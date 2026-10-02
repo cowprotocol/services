@@ -49,6 +49,42 @@ impl Order {
     pub fn buys_native_sol(&self) -> bool {
         self.buy_token == NATIVE_SOL
     }
+
+    /// The amounts still open to fill: the order-side target less `executed`,
+    /// the other leg scaled in proportion. Rounds like the driver's
+    /// `Order::remaining`, the sell leg down and the buy leg up, so the cut
+    /// judges an order by the legs the driver sends to solvers.
+    pub fn remaining(&self) -> Remaining {
+        let (target, other) = match self.kind {
+            OrderKind::Sell => (self.sell_amount, self.buy_amount),
+            OrderKind::Buy => (self.buy_amount, self.sell_amount),
+        };
+        let open = target.saturating_sub(self.executed);
+        if open == 0 {
+            return Remaining { sell: 0, buy: 0 };
+        }
+        let scaled = u128::from(other) * u128::from(open);
+        let target = u128::from(target);
+        // `open <= target`, so the quotient never exceeds `other`.
+        let fits = |leg: u128| u64::try_from(leg).expect("a scaled leg fits u64");
+        match self.kind {
+            OrderKind::Sell => Remaining {
+                sell: open,
+                buy: fits(scaled.div_ceil(target)),
+            },
+            OrderKind::Buy => Remaining {
+                sell: fits(scaled / target),
+                buy: open,
+            },
+        }
+    }
+}
+
+/// What is left of an order to fill, see [`Order::remaining`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Remaining {
+    pub sell: u64,
+    pub buy: u64,
 }
 
 /// The cut auction the loop fans out to solvers.
@@ -79,7 +115,7 @@ impl AuctionInfo for Auction {
 #[cfg(test)]
 mod tests {
     use {
-        super::{Auction, HashMap, Order, OrderKind, Pubkey},
+        super::{Auction, HashMap, Order, OrderKind, Pubkey, Remaining},
         chain_types::solana::AppData,
     };
 
@@ -101,6 +137,46 @@ mod tests {
             created_on_chain: true,
             executed: 0,
         }
+    }
+
+    /// 999 of 1000 sold leaves 1 to sell and the 1000 buy limit scales to 1,
+    /// rounding up when it does not divide; 400 of 1000 bought leaves 600 to
+    /// buy and the sell limit scales down to 600.
+    #[test]
+    fn remaining_scales_the_other_leg_like_the_driver() {
+        let sell = order(1_000);
+        assert_eq!(
+            sell.remaining(),
+            Remaining {
+                sell: 1_000,
+                buy: 1_000
+            }
+        );
+        let filled = Order {
+            executed: 999,
+            ..sell.clone()
+        };
+        assert_eq!(filled.remaining(), Remaining { sell: 1, buy: 1 });
+        assert_eq!(
+            Order {
+                buy_amount: 1_001,
+                ..filled
+            }
+            .remaining(),
+            Remaining { sell: 1, buy: 2 }
+        );
+        let buy = Order {
+            kind: OrderKind::Buy,
+            executed: 400,
+            ..sell
+        };
+        assert_eq!(
+            buy.remaining(),
+            Remaining {
+                sell: 600,
+                buy: 600
+            }
+        );
     }
 
     #[test]

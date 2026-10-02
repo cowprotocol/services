@@ -367,6 +367,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
+            deadline_check: config.contracts.deadline_check.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),

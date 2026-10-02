@@ -241,7 +241,8 @@ paths:
             account), partially fillable, or paying an account the System
             Program does not own (`InvalidNativeBuy`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
-            validity (`InsufficientValidTo`), a dead blockhash
+            validity (`InsufficientValidTo`), a mint the settlement program
+            cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:
             application/json:
@@ -274,9 +275,10 @@ paths:
             (`SameBuyAndSellToken`), the amount is zero
             (`ZeroAmount`), a native SOL buy is quoted under 890880 lamports,
             the rent-exempt minimum of an empty account (`InvalidNativeBuy`),
-            or `validTo` is closer than the configured minimum
+            `validTo` is closer than the configured minimum
             (default two minutes) or further than the configured maximum
-            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`).
+            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
+            or a mint the settlement program cannot move (`UnsupportedToken`).
           content:
             application/json:
               schema:
