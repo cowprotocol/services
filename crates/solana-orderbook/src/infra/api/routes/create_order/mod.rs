@@ -129,9 +129,40 @@ impl From<PlacementError> for error::Reply {
     }
 }
 
-fn internal_error_reply(err: impl std::fmt::Debug, what: &str) -> error::Reply {
-    tracing::error!(?err, "{what}");
-    error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+/// Why a placement failed: a refusal the client can act on, or an internal
+/// error with the step that failed.
+enum Failure {
+    Refused(PlacementError),
+    Internal {
+        err: Box<dyn std::fmt::Debug + Send>,
+        step: &'static str,
+    },
+}
+
+impl Failure {
+    fn internal(err: impl std::fmt::Debug + Send + 'static, step: &'static str) -> Self {
+        Self::Internal {
+            err: Box::new(err),
+            step,
+        }
+    }
+}
+
+impl From<PlacementError> for Failure {
+    fn from(error: PlacementError) -> Self {
+        Self::Refused(error)
+    }
+}
+
+impl From<Failure> for error::Reply {
+    fn from(failure: Failure) -> Self {
+        match failure {
+            Failure::Refused(error) => error.into(),
+            Failure::Internal { .. } => {
+                error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+            }
+        }
+    }
 }
 
 /// Handle `POST /api/v1/orders`: validate the transaction, derive the order
@@ -140,6 +171,19 @@ pub async fn create_order(
     state: axum::extract::State<State>,
     Json(params): Json<Params>,
 ) -> Result<(StatusCode, Json<String>), error::Reply> {
+    place(state, params).await.map_err(|failure| {
+        match &failure {
+            Failure::Refused(error) => tracing::debug!(err = ?error, "error creating order"),
+            Failure::Internal { err, step } => tracing::error!(?err, step, "error creating order"),
+        }
+        failure.into()
+    })
+}
+
+async fn place(
+    state: axum::extract::State<State>,
+    params: Params,
+) -> Result<(StatusCode, Json<String>), Failure> {
     let Some(sponsoring) = state.sponsoring() else {
         return Err(PlacementError::SponsoringDisabled.into());
     };
@@ -159,7 +203,7 @@ pub async fn create_order(
             .rpc
             .multiple_accounts([wallet])
             .await
-            .map_err(|err| internal_error_reply(err, "native buy wallet lookup failed"))?;
+            .map_err(|err| Failure::internal(err, "native buy wallet lookup"))?;
         if accounts
             .get(&wallet)
             .is_some_and(|account| account.owner != solana_system_interface::program::ID)
@@ -179,7 +223,7 @@ pub async fn create_order(
         .rpc
         .is_blockhash_valid(blockhash)
         .await
-        .map_err(|err| internal_error_reply(err, "blockhash validity check failed"))?;
+        .map_err(|err| Failure::internal(err, "blockhash validity check"))?;
     if !valid {
         return Err(PlacementError::BlockhashExpired.into());
     }
@@ -187,7 +231,7 @@ pub async fn create_order(
         .rpc
         .block_height()
         .await
-        .map_err(|err| internal_error_reply(err, "block height fetch failed"))?;
+        .map_err(|err| Failure::internal(err, "block height fetch"))?;
     order.last_valid_block_height = u64::from(height) + MAX_PROCESSING_AGE as u64;
 
     // Short-circuit replays with a cheap read before the insert. A replayed
@@ -195,7 +239,7 @@ pub async fn create_order(
     // insert's unique violation stays as the race-safe backstop.
     let duplicate = db::order_exists(state.pool(), &order.uid.0)
         .await
-        .map_err(|err| internal_error_reply(err, "order existence check failed"))?;
+        .map_err(|err| Failure::internal(err, "order existence check"))?;
     if duplicate {
         return Err(PlacementError::DuplicatedOrder.into());
     }
@@ -217,7 +261,7 @@ pub async fn create_order(
         if duplicate {
             return Err(PlacementError::DuplicatedOrder.into());
         }
-        return Err(internal_error_reply(err, "sponsored order insert failed"));
+        return Err(Failure::internal(err, "sponsored order insert"));
     }
     Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid.0))))
 }
@@ -258,6 +302,12 @@ fn validate(
     // out of its balance.
     let priority_fee = compute_budget.max_priority_fee_lamports();
     if priority_fee > u128::from(sponsoring.max_priority_fee_lamports) {
+        tracing::debug!(
+            price = ?compute_budget.price,
+            limit = ?compute_budget.limit,
+            %priority_fee,
+            "priority fee above the sponsored ceiling"
+        );
         return Err(PlacementError::InvalidTransaction(
             "the priority fee is above the sponsored ceiling",
         ));
