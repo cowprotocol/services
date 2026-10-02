@@ -549,7 +549,8 @@ fn build_module() -> Module {
                     BASE => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                     AVALANCHE => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                     BNB => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
-                    OPTIMISM => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    // not deployed yet
+                    // OPTIMISM => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                     POLYGON => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                     GNOSIS => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                     SEPOLIA => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
