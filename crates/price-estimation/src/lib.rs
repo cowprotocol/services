@@ -173,10 +173,7 @@ pub struct Query {
 pub struct Verification {
     /// This address needs to have the `sell_token`.
     pub from: Address,
-    /// Address that will receive the `buy_token`. The settlement contract's
-    /// zero-sentinel is encoded by the [`Receiver`] type; use
-    /// [`Verification::effective_receiver`] to get the resolved payout
-    /// address.
+    /// This address will receive the `buy_token`.
     pub receiver: Receiver,
     /// App data provided with the quote that encodes things like
     /// hooks and custom wrappers.

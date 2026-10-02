@@ -398,10 +398,6 @@ mod tests {
         );
     }
 
-    /// Regression: before the `Option<Address>` → `Address` flip, clients
-    /// could send `"receiver": null` and the orderbook would parse it as
-    /// `None` → zero. Make sure the custom deserializer still accepts both
-    /// `null` and a missing field.
     #[test]
     fn quote_request_tolerates_null_receiver() {
         let base = json!({

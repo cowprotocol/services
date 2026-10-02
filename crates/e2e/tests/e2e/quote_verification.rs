@@ -8,6 +8,7 @@ use {
     configs::{autopilot::Configuration, test_util::TestDefault},
     contracts::ERC20,
     e2e::setup::*,
+    eth_domain_types::Receiver,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::quote::{OrderQuoteRequest, OrderQuoteSide, PriceQuality, SellAmount},
     number::units::EthUnit,
@@ -222,7 +223,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: Address::ZERO.into(),
+            receiver: Receiver::OWNER,
             ..request.clone()
         })
         .await

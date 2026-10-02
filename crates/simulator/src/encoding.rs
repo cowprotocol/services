@@ -161,10 +161,8 @@ pub fn encode_trade(
     (
         U256::from(sell_token_index),
         U256::from(buy_token_index),
-        // Reconstruct the raw signed address — the settlement contract treats
-        // `0x0000…` as "pay the owner", so we must encode what the user
-        // actually signed (not the resolved payout address) or the EIP-712
-        // hash won't match.
+        // Use the actual raw bytes that got signed by the owner intead of the
+        // resolved address to make the signature recovery work in the contract.
         Address::from(*order.receiver.raw_bytes()),
         order.sell_amount,
         order.buy_amount,

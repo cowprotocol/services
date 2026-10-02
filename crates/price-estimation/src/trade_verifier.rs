@@ -484,9 +484,6 @@ impl TradeVerifier {
             sell_amount: fake_sell_amount,
             buy_token: query.buy_token,
             buy_amount: fake_buy_amount,
-            // Fabricated OrderData used only for simulation: `effective`
-            // ensures the hash computed over this struct matches the owner's
-            // intent (zero-sentinel resolved to from).
             receiver: Receiver::new(verification.effective_receiver()),
             valid_to: u32::MAX,
             app_data: Default::default(),

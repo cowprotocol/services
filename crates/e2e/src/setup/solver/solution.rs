@@ -70,8 +70,6 @@ impl JitOrder {
             sell_token: data.sell_token,
             buy_token: data.buy_token,
             receiver: data.receiver,
-            // ↑ `data.receiver` is already a `Receiver` after the Option→Address
-            // flip, so this stays wire-compatible.
             sell_amount: data.sell_amount,
             buy_amount: data.buy_amount,
             partially_fillable: data.partially_fillable,

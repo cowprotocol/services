@@ -508,8 +508,12 @@ async fn find_banned_user_orders(
     banned_users: &order_validation::banned::Users,
 ) -> Vec<OrderUid> {
     fn users_to_check(order: &Order) -> impl Iterator<Item = Address> {
+        // only check the receiver if it's actually different from the owner
+        let receiver = order.data.receiver.resolve(order.metadata.owner);
+        let receiver_check = receiver.ne(&order.metadata.owner).then_some(receiver);
+
         std::iter::once(order.metadata.owner)
-            .chain(order.data.receiver.as_custom())
+            .chain(receiver_check)
             .chain(order.metadata.onchain_user)
     }
 

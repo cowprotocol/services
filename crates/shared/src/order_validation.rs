@@ -756,12 +756,13 @@ impl OrderValidator {
 impl OrderValidating for OrderValidator {
     #[instrument(skip_all)]
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        // A zero `receiver` means "pay the owner" — skip it so we don't
-        // consult the banned-user list for the zero address.
-        let custom_receiver = order.receiver.as_custom();
+        // only check the receiver if it's actually different from the owner
+        let receiver = order.receiver.resolve(order.owner);
+        let receiver_check = receiver.ne(&order.owner).then_some(receiver);
+
         if !self
             .banned_users
-            .banned(std::iter::once(order.owner).chain(custom_receiver))
+            .banned(std::iter::once(order.owner).chain(receiver_check))
             .await
             .is_empty()
         {
