@@ -996,8 +996,8 @@ async fn parse_streaming_quotes(response: reqwest::Response) -> Vec<OrderQuoteRe
 
 // Smoke test for the SSE streaming quote endpoint. Asserts that fast quotes are
 // rejected and optimal quotes are unverified, then posts a verified quote
-// request and asserts that at least one SSE data line parses as a valid
-// OrderQuoteResponse carrying a persisted quote id.
+// request and asserts that at least one SSE data line parses as a valid,
+// verified OrderQuoteResponse carrying a persisted quote id.
 async fn quote_stream_smoke(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -1096,6 +1096,12 @@ async fn quote_stream_smoke(web3: Web3) {
         .await
         .expect("streaming quote request failed");
     let parsed = parse_streaming_quotes(response).await;
+    // The endpoint does not guarantee a verified quote, but in this setup every
+    // streamed quote can be verified, so at least one of them should be.
+    assert!(
+        parsed.iter().any(|quote| quote.verified),
+        "expected at least one verified streaming quote, got {parsed:?}"
+    );
 
     let weth = *onchain.contracts().weth.address();
     let buy_token = *token.address();
