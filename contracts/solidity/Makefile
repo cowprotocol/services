@@ -10,11 +10,11 @@ ARTIFACTDIR := ../artifacts
 CONTRACTS := \
 	AnyoneAuthenticator.sol \
 	Balances.sol \
+	DeadlineCheck.sol \
 	Signatures.sol \
 	Solver.sol \
 	Spardose.sol \
-	Swapper.sol \
-	DeadlineCheck.sol
+	Swapper.sol
 ARTIFACTS := $(patsubst %.sol,$(ARTIFACTDIR)/%.json,$(CONTRACTS))
 
 TEST_CONTRACTS := Counter.sol GasHog.sol NonStandardERC20Balances.sol RemoteERC20Balances.sol
