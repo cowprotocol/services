@@ -71,6 +71,7 @@ impl Transaction {
         transaction: &blockchain::Transaction,
         domain_separator: &eth::DomainSeparator,
         settlement_contract: eth::Address,
+        weth: eth::WrappedNativeToken,
         authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
         // Find trace call to settlement contract
@@ -120,6 +121,7 @@ impl Transaction {
                     ..
                 } = GPv2Settlement::GPv2Settlement::settleCall::abi_decode(data)?;
 
+                let uniform_tokens = uniform_tokens(&tokens, &decoded_trades);
                 let mut trades = Vec::with_capacity(decoded_trades.len());
                 for trade in decoded_trades {
                     let flags = tokenized::TradeFlags(trade.flags);
@@ -129,12 +131,10 @@ impl Transaction {
                         .expect("SC was able to look up this index");
                     let sell_token = tokens[sell_token_index];
                     let buy_token = tokens[buy_token_index];
-                    let uniform_sell_token_index = tokens
-                        .iter()
-                        .position(|token| token == &sell_token)
-                        .unwrap();
+                    let uniform_sell_token_index =
+                        uniform_tokens.iter().position(|token| *token == sell_token);
                     let uniform_buy_token_index =
-                        tokens.iter().position(|token| token == &buy_token).unwrap();
+                        uniform_buy_token_index(uniform_tokens, buy_token, weth);
                     trades.push(EncodedTrade {
                         uid: tokenized::order_uid(&trade, &tokens, domain_separator)
                             .map_err(Error::OrderUidRecover)?,
@@ -161,15 +161,15 @@ impl Transaction {
                         .map_err(Error::SignatureRecover)?)
                         .into(),
                         executed: trade.executedAmount.into(),
-                        prices: Prices {
-                            uniform: ClearingPrices {
-                                sell: clearing_prices[uniform_sell_token_index],
-                                buy: clearing_prices[uniform_buy_token_index],
+                        uniform_prices: uniform_sell_token_index.zip(uniform_buy_token_index).map(
+                            |(sell, buy)| ClearingPrices {
+                                sell: clearing_prices[sell],
+                                buy: clearing_prices[buy],
                             },
-                            custom: ClearingPrices {
-                                sell: clearing_prices[sell_token_index],
-                                buy: clearing_prices[buy_token_index],
-                            },
+                        ),
+                        custom_prices: ClearingPrices {
+                            sell: clearing_prices[sell_token_index],
+                            buy: clearing_prices[buy_token_index],
                         },
                     })
                 }
@@ -177,6 +177,41 @@ impl Transaction {
             },
         })
     }
+}
+
+/// Tokens of the uniform clearing prices, which precede the custom prices the
+/// trades point at.
+fn uniform_tokens<'a>(
+    tokens: &'a [eth::Address],
+    trades: &[GPv2Settlement::GPv2Trade::Data],
+) -> &'a [eth::Address] {
+    let len = trades
+        .iter()
+        .flat_map(|trade| [trade.sellTokenIndex, trade.buyTokenIndex])
+        .min()
+        .map_or(0, |index| {
+            usize::try_from(index).expect("SC was able to look up this index")
+        });
+    &tokens[..len]
+}
+
+/// Index of the uniform clearing price of a trade's buy token. The native ETH
+/// sentinel only exists as a buy token and is paid out by unwrapping WETH, so
+/// ETH and WETH stand in for each other.
+fn uniform_buy_token_index(
+    uniform_tokens: &[eth::Address],
+    buy_token: eth::Address,
+    weth: eth::WrappedNativeToken,
+) -> Option<usize> {
+    let erc20 = |token: eth::Address| eth::TokenAddress::from(token).as_erc20(weth);
+    uniform_tokens
+        .iter()
+        .position(|token| *token == buy_token)
+        .or_else(|| {
+            uniform_tokens
+                .iter()
+                .position(|token| erc20(*token) == erc20(buy_token))
+        })
 }
 
 fn find_settlement_trace_and_callers(
@@ -247,7 +282,10 @@ pub struct EncodedTrade {
     pub partially_fillable: bool,
     pub signature: order::Signature,
     pub executed: order::TargetAmount,
-    pub prices: Prices,
+    /// Uniform prices of the traded tokens, if the settlement lists them. Only
+    /// liquidity JIT orders can do without, see [`super::Trade::new`].
+    pub uniform_prices: Option<ClearingPrices>,
+    pub custom_prices: ClearingPrices,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -280,4 +318,33 @@ pub enum Error {
     SignatureRecover(#[source] anyhow::Error),
     #[error("failed to check authentication {0}")]
     Authentication(#[source] alloy::contract::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, alloy::primitives::U256};
+
+    #[test]
+    fn uniform_buy_token_index_accepts_weth_for_eth() {
+        let [a, weth] = [1, 2].map(eth::Address::repeat_byte);
+        let eth = *eth::ETH_TOKEN;
+        let trade = |sell: u8, buy: u8| GPv2Settlement::GPv2Trade::Data {
+            sellTokenIndex: U256::from(sell),
+            buyTokenIndex: U256::from(buy),
+            ..Default::default()
+        };
+        let index = |tokens: &[eth::Address], trades: &[GPv2Settlement::GPv2Trade::Data]| {
+            uniform_buy_token_index(uniform_tokens(tokens, trades), eth, weth.into())
+        };
+
+        // Only WETH has a uniform price, so both ETH buys use it.
+        let tokens = [a, weth, a, eth, a, eth];
+        let trades = [trade(2, 3), trade(4, 5)];
+        assert_eq!(uniform_tokens(&tokens, &trades), [a, weth]);
+        assert_eq!(index(&tokens, &trades), Some(1));
+        // An explicit uniform ETH price wins over WETH.
+        assert_eq!(index(&[a, weth, eth, a, eth], &[trade(3, 4)]), Some(2));
+        // No uniform prices at all.
+        assert_eq!(index(&[a, eth], &[trade(0, 1)]), None);
+    }
 }
