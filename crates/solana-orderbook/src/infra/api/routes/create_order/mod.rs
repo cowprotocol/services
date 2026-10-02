@@ -388,6 +388,8 @@ async fn check_accounts(
         )
         .into());
     }
+    // The parser matched every preparation step to the sell or buy mint, both
+    // read above, so each pair has a verdict.
     let owned = token_programs.iter().all(|(mint, program)| {
         verdicts
             .get(mint)
