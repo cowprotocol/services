@@ -37,6 +37,13 @@ impl AccountsSnapshot {
         Self { accounts }
     }
 
+    pub fn is_feature_active(&self, key: &Pubkey) -> bool {
+        self.accounts
+            .get(key)
+            .and_then(solana_feature_gate_interface::from_account)
+            .is_some_and(|feature| feature.activated_at.is_some())
+    }
+
     /// Return the address lookup table at `key` for the v0 message compiler.
     ///
     /// # Requirements
