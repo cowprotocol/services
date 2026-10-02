@@ -75,7 +75,6 @@ impl Settlement {
         auction_id: auction::Id,
         eth: &Ethereum,
         simulator: &Simulator,
-        solver_native_token: ManageNativeToken,
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules
         // which would otherwise lead to slashing. Check those rules
@@ -121,7 +120,7 @@ impl Settlement {
             eth.contracts(),
             approvals_internalized.iter().cloned(),
             Internalization::Enable,
-            solver_native_token,
+            solution.solver().solver_native_token(),
             None,
         )?;
 

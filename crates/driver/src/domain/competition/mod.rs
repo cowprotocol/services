@@ -423,12 +423,7 @@ impl Competition {
                 observe::encoding(solution.id());
                 let settlement = solution
                     .clone()
-                    .encode(
-                        auction,
-                        &self.eth,
-                        &self.simulator,
-                        self.solver.solver_native_token(),
-                    )
+                    .encode(auction, &self.eth, &self.simulator)
                     .await;
                 (solution, settlement)
             })
@@ -589,12 +584,7 @@ impl Competition {
             ..cached.auction
         };
         let settlement = solution
-            .encode(
-                &auction,
-                &self.eth,
-                &self.simulator,
-                self.solver.solver_native_token(),
-            )
+            .encode(&auction, &self.eth, &self.simulator)
             .await?;
         let solution_id = settlement.solution().get();
         tracing::debug!(solution_id, orders = ?settlement.orders().keys(), "reencoded fast path solution");

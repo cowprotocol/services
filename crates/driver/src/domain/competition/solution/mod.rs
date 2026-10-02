@@ -556,18 +556,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
-        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
         let auction_id = auction.auction_id().ok_or(Error::MissingAuctionId)?;
-        Settlement::new(
-            self,
-            auction,
-            auction_id,
-            eth,
-            simulator,
-            solver_native_token,
-        )
-        .await
+        Settlement::new(self, auction, auction_id, eth, simulator).await
     }
 
     /// Swap this quote solution's single user order for the real signed
