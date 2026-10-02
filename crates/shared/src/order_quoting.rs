@@ -549,6 +549,9 @@ pub struct Validity {
     pub eip1271_onchain_quote: Duration,
     pub presign_onchain_quote: Duration,
     pub standard_quote: Duration,
+    /// Shorter deadline for fast-path quotes to limit the free option granted
+    /// to users between quoting and settlement.
+    pub fast_path_quote: Duration,
 }
 
 #[cfg(test)]
@@ -558,6 +561,7 @@ impl Default for Validity {
             eip1271_onchain_quote: Duration::seconds(600),
             presign_onchain_quote: Duration::seconds(600),
             standard_quote: Duration::seconds(60),
+            fast_path_quote: Duration::seconds(10),
         }
     }
 }
@@ -623,20 +627,31 @@ impl OrderQuoter {
         }
     }
 
+    /// Computes the absolute expiration timestamp for a new quote
+    /// depending on the quote's parameters (fast path, signing scheme).
+    fn quote_expiration(&self, parameters: &QuoteParameters) -> DateTime<Utc> {
+        let validity = if parameters.fast_path {
+            self.validity.fast_path_quote
+        } else {
+            match parameters.signing_scheme {
+                QuoteSigningScheme::Eip1271 {
+                    onchain_order: true,
+                    ..
+                } => self.validity.eip1271_onchain_quote,
+                QuoteSigningScheme::PreSign {
+                    onchain_order: true,
+                } => self.validity.presign_onchain_quote,
+                _ => self.validity.standard_quote,
+            }
+        };
+        self.now.now() + validity
+    }
+
     async fn compute_quote_data(
         &self,
         parameters: &QuoteParameters,
     ) -> Result<QuoteCompetition, CalculateQuoteError> {
-        let expiration = match parameters.signing_scheme {
-            QuoteSigningScheme::Eip1271 {
-                onchain_order: true,
-                ..
-            } => self.now.now() + self.validity.eip1271_onchain_quote,
-            QuoteSigningScheme::PreSign {
-                onchain_order: true,
-            } => self.now.now() + self.validity.presign_onchain_quote,
-            _ => self.now.now() + self.validity.standard_quote,
-        };
+        let expiration = self.quote_expiration(parameters);
 
         let trade_query =
             Arc::new(parameters.to_price_query(self.default_quote_timeout, self.max_quote_timeout));
@@ -796,16 +811,7 @@ impl StreamingQuoting for OrderQuoter {
                 .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeBuy, err))),
         )?;
 
-        let expiration = match parameters.signing_scheme {
-            QuoteSigningScheme::Eip1271 {
-                onchain_order: true,
-                ..
-            } => self.now.now() + self.validity.eip1271_onchain_quote,
-            QuoteSigningScheme::PreSign {
-                onchain_order: true,
-            } => self.now.now() + self.validity.presign_onchain_quote,
-            _ => self.now.now() + self.validity.standard_quote,
-        };
+        let expiration = self.quote_expiration(&parameters);
 
         let storage = self.storage.clone();
 
@@ -894,7 +900,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             owner,
             sell_token: quote_request.sell_token,
             buy_token: quote_request.buy_token,
-            receiver: quote_request.receiver.unwrap_or(owner),
+            receiver: quote_request.receiver,
             valid_to: quote_request.validity.actual_valid_to(),
             partially_fillable: false,
             buy_token_balance: quote_request.buy_token_balance,
@@ -2103,7 +2109,7 @@ mod tests {
                 sell_amount: U256::from(10),
                 buy_amount: U256::from(20),
                 executed_amount: U256::from(11),
-                receiver: Address::repeat_byte(6),
+                receiver: Address::repeat_byte(6).into(),
                 valid_to: 1734084318,
                 app_data: Default::default(),
                 side: dto::Side::Sell,

@@ -11,6 +11,7 @@ use {
             TokenAsset,
         },
         pda::order::find_order_pda,
+        token_program::TokenProgram,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     solana_driver::{
@@ -23,7 +24,7 @@ use {
         },
     },
     solana_sdk::pubkey::Pubkey,
-    solana_testlib::temp_keypair,
+    solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
     spl_token_interface::native_mint,
     std::{
         net::SocketAddr,
@@ -74,27 +75,40 @@ fn uid() -> String {
 }
 
 fn buy_token_account() -> Pubkey {
-    associated_token_address(&pubkey(0x22), &pubkey(0x44))
+    associated_token_address(&pubkey(0x22), &pubkey(0x44), TokenProgram::SplToken)
 }
 
-fn blockchain() -> Arc<Solana> {
-    Arc::new(Solana::new(
-        SolanaRPC::new_mock("succeeds".to_string()),
+/// A blockchain adapter that already knows the test order's mints as SPL
+/// Token mints, so that the mock RPC's answer to every account lookup,
+/// "absent", only ever reaches the token accounts. `mocks` answers the other
+/// requests.
+async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
+    mocks.insert(
+        RpcRequest::GetMultipleAccounts,
+        multiple_accounts_json([mint_account_json(), mint_account_json()]),
+    );
+    let blockchain = Solana::new(
+        SolanaRPC::new_mock_with_mocks(mocks),
         cow_settlement_interface::id(),
-    ))
+    );
+    blockchain
+        .token_programs([pubkey(0x33), pubkey(0x44)])
+        .await
+        .unwrap();
+    Arc::new(blockchain)
 }
 
-fn api_with(solvers: Vec<Solver>) -> Api {
+async fn api_with(solvers: Vec<Solver>) -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        blockchain: blockchain(),
+        blockchain: blockchain_with(Mocks::new()).await,
         solvers,
     }
 }
 
 /// Spawn the API server on an ephemeral port and return its bound address.
 async fn spawn_server(solvers: Vec<Solver>) -> SocketAddr {
-    let api = api_with(solvers);
+    let api = api_with(solvers).await;
     let (listener, addr) = api.bind().await.unwrap();
     // The test never cancels this token, so the server stays alive.
     let shutdown = CancellationToken::new();
@@ -273,7 +287,7 @@ async fn healthz_returns_200() {
 
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
-    let api = api_with(Vec::new());
+    let api = api_with(Vec::new()).await;
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
     let serve = api.serve(listener, shutdown_token.clone());
@@ -490,14 +504,10 @@ async fn settle_rejects_a_passed_submission_deadline() {
     // The mock RPC reports slot 1000, so a deadline of 500 is already past.
     let mut mocks = Mocks::new();
     mocks.insert(RpcRequest::GetSlot, serde_json::json!(1000));
-    let blockchain = Arc::new(Solana::new(
-        SolanaRPC::new_mock_with_mocks(mocks),
-        cow_settlement_interface::id(),
-    ));
 
     let api = Api {
         addr: "0.0.0.0:0".parse().unwrap(),
-        blockchain,
+        blockchain: blockchain_with(mocks).await,
         solvers: vec![solver],
     };
     let (listener, addr) = api.bind().await.unwrap();

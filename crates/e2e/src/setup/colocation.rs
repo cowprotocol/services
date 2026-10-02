@@ -208,6 +208,7 @@ gp-v2-settlement = "{:?}"
 weth = "{:?}"
 balances = "{:?}"
 signatures = "{:?}"
+deadline-check = "{:?}"
 {flashloan_router_config}
 
 {solvers}
@@ -230,6 +231,7 @@ refresh-cooldown = "0s"
         contracts.weth.address(),
         contracts.balances.address(),
         contracts.signatures.address(),
+        contracts.deadline_check.address(),
     );
 
     let final_config = if let Some(override_str) = config_override {

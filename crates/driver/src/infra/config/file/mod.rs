@@ -485,6 +485,12 @@ struct ContractsConfig {
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::Address>,
+
+    /// Override the default address of the DeadlineCheck contract. A
+    /// call to this contract is injected as a pre-interaction at
+    /// `/settle` time so that the settlement reverts on-chain if it is
+    /// mined past its submission deadline.
+    deadline_check: Option<eth::Address>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
