@@ -98,10 +98,6 @@ pub struct Rpc {
     /// RPC endpoint for `simulateBundle` only, so a metered plan on the main
     /// endpoint is spared its cost.
     pub bundle_endpoint: url::Url,
-    /// Rate limit on `simulateBundle` requests: a bucket of `capacity`
-    /// permits refilled one per `refill-interval`. Defaults to 10 per second.
-    #[serde(default)]
-    pub bundle_throttle: crate::infra::blockchain::ThrottlerConfig,
     /// Timeout for individual RPC requests.
     #[serde(with = "humantime_serde")]
     pub request_timeout: Duration,

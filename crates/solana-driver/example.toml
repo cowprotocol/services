@@ -8,9 +8,6 @@ settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 endpoint = "https://api.mainnet-beta.solana.com"
 # Serves only `simulateBundle`; must support that Jito extension.
 bundle-endpoint = "https://bundles.example.com"
-# Optional: at most `capacity` `simulateBundle` requests in a burst, then one
-# per `refill-interval`. Default shown.
-bundle-throttle = { capacity = 10, refill-interval = "100ms" }
 request-timeout = "10s"
 
 [http]

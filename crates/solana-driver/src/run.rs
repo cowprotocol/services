@@ -53,8 +53,7 @@ pub async fn run(args: Args) {
     );
     let blockchain = Arc::new(
         blockchain::Solana::new(rpc, config.chain.settlement_program_id)
-            .with_bundle_rpc(bundle_rpc)
-            .with_bundle_throttler(blockchain::Throttler::new(config.rpc.bundle_throttle)),
+            .with_bundle_rpc(bundle_rpc),
     );
     let api = Api {
         addr: config.http.bind_address,

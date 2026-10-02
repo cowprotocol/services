@@ -4,12 +4,10 @@
 //! `infra/blockchain/mod.rs` (`struct Ethereum`).
 
 mod accounts;
-mod throttler;
 mod token;
 
 pub use {
     accounts::{AccountsSnapshot, InvalidAddressLookupTableReason, TokenAccountState},
-    throttler::{Throttler, ThrottlerConfig},
     token::{
         associated_token_address,
         close_token_account,
@@ -27,8 +25,6 @@ pub struct Solana {
     rpc: SolanaRPC,
     /// Serves `simulateBundle`. `None` only in tests, where `rpc` serves it.
     bundle_rpc: Option<SolanaRPC>,
-    /// Paces `simulateBundle` requests when set.
-    bundle_throttler: Option<Throttler>,
     program_id: Pubkey,
 }
 
@@ -38,7 +34,6 @@ impl Solana {
         Self {
             rpc,
             bundle_rpc: None,
-            bundle_throttler: None,
             program_id,
         }
     }
@@ -46,12 +41,6 @@ impl Solana {
     /// Route `simulateBundle` to a dedicated client.
     pub fn with_bundle_rpc(mut self, rpc: SolanaRPC) -> Self {
         self.bundle_rpc = Some(rpc);
-        self
-    }
-
-    /// Pace `simulateBundle` requests through a throttler.
-    pub fn with_bundle_throttler(mut self, throttler: Throttler) -> Self {
-        self.bundle_throttler = Some(throttler);
         self
     }
 
@@ -85,9 +74,6 @@ impl Solana {
         &self,
         transactions: &[VersionedTransaction],
     ) -> Result<Vec<cow_solana_rpc::RpcSimulateBundleTransactionResult>, Error> {
-        if let Some(throttler) = &self.bundle_throttler {
-            throttler.throttle().await;
-        }
         self.bundle_rpc
             .as_ref()
             .unwrap_or(&self.rpc)
