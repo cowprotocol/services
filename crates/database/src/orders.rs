@@ -74,7 +74,7 @@ pub struct Order {
     pub creation_timestamp: DateTime<Utc>,
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Option<Address>,
+    pub receiver: Address,
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
@@ -218,8 +218,17 @@ pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,
 ) -> Result<Option<Order>, sqlx::Error> {
+    // Explicit column list (instead of `SELECT *`) so we can COALESCE the
+    // nullable `receiver` column into the zero address — matching the other
+    // read paths and keeping legacy NULL rows decodable.
     const QUERY: &str = r#"
-SELECT * FROM ORDERS
+SELECT uid, owner, creation_timestamp, sell_token, buy_token,
+    COALESCE(receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver,
+    sell_amount, buy_amount, valid_to, app_data, fee_amount, kind,
+    partially_fillable, signature, signing_scheme, settlement_contract,
+    sell_token_balance, buy_token_balance, cancellation_timestamp,
+    valid_from, fast_path
+FROM orders
 WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
@@ -562,7 +571,7 @@ pub struct FullOrder {
     pub sum_buy: BigDecimal,
     pub sum_fee: BigDecimal,
     pub invalidated: bool,
-    pub receiver: Option<Address>,
+    pub receiver: Address,
     pub signing_scheme: SigningScheme,
     pub settlement_contract: Address,
     pub sell_token_balance: SellTokenSource,
@@ -671,7 +680,7 @@ impl FullOrderWithQuote {
 pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
 o.valid_to, o.valid_from, o.fast_path, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
-o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
+COALESCE(o.receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 FALSE AS is_liquidity_order,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
@@ -849,7 +858,7 @@ pub fn solvable_orders(
         lo.kind,
         lo.partially_fillable,
         lo.signature,
-        lo.receiver,
+        COALESCE(lo.receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver,
         lo.signing_scheme,
         lo.settlement_contract,
         lo.sell_token_balance,
@@ -983,7 +992,7 @@ SELECT
     so.kind,
     so.partially_fillable,
     so.signature,
-    so.receiver,
+    COALESCE(so.receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver,
     so.signing_scheme,
     so.settlement_contract,
     so.sell_token_balance,

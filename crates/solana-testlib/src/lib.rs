@@ -37,6 +37,7 @@ pub fn classic_mint(decimals: u8) -> Account {
     }
     .pack_into_slice(&mut data);
     Account {
+        lamports: 1_461_600,
         owner: spl_token_interface::ID,
         data,
         ..Account::default()
@@ -103,6 +104,12 @@ pub fn account_json(account: &Account) -> serde_json::Value {
         "rentEpoch": account.rent_epoch,
         "space": account.data.len(),
     })
+}
+
+/// An initialized 6-decimal SPL Token mint, in the JSON shape a
+/// `getMultipleAccounts` mock answers with.
+pub fn mint_account_json() -> serde_json::Value {
+    account_json(&classic_mint(6))
 }
 
 /// An initialized SPL token account of `mint` owned by `owner`, in the JSON

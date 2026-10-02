@@ -16,6 +16,7 @@ use {
     sqlx::PgPool,
     std::{
         collections::{HashMap, HashSet},
+        sync::Mutex,
         time::{SystemTime, UNIX_EPOCH},
     },
 };
@@ -29,6 +30,8 @@ pub struct DbAuctionProvider {
     prices: NativePrices,
     /// The verdicts on the mints the cuts read so far.
     mints: MintVerdicts,
+    /// Block height of the last successful lookup.
+    last_block_height: Mutex<Option<i64>>,
 }
 
 impl DbAuctionProvider {
@@ -39,6 +42,30 @@ impl DbAuctionProvider {
             max_indexer_lag,
             prices,
             mints: MintVerdicts::default(),
+            last_block_height: Mutex::default(),
+        }
+    }
+
+    /// The chain's block height, falling back to the last one read when the
+    /// lookup fails. `None` until a lookup succeeds. Block height only grows,
+    /// so a creation deadline checked against an older one can keep an order
+    /// that died since but never drops a live one.
+    async fn block_height(&self) -> Option<i64> {
+        match self.rpc.block_height().await {
+            Ok(height) => {
+                let height = Some(i64::try_from(u64::from(height)).unwrap_or(i64::MAX));
+                *self.last_block_height.lock().unwrap() = height;
+                height
+            }
+            Err(err) => {
+                let last = *self.last_block_height.lock().unwrap();
+                tracing::warn!(
+                    ?err,
+                    ?last,
+                    "block height lookup failed, using the last one"
+                );
+                last
+            }
         }
     }
 
@@ -46,8 +73,13 @@ impl DbAuctionProvider {
     /// cannot move, then those whose buy token account cannot receive the
     /// payout. The mints without a cached verdict and the buy token accounts
     /// share one lookup. When it fails every order passes, a doomed order then
-    /// costs one failed settlement instead of the whole cut.
-    async fn checked_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+    /// costs one failed settlement instead of the whole cut. Returns the kept
+    /// orders, the uids dropped for their mint and the uids dropped for their
+    /// buy token account.
+    async fn checked_orders(
+        &self,
+        orders: Vec<Order>,
+    ) -> (Vec<Order>, Vec<IntentHash>, Vec<IntentHash>) {
         let lookup = self.mints.lookup(orders.iter().flat_map(token_mints));
         let buy_accounts = orders
             .iter()
@@ -61,42 +93,60 @@ impl DbAuctionProvider {
             Ok(accounts) => accounts,
             Err(err) => {
                 tracing::warn!(?err, "order account lookup failed, keeping all orders");
-                return orders;
+                return (orders, Vec::new(), Vec::new());
             }
         };
-        let orders = self.settleable_orders(orders, &lookup.resolve(&accounts));
-        receivable_orders(orders, &accounts)
+        let (orders, unsettleable) = settleable_orders(orders, &lookup.resolve(&accounts));
+        let (orders, unreceivable) = receivable_orders(orders, &accounts);
+        (orders, unsettleable, unreceivable)
     }
 
-    /// Drop orders on a sell or buy mint the program cannot move, with a
-    /// `Filtered` event each.
-    fn settleable_orders(
-        &self,
-        orders: Vec<Order>,
-        verdicts: &HashMap<Pubkey, MintVerdict>,
-    ) -> Vec<Order> {
-        let (orders, unsettleable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
-            let unsettleable =
-                token_mints(order).find_map(|mint| Some((mint, verdicts.get(&mint)?.err()?)));
-            if let Some((mint, reason)) = unsettleable {
-                metrics().unsettleable_orders.inc();
-                tracing::debug!(
-                    order = %order.uid,
-                    %mint,
-                    %reason,
-                    "excluding order, the settlement program cannot move its mint"
-                );
+    /// Record each pending sponsored order the cut drops for a dead creation,
+    /// once: an `invalid` event and an info line, the same record a creation
+    /// found dead at countersign gets. A failed read or write leaves the
+    /// orders to the next cut.
+    async fn record_dead_creations(&self, now: i64, block_height: i64) {
+        let recorded = async {
+            let uids: Vec<IntentHash> =
+                db::unrecorded_dead_creations(&self.pool, now, block_height)
+                    .await?
+                    .into_iter()
+                    .map(|uid| IntentHash(uid.0))
+                    .collect();
+            order_events::store(&self.pool, uids.iter().copied(), OrderEventLabel::Invalid).await?;
+            anyhow::Ok(uids)
+        };
+        match recorded.await {
+            Ok(uids) => {
+                for order_uid in uids {
+                    tracing::info!(%order_uid, "sponsored creation expired, dropping the order");
+                }
             }
-            unsettleable.is_none()
-        });
-        if !unsettleable.is_empty() {
-            order_events::store_detached(
-                self.pool.clone(),
-                unsettleable.into_iter().map(|order| order.uid).collect(),
-                OrderEventLabel::Filtered,
-            );
+            Err(err) => tracing::warn!(?err, "failed to record dead sponsored creations"),
         }
-        orders
+    }
+
+    /// Record the orders a cut leaves out for `reason`: the per-reason gauge,
+    /// a debug line with their uids and a `filtered` order event. An order
+    /// repeats this on every cut while the reason holds, so the line stays at
+    /// debug. Every completed cut sets the gauge, so an empty reason reads
+    /// zero. A skipped cut leaves the previous values in place.
+    fn track_filtered_orders(&self, reason: OrderFilterReason, uids: Vec<IntentHash>) {
+        metrics()
+            .filtered_orders
+            .with_label_values(&[reason.as_str()])
+            .set(i64::try_from(uids.len()).unwrap_or(i64::MAX));
+        if uids.is_empty() {
+            return;
+        }
+        let orders: Vec<String> = uids.iter().map(ToString::to_string).collect();
+        tracing::debug!(
+            reason = reason.as_str(),
+            count = orders.len(),
+            ?orders,
+            "filtered orders"
+        );
+        order_events::store_detached(self.pool.clone(), uids, OrderEventLabel::Filtered);
     }
 }
 
@@ -106,41 +156,59 @@ fn buy_account_checked(order: &Order) -> bool {
     order.created_on_chain || order.buys_native_sol()
 }
 
+/// Drop orders on a sell or buy mint the program cannot move. Returns the kept
+/// orders and the uids of the dropped ones.
+fn settleable_orders(
+    orders: Vec<Order>,
+    verdicts: &HashMap<Pubkey, MintVerdict>,
+) -> (Vec<Order>, Vec<IntentHash>) {
+    let (orders, unsettleable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+        let unsettleable =
+            token_mints(order).find_map(|mint| Some((mint, verdicts.get(&mint)?.err()?)));
+        if let Some((mint, reason)) = unsettleable {
+            tracing::debug!(
+                order = %order.uid,
+                %mint,
+                %reason,
+                "excluding order, the settlement program cannot move its mint"
+            );
+        }
+        unsettleable.is_none()
+    });
+    (
+        orders,
+        unsettleable.into_iter().map(|order| order.uid).collect(),
+    )
+}
+
 /// Drop orders whose buy token account cannot receive the payout at
 /// `FinalizeSettle`. A native SOL buy pays a wallet instead, which must be
-/// missing or owned by the System Program.
-fn receivable_orders(orders: Vec<Order>, accounts: &HashMap<Pubkey, Account>) -> Vec<Order> {
-    orders
-        .into_iter()
-        .filter(|order| {
-            if !buy_account_checked(order) {
-                return true;
+/// missing or owned by the System Program. Returns the kept orders and the
+/// uids of the dropped ones.
+fn receivable_orders(
+    orders: Vec<Order>,
+    accounts: &HashMap<Pubkey, Account>,
+) -> (Vec<Order>, Vec<IntentHash>) {
+    let (orders, unreceivable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+        if !buy_account_checked(order) {
+            return true;
+        }
+        let account = Pubkey::new_from_array(order.buy_token_account.0);
+        match accounts.get(&account) {
+            found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
+            Some(found) => {
+                receivable_token_account(found, &Pubkey::new_from_array(order.buy_token.0))
             }
-            let account = Pubkey::new_from_array(order.buy_token_account.0);
-            let receivable = match accounts.get(&account) {
-                found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
-                Some(found) => {
-                    receivable_token_account(found, &Pubkey::new_from_array(order.buy_token.0))
-                }
-                None => false,
-                // TODO: flip on once the buy token account rent is priced,
-                // with the program that owns the buy mint account.
-                // None => account == associated_token_address(order, &program),
-            };
-            if !receivable {
-                // A doomed order repeats this on every cut until it
-                // expires: the counter is the alerting signal, the log
-                // line stays at debug.
-                metrics().unreceivable_orders.inc();
-                tracing::debug!(
-                    order = %order.uid,
-                    %account,
-                    "excluding order, its buy token account cannot receive the payout"
-                );
-            }
-            receivable
-        })
-        .collect()
+            None => false,
+            // TODO: flip on once the buy token account rent is priced,
+            // with the program that owns the buy mint account.
+            // None => account == associated_token_address(order, &program),
+        }
+    });
+    (
+        orders,
+        unreceivable.into_iter().map(|order| order.uid).collect(),
+    )
 }
 
 fn now_unix() -> i64 {
@@ -179,19 +247,15 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         }
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
-        // cut drops the dead ones. A failed height fetch keeps them all: they
-        // then fall out at the countersign instead of the cut.
-        let block_height = match self.rpc.block_height().await {
-            Ok(height) => Some(i64::try_from(u64::from(height)).unwrap_or(i64::MAX)),
-            Err(err) => {
-                tracing::warn!(?err, "block height lookup failed, keeping pending orders");
-                None
-            }
-        };
+        // cut drops the dead ones.
+        let block_height = self.block_height().await;
         let orders = db::cut(&self.pool, now, block_height)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
+        if let Some(height) = block_height {
+            self.record_dead_creations(now, height).await;
+        }
         // An order with a settlement in flight stays out until the
         // settlement cannot land any more: a second winner could
         // double-settle it. A failed read skips the cut rather than cutting
@@ -207,23 +271,15 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         let (orders, held_out): (Vec<_>, Vec<_>) = orders
             .into_iter()
             .partition(|order| !held.contains(&order.uid));
-        if !held_out.is_empty() {
-            metrics()
-                .held_out_orders
-                .inc_by(u64::try_from(held_out.len()).unwrap_or(u64::MAX));
-            let uids: Vec<String> = held_out.iter().map(|order| order.uid.to_string()).collect();
-            tracing::debug!(
-                held_out = held_out.len(),
-                ?uids,
-                "orders held out with settlements in flight"
-            );
-            order_events::store_detached(
-                self.pool.clone(),
-                held_out.into_iter().map(|order| order.uid).collect(),
-                OrderEventLabel::Filtered,
-            );
-        }
-        let orders = self.checked_orders(payable_orders(orders)).await;
+        self.track_filtered_orders(
+            OrderFilterReason::InFlight,
+            held_out.into_iter().map(|order| order.uid).collect(),
+        );
+        let (orders, unpayable) = payable_orders(orders);
+        self.track_filtered_orders(OrderFilterReason::UnpayableNativeBuy, unpayable);
+        let (orders, unsettleable, unreceivable) = self.checked_orders(orders).await;
+        self.track_filtered_orders(OrderFilterReason::UnsettleableMint, unsettleable);
+        self.track_filtered_orders(OrderFilterReason::UnreceivableBuyTokenAccount, unreceivable);
         if orders.is_empty() {
             return None;
         }
@@ -287,25 +343,40 @@ fn auction_snapshot(tip: u64, auction: &crate::domain::auction::Auction) -> serd
     })
 }
 
+/// Why an auction cut leaves an order out.
+#[derive(Clone, Copy)]
+enum OrderFilterReason {
+    /// A settlement from an earlier auction can still land.
+    InFlight,
+    /// The settlement cannot pay out the native SOL buy.
+    UnpayableNativeBuy,
+    /// The settlement program cannot move the sell or buy mint.
+    UnsettleableMint,
+    /// The buy token account cannot receive the payout.
+    UnreceivableBuyTokenAccount,
+}
+
+impl OrderFilterReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InFlight => "in_flight",
+            Self::UnpayableNativeBuy => "unpayable_native_buy",
+            Self::UnsettleableMint => "unsettleable_mint",
+            Self::UnreceivableBuyTokenAccount => "unreceivable_buy_token_account",
+        }
+    }
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "auction_provider")]
 struct Metrics {
-    /// Orders excluded from auction cuts because their buy token account
-    /// cannot receive the payout.
-    unreceivable_orders: prometheus::IntCounter,
-    /// Orders excluded from auction cuts because the settlement program cannot
-    /// move their sell or buy mint.
-    unsettleable_orders: prometheus::IntCounter,
-    /// Native SOL buys excluded from auction cuts because the settlement
-    /// cannot pay them out.
-    unpayable_native_buys: prometheus::IntCounter,
+    /// Orders the last auction cut left out, by reason.
+    #[metric(labels("reason"))]
+    filtered_orders: prometheus::IntGaugeVec,
     /// Auction cuts skipped because the indexer lags beyond the watermark.
     /// The loop keeps spinning and stays live through a skip, so this
     /// counter is the alerting signal for a stalled indexer.
     lag_skipped_cuts: prometheus::IntCounter,
-    /// Orders excluded from auction cuts while their settlement is in
-    /// flight.
-    held_out_orders: prometheus::IntCounter,
 }
 
 fn metrics() -> &'static Metrics {
@@ -352,27 +423,22 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
 /// Drop native SOL buys the settlement cannot pay out. A payout under the
 /// rent-exempt minimum of an empty wallet reverts the whole settlement, and a
 /// partial fill can land under it. A wSOL sell reaches solvers as wSOL for
-/// wSOL.
-fn payable_orders(mut orders: Vec<Order>) -> Vec<Order> {
+/// wSOL. Returns the kept orders and the uids of the dropped ones.
+fn payable_orders(orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
     // TODO: use the cluster's rent, refreshed periodically. The SDK default is
     // above it since SIMD-0437, so this floor also drops small payouts that
     // would settle.
     let min_payout = Rent::default().minimum_balance(0);
-    orders.retain(|order| {
-        let payable = !order.buys_native_sol()
+    let (payable, unpayable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+        !order.buys_native_sol()
             || (order.buy_amount >= min_payout
                 && !order.partially_fillable
-                && order.sell_token.0 != native_mint::ID.to_bytes());
-        if !payable {
-            metrics().unpayable_native_buys.inc();
-            tracing::debug!(
-                order = %order.uid,
-                "excluding native SOL buy, the settlement cannot pay it out"
-            );
-        }
-        payable
+                && order.sell_token.0 != native_mint::ID.to_bytes())
     });
-    orders
+    (
+        payable,
+        unpayable.into_iter().map(|order| order.uid).collect(),
+    )
 }
 
 /// Whether `account` is a System Program wallet. Lamports paid to a program
@@ -455,13 +521,17 @@ mod tests {
             order([0x04; 32], true),
             order(ata, true),
         ];
-        let kept: Vec<[u8; 32]> = provider
-            .checked_orders(orders)
-            .await
-            .iter()
-            .map(|order| order.buy_token_account.0)
-            .collect();
+        let (kept, _, dropped) = provider.checked_orders(orders).await;
+        let kept: Vec<[u8; 32]> = kept.iter().map(|order| order.buy_token_account.0).collect();
         assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
+        assert_eq!(
+            dropped,
+            [
+                IntentHash([0x03; 32]),
+                IntentHash([0x04; 32]),
+                IntentHash(ata)
+            ]
+        );
     }
 
     /// A native SOL buy pays its wallet directly: a missing or system-owned
@@ -502,6 +572,7 @@ mod tests {
         let kept: Vec<[u8; 32]> = provider
             .checked_orders(orders)
             .await
+            .0
             .iter()
             .map(|order| order.buy_token_account.0)
             .collect();
@@ -534,10 +605,26 @@ mod tests {
                 ..order([0x02; 32], true)
             },
         ];
-        assert_eq!(
-            payable_orders(orders.clone()),
-            [orders[0].clone(), orders[4].clone()]
-        );
+        let (kept, dropped) = payable_orders(orders.clone());
+        assert_eq!(kept, [orders[0].clone(), orders[4].clone()]);
+        assert_eq!(dropped.len(), 3);
+    }
+
+    /// The gauge reads the last cut's count, zero once the reason clears.
+    #[tokio::test]
+    async fn tracks_filtered_orders_per_reason() {
+        let provider = provider(Mocks::default());
+        let gauge = || {
+            metrics()
+                .filtered_orders
+                .with_label_values(&[OrderFilterReason::InFlight.as_str()])
+                .get()
+        };
+        provider
+            .track_filtered_orders(OrderFilterReason::InFlight, vec![IntentHash([0x01; 32]); 2]);
+        assert_eq!(gauge(), 2);
+        provider.track_filtered_orders(OrderFilterReason::InFlight, Vec::new());
+        assert_eq!(gauge(), 0);
     }
 
     /// A failed lookup (here a malformed response) keeps every order.
@@ -548,7 +635,25 @@ mod tests {
             serde_json::json!("not an account list"),
         )]));
         let orders = vec![order([0x01; 32], true)];
-        assert_eq!(provider.checked_orders(orders).await.len(), 1);
+        let (kept, unsettleable, unreceivable) = provider.checked_orders(orders).await;
+        assert_eq!(
+            (kept.len(), unsettleable.len(), unreceivable.len()),
+            (1, 0, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_the_last_block_height() {
+        let mut provider = provider(Mocks::from([(
+            RpcRequest::GetBlockHeight,
+            serde_json::json!(100),
+        )]));
+        assert_eq!(provider.block_height().await, Some(100));
+        provider.rpc = SolanaRPC::new_mock_with_mocks(Mocks::from([(
+            RpcRequest::GetBlockHeight,
+            serde_json::json!("not a height"),
+        )]));
+        assert_eq!(provider.block_height().await, Some(100));
     }
 
     /// Orders on a mint the program cannot move stay out, on either side of
@@ -590,9 +695,17 @@ mod tests {
         ];
         let uids = |orders: &[Order]| orders.iter().map(|order| order.uid).collect::<Vec<_>>();
 
-        let kept = provider.checked_orders(orders.clone()).await;
+        let (kept, unsettleable, _) = provider.checked_orders(orders.clone()).await;
         assert_eq!(uids(&kept), [IntentHash([0x01; 32])]);
-        let kept = provider.checked_orders(orders).await;
+        assert_eq!(
+            unsettleable,
+            [
+                IntentHash([0x02; 32]),
+                IntentHash([0x03; 32]),
+                IntentHash([0x04; 32])
+            ]
+        );
+        let (kept, _, _) = provider.checked_orders(orders).await;
         assert_eq!(uids(&kept), [IntentHash([0x01; 32])]);
     }
 

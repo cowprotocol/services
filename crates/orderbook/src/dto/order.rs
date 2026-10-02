@@ -1,6 +1,7 @@
 use {
     alloy::primitives::Address,
     app_data::AppDataHash,
+    eth_domain_types::Receiver,
     model::{
         interaction::InteractionData,
         order::{
@@ -32,7 +33,7 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
     pub kind: OrderKind,
-    pub receiver: Option<Address>,
+    pub receiver: Receiver,
     pub owner: Address,
     pub partially_fillable: bool,
     #[serde_as(as = "HexOrDecimalU256")]

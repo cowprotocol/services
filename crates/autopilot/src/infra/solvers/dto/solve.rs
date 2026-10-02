@@ -557,7 +557,7 @@ mod tests {
             "created": 1,
             "validTo": 2,
             "kind": "sell",
-            "receiver": null,
+            "receiver": "0x0000000000000000000000000000000000000000",
             "owner": "0x4444444444444444444444444444444444444444",
             "partiallyFillable": true,
             "executed": executed.to_string(),

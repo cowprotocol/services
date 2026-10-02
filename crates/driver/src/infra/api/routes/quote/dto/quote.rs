@@ -80,7 +80,7 @@ struct JitOrder {
     buy_amount: eth::U256,
     #[serde_as(as = "serde_ext::U256")]
     executed_amount: eth::U256,
-    receiver: eth::Address,
+    receiver: eth::Receiver,
     partially_fillable: bool,
     valid_to: u32,
     #[serde_as(as = "serde_ext::Hex")]

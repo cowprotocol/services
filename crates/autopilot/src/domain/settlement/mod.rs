@@ -212,7 +212,7 @@ impl Settlement {
             .trades
             .into_iter()
             .map(|trade| Trade::new(trade, &auction, settled.timestamp))
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             block: settled.block,
@@ -310,6 +310,8 @@ pub enum Error {
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
+    #[error("settlement lists no uniform clearing price for order {0}")]
+    MissingUniformPrice(domain::OrderUid),
 }
 
 /// Errors that can occur when fetching data from the persistence layer.
@@ -382,12 +384,19 @@ mod tests {
             settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
+        chain::Chain,
         eth_domain_types::{self as eth, Address},
         hex_literal::hex,
         number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
         winner_selection::{self as ws, state::RankedItem},
     };
+
+    fn wrapped_native_token(chain: Chain) -> eth::WrappedNativeToken {
+        contracts::WETH9::deployment_address(&chain.id())
+            .expect("WETH9 is deployed on all chains")
+            .into()
+    }
 
     #[derive(Clone)]
     struct MockAuthenticator;
@@ -741,6 +750,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -849,6 +859,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -875,7 +886,7 @@ mod tests {
             orders: HashMap::from([(order_uid, vec![])]),
         };
 
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
 
         // NOTE(historical): surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
@@ -991,6 +1002,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1025,7 +1037,7 @@ mod tests {
                 }],
             )]),
         };
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
 
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
@@ -1165,6 +1177,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1191,7 +1204,7 @@ mod tests {
             id: 0,
             orders: Default::default(),
         };
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
         println!("{}", trade.uid().owner());
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
@@ -1344,6 +1357,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1377,7 +1391,8 @@ mod tests {
                 }],
             )]),
         };
-        let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
+        let jit_trade =
+            super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0).unwrap();
         assert_eq!(
             jit_trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::ZERO
@@ -1570,6 +1585,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Gnosis),
             &MockAuthenticator,
         )
         .await

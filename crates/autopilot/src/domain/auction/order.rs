@@ -14,7 +14,7 @@ pub struct Order {
     pub side: Side,
     pub created: u32,
     pub valid_to: u32,
-    pub receiver: Option<eth::Address>,
+    pub receiver: eth::Receiver,
     pub owner: eth::Address,
     pub partially_fillable: bool,
     pub executed: TargetAmount,
