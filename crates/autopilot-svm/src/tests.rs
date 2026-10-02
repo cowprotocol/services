@@ -24,7 +24,6 @@ use {
     },
     async_trait::async_trait,
     axum::{Json, Router, extract::State, routing::post},
-    base64::{Engine, prelude::BASE64_STANDARD},
     chain_types::solana::{IntentHash, Pubkey, Signature},
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
@@ -91,18 +90,7 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
 /// A canned `getMultipleAccounts` entry: an initialized mint of the classic
 /// SPL token program with the given decimals.
 pub(crate) fn mint_account_json(decimals: u8) -> serde_json::Value {
-    let mut data = [0u8; 82];
-    data[44] = decimals;
-    // The initialized flag.
-    data[45] = 1;
-    serde_json::json!({
-        "lamports": 1_461_600u64,
-        "data": [BASE64_STANDARD.encode(data), "base64"],
-        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "executable": false,
-        "rentEpoch": 0u64,
-        "space": 82u64,
-    })
+    solana_testlib::account_json(&solana_testlib::classic_mint(decimals))
 }
 
 /// A canned `getMultipleAccounts` entry: an initialized account of the
@@ -114,13 +102,17 @@ pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
     )
 }
 
-/// A mock RPC answering one buy-account lookup with an initialized token
-/// account of the seeded order's buy mint. Each canned response serves once,
-/// later cuts fail open and keep the orders.
+/// A mock RPC answering one order-account lookup: an initialized token
+/// account of the seeded order's buy mint, then its sell and buy mints. Each
+/// canned response serves once, later cuts fail open and keep the orders.
 fn mock_rpc() -> SolanaRPC {
     let response = serde_json::json!({
         "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-        "value": [token_account_json([0xAB; 32])],
+        "value": [
+            token_account_json([0xAB; 32]),
+            mint_account_json(9),
+            mint_account_json(9),
+        ],
     });
     SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]))
 }
@@ -152,7 +144,7 @@ async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
+VALUES ($1, $2, $2, $3, $2, $6, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
         "#,
     )
     .bind(uid)
@@ -160,6 +152,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, 
     .bind(ByteArray([0xAB; 32]))
     .bind(i64::from(u32::MAX))
     .bind(ByteArray([0xB0; 32]))
+    .bind(ByteArray([0xAC; 32]))
     .execute(pool)
     .await
     .unwrap();
