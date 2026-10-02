@@ -46,8 +46,14 @@ pub async fn run(args: Args) {
         .map(solver::Solver::new)
         .collect::<Result<_, _>>()
         .expect("failed to load solver signer keypairs");
+    let bundle_rpc = SolanaRPC::new_with_timeout_and_commitment(
+        &config.rpc.bundle_endpoint,
+        config.rpc.request_timeout,
+        CommitmentConfig::confirmed(),
+    );
     let blockchain = Arc::new(blockchain::Solana::new(
         rpc,
+        bundle_rpc,
         config.chain.settlement_program_id,
     ));
     let api = Api {

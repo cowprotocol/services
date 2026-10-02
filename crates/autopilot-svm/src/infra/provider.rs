@@ -532,6 +532,7 @@ mod tests {
             order_pda: ChainPubkey([0x77; 32]),
             app_data: AppData([0; 32]),
             created_on_chain,
+            creation: None,
         }
     }
 

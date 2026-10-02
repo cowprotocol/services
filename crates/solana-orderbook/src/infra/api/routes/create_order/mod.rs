@@ -239,7 +239,7 @@ async fn place(
         None => None,
     };
 
-    let uid = order.uid;
+    let uid = const_hex::encode_prefixed(order.uid.0);
     if let Err(err) = db::insert_sponsored_order(state.pool(), &order, quote.as_ref()).await {
         let duplicate = err
             .downcast_ref::<sqlx::Error>()
@@ -250,7 +250,8 @@ async fn place(
         }
         return Err(Failure::internal(err, "sponsored order insert"));
     }
-    Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid.0))))
+    tracing::info!(order_uid = %uid, "order created");
+    Ok((StatusCode::CREATED, Json(uid)))
 }
 
 /// Check the transaction is exactly the sponsored-creation shape and derive

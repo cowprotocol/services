@@ -9,6 +9,7 @@ use {
         buy_token_accounts::BuyTokenAccountCache,
         order_uid::OrderUid,
         program_error::ProgramError,
+        settlement::ResolveError,
         solution::Solution,
     },
     crate::infra::{blockchain::Solana, solver::Solver},
@@ -19,7 +20,7 @@ use {
         hash::Hash,
         pubkey::Pubkey,
         signature::Signature,
-        transaction::VersionedTransaction,
+        transaction::{TransactionError, VersionedTransaction},
     },
     std::{
         collections::{HashMap, HashSet},
@@ -89,7 +90,9 @@ impl Competition {
         self.solver.name()
     }
 
-    /// Solve the auction and cache each solution for a later `settle`.
+    /// Solve the auction, drop the solutions whose settlement provably fails
+    /// (over the byte limit or failing in simulation), and cache the rest for
+    /// a later `settle`.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -109,12 +112,67 @@ impl Competition {
         let solutions = self
             .compute_solutions(&auction, &buy_token_accounts.missing)
             .await?;
-        let solutions = self
-            .fitting_solutions(auction_id, &auction, solutions)
-            .await;
+        auction.drop_landed_creations(&self.blockchain).await;
+        // The autopilot discards a late response, so the simulations get half
+        // the remaining window. A timeout is no verdict.
+        let window = auction
+            .deadline
+            .signed_duration_since(chrono::Utc::now())
+            .to_std()
+            .unwrap_or_default()
+            / 2;
+        let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
+            let auction = &auction;
+            async move {
+                let started = Instant::now();
+                let verdict = tokio::time::timeout(
+                    window,
+                    self.simulate_solution(auction_id, auction, solution),
+                )
+                .await
+                .unwrap_or(Err(Error::SimulationTimedOut));
+                (verdict, started.elapsed())
+            }
+        }))
+        .await;
 
         let auction = Arc::new(auction);
-        for solution in &solutions {
+        let window_ms = window.as_millis() as u64;
+        let mut kept = Vec::new();
+        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+            metrics()
+                .solve_simulations
+                .with_label_values(&[
+                    verdict.as_ref().err().map_or("passed", error_label),
+                    self.solver.name(),
+                ])
+                .inc();
+            let elapsed_ms = elapsed.as_millis() as u64;
+            match &verdict {
+                Ok(()) => tracing::info!(
+                    solution_id = solution.id,
+                    elapsed_ms,
+                    window_ms,
+                    "solution simulation passed"
+                ),
+                Err(error) if proves_failure(error) => {
+                    tracing::warn!(
+                        solution_id = solution.id,
+                        ?error,
+                        elapsed_ms,
+                        window_ms,
+                        "dropping solution, its settlement fails in simulation"
+                    );
+                    continue;
+                }
+                Err(error) => tracing::info!(
+                    solution_id = solution.id,
+                    ?error,
+                    elapsed_ms,
+                    window_ms,
+                    "solution simulation inconclusive"
+                ),
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -125,80 +183,90 @@ impl Competition {
                     solution: solution.clone(),
                 },
             );
+            kept.push(solution);
         }
-
-        Ok(solutions)
+        Ok(kept)
     }
 
-    /// Drop the solutions whose settlement transaction is over the network's
-    /// byte or account lock limit: they would win the auction and then fail
-    /// to settle. A solution whose transaction cannot be built here stays, and
-    /// `settle` reports its failure.
-    async fn fitting_solutions(
-        &self,
-        auction_id: Id,
-        auction: &Auction,
-        solutions: Vec<Solution>,
-    ) -> Vec<Solution> {
-        let footprints = futures::future::join_all(
-            solutions
-                .iter()
-                .map(|solution| self.transaction_footprint(auction_id, auction, solution)),
-        )
-        .await;
-        solutions
-            .into_iter()
-            .zip(footprints)
-            .filter_map(|(solution, footprint)| match footprint {
-                Some((size, _)) if size > MAX_TRANSACTION_BYTES => {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        size,
-                        "dropping solution whose settlement transaction is over the size limit"
-                    );
-                    None
-                }
-                Some((_, accounts)) if accounts > MAX_TRANSACTION_ACCOUNTS => {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        accounts,
-                        "dropping solution whose settlement transaction is over the account lock \
-                         limit"
-                    );
-                    None
-                }
-                _ => Some(solution),
-            })
-            .collect()
-    }
-
-    /// The wire size and account count of the solution's settlement
-    /// transaction, `None` when it cannot be built. The blockhash changes
-    /// neither.
-    async fn transaction_footprint(
+    /// Check the solution's settlement fits the network's byte and account
+    /// lock limits, then simulate it as one atomic bundle behind the
+    /// creations of its orders not created on chain yet. Any failure would
+    /// win the auction and then fail to settle. An error that
+    /// [`proves_failure`] is a verdict on the solution; any other means the
+    /// driver could not find out.
+    async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Option<(u64, usize)> {
+    ) -> Result<(), Error> {
+        let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
-        let settlement = super::Settlement::new(
-            self.blockchain.program_id(),
-            auction_id,
-            orders,
-            solution.clone(),
-        )
-        .ok()?;
+        let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
+            .iter()
+            .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
+            .unzip();
+        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await?;
+        // The simulation replaces every blockhash, so a placeholder saves the
+        // fetch.
+        bundle.push(resolved.encode(self.solver.keypair(), Hash::default())?);
+        if let Some(size) = bundle
+            .iter()
+            .filter_map(encoded_size)
+            .find(|size| *size > MAX_TRANSACTION_BYTES)
+        {
+            return Err(Error::TransactionTooLarge { size });
+        }
+        if let Some(accounts) = bundle
+            .iter()
+            .map(account_count)
+            .find(|accounts| *accounts > MAX_TRANSACTION_ACCOUNTS)
+        {
+            return Err(Error::TooManyAccounts { accounts });
+        }
+        tracing::debug!(
+            solution_id = solution.id,
+            creations = ?creation_uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            bytes = bundle.iter().filter_map(encoded_size).sum::<u64>(),
+            "simulating settlement bundle"
+        );
+
+        let results = self
+            .blockchain
+            .simulate_bundle(&bundle)
             .await
-            .ok()?;
-        let transaction = resolved
-            .encode(self.solver.keypair(), Hash::default())
-            .ok()?;
-        Some((encoded_size(&transaction)?, account_count(&transaction)))
+            .map_err(Error::Rpc)?;
+        for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
+            if let Some(err) = &result.err {
+                // Named here because the bundle endpoint may return no logs
+                // for a failed leg.
+                tracing::warn!(
+                    solution_id = solution.id,
+                    leg,
+                    creation = ?creation_uids.get(leg).map(ToString::to_string),
+                    program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
+                    logs = ?result.logs,
+                    "bundle simulation failed"
+                );
+                return Err(Error::SimulationFailed {
+                    program_error: result
+                        .logs
+                        .as_deref()
+                        .and_then(|logs| ProgramError::from_logs(program_id, logs)),
+                    err: err.clone(),
+                });
+            }
+        }
+        if results.len() < bundle.len() {
+            return Err(Error::IncompleteSimulation {
+                executed: results.len(),
+                legs: bundle.len(),
+            });
+        }
+        Ok(())
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -548,6 +616,20 @@ impl Competition {
     }
 }
 
+/// The program whose instruction the error names. Programs are always static
+/// keys, never loaded from a lookup table.
+fn failing_program(transaction: &VersionedTransaction, err: &TransactionError) -> Option<Pubkey> {
+    let TransactionError::InstructionError(index, _) = err else {
+        return None;
+    };
+    let message = &transaction.message;
+    let instruction = message.instructions().get(usize::from(*index))?;
+    message
+        .static_account_keys()
+        .get(usize::from(instruction.program_id_index))
+        .copied()
+}
+
 struct VolumeFee {
     order_uid: OrderUid,
     mint: Pubkey,
@@ -636,10 +718,22 @@ pub(crate) enum Error {
         err: cow_solana_rpc::UiTransactionError,
         program_error: Option<ProgramError>,
     },
-    /// The encoded settlement exceeds the network's per-transaction ceiling.
+    /// The solve-time simulation did not answer within its share of the
+    /// auction deadline.
+    #[error("settlement simulation timed out")]
+    SimulationTimedOut,
+    /// The bundle simulation answered for fewer transactions than it was sent
+    /// without naming a failure, so the settlement went unexecuted.
+    #[error("bundle simulation executed {executed} of {legs} transactions without an error")]
+    IncompleteSimulation { executed: usize, legs: usize },
+    /// An encoded transaction exceeds the network's per-transaction ceiling.
     /// Nothing was sent.
-    #[error("settlement transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
+    #[error("transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
     TransactionTooLarge { size: u64 },
+    /// A transaction locks more accounts than the runtime allows. Nothing was
+    /// sent.
+    #[error("transaction locks {accounts} accounts, over the {MAX_TRANSACTION_ACCOUNTS} limit")]
+    TooManyAccounts { accounts: usize },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -657,6 +751,9 @@ struct Metrics {
     /// Settlement attempts by final outcome and solver.
     #[metric(labels("outcome", "solver"))]
     outcomes: prometheus::IntCounterVec,
+    /// Solve-time settlement simulations by outcome and solver.
+    #[metric(labels("outcome", "solver"))]
+    solve_simulations: prometheus::IntCounterVec,
     /// Serialized settlement transaction size in bytes. The network rejects a
     /// transaction over 1232 bytes.
     #[metric(buckets(600., 800., 1000., 1100., 1200., 1232., 1400., 1600.))]
@@ -718,12 +815,27 @@ fn account_count(transaction: &VersionedTransaction) -> usize {
     message.static_account_keys().len() + loaded
 }
 
+/// Whether the error proves the settlement fails on chain, as opposed to the
+/// driver failing to find out. Only a proof drops a solution at solve time:
+/// an unverified solution costs at most one failed settlement, a wrongly
+/// dropped one costs the auction its best solution.
+fn proves_failure(error: &Error) -> bool {
+    match error {
+        Error::Settlement(_)
+        | Error::SimulationFailed { .. }
+        | Error::TransactionTooLarge { .. }
+        | Error::TooManyAccounts { .. } => true,
+        Error::Resolve(error) => !matches!(error, ResolveError::Rpc(_)),
+        _ => false,
+    }
+}
+
 /// The metrics label for a finished settlement attempt.
 fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
-    let error = match result {
-        Ok(_) => return "submitted",
-        Err(error) => error,
-    };
+    result.as_ref().err().map_or("submitted", error_label)
+}
+
+fn error_label(error: &Error) -> &'static str {
     match error {
         Error::Solver(_) => "solver_failed",
         Error::SolutionNotAvailable => "solution_unavailable",
@@ -734,7 +846,10 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
+        Error::SimulationTimedOut => "simulation_timed_out",
+        Error::IncompleteSimulation { .. } => "simulation_incomplete",
         Error::TransactionTooLarge { .. } => "transaction_too_large",
+        Error::TooManyAccounts { .. } => "too_many_accounts",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",

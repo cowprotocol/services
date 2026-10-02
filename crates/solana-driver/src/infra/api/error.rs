@@ -86,6 +86,10 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::SimulationFailed { .. } => Kind::SimulationFailed,
             competition::Error::TransactionTooLarge { .. } => Kind::TransactionTooLarge,
             competition::Error::TaskPanicked => Kind::Unknown,
+            // Solve-time verdicts never leave `solve`.
+            competition::Error::SimulationTimedOut
+            | competition::Error::IncompleteSimulation { .. }
+            | competition::Error::TooManyAccounts { .. } => Kind::Unknown,
             // The solver is responsible for valid solutions. Map validation
             // errors to SolverFailed, as the EVM driver does. Map compile,
             // sign, or index-overflow errors to Unknown.
@@ -125,6 +129,7 @@ impl From<AuctionError> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: AuctionError) -> Self {
         match value {
             AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
+            AuctionError::InvalidCreation => Kind::InvalidCreation,
         }
         .into()
     }

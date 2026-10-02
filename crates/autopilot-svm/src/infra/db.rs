@@ -30,6 +30,7 @@ pub struct OrderRow {
     pub order_pda: ByteArray<32>,
     pub app_data: ByteArray<32>,
     pub created_on_chain: bool,
+    pub creation: Option<Vec<u8>>,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -48,7 +49,8 @@ pub async fn open_orders(
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.order_pda, o.app_data,
-       p.order_uid IS NOT NULL AS created_on_chain
+       p.order_uid IS NOT NULL AS created_on_chain,
+       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
@@ -569,6 +571,7 @@ impl TryFrom<OrderRow> for Order {
             order_pda: Pubkey(row.order_pda.0),
             app_data: AppData(row.app_data.0),
             created_on_chain: row.created_on_chain,
+            creation: row.creation,
         })
     }
 }
@@ -612,6 +615,7 @@ mod tests {
             order_pda: ByteArray([7; 32]),
             app_data: ByteArray([0; 32]),
             created_on_chain: true,
+            creation: None,
         }
     }
 
@@ -745,6 +749,8 @@ WHERE uid = $1
             orders.iter().map(|order| order.uid.0[0]).collect()
         };
         let orders = open_orders(&mut *tx, 1_000, Some(100)).await.unwrap();
+        let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
+        assert_eq!(creations, vec![None, None, None, Some(vec![1])]);
         assert_eq!(uids(orders), vec![1, 5, 6, 10]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 10]);

@@ -1,10 +1,18 @@
 //! Solana JSON-RPC client wrapper.
 
+#[cfg(feature = "test-util")]
+pub use solana_rpc_client::mock_sender::{Mocks, MocksMap};
 use {
+    base64::Engine,
     futures::{TryFutureExt, future},
     itertools::Itertools,
+    serde::Deserialize,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
+    solana_rpc_client_api::{
+        client_error::ErrorKind,
+        request::MAX_MULTIPLE_ACCOUNTS,
+        response::Response,
+    },
     solana_sdk::{
         account::Account,
         hash::Hash,
@@ -19,14 +27,15 @@ pub use {
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::{
         client_error::Error,
+        request::RpcRequest,
         response::{RpcSimulateTransactionResult, UiTransactionError},
     },
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
 };
-#[cfg(feature = "test-util")]
-pub use {
-    solana_rpc_client::mock_sender::{Mocks, MocksMap},
-    solana_rpc_client_api::request::RpcRequest,
+
+/// The `simulateBundle` request, a Jito extension of the RPC API.
+pub const SIMULATE_BUNDLE: RpcRequest = RpcRequest::Custom {
+    method: "simulateBundle",
 };
 
 pub struct SolanaRPC {
@@ -223,6 +232,44 @@ impl SolanaRPC {
             .map(|response| response.value)
     }
 
+    /// Simulate the transactions as one atomic bundle without sending them,
+    /// signatures unverified and blockhashes replaced by the node's latest,
+    /// so partially signed and stale transactions still simulate. One result
+    /// per executed transaction, in order, ending at the first failure. A
+    /// node without the Jito extension answers with an error.
+    pub async fn simulate_bundle(
+        &self,
+        transactions: &[VersionedTransaction],
+    ) -> Result<Vec<RpcSimulateBundleTransactionResult>, Error> {
+        let encoded = transactions
+            .iter()
+            .map(|transaction| {
+                bincode::serialize(transaction)
+                    .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| ErrorKind::Custom(format!("serialize transaction: {err}")))?;
+        // The account config lists are mandatory: one `null` per transaction.
+        let accounts = vec![serde_json::Value::Null; encoded.len()];
+        let params = serde_json::json!([
+            { "encodedTransactions": encoded },
+            {
+                "preExecutionAccountsConfigs": accounts,
+                "postExecutionAccountsConfigs": accounts,
+                "transactionEncoding": "base64",
+                "skipSigVerify": true,
+                "replaceRecentBlockhash": true,
+            },
+        ]);
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Value {
+            transaction_results: Vec<RpcSimulateBundleTransactionResult>,
+        }
+        let response: Response<Value> = self.inner.send(SIMULATE_BUNDLE, params).await?;
+        Ok(response.value.transaction_results)
+    }
+
     /// Whether the blockhash is still usable for a new transaction at
     /// confirmed commitment.
     pub async fn is_blockhash_valid(&self, blockhash: &Hash) -> Result<bool, Error> {
@@ -243,6 +290,14 @@ impl SolanaRPC {
     ) -> Result<Signature, Error> {
         self.inner.send_and_confirm_transaction(transaction).await
     }
+}
+
+/// One transaction's execution inside a simulated bundle.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RpcSimulateBundleTransactionResult {
+    pub err: Option<UiTransactionError>,
+    pub logs: Option<Vec<String>>,
 }
 
 /// One page of an address's transaction history.
