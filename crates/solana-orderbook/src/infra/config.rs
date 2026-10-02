@@ -134,10 +134,11 @@ pub struct Sponsoring {
     pub max_priority_fee_lamports: u64,
 }
 
-/// Wallets choose the priority fee, and common ones ask up to 100,000
-/// lamports for a creation.
+/// Wallets commonly ask 75,000 to 100,000 lamports for a creation, so a
+/// deployment raises this in config. The fallback errs towards refusing a
+/// placement over burning funder lamports.
 fn default_max_priority_fee_lamports() -> u64 {
-    1_000_000
+    100_000
 }
 
 fn default_settlement_program_id() -> Pubkey {
