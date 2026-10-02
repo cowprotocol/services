@@ -80,8 +80,26 @@ impl Detector {
         self
     }
 
-    /// Removes all unsupported orders from the auction.
-    pub async fn filter_unsupported_orders_in_auction(&self, mut auction: Auction) -> Auction {
+    /// Removes all unsupported orders from the auction. Orders whose sell
+    /// token quality is unknown get simulated if a simulation detector is
+    /// configured.
+    pub async fn filter_unsupported_orders_in_auction(&self, auction: Auction) -> Auction {
+        self.filter_unsupported_orders(auction, self.simulation_detector.as_ref())
+            .await
+    }
+
+    /// Removes all unsupported orders from a quote's auction. The quote order
+    /// is synthetic and has no trader to take the sell token from, so only
+    /// hardcoded and cached verdicts apply and nothing gets simulated.
+    pub async fn filter_unsupported_orders_in_quote(&self, auction: Auction) -> Auction {
+        self.filter_unsupported_orders(auction, None).await
+    }
+
+    async fn filter_unsupported_orders(
+        &self,
+        mut auction: Auction,
+        simulation_detector: Option<&bad_tokens::simulation::Detector>,
+    ) -> Auction {
         let now = Instant::now();
 
         // reuse the original allocation
@@ -110,7 +128,7 @@ impl Detector {
                     }
                     // sell token quality is unknown => keep order if token is supported
                     (Quality::Unknown, _) => {
-                        let Some(detector) = &self.simulation_detector else {
+                        let Some(detector) = simulation_detector else {
                             // we can't determine quality => assume order is
                             // good
                             return Some(order);

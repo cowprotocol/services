@@ -164,7 +164,7 @@ impl Order {
         };
         let auction = competition
             .risk_detector
-            .filter_unsupported_orders_in_auction(auction)
+            .filter_unsupported_orders_in_quote(auction)
             .await;
         if auction.orders.is_empty() {
             return Err(QuotingFailed::UnsupportedToken.into());

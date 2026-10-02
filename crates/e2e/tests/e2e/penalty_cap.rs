@@ -96,10 +96,16 @@ async fn penalty_cap(web3: Web3) {
     .unwrap();
 
     // Once the order gets settled, the trade exposes the cap of the auction
-    // that settled it.
+    // that settled it. The trade gets indexed before the settlement is linked
+    // to its auction, which is where the cap comes from, so wait for the cap.
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        !services.get_trades(&uid).await.unwrap().is_empty()
+        services
+            .get_trades(&uid)
+            .await
+            .unwrap()
+            .first()
+            .is_some_and(|trade| trade.penalty_cap_native.is_some())
     })
     .await
     .unwrap();
