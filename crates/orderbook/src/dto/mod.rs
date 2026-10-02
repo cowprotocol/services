@@ -5,16 +5,12 @@ use {
     alloy::primitives::U256,
     eth_domain_types::{Address, NonZeroU256},
     model::{
-        order::{
-            BuyTokenDestination,
-            OrderKind,
-            SellTokenSource,
-            deserialize_receiver_defaulting_to_zero,
-        },
+        order::{BuyTokenDestination, OrderKind, SellTokenSource},
         signature::Signature,
     },
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
+    serde_ext::deserialize_receiver_defaulting_to_zero,
     serde_with::serde_as,
     simulator::tenderly,
 };

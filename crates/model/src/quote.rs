@@ -1,12 +1,6 @@
 use {
     crate::{
-        order::{
-            BuyTokenDestination,
-            OrderCreationAppData,
-            OrderKind,
-            SellTokenSource,
-            deserialize_receiver_defaulting_to_zero,
-        },
+        order::{BuyTokenDestination, OrderCreationAppData, OrderKind, SellTokenSource},
         signature::SigningScheme,
         time,
     },
@@ -24,6 +18,7 @@ use {
         de,
         ser::{self, SerializeStruct as _},
     },
+    serde_ext::deserialize_receiver_defaulting_to_zero,
     serde_with::{DisplayFromStr, serde_as},
     std::time::Duration,
 };
