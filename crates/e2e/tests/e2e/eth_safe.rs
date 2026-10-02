@@ -65,7 +65,7 @@ async fn test(web3: Web3) {
         valid_to: model::time::now_in_epoch_seconds() + 300,
         partially_fillable: true,
         kind: OrderKind::Sell,
-        receiver: Some(safe.address()),
+        receiver: safe.address().into(),
         ..Default::default()
     };
     order.signature = Signature::Eip1271(safe.sign_message(&hashed_eip712_message(

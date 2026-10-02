@@ -356,6 +356,10 @@ pub async fn run(config: Configuration) {
                     config.order_quoting.standard_offchain_quote_validity,
                 )
                 .unwrap(),
+                fast_path_quote: chrono::Duration::from_std(
+                    config.order_quoting.fast_path_quote_validity,
+                )
+                .unwrap(),
             },
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,

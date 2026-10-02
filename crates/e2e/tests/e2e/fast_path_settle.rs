@@ -1729,7 +1729,7 @@ async fn fast_path_ethflow_settle(web3: Web3) {
         from: trader.address(),
         sell_token: *onchain.contracts().weth.address(),
         buy_token: *token.address(),
-        receiver: Some(trader.address()),
+        receiver: trader.address().into(),
         validity: Validity::For(3600),
         app_data: OrderCreationAppData::Hash {
             hash: app_data_hash,

@@ -4,6 +4,7 @@ use {
     crate::domain::eth,
     alloy::primitives::B256,
     eth::Address,
+    eth_domain_types::Receiver,
     std::fmt::{self, Debug, Display, Formatter},
 };
 
@@ -68,7 +69,7 @@ pub struct JitOrder {
     pub partially_fillable: bool,
     pub valid_to: u32,
     pub app_data: AppData,
-    pub receiver: Address,
+    pub receiver: Receiver,
 }
 
 /// Signature over the order data.

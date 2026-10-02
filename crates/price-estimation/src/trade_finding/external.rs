@@ -507,6 +507,7 @@ pub mod dto {
         alloy::primitives::{Address, U256},
         app_data::AppDataHash,
         bytes_hex::BytesHex,
+        eth_domain_types::Receiver,
         model::{
             order::{BuyTokenDestination, OrderKind, SellTokenSource},
             signature::SigningScheme,
@@ -597,7 +598,7 @@ pub mod dto {
         pub buy_amount: U256,
         #[serde_as(as = "HexOrDecimalU256")]
         pub executed_amount: U256,
-        pub receiver: Address,
+        pub receiver: Receiver,
         pub valid_to: u32,
         pub app_data: AppDataHash,
         pub side: Side,

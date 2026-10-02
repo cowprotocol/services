@@ -34,6 +34,7 @@ use {
         run_test,
         wait_for_condition,
     },
+    eth_domain_types::Receiver,
     ethrpc::{Web3, alloy::CallBuilderExt, block_stream::timestamp_of_current_block_in_seconds},
     model::{
         DomainSeparator,
@@ -117,7 +118,7 @@ async fn eth_flow_tx(web3: Web3) {
 
     // Get a quote from the services
     let buy_token = *dai.address();
-    let receiver = Address::repeat_byte(0x42);
+    let receiver = Receiver::new(Address::repeat_byte(0x42));
     let sell_amount = 1u64.eth();
     let intent = EthFlowTradeIntent {
         sell_amount,
@@ -386,7 +387,7 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
         .await
         .unwrap();
 
-    let receiver = Address::repeat_byte(0x42);
+    let receiver = Receiver::new(Address::repeat_byte(0x42));
     let sell_amount = 1u64.eth();
     let quote_request = OrderQuoteRequest {
         app_data: OrderCreationAppData::Hash {
@@ -445,7 +446,11 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     let min_delivered = sell_amount * U256::from(95) / U256::from(100);
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        web3.provider.get_balance(receiver).await.unwrap() >= min_delivered
+        web3.provider
+            .get_balance(receiver.as_custom().unwrap())
+            .await
+            .unwrap()
+            >= min_delivered
     })
     .await
     .unwrap();
@@ -556,7 +561,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
             &(EthFlowTradeIntent {
                 sell_amount: 1u64.eth(),
                 buy_token: *dai.address(),
-                receiver: Address::repeat_byte(42),
+                receiver: Receiver::new(Address::repeat_byte(42)),
             })
             .to_quote_request(dummy_trader.address(), &onchain.contracts().weth),
         )
@@ -581,7 +586,7 @@ async fn eth_flow_indexing_after_refund(web3: Web3) {
     // Create the actual order that should be picked up by the services and
     // matched.
     let buy_token = *dai.address();
-    let receiver = Address::repeat_byte(0x42);
+    let receiver = Receiver::new(Address::repeat_byte(0x42));
     let sell_amount = 1u64.eth();
     let valid_to = chrono::offset::Utc::now().timestamp() as u32
         + timestamp_of_current_block_in_seconds(&web3.provider)
@@ -862,7 +867,7 @@ impl ExtendedEthFlowOrder {
         let quote = &quote_response.quote;
         ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
             buyToken: quote.buy_token,
-            receiver: quote.receiver.expect("eth-flow order without receiver"),
+            receiver: Address::from(*quote.receiver.raw_bytes()),
             sellAmount: quote.sell_amount,
             buyAmount: quote.buy_amount,
             appData: quote.app_data.hash().0.into(),
@@ -885,7 +890,7 @@ impl ExtendedEthFlowOrder {
             .with_sell_token(*weth.address())
             .with_sell_amount(self.0.sellAmount)
             .with_fee_amount(self.0.feeAmount)
-            .with_receiver(Some(self.0.receiver))
+            .with_receiver(self.0.receiver.into())
             .with_buy_token(self.0.buyToken)
             .with_buy_amount(self.0.buyAmount)
             .with_valid_to(u32::MAX)
@@ -1023,7 +1028,7 @@ impl ExtendedEthFlowOrder {
 pub struct EthFlowTradeIntent {
     pub sell_amount: alloy::primitives::U256,
     pub buy_token: Address,
-    pub receiver: Address,
+    pub receiver: Receiver,
 }
 
 impl EthFlowTradeIntent {
@@ -1034,7 +1039,7 @@ impl EthFlowTradeIntent {
             // Even if the user sells ETH, we request a quote for WETH
             sell_token: *weth.address(),
             buy_token: self.buy_token,
-            receiver: Some(self.receiver),
+            receiver: self.receiver,
             validity: Validity::For(3600),
             app_data: OrderCreationAppData::default(),
             signing_scheme: QuoteSigningScheme::Eip1271 {
