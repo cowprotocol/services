@@ -118,6 +118,40 @@ impl Auction {
         }
         Ok(resolved)
     }
+
+    /// Drop the creations whose order PDA already exists on chain: an earlier
+    /// settlement attempt landed them and the autopilot still ships them
+    /// until the indexer catches up. Simulating one fails on the existing
+    /// account and would veto a settlement that no longer needs it. A failed
+    /// lookup keeps every creation and leaves the verdict to the simulation.
+    pub(super) async fn drop_landed_creations(&mut self, blockchain: &Solana) {
+        if self.creations.is_empty() {
+            return;
+        }
+        let pending = || {
+            self.orders
+                .iter()
+                .filter(|order| self.creations.contains_key(&order.uid))
+        };
+        let snapshot = match blockchain
+            .accounts_snapshot(pending().map(|order| order.order_pda))
+            .await
+        {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                tracing::warn!(?err, "could not check which creations already landed");
+                return;
+            }
+        };
+        let landed: Vec<OrderUid> = pending()
+            .filter(|order| snapshot.exists(&order.order_pda))
+            .map(|order| order.uid)
+            .collect();
+        for uid in landed {
+            tracing::info!(order_uid = %uid, "creation already landed, settling without it");
+            self.creations.remove(&uid);
+        }
+    }
 }
 
 /// One order available for solvers to fill.
@@ -302,6 +336,56 @@ mod tests {
             )
             .await
             .expect_err("a failed lookup fails the resolution");
+    }
+
+    /// The lookup answers in order: the first order's PDA exists, the
+    /// second's does not.
+    #[tokio::test]
+    async fn drops_the_creations_whose_order_pda_exists() {
+        let existing = json!({
+            "lamports": 1u64,
+            "data": ["", "base64"],
+            "owner": pubkey(0xaa).to_string(),
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 0u64,
+        });
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            multiple_accounts_json([existing, Value::Null]),
+        )]);
+        let mut auction = auction(vec![
+            order(1, pubkey(0x66)),
+            Order {
+                order_pda: pubkey(0x78),
+                ..order(2, pubkey(0x66))
+            },
+        ]);
+        auction.creations = HashMap::from([
+            (OrderUid([1; 32]), VersionedTransaction::default()),
+            (OrderUid([2; 32]), VersionedTransaction::default()),
+        ]);
+
+        auction.drop_landed_creations(&blockchain(mocks)).await;
+
+        assert_eq!(
+            auction.creations.keys().collect::<Vec<_>>(),
+            [&OrderUid([2; 32])]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_lookup_keeps_every_creation() {
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            json!("not an account list"),
+        )]);
+        let mut auction = auction(vec![order(1, pubkey(0x66))]);
+        auction.creations = HashMap::from([(OrderUid([1; 32]), VersionedTransaction::default())]);
+
+        auction.drop_landed_creations(&blockchain(mocks)).await;
+
+        assert_eq!(auction.creations.len(), 1);
     }
 
     #[test]

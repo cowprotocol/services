@@ -23,7 +23,13 @@ use {
             solver::Solver,
         },
     },
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{
+        hash::Hash,
+        instruction::Instruction,
+        message::{Message, VersionedMessage},
+        pubkey::Pubkey,
+        transaction::VersionedTransaction,
+    },
     solana_testlib::temp_keypair,
     spl_token_interface::native_mint,
     std::{
@@ -268,11 +274,13 @@ fn response_ids(body: &serde_json::Value) -> Vec<u64> {
 /// The standard solve request with its order not created on chain yet, so
 /// it carries the owner-signed creation transaction.
 fn sponsored_solve_request() -> serde_json::Value {
-    let creation =
-        bincode::serialize(&solana_sdk::transaction::VersionedTransaction::default()).unwrap();
+    sponsored_solve_request_with(VersionedTransaction::default())
+}
+
+fn sponsored_solve_request_with(creation: VersionedTransaction) -> serde_json::Value {
     let mut request = solve_request();
     request["orders"][0]["creation"] = base64::engine::general_purpose::STANDARD
-        .encode(creation)
+        .encode(bincode::serialize(&creation).unwrap())
         .into();
     request
 }
@@ -919,4 +927,49 @@ async fn solve_rejects_a_malformed_creation() {
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "InvalidCreation");
+}
+
+/// A bundle answer covering fewer transactions than sent, with no failure
+/// named, is no verdict: the solution stays in the race.
+#[tokio::test]
+async fn solve_keeps_a_solution_whose_bundle_simulation_stops_short() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        SIMULATE_BUNDLE,
+        serde_json::json!({
+            "context": { "slot": 1 },
+            "value": { "transactionResults": [] },
+        }),
+    );
+    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+
+    let response = post_solve(addr, &sponsored_solve_request()).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(response_ids(&body), vec![42]);
+}
+
+/// A creation leg is bound by the same byte limit as the settlement.
+#[tokio::test]
+async fn solve_drops_a_solution_whose_creation_is_over_the_transaction_size_limit() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine);
+    let addr = spawn_server(vec![solver]).await;
+    // 1,233 bytes of instruction data alone exceed the 1,232-byte limit.
+    let oversized = Instruction::new_with_bytes(pubkey(0x99), &[0; 1233], Vec::new());
+    let creation = VersionedTransaction {
+        signatures: Vec::new(),
+        message: VersionedMessage::Legacy(Message::new_with_blockhash(
+            &[oversized],
+            Some(&pubkey(0x22)),
+            &Hash::default(),
+        )),
+    };
+
+    let response = post_solve(addr, &sponsored_solve_request_with(creation)).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(response_ids(&body), Vec::<u64>::new());
 }

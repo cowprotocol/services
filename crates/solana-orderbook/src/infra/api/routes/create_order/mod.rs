@@ -219,7 +219,7 @@ pub async fn create_order(
         }
         return Err(internal_error_reply(err, "sponsored order insert failed"));
     }
-    tracing::info!(%uid, "order created");
+    tracing::info!(order_uid = %uid, "order created");
     Ok((StatusCode::CREATED, Json(uid)))
 }
 

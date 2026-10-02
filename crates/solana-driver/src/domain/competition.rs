@@ -107,6 +107,7 @@ impl Competition {
         let solutions = self
             .compute_solutions(&auction, &buy_token_accounts.missing)
             .await?;
+        auction.drop_landed_creations(&self.blockchain).await;
         // The autopilot discards a late response, so the simulations get half
         // the remaining window. A timeout is no verdict.
         let window = auction
@@ -124,7 +125,7 @@ impl Competition {
                     self.simulate_solution(auction_id, auction, solution),
                 )
                 .await
-                .unwrap_or(Err(Error::DeadlineExceeded));
+                .unwrap_or(Err(Error::SimulationTimedOut));
                 (verdict, started.elapsed())
             }
         }))
@@ -149,20 +150,23 @@ impl Competition {
                     window_ms,
                     "solution simulation passed"
                 ),
-                Err(error) => {
-                    let dropped = proves_failure(error);
+                Err(error) if proves_failure(error) => {
                     tracing::warn!(
                         solution_id = solution.id,
                         ?error,
-                        dropped,
                         elapsed_ms,
                         window_ms,
-                        "solution simulation failed"
+                        "dropping solution, its settlement fails in simulation"
                     );
-                    if dropped {
-                        continue;
-                    }
+                    continue;
                 }
+                Err(error) => tracing::info!(
+                    solution_id = solution.id,
+                    ?error,
+                    elapsed_ms,
+                    window_ms,
+                    "solution simulation inconclusive"
+                ),
             }
             self.solutions.insert(
                 Key {
@@ -202,13 +206,14 @@ impl Competition {
             .await?;
         // The simulation replaces every blockhash, so a placeholder saves the
         // fetch.
-        let transaction = resolved.encode(self.solver.keypair(), Hash::default())?;
-        if let Some(size) = encoded_size(&transaction)
-            && size > MAX_TRANSACTION_BYTES
+        bundle.push(resolved.encode(self.solver.keypair(), Hash::default())?);
+        if let Some(size) = bundle
+            .iter()
+            .filter_map(encoded_size)
+            .find(|size| *size > MAX_TRANSACTION_BYTES)
         {
             return Err(Error::TransactionTooLarge { size });
         }
-        bundle.push(transaction);
         tracing::debug!(
             solution_id = solution.id,
             creations = ?creation_uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
@@ -221,14 +226,6 @@ impl Competition {
             .simulate_bundle(&bundle)
             .await
             .map_err(Error::Rpc)?;
-        if results.len() < bundle.len() {
-            tracing::warn!(
-                solution_id = solution.id,
-                executed = results.len(),
-                legs = bundle.len(),
-                "bundle simulation stopped short without a transaction error"
-            );
-        }
         for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
             if let Some(err) = &result.err {
                 let error = TransactionError::from(err.clone());
@@ -247,6 +244,12 @@ impl Competition {
                     err: err.clone(),
                 });
             }
+        }
+        if results.len() < bundle.len() {
+            return Err(Error::IncompleteSimulation {
+                executed: results.len(),
+                legs: bundle.len(),
+            });
         }
         Ok(())
     }
@@ -719,9 +722,17 @@ pub(crate) enum Error {
         err: cow_solana_rpc::UiTransactionError,
         settlement_error: Option<SettlementError>,
     },
-    /// The encoded settlement exceeds the network's per-transaction ceiling.
+    /// The solve-time simulation did not answer within its share of the
+    /// auction deadline.
+    #[error("settlement simulation timed out")]
+    SimulationTimedOut,
+    /// The bundle simulation answered for fewer transactions than it was sent
+    /// without naming a failure, so the settlement went unexecuted.
+    #[error("bundle simulation executed {executed} of {legs} transactions without an error")]
+    IncompleteSimulation { executed: usize, legs: usize },
+    /// An encoded transaction exceeds the network's per-transaction ceiling.
     /// Nothing was sent.
-    #[error("settlement transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
+    #[error("transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
     TransactionTooLarge { size: u64 },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
@@ -834,6 +845,8 @@ fn error_label(error: &Error) -> &'static str {
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
+        Error::SimulationTimedOut => "simulation_timed_out",
+        Error::IncompleteSimulation { .. } => "simulation_incomplete",
         Error::TransactionTooLarge { .. } => "transaction_too_large",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
