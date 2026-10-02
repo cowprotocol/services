@@ -5,6 +5,7 @@ pub mod buy_token_accounts;
 pub mod competition;
 pub mod order_uid;
 pub mod priority_fee;
+pub mod program_error;
 pub mod settlement;
 pub mod slot;
 pub mod solution;

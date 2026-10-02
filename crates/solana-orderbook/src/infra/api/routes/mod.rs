@@ -1,6 +1,7 @@
 mod account;
 mod create_order;
 mod healthz;
+mod mint;
 mod order;
 mod quote;
 mod status;

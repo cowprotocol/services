@@ -24,7 +24,10 @@ pub use {
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
 };
 #[cfg(feature = "test-util")]
-pub use {solana_rpc_client::mock_sender::Mocks, solana_rpc_client_api::request::RpcRequest};
+pub use {
+    solana_rpc_client::mock_sender::{Mocks, MocksMap},
+    solana_rpc_client_api::request::RpcRequest,
+};
 
 pub struct SolanaRPC {
     inner: RpcClient,
@@ -68,6 +71,15 @@ impl SolanaRPC {
     pub fn new_mock_with_mocks(mocks: Mocks) -> Self {
         Self {
             inner: RpcClient::new_mock_with_mocks("mock".to_owned(), mocks),
+        }
+    }
+
+    /// Creates a client answering each request from its queue of canned
+    /// responses, in order, for tests.
+    #[cfg(feature = "test-util")]
+    pub fn new_mock_with_mocks_map(mocks: MocksMap) -> Self {
+        Self {
+            inner: RpcClient::new_mock_with_mocks_map("mock", mocks),
         }
     }
 
