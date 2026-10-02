@@ -59,7 +59,10 @@ impl ProgramError {
     /// names the program that raised the code, while the failing top-level
     /// instruction may belong to a caller that only passed it on.
     pub fn from_logs(settlement_program: Pubkey, logs: &[String]) -> Option<Self> {
-        let (program, code) = logs.iter().find_map(|line| custom_error(line))?;
+        let (failed, (program, code)) = logs
+            .iter()
+            .enumerate()
+            .find_map(|(index, line)| Some((index, custom_error(line)?)))?;
         let name = if program == settlement_program {
             SettlementError::try_from(code)
                 .ok()
@@ -73,7 +76,7 @@ impl ProgramError {
                 .and_then(|index| JUPITER_ERRORS.get(usize::try_from(index).ok()?))
                 .map(|name| (*name).to_owned())
         } else {
-            anchor_error_name(logs, code)
+            anchor_error_name(frame(logs, program, failed), code)
         };
         Some(Self {
             program,
@@ -93,11 +96,25 @@ fn custom_error(line: &str) -> Option<(Pubkey, u32)> {
     Some((program.parse().ok()?, u32::from_str_radix(code, 16).ok()?))
 }
 
+/// The lines of the frame `program` fails in at index `failed`: those after
+/// its last `Program <id> invoke` line before it. Any program can print a
+/// line that looks like an Anchor error, so the name lookup below stays
+/// inside the failing frame.
+fn frame(logs: &[String], program: Pubkey, failed: usize) -> &[String] {
+    let invoke = format!("Program {program} invoke [");
+    let start = logs[..failed]
+        .iter()
+        .rposition(|line| line.starts_with(&invoke))
+        .map_or(0, |index| index + 1);
+    &logs[start..failed]
+}
+
 /// The name an Anchor program logs with error `code`, from its
 /// `AnchorError ... Error Code: <name>. Error Number: <code>. ...` line.
-fn anchor_error_name(logs: &[String], code: u32) -> Option<String> {
+/// Anchor logs it right before the program fails, so the last match wins.
+fn anchor_error_name(frame: &[String], code: u32) -> Option<String> {
     let number = format!(". Error Number: {code}.");
-    logs.iter().find_map(|line| {
+    frame.iter().rev().find_map(|line| {
         let (_, rest) = line
             .strip_prefix("Program log: AnchorError")?
             .split_once("Error Code: ")?;
@@ -182,6 +199,58 @@ mod tests {
         assert_eq!(
             ProgramError::from_logs(SETTLEMENT, &anchor_cpi),
             error(CLMM, 6028, Some("InvalidFirstTickArrayAccount"))
+        );
+    }
+
+    /// A program that ran earlier prints a line shaped like an Anchor error
+    /// with the failing code. The name comes from the failing frame only.
+    #[test]
+    fn ignores_anchor_errors_outside_the_failing_frame() {
+        let decoy = [
+            "Program 11111111111111111111111111111111 invoke [1]",
+            "Program log: AnchorError occurred. Error Code: Decoy. Error Number: 6028. Error \
+             Message: Decoy.",
+            "Program 11111111111111111111111111111111 success",
+        ];
+        let named = logs(
+            &[
+                &decoy[..],
+                &[
+                    "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 invoke [1]",
+                    "Program REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2 invoke [2]",
+                    "Program log: AnchorError thrown in \
+                     programs/amm/src/instructions/swap.rs:194. Error Code: \
+                     InvalidFirstTickArrayAccount. Error Number: 6028. Error Message: Invalid \
+                     first tick array account.",
+                    "Program REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2 consumed 1 of 2 compute \
+                     units",
+                    "Program REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2 failed: custom program \
+                     error: 0x178c",
+                    "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program \
+                     error: 0x178c",
+                ],
+            ]
+            .concat(),
+        );
+        assert_eq!(
+            ProgramError::from_logs(SETTLEMENT, &named),
+            error(CLMM, 6028, Some("InvalidFirstTickArrayAccount"))
+        );
+
+        let unnamed = logs(
+            &[
+                &decoy[..],
+                &[
+                    "Program REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2 invoke [1]",
+                    "Program REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2 failed: custom program \
+                     error: 0x178c",
+                ],
+            ]
+            .concat(),
+        );
+        assert_eq!(
+            ProgramError::from_logs(SETTLEMENT, &unnamed),
+            error(CLMM, 6028, None)
         );
     }
 
