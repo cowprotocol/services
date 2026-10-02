@@ -24,6 +24,8 @@ use {
 pub struct Solana {
     rpc: SolanaRPC,
     /// Serves `simulateBundle`, which `rpc` need not support.
+    /// TODO: temporary; collapse into `rpc` once a single endpoint serves
+    /// every method, see `config::Rpc::bundle_endpoint`.
     bundle_rpc: SolanaRPC,
     program_id: Pubkey,
 }

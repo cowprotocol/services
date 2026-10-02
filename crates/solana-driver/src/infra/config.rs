@@ -97,6 +97,10 @@ pub struct Rpc {
     pub endpoint: url::Url,
     /// RPC endpoint for `simulateBundle` only, so a metered plan on the main
     /// endpoint is spared its cost.
+    ///
+    /// TODO: the split is temporary. Once a single endpoint serves every
+    /// method, drop this field and `Solana::bundle_rpc` and route the call
+    /// through `endpoint`.
     pub bundle_endpoint: url::Url,
     /// Timeout for individual RPC requests.
     #[serde(with = "humantime_serde")]
