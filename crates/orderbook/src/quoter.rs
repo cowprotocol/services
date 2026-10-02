@@ -69,7 +69,22 @@ pub struct QuoteHandler {
     volume_fee: Option<VolumeFeeConfig>,
     volume_fee_policy: Arc<VolumeFeePolicy>,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
-    streaming_quoter: Option<Arc<dyn StreamingQuoting>>,
+    streaming_quoters: Option<StreamingQuoters>,
+}
+
+struct StreamingQuoters {
+    optimal: Arc<dyn StreamingQuoting>,
+    verified: Arc<dyn StreamingQuoting>,
+}
+
+impl StreamingQuoters {
+    fn get(&self, price_quality: PriceQuality) -> Option<&Arc<dyn StreamingQuoting>> {
+        match price_quality {
+            PriceQuality::Fast => None,
+            PriceQuality::Optimal => Some(&self.optimal),
+            PriceQuality::Verified => Some(&self.verified),
+        }
+    }
 }
 
 impl QuoteHandler {
@@ -90,7 +105,7 @@ impl QuoteHandler {
             volume_fee,
             volume_fee_policy,
             token_info_fetcher,
-            streaming_quoter: None,
+            streaming_quoters: None,
         }
     }
 
@@ -104,8 +119,12 @@ impl QuoteHandler {
         self
     }
 
-    pub fn with_streaming_quoter(mut self, quoter: Arc<dyn StreamingQuoting>) -> Self {
-        self.streaming_quoter = Some(quoter);
+    pub fn with_streaming_quoters(
+        mut self,
+        optimal: Arc<dyn StreamingQuoting>,
+        verified: Arc<dyn StreamingQuoting>,
+    ) -> Self {
+        self.streaming_quoters = Some(StreamingQuoters { optimal, verified });
         self
     }
 }
@@ -173,11 +192,19 @@ impl QuoteHandler {
         // Resolve the streaming quoter before `build_quote_params` so a
         // misconfigured endpoint fails fast without emitting a `quoteRequested`
         // event that could never be followed by a `quoteComputed`.
-        let streaming = self.streaming_quoter.clone().ok_or_else(|| {
-            OrderQuoteError::CalculateQuote(
-                anyhow::anyhow!("streaming quoter not configured").into(),
-            )
-        })?;
+        let streaming = self
+            .streaming_quoters
+            .as_ref()
+            .ok_or_else(|| {
+                OrderQuoteError::CalculateQuote(
+                    anyhow::anyhow!("streaming quoters not configured").into(),
+                )
+            })?
+            .get(request.price_quality)
+            .ok_or(OrderQuoteError::UnsupportedPriceQuality(
+                request.price_quality,
+            ))?
+            .clone();
 
         let (params, valid_to) = self.build_quote_params(request).await?;
         // Captured before `params` is consumed below; the document isn't
@@ -460,6 +487,9 @@ fn get_vol_fee_adjusted_quote_data(
 /// Result from handling a quote request.
 #[derive(Debug, Error)]
 pub enum OrderQuoteError {
+    #[error("{0:?} price quality is not supported for streamed quotes")]
+    UnsupportedPriceQuality(PriceQuality),
+
     #[error("error validating app data: {0:?}")]
     AppData(AppDataValidationError),
 
