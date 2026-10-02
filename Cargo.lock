@@ -9270,6 +9270,7 @@ dependencies = [
  "solana-system-interface 3.2.0",
  "solana-testlib",
  "spl-associated-token-account-interface",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -10329,6 +10330,7 @@ dependencies = [
  "base64 0.22.1",
  "serde_json",
  "solana-sdk",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "tempfile",
 ]
