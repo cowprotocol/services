@@ -28,6 +28,8 @@ use {
     chain_types::solana::{IntentHash, Pubkey, Signature},
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
+    solana_sdk::program_pack::Pack,
+    spl_token_interface::state::{Account as TokenAccount, AccountState},
     sqlx::PgPool,
     std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::{mpsc, watch},
@@ -114,13 +116,46 @@ pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
     )
 }
 
-/// A mock RPC answering one buy-account lookup with an initialized token
-/// account of the seeded order's buy mint. Each canned response serves once,
-/// later cuts fail open and keep the orders.
+/// A canned `getMultipleAccounts` entry: an initialized account of the
+/// classic SPL token program holding `amount` of `mint`, with `approved` of it
+/// delegated when given.
+pub(crate) fn sell_token_account_json(
+    mint: [u8; 32],
+    amount: u64,
+    approved: Option<u64>,
+) -> serde_json::Value {
+    let mut data = [0u8; TokenAccount::LEN];
+    TokenAccount {
+        mint: solana_sdk::pubkey::Pubkey::new_from_array(mint),
+        amount,
+        delegate: approved
+            .map(|_| solana_sdk::pubkey::Pubkey::new_from_array([0xDE; 32]))
+            .into(),
+        delegated_amount: approved.unwrap_or(0),
+        state: AccountState::Initialized,
+        ..TokenAccount::default()
+    }
+    .pack_into_slice(&mut data);
+    serde_json::json!({
+        "lamports": 2_039_280u64,
+        "data": [BASE64_STANDARD.encode(data), "base64"],
+        "owner": spl_token_interface::ID.to_string(),
+        "executable": false,
+        "rentEpoch": 0u64,
+        "space": TokenAccount::LEN,
+    })
+}
+
+/// A mock RPC answering one order-account lookup: an initialized token
+/// account of the seeded order's buy mint, then its sell token account holding
+/// and approving the sell amount. Each canned response serves once.
 fn mock_rpc() -> SolanaRPC {
     let response = serde_json::json!({
         "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-        "value": [token_account_json([0xAB; 32])],
+        "value": [
+            token_account_json([0xAB; 32]),
+            sell_token_account_json([0xAA; 32], 1_000, Some(1_000)),
+        ],
     });
     SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]))
 }
@@ -152,7 +187,7 @@ async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
+VALUES ($1, $2, $2, $3, $2, $6, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
         "#,
     )
     .bind(uid)
@@ -160,6 +195,7 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, 
     .bind(ByteArray([0xAB; 32]))
     .bind(i64::from(u32::MAX))
     .bind(ByteArray([0xB0; 32]))
+    .bind(ByteArray([0xAC; 32]))
     .execute(pool)
     .await
     .unwrap();
