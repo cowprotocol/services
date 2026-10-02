@@ -31,6 +31,14 @@ pub async fn post_quote_handler(
 impl IntoResponse for OrderQuoteError {
     fn into_response(self) -> Response {
         match self {
+            OrderQuoteError::UnsupportedPriceQuality(price_quality) => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "UnsupportedPriceQuality",
+                    format!("{price_quality:?} price quality is not supported for streamed quotes"),
+                ),
+            )
+                .into_response(),
             OrderQuoteError::AppData(err) => AppDataValidationErrorWrapper(err).into_response(),
             OrderQuoteError::Order(err) => PartialValidationErrorWrapper(err).into_response(),
             OrderQuoteError::CalculateQuote(err) => CalculateQuoteErrorWrapper(err).into_response(),
@@ -81,6 +89,7 @@ mod tests {
         app_data::AppDataHash,
         bigdecimal::BigDecimal,
         chrono::{TimeZone, Utc},
+        eth_domain_types::Receiver,
         model::{
             order::{BuyTokenDestination, SellTokenSource},
             quote::{
@@ -121,7 +130,7 @@ mod tests {
                 from: Address::repeat_byte(0x01),
                 sell_token: Address::repeat_byte(0x02),
                 buy_token: Address::repeat_byte(0x03),
-                receiver: None,
+                receiver: Receiver::OWNER,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee {
                         value: NonZeroU256::try_from(1337).unwrap()
@@ -160,7 +169,7 @@ mod tests {
                 from: Address::repeat_byte(0x01),
                 sell_token: Address::repeat_byte(0x02),
                 buy_token: Address::repeat_byte(0x03),
-                receiver: None,
+                receiver: Receiver::OWNER,
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::BeforeFee {
                         value: NonZeroU256::try_from(1337).unwrap()
@@ -194,7 +203,7 @@ mod tests {
                 from: Address::repeat_byte(0x01),
                 sell_token: Address::repeat_byte(0x02),
                 buy_token: Address::repeat_byte(0x03),
-                receiver: Some(Address::repeat_byte(0x04)),
+                receiver: Receiver::new(Address::repeat_byte(0x04)),
                 side: OrderQuoteSide::Buy {
                     buy_amount_after_fee: NonZeroU256::try_from(1337).unwrap(),
                 },
@@ -262,7 +271,7 @@ mod tests {
         let quote = OrderQuote {
             sell_token: Default::default(),
             buy_token: Default::default(),
-            receiver: None,
+            receiver: Receiver::OWNER,
             sell_amount: Default::default(),
             buy_amount: Default::default(),
             valid_to: 0,
@@ -305,5 +314,18 @@ mod tests {
         assert_eq!(body, expected_error);
         // There are many other FeeAndQuoteErrors, but writing a test for each
         // would follow the same pattern as this.
+    }
+
+    #[tokio::test]
+    async fn unsupported_streaming_price_quality_response() {
+        let response = OrderQuoteError::UnsupportedPriceQuality(PriceQuality::Fast).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response_body(response).await;
+        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let expected_error = json!({
+            "errorType": "UnsupportedPriceQuality",
+            "description": "Fast price quality is not supported for streamed quotes"
+        });
+        assert_eq!(body, expected_error);
     }
 }

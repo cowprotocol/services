@@ -6,6 +6,7 @@ use {
         Order,
         Side,
         auction::Id,
+        buy_token_accounts::BuyTokenAccountCache,
         order_uid::OrderUid,
         settlement::ResolveError,
         solution::Solution,
@@ -22,7 +23,7 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -60,14 +61,22 @@ struct CachedSolution {
 pub(crate) struct Competition {
     solver: Solver,
     blockchain: Arc<Solana>,
+    /// Shared with the driver's other solver engines, which solve the same
+    /// auction.
+    buy_token_accounts: BuyTokenAccountCache,
     solutions: Cache<Key, CachedSolution>,
 }
 
 impl Competition {
-    pub fn new(solver: Solver, blockchain: Arc<Solana>) -> Self {
+    pub fn new(
+        solver: Solver,
+        blockchain: Arc<Solana>,
+        buy_token_accounts: BuyTokenAccountCache,
+    ) -> Self {
         Self {
             solver,
             blockchain,
+            buy_token_accounts,
             solutions: Cache::builder().time_to_live(SOLUTION_CACHE_TTL).build(),
         }
     }
@@ -79,8 +88,25 @@ impl Competition {
     /// Solve the auction, drop the solutions whose settlement provably fails
     /// (over the byte limit or failing in simulation), and cache the rest for
     /// a later `settle`.
-    pub async fn solve(&self, auction_id: Id, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        let solutions = self.compute_solutions(auction).await?;
+    pub async fn solve(
+        &self,
+        auction_id: Id,
+        mut auction: Auction,
+    ) -> Result<Vec<Solution>, Error> {
+        let buy_token_accounts = auction
+            .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
+            .await
+            .map_err(Error::BuyTokenAccounts)?;
+        auction
+            .orders
+            .retain(|order| !buy_token_accounts.unreceivable.contains(&order.uid));
+        if auction.orders.is_empty() {
+            tracing::info!("no receivable order left; skipping solving");
+            return Ok(Vec::new());
+        }
+        let solutions = self
+            .compute_solutions(&auction, &buy_token_accounts.missing)
+            .await?;
         // The autopilot discards a late response, so the simulations get half
         // the remaining window. A timeout is no verdict.
         let window = auction
@@ -89,19 +115,22 @@ impl Competition {
             .to_std()
             .unwrap_or_default()
             / 2;
-        let verdicts = futures::future::join_all(solutions.iter().map(|solution| async move {
-            let started = Instant::now();
-            let verdict = tokio::time::timeout(
-                window,
-                self.simulate_solution(auction_id, auction, solution),
-            )
-            .await
-            .unwrap_or(Err(Error::DeadlineExceeded));
-            (verdict, started.elapsed())
+        let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
+            let auction = &auction;
+            async move {
+                let started = Instant::now();
+                let verdict = tokio::time::timeout(
+                    window,
+                    self.simulate_solution(auction_id, auction, solution),
+                )
+                .await
+                .unwrap_or(Err(Error::DeadlineExceeded));
+                (verdict, started.elapsed())
+            }
         }))
         .await;
 
-        let auction = Arc::new(auction.clone());
+        let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
         for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
@@ -224,10 +253,21 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them.
-    pub async fn compute_solutions(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
+    ///
+    /// `missing_buy_token_accounts` marks the orders whose payout account the
+    /// settlement creates, so the engine can price its rent in.
+    pub async fn compute_solutions(
+        &self,
+        auction: &Auction,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
+    ) -> Result<Vec<Solution>, Error> {
         let solutions = self
             .solver
-            .solve(auction, self.blockchain.program_id())
+            .solve(
+                auction,
+                self.blockchain.program_id(),
+                missing_buy_token_accounts,
+            )
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and
@@ -659,6 +699,11 @@ pub(crate) enum Error {
     /// A pre-submission RPC read failed; nothing was submitted.
     #[error("rpc request failed: {0}")]
     Rpc(#[source] cow_solana_rpc::Error),
+    /// The buy token account lookup failed; nothing was solved. The error is
+    /// shared because the cache hands the same failure to every engine
+    /// waiting on the lookup.
+    #[error("buy token account lookup failed: {0}")]
+    BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
     #[error("failed to submit or confirm settlement: {err}, settlement error {settlement_error:?}")]
     FailedToSubmit {
         #[source]
@@ -785,6 +830,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::DeadlineExceeded => "deadline_exceeded",
         Error::TooManyPendingSettlements => "throttled",
         Error::Rpc(_) => "rpc_failed",
+        Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",

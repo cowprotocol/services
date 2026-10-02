@@ -142,7 +142,7 @@ pub struct Order {
     pub funded: bool,
     pub fee_policy: Vec<fee::Policy>,
     pub owner: eth::Address,
-    pub receiver: Option<eth::Address>,
+    pub receiver: eth::Receiver,
     pub fee_amount: eth::U256,
     pub sell_token_source: SellTokenSource,
     pub buy_token_destination: BuyTokenDestination,
@@ -284,7 +284,7 @@ impl Order {
         self.solver_fee.unwrap_or_default()
     }
 
-    pub fn receiver(self, receiver: Option<eth::Address>) -> Self {
+    pub fn receiver(self, receiver: eth::Receiver) -> Self {
         Self { receiver, ..self }
     }
 }
@@ -1014,7 +1014,14 @@ impl Setup {
                 solutions: &solutions,
                 trusted: &trusted,
                 quoted_orders: &quotes,
-                deadline: time::Deadline::new(deadline, solver.timeouts),
+                deadline: time::Deadline::new(
+                    deadline,
+                    if self.quote {
+                        infra::solver::Solver::quote_timeouts()
+                    } else {
+                        solver.timeouts
+                    },
+                ),
                 quote: self.quote,
                 quote_id: self.quote.then_some(self.quote_id),
                 fee_handler: solver.fee_handler,

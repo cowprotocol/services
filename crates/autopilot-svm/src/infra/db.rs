@@ -840,7 +840,7 @@ WHERE uid = $1
         for order in [1u8, 3] {
             sqlx::query(
                 "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
-                 sell_amount, buy_amount, fee_amount) VALUES ($1, 0, $2, 10, 20, 0)",
+                 sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 0, $2, 10, 20, 0, 10)",
             )
             .bind([9u8; 64])
             .bind(ByteArray([order; 32]))

@@ -1,6 +1,7 @@
 //! Domain model of the Solana driver.
 
 pub mod auction;
+pub mod buy_token_accounts;
 pub mod competition;
 pub mod order_uid;
 pub mod settlement;

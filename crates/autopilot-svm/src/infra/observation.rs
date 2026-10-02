@@ -290,7 +290,7 @@ mod tests {
         for order in orders {
             sqlx::query(
                 "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
-                 sell_amount, buy_amount, fee_amount) VALUES ($1, 0, $2, 10, 20, 0)",
+                 sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 0, $2, 10, 20, 0, 10)",
             )
             .bind([signature; 64])
             .bind([*order; 32])

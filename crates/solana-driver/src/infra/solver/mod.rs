@@ -6,14 +6,14 @@
 
 use {
     crate::{
-        domain::{self, solver_fee::SolverFee},
+        domain::{self, order_uid::OrderUid, solver_fee::SolverFee},
         infra::{config, solver::dto::auction::Auction},
     },
     solana_sdk::{
         pubkey::Pubkey,
         signer::{Signer, keypair::Keypair},
     },
-    std::{num::NonZero, sync::Arc},
+    std::{collections::HashSet, num::NonZero, sync::Arc},
     thiserror::Error,
 };
 
@@ -86,14 +86,22 @@ impl Solver {
     /// domain solutions it produced.
     ///
     /// `program_id` is the settlement program the swap instructions are built
-    /// for.
+    /// for. `missing_buy_token_accounts` marks the orders whose payout account
+    /// the settlement creates.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
     pub async fn solve(
         &self,
         auction: &domain::Auction,
         program_id: Pubkey,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.pubkey(), program_id, self.solver_fee);
+        let auction_dto = Auction::new(
+            auction,
+            self.pubkey(),
+            program_id,
+            self.solver_fee,
+            missing_buy_token_accounts,
+        );
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -196,7 +204,7 @@ mod tests {
         };
 
         let solutions = solver
-            .solve(&auction, Pubkey::default())
+            .solve(&auction, Pubkey::default(), &Default::default())
             .await
             .expect("solve should succeed with no solutions");
         assert!(

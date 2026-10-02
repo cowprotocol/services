@@ -109,6 +109,7 @@ mod tests {
             full_sell_amount: 1_000,
             full_buy_amount: 0,
             side,
+            missing_buy_token_account: false,
         }
     }
 

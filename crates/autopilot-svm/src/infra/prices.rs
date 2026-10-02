@@ -3,7 +3,10 @@
 use {
     crate::infra::config,
     anyhow::{Context, Result, anyhow},
-    chain_types::{ChainTypes, solana::Solana},
+    chain_types::{
+        ChainTypes,
+        solana::{NATIVE_SOL, Solana},
+    },
     cow_solana_rpc::SolanaRPC,
     futures::{StreamExt, stream},
     moka::sync::Cache,
@@ -220,6 +223,12 @@ impl NativePrices {
 }
 
 impl Inner {
+    /// Whether `token` is SOL, wrapped or native: it prices at the
+    /// denominator without a lookup.
+    fn is_sol(&self, token: &Pubkey) -> bool {
+        *token == self.wrapped_native || token.to_bytes() == NATIVE_SOL.0
+    }
+
     /// One refresher pass: refetch the maintained tokens nearing expiry, so
     /// lookups keep hitting fresh entries. A failed pass only logs, the
     /// entries then expire and the next lookup fetches inline.
@@ -251,7 +260,7 @@ impl Inner {
         let mut fetch = Vec::new();
         let now = Instant::now();
         for token in &tokens {
-            if *token == self.wrapped_native {
+            if self.is_sol(token) {
                 result.insert(*token, Solana::NATIVE_PRICE_DENOMINATOR);
                 continue;
             }
@@ -269,7 +278,7 @@ impl Inner {
             let mut maintained = self.maintained.lock().expect("maintained set poisoned");
             *maintained = tokens
                 .into_iter()
-                .filter(|token| *token != self.wrapped_native)
+                .filter(|token| !self.is_sol(token))
                 .collect();
         }
         if fetch.is_empty() {
@@ -670,18 +679,23 @@ mod tests {
         assert_eq!(scale(1e9, 0), None);
     }
 
-    /// The wrapped native mint is priced at the denominator without any
+    /// SOL, wrapped or native, is priced at the denominator without any
     /// lookup: the estimators here are dead and so is the RPC.
     #[tokio::test]
     async fn prices_the_native_mint_locally() {
         let wrapped = Pubkey::new_unique();
+        let native = Pubkey::new_from_array(NATIVE_SOL.0);
         let prices = NativePrices::new(
             &coingecko_config("http://127.0.0.1:1/".parse().unwrap()),
             SolanaRPC::new_mock_with_mocks(Mocks::default()),
             wrapped,
         );
-        let result = prices.prices(HashSet::from([wrapped])).await.unwrap();
+        let result = prices
+            .prices(HashSet::from([wrapped, native]))
+            .await
+            .unwrap();
         assert_eq!(result[&wrapped], Solana::NATIVE_PRICE_DENOMINATOR);
+        assert_eq!(result[&native], Solana::NATIVE_PRICE_DENOMINATOR);
     }
 
     /// Without sources every token prices at the denominator and nothing is

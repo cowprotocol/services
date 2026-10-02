@@ -12,6 +12,10 @@ use {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Pubkey(pub [u8; 32]);
 
+/// The buy token of an order paid in native SOL: the intent names the System
+/// Program ID in place of a mint.
+pub const NATIVE_SOL: Pubkey = Pubkey([0; 32]);
+
 /// A Solana order identifier: the 32-byte intent hash. Unlike the EVM
 /// 56-byte UID it carries no embedded owner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -130,10 +134,13 @@ impl ChainTypes for Solana {
     /// Lamports per SOL (9 decimals).
     const NATIVE_PRICE_DENOMINATOR: u64 = 1_000_000_000;
 
-    /// Identity: Solana orders name SPL mints directly, there is no
-    /// native-token sentinel to map.
-    fn canonical_token(token: Pubkey, _wrapped_native: Pubkey) -> Pubkey {
-        token
+    /// Maps [`NATIVE_SOL`] to wSOL, the token its buys trade through.
+    fn canonical_token(token: Pubkey, wrapped_native: Pubkey) -> Pubkey {
+        if token == NATIVE_SOL {
+            wrapped_native
+        } else {
+            token
+        }
     }
 
     /// The intent hash embeds no owner, so JIT orders cannot be attributed.
@@ -179,6 +186,17 @@ impl Amount for u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Native SOL buys trade the wSOL pair, other tokens map to themselves.
+    #[test]
+    fn native_sol_canonicalizes_to_the_wrapped_mint() {
+        let wrapped = Pubkey([0xFE; 32]);
+        assert_eq!(Solana::canonical_token(NATIVE_SOL, wrapped), wrapped);
+        assert_eq!(
+            Solana::canonical_token(Pubkey([0x11; 32]), wrapped),
+            Pubkey([0x11; 32])
+        );
+    }
 
     #[test]
     fn app_data_round_trips_as_0x_hex() {

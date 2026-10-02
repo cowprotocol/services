@@ -311,8 +311,8 @@ ON CONFLICT (tx_signature, instruction_index) DO NOTHING
         let inserted = sqlx::query(
             r#"
 INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount,
-    buy_amount, fee_amount)
-VALUES ($1, $2, $3, $4, $5, 0)
+    buy_amount, fee_amount, slot)
+VALUES ($1, $2, $3, $4, $5, 0, $6)
 ON CONFLICT DO NOTHING
             "#,
         )
@@ -321,6 +321,7 @@ ON CONFLICT DO NOTHING
         .bind(order_uid)
         .bind(BigDecimal::from(trade.amount_withdrawn_delta))
         .bind(BigDecimal::from(trade.amount_received_delta))
+        .bind(to_db_slot(settlement.slot))
         .execute(&mut **tx)
         .await?
         .rows_affected();
@@ -694,14 +695,15 @@ mod tests {
             sqlx::query(
                 "INSERT INTO solana.trades
                      (tx_signature, instruction_index, order_uid, sell_amount,
-                      buy_amount, fee_amount)
-                 VALUES ($1, $2, $3, $4, $5, 0)",
+                      buy_amount, fee_amount, slot)
+                 VALUES ($1, $2, $3, $4, $5, 0, $6)",
             )
             .bind(signature.as_ref())
             .bind(instruction_index)
             .bind([0x01u8; 32])
             .bind(sell)
             .bind(buy)
+            .bind(slot)
             .execute(&pool)
             .await
             .unwrap();
@@ -987,12 +989,14 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
             .fetch_one(&pool)
             .await
             .unwrap();
-        // The trade names the order PDA, the row must carry the resolved uid.
-        let trade_uids: Vec<Vec<u8>> = sqlx::query_scalar("SELECT order_uid FROM solana.trades")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-        assert_eq!((settlements, trade_uids), (2, vec![uid.to_vec()]));
+        // The trade names the order PDA, the row must carry the resolved uid
+        // and the settlement's slot.
+        let trades: Vec<(Vec<u8>, i64)> =
+            sqlx::query_as("SELECT order_uid, slot FROM solana.trades")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!((settlements, trades), (2, vec![(uid.to_vec(), 20)]));
         assert_eq!(postgres.last_indexed_slot().await.unwrap(), Some(Slot(20)));
 
         // One event per actually-inserted row, stable under the replay: the

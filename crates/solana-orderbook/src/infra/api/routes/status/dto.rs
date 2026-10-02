@@ -33,6 +33,9 @@ pub enum Status {
     /// The user cancelled the order. It will no longer show up in any
     /// auctions.
     Cancelled,
+    /// The order can no longer be settled: its `validTo` passed, or its
+    /// sponsored creation transaction can no longer land.
+    Expired,
 }
 
 /// One solution's view of the order.
@@ -86,6 +89,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(Status::Scheduled).unwrap(),
             serde_json::json!({"type": "scheduled"})
+        );
+        assert_eq!(
+            serde_json::to_value(Status::Expired).unwrap(),
+            serde_json::json!({"type": "expired"})
         );
         assert_eq!(
             serde_json::to_value(Status::Solved(vec![SolutionInclusion {

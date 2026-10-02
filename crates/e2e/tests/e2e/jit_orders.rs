@@ -150,7 +150,7 @@ async fn single_limit_order_test(web3: Web3) {
         partially_fillable: false,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         app_data: Default::default(),
-        receiver: solver.address(),
+        receiver: solver.address().into(),
     }
     .sign(
         EcdsaSigningScheme::Eip712,

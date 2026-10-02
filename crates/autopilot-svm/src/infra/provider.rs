@@ -10,11 +10,15 @@ use {
     chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
     cow_solana_rpc::SolanaRPC,
     database::solana::OrderEventLabel,
-    solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey},
-    spl_token_interface::state::{Account as TokenAccount, AccountState},
+    solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey, rent::Rent},
+    spl_token_interface::{
+        native_mint,
+        state::{Account as TokenAccount, AccountState},
+    },
     sqlx::PgPool,
     std::{
         collections::HashSet,
+        sync::Mutex,
         time::{SystemTime, UNIX_EPOCH},
     },
 };
@@ -26,6 +30,8 @@ pub struct DbAuctionProvider {
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
     prices: NativePrices,
+    /// Block height of the last successful lookup.
+    last_block_height: Mutex<Option<i64>>,
 }
 
 impl DbAuctionProvider {
@@ -35,51 +41,99 @@ impl DbAuctionProvider {
             rpc,
             max_indexer_lag,
             prices,
+            last_block_height: Mutex::default(),
+        }
+    }
+
+    /// The chain's block height, falling back to the last one read when the
+    /// lookup fails. `None` until a lookup succeeds. Block height only grows,
+    /// so a creation deadline checked against an older one can keep an order
+    /// that died since but never drops a live one.
+    async fn block_height(&self) -> Option<i64> {
+        match self.rpc.block_height().await {
+            Ok(height) => {
+                let height = Some(i64::try_from(u64::from(height)).unwrap_or(i64::MAX));
+                *self.last_block_height.lock().unwrap() = height;
+                height
+            }
+            Err(err) => {
+                let last = *self.last_block_height.lock().unwrap();
+                tracing::warn!(
+                    ?err,
+                    ?last,
+                    "block height lookup failed, using the last one"
+                );
+                last
+            }
         }
     }
 
     /// Drop orders whose buy token account cannot receive the settlement
-    /// payout: their settlement would revert at `FinalizeSettle`. Only orders
-    /// already created on chain are checked, a pending sponsored order
-    /// creates its own accounts at settlement time. When the account lookup
+    /// payout: their settlement would revert at `FinalizeSettle`. A native SOL
+    /// buy pays a wallet instead, which must be missing or owned by the System
+    /// Program. A pending sponsored token buy skips the check, its creation
+    /// transaction creates the buy token account. When the account lookup
     /// fails every order passes, a doomed order then costs one failed
-    /// settlement instead of the whole cut.
-    async fn receivable_orders(&self, orders: Vec<Order>) -> Vec<Order> {
+    /// settlement instead of the whole cut. Returns the kept orders and the
+    /// uids of the dropped ones.
+    async fn receivable_orders(&self, orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
+        let checked = |order: &Order| order.created_on_chain || order.buys_native_sol();
         let candidates = orders
             .iter()
-            .filter(|order| order.created_on_chain)
+            .filter(|order| checked(order))
             .map(|order| Pubkey::new_from_array(order.buy_token_account.0));
         let accounts = match self.rpc.multiple_accounts(candidates).await {
             Ok(accounts) => accounts,
             Err(err) => {
                 tracing::warn!(?err, "buy account lookup failed, keeping all orders");
-                return orders;
+                return (orders, Vec::new());
             }
         };
-        orders
+        let mut dropped = Vec::new();
+        let orders = orders
             .into_iter()
             .filter(|order| {
-                if !order.created_on_chain {
+                if !checked(order) {
                     return true;
                 }
                 let account = Pubkey::new_from_array(order.buy_token_account.0);
-                let receivable = accounts
-                    .get(&account)
-                    .is_some_and(|found| receivable_token_account(found, order.buy_token.0));
+                let receivable = match accounts.get(&account) {
+                    found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
+                    Some(found) => receivable_token_account(found, order.buy_token.0),
+                    None => false,
+                    // TODO: flip on once the buy token account rent is priced.
+                    // None => account == associated_token_address(order),
+                };
                 if !receivable {
-                    // A doomed order repeats this on every cut until it
-                    // expires: the counter is the alerting signal, the log
-                    // line stays at debug.
-                    metrics().unreceivable_orders.inc();
-                    tracing::debug!(
-                        order = %order.uid,
-                        %account,
-                        "excluding order, its buy token account cannot receive the payout"
-                    );
+                    dropped.push(order.uid);
                 }
                 receivable
             })
-            .collect()
+            .collect();
+        (orders, dropped)
+    }
+
+    /// Record the orders a cut leaves out for `reason`: the per-reason gauge,
+    /// a debug line with their uids and a `filtered` order event. An order
+    /// repeats this on every cut while the reason holds, so the line stays at
+    /// debug. Every completed cut sets the gauge, so an empty reason reads
+    /// zero. A skipped cut leaves the previous values in place.
+    fn track_filtered_orders(&self, reason: OrderFilterReason, uids: Vec<IntentHash>) {
+        metrics()
+            .filtered_orders
+            .with_label_values(&[reason.as_str()])
+            .set(i64::try_from(uids.len()).unwrap_or(i64::MAX));
+        if uids.is_empty() {
+            return;
+        }
+        let orders: Vec<String> = uids.iter().map(ToString::to_string).collect();
+        tracing::debug!(
+            reason = reason.as_str(),
+            count = orders.len(),
+            ?orders,
+            "filtered orders"
+        );
+        order_events::store_detached(self.pool.clone(), uids, OrderEventLabel::Filtered);
     }
 }
 
@@ -119,16 +173,8 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         }
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
-        // cut drops the dead ones. A failed height fetch keeps them all: they
-        // then fall out at the countersign instead of the cut.
-        let block_height = match self.rpc.block_height().await {
-            Ok(height) => Some(i64::try_from(u64::from(height)).unwrap_or(i64::MAX)),
-            Err(err) => {
-                tracing::warn!(?err, "block height lookup failed, keeping pending orders");
-                None
-            }
-        };
-        let orders = db::cut(&self.pool, now, block_height)
+        // cut drops the dead ones.
+        let orders = db::cut(&self.pool, now, self.block_height().await)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
@@ -147,23 +193,14 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         let (orders, held_out): (Vec<_>, Vec<_>) = orders
             .into_iter()
             .partition(|order| !held.contains(&order.uid));
-        if !held_out.is_empty() {
-            metrics()
-                .held_out_orders
-                .inc_by(u64::try_from(held_out.len()).unwrap_or(u64::MAX));
-            let uids: Vec<String> = held_out.iter().map(|order| order.uid.to_string()).collect();
-            tracing::debug!(
-                held_out = held_out.len(),
-                ?uids,
-                "orders held out with settlements in flight"
-            );
-            order_events::store_detached(
-                self.pool.clone(),
-                held_out.into_iter().map(|order| order.uid).collect(),
-                OrderEventLabel::Filtered,
-            );
-        }
-        let orders = self.receivable_orders(orders).await;
+        self.track_filtered_orders(
+            OrderFilterReason::InFlight,
+            held_out.into_iter().map(|order| order.uid).collect(),
+        );
+        let (orders, unpayable) = payable_orders(orders);
+        self.track_filtered_orders(OrderFilterReason::UnpayableNativeBuy, unpayable);
+        let (orders, unreceivable) = self.receivable_orders(orders).await;
+        self.track_filtered_orders(OrderFilterReason::UnreceivableBuyTokenAccount, unreceivable);
         if orders.is_empty() {
             return None;
         }
@@ -227,19 +264,37 @@ fn auction_snapshot(tip: u64, auction: &crate::domain::auction::Auction) -> serd
     })
 }
 
+/// Why an auction cut leaves an order out.
+#[derive(Clone, Copy)]
+enum OrderFilterReason {
+    /// A settlement from an earlier auction can still land.
+    InFlight,
+    /// The settlement cannot pay out the native SOL buy.
+    UnpayableNativeBuy,
+    /// The buy token account cannot receive the payout.
+    UnreceivableBuyTokenAccount,
+}
+
+impl OrderFilterReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InFlight => "in_flight",
+            Self::UnpayableNativeBuy => "unpayable_native_buy",
+            Self::UnreceivableBuyTokenAccount => "unreceivable_buy_token_account",
+        }
+    }
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "auction_provider")]
 struct Metrics {
-    /// Orders excluded from auction cuts because their buy token account
-    /// cannot receive the payout.
-    unreceivable_orders: prometheus::IntCounter,
+    /// Orders the last auction cut left out, by reason.
+    #[metric(labels("reason"))]
+    filtered_orders: prometheus::IntGaugeVec,
     /// Auction cuts skipped because the indexer lags beyond the watermark.
     /// The loop keeps spinning and stays live through a skip, so this
     /// counter is the alerting signal for a stalled indexer.
     lag_skipped_cuts: prometheus::IntCounter,
-    /// Orders excluded from auction cuts while their settlement is in
-    /// flight.
-    held_out_orders: prometheus::IntCounter,
 }
 
 fn metrics() -> &'static Metrics {
@@ -256,6 +311,26 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
     tip.saturating_sub(indexed) > max_lag
 }
 
+/// The order owner's associated token account for the buy mint under the
+/// classic SPL token program, the one account a settlement can create for
+/// the payout when it does not exist yet.
+/// TODO(token-2022): a token-2022 mint derives a different address, so its
+/// missing account is dropped here, like the driver cannot settle it yet.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the receivable check that uses it is held until solvers price the ATA rent"
+    )
+)]
+fn associated_token_address(order: &Order) -> Pubkey {
+    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+        &Pubkey::new_from_array(order.owner.0),
+        &Pubkey::new_from_array(order.buy_token.0),
+        &spl_token_interface::ID,
+    )
+}
+
 /// An initialized, unfrozen account of the classic SPL token program holding
 /// the order's buy mint: anything else reverts the payout at settlement.
 /// TODO(token-2022): accounts of the token-2022 program are dropped here,
@@ -267,12 +342,39 @@ fn receivable_token_account(account: &Account, buy_mint: [u8; 32]) -> bool {
         })
 }
 
+/// Drop native SOL buys the settlement cannot pay out. A payout under the
+/// rent-exempt minimum of an empty wallet reverts the whole settlement, and a
+/// partial fill can land under it. A wSOL sell reaches solvers as wSOL for
+/// wSOL. Returns the kept orders and the uids of the dropped ones.
+fn payable_orders(orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
+    // TODO: use the cluster's rent, refreshed periodically. The SDK default is
+    // above it since SIMD-0437, so this floor also drops small payouts that
+    // would settle.
+    let min_payout = Rent::default().minimum_balance(0);
+    let (payable, unpayable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+        !order.buys_native_sol()
+            || (order.buy_amount >= min_payout
+                && !order.partially_fillable
+                && order.sell_token.0 != native_mint::ID.to_bytes())
+    });
+    (
+        payable,
+        unpayable.into_iter().map(|order| order.uid).collect(),
+    )
+}
+
+/// Whether `account` is a System Program wallet. Lamports paid to a program
+/// or a sysvar revert the settlement, a program-owned account strands them.
+fn receivable_wallet(account: &Account) -> bool {
+    account.owner == solana_system_interface::program::ID
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
         crate::domain::auction::OrderKind,
-        chain_types::solana::{AppData, IntentHash, Pubkey as ChainPubkey},
+        chain_types::solana::{AppData, IntentHash, NATIVE_SOL, Pubkey as ChainPubkey},
         cow_solana_rpc::{Mocks, RpcRequest},
     };
 
@@ -305,9 +407,12 @@ mod tests {
         )
     }
 
-    /// The lookup answers for the three created orders in candidate order:
-    /// initialized with the buy mint, initialized with a wrong mint, absent.
-    /// The pending sponsored order is exempt from the check.
+    /// The lookup answers for the four created orders in candidate order:
+    /// initialized with the buy mint, initialized with a wrong mint, absent
+    /// at an arbitrary address, absent at the owner's associated token
+    /// address. An absent account is dropped either way while the settlement
+    /// creating it is held. The pending sponsored order is exempt from the
+    /// check.
     #[tokio::test]
     async fn drops_created_orders_with_unreceivable_buy_accounts() {
         let response = serde_json::json!({
@@ -316,22 +421,120 @@ mod tests {
                 crate::tests::token_account_json([0x44; 32]),
                 crate::tests::token_account_json([0x99; 32]),
                 null,
+                null,
             ],
         });
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        let ata = associated_token_address(&order([0; 32], true)).to_bytes();
         let orders = vec![
             order([0x01; 32], true),
             order([0x02; 32], false),
             order([0x03; 32], true),
             order([0x04; 32], true),
+            order(ata, true),
         ];
-        let kept: Vec<u8> = provider
+        let (kept, dropped) = provider.receivable_orders(orders).await;
+        let kept: Vec<[u8; 32]> = kept.iter().map(|order| order.buy_token_account.0).collect();
+        assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
+        assert_eq!(
+            dropped,
+            [
+                IntentHash([0x03; 32]),
+                IntentHash([0x04; 32]),
+                IntentHash(ata)
+            ]
+        );
+    }
+
+    /// A native SOL buy pays its wallet directly: a missing or system-owned
+    /// wallet receives it, an account of another program does not. A pending
+    /// sponsored native buy gets the same check.
+    #[tokio::test]
+    async fn native_buys_pay_system_wallets() {
+        let system_wallet = serde_json::json!({
+            "lamports": 1_000_000u64,
+            "data": ["", "base64"],
+            "owner": "11111111111111111111111111111111",
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 0u64,
+        });
+        let response = serde_json::json!({
+            "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+            "value": [
+                null,
+                system_wallet,
+                crate::tests::token_account_json([0x44; 32]),
+                crate::tests::token_account_json([0x44; 32]),
+            ],
+        });
+        let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        let native = |wallet, created_on_chain| Order {
+            buy_token: NATIVE_SOL,
+            ..order(wallet, created_on_chain)
+        };
+        let orders = vec![
+            native([0x01; 32], true),
+            native([0x02; 32], true),
+            native([0x03; 32], true),
+            native([0x04; 32], false),
+        ];
+        let kept: Vec<[u8; 32]> = provider
             .receivable_orders(orders)
             .await
+            .0
             .iter()
-            .map(|order| order.buy_token_account.0[0])
+            .map(|order| order.buy_token_account.0)
             .collect();
-        assert_eq!(kept, [0x01, 0x02]);
+        assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
+    }
+
+    /// Native SOL buys stay out under the rent-exempt minimum of an empty
+    /// account, when partially fillable, and when they sell wSOL. Token buys
+    /// pass whatever their amount.
+    #[test]
+    fn drops_native_buys_the_settlement_cannot_pay() {
+        let native = |buy_amount| Order {
+            buy_token: NATIVE_SOL,
+            buy_amount,
+            ..order([0x01; 32], true)
+        };
+        let orders = vec![
+            native(890_880),
+            native(890_879),
+            Order {
+                partially_fillable: true,
+                ..native(1_000_000_000)
+            },
+            Order {
+                sell_token: ChainPubkey(native_mint::ID.to_bytes()),
+                ..native(1_000_000_000)
+            },
+            Order {
+                buy_amount: 1,
+                ..order([0x02; 32], true)
+            },
+        ];
+        let (kept, dropped) = payable_orders(orders.clone());
+        assert_eq!(kept, [orders[0].clone(), orders[4].clone()]);
+        assert_eq!(dropped.len(), 3);
+    }
+
+    /// The gauge reads the last cut's count, zero once the reason clears.
+    #[tokio::test]
+    async fn tracks_filtered_orders_per_reason() {
+        let provider = provider(Mocks::default());
+        let gauge = || {
+            metrics()
+                .filtered_orders
+                .with_label_values(&[OrderFilterReason::InFlight.as_str()])
+                .get()
+        };
+        provider
+            .track_filtered_orders(OrderFilterReason::InFlight, vec![IntentHash([0x01; 32]); 2]);
+        assert_eq!(gauge(), 2);
+        provider.track_filtered_orders(OrderFilterReason::InFlight, Vec::new());
+        assert_eq!(gauge(), 0);
     }
 
     /// A failed lookup (here a malformed response) keeps every order.
@@ -342,7 +545,22 @@ mod tests {
             serde_json::json!("not an account list"),
         )]));
         let orders = vec![order([0x01; 32], true)];
-        assert_eq!(provider.receivable_orders(orders).await.len(), 1);
+        let (kept, dropped) = provider.receivable_orders(orders).await;
+        assert_eq!((kept.len(), dropped.len()), (1, 0));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_the_last_block_height() {
+        let mut provider = provider(Mocks::from([(
+            RpcRequest::GetBlockHeight,
+            serde_json::json!(100),
+        )]));
+        assert_eq!(provider.block_height().await, Some(100));
+        provider.rpc = SolanaRPC::new_mock_with_mocks(Mocks::from([(
+            RpcRequest::GetBlockHeight,
+            serde_json::json!("not a height"),
+        )]));
+        assert_eq!(provider.block_height().await, Some(100));
     }
 
     /// The watermark trips past the allowed lag, on a never-written indexer,
