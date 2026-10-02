@@ -18,7 +18,7 @@ pub struct JitOrder {
     pub partially_fillable: bool,
     pub valid_to: u32,
     pub app_data: AppDataHash,
-    pub receiver: Address,
+    pub receiver: eth_domain_types::Receiver,
 }
 
 impl JitOrder {
@@ -26,7 +26,7 @@ impl JitOrder {
         OrderData {
             sell_token: self.sell.token,
             buy_token: self.buy.token,
-            receiver: eth_domain_types::Receiver::new(self.receiver),
+            receiver: self.receiver,
             sell_amount: self.sell.amount,
             buy_amount: self.buy.amount,
             valid_to: self.valid_to,

@@ -871,7 +871,7 @@ fn encode_jit_orders(
             let order_data = OrderData {
                 sell_token: jit_order.sell_token,
                 buy_token: jit_order.buy_token,
-                receiver: Receiver::new(jit_order.receiver),
+                receiver: jit_order.receiver,
                 sell_amount: jit_order.sell_amount,
                 buy_amount: jit_order.buy_amount,
                 valid_to: jit_order.valid_to,

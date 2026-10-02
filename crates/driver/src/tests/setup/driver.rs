@@ -97,8 +97,11 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
         "quote": quote.order.quote,
     });
-    if !quote.order.receiver.is_zero() {
-        order["receiver"] = json!(quote.order.receiver.encode_hex_with_prefix());
+    if !quote.order.receiver.is_default() {
+        order["receiver"] = json!(format!(
+            "0x{}",
+            const_hex::encode(quote.order.receiver.raw_bytes())
+        ));
     }
     order
 }

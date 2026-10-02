@@ -160,7 +160,7 @@ pub struct Jit {
     pub sell: eth::Asset,
     pub buy: eth::Asset,
     pub side: order::Side,
-    pub receiver: eth::Address,
+    pub receiver: eth::Receiver,
     pub valid_to: u32,
     pub app_data: order::AppDataHash,
     pub fee_amount: eth::TokenAmount,

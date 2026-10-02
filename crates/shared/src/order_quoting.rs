@@ -2103,7 +2103,7 @@ mod tests {
                 sell_amount: U256::from(10),
                 buy_amount: U256::from(20),
                 executed_amount: U256::from(11),
-                receiver: Address::repeat_byte(6),
+                receiver: Address::repeat_byte(6).into(),
                 valid_to: 1734084318,
                 app_data: Default::default(),
                 side: dto::Side::Sell,

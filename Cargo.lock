@@ -10563,6 +10563,7 @@ dependencies = [
  "const-hex",
  "contracts",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "futures",
  "glob",
