@@ -53,6 +53,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
+serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 shared = { workspace = true }

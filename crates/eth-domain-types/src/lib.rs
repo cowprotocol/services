@@ -6,6 +6,7 @@ pub use {
     ether::Ether,
     gas::{EffectiveGasPrice, FeePerGas, Gas, GasPrice},
     number::nonzero::NonZeroU256,
+    receiver::Receiver,
     token_amount::{SellTokenAmount, SurplusTokenAmount, TokenAmount},
 };
 use {
@@ -19,6 +20,7 @@ pub mod allowance;
 mod eip712;
 mod ether;
 mod gas;
+mod receiver;
 mod token_amount;
 
 /// ERC20 token address for ETH. In reality, ETH is not an ERC20 token because

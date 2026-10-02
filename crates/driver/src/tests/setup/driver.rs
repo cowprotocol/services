@@ -97,8 +97,11 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
         "quote": quote.order.quote,
     });
-    if let Some(receiver) = quote.order.receiver {
-        order["receiver"] = json!((receiver.encode_hex_with_prefix()));
+    if !quote.order.receiver.is_default() {
+        order["receiver"] = json!(format!(
+            "0x{}",
+            const_hex::encode(quote.order.receiver.raw_bytes())
+        ));
     }
     order
 }
@@ -258,6 +261,7 @@ async fn create_config_file(
            balances = "{}"
            signatures = "{}"
            flashloan-router = "{}"
+           deadline-check = "{}"
 
            [submission]
            gas-price-cap = "1000000000000"
@@ -267,6 +271,7 @@ async fn create_config_file(
         blockchain.balances.address(),
         blockchain.signatures.address(),
         blockchain.flashloan_router.address(),
+        blockchain.deadline_check.address(),
     )
     .unwrap();
 

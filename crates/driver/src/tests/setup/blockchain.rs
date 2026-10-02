@@ -20,7 +20,7 @@ use {
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
-        support::{Balances, Signatures},
+        support::{Balances, DeadlineCheck, Signatures},
     },
     eth_domain_types as eth,
     ethrpc::{
@@ -54,6 +54,7 @@ pub struct Blockchain {
     pub balances: Balances::Instance,
     pub signatures: Signatures::Instance,
     pub flashloan_router: FlashLoanRouter::Instance,
+    pub deadline_check: DeadlineCheck::Instance,
     pub domain_separator: boundary::DomainSeparator,
     #[allow(
         dead_code,
@@ -401,6 +402,14 @@ impl Blockchain {
         let flashloan_router =
             FlashLoanRouter::Instance::new(flashloan_router_address, web3.provider.clone());
 
+        let deadline_check_address = DeadlineCheck::Instance::deploy_builder(web3.provider.clone())
+            .from(main_trader_address)
+            .deploy()
+            .await
+            .unwrap();
+        let deadline_check =
+            DeadlineCheck::Instance::new(deadline_check_address, web3.provider.clone());
+
         let mut trader_addresses: Vec<Address> = Vec::new();
         for config in config.solvers {
             authenticator
@@ -651,6 +660,7 @@ impl Blockchain {
             node,
             pairs,
             flashloan_router,
+            deadline_check,
         }
     }
 
