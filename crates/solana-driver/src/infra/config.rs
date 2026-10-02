@@ -10,12 +10,7 @@ use {
         deserialize_url_with_trailing_slash,
     },
     solana_sdk::pubkey::Pubkey,
-    std::{
-        net::SocketAddr,
-        num::NonZero,
-        path::{Path, PathBuf},
-        time::Duration,
-    },
+    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -120,7 +115,7 @@ pub struct Solver {
     pub endpoint: url::Url,
     /// The solver's settlement signer. The driver's on-chain identity for
     /// this solver derives from it.
-    pub signer: SettlementSigner,
+    pub signer: cow_solana_signer::Config,
     /// Temporary staging knob: solve only auctions whose id is a multiple of
     /// this value and sit the rest out, so other solvers win settlements to
     /// test against. Absent means every auction.
@@ -133,18 +128,6 @@ pub struct Solver {
     /// accordingly. Absent means no fee.
     #[serde(default)]
     pub solver_fee_bps: Option<SolverFee>,
-}
-
-/// A settlement signer backend. A config names exactly one.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SettlementSigner {
-    /// Path to a keypair file.
-    /// TODO: plaintext keypair paths are temporary, prefer `kms-key`.
-    Keypair(PathBuf),
-    /// Id, alias, or ARN of an AWS KMS Ed25519 key. The private key never
-    /// reaches the driver.
-    KmsKey(String),
 }
 
 #[cfg(test)]
@@ -164,7 +147,7 @@ mod tests {
         assert_eq!(config.solvers[0].name, "baseline");
         assert!(matches!(
             &config.solvers[0].signer,
-            SettlementSigner::Keypair(path) if path == Path::new("/path/to/keypair.json")
+            cow_solana_signer::Config::Keypair(path) if path == Path::new("/path/to/keypair.json")
         ));
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
@@ -182,33 +165,8 @@ mod tests {
         assert_eq!(solver.name, "baseline");
         assert!(matches!(
             &solver.signer,
-            SettlementSigner::Keypair(path) if path == Path::new("/path/to/keypair.json")
+            cow_solana_signer::Config::Keypair(path) if path == Path::new("/path/to/keypair.json")
         ));
-    }
-
-    #[test]
-    fn solver_config_parses_a_kms_signer() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { kms-key = "arn:aws:kms:eu-central-1:1:key/2" }
-        "#;
-        let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert!(matches!(
-            &solver.signer,
-            SettlementSigner::KmsKey(key) if key == "arn:aws:kms:eu-central-1:1:key/2"
-        ));
-    }
-
-    /// Naming both backends in one signer map is a parse error.
-    #[test]
-    fn solver_config_rejects_two_signer_backends() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { keypair = "/path/to/keypair.json", kms-key = "arn" }
-        "#;
-        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
     }
 
     #[test]

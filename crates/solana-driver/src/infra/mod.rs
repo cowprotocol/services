@@ -5,7 +5,6 @@ pub mod api;
 pub mod blockchain;
 pub mod config;
 pub mod observe;
-pub mod signer;
 pub mod solver;
 
 pub use self::api::Api;
