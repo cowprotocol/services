@@ -134,9 +134,10 @@ pub struct Sponsoring {
     pub max_priority_fee_lamports: u64,
 }
 
-/// A sponsored creation pays around 100 lamports of priority fee today.
+/// Wallets choose the priority fee, and common ones ask up to 100,000
+/// lamports for a creation.
 fn default_max_priority_fee_lamports() -> u64 {
-    100_000
+    1_000_000
 }
 
 fn default_settlement_program_id() -> Pubkey {

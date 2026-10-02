@@ -81,6 +81,7 @@ enum PlacementError {
 
 impl From<PlacementError> for error::Reply {
     fn from(error: PlacementError) -> Self {
+        tracing::debug!(err = ?error, "error creating order");
         let (error_type, description) = match error {
             PlacementError::SponsoringDisabled => (
                 "SponsoringDisabled",
@@ -258,6 +259,12 @@ fn validate(
     // out of its balance.
     let priority_fee = compute_budget.max_priority_fee_lamports();
     if priority_fee > u128::from(sponsoring.max_priority_fee_lamports) {
+        tracing::debug!(
+            price = ?compute_budget.price,
+            limit = ?compute_budget.limit,
+            %priority_fee,
+            "priority fee above the sponsored ceiling"
+        );
         return Err(PlacementError::InvalidTransaction(
             "the priority fee is above the sponsored ceiling",
         ));
