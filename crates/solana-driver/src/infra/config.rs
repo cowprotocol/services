@@ -1,7 +1,7 @@
 //! Configuration of infrastructural components.
 
 use {
-    crate::domain::solver_fee::SolverFee,
+    crate::domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
     configs::shared::LoggingConfig,
     serde::Deserialize,
     serde_ext::{
@@ -29,7 +29,7 @@ pub async fn load(path: &Path) -> Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
-    toml::de::from_str(&data).unwrap_or_else(|err| {
+    let config: Config = toml::de::from_str(&data).unwrap_or_else(|err| {
         if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
             panic!("failed to parse TOML config at {path:?}: {err:#?}")
         } else {
@@ -38,7 +38,13 @@ pub async fn load(path: &Path) -> Config {
                  parsing error but this may leak secrets."
             )
         }
-    })
+    });
+    // `clamp` panics on an inverted band.
+    assert!(
+        config.priority_fee.min_compute_unit_price <= config.priority_fee.max_compute_unit_price,
+        "priority-fee: min-compute-unit-price is above max-compute-unit-price"
+    );
+    config
 }
 
 /// Configuration of infrastructural components.
@@ -49,6 +55,8 @@ pub struct Config {
     pub chain: Chain,
     /// RPC client configuration.
     pub rpc: Rpc,
+    /// The priority fee policy for transactions.
+    pub priority_fee: PriorityFeePolicy,
     /// HTTP API server configuration.
     pub http: Http,
     /// Logging configuration.
@@ -161,6 +169,9 @@ mod tests {
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
         assert!(!config.logging.use_json);
+        assert_eq!(config.priority_fee.min_compute_unit_price, 1_000);
+        assert_eq!(config.priority_fee.max_compute_unit_price, 1_000_000);
+        assert_eq!(config.priority_fee.max_priority_fee_lamports, 1_000_000);
     }
 
     #[test]
