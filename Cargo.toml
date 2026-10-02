@@ -30,7 +30,7 @@ alloy-transport-ws = { version = "2.4.1", default-features = false }
 anyhow = "1.0.100"
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
-async-nats = "0.48.0"
+async-nats = { version = "0.48.0", default-features = false, features = ["aws-lc-rs", "jetstream"] }
 async-stream = "0.3.5"
 async-trait = "0.1.80"
 autopilot = { path = "crates/autopilot" }
