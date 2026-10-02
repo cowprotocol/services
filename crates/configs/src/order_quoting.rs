@@ -54,6 +54,9 @@ pub struct OrderQuoting {
 
     /// The time period a fast-path quote is valid. Kept short to
     /// limit the free option a quote grants between pricing and settlement.
+    /// Otherwise people can get a quote solvers would be held accountable for,
+    /// wait until the price moves in their favor, and finally place the order
+    /// forcing the solver to execute at the advantageous price.
     #[serde(with = "humantime_serde", default = "default_fast_path_quote_validity")]
     pub fast_path_quote_validity: Duration,
 
