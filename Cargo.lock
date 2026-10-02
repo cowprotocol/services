@@ -4550,6 +4550,7 @@ dependencies = [
  "num",
  "number",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

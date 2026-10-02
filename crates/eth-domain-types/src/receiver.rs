@@ -36,8 +36,10 @@ impl Receiver {
         if self.is_default() { owner } else { self.0 }
     }
 
-    /// Raw 20 bytes for signature hashing. Deliberately not an `Address` —
-    /// use [`Receiver::resolve`] when you want the effective payout address.
+    /// Raw 20 bytes the user actually signed - use this when persisting the
+    /// receiver somewhere, computing the order hash or encoding calldata.
+    /// Deliberately not an `Address` — use [`Receiver::resolve`] when you
+    /// want the effective payout address.
     pub fn raw_bytes(&self) -> &[u8; 20] {
         &self.0.0
     }
@@ -62,9 +64,9 @@ impl From<Address> for Receiver {
 }
 
 impl<'de> Deserialize<'de> for Receiver {
-    /// Accepts an address string, a missing field (combined with
-    /// `#[serde(default)]`), or an explicit `null`. All three forms that
-    /// mean "no custom receiver" deserialize to [`Receiver::OWNER`].
+    /// Accepts an address string, a missing field  or an explicit `null`.
+    /// All three forms that mean "no custom receiver" deserialize to
+    /// [`Receiver::OWNER`].
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -72,5 +74,71 @@ impl<'de> Deserialize<'de> for Receiver {
         Ok(Self(
             Option::<Address>::deserialize(deserializer)?.unwrap_or(Address::ZERO),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, serde::Deserialize, serde_json::json};
+
+    /// Container without `#[serde(default)]` on `receiver`.
+    #[derive(Debug, Deserialize)]
+    struct Strict {
+        receiver: Receiver,
+    }
+
+    /// Same shape with `#[serde(default)]`: a missing field falls back to
+    /// `Receiver::default()` (= `Receiver::OWNER`) without even calling the
+    /// custom deserializer.
+    #[derive(Debug, Deserialize)]
+    struct Defaulting {
+        #[serde(default)]
+        receiver: Receiver,
+    }
+
+    #[test]
+    fn explicit_address_parses() {
+        let v = json!({ "receiver": "0x3333333333333333333333333333333333333333" });
+        let strict: Strict = serde_json::from_value(v.clone()).unwrap();
+        let defaulting: Defaulting = serde_json::from_value(v).unwrap();
+        assert_eq!(strict.receiver, Receiver::new(Address::repeat_byte(0x33)));
+        assert_eq!(
+            defaulting.receiver,
+            Receiver::new(Address::repeat_byte(0x33))
+        );
+    }
+
+    #[test]
+    fn explicit_null_parses_as_owner() {
+        let v = json!({ "receiver": null });
+        let strict: Strict = serde_json::from_value(v.clone()).unwrap();
+        let defaulting: Defaulting = serde_json::from_value(v).unwrap();
+        assert_eq!(strict.receiver, Receiver::OWNER);
+        assert_eq!(defaulting.receiver, Receiver::OWNER);
+    }
+
+    /// A missing field is tolerated **without** `#[serde(default)]` only
+    /// because `Receiver::deserialize` internally calls
+    /// `Option::<Address>::deserialize`, and serde-json routes a missing
+    /// key through `deserialize_option`, which `Option` happily accepts as
+    /// `None`. Other data formats (CBOR, bincode, …) raise "missing field"
+    /// instead — so DTOs that need to be format-agnostic (and anything we
+    /// expose over HTTP via JSON) should still annotate the field with
+    /// `#[serde(default)]`.
+    #[test]
+    fn missing_field_is_tolerated_by_serde_json() {
+        // Via `from_value` (works because serde-json routes missing keys
+        // through `Option`).
+        let strict: Strict = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(strict.receiver, Receiver::OWNER);
+
+        // Same via `from_str` for completeness.
+        let strict: Strict = serde_json::from_str("{}").unwrap();
+        assert_eq!(strict.receiver, Receiver::OWNER);
+
+        // `#[serde(default)]` is the belt-and-braces option; it works
+        // regardless of what the data format does with missing keys.
+        let defaulting: Defaulting = serde_json::from_str("{}").unwrap();
+        assert_eq!(defaulting.receiver, Receiver::OWNER);
     }
 }
