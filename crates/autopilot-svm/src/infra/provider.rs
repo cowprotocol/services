@@ -113,6 +113,31 @@ impl DbAuctionProvider {
         (orders, dropped)
     }
 
+    /// Record each pending sponsored order the cut drops for a dead creation,
+    /// once: an `invalid` event and an info line, the same record a creation
+    /// found dead at countersign gets. A failed read or write leaves the
+    /// orders to the next cut.
+    async fn record_dead_creations(&self, now: i64, block_height: i64) {
+        let recorded = async {
+            let uids: Vec<IntentHash> =
+                db::unrecorded_dead_creations(&self.pool, now, block_height)
+                    .await?
+                    .into_iter()
+                    .map(|uid| IntentHash(uid.0))
+                    .collect();
+            order_events::store(&self.pool, uids.iter().copied(), OrderEventLabel::Invalid).await?;
+            anyhow::Ok(uids)
+        };
+        match recorded.await {
+            Ok(uids) => {
+                for order_uid in uids {
+                    tracing::info!(%order_uid, "sponsored creation expired, dropping the order");
+                }
+            }
+            Err(err) => tracing::warn!(?err, "failed to record dead sponsored creations"),
+        }
+    }
+
     /// Record the orders a cut leaves out for `reason`: the per-reason gauge,
     /// a debug line with their uids and a `filtered` order event. An order
     /// repeats this on every cut while the reason holds, so the line stays at
@@ -174,10 +199,14 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
         // cut drops the dead ones.
-        let orders = db::cut(&self.pool, now, self.block_height().await)
+        let block_height = self.block_height().await;
+        let orders = db::cut(&self.pool, now, block_height)
             .await
             .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
             .ok()?;
+        if let Some(height) = block_height {
+            self.record_dead_creations(now, height).await;
+        }
         // An order with a settlement in flight stays out until the
         // settlement cannot land any more: a second winner could
         // double-settle it. A failed read skips the cut rather than cutting
