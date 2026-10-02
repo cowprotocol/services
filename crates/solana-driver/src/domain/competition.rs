@@ -38,6 +38,11 @@ const SLOT_DURATION_MS: u64 = 400;
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.
 const MAX_TRANSACTION_BYTES: u64 = 1232;
+/// The runtime's per-transaction account lock limit, counting static keys and
+/// lookup-table loaded addresses. The SDK's `MAX_TX_ACCOUNT_LOCKS` (128)
+/// applies only under the `increase_tx_account_lock_limit` feature, inactive
+/// on mainnet.
+const MAX_TRANSACTION_ACCOUNTS: usize = 64;
 
 /// Cache key for a proposed solution.
 ///
@@ -126,26 +131,26 @@ impl Competition {
     }
 
     /// Drop the solutions whose settlement transaction is over the network's
-    /// byte limit: they would win the auction and then fail to settle. A
-    /// solution whose transaction cannot be built here stays, and `settle`
-    /// reports its failure.
+    /// byte or account lock limit: they would win the auction and then fail
+    /// to settle. A solution whose transaction cannot be built here stays, and
+    /// `settle` reports its failure.
     async fn fitting_solutions(
         &self,
         auction_id: Id,
         auction: &Auction,
         solutions: Vec<Solution>,
     ) -> Vec<Solution> {
-        let sizes = futures::future::join_all(
+        let footprints = futures::future::join_all(
             solutions
                 .iter()
-                .map(|solution| self.transaction_size(auction_id, auction, solution)),
+                .map(|solution| self.transaction_footprint(auction_id, auction, solution)),
         )
         .await;
         solutions
             .into_iter()
-            .zip(sizes)
-            .filter_map(|(solution, size)| match size {
-                Some(size) if size > MAX_TRANSACTION_BYTES => {
+            .zip(footprints)
+            .filter_map(|(solution, footprint)| match footprint {
+                Some((size, _)) if size > MAX_TRANSACTION_BYTES => {
                     tracing::warn!(
                         solver = %self.solver.name(),
                         solution_id = solution.id,
@@ -154,19 +159,30 @@ impl Competition {
                     );
                     None
                 }
+                Some((_, accounts)) if accounts > MAX_TRANSACTION_ACCOUNTS => {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        accounts,
+                        "dropping solution whose settlement transaction is over the account lock \
+                         limit"
+                    );
+                    None
+                }
                 _ => Some(solution),
             })
             .collect()
     }
 
-    /// The wire size of the solution's settlement transaction, `None` when
-    /// it cannot be built. The blockhash does not change the size.
-    async fn transaction_size(
+    /// The wire size and account count of the solution's settlement
+    /// transaction, `None` when it cannot be built. The blockhash changes
+    /// neither.
+    async fn transaction_footprint(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Option<u64> {
+    ) -> Option<(u64, usize)> {
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let settlement = super::Settlement::new(
             self.blockchain.program_id(),
@@ -182,7 +198,7 @@ impl Competition {
         let transaction = resolved
             .encode(self.solver.keypair(), Hash::default())
             .ok()?;
-        encoded_size(&transaction)
+        Some((encoded_size(&transaction)?, account_count(&transaction)))
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -784,5 +800,30 @@ mod tests {
             settlement_error(ours, &transaction, &TransactionError::BlockhashNotFound),
             None
         );
+    }
+
+    /// Addresses loaded from lookup tables count toward the account lock
+    /// limit like static keys.
+    #[test]
+    fn counts_lookup_table_accounts() {
+        let lookup = |writable_indexes, readonly_indexes| {
+            solana_sdk::message::v0::MessageAddressTableLookup {
+                account_key: Pubkey::new_unique(),
+                writable_indexes,
+                readonly_indexes,
+            }
+        };
+        let transaction = VersionedTransaction {
+            signatures: vec![],
+            message: solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+                account_keys: vec![Pubkey::new_unique(); 3],
+                address_table_lookups: vec![
+                    lookup(vec![0, 1], vec![2, 3, 4]),
+                    lookup(vec![], vec![0]),
+                ],
+                ..Default::default()
+            }),
+        };
+        assert_eq!(account_count(&transaction), 9);
     }
 }
