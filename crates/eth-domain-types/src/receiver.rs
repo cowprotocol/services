@@ -44,7 +44,7 @@ impl Receiver {
 
     /// Whether this is the zero-address sentinel (= "pay the owner").
     pub fn is_default(self) -> bool {
-        self.0.is_zero()
+        self == Self::OWNER
     }
 
     /// The address the user explicitly specified as a custom receiver, or
