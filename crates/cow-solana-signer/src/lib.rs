@@ -1,6 +1,7 @@
-//! Settlement signers: a local keypair or an AWS KMS Ed25519 key.
+//! Solana signers: a local keypair or an AWS KMS Ed25519 key.
 
 use {
+    serde::Deserialize,
     solana_sdk::{
         message::{VersionedMessage, v0},
         pubkey::Pubkey,
@@ -8,10 +9,38 @@ use {
         signer::{Signer as _, keypair::Keypair},
         transaction::VersionedTransaction,
     },
+    std::path::PathBuf,
     thiserror::Error,
 };
 
-/// Signs settlement transactions for one solver.
+/// A signer backend named in a config. A config names exactly one.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Config {
+    /// Path to a keypair file.
+    /// TODO: plaintext keypair paths are temporary, prefer `kms-key`.
+    Keypair(PathBuf),
+    /// Id, alias, or ARN of an AWS KMS Ed25519 key. The private key never
+    /// leaves KMS.
+    KmsKey(String),
+}
+
+impl Config {
+    /// Load the signer the config names.
+    pub async fn load(&self) -> Result<Signer, Error> {
+        match self {
+            Self::Keypair(path) => solana_sdk::signer::keypair::read_keypair_file(path)
+                .map(Signer::Keypair)
+                .map_err(|error| Error::Keypair {
+                    path: path.clone(),
+                    error: error.to_string(),
+                }),
+            Self::KmsKey(key_id) => KmsSigner::new(key_id.clone()).await.map(Signer::Kms),
+        }
+    }
+}
+
+/// Signs with one key.
 #[derive(Debug)]
 pub enum Signer {
     Keypair(Keypair),
@@ -27,10 +56,23 @@ impl Signer {
         }
     }
 
-    /// Sign the message into a submittable transaction. The solver's key is
+    /// Sign a serialized message. The signature is verified locally, so a
+    /// misconfigured signer fails here instead of at broadcast.
+    pub async fn sign_message(&self, message: &[u8]) -> Result<Signature, Error> {
+        let signature = match self {
+            Self::Keypair(keypair) => keypair.sign_message(message),
+            Self::Kms(kms) => kms.sign(message).await?,
+        };
+        let pubkey = self.pubkey();
+        if !signature.verify(pubkey.as_ref(), message) {
+            return Err(Error::InvalidSignature { pubkey });
+        }
+        Ok(signature)
+    }
+
+    /// Sign the message into a submittable transaction. The signer's key is
     /// the only one available, so the message must name it as its sole
-    /// signer. The signature is verified locally, so a misconfigured signer
-    /// fails here instead of at broadcast.
+    /// signer.
     pub async fn sign(&self, message: v0::Message) -> Result<VersionedTransaction, Error> {
         let message = VersionedMessage::V0(message);
         let pubkey = self.pubkey();
@@ -41,14 +83,7 @@ impl Signer {
         if message.static_account_keys().first() != Some(&pubkey) {
             return Err(Error::NotASigner { pubkey });
         }
-        let bytes = message.serialize();
-        let signature = match self {
-            Self::Keypair(keypair) => keypair.sign_message(&bytes),
-            Self::Kms(kms) => kms.sign(&bytes).await?,
-        };
-        if !signature.verify(pubkey.as_ref(), &bytes) {
-            return Err(Error::InvalidSignature { pubkey });
-        }
+        let signature = self.sign_message(&message.serialize()).await?;
         Ok(VersionedTransaction {
             signatures: vec![signature],
             message,
@@ -131,6 +166,8 @@ fn ed25519_spki_pubkey(der: &[u8]) -> Option<Pubkey> {
 
 #[derive(Debug, PartialEq, Error)]
 pub enum Error {
+    #[error("failed to read the keypair at {}: {error}", path.display())]
+    Keypair { path: PathBuf, error: String },
     #[error("KMS request for key {key_id} failed: {error}")]
     Kms { key_id: String, error: String },
     #[error("KMS key {key_id} is not an Ed25519 signing key")]
@@ -139,18 +176,51 @@ pub enum Error {
     InvalidSignature { pubkey: Pubkey },
     #[error("{pubkey} is not the message's signer")]
     NotASigner { pubkey: Pubkey },
-    #[error("the message requires {required} signers, only the solver's own is available")]
+    #[error("the message requires {required} signers, the signer provides one")]
     MissingSignatures { required: usize },
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, solana_sdk::hash::Hash};
+    use {super::*, solana_sdk::hash::Hash, solana_testlib::temp_keypair, std::path::Path};
 
     fn message(payer: &Pubkey) -> v0::Message {
         let instruction =
             solana_system_interface::instruction::transfer(payer, &Pubkey::new_unique(), 1);
         v0::Message::try_compile(payer, &[instruction], &[], Hash::new_unique()).unwrap()
+    }
+
+    /// Each backend parses from its own key. Naming both is a parse error.
+    #[test]
+    fn parses_one_backend() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            signer: Config,
+        }
+        let parse = |toml: &str| toml::from_str::<Wrapper>(toml).map(|wrapper| wrapper.signer);
+        assert!(matches!(
+            parse(r#"signer = { keypair = "/path/to/keypair.json" }"#),
+            Ok(Config::Keypair(path)) if path == Path::new("/path/to/keypair.json")
+        ));
+        assert!(matches!(
+            parse(r#"signer = { kms-key = "arn:aws:kms:eu-central-1:1:key/2" }"#),
+            Ok(Config::KmsKey(key)) if key == "arn:aws:kms:eu-central-1:1:key/2"
+        ));
+        parse(r#"signer = { keypair = "/path/to/keypair.json", kms-key = "arn" }"#).unwrap_err();
+    }
+
+    /// The keypair backend loads from its file. A missing file names the
+    /// path.
+    #[tokio::test]
+    async fn loads_a_keypair_file() {
+        let file = temp_keypair();
+        let signer = Config::Keypair(file.path().to_path_buf()).load().await;
+        assert!(matches!(signer, Ok(Signer::Keypair(_))));
+        let missing = PathBuf::from("/nonexistent/keypair.json");
+        assert!(matches!(
+            Config::Keypair(missing.clone()).load().await,
+            Err(Error::Keypair { path, .. }) if path == missing
+        ));
     }
 
     /// The keypair backend assembles a transaction whose signature verifies

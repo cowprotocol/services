@@ -1508,6 +1508,7 @@ dependencies = [
  "configs",
  "const-hex",
  "cow-solana-rpc",
+ "cow-solana-signer",
  "database",
  "futures",
  "humantime-serde",
@@ -3793,6 +3794,21 @@ dependencies = [
  "solana-transaction-status-client-types",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "cow-solana-signer"
+version = "0.1.0"
+dependencies = [
+ "aws-config",
+ "aws-sdk-kms",
+ "serde",
+ "solana-sdk",
+ "solana-system-interface 3.2.0",
+ "solana-testlib",
+ "thiserror 1.0.69",
+ "tokio",
+ "toml",
 ]
 
 [[package]]
@@ -9225,8 +9241,6 @@ dependencies = [
 name = "solana-driver"
 version = "0.1.0"
 dependencies = [
- "aws-config",
- "aws-sdk-kms",
  "axum",
  "bincode",
  "chrono",
@@ -9236,6 +9250,7 @@ dependencies = [
  "cow-settlement-client",
  "cow-settlement-interface",
  "cow-solana-rpc",
+ "cow-solana-signer",
  "futures",
  "humantime-serde",
  "itertools 0.14.0",
