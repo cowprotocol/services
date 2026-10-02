@@ -102,10 +102,7 @@ impl Contracts {
                 .deadline_check
                 .map(Into::into)
                 .or_else(|| contracts::support::DeadlineCheck::deployment_address(&chain.id()))
-                .expect(
-                    "DeadlineCheck contract has no known deployment on this chain and no \
-                     [contracts.deadline-check] override was configured",
-                ),
+                .unwrap(),
             web3.provider.clone(),
         );
 
