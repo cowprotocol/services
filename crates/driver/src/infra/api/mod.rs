@@ -81,6 +81,10 @@ impl Api {
             self.solvers.iter().map(|solver| solver.address()),
         );
 
+        // Shared native-price cache, populated from every solve and read back
+        // when re-encoding fast-path solutions to bound absolute slippage.
+        let native_price_cache = domain::competition::NativePriceCache::new();
+
         // Add the metrics, healthz, and gasprice endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);
@@ -136,6 +140,7 @@ impl Api {
                     fetcher.clone(),
                     order_sorting_strategies.clone(),
                     quote_cache.clone(),
+                    native_price_cache.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
