@@ -5,6 +5,7 @@ use {
             self,
             competition::{
                 self,
+                auction,
                 order::{self, Partial},
             },
             liquidity,
@@ -23,8 +24,6 @@ use {
 pub enum Error {
     #[error("invalid interaction: {0:?}")]
     InvalidInteractionExecution(Box<competition::solution::interaction::Liquidity>),
-    #[error("missing auction id")]
-    MissingAuctionId,
     #[error("invalid clearing price: {0:?}")]
     InvalidClearingPrice(eth::TokenAddress),
     #[error(transparent)]
@@ -36,19 +35,27 @@ pub enum Error {
     FlashloanWrappersIncompatible,
 }
 
+#[expect(clippy::too_many_arguments)]
 pub fn tx(
-    auction: &competition::Auction,
+    auction_id: auction::Id,
+    native_prices: &auction::Prices,
     solution: &super::Solution,
     contracts: &infra::blockchain::Contracts,
     approvals: impl Iterator<Item = eth::allowance::Approval>,
     internalization: settlement::Internalization,
     solver_native_token: ManageNativeToken,
+    deadline_to_enforce: Option<eth::BlockNo>,
 ) -> Result<eth::Tx, Error> {
     let mut tokens = Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut clearing_prices =
         Vec::with_capacity(solution.prices.len() + (solution.trades().len() * 2));
     let mut trades: Vec<Trade> = Vec::with_capacity(solution.trades().len());
-    let mut pre_interactions = solution.pre_interactions.clone();
+    let mut pre_interactions = deadline_to_enforce
+        .map(|deadline| deadline_check_interaction(contracts.deadline_check(), deadline))
+        .into_iter()
+        .chain(solution.pre_interactions.iter().cloned())
+        .collect::<Vec<_>>();
+
     let mut interactions =
         Vec::with_capacity(approvals.size_hint().0 + solution.interactions().len());
     let mut post_interactions = solution.post_interactions.clone();
@@ -179,7 +186,7 @@ pub fn tx(
         max: solution.solver().slippage().absolute.map(Ether::into),
         // TODO configure min slippage
         min: None,
-        prices: auction.native_prices().clone(),
+        prices: native_prices.clone(),
     };
 
     for interaction in solution.interactions() {
@@ -223,12 +230,7 @@ pub fn tx(
         .to_vec();
 
     // Append auction ID to settlement calldata
-    settle_calldata.extend(
-        auction
-            .auction_id()
-            .ok_or(Error::MissingAuctionId)?
-            .to_be_bytes(),
-    );
+    settle_calldata.extend(auction_id.to_be_bytes());
     let has_flashloans = !solution.flashloans.is_empty();
     let has_wrappers = !solution.wrappers.is_empty();
 
@@ -339,6 +341,27 @@ fn unwrap(amount: eth::TokenAmount, weth: &WETH9::Instance) -> domain::Interacti
         target: *weth.address(),
         value: Ether::zero(),
         call_data: weth.withdraw(amount.0).calldata().to_vec().into(),
+    }
+}
+
+/// Builds a direct call to `DeadlineCheck.checkDeadline(deadline)`. The
+/// call must be added as the first pre-interaction of the settlement so
+/// that it reverts the whole batch when included past the deadline.
+///
+/// This intentionally does **not** go through `HooksTrampoline` — the
+/// trampoline swallows reverts of user hooks, but we need the settlement
+/// itself to revert.
+fn deadline_check_interaction(
+    contract: &contracts::support::DeadlineCheck::Instance,
+    deadline: eth::BlockNo,
+) -> domain::Interaction {
+    domain::Interaction {
+        target: *contract.address(),
+        value: Ether::zero(),
+        call_data: contract
+            .checkDeadline(U256::from(deadline.0))
+            .calldata()
+            .clone(),
     }
 }
 

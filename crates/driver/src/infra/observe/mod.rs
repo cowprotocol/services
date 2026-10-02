@@ -13,7 +13,7 @@ use {
                 self,
                 Solution,
                 Solved,
-                solution::{self, Settlement},
+                solution::{self, Settlement, settlement::EncodedSettlement},
             },
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
@@ -363,7 +363,7 @@ pub fn solver_response(
 /// once the race outcome is known.
 pub fn mempool_log(
     mempool: &Mempool,
-    settlement: &Settlement,
+    settlement: &EncodedSettlement,
     result: &Result<SubmissionSuccess, mempools::Error>,
 ) {
     match result {
@@ -429,6 +429,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::FastPathLimitNotMet => "FastPathLimitNotMet",
         competition::Error::FastPathInvalidOrder(_) => "FastPathInvalidOrder",
         competition::Error::FastPathSettlement(_) => "FastPathSettlement",
+        competition::Error::EncodingFailed(_) => "EncodingFailed",
     }
 }
 

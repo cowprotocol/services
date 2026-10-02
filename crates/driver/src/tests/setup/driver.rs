@@ -261,6 +261,7 @@ async fn create_config_file(
            balances = "{}"
            signatures = "{}"
            flashloan-router = "{}"
+           deadline-check = "{}"
 
            [submission]
            gas-price-cap = "1000000000000"
@@ -270,6 +271,7 @@ async fn create_config_file(
         blockchain.balances.address(),
         blockchain.signatures.address(),
         blockchain.flashloan_router.address(),
+        blockchain.deadline_check.address(),
     )
     .unwrap();
 
