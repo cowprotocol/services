@@ -130,20 +130,20 @@ impl From<PlacementError> for error::Reply {
 }
 
 /// Why a placement failed: a refusal the client can act on, or an internal
-/// error with what the orderbook was doing.
+/// error with the step that failed.
 enum Failure {
     Refused(PlacementError),
     Internal {
         err: Box<dyn std::fmt::Debug + Send>,
-        what: &'static str,
+        step: &'static str,
     },
 }
 
 impl Failure {
-    fn internal(err: impl std::fmt::Debug + Send + 'static, what: &'static str) -> Self {
+    fn internal(err: impl std::fmt::Debug + Send + 'static, step: &'static str) -> Self {
         Self::Internal {
             err: Box::new(err),
-            what,
+            step,
         }
     }
 }
@@ -174,7 +174,7 @@ pub async fn create_order(
     place(state, params).await.map_err(|failure| {
         match &failure {
             Failure::Refused(error) => tracing::debug!(err = ?error, "error creating order"),
-            Failure::Internal { err, what } => tracing::error!(?err, "{what}"),
+            Failure::Internal { err, step } => tracing::error!(?err, step, "error creating order"),
         }
         failure.into()
     })
@@ -203,7 +203,7 @@ async fn place(
             .rpc
             .multiple_accounts([wallet])
             .await
-            .map_err(|err| Failure::internal(err, "native buy wallet lookup failed"))?;
+            .map_err(|err| Failure::internal(err, "native buy wallet lookup"))?;
         if accounts
             .get(&wallet)
             .is_some_and(|account| account.owner != solana_system_interface::program::ID)
@@ -223,7 +223,7 @@ async fn place(
         .rpc
         .is_blockhash_valid(blockhash)
         .await
-        .map_err(|err| Failure::internal(err, "blockhash validity check failed"))?;
+        .map_err(|err| Failure::internal(err, "blockhash validity check"))?;
     if !valid {
         return Err(PlacementError::BlockhashExpired.into());
     }
@@ -231,7 +231,7 @@ async fn place(
         .rpc
         .block_height()
         .await
-        .map_err(|err| Failure::internal(err, "block height fetch failed"))?;
+        .map_err(|err| Failure::internal(err, "block height fetch"))?;
     order.last_valid_block_height = u64::from(height) + MAX_PROCESSING_AGE as u64;
 
     // Short-circuit replays with a cheap read before the insert. A replayed
@@ -239,7 +239,7 @@ async fn place(
     // insert's unique violation stays as the race-safe backstop.
     let duplicate = db::order_exists(state.pool(), &order.uid.0)
         .await
-        .map_err(|err| Failure::internal(err, "order existence check failed"))?;
+        .map_err(|err| Failure::internal(err, "order existence check"))?;
     if duplicate {
         return Err(PlacementError::DuplicatedOrder.into());
     }
@@ -261,7 +261,7 @@ async fn place(
         if duplicate {
             return Err(PlacementError::DuplicatedOrder.into());
         }
-        return Err(Failure::internal(err, "sponsored order insert failed"));
+        return Err(Failure::internal(err, "sponsored order insert"));
     }
     Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid.0))))
 }
