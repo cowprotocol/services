@@ -77,7 +77,7 @@ mod tests {
         assert_eq!(body.error_type, "UnsupportedToken");
         assert_eq!(
             body.description,
-            format!("Token {bad} is unsupported: Token-2022 transfer fee extension")
+            format!("Token {bad} is unsupported: Token-2022 transfer fee")
         );
         let unknown = Pubkey::new_unique();
         let (_, body) = ensure_settleable(&verdicts, [good, unknown]).unwrap_err();
