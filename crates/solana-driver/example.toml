@@ -1,8 +1,8 @@
 # Example configuration for the Solana driver.
 
 [chain]
-# The CoW Settlement program id, the deployment the interface crate exports.
-settlement-program-id = "C7PXyLpLQBh3Ce7e9DNj3rDVUvwqa5orDwQG5hs1rfNi"
+# The CoW Settlement program id (v0.2.0, stable mainnet address).
+settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"

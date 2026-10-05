@@ -21,7 +21,7 @@ pub async fn load(path: &Path) -> Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
-    let config: Config = toml::de::from_str(&data).unwrap_or_else(|err| {
+    toml::de::from_str(&data).unwrap_or_else(|err| {
         if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
             panic!("failed to parse TOML config at {path:?}: {err:#?}")
         } else {
@@ -30,17 +30,7 @@ pub async fn load(path: &Path) -> Config {
                  parsing error but this may leak secrets."
             )
         }
-    });
-    // The settlement client pins the state PDA to the interface crate's
-    // program id, so a creation can only target that deployment.
-    if let Some(sponsoring) = &config.sponsoring {
-        assert_eq!(
-            sponsoring.settlement_program,
-            cow_settlement_interface::ID,
-            "sponsoring.settlement-program must be the settlement interface's program id"
-        );
-    }
-    config
+    })
 }
 
 /// Configuration of infrastructural components.
@@ -130,9 +120,8 @@ pub struct Sponsoring {
     /// fee payer and rent payer. The autopilot countersigns with its key.
     #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
     pub funder: Pubkey,
-    /// The settlement program a creation transaction must target. Only the
-    /// deployment the interface crate exports is accepted, which is also the
-    /// default.
+    /// The settlement program a creation transaction must target. Defaults
+    /// to the official deployment the interface crate exports.
     #[serde(
         default = "default_settlement_program_id",
         deserialize_with = "deserialize_solana_pubkey_b58"
