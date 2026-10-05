@@ -54,6 +54,8 @@ impl Order {
     /// the other leg scaled in proportion. Rounds like the driver's
     /// `Order::remaining`, the sell leg down and the buy leg up, so the cut
     /// judges an order by the legs the driver sends to solvers.
+    ///
+    /// TODO: duplicate of the driver's `Order::remaining`; unify the two.
     pub fn remaining(&self) -> Remaining {
         let (target, other) = match self.kind {
             OrderKind::Sell => (self.sell_amount, self.buy_amount),

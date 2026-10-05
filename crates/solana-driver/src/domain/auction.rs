@@ -176,6 +176,8 @@ impl Order {
     /// the other leg scaled in proportion. Rounds like the EVM driver, the
     /// sell leg down and the buy leg up, so the scaled limit is never looser
     /// than the signed one.
+    ///
+    /// TODO: duplicate of `autopilot-svm`'s `Order::remaining`; unify the two.
     pub fn remaining(&self) -> Remaining {
         let (target, other) = match self.side {
             Side::Sell => (self.sell_amount, self.buy_amount),
