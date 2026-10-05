@@ -694,24 +694,24 @@ mod tests {
             partially_fillable,
             ..order([0x01; 32], true)
         };
-        let wallet =
+        let funded =
             |lamports, len| Account::new(lamports, len, &solana_system_interface::program::ID);
         let cases = [
             (None, native(floor, false), true),
             (None, native(floor - 1, false), false),
             (None, native(u64::MAX, true), false),
-            (Some(wallet(floor, 0)), native(1, true), true),
-            (Some(wallet(floor - 1, 0)), native(u64::MAX, false), true),
-            (Some(wallet(floor - 1_000, 0)), native(1_000, false), true),
-            (Some(wallet(floor - 1_000, 0)), native(999, false), false),
-            (Some(wallet(floor - 1_000, 0)), native(1_000, true), false),
-            (Some(wallet(floor, 8)), native(1, false), false),
+            (Some(funded(floor, 0)), native(1, true), true),
+            (Some(funded(floor - 1, 0)), native(u64::MAX, false), true),
+            (Some(funded(floor - 1_000, 0)), native(1_000, false), true),
+            (Some(funded(floor - 1_000, 0)), native(999, false), false),
+            (Some(funded(floor - 1_000, 0)), native(1_000, true), false),
+            (Some(funded(floor, 8)), native(1, false), false),
         ];
-        for (account, order, receivable) in cases {
+        for (wallet, order, receivable) in cases {
             assert_eq!(
-                receivable_native_payout(&order, account.as_ref()),
+                receivable_native_payout(&order, wallet.as_ref()),
                 receivable,
-                "{account:?} {order:?}"
+                "{wallet:?} {order:?}"
             );
         }
     }
