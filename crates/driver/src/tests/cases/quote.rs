@@ -251,7 +251,7 @@ async fn with_quote_solver_fee() {
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .buy_amount(40u64.ether().into_wei()) // Set a limit to create slack
+                .buy_amount(40u64.ether().into_wei()), // Set a limit to create slack
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().solver_fee_bps(0)]) // No solver fee
@@ -272,7 +272,7 @@ async fn with_quote_solver_fee() {
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .buy_amount(40u64.ether().into_wei()) // Same limit to create slack
+                .buy_amount(40u64.ether().into_wei()), // Same limit to create slack
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().solver_fee_bps(200)]) // 2% solver fee

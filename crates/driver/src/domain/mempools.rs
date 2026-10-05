@@ -71,22 +71,27 @@ impl Mempools {
     ) -> Result<eth::TxId, Error> {
         let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
-        let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
-            |(mempool, stat)| {
-                async move {
-                    let result = self
-                        .submit(mempool, settlement, submission_deadline, mode)
-                        .instrument(tracing::info_span!("mempool", kind = %mempool))
-                        .await;
-                    // Log inline so errors from mempools that later get superseded still surface;
-                    // metrics are emitted from `update_metrics` once the race outcome is known.
-                    observe::mempool_log(mempool, settlement, &result);
-                    *stat = Outcome::from(&result);
-                    result
-                }
-                .boxed()
-            },
-        ))
+        let res = select_ok(
+            self.mempools
+                .iter()
+                .zip(stats.iter_mut())
+                .map(|(mempool, stat)| {
+                    async move {
+                        let result = self
+                            .submit(mempool, settlement, submission_deadline, mode)
+                            .instrument(tracing::info_span!("mempool", kind = %mempool))
+                            .await;
+                        // Log inline so errors from mempools that later get
+                        // superseded still surface;
+                        // metrics are emitted from `update_metrics` once the
+                        // race outcome is known.
+                        observe::mempool_log(mempool, settlement, &result);
+                        *stat = Outcome::from(&result);
+                        result
+                    }
+                    .boxed()
+                }),
+        )
         .await
         // Drop the remaining futures (and the mutable borrow on `stats` they
         // carry) so `update_metrics` can read `stats` below.

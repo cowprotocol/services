@@ -34,7 +34,7 @@ async fn default_sorting() {
                 .created(now - 1)
                 .quote(OrderQuote::default().solver(solver.address()))
                 .reduce_amount("1e-2".ether().into_wei())
-                .valid_to(u32::MAX - 1)
+                .valid_to(u32::MAX - 1),
         )
         // Most recent orders get higher priority.
         .order(
@@ -43,7 +43,7 @@ async fn default_sorting() {
                 .created(now - 2)
                 .quote(OrderQuote::default().solver(solver.address()))
                 .reduce_amount("1e-2".ether().into_wei())
-                .valid_to(u32::MAX - 2)
+                .valid_to(u32::MAX - 2),
         )
         // Orders with better price are prioritized.
         .order(
@@ -52,19 +52,25 @@ async fn default_sorting() {
                 .created(now - 2)
                 .quote(OrderQuote::default().solver(solver.address()))
                 .reduce_amount("1e-1".ether().into_wei())
-                .valid_to(u32::MAX - 2)
+                .valid_to(u32::MAX - 2),
         )
-        // Even though the order was created earlier and has a better price, it comes after the own quoted orders.
+        // Even though the order was created earlier and has a better price, it comes after the own
+        // quoted orders.
         .order(ab_order().rename("4").created(now))
         // Most recent orders get higher priority.
-        .order(ab_order().rename("5").created(now - 1).valid_to(u32::MAX - 3))
+        .order(
+            ab_order()
+                .rename("5")
+                .created(now - 1)
+                .valid_to(u32::MAX - 3),
+        )
         // Similar to the previous order, but has a worse price gets lowest priority.
         .order(
             ab_order()
                 .rename("6")
                 .created(now - 1)
                 .reduce_amount("1e-2".ether().into_wei())
-                .valid_to(u32::MAX - 4)
+                .valid_to(u32::MAX - 4),
         )
         // The order was quoted by the solver and has one of the best prices, but it is too old.
         .order(
@@ -72,7 +78,7 @@ async fn default_sorting() {
                 .rename("7")
                 .created(now - 310)
                 .quote(OrderQuote::default().solver(solver.address()))
-                .valid_to(u32::MAX - 5)
+                .valid_to(u32::MAX - 5),
         )
         .solution(ab_solution())
         .done()
@@ -250,13 +256,17 @@ async fn filtering() {
         .pool(ab_pool())
         // Orders with better price ratios come first.
         .order(ab_order())
-        .order(ab_order().reduce_amount("1e-3".ether().into_wei()).rename("second order"))
+        .order(
+            ab_order()
+                .reduce_amount("1e-3".ether().into_wei())
+                .rename("second order"),
+        )
         // Filter out the next order, because the trader doesn't have enough balance to cover it.
         .order(
             ab_order()
                 .rename("third order")
                 .multiply_amount("0.1".ether().into_wei())
-                .filtered()
+                .filtered(),
         )
         // Filter out the next order. It can't be fulfilled due to the balance that is required to
         // fulfill the previous orders.
@@ -266,9 +276,9 @@ async fn filtering() {
                 surplus_factor: U256::ONE,
                 ..ab_order()
             }
-                .rename("fourth order")
-                .unfunded()
-                .filtered()
+            .rename("fourth order")
+            .unfunded()
+            .filtered(),
         )
         .solution(ab_solution())
         .done()
