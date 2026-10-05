@@ -437,9 +437,14 @@ fn get_vol_fee_adjusted_quote_data(
     buy_token: Address,
     sell_token: Address,
 ) -> anyhow::Result<AdjustedQuoteData> {
-    let Some(_) = volume_fee.as_ref()
+    let Some(_) = volume_fee
+        .as_ref()
         // Only apply volume fee if effective timestamp has come
-        .filter(|config| config.effective_from_timestamp.is_none_or(|ts| ts <= Utc::now()))
+        .filter(|config| {
+            config
+                .effective_from_timestamp
+                .is_none_or(|ts| ts <= Utc::now())
+        })
     else {
         return Ok(AdjustedQuoteData::unchanged(quote));
     };

@@ -407,16 +407,12 @@ async fn refunder_skips_invalidated_orders(web3: Web3) {
     // excludes it from the refundable set. The refunder uses permissive
     // thresholds (min_validity_duration=0, min_price_deviation_bps=0 at lines
     // 577-582), so slippage and validity are irrelevant.
-    let (ethflow_order, order_id, valid_to) = EthflowOrderBuilder::new(
-        &services,
-        &onchain,
-        &user,
-        buy_token,
-    )
-    .with_valid_to(valid_to)
-    .invalidated() // KEY: This is what the test verifies
-    .create_and_index()
-    .await;
+    let (ethflow_order, order_id, valid_to) =
+        EthflowOrderBuilder::new(&services, &onchain, &user, buy_token)
+            .with_valid_to(valid_to)
+            .invalidated() // KEY: This is what the test verifies
+            .create_and_index()
+            .await;
 
     advance_time_past_expiration(&web3, valid_to).await;
 
