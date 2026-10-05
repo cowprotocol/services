@@ -293,11 +293,12 @@ impl TradeVerifier {
             trade.simulation_solver_address(),
         );
 
-        self
-            .simulator
+        self.simulator
             .new_simulation_builder()
             .with_orders(std::iter::once(fake_order).chain(jit_orders))
-            .from_solver(SimulationSolver::OriginUnaltered(trade.simulation_solver_address()))
+            .from_solver(SimulationSolver::OriginUnaltered(
+                trade.simulation_solver_address(),
+            ))
             .presign_orders()
             .with_overrides(override_requests)
             // the order in which we add interactions is currently quite fragile.
