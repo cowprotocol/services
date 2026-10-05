@@ -115,7 +115,9 @@ pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
 
 /// Whether a fee schedule takes anything from a transfer: a rate in basis
 /// points under a positive cap. Both schedules of a mint count, the newer one
-/// takes effect at a later epoch.
+/// takes effect at a later epoch. Without the current epoch a stale older
+/// schedule cannot be told from an active one, so a mint that dropped its fee
+/// to zero stays refused while the old schedule is still on it.
 fn charges_fee(fee: &TransferFee) -> bool {
     u16::from(fee.transfer_fee_basis_points) > 0 && u64::from(fee.maximum_fee) > 0
 }
@@ -237,9 +239,9 @@ mod tests {
     /// The program moves classic mints and Token-2022 mints whose extension
     /// settings leave the transfer whole, each under its own token program: a
     /// permanent delegate, a fee schedule taking nothing, a hook without a
-    /// program and a pausable mint while not paused. A charged fee, a hook
-    /// program, a pause, a non-transferable mint and frozen-by-default
-    /// accounts fail it.
+    /// program and a pausable mint while not paused. A charged fee on either
+    /// schedule, a hook program, a pause, a non-transferable mint and
+    /// frozen-by-default accounts fail it.
     #[test]
     fn classifies_mints_by_their_extensions() {
         let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
@@ -277,6 +279,17 @@ mod tests {
         );
         assert_eq!(
             mint_verdict(Some(&fee_mint(100, 1_000))),
+            Err(UnsettleableMint::TransferFee)
+        );
+        assert_eq!(
+            with(ExtensionType::TransferFeeConfig, |mint| {
+                let older = &mut mint
+                    .init_extension::<TransferFeeConfig>(true)
+                    .unwrap()
+                    .older_transfer_fee;
+                older.transfer_fee_basis_points = 100u16.into();
+                older.maximum_fee = 1_000u64.into();
+            }),
             Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
