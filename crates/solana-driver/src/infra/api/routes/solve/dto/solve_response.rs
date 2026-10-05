@@ -27,9 +27,6 @@ pub struct SolveResponse {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     solution_id: u64,
-    /// Total surplus in lamports, decimal string on the wire.
-    #[serde_as(as = "DisplayFromStr")]
-    score: u64,
     /// The keypair the driver settles with, the on-chain solver identity.
     #[serde_as(as = "DisplayFromStr")]
     solver: Pubkey,
@@ -77,9 +74,6 @@ impl Solution {
             .collect();
         Self {
             solution_id: id,
-            // TODO: the driver stubs the score to 0 until surplus math is done, which needs
-            // native price functionality.
-            score: 0,
             solver,
             orders,
         }
@@ -97,7 +91,6 @@ mod tests {
         let solve = SolveResponse {
             solutions: vec![Solution {
                 solution_id: 3,
-                score: 12_345,
                 solver: Pubkey::new_from_array([0x22; 32]),
                 orders: HashMap::from([(
                     OrderUid([0x11; 32]),
@@ -111,7 +104,6 @@ mod tests {
         let expected = serde_json::json!({
             "solutions": [{
                 "solutionId": 3,
-                "score": "12345",
                 "solver": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
                 "orders": {
                     "0x1111111111111111111111111111111111111111111111111111111111111111": {

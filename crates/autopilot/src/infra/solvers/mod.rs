@@ -1,5 +1,5 @@
 use {
-    self::dto::{reveal, settle, solve},
+    self::dto::{reveal, settle, settle_fast_path, solve},
     crate::util,
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
@@ -90,7 +90,29 @@ impl Driver {
         request: &settle::Request,
         timeout: std::time::Duration,
     ) -> Result<()> {
-        let url = util::join(&self.url, "settle");
+        self.post_settle("settle", request, request.auction_id, timeout)
+            .await
+    }
+
+    pub async fn settle_fast_path(
+        &self,
+        request: &settle_fast_path::Request,
+        timeout: std::time::Duration,
+    ) -> Result<()> {
+        self.post_settle("settle_fast_path", request, request.auction_id, timeout)
+            .await
+    }
+
+    /// Posts a settle request and waits for the driver to acknowledge it. The
+    /// endpoints return no body, so only the status is inspected.
+    async fn post_settle<Request: serde::Serialize>(
+        &self,
+        path: &str,
+        request: &Request,
+        auction_id: i64,
+        timeout: std::time::Duration,
+    ) -> Result<()> {
+        let url = util::join(&self.url, path);
         tracing::trace!(
             path=&url.path(),
             body=%serde_json::to_string_pretty(request).unwrap(),
@@ -102,7 +124,7 @@ impl Driver {
             .post(url)
             .json(request)
             .timeout(timeout)
-            .header("X-REQUEST-ID", request.auction_id.to_string())
+            .header("X-REQUEST-ID", auction_id.to_string())
             .headers(tracing_headers())
             .send()
             .await

@@ -14,6 +14,16 @@ const DEDUP_LOCK: &str = "solana_order_events_dedup";
 const DEDUP_LOCK_QUERY: &str =
     "SELECT pg_advisory_xact_lock(hashtextextended($1::text || $2::text, 0))";
 
+/// Append the events off the caller's path: a failed write is logged, not
+/// returned.
+pub fn store_detached(pool: PgPool, uids: Vec<IntentHash>, label: OrderEventLabel) {
+    tokio::spawn(async move {
+        if let Err(err) = store(&pool, uids, label).await {
+            tracing::error!(?err, ?label, "failed to store order events");
+        }
+    });
+}
+
 /// Append one event per order, skipping a label the order's latest event
 /// already carries: a looping order marks each state once, not once per cycle.
 pub async fn store(

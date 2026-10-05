@@ -22,10 +22,7 @@ pub mod solana;
 pub mod solver_competition_v2;
 pub mod trades;
 
-use {
-    byte_array::ByteArray,
-    sqlx::{Executor, PgPool},
-};
+use {byte_array::ByteArray, sqlx::Executor};
 
 // Design:
 //
@@ -46,6 +43,7 @@ use {
 // test obsolete.
 
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
+pub type PgPool = sqlx::PgPool;
 
 /// The names of tables we use in the db.
 pub const TABLES: &[&str] = &[

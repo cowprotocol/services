@@ -8,7 +8,6 @@ use {
             competition::DriverCompetition,
             driver::{Driver, dto},
             executor::DriverExecutor,
-            inflight::InFlightOrders,
             observation::SettlementWindows,
             observer::CompetitionObserver,
             prices::NativePrices,
@@ -25,13 +24,14 @@ use {
     },
     async_trait::async_trait,
     axum::{Json, Router, extract::State, routing::post},
-    base64::{Engine, prelude::BASE64_STANDARD},
     chain_types::solana::{IntentHash, Pubkey, Signature},
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     database::byte_array::ByteArray,
+    solana_sdk::program_pack::Pack,
+    spl_token_interface::state::{Account as TokenAccount, AccountState},
     sqlx::PgPool,
     std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration},
-    tokio::sync::mpsc,
+    tokio::sync::{mpsc, watch},
     url::Url,
 };
 
@@ -92,44 +92,59 @@ async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
 /// A canned `getMultipleAccounts` entry: an initialized mint of the classic
 /// SPL token program with the given decimals.
 pub(crate) fn mint_account_json(decimals: u8) -> serde_json::Value {
-    let mut data = [0u8; 82];
-    data[44] = decimals;
-    // The initialized flag.
-    data[45] = 1;
-    serde_json::json!({
-        "lamports": 1_461_600u64,
-        "data": [BASE64_STANDARD.encode(data), "base64"],
-        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "executable": false,
-        "rentEpoch": 0u64,
-        "space": 82u64,
-    })
+    solana_testlib::account_json(&solana_testlib::classic_mint(decimals))
 }
 
 /// A canned `getMultipleAccounts` entry: an initialized account of the
 /// classic SPL token program holding `mint`.
 pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
-    let mut data = [0u8; 165];
-    data[..32].copy_from_slice(&mint);
-    // The account state byte: 1 is Initialized.
-    data[108] = 1;
-    serde_json::json!({
-        "lamports": 2_039_280u64,
-        "data": [BASE64_STANDARD.encode(data), "base64"],
-        "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-        "executable": false,
-        "rentEpoch": 0u64,
-        "space": 165u64,
+    solana_testlib::token_account_json(
+        &solana_sdk::pubkey::Pubkey::new_from_array(mint),
+        &solana_sdk::pubkey::Pubkey::default(),
+    )
+}
+
+/// A canned `getMultipleAccounts` entry: an initialized account of the
+/// classic SPL token program holding `amount` of `mint`, with `approved` of it
+/// delegated when given.
+pub(crate) fn sell_token_account_json(
+    mint: [u8; 32],
+    amount: u64,
+    approved: Option<u64>,
+) -> serde_json::Value {
+    let mut data = vec![0; TokenAccount::LEN];
+    TokenAccount {
+        mint: solana_sdk::pubkey::Pubkey::new_from_array(mint),
+        amount,
+        delegate: approved
+            .map(|_| solana_sdk::pubkey::Pubkey::new_from_array([0xDE; 32]))
+            .into(),
+        delegated_amount: approved.unwrap_or(0),
+        state: AccountState::Initialized,
+        ..TokenAccount::default()
+    }
+    .pack_into_slice(&mut data);
+    solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 2_039_280,
+        owner: spl_token_interface::ID,
+        data,
+        ..Default::default()
     })
 }
 
-/// A mock RPC answering one buy-account lookup with an initialized token
-/// account of the seeded order's buy mint. Each canned response serves once,
-/// later cuts fail open and keep the orders.
+/// A mock RPC answering one order-account lookup: an initialized token
+/// account of the seeded order's buy mint, its sell token account holding and
+/// approving the sell amount, then its sell and buy mints. Each canned
+/// response serves once, later cuts fail open and keep the orders.
 fn mock_rpc() -> SolanaRPC {
     let response = serde_json::json!({
         "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-        "value": [token_account_json([0xAB; 32])],
+        "value": [
+            token_account_json([0xAB; 32]),
+            sell_token_account_json([0xAA; 32], 1_000, Some(1_000)),
+            mint_account_json(9),
+            mint_account_json(9),
+        ],
     });
     SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]))
 }
@@ -161,7 +176,7 @@ async fn seed_open_order(pool: &PgPool, uid: [u8; 32], tip: i64) {
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
     partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
+VALUES ($1, $2, $2, $3, $7, $6, 1000, 500, $4, 'sell'::solana.OrderKind, false, $2, now(), $5)
         "#,
     )
     .bind(uid)
@@ -169,6 +184,8 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, 
     .bind(ByteArray([0xAB; 32]))
     .bind(i64::from(u32::MAX))
     .bind(ByteArray([0xB0; 32]))
+    .bind(ByteArray([0xAC; 32]))
+    .bind(ByteArray([0xAD; 32]))
     .execute(pool)
     .await
     .unwrap();
@@ -192,7 +209,6 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     // the solution scores its 100 surplus and wins.
     let solution = dto::Solution {
         solution_id: 7,
-        score: 100,
         solver: Pubkey([0xCC; 32]),
         orders: HashMap::from([(
             IntentHash(uid),
@@ -216,7 +232,6 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             pool.clone(),
             mock_rpc(),
             150,
-            InFlightOrders::default(),
             NativePrices::seeded(test_prices()),
         );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
@@ -228,15 +243,14 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
 
-    let windows = SettlementWindows::new(pool.clone());
-    let inflight = InFlightOrders::default();
+    let (slots, slot_watch) = watch::channel(tip);
+    let windows = SettlementWindows::new(pool.clone(), slot_watch, 150);
     let mut auction_loop = AuctionLoop::new(
         Box::new(FixedTrigger(tip)),
         Box::new(DbAuctionProvider::new(
             pool.clone(),
             mock_rpc(),
             150,
-            inflight.clone(),
             NativePrices::seeded(test_prices()),
         )),
         Box::new(DriverCompetition::new(
@@ -244,12 +258,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             Duration::from_secs(6),
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
-        Box::new(DriverExecutor::new(
-            vec![driver],
-            windows.clone(),
-            None,
-            inflight.clone(),
-        )),
+        Box::new(DriverExecutor::new(vec![driver], windows.clone(), None)),
         Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
         25,
     );
@@ -261,27 +270,6 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         .expect("settle channel open");
     assert_eq!(settle.solution_id, 7);
     assert!(settle.auction_id > 0);
-    // The dispatched order is held out of the next cut until its settlement
-    // transaction cannot land any more: the deadline plus the blockhash
-    // lifetime.
-    let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
-    // The lag gate stays out of the way: this provider tests the hold, and
-    // the watermark is still at the dispatch tip.
-    let held_provider = DbAuctionProvider::new(
-        pool.clone(),
-        mock_rpc(),
-        u64::MAX,
-        inflight.clone(),
-        NativePrices::seeded(test_prices()),
-    );
-    assert!(
-        held_provider.cut_auction(&(expired - 1)).await.is_none(),
-        "in-flight order excluded from the cut"
-    );
-    assert!(
-        held_provider.cut_auction(&expired).await.is_some(),
-        "order returns once the transaction cannot land"
-    );
     // The dispatch opened a settlement-execution window.
     let open_windows: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM solana.settlement_executions WHERE outcome IS NULL",
@@ -290,8 +278,109 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .await
     .unwrap();
     assert_eq!(open_windows, 1);
-    // The cycle reported the order's auction progress. The writes are detached
-    // from the cycle, so they can land after `run_cycle` returns.
+    // The competition was persisted: the snapshot row, the proposed solution
+    // under its generated uid, its execution, and the window keyed by the
+    // same uid.
+    let snapshots: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.competition_auctions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(snapshots, 1);
+    let caps: Vec<i64> = sqlx::query_scalar(
+        "SELECT unnest(penalty_caps_native)::bigint FROM solana.competition_auctions",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(caps, [0]);
+    let (solution_uid, solver_id, is_winner, filtered_out): (i64, i64, bool, bool) =
+        sqlx::query_as("SELECT uid, id, is_winner, filtered_out FROM solana.proposed_solutions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (solution_uid, solver_id, is_winner, filtered_out),
+        (0, 7, true, false)
+    );
+    // The sole winner's reference score: the winners' total without it, zero.
+    let (reference_solver, reference_score): (Vec<u8>, String) =
+        sqlx::query_as("SELECT solver, reference_score::text FROM solana.reference_scores")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        (reference_solver.as_slice(), reference_score.as_str()),
+        (&[0xCC; 32][..], "0")
+    );
+    let (executed_sell, executed_buy): (String, String) = sqlx::query_as(
+        "SELECT executed_sell::text, executed_buy::text FROM solana.proposed_trade_executions \
+         WHERE solution_uid = 0",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (executed_sell.as_str(), executed_buy.as_str()),
+        ("1000", "600")
+    );
+    let window_uid: i64 =
+        sqlx::query_scalar("SELECT solution_uid FROM solana.settlement_executions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(window_uid, 0);
+    // The dispatched order is held out of the next cut until its settlement
+    // transaction cannot land any more: the deadline plus the blockhash
+    // lifetime. The hold comes from the persisted competition alone, so a
+    // fresh provider also stands in for a restart. The lag gate stays out of
+    // the way, the watermark is still at the dispatch tip.
+    let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
+    let held_provider = DbAuctionProvider::new(
+        pool.clone(),
+        mock_rpc(),
+        u64::MAX,
+        NativePrices::seeded(test_prices()),
+    );
+    assert!(
+        held_provider.cut_auction(&(tip + 25)).await.is_none(),
+        "in-flight order excluded from the cut"
+    );
+    // The dispatch task times the window out once the tip reaches the
+    // deadline and the indexer has processed it. The hold outlasts it by the
+    // blockhash lifetime.
+    sqlx::query("UPDATE solana.indexer_state SET slot = $1")
+        .bind(i64::try_from(tip + 25).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    slots.send(tip + 25).unwrap();
+    let outcome = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let outcome: Option<String> =
+                sqlx::query_scalar("SELECT outcome FROM solana.settlement_executions")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            if let Some(outcome) = outcome {
+                return outcome;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("window timed out before the timeout");
+    assert_eq!(outcome, "timeout");
+    assert!(
+        held_provider.cut_auction(&(expired - 1)).await.is_none(),
+        "order stays held while its transaction can still land"
+    );
+    assert!(
+        held_provider.cut_auction(&expired).await.is_some(),
+        "order returns once the transaction cannot land"
+    );
+    // The cycle reported the order's auction progress and the later cuts its
+    // hold-out. The writes are detached, so they can land after the cuts
+    // return.
     let events = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let mut events: Vec<String> =
@@ -299,7 +388,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
                     .fetch_all(&pool)
                     .await
                     .unwrap();
-            if events.len() == 2 {
+            if events.len() == 3 {
                 events.sort();
                 return events;
             }
@@ -308,5 +397,5 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     })
     .await
     .expect("order events written before the timeout");
-    assert_eq!(events, ["executing", "ready"]);
+    assert_eq!(events, ["executing", "filtered", "ready"]);
 }

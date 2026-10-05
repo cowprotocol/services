@@ -3,11 +3,16 @@
 //! The wire format matches `solana-solvers/src/dto/auction.rs`.
 
 use {
-    crate::domain::{self, Side, order_uid::OrderUid},
-    cow_settlement_interface::pda::buffer::find_buffer_pda,
+    crate::{
+        domain::{self, Side, order_uid::OrderUid, solver_fee::SolverFee},
+        infra::blockchain::associated_token_address,
+    },
+    cow_settlement_interface::{pda::buffer::find_buffer_pda, token_program::TokenProgram},
     serde::Serialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
+    spl_token_interface::native_mint,
+    std::collections::HashSet,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -36,41 +41,98 @@ pub struct Order {
     pub sell_mint: Pubkey,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_mint: Pubkey,
+    /// The account the swap output lands in: the buy-mint buffer, or the
+    /// taker's wSOL ATA for an order buying native SOL. The route must leave
+    /// that ATA open: the settlement closes it after the swap to unwrap the
+    /// payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
-    /// Sell amount for a sell, buy amount for a buy
-    /// Represented as a quoted decimal string instead of a JSON number.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub sell_amount: u64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub buy_amount: u64,
+    /// Sell amount for a sell, buy amount for a buy.
+    ///
+    /// TODO: remove once external solvers read `sellAmount`/`buyAmount`.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub amount: u64,
+    /// The signed sell amount, untouched by the solver fee.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub full_sell_amount: u64,
+    /// The signed buy amount, untouched by the solver fee.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub full_buy_amount: u64,
     pub side: Side,
+    /// True when the order's buy token account does not exist on chain
+    /// yet. The settlement creates it and the solver keypair pays its rent,
+    /// so the solution should price that rent in.
+    ///
+    /// TODO(token-2022): a token-2022 account rents more bytes, so once
+    /// those mints are supported this boolean becomes a `setupCostLamports`
+    /// number and engines stop having to know the rent math.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub missing_buy_token_account: bool,
 }
 
 impl Order {
-    /// Build the wire order from a domain order and the settlement program id.
+    pub fn target_amount(&self) -> u64 {
+        match self.side {
+            Side::Sell => self.sell_amount,
+            Side::Buy => self.buy_amount,
+        }
+    }
+
+    /// Build the wire order from a domain order, the taker and the settlement
+    /// program id.
     ///
     /// The swap output must land in the buy-mint buffer PDA so that
-    /// `FinalizeSettle` can push it to the user's buy token account.
+    /// `FinalizeSettle` can push it to the user's buy token account. Solvers
+    /// swap into token accounts, so a native SOL buy goes out as a wSOL buy
+    /// into the taker's wSOL ATA.
     ///
     /// The wire format does not specify how the sell tokens are ultimately
     /// used, so the driver defaults `BeginSettle` to pull sell tokens into the
     /// taker's sell ATA. A future optimization can let solvers report per-order
     /// pull destinations so the driver routes directly to their chosen
     /// accounts.
-    ///
-    /// The engine wire carries a single `amount` on the order's side, so the
-    /// driver projects the side-matching amount (`sell_amount` for sells,
-    /// `buy_amount` for buys) from the full domain order.
-    fn from_order_and_program_id(order: &domain::Order, program_id: Pubkey) -> Self {
+    fn new(
+        order: &domain::Order,
+        taker: Pubkey,
+        program_id: Pubkey,
+        fee: Option<SolverFee>,
+        missing_buy_token_account: bool,
+    ) -> Self {
+        let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
+        let (sell_amount, buy_amount) = match order.side {
+            Side::Sell => (order.sell_amount, tighten(Side::Sell, order.buy_amount)),
+            Side::Buy => (tighten(Side::Buy, order.sell_amount), order.buy_amount),
+        };
+        let (buy_mint, buy_destination) = if order.buys_native_sol() {
+            (
+                native_mint::ID,
+                associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken),
+            )
+        } else {
+            (
+                order.buy_token,
+                find_buffer_pda(&program_id, &order.buy_token).0,
+            )
+        };
         Self {
             uid: order.uid,
             sell_mint: order.sell_token,
-            buy_mint: order.buy_token,
-            buy_destination: find_buffer_pda(&program_id, &order.buy_token).0,
+            buy_mint,
+            buy_destination,
+            sell_amount,
+            buy_amount,
             amount: match order.side {
-                Side::Sell => order.sell_amount,
-                Side::Buy => order.buy_amount,
+                Side::Sell => sell_amount,
+                Side::Buy => buy_amount,
             },
+            full_sell_amount: order.sell_amount,
+            full_buy_amount: order.buy_amount,
             side: order.side,
+            missing_buy_token_account,
         }
     }
 }
@@ -78,18 +140,33 @@ impl Order {
 impl Auction {
     /// Build the wire auction from the domain auction.
     ///
-    /// The `taker` is the solver that signs the settlement transaction.
-    /// `program_id` is used to derive the buy-mint buffer PDA, which is the
-    /// swap output destination so `FinalizeSettle` can push it to the
-    /// user's buy token account.
-    pub fn new(auction: &domain::Auction, taker: Pubkey, program_id: Pubkey) -> Self {
+    /// The `taker` is the solver that signs the settlement transaction, and its
+    /// wSOL ATA receives native SOL buys. `program_id` derives the buy-mint
+    /// buffer PDA that every other order swaps into. `fee` tightens every
+    /// order's limit leg. `missing_buy_token_accounts` marks the orders whose
+    /// payout account the settlement creates.
+    pub fn new(
+        auction: &domain::Auction,
+        taker: Pubkey,
+        program_id: Pubkey,
+        fee: Option<SolverFee>,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
+    ) -> Self {
         Self {
             id: auction.id.map(|id| id.get()),
             taker,
             orders: auction
                 .orders
                 .iter()
-                .map(|order| Order::from_order_and_program_id(order, program_id))
+                .map(|order| {
+                    Order::new(
+                        order,
+                        taker,
+                        program_id,
+                        fee,
+                        missing_buy_token_accounts.contains(&order.uid),
+                    )
+                })
                 .collect(),
             deadline: auction.deadline,
         }
@@ -98,7 +175,12 @@ impl Auction {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::domain::Side, serde_json::json};
+    use {
+        super::*,
+        crate::domain::Side,
+        cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
+        serde_json::json,
+    };
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -119,7 +201,11 @@ mod tests {
                 "sellMint": pubkey(1).to_string(),
                 "buyMint": buy_mint.to_string(),
                 "buyDestination": find_buffer_pda(&program_id, &buy_mint).0.to_string(),
+                "sellAmount": "1000",
+                "buyAmount": "2000",
                 "amount": "1000",
+                "fullSellAmount": "1000",
+                "fullBuyAmount": "2000",
                 "side": "sell",
             }],
             "deadline": "2026-01-01T00:00:00Z",
@@ -133,8 +219,13 @@ mod tests {
                 sell_mint: pubkey(1),
                 buy_mint,
                 buy_destination: find_buffer_pda(&program_id, &buy_mint).0,
+                sell_amount: 1_000,
+                buy_amount: 2_000,
                 amount: 1_000,
+                full_sell_amount: 1_000,
+                full_buy_amount: 2_000,
                 side: Side::Sell,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
                 .unwrap()
@@ -143,5 +234,106 @@ mod tests {
 
         let actual = serde_json::to_value(&expected).unwrap();
         assert_eq!(actual, json);
+    }
+
+    fn domain_order(side: Side) -> domain::Order {
+        domain::Order {
+            uid: OrderUid([8; 32]),
+            owner: pubkey(0x22),
+            sell_token: pubkey(1),
+            buy_token: pubkey(2),
+            sell_token_account: pubkey(0x55),
+            buy_token_account: pubkey(0x66),
+            sell_amount: 1_000,
+            buy_amount: 1_000,
+            valid_to: u32::MAX,
+            side,
+            partially_fillable: false,
+            order_pda: pubkey(0x67),
+            app_data: [0x77; 32],
+        }
+    }
+
+    #[test]
+    fn without_a_fee_both_legs_are_the_signed_amounts() {
+        let order = Order::new(
+            &domain_order(Side::Sell),
+            pubkey(3),
+            pubkey(0xaa),
+            None,
+            false,
+        );
+        assert_eq!((order.sell_amount, order.buy_amount), (1_000, 1_000));
+        assert_eq!(
+            (order.full_sell_amount, order.full_buy_amount),
+            (1_000, 1_000)
+        );
+    }
+
+    #[test]
+    fn the_fee_tightens_the_limit_leg() {
+        let fee = Some(SolverFee::try_from(500).unwrap());
+        let sell = Order::new(
+            &domain_order(Side::Sell),
+            pubkey(3),
+            pubkey(0xaa),
+            fee,
+            false,
+        );
+        assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_053));
+        assert_eq!(
+            (sell.full_sell_amount, sell.full_buy_amount),
+            (1_000, 1_000)
+        );
+
+        let buy = Order::new(
+            &domain_order(Side::Buy),
+            pubkey(3),
+            pubkey(0xaa),
+            fee,
+            false,
+        );
+        assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
+        assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
+    }
+
+    #[test]
+    fn missing_buy_token_account_is_on_the_wire_only_when_flagged() {
+        let (taker, program_id) = (pubkey(3), pubkey(0xaa));
+        let order = domain_order(Side::Sell);
+
+        let flagged =
+            serde_json::to_value(Order::new(&order, taker, program_id, None, true)).unwrap();
+        assert_eq!(flagged["missingBuyTokenAccount"], json!(true));
+
+        let unflagged =
+            serde_json::to_value(Order::new(&order, taker, program_id, None, false)).unwrap();
+        assert!(unflagged.get("missingBuyTokenAccount").is_none());
+    }
+
+    #[test]
+    fn a_token_buy_lands_in_the_buffer_pda() {
+        let (taker, program_id) = (pubkey(3), pubkey(0xaa));
+        let order = Order::new(&domain_order(Side::Sell), taker, program_id, None, false);
+        assert_eq!(order.buy_mint, pubkey(2));
+        assert_eq!(
+            order.buy_destination,
+            find_buffer_pda(&program_id, &pubkey(2)).0
+        );
+    }
+
+    #[test]
+    fn a_native_sol_buy_goes_out_as_wsol_into_the_takers_ata() {
+        let (taker, program_id) = (pubkey(3), pubkey(0xaa));
+        let native_buy = domain::Order {
+            buy_token: ENCODED_NATIVE_SOL_TRANSFER,
+            ..domain_order(Side::Sell)
+        };
+        let order = Order::new(&native_buy, taker, program_id, None, false);
+        assert_eq!(order.buy_mint, native_mint::ID);
+        assert_eq!(
+            order.buy_destination,
+            associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken)
+        );
     }
 }

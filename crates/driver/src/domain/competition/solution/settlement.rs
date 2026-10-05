@@ -15,7 +15,7 @@ use {
                 solution::{self, Interaction, Trade, error},
             },
         },
-        infra::{blockchain::Ethereum, solver::ManageNativeToken},
+        infra::blockchain::Ethereum,
     },
     alloy::primitives::U256,
     eth_domain_types as eth,
@@ -25,64 +25,56 @@ use {
     tracing::instrument,
 };
 
-/// A transaction calling into our settlement contract on the blockchain, ready
-/// to be published to the blockchain.
+/// A solution enriched with everything the driver needs to encode a
+/// submission-ready transaction on demand.
 ///
-/// Currently, this represents a wrapper around the [`boundary::Settlement`]
-/// concept from the shared part of the codebase. This isn't well-defined
-/// enough, it's an intermediate state between a solution and an onchain
-/// settlement. The intention with this type is to represent the settlement
-/// transaction itself, not an intermediate state.
+/// Encoding is two-phase. [`Settlement::new`] runs the invariant checks
+/// once (simulation, solver balance, internalization uses only trusted
+/// tokens), fetches approvals from the chain, and stores every input
+/// that doesn't depend on submission timing. [`Settlement::encode`] is
+/// then a synchronous operation that rebuilds the calldata from those
+/// cached inputs, splicing in a `DeadlineCheck` pre-interaction bound
+/// to a specific submission deadline.
 ///
-/// This type enforces the following rules:
-///
-/// - Simulation: the settlement has been simulated without reverting, including
-///   the case where no interactions were internalized. Additionally the solver
-///   account is known to have sufficient Ether to execute the transaction.
-/// - Internalization: internalized interactions only use trusted tokens.
-///
-/// Publishing a settlement which violates these rules would result in slashing
-/// for the solver (earning reduced rewards). Enforcing these rules ensures that
-/// the settlement can be broadcast safely with high confidence that it will not
-/// be reverted and that it will not result in slashing for the solver.
+/// Publishing a settlement that violates the invariants would result in
+/// slashing for the solver (earning reduced rewards). Enforcing them
+/// here ensures that the settlement can be broadcast safely with high
+/// confidence that it will not be reverted and that it will not result
+/// in slashing for the solver.
 #[derive(derive_more::Debug, Clone)]
 pub struct Settlement {
+    /// Auction id appended as bytes to the end of the `settle()` calldata
     pub auction_id: auction::Id,
-    /// The prepared on-chain transaction for this settlement
-    transaction: SettlementTx,
     /// The gas parameters used by the settlement.
     pub gas: Gas,
+    /// Access list required for ETH transfers to smart-contract wallets
+    #[debug(ignore)]
+    access_list: eth::AccessList,
     #[debug(ignore)]
     solution: Solution,
-}
-
-#[derive(derive_more::Debug, Clone)]
-struct SettlementTx {
-    /// Transaction with all internalizable interactions omitted
-    internalized: eth::Tx,
+    /// Native prices used to apply slippage constraints on interactions
     #[debug(ignore)]
-    /// Full Transaction without internalizing any interactions
-    uninternalized: eth::Tx,
-    /// Whether this settlement has interactions that could make it revert
-    may_revert: bool,
-}
-
-impl SettlementTx {
-    fn set_access_list(&mut self, access_list: RequiredAccessList) {
-        self.internalized.set_access_list(access_list.0.clone());
-        self.uninternalized.set_access_list(access_list.0);
-    }
+    native_prices: auction::Prices,
+    /// On-chain approvals needed when encoding with
+    /// [`Internalization::Enable`]. Fetched once in [`Settlement::new`] so
+    /// [`Settlement::encode`] can stay synchronous and off the RPC path.
+    #[debug(ignore)]
+    approvals_internalized: Vec<eth::allowance::Approval>,
+    /// On-chain approvals needed when encoding with
+    /// [`Internalization::Disable`]. Fetched once in [`Settlement::new`].
+    #[debug(ignore)]
+    approvals_uninternalized: Vec<eth::allowance::Approval>,
 }
 
 impl Settlement {
     /// Encode a solution into an onchain settlement.
-    #[instrument(name = "encode_settlement", skip_all)]
-    pub(super) async fn encode(
+    #[instrument(name = "create_settlement", skip_all)]
+    pub(super) async fn new(
         solution: competition::Solution,
         auction: &competition::Auction,
+        auction_id: auction::Id,
         eth: &Ethereum,
         simulator: &Simulator,
-        solver_native_token: ManageNativeToken,
     ) -> Result<Self, Error> {
         // For a settlement to be valid, the solution has to respect some rules
         // which would otherwise lead to slashing. Check those rules
@@ -108,43 +100,30 @@ impl Settlement {
             return Err(Error::NonBufferableTokensUsed(untrusted_tokens));
         }
 
-        let (internalized, uninternalized) = futures::try_join!(
+        let native_prices = auction.native_prices();
+
+        let (approvals_enable, approvals_disable) = futures::try_join!(
             solution.approvals(eth, Internalization::Enable),
             solution.approvals(eth, Internalization::Disable),
         )?;
+        let approvals_internalized: Vec<_> = approvals_enable.collect();
+        let approvals_uninternalized: Vec<_> = approvals_disable.collect();
 
-        // Encode the solution into a settlement.
-        let tx = SettlementTx {
-            internalized: encoding::tx(
-                auction,
-                &solution,
-                eth.contracts(),
-                internalized,
-                Internalization::Enable,
-                solver_native_token,
-            )?,
-            uninternalized: encoding::tx(
-                auction,
-                &solution,
-                eth.contracts(),
-                uninternalized,
-                Internalization::Disable,
-                solver_native_token,
-            )?,
-            may_revert: solution.revertable(),
-        };
-        Self::new(auction.id().unwrap(), solution, tx, eth, simulator).await
-    }
+        // Encode a reference internalized transaction (no deadline
+        // pre-interaction) so we can simulate it and compute the access
+        // list. This tx is discarded; the concrete calldata is
+        // regenerated on demand via [`Settlement::encode`].
+        let mut reference_tx = encoding::tx(
+            auction_id,
+            &native_prices,
+            &solution,
+            eth.contracts(),
+            approvals_internalized.iter().cloned(),
+            Internalization::Enable,
+            solution.solver().solver_native_token(),
+            None,
+        )?;
 
-    /// Create a new settlement and ensure that it is valid.
-    #[instrument(name = "create_settlement", skip_all)]
-    async fn new(
-        auction_id: auction::Id,
-        solution: Solution,
-        mut transaction: SettlementTx,
-        eth: &Ethereum,
-        simulator: &Simulator,
-    ) -> Result<Self, Error> {
         // <address payable>.transfer(ETH) is allowed to use at most 2300 gas
         // units ( see <https://fravoll.github.io/solidity-patterns/secure_ether_transfer.html>).
         // This is not enough when the receiver is a smart contract wallet which
@@ -178,20 +157,18 @@ impl Settlement {
         .reduce(|acc, list| acc.merge(list))
         .map(RequiredAccessList);
 
-        if let Some(access_list) = partial_access_list {
-            transaction.set_access_list(access_list.clone());
+        if let Some(access_list) = partial_access_list.as_ref() {
+            reference_tx.set_access_list(access_list.0.clone());
         }
 
-        let gas_used_fut = simulator
-            .gas(transaction.internalized.clone())
-            .inspect(|res| {
-                tracing::debug!(
-                    block = eth.current_block().borrow().number,
-                    transaction = ?transaction.internalized,
-                    ?res,
-                    "simulated settlement"
-                )
-            });
+        let gas_used_fut = simulator.gas(reference_tx.clone()).inspect(|res| {
+            tracing::debug!(
+                block = eth.current_block().borrow().number,
+                transaction = ?reference_tx,
+                ?res,
+                "simulated settlement"
+            )
+        });
 
         // run everything concurrently to minimize latency added through RPC
         // roundtrips
@@ -217,26 +194,56 @@ impl Settlement {
             ));
         }
 
+        // All sanity checks passed so we can now return the [`Settlement`]
+        // containing all data to later re-build the final tx from it.
         Ok(Self {
             auction_id,
-            solution,
-            transaction,
             gas,
+            access_list: partial_access_list.map(|l| l.0).unwrap_or_default(),
+            solution,
+            native_prices,
+            approvals_internalized,
+            approvals_uninternalized,
         })
     }
 
-    /// The calldata for this settlement.
-    pub fn transaction(&self, internalization: Internalization) -> &eth::Tx {
-        match internalization {
-            Internalization::Enable => &self.transaction.internalized,
-            Internalization::Disable => &self.transaction.uninternalized,
-        }
-    }
+    /// Encode the settlement into a submission-ready [`EncodedSettlement`].
+    ///
+    /// If `deadline` is `Some`, an interaction will be inserted which will
+    /// cause a revert when the tx gets mined after the deadline.
+    #[instrument(name = "encode_settlement", skip_all)]
+    pub fn encode(
+        &self,
+        eth: &Ethereum,
+        deadline: Option<eth::BlockNo>,
+    ) -> Result<EncodedSettlement, Error> {
+        let encode_one = |internalization| -> Result<eth::Tx, Error> {
+            let approvals = match internalization {
+                Internalization::Enable => &self.approvals_internalized,
+                Internalization::Disable => &self.approvals_uninternalized,
+            };
 
-    /// Whether the settlement contains interactions that could possibly revert
-    /// on chain
-    pub fn may_revert(&self) -> bool {
-        self.transaction.may_revert
+            let mut tx = encoding::tx(
+                self.auction_id,
+                &self.native_prices,
+                &self.solution,
+                eth.contracts(),
+                approvals.iter().cloned(),
+                internalization,
+                self.solution.solver().solver_native_token(),
+                deadline,
+            )?;
+            tx.set_access_list(self.access_list.clone());
+            Ok(tx)
+        };
+
+        Ok(EncodedSettlement {
+            internalized: encode_one(Internalization::Enable)?,
+            uninternalized: encode_one(Internalization::Disable)?,
+            gas: self.gas,
+            may_revert: self.solution.revertable(),
+            gas_fee_override: self.solution.gas_fee_override(),
+        })
     }
 
     /// Score as defined per CIP38. Equal to surplus + protocol fees.
@@ -252,11 +259,6 @@ impl Settlement {
     /// The solution encoded in this settlement.
     pub fn solution(&self) -> &super::Id {
         self.solution.id()
-    }
-
-    /// Optional gas fee overrides provided by the solver.
-    pub fn gas_fee_override(&self) -> Option<super::GasFeeOverride> {
-        self.solution.gas_fee_override()
     }
 
     /// Solution's pre interactions
@@ -332,11 +334,26 @@ impl Settlement {
             .map(|(token, amount)| (token, amount.into()))
             .collect()
     }
+}
 
-    /// Returns true if this settlement's solution has any trades with haircut.
-    pub fn has_haircut(&self) -> bool {
-        self.solution.has_haircut()
-    }
+/// Fully-encoded settlement with all additional information the
+/// driver needs for the submission logic.
+#[derive(derive_more::Debug, Clone)]
+pub struct EncodedSettlement {
+    /// Transaction that replaced all possible AMM interactions
+    /// with interactions trading against settlement contract inventory.
+    pub internalized: eth::Tx,
+    /// The transaction with all originally provided AMM interactions.
+    #[debug(ignore)]
+    pub uninternalized: eth::Tx,
+    /// Gas parameters (limit used for mempool submission, estimate for
+    /// observability).
+    pub gas: Gas,
+    /// Effectively indicates whether the settlement interacts with
+    /// AMMs which can revert when arbitrage bots snipe good liquidity.
+    pub may_revert: bool,
+    /// Solver-provided override for the gas fee at submission time.
+    pub gas_fee_override: Option<super::GasFeeOverride>,
 }
 
 /// Access lists that are required when the order buys native ETH and the

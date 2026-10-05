@@ -71,18 +71,12 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         "buyToken": test.blockchain.get_token(quote.order.buy_token).encode_hex_with_prefix(),
         "sellAmount": quote.sell_amount().to_string(),
         "buyAmount": quote.buy_amount().to_string(),
-        "protocolFees": match quote.order.kind {
-            order::Kind::Market => json!([]),
-            order::Kind::Limit => {
-                let fee_policies_json: Vec<serde_json::Value> = quote
-                    .order
-                    .fee_policy
-                    .iter()
-                    .map(|policy| policy.to_json_value())
-                    .collect();
-                json!(fee_policies_json)
-            }
-        },
+        "protocolFees": quote
+            .order
+            .fee_policy
+            .iter()
+            .map(|policy| policy.to_json_value())
+            .collect::<Vec<_>>(),
         "created": quote.order.created,
         "validTo": quote.order.valid_to,
         "kind": match quote.order.side {
@@ -97,35 +91,19 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
         },
         "preInteractions": [],
         "postInteractions": [],
-        "class": match quote.order.kind {
-            order::Kind::Market => "market",
-            order::Kind::Limit => "limit",
-        },
+        "class": "limit",
         "appData": app_data::AppDataHash(quote.order.app_data.hash().0 .0),
         "signingScheme": "eip712",
         "signature": const_hex::encode_prefixed(quote.order_signature(&test.blockchain)),
         "quote": quote.order.quote,
     });
-    if let Some(receiver) = quote.order.receiver {
-        order["receiver"] = json!((receiver.encode_hex_with_prefix()));
+    if !quote.order.receiver.is_default() {
+        order["receiver"] = json!(format!(
+            "0x{}",
+            const_hex::encode(quote.order.receiver.raw_bytes())
+        ));
     }
     order
-}
-
-/// The native-price map (`{token: wei}`, 1 ETH each) for a quoted order's
-/// tokens, in the shape the driver expects on the /settle request.
-pub fn prices_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_json::Value {
-    let prices: std::collections::BTreeMap<String, &str> =
-        [quote.order.sell_token, quote.order.buy_token]
-            .into_iter()
-            .map(|token| {
-                (
-                    test.blockchain.get_token(token).encode_hex_with_prefix(),
-                    "1000000000000000000",
-                )
-            })
-            .collect();
-    json!(prices)
 }
 
 /// Create a request for the driver /solve endpoint.
@@ -189,17 +167,29 @@ pub fn settle_req(
     submission_deadline_latest_block: u64,
     solution_id: u64,
     auction_id: &str,
-    fast_path: Option<serde_json::Value>,
 ) -> serde_json::Value {
-    let mut req = json!({
+    json!({
         "solutionId": solution_id,
         "submissionDeadlineLatestBlock": submission_deadline_latest_block,
         "auctionId": auction_id,
-    });
-    if let Some(fast_path) = fast_path {
-        req["fastPath"] = fast_path;
-    }
-    req
+    })
+}
+
+/// Create a request for the driver /settle_fast_path endpoint.
+pub fn settle_fast_path_req(
+    submission_deadline_latest_block: u64,
+    quote_id: i64,
+    auction_id: &str,
+    order: serde_json::Value,
+    limit_prices: serde_json::Value,
+) -> serde_json::Value {
+    json!({
+        "quoteId": quote_id,
+        "order": order,
+        "limitPrices": limit_prices,
+        "submissionDeadlineLatestBlock": submission_deadline_latest_block,
+        "auctionId": auction_id,
+    })
 }
 
 /// The quoted sell/buy amounts, used as the fast-path limit prices.
@@ -230,12 +220,11 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
         },
         "deadline": test.deadline,
     });
+    // The orderbook allocates the quote id before quoting and sends it with
+    // every quote request.
+    req["quoteId"] = json!(test.quote_id);
     if test.quote_fast_path {
-        // Mirrors what the orderbook does for fast-path quotes: request
-        // fast-path and hand over the real auction id it allocated from
-        // the shared sequence.
         req["enableFastPath"] = json!(true);
-        req["auctionId"] = json!(test.auction_id);
     }
     req
 }
@@ -272,6 +261,7 @@ async fn create_config_file(
            balances = "{}"
            signatures = "{}"
            flashloan-router = "{}"
+           deadline-check = "{}"
 
            [submission]
            gas-price-cap = "1000000000000"
@@ -281,6 +271,7 @@ async fn create_config_file(
         blockchain.balances.address(),
         blockchain.signatures.address(),
         blockchain.flashloan_router.address(),
+        blockchain.deadline_check.address(),
     )
     .unwrap();
 
@@ -362,7 +353,7 @@ async fn create_config_file(
                http-time-buffer = "{}ms"
                fee-handler = {}
                merge-solutions = {}
-               haircut-bps = {}
+               solver-fee-bps = {}
                max-solutions-to-propose = {}
                fast-path-enabled = {}
                "#,
@@ -379,7 +370,7 @@ async fn create_config_file(
             solver.timeouts.http_delay.num_milliseconds(),
             serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
-            solver.haircut_bps,
+            solver.solver_fee_bps,
             solver.max_solutions_to_propose,
             solver.fast_path_enabled,
         )

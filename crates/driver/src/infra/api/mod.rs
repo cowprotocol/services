@@ -76,6 +76,11 @@ impl Api {
         let order_sorting_strategies =
             Self::build_order_sorting_strategies(&order_priority_strategies);
 
+        // One fast-path quote cache per solver account.
+        let quote_cache = domain::competition::FastPathQuoteCache::new(
+            self.solvers.iter().map(|solver| solver.address()),
+        );
+
         // Add the metrics, healthz, and gasprice endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);
@@ -96,6 +101,7 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
+            let router = routes::settle_fast_path(router);
 
             let bad_order_config = solver.bad_order_detection();
             let mut bad_tokens =
@@ -129,6 +135,7 @@ impl Api {
                     Arc::new(bad_tokens),
                     fetcher.clone(),
                     order_sorting_strategies.clone(),
+                    quote_cache.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),

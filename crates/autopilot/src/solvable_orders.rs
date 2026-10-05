@@ -121,7 +121,7 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
     protocol_fees: Arc<domain::ProtocolFees>,
-    penalty_cap_calculator: Option<domain::penalty_cap::PenaltyCapCalculator>,
+    penalty_cap_calculator: Option<Arc<domain::penalty_cap::PenaltyCapCalculator>>,
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
     native_price_timeout: Duration,
     settlement_contract: Address,
@@ -147,7 +147,7 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
         protocol_fees: Arc<domain::ProtocolFees>,
-        penalty_cap_calculator: Option<domain::penalty_cap::PenaltyCapCalculator>,
+        penalty_cap_calculator: Option<Arc<domain::penalty_cap::PenaltyCapCalculator>>,
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
         native_price_timeout: Duration,
         settlement_contract: Address,
@@ -501,24 +501,29 @@ impl SolvableOrdersCache {
     }
 }
 
-/// Finds all orders whose owners or receivers are in the set of "banned"
-/// users.
+/// Finds all orders whose owners, receivers or account that placed the order
+/// onchain are in the set of "banned" users.
 async fn find_banned_user_orders(
     orders: &[&Order],
     banned_users: &order_validation::banned::Users,
 ) -> Vec<OrderUid> {
+    fn users_to_check(order: &Order) -> impl Iterator<Item = Address> {
+        // only check the receiver if it's actually different from the owner
+        let receiver = order.data.receiver.resolve(order.metadata.owner);
+        let receiver_check = receiver.ne(&order.metadata.owner).then_some(receiver);
+
+        std::iter::once(order.metadata.owner)
+            .chain(receiver_check)
+            .chain(order.metadata.onchain_user)
+    }
+
     let banned = banned_users
-        .banned(
-            orders
-                .iter()
-                .flat_map(|order| std::iter::once(order.metadata.owner).chain(order.data.receiver)),
-        )
+        .banned(orders.iter().flat_map(|order| users_to_check(order)))
         .await;
     orders
         .iter()
         .filter_map(|order| {
-            std::iter::once(order.metadata.owner)
-                .chain(order.data.receiver)
+            users_to_check(order)
                 .any(|addr| banned.contains(&addr))
                 .then_some(order.metadata.uid)
         })
@@ -578,7 +583,7 @@ fn orders_with_balance<'a>(
             return true;
         }
 
-        if order.data.receiver.as_ref() == Some(&settlement_contract) {
+        if order.data.receiver.as_custom() == Some(settlement_contract) {
             // TODO: replace with proper detection logic
             // for now we assume that all orders with the settlement contract
             // as the receiver are flashloan orders which unlock the necessary
@@ -732,6 +737,7 @@ mod tests {
         super::*,
         alloy::primitives::{Address, B256},
         bad_tokens::list_based::DenyListedTokens,
+        eth_domain_types::Receiver,
         futures::FutureExt,
         maplit::{btreemap, hashset},
         model::order::{OrderBuilder, OrderData, OrderMetadata, OrderUid},
@@ -1025,34 +1031,49 @@ mod tests {
 
     #[tokio::test]
     async fn filters_banned_users() {
-        let banned_users = hashset!(Address::from([0xba; 20]), Address::from([0xbb; 20]));
-        let orders = [
-            Address::repeat_byte(1),
-            Address::repeat_byte(1),
-            Address::repeat_byte(0xba),
-            Address::repeat_byte(2),
-            Address::repeat_byte(0xba),
-            Address::repeat_byte(0xbb),
-            Address::repeat_byte(3),
-        ]
-        .into_iter()
-        .enumerate()
-        .map(|(i, owner)| {
-            Arc::new(Order {
-                metadata: OrderMetadata {
-                    owner,
-                    uid: OrderUid([i as u8; 56]),
+        let banned = Address::repeat_byte(0xba);
+        let allowed = Address::repeat_byte(1);
+        let banned_users = hashset!(banned);
+
+        // (owner, receiver, onchain_user) — exercise every combination of which
+        // field pulls a banned address in. `Address::ZERO` means "no custom
+        // receiver" (settlement contract pays the owner).
+        let cases = [
+            // 0: nothing banned → keep
+            (allowed, Address::ZERO, None),
+            // 1: all three fields set but clean → keep
+            (allowed, allowed, Some(allowed)),
+            // 2: owner banned → filter
+            (banned, Address::ZERO, None),
+            // 3: receiver banned → filter
+            (allowed, banned, None),
+            // 4: onchain_user banned → filter
+            (allowed, Address::ZERO, Some(banned)),
+            // 5: every field banned → filter (once)
+            (banned, banned, Some(banned)),
+        ];
+
+        let orders = cases
+            .into_iter()
+            .enumerate()
+            .map(|(i, (owner, receiver, onchain_user))| {
+                Arc::new(Order {
+                    metadata: OrderMetadata {
+                        owner,
+                        onchain_user,
+                        uid: OrderUid([i as u8; 56]),
+                        ..Default::default()
+                    },
+                    data: OrderData {
+                        receiver: Receiver::new(receiver),
+                        buy_amount: alloy::primitives::U256::ONE,
+                        sell_amount: alloy::primitives::U256::ONE,
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
-                data: OrderData {
-                    buy_amount: alloy::primitives::U256::ONE,
-                    sell_amount: alloy::primitives::U256::ONE,
-                    ..Default::default()
-                },
-                ..Default::default()
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
         let orders_ref = orders.iter().map(|o| o.as_ref()).collect::<Vec<_>>();
         let banned_user_orders = find_banned_user_orders(
@@ -1062,7 +1083,12 @@ mod tests {
         .await;
         assert_eq!(
             banned_user_orders,
-            [OrderUid([2; 56]), OrderUid([4; 56]), OrderUid([5; 56])],
+            [
+                OrderUid([2; 56]),
+                OrderUid([3; 56]),
+                OrderUid([4; 56]),
+                OrderUid([5; 56]),
+            ],
         );
     }
 
@@ -1192,7 +1218,7 @@ mod tests {
                     sell_amount: alloy::primitives::U256::from(200),
                     fee_amount: alloy::primitives::U256::ZERO,
                     partially_fillable: true,
-                    receiver: Some(settlement_contract),
+                    receiver: Receiver::new(settlement_contract),
                     ..Default::default()
                 },
                 ..Default::default()

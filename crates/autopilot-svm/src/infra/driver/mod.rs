@@ -63,6 +63,7 @@ enum Kind {
     QuoteSameTokens,
     QuotingFailed,
     SimulationFailed,
+    TransactionTooLarge,
     Unknown,
 }
 
@@ -87,6 +88,7 @@ impl Error {
                 | Kind::InvalidCreation
                 | Kind::FailedToCreate
                 | Kind::SimulationFailed
+                | Kind::TransactionTooLarge
         )
     }
 }
@@ -150,6 +152,7 @@ mod tests {
         };
         assert!(status("SimulationFailed").settlement_provably_unsent());
         assert!(status("SolutionNotAvailable").settlement_provably_unsent());
+        assert!(status("TransactionTooLarge").settlement_provably_unsent());
         // The driver answers this both before and after the send.
         assert!(!status("DeadlineExceeded").settlement_provably_unsent());
         assert!(!status("FailedToSubmit").settlement_provably_unsent());

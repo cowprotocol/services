@@ -71,11 +71,11 @@ impl Trade {
         price_sell: NonZero<u64>,
         price_buy: NonZero<u64>,
     ) -> Result<domain::Trade, Error> {
-        if self.executed_amount > order.amount {
+        if self.executed_amount > order.target_amount() {
             return Err(Error::ExecutedAmountExceedsOrderAmount(
                 self.order_uid,
                 self.executed_amount,
-                order.amount,
+                order.target_amount(),
             ));
         }
 
@@ -97,6 +97,7 @@ impl Trade {
             order_uid: self.order_uid,
             executed_sell,
             executed_buy,
+            solver_fee: 0,
         })
     }
 
@@ -234,6 +235,7 @@ mod tests {
     use {
         super::*,
         crate::{domain::Side, infra::blockchain::associated_token_address},
+        cow_settlement_interface::token_program::TokenProgram,
         serde_json::json,
         solana_sdk::pubkey::Pubkey,
     };
@@ -254,9 +256,18 @@ mod tests {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
-                buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
+                buy_destination: associated_token_address(
+                    &pubkey(3),
+                    &pubkey(2),
+                    TokenProgram::SplToken,
+                ),
+                sell_amount: 1_000,
+                buy_amount: 0,
                 amount: 1_000,
+                full_sell_amount: 1_000,
+                full_buy_amount: 0,
                 side: Side::Sell,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
         }
@@ -375,9 +386,18 @@ mod tests {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
-                buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
+                buy_destination: associated_token_address(
+                    &pubkey(3),
+                    &pubkey(2),
+                    TokenProgram::SplToken,
+                ),
+                sell_amount: u64::MAX,
+                buy_amount: 0,
                 amount: u64::MAX,
+                full_sell_amount: u64::MAX,
+                full_buy_amount: 0,
                 side: Side::Sell,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
         };

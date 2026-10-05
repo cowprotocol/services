@@ -1,24 +1,20 @@
 //! Typed views of fetched on-chain accounts.
 //!
 //! Raw account state (owners, data bytes) stays behind the blockchain
-//! adapter. The domain receives decoded lookup tables and classified
-//! token-account states, never raw `Account`s.
+//! adapter. The domain receives decoded lookup tables, mint token programs and
+//! classified token-account states, never raw `Account`s.
 
 use {
+    cow_settlement_interface::token_program::TokenProgram,
     solana_address_lookup_table_interface::{
         program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
         state::AddressLookupTable,
     },
-    solana_sdk::{
-        account::Account,
-        message::AddressLookupTableAccount,
-        program_pack::Pack,
-        pubkey::Pubkey,
-    },
+    solana_sdk::{account::Account, message::AddressLookupTableAccount, pubkey::Pubkey},
     solana_system_interface::program::ID as SYSTEM_PROGRAM_ID,
-    spl_token_interface::{
-        ID as SPL_TOKEN_PROGRAM_ID,
-        state::{Account as TokenAccount, AccountState},
+    spl_token_2022_interface::{
+        extension::StateWithExtensions,
+        state::{Account as TokenAccount, AccountState, Mint},
     },
     std::collections::HashMap,
 };
@@ -26,8 +22,8 @@ use {
 /// A point-in-time snapshot of accounts from one batched fetch.
 ///
 /// An account that does not exist on chain is not in the snapshot. Each
-/// interpretation method (ALT, Token account) reports a missing account for its
-/// key.
+/// interpretation method (ALT, mint, token account) reports a missing account
+/// for its key.
 pub struct AccountsSnapshot {
     accounts: HashMap<Pubkey, Account>,
 }
@@ -79,23 +75,37 @@ impl AccountsSnapshot {
         })
     }
 
+    /// The token program of the mint at `mint`: the account's owner, when it is
+    /// one of the two token programs and the data reads as an initialized
+    /// mint.
+    pub fn mint_token_program(&self, mint: &Pubkey) -> Result<TokenProgram, InvalidMintReason> {
+        let account = self
+            .accounts
+            .get(mint)
+            .ok_or(InvalidMintReason::AccountNotFound)?;
+        let program =
+            TokenProgram::try_from(&account.owner).map_err(|_| InvalidMintReason::NotAMint)?;
+        StateWithExtensions::<Mint>::unpack(&account.data)
+            .map_err(|_| InvalidMintReason::NotAMint)?;
+        Ok(program)
+    }
+
     /// Classify the state of the token account at `address` for a caller that
     /// creates missing token accounts idempotently.
     ///
-    /// An SPL-token-owned account is `Initialized` only when it unpacks as an
-    /// initialized, unfrozen token account. Anything else the token program
-    /// owns (wrong length, uninitialized, frozen) is `Unexpected`: an
-    /// idempotent create cannot replace it.
+    /// An account of either token program is `Initialized` only when it
+    /// unpacks as an initialized, unfrozen token account, extensions included.
+    /// Anything else a token program owns (wrong length, uninitialized,
+    /// frozen) is `Unexpected`: an idempotent create cannot replace it.
     pub fn token_account_state(&self, address: &Pubkey) -> TokenAccountState {
         match self.accounts.get(address) {
             // The account does not exist on chain: the idempotent create makes it.
             None => TokenAccountState::NeedsCreation,
-            // An initialized, unfrozen SPL token account. Anything else the
-            // token program owns is `Unexpected`.
-            Some(account) if account.owner == SPL_TOKEN_PROGRAM_ID => {
-                let usable = TokenAccount::unpack(&account.data)
-                    .map(|ta| ta.state == AccountState::Initialized)
-                    .unwrap_or(false);
+            // An initialized, unfrozen token account. Anything else a token
+            // program owns is `Unexpected`.
+            Some(account) if TokenProgram::try_from(&account.owner).is_ok() => {
+                let usable = StateWithExtensions::<TokenAccount>::unpack(&account.data)
+                    .is_ok_and(|state| state.base.state == AccountState::Initialized);
                 if usable {
                     TokenAccountState::Initialized
                 } else {
@@ -116,6 +126,15 @@ impl AccountsSnapshot {
             },
         }
     }
+
+    /// Whether the token account at `address` must be created before it can
+    /// hold tokens, see [`Self::token_account_state`].
+    pub fn token_account_needs_creation(&self, address: Pubkey) -> bool {
+        matches!(
+            self.token_account_state(&address),
+            TokenAccountState::NeedsCreation
+        )
+    }
 }
 
 /// The observed state of a token account, for a caller that creates missing
@@ -126,13 +145,25 @@ pub enum TokenAccountState {
     /// account does not exist, or it is a pre-funded system-owned account with
     /// no data.
     NeedsCreation,
-    /// An initialized, unfrozen SPL token account. The caller does not need to
-    /// create it.
+    /// An initialized, unfrozen account of either token program. The caller
+    /// does not need to create it.
     Initialized,
     /// Any other state: a foreign owner, or a system account with data. The
     /// caller cannot use this account, and an idempotent create cannot
     /// replace it.
     Unexpected { owner: Pubkey, data_len: usize },
+}
+
+/// Why the snapshot rejected an account as a mint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidMintReason {
+    /// The account does not exist on chain.
+    #[error("account not found")]
+    AccountNotFound,
+    /// Neither token program owns the account, or its data does not read as
+    /// an initialized mint.
+    #[error("not a mint of either token program")]
+    NotAMint,
 }
 
 /// Why the snapshot rejected an account as an address lookup table.
@@ -157,6 +188,15 @@ mod tests {
     use {
         super::*,
         solana_address_lookup_table_interface::state::LookupTableMeta,
+        solana_sdk::program_pack::Pack,
+        spl_token_2022_interface::extension::{
+            BaseStateWithExtensionsMut,
+            ExtensionType,
+            StateWithExtensionsMut,
+            immutable_owner::ImmutableOwner,
+            mint_close_authority::MintCloseAuthority,
+        },
+        spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID,
         std::borrow::Cow,
     };
 
@@ -297,7 +337,7 @@ mod tests {
         let address = pubkey(0x11);
         let account = Account {
             owner: SPL_TOKEN_PROGRAM_ID,
-            data: vec![0; spl_token_interface::state::Mint::LEN],
+            data: vec![0; Mint::LEN],
             ..Account::default()
         };
         let state = snapshot([(address, account)]).token_account_state(&address);
@@ -357,5 +397,132 @@ mod tests {
             state,
             TokenAccountState::Unexpected { data_len: 8, .. }
         ));
+    }
+
+    /// A Token-2022 account with the given state and the `ImmutableOwner`
+    /// extension, which every Token-2022 ATA carries.
+    fn token_2022_account(state: AccountState) -> Account {
+        let len = ExtensionType::try_calculate_account_len::<TokenAccount>(&[
+            ExtensionType::ImmutableOwner,
+        ])
+        .unwrap();
+        let mut data = vec![0; len];
+        let mut account =
+            StateWithExtensionsMut::<TokenAccount>::unpack_uninitialized(&mut data).unwrap();
+        account.init_extension::<ImmutableOwner>(true).unwrap();
+        account.base = TokenAccount {
+            mint: pubkey(0x22),
+            owner: pubkey(0x33),
+            state,
+            ..TokenAccount::default()
+        };
+        account.pack_base();
+        account.init_account_type().unwrap();
+        Account {
+            owner: TokenProgram::Token2022.address(),
+            data,
+            ..Account::default()
+        }
+    }
+
+    #[test]
+    fn an_initialized_token_2022_account_is_initialized() {
+        let address = pubkey(0x11);
+        let account = token_2022_account(AccountState::Initialized);
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Initialized));
+    }
+
+    #[test]
+    fn a_frozen_token_2022_account_is_unexpected() {
+        let address = pubkey(0x11);
+        let account = token_2022_account(AccountState::Frozen);
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Unexpected { .. }));
+    }
+
+    /// An initialized 82-byte SPL Token mint.
+    fn mint_account() -> Account {
+        let mut data = vec![0; Mint::LEN];
+        Mint {
+            is_initialized: true,
+            decimals: 6,
+            ..Mint::default()
+        }
+        .pack_into_slice(&mut data);
+        Account {
+            owner: SPL_TOKEN_PROGRAM_ID,
+            data,
+            ..Account::default()
+        }
+    }
+
+    /// An initialized Token-2022 mint with the `MintCloseAuthority` extension,
+    /// so its data is longer than an SPL Token mint's.
+    fn token_2022_mint_account() -> Account {
+        let len =
+            ExtensionType::try_calculate_account_len::<Mint>(&[ExtensionType::MintCloseAuthority])
+                .unwrap();
+        let mut data = vec![0; len];
+        let mut mint = StateWithExtensionsMut::<Mint>::unpack_uninitialized(&mut data).unwrap();
+        mint.init_extension::<MintCloseAuthority>(true).unwrap();
+        mint.base = Mint {
+            is_initialized: true,
+            decimals: 6,
+            ..Mint::default()
+        };
+        mint.pack_base();
+        mint.init_account_type().unwrap();
+        Account {
+            owner: TokenProgram::Token2022.address(),
+            data,
+            ..Account::default()
+        }
+    }
+
+    #[test]
+    fn a_mint_reads_as_its_owners_token_program() {
+        let (spl, token_2022) = (pubkey(0x11), pubkey(0x12));
+        let snapshot = snapshot([
+            (spl, mint_account()),
+            (token_2022, token_2022_mint_account()),
+        ]);
+        assert_eq!(
+            snapshot.mint_token_program(&spl),
+            Ok(TokenProgram::SplToken)
+        );
+        assert_eq!(
+            snapshot.mint_token_program(&token_2022),
+            Ok(TokenProgram::Token2022)
+        );
+    }
+
+    /// A missing account is told apart from a token account or an account of
+    /// another program at a mint's address.
+    #[test]
+    fn only_a_token_program_mint_has_a_token_program() {
+        let (token_account, foreign) = (pubkey(0x11), pubkey(0x12));
+        let snapshot = snapshot([
+            (token_account, token_2022_account(AccountState::Initialized)),
+            (
+                foreign,
+                Account {
+                    owner: pubkey(0xff),
+                    ..mint_account()
+                },
+            ),
+        ]);
+        assert_eq!(
+            snapshot.mint_token_program(&pubkey(0x13)),
+            Err(InvalidMintReason::AccountNotFound)
+        );
+        assert_eq!(
+            snapshot.mint_token_program(&token_account),
+            Err(InvalidMintReason::NotAMint)
+        );
+        assert_eq!(
+            snapshot.mint_token_program(&foreign),
+            Err(InvalidMintReason::NotAMint)
+        );
     }
 }

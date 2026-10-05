@@ -15,6 +15,7 @@ use {
             OrderQuoteRequest,
             OrderQuoteResponse,
             OrderQuoteSide,
+            PriceQuality,
             QuoteSigningScheme,
             SellAmount,
         },
@@ -334,7 +335,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -343,7 +344,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
@@ -410,8 +411,10 @@ async fn quote_timeout(web3: Web3) {
 
     let assert_within_variance = |start_timestamp: Instant, target| {
         const VARIANCE: u64 = 100; // small buffer to allow for variance in the test
-        const HTTP_BUFFER: u64 = 100;
-        let min = target - HTTP_BUFFER;
+        let http_buffer = driver::infra::Solver::quote_timeouts()
+            .http_delay
+            .num_milliseconds() as u64;
+        let min = target - http_buffer;
         let max = min + VARIANCE;
         let elapsed = start_timestamp.elapsed().as_millis() as u64;
         tracing::debug!(target, actual = ?elapsed, "finished request");
@@ -515,7 +518,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -524,7 +527,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
@@ -640,7 +643,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -649,7 +652,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
@@ -753,7 +756,7 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 endpoint: custom_error_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -762,7 +765,7 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 endpoint: no_liquidity_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
@@ -955,9 +958,48 @@ async fn volume_fee(web3: Web3) {
     );
 }
 
-// Smoke test for the SSE streaming quote endpoint. Posts a quote request to
-// /api/v1/quote/stream and asserts that at least one SSE data line parses as
-// a valid OrderQuoteResponse carrying a persisted quote id.
+async fn parse_streaming_quotes(response: reqwest::Response) -> Vec<OrderQuoteResponse> {
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "expected 200 from /api/v1/quote/stream"
+    );
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content_type.starts_with("text/event-stream"),
+        "expected text/event-stream, got {content_type:?}"
+    );
+
+    let body = response.text().await.expect("failed to read SSE body");
+    tracing::info!(%body, "SSE response body");
+
+    // SSE lines look like: "data: <json>\n"
+    let parsed = body
+        .lines()
+        .filter(|line| line.starts_with("data:"))
+        .filter_map(|line| {
+            let json = line.trim_start_matches("data:").trim();
+            serde_json::from_str(json).ok()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        !parsed.is_empty(),
+        "expected at least one valid OrderQuoteResponse in SSE stream, body was: {body}"
+    );
+    parsed
+}
+
+// Smoke test for the SSE streaming quote endpoint. Asserts that fast quotes are
+// rejected and optimal quotes are unverified, then posts a verified quote
+// request and asserts that at least one SSE data line parses as a valid,
+// verified OrderQuoteResponse carrying a persisted quote id.
 async fn quote_stream_smoke(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -1004,48 +1046,63 @@ async fn quote_stream_smoke(web3: Web3) {
         ..Default::default()
     };
 
-    tracing::info!("Sending streaming quote request.");
     let stream_url = format!("{API_HOST}{QUOTING_ENDPOINT}/stream");
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::new();
+
+    tracing::info!("Sending fast streaming quote request.");
+    let mut fast_request = request.clone();
+    fast_request.price_quality = PriceQuality::Fast;
+    let response = client
+        .post(&stream_url)
+        .json(&fast_request)
+        .send()
+        .await
+        .expect("fast streaming quote request failed");
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "expected fast streaming quote request to be rejected"
+    );
+    assert_eq!(
+        response
+            .json::<serde_json::Value>()
+            .await
+            .expect("failed to parse fast streaming quote error"),
+        json!({
+            "errorType": "UnsupportedPriceQuality",
+            "description": "Fast price quality is not supported for streamed quotes",
+        })
+    );
+
+    tracing::info!("Sending optimal streaming quote request.");
+    let mut optimal_request = request.clone();
+    optimal_request.price_quality = PriceQuality::Optimal;
+    let response = client
+        .post(&stream_url)
+        .json(&optimal_request)
+        .send()
+        .await
+        .expect("optimal streaming quote request failed");
+    let optimal_quotes = parse_streaming_quotes(response).await;
+    assert!(
+        optimal_quotes.iter().all(|quote| !quote.verified),
+        "expected optimal streaming quotes to be unverified, got {optimal_quotes:?}"
+    );
+
+    tracing::info!("Sending verified streaming quote request.");
+    let response = client
         .post(&stream_url)
         .json(&request)
         .send()
         .await
         .expect("streaming quote request failed");
-
-    assert_eq!(
-        response.status(),
-        reqwest::StatusCode::OK,
-        "expected 200 from /api/v1/quote/stream"
-    );
-
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .to_string();
+    let parsed = parse_streaming_quotes(response).await;
+    // The endpoint does not guarantee a verified quote, but in this setup every
+    // streamed quote can be verified, so at least one of them should be.
     assert!(
-        content_type.starts_with("text/event-stream"),
-        "expected text/event-stream, got {content_type:?}"
-    );
-
-    let body = response.text().await.expect("failed to read SSE body");
-    tracing::info!(%body, "SSE response body");
-
-    // SSE lines look like: "data: <json>\n"
-    let parsed: Vec<OrderQuoteResponse> = body
-        .lines()
-        .filter(|line| line.starts_with("data:"))
-        .filter_map(|line| {
-            let json = line.trim_start_matches("data:").trim();
-            serde_json::from_str(json).ok()
-        })
-        .collect();
-
-    assert!(
-        !parsed.is_empty(),
-        "expected at least one valid OrderQuoteResponse in SSE stream, body was: {body}"
+        parsed.iter().any(|quote| quote.verified),
+        "expected at least one verified streaming quote, got {parsed:?}"
     );
 
     let weth = *onchain.contracts().weth.address();

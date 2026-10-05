@@ -16,7 +16,7 @@ use {
         UniswapV2Factory,
         UniswapV2Router02,
         WETH9,
-        support::{Balances, Signatures},
+        support::{Balances, DeadlineCheck, Signatures},
     },
     ethrpc::alloy::{CallBuilderExt, ProviderExt},
     model::DomainSeparator,
@@ -27,6 +27,7 @@ use {
 pub struct DeployedContracts {
     pub balances: Option<Address>,
     pub signatures: Option<Address>,
+    pub deadline_check: Option<Address>,
 }
 
 pub struct Contracts {
@@ -36,6 +37,7 @@ pub struct Contracts {
     pub signatures: Signatures::Instance,
     pub gp_authenticator: GPv2AllowListAuthentication::Instance,
     pub balances: Balances::Instance,
+    pub deadline_check: DeadlineCheck::Instance,
     pub uniswap_v2_factory: UniswapV2Factory::Instance,
     pub uniswap_v2_router: UniswapV2Router02::Instance,
     pub weth: WETH9::Instance,
@@ -70,6 +72,12 @@ impl Contracts {
             None => Signatures::Instance::deployed(&web3.provider)
                 .await
                 .expect("failed to find signatures contract"),
+        };
+        let deadline_check = match deployed.deadline_check {
+            Some(address) => DeadlineCheck::Instance::new(address, web3.provider.clone()),
+            None => DeadlineCheck::Instance::deployed(&web3.provider)
+                .await
+                .expect("failed to find deadline_check contract"),
         };
 
         let flashloan_router = FlashLoanRouter::Instance::deployed(&web3.provider)
@@ -115,6 +123,7 @@ impl Contracts {
             gp_settlement,
             balances,
             signatures,
+            deadline_check,
             flashloan_router,
         }
     }
@@ -187,6 +196,9 @@ impl Contracts {
         let signatures = Signatures::Instance::deploy(web3.provider.clone())
             .await
             .unwrap();
+        let deadline_check = DeadlineCheck::Instance::deploy(web3.provider.clone())
+            .await
+            .unwrap();
 
         grant_required_roles(
             &balancer_authorizer,
@@ -245,6 +257,7 @@ impl Contracts {
             gp_authenticator,
             balances,
             signatures,
+            deadline_check,
             uniswap_v2_factory,
             uniswap_v2_router,
             weth,

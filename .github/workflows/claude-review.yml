@@ -59,10 +59,13 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           trigger_phrase: "@claude"
           track_progress: true
+          # Reviewing a diff means opening the files around it, and a denied
+          # tool call still consumes a turn, so an allowlist without the read
+          # tools burns the turn budget instead of reviewing.
           claude_args: |
             --model claude-opus-4-8
-            --max-turns 30
-            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+            --max-turns 50
+            --allowedTools "Read,Grep,Glob,LS,mcp__github_inline_comment__create_inline_comment"
           prompt: |
             Review this PR. Post each issue as an INLINE comment on the exact file and
             line using the create_inline_comment tool. Follow the pr-review skill if available.
@@ -79,13 +82,23 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          is_error=$(jq -r 'map(select(.type == "result")) | last | .is_error // false' "$EXEC_FILE" 2>/dev/null || echo false)
+          result=$(jq -c 'map(select(.type == "result")) | last // {}' "$EXEC_FILE" 2>/dev/null || echo '{}')
+          is_error=$(printf '%s' "$result" | jq -r '.is_error // false')
+          subtype=$(printf '%s' "$result" | jq -r '.subtype // "unknown"')
           if [ "$CLAUDE_OUTCOME" != "failure" ] && [ "$is_error" != "true" ]; then
             echo "Claude review completed without error."
             exit 0
           fi
-          msg="⚠️ **Claude PR review failed to run** (\`is_error=true\`, no review posted — usually an Anthropic API/auth/credit error). See the [workflow run]($RUN_URL) for details, or check [Claude status](https://status.claude.com/)."
-          echo "::error::Claude PR review failed to run — see $RUN_URL"
-          # ponytail: one comment per failed run; make it a sticky find-or-update comment if the noise matters.
+          # A turn budget that ran out and an API failure need different fixes,
+          # so the comment names which one happened.
+          if [ "$subtype" = "error_max_turns" ]; then
+            turns=$(printf '%s' "$result" | jq -r '.num_turns // "?"')
+            denials=$(printf '%s' "$result" | jq -r '.permission_denials_count // 0')
+            reason="it ran out of turns ($turns used, $denials tool calls denied). Raise \`--max-turns\`, or allow the denied tools so the budget goes to reviewing."
+          else
+            reason="the step failed with subtype \`$subtype\`, usually an Anthropic API, auth or credit error. Check [Claude status](https://status.claude.com/)."
+          fi
+          msg="⚠️ **Claude PR review failed to run**: $reason See the [workflow run]($RUN_URL) for details."
+          echo "::error::Claude PR review failed ($subtype), see $RUN_URL"
           gh pr comment "$PR_NUMBER" --body "$msg" || echo "Could not post PR comment"
           exit 1

@@ -76,7 +76,8 @@ pub fn encoding_failed(
         | solution::Error::FastPathOrderMismatch
         | solution::Error::FastPathLimitNotMet
         | solution::Error::FastPathTrade(_)
-        | solution::Error::Math(_) => return,
+        | solution::Error::Math(_)
+        | solution::Error::MissingAuctionId => return,
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);

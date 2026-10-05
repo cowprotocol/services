@@ -74,7 +74,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     };
 
     let order = ab_order()
-        .kind(order::Kind::Limit)
         .sell_amount(test_case.order.sell_amount)
         .buy_amount(test_case.order.buy_amount)
         // Expected amounts already account for network fee, so it doesn't matter for the math.

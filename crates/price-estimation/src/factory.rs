@@ -7,6 +7,7 @@ use {
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimating, NativePriceEstimator},
         native_price_cache::{self, ApproximationToken},
+        quote_id::QuoteIdAllocator,
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -63,6 +64,9 @@ pub struct Components {
     pub http_factory: HttpClientFactory,
     pub deny_listed_tokens: DenyListedTokens,
     pub tokens: Arc<dyn TokenInfoFetching>,
+    /// Where the ids quotes are stored under come from. Every solver asked
+    /// for a quote is sent its own id.
+    pub quote_id_generator: Arc<dyn crate::QuoteIdGenerating>,
 }
 
 /// A factory for initializing shared price estimators.
@@ -71,6 +75,9 @@ pub struct PriceEstimatorFactory<'a> {
     config: &'a NativePriceConfig,
     network: Network,
     components: Components,
+    /// Hands out the ids quote requests are sent with. Shared by all external
+    /// estimators so that ids are drawn from the database in bulk.
+    quote_ids: Arc<QuoteIdAllocator>,
     settlement_simulator: Option<SettlementSimulator>,
     trade_verifier: Option<Arc<dyn TradeVerifying>>,
     estimators: HashMap<String, EstimatorEntry>,
@@ -94,6 +101,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             args,
             config,
             network,
+            quote_ids: Arc::new(QuoteIdAllocator::new(components.quote_id_generator.clone())),
             components,
             estimators: HashMap::new(),
         })
@@ -575,6 +583,7 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
             factory.network.block_stream.clone(),
+            factory.quote_ids.clone(),
         ))
     }
 

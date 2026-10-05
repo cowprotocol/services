@@ -167,14 +167,21 @@ pub struct Configuration {
     /// Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
 
-    /// Runtime toggle for the autopilot's fast-path handler. When
-    /// `false`, fast-path orders are still accepted at placement but
-    /// the handler skips the out-of-competition settle and drops them
-    /// into the next regular auction. The exclusivity window itself
-    /// is derived from `run_loop.submission_deadline` (blocks) × the
-    /// network's block time.
+    /// Number of blocks a fast-path order stays exclusive to the winning
+    /// quote's solver: it may settle out of competition within this many
+    /// blocks before the order falls back to the regular auction. Also
+    /// caps the `/settle` attempt. `None` disables the fast path: orders
+    /// are still accepted at placement but drop straight into the next
+    /// regular auction.
     #[serde(default)]
-    pub fast_path_enabled: bool,
+    pub fast_path_submission_deadline: Option<u64>,
+
+    /// Whether fast-path orders get the CIP-87 penalty cap. Off at launch so
+    /// fast-path penalties stay decoupled from the regular auction's; enable
+    /// once solvers understand the feature. Has no effect unless `penalty_cap`
+    /// is also configured.
+    #[serde(default)]
+    pub fast_path_penalty_cap_enabled: bool,
 
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
     /// 1inch, quote verification, balance overrides, etc.).
@@ -249,7 +256,8 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
-            fast_path_enabled: false,
+            fast_path_submission_deadline: None,
+            fast_path_penalty_cap_enabled: false,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -283,7 +291,8 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
-            fast_path_enabled: false,
+            fast_path_submission_deadline: None,
+            fast_path_penalty_cap_enabled: false,
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -334,6 +343,8 @@ mod tests {
         min-order-validity-period = "2m"
         max-auction-age = "10m"
         native-price-timeout = "3s"
+        fast-path-submission-deadline = 3
+        fast-path-penalty-cap-enabled = true
 
         [[drivers]]
         name = "solver1"
@@ -486,6 +497,8 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
+        assert_eq!(config.fast_path_submission_deadline, Some(3));
+        assert!(config.fast_path_penalty_cap_enabled);
 
         assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
         assert_eq!(
@@ -555,6 +568,8 @@ mod tests {
         assert_eq!(config.min_order_validity_period, Duration::from_secs(60));
         assert_eq!(config.max_auction_age, Duration::from_secs(300));
         assert_eq!(config.native_price_timeout, Duration::ZERO);
+        assert_eq!(config.fast_path_submission_deadline, None);
+        assert!(!config.fast_path_penalty_cap_enabled);
     }
 
     #[test]

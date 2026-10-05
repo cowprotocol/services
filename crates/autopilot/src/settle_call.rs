@@ -6,7 +6,10 @@
 use {
     crate::{
         domain::settlement::{ExecutionEnded, ExecutionStarted},
-        infra::{self, solvers::dto::settle},
+        infra::{
+            self,
+            solvers::dto::{settle, settle_fast_path},
+        },
         maintenance::{MaintenanceSync, SyncTarget},
     },
     eth_domain_types::{self as eth, TxId},
@@ -21,6 +24,39 @@ pub enum SettleError {
     Other(anyhow::Error),
     #[error("settlement transaction await reached deadline")]
     Timeout,
+}
+
+/// A settlement to ask a driver for: either a solution it proposed in the
+/// auction, or a quote solution it cached at quote time. Both go through the
+/// same deadline handling and execution journalling, but hit different driver
+/// endpoints.
+#[derive(Debug)]
+pub enum Request {
+    Auction(settle::Request),
+    FastPath(Box<settle_fast_path::Request>),
+}
+
+impl Request {
+    fn auction_id(&self) -> i64 {
+        match self {
+            Self::Auction(request) => request.auction_id,
+            Self::FastPath(request) => request.auction_id,
+        }
+    }
+
+    fn submission_deadline_latest_block(&self) -> u64 {
+        match self {
+            Self::Auction(request) => request.submission_deadline_latest_block,
+            Self::FastPath(request) => request.submission_deadline_latest_block,
+        }
+    }
+
+    async fn send(&self, driver: &infra::Driver, timeout: Duration) -> anyhow::Result<()> {
+        match self {
+            Self::Auction(request) => driver.settle(request, timeout).await,
+            Self::FastPath(request) => driver.settle_fast_path(request, timeout).await,
+        }
+    }
 }
 
 pub struct SettleCall {
@@ -56,27 +92,18 @@ impl SettleCall {
         driver: &infra::Driver,
         solver: eth::Address,
         solution_uid: usize,
-        request: settle::Request,
+        request: Request,
     ) -> Result<TxId, SettleError> {
-        let auction_id = request.auction_id;
-        let deadline = request.submission_deadline_latest_block;
+        let auction_id = request.auction_id();
+        let deadline = request.submission_deadline_latest_block();
 
         let settle = async move {
             let current_block = self.eth.current_block().borrow().number;
-            anyhow::ensure!(
-                current_block < request.submission_deadline_latest_block,
-                "submission deadline was missed"
-            );
+            anyhow::ensure!(current_block < deadline, "submission deadline was missed");
 
-            self.store_execution_started(
-                request.auction_id,
-                solver,
-                solution_uid,
-                current_block,
-                request.submission_deadline_latest_block,
-            );
-            driver
-                .settle(&request, self.max_settlement_transaction_wait)
+            self.store_execution_started(auction_id, solver, solution_uid, current_block, deadline);
+            request
+                .send(driver, self.max_settlement_transaction_wait)
                 .await
         }
         .boxed();

@@ -100,9 +100,6 @@ pub struct SolveResponse {
 #[serde(rename_all = "camelCase")]
 pub struct Solution {
     pub solution_id: u64,
-    /// Total surplus in lamports, decimal string on the wire.
-    #[serde_as(as = "DisplayFromStr")]
-    pub score: u64,
     /// The keypair the driver settles with, the on-chain solver identity.
     #[serde_as(as = "DisplayFromStr")]
     pub solver: Pubkey,
@@ -208,7 +205,6 @@ mod tests {
         let solve = SolveResponse {
             solutions: vec![Solution {
                 solution_id: 3,
-                score: 12_345,
                 solver: Pubkey([0x22; 32]),
                 orders: HashMap::from([(
                     IntentHash([0x11; 32]),
@@ -220,7 +216,6 @@ mod tests {
             }],
         };
         let json = serde_json::to_value(&solve).unwrap();
-        assert_eq!(json["solutions"][0]["score"], "12345");
         assert_eq!(
             serde_json::from_value::<SolveResponse>(json).unwrap(),
             solve

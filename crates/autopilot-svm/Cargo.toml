@@ -27,6 +27,7 @@ cow-solana-rpc = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
+moka = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
@@ -36,6 +37,10 @@ serde-ext = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }
+solana-system-interface = { workspace = true }
+solana-token = { workspace = true }
+spl-associated-token-account-interface = { workspace = true }
+spl-token-2022-interface = { workspace = true }
 spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
@@ -47,8 +52,8 @@ url = { workspace = true }
 winner-selection = { workspace = true }
 
 [dev-dependencies]
-base64 = { workspace = true }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
+solana-testlib = { workspace = true }
 
 [lints]
 workspace = true

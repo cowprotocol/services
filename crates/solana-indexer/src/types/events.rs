@@ -98,10 +98,13 @@ pub(crate) enum SettlementEvent {
         /// Order UID this order is identified by.
         order_uid: OrderUid,
     },
-    /// An order was cancelled.
+    /// An order was cancelled. The wire names the order PDA, not the UID.
     OrderCancelled {
-        /// Order UID this order is identified by.
-        order_uid: OrderUid,
+        /// Transaction the cancellation landed in, the key that lifts it
+        /// again when the transaction vanishes before finalizing.
+        signature: Signature,
+        /// Canonical order PDA address.
+        order_pda: Pubkey,
     },
     /// A settlement was finalized on-chain.
     SettlementFinalized(FinalizedSettlement),

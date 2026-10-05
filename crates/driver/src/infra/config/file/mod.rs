@@ -325,12 +325,13 @@ struct SolverConfig {
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
 
-    /// Haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make bids more conservative by adjusting clearing prices
-    /// to report lower surplus. Useful for solvers prone to negative slippage.
-    /// Default: 0 (no haircut).
-    #[serde(default)]
-    haircut_bps: u32,
+    /// Volume-based solver fee in basis points (0-10000, exclusive). Injected
+    /// as an additional volume fee policy on every auction order, reusing the
+    /// protocol fee machinery to make bids and delivered prices more
+    /// conservative. Useful for solvers prone to negative slippage.
+    /// Default: 0 (no fee).
+    #[serde(default, alias = "haircut-bps")]
+    solver_fee_bps: u32,
 
     /// Additional EOAs that submit settlement txs on behalf of the solver
     /// via EIP-7702 delegation. When non-empty, enables parallel submission
@@ -484,6 +485,12 @@ struct ContractsConfig {
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::Address>,
+
+    /// Override the default address of the DeadlineCheck contract. A
+    /// call to this contract is injected as a pre-interaction at
+    /// `/settle` time so that the settlement reverts on-chain if it is
+    /// mined past its submission deadline.
+    deadline_check: Option<eth::Address>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

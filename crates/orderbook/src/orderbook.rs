@@ -571,13 +571,7 @@ impl Orderbook {
         // latest state of an already executed order is not `Traded`. To
         // detect that we first check the trades table and return the
         // appropriate competition data.
-        let trades = self
-            .database
-            .trades(&TradeFilter {
-                owner: None,
-                order_uid: Some(*uid),
-            })
-            .await?;
+        let trades = self.database.trades(&TradeFilter::OrderUid(*uid)).await?;
 
         match trades.first().map(|trade| trade.tx_hash) {
             Some(Some(tx_hash)) => {

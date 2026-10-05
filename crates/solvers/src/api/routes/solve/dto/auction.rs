@@ -12,10 +12,7 @@ use {
 /// Converts a data transfer object into its domain object representation.
 pub fn into_domain(auction: Auction) -> Result<auction::Auction, Error> {
     Ok(auction::Auction {
-        id: match auction.id {
-            Some(id) => auction::Id::Solve(id),
-            None => auction::Id::Quote,
-        },
+        id: auction::Id(auction.id.or(auction.quote_id).unwrap_or_default()),
         tokens: auction::Tokens(
             auction
                 .tokens

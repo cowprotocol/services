@@ -15,7 +15,7 @@ use {
 pub fn create_quote_row(competition: &QuoteCompetition) -> Result<DbQuote> {
     let data = competition.to_quote_data();
     Ok(DbQuote {
-        id: Default::default(),
+        id: competition.metadata.quote_id,
         sell_token: ByteArray(*data.sell_token.0),
         buy_token: ByteArray(*data.buy_token.0),
         sell_amount: u256_to_big_decimal(&data.quoted_sell_amount),

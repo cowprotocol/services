@@ -34,3 +34,6 @@ filter = "info,solana_orderbook=debug"
 # [sponsoring]
 # The funding account creation transactions must name as their fee payer.
 # funder = "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
+# The most the funder pays in priority fee for one creation, in lamports.
+# Defaults to 100000.
+# max-priority-fee-lamports = 100000

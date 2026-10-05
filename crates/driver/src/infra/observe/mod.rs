@@ -13,7 +13,7 @@ use {
                 self,
                 Solution,
                 Solved,
-                solution::{self, Settlement},
+                solution::{self, Settlement, settlement::EncodedSettlement},
             },
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
@@ -127,24 +127,17 @@ pub fn encoding_failed(
     solver: &solver::Name,
     id: &solution::Id,
     err: &solution::Error,
-    has_haircut: bool,
     orders: &[competition::order::Uid],
 ) {
     tracing::info!(
         ?id,
         ?orders,
         ?err,
-        has_haircut,
         "discarded solution: settlement encoding"
     );
-    let reason = if has_haircut {
-        "SettlementEncodingHaircut"
-    } else {
-        "SettlementEncoding"
-    };
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), reason])
+        .with_label_values(&[solver.as_str(), "SettlementEncoding"])
         .inc();
 }
 
@@ -182,26 +175,11 @@ pub fn score(settlement: &Settlement, score: &eth::Ether) {
 
 // Observe that the winning settlement started failing upon arrival of a new
 // block
-pub fn winner_voided(
-    solver: &solver::Name,
-    block: BlockInfo,
-    err: &simulator::RevertError,
-    has_haircut: bool,
-) {
-    tracing::warn!(
-        block = block.number,
-        ?err,
-        has_haircut,
-        "solution reverts on new block"
-    );
-    let reason = if has_haircut {
-        "SimulationRevertHaircut"
-    } else {
-        "SimulationRevert"
-    };
+pub fn winner_voided(solver: &solver::Name, block: BlockInfo, err: &simulator::RevertError) {
+    tracing::warn!(block = block.number, ?err, "solution reverts on new block");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), reason])
+        .with_label_values(&[solver.as_str(), "SimulationRevert"])
         .inc();
 }
 
@@ -385,7 +363,7 @@ pub fn solver_response(
 /// once the race outcome is known.
 pub fn mempool_log(
     mempool: &Mempool,
-    settlement: &Settlement,
+    settlement: &EncodedSettlement,
     result: &Result<SubmissionSuccess, mempools::Error>,
 ) {
     match result {
@@ -451,6 +429,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::FastPathLimitNotMet => "FastPathLimitNotMet",
         competition::Error::FastPathInvalidOrder(_) => "FastPathInvalidOrder",
         competition::Error::FastPathSettlement(_) => "FastPathSettlement",
+        competition::Error::EncodingFailed(_) => "EncodingFailed",
     }
 }
 

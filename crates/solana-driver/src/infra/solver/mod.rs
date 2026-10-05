@@ -6,14 +6,14 @@
 
 use {
     crate::{
-        domain,
+        domain::{self, order_uid::OrderUid, solver_fee::SolverFee},
         infra::{config, solver::dto::auction::Auction},
     },
     solana_sdk::{
         pubkey::Pubkey,
         signer::{Signer, keypair::Keypair},
     },
-    std::{num::NonZero, sync::Arc},
+    std::{collections::HashSet, num::NonZero, sync::Arc},
     thiserror::Error,
 };
 
@@ -27,6 +27,7 @@ pub struct Solver {
     client: reqwest::Client,
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
+    solver_fee: Option<SolverFee>,
 }
 
 impl Solver {
@@ -48,6 +49,11 @@ impl Solver {
     /// The auction-id stride this solver participates at, when throttled.
     pub fn solve_every_nth_auction(&self) -> Option<NonZero<u64>> {
         self.solve_every_nth_auction
+    }
+
+    /// The volume-based solver fee, `None` when no fee is configured.
+    pub fn solver_fee(&self) -> Option<SolverFee> {
+        self.solver_fee
     }
 
     /// Build a solver client from its configuration.
@@ -72,6 +78,7 @@ impl Solver {
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
+            solver_fee: config.solver_fee_bps,
         })
     }
 
@@ -79,14 +86,22 @@ impl Solver {
     /// domain solutions it produced.
     ///
     /// `program_id` is the settlement program the swap instructions are built
-    /// for.
+    /// for. `missing_buy_token_accounts` marks the orders whose payout account
+    /// the settlement creates.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
     pub async fn solve(
         &self,
         auction: &domain::Auction,
         program_id: Pubkey,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.pubkey(), program_id);
+        let auction_dto = Auction::new(
+            auction,
+            self.pubkey(),
+            program_id,
+            self.solver_fee,
+            missing_buy_token_accounts,
+        );
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -176,6 +191,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer_keypair: keypair_path,
             solve_every_nth_auction: None,
+            solver_fee_bps: None,
         })
         .expect("solver construction should succeed");
         let auction = domain::Auction {
@@ -187,7 +203,7 @@ mod tests {
         };
 
         let solutions = solver
-            .solve(&auction, Pubkey::default())
+            .solve(&auction, Pubkey::default(), &Default::default())
             .await
             .expect("solve should succeed with no solutions");
         assert!(

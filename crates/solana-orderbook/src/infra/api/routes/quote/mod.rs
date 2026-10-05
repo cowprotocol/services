@@ -3,14 +3,18 @@
 pub mod dto;
 
 use {
+    super::mint::{ensure_settleable, token_mints},
     crate::infra::{
-        api::{State, ValidationParameters, error, extract},
+        api::{Sponsoring, State, ValidationParameters, error, extract},
         db,
         quoter,
     },
     axum::{Json, http::StatusCode},
     chrono::Utc,
+    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     database::{byte_array::ByteArray, solana::OrderKind},
+    solana_sdk::pubkey::Pubkey,
+    spl_token_interface::native_mint,
     std::time::Duration,
 };
 
@@ -35,6 +39,9 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
+    if let Some(sponsoring) = state.sponsoring() {
+        check_mints(sponsoring, &request).await?;
+    }
 
     let (kind, amount) = request.side.kind_and_amount();
     let quoted = state
@@ -54,6 +61,16 @@ pub async fn quote(
         .map_err(|quoter::Error::NoQuotes| {
             error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
+    // A native SOL buy under the floor cannot be placed.
+    if request.buy_token == ENCODED_NATIVE_SOL_TRANSFER
+        && quoted.buy_amount < super::min_native_payout()
+    {
+        return Err(error::reply(
+            StatusCode::BAD_REQUEST,
+            "InvalidNativeBuy",
+            "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
+        ));
+    }
 
     let expiration = now + state.quote_expiry();
     // A failed insert answers without an id instead of failing the quote,
@@ -101,7 +118,24 @@ pub async fn quote(
         expiration,
         id,
         verified: false,
+        funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// Reject a mint the settlement program cannot move. The chain read goes
+/// through the sponsoring RPC client, so the check is skipped without
+/// sponsoring and when the read fails: placement and the autopilot check the
+/// mints again.
+async fn check_mints(sponsoring: &Sponsoring, request: &dto::Request) -> Result<(), error::Reply> {
+    let mints: Vec<Pubkey> = token_mints(request.sell_token, request.buy_token).collect();
+    let lookup = sponsoring.mints.lookup(mints.iter().copied());
+    match sponsoring.rpc.multiple_accounts(lookup.unread()).await {
+        Ok(accounts) => ensure_settleable(&lookup.resolve(&accounts), mints),
+        Err(err) => {
+            tracing::warn!(?err, "mint lookup failed, quoting unchecked");
+            Ok(())
+        }
+    }
 }
 
 /// The checks an order must pass before it is worth quoting.
@@ -111,7 +145,7 @@ fn validate(
     now_secs: u32,
     validation: &ValidationParameters,
 ) -> Result<(), error::Reply> {
-    if request.sell_token == request.buy_token {
+    if same_token(&request.sell_token, &request.buy_token) {
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
             "SameBuyAndSellToken",
@@ -140,4 +174,28 @@ fn validate(
         ));
     }
     Ok(())
+}
+
+/// Whether a quote trades a token for itself. The System Program ID stands
+/// for native SOL only on the buy side, where it counts as wSOL. A SOL sell
+/// names the wSOL mint.
+fn same_token(sell: &Pubkey, buy: &Pubkey) -> bool {
+    sell == buy || (*sell == native_mint::ID && *buy == ENCODED_NATIVE_SOL_TRANSFER)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_sol_buys_count_as_wsol() {
+        let mint = Pubkey::new_unique();
+        assert!(same_token(&mint, &mint));
+        assert!(!same_token(&mint, &Pubkey::new_unique()));
+        assert!(same_token(&native_mint::ID, &ENCODED_NATIVE_SOL_TRANSFER));
+        assert!(!same_token(&mint, &ENCODED_NATIVE_SOL_TRANSFER));
+        // As a sell token the System Program ID is not SOL. A SOL sell names
+        // the wSOL mint.
+        assert!(!same_token(&ENCODED_NATIVE_SOL_TRANSFER, &native_mint::ID));
+    }
 }
