@@ -149,6 +149,7 @@ impl Competition {
             let elapsed_ms = elapsed.as_millis() as u64;
             match &verdict {
                 Ok(()) => tracing::info!(
+                    solver = %self.solver.name(),
                     solution_id = solution.id,
                     elapsed_ms,
                     window_ms,
@@ -156,6 +157,7 @@ impl Competition {
                 ),
                 Err(error) if proves_failure(error) => {
                     tracing::warn!(
+                        solver = %self.solver.name(),
                         solution_id = solution.id,
                         ?error,
                         elapsed_ms,
@@ -165,6 +167,7 @@ impl Competition {
                     continue;
                 }
                 Err(error) => tracing::info!(
+                    solver = %self.solver.name(),
                     solution_id = solution.id,
                     ?error,
                     elapsed_ms,
@@ -243,6 +246,7 @@ impl Competition {
                 // Named here because the bundle endpoint may return no logs
                 // for a failed leg.
                 tracing::warn!(
+                    solver = %self.solver.name(),
                     solution_id = solution.id,
                     leg,
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
