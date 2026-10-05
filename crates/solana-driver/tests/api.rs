@@ -155,7 +155,7 @@ async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubk
     let solver = Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: format!("http://{addr}").parse().unwrap(),
-        signer: config::SettlementSigner::Keypair(keypair_path),
+        signer: cow_solana_signer::Config::Keypair(keypair_path),
         solve_every_nth_auction: None,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
     })
@@ -176,7 +176,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
     Solver::new(&config::Solver {
         name: "mock".to_owned(),
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
-        signer: config::SettlementSigner::Keypair(keypair_file.path().to_path_buf()),
+        signer: cow_solana_signer::Config::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
         solver_fee_bps: None,
     })

@@ -2,19 +2,16 @@
 
 use {
     super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
-    crate::infra::{
-        blockchain::{
-            AccountsSnapshot,
-            InvalidAddressLookupTableReason,
-            InvalidMintReason,
-            Solana,
-            TokenAccountState,
-            associated_token_address,
-            close_token_account,
-            create_associated_token_account_idempotent,
-            require_token_balance,
-        },
-        signer::Signer,
+    crate::infra::blockchain::{
+        AccountsSnapshot,
+        InvalidAddressLookupTableReason,
+        InvalidMintReason,
+        Solana,
+        TokenAccountState,
+        associated_token_address,
+        close_token_account,
+        create_associated_token_account_idempotent,
+        require_token_balance,
     },
     cow_settlement_client::instruction::{
         BeginSettle,
@@ -29,6 +26,7 @@ use {
         pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         token_program::TokenProgram,
     },
+    cow_solana_signer::Signer,
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_sdk::{
         hash::Hash,
@@ -804,7 +802,7 @@ pub enum Error {
     Compile(#[from] solana_sdk::message::CompileError),
     /// The transaction failed to sign.
     #[error("failed to sign transaction: {0}")]
-    Sign(#[from] crate::infra::signer::Error),
+    Sign(#[from] cow_solana_signer::Error),
     /// The instruction index does not fit in `u16`.
     #[error("instruction index does not fit in u16")]
     InstructionIndexOverflow,
