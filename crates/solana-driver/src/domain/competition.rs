@@ -17,7 +17,6 @@ use {
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
-        hash::Hash,
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -210,9 +209,9 @@ impl Competition {
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?;
-        // The simulation replaces every blockhash, so a placeholder saves the
-        // fetch.
-        bundle.push(resolved.encode(self.solver.keypair(), Hash::default())?);
+        // The simulation skips signature checks and replaces every blockhash,
+        // so an unsigned transaction saves the signing and the fetch.
+        bundle.push(resolved.unsigned(self.solver.pubkey())?);
         if let Some(size) = bundle
             .iter()
             .filter_map(encoded_size)
@@ -453,7 +452,9 @@ impl Competition {
             .latest_confirmed_blockhash()
             .await
             .map_err(Error::Rpc)?;
-        let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
+        let transaction = resolved
+            .encode(self.solver.signer(), latest.blockhash)
+            .await?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
         {

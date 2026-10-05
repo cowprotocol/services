@@ -10,12 +10,7 @@ use {
         deserialize_url_with_trailing_slash,
     },
     solana_sdk::pubkey::Pubkey,
-    std::{
-        net::SocketAddr,
-        num::NonZero,
-        path::{Path, PathBuf},
-        time::Duration,
-    },
+    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -125,13 +120,9 @@ pub struct Solver {
     /// HTTP endpoint of the solver engine API.
     #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
     pub endpoint: url::Url,
-    /// Path to the solver's settlement signer keypair. The driver's on-chain
-    /// identity for this solver is derived from this keypair.
-    ///
-    /// TODO: plaintext keypair paths are temporary. Secrets must not live in
-    /// plaintext config long-term; KMS-backed signers are planned, mirroring
-    /// the EVM driver's `submission_accounts`.
-    pub signer_keypair: PathBuf,
+    /// The solver's settlement signer. The driver's on-chain identity for
+    /// this solver derives from it.
+    pub signer: cow_solana_signer::Config,
     /// Temporary staging knob: solve only auctions whose id is a multiple of
     /// this value and sit the rest out, so other solvers win settlements to
     /// test against. Absent means every auction.
@@ -165,10 +156,10 @@ mod tests {
         );
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
-        assert_eq!(
-            config.solvers[0].signer_keypair,
-            Path::new("/path/to/keypair.json")
-        );
+        assert!(matches!(
+            &config.solvers[0].signer,
+            cow_solana_signer::Config::Keypair(path) if path == Path::new("/path/to/keypair.json")
+        ));
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
         assert!(!config.logging.use_json);
@@ -179,11 +170,14 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
-            signer-keypair = "/path/to/keypair.json"
+            signer = { keypair = "/path/to/keypair.json" }
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
         assert_eq!(solver.name, "baseline");
-        assert_eq!(solver.signer_keypair, Path::new("/path/to/keypair.json"));
+        assert!(matches!(
+            &solver.signer,
+            cow_solana_signer::Config::Keypair(path) if path == Path::new("/path/to/keypair.json")
+        ));
     }
 
     #[test]
@@ -197,7 +191,7 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
-            signer-keypair = "/path/to/keypair.json"
+            signer = { keypair = "/path/to/keypair.json" }
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
         assert!(solver.solver_fee_bps.is_none());
@@ -208,7 +202,7 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
-            signer-keypair = "/path/to/keypair.json"
+            signer = { keypair = "/path/to/keypair.json" }
             solver-fee-bps = 500
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
@@ -223,7 +217,7 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
-            signer-keypair = "/path/to/keypair.json"
+            signer = { keypair = "/path/to/keypair.json" }
             solver-fee-bps = 10000
         "#;
         assert!(toml::de::from_str::<Solver>(solver_config).is_err());
@@ -234,7 +228,7 @@ mod tests {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
-            signer-keypair = "/path/to/keypair.json"
+            signer = { keypair = "/path/to/keypair.json" }
             solver-fee-bps = 65536
         "#;
         assert!(toml::de::from_str::<Solver>(solver_config).is_err());

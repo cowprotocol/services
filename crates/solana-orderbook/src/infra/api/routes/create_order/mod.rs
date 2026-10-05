@@ -347,19 +347,7 @@ fn validate(
     if intent.sell_amount == 0 || intent.buy_amount == 0 {
         return Err(PlacementError::ZeroAmount);
     }
-    // A native payout under the rent-exempt minimum of an empty account
-    // reverts the whole settlement, and a partial fill can land under it.
     let native_buy = matches!(intent.buy, Asset::Native(_));
-    if native_buy && intent.buy_amount < super::min_native_payout() {
-        return Err(PlacementError::InvalidNativeBuy(
-            "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
-        ));
-    }
-    if native_buy && intent.flags.partially_fillable {
-        return Err(PlacementError::InvalidNativeBuy(
-            "a native SOL buy cannot be partially fillable",
-        ));
-    }
     let order_pda = find_order_pda(&sponsoring.settlement_program, &uid).0;
     if *input.order_pda != order_pda {
         return Err(PlacementError::WrongOrderPda);
@@ -414,9 +402,10 @@ fn validate(
 
 /// Reject an order on a mint the settlement program cannot move, a
 /// preparation step naming a token program that does not own its mint, and a
-/// native SOL buy paying an account the System Program does not own. Lamports
-/// paid to a program or a sysvar revert the settlement, and a program-owned
-/// account strands them. The payout creates a missing wallet.
+/// native SOL buy paying an account the System Program does not own or
+/// leaving its wallet under the rent-exempt minimum. Lamports paid to a
+/// program or a sysvar revert the settlement, and a program-owned account
+/// strands them. The payout creates a missing wallet.
 async fn check_accounts(
     sponsoring: &Sponsoring,
     order: &db::SponsoredOrder,
@@ -441,6 +430,18 @@ async fn check_accounts(
     {
         return Err(PlacementError::InvalidNativeBuy(
             "a native SOL buy must pay a wallet owned by the System Program",
+        )
+        .into());
+    }
+    if let Some(wallet) = wallet
+        && !super::receivable_native_payout(
+            accounts.get(&wallet),
+            order.buy_amount,
+            order.partially_fillable,
+        )
+    {
+        return Err(PlacementError::InvalidNativeBuy(
+            "a native SOL buy must leave its wallet rent-exempt",
         )
         .into());
     }

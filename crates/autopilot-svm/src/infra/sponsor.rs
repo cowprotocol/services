@@ -5,18 +5,16 @@ use {
     anyhow::{Context, Result, ensure},
     chain_types::solana::IntentHash,
     cow_solana_rpc::SolanaRPC,
+    cow_solana_signer::Signer,
     database::solana::OrderEventLabel,
-    solana_sdk::{
-        signer::{Signer, keypair::Keypair},
-        transaction::VersionedTransaction,
-    },
+    solana_sdk::transaction::VersionedTransaction,
     sqlx::PgPool,
 };
 
-/// Holds the funder key and countersigns the stored creation transactions of
-/// winning sponsored orders right before their settlement is dispatched.
+/// Holds the funder signer and countersigns the stored creation transactions
+/// of winning sponsored orders right before their settlement is dispatched.
 pub struct Sponsor {
-    keypair: Keypair,
+    signer: Signer,
     rpc: SolanaRPC,
     pool: PgPool,
 }
@@ -28,8 +26,8 @@ pub struct Sponsor {
 struct BlockhashExpired;
 
 impl Sponsor {
-    pub fn new(keypair: Keypair, rpc: SolanaRPC, pool: PgPool) -> Self {
-        Self { keypair, rpc, pool }
+    pub fn new(signer: Signer, rpc: SolanaRPC, pool: PgPool) -> Self {
+        Self { signer, rpc, pool }
     }
 
     /// The fully signed creation transactions the given orders still need on
@@ -89,7 +87,7 @@ impl Sponsor {
         let mut transaction: VersionedTransaction =
             bincode::deserialize(bytes).context("stored creation does not decode")?;
         ensure!(
-            transaction.message.static_account_keys().first() == Some(&self.keypair.pubkey()),
+            transaction.message.static_account_keys().first() == Some(&self.signer.pubkey()),
             "stored creation does not name the funder as fee payer"
         );
         let valid = self
@@ -98,7 +96,11 @@ impl Sponsor {
             .await
             .context("blockhash validity check failed")?;
         ensure!(valid, BlockhashExpired);
-        let signature = self.keypair.sign_message(&transaction.message.serialize());
+        let signature = self
+            .signer
+            .sign_message(&transaction.message.serialize())
+            .await
+            .context("failed to countersign the creation")?;
         match transaction.signatures.first_mut() {
             Some(slot) => *slot = signature,
             None => anyhow::bail!("stored creation carries no signature slots"),
@@ -112,7 +114,13 @@ mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest},
-        solana_sdk::{hash::Hash, message::Message, pubkey::Pubkey, signature::Signature},
+        solana_sdk::{
+            hash::Hash,
+            message::Message,
+            pubkey::Pubkey,
+            signature::Signature,
+            signer::{Signer as _, keypair::Keypair},
+        },
     };
 
     /// Countersigning fills exactly the funder's slot and leaves the owner's
@@ -143,7 +151,7 @@ mod tests {
         };
 
         let sponsor = Sponsor::new(
-            funder.insecure_clone(),
+            Signer::Keypair(funder.insecure_clone()),
             SolanaRPC::new_mock_with_mocks(Mocks::from([(
                 RpcRequest::IsBlockhashValid,
                 serde_json::json!({
@@ -183,7 +191,7 @@ mod tests {
             message: solana_sdk::message::VersionedMessage::Legacy(message),
         };
         let sponsor = Sponsor::new(
-            funder.insecure_clone(),
+            Signer::Keypair(funder.insecure_clone()),
             SolanaRPC::new_mock_with_mocks(Mocks::from([(
                 RpcRequest::IsBlockhashValid,
                 serde_json::json!({
@@ -244,7 +252,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 2000, 'sell'::solana.OrderKind, fals
             .await
             .unwrap();
             let sponsor = Sponsor::new(
-                funder.insecure_clone(),
+                Signer::Keypair(funder.insecure_clone()),
                 SolanaRPC::new_mock_with_mocks(Mocks::from([
                     (
                         RpcRequest::IsBlockhashValid,
