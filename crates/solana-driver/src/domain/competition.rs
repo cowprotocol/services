@@ -16,12 +16,7 @@ use {
     base64::{Engine, prelude::BASE64_STANDARD},
     itertools::Itertools,
     moka::sync::Cache,
-    solana_sdk::{
-        hash::Hash,
-        pubkey::Pubkey,
-        signature::Signature,
-        transaction::VersionedTransaction,
-    },
+    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
@@ -179,8 +174,7 @@ impl Competition {
     }
 
     /// The wire size and account count of the solution's settlement
-    /// transaction, `None` when it cannot be built. Neither the blockhash nor
-    /// the compute unit price changes either.
+    /// transaction, `None` when it cannot be built.
     async fn transaction_footprint(
         &self,
         auction_id: Id,
@@ -199,9 +193,7 @@ impl Competition {
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await
             .ok()?;
-        let transaction = resolved
-            .encode(self.solver.keypair(), Hash::default(), 0)
-            .ok()?;
+        let transaction = resolved.unsigned().ok()?;
         Some((encoded_size(&transaction)?, account_count(&transaction)))
     }
 
@@ -391,11 +383,13 @@ impl Competition {
                     .await
                     .map_err(Error::Rpc)
             },)?;
-        let transaction = resolved.encode(
-            self.solver.keypair(),
-            latest.blockhash,
-            estimate.compute_unit_price,
-        )?;
+        let transaction = resolved
+            .encode(
+                self.solver.signer(),
+                latest.blockhash,
+                estimate.compute_unit_price,
+            )
+            .await?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
         {

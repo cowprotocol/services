@@ -40,12 +40,10 @@ pub async fn run(args: Args) {
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
     );
-    let solvers: Vec<solver::Solver> = config
-        .solvers
-        .iter()
-        .map(solver::Solver::new)
-        .collect::<Result<_, _>>()
-        .expect("failed to load solver signer keypairs");
+    let solvers: Vec<solver::Solver> =
+        futures::future::try_join_all(config.solvers.iter().map(solver::Solver::new))
+            .await
+            .expect("failed to load solver signers");
     let blockchain = Arc::new(blockchain::Solana::new(
         rpc,
         config.chain.settlement_program_id,

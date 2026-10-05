@@ -26,6 +26,7 @@ use {
         pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         token_program::TokenProgram,
     },
+    cow_solana_signer::Signer,
     itertools::Itertools,
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_sdk::{
@@ -33,7 +34,7 @@ use {
         instruction::Instruction,
         message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0},
         pubkey::Pubkey,
-        signer::keypair::Keypair,
+        signature::Signature,
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::transfer,
@@ -375,24 +376,45 @@ impl ResolvedSettlement {
             .collect())
     }
 
-    /// Encode the resolved settlement as a v0 transaction signed by the payer,
+    /// Compile the resolved settlement into the v0 message the payer signs,
     /// paying `compute_unit_price` micro-lamports per compute unit.
-    pub fn encode(
-        self,
-        signer: &Keypair,
-        blockhash: Hash,
-        compute_unit_price: u64,
-    ) -> Result<VersionedTransaction, Error> {
+    fn message(&self, blockhash: Hash, compute_unit_price: u64) -> Result<MessageV0, Error> {
         let mut instructions = self.instructions()?;
         // The runtime reads compute budget instructions from anywhere in the
         // message; appending keeps the settlement's instruction indices.
         instructions.push(ComputeBudgetInstruction::set_compute_unit_price(
             compute_unit_price,
         ));
-        let message =
-            MessageV0::try_compile(&self.payer, &instructions, &self.lookup_tables, blockhash)?;
-        let transaction = VersionedTransaction::try_new(VersionedMessage::V0(message), &[signer])?;
-        Ok(transaction)
+        Ok(MessageV0::try_compile(
+            &self.payer,
+            &instructions,
+            &self.lookup_tables,
+            blockhash,
+        )?)
+    }
+
+    /// Encode the resolved settlement as a v0 transaction signed by the payer,
+    /// paying `compute_unit_price` micro-lamports per compute unit.
+    pub async fn encode(
+        self,
+        signer: &Signer,
+        blockhash: Hash,
+        compute_unit_price: u64,
+    ) -> Result<VersionedTransaction, Error> {
+        let message = self.message(blockhash, compute_unit_price)?;
+        Ok(signer.sign(message).await?)
+    }
+
+    /// The resolved settlement as an unsigned transaction. Signatures, the
+    /// blockhash and the compute unit price are fixed-size, so it has the
+    /// signed transaction's wire size.
+    pub fn unsigned(&self) -> Result<VersionedTransaction, Error> {
+        let message = self.message(Hash::default(), 0)?;
+        let signatures = vec![Signature::default(); message.header.num_required_signatures.into()];
+        Ok(VersionedTransaction {
+            signatures,
+            message: VersionedMessage::V0(message),
+        })
     }
 }
 
@@ -808,7 +830,7 @@ pub enum Error {
     Compile(#[from] solana_sdk::message::CompileError),
     /// The transaction failed to sign.
     #[error("failed to sign transaction: {0}")]
-    Sign(#[from] solana_sdk::signer::SignerError),
+    Sign(#[from] cow_solana_signer::Error),
     /// The instruction index does not fit in `u16`.
     #[error("instruction index does not fit in u16")]
     InstructionIndexOverflow,
@@ -830,7 +852,7 @@ mod tests {
         },
         cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
         serde_json::Value,
-        solana_sdk::signer::Signer,
+        solana_sdk::signer::keypair::Keypair,
         solana_testlib::{
             account_json,
             mint_account_json,
@@ -1002,6 +1024,27 @@ mod tests {
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
         assert_eq!(begin_input.orders.iter().count(), 1);
+    }
+
+    /// The unsigned transaction has the signed one's wire size.
+    #[tokio::test]
+    async fn unsigned_has_the_signed_wire_size() {
+        let program_id = pubkey(0xaa);
+        let signer = Signer::Keypair(Keypair::new());
+        let order = test_order(&program_id);
+        let uid = order.uid;
+        let settlement = test_settlement(&[order], &[trade(uid, 1_000, 2_000)]).unwrap();
+        let resolved = resolve_for_test(settlement, signer.pubkey());
+
+        let unsigned = resolved.unsigned().unwrap();
+        let signed = resolved
+            .encode(&signer, Hash::new_unique(), 1_500)
+            .await
+            .unwrap();
+        assert_eq!(
+            bincode::serialized_size(&unsigned).unwrap(),
+            bincode::serialized_size(&signed).unwrap()
+        );
     }
 
     /// The sell tokens are pulled into the payer's sell ATA, not a buffer, so
@@ -1536,17 +1579,20 @@ mod tests {
 
     /// `encode` appends `SetComputeUnitPrice` after the settlement's
     /// instructions.
-    #[test]
-    fn encode_appends_the_compute_unit_price() {
+    #[tokio::test]
+    async fn encode_appends_the_compute_unit_price() {
         let program_id = pubkey(0xaa);
-        let signer = Keypair::new();
+        let signer = Signer::Keypair(Keypair::new());
         let order = test_order(&program_id);
         let settlement =
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
         let resolved = resolve_for_test(settlement, signer.pubkey());
         let settlement_instructions = resolved.instructions().unwrap().len();
 
-        let transaction = resolved.encode(&signer, Hash::default(), 1_500).unwrap();
+        let transaction = resolved
+            .encode(&signer, Hash::default(), 1_500)
+            .await
+            .unwrap();
 
         let message = &transaction.message;
         assert_eq!(message.instructions().len(), settlement_instructions + 1);
