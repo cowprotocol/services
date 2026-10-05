@@ -25,6 +25,7 @@ const-hex = { workspace = true }
 contracts = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
+eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 event-bus-dto = { workspace = true }
 futures = { workspace = true }

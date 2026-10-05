@@ -7,7 +7,7 @@ use {
         domain::{self, Side, order_uid::OrderUid, solver_fee::SolverFee},
         infra::blockchain::associated_token_address,
     },
-    cow_settlement_interface::pda::buffer::find_buffer_pda,
+    cow_settlement_interface::{pda::buffer::find_buffer_pda, token_program::TokenProgram},
     serde::Serialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
@@ -110,7 +110,7 @@ impl Order {
         let (buy_mint, buy_destination) = if order.buys_native_sol() {
             (
                 native_mint::ID,
-                associated_token_address(&taker, &native_mint::ID),
+                associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken),
             )
         } else {
             (
@@ -333,7 +333,7 @@ mod tests {
         assert_eq!(order.buy_mint, native_mint::ID);
         assert_eq!(
             order.buy_destination,
-            associated_token_address(&taker, &native_mint::ID)
+            associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken)
         );
     }
 }

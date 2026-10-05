@@ -5,7 +5,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
-    database::byte_array::ByteArray,
+    database::{byte_array::ByteArray, solana::OrderEventLabel},
     solana_sdk::clock::MAX_PROCESSING_AGE,
     sqlx::{PgExecutor, Postgres, QueryBuilder},
 };
@@ -76,6 +76,38 @@ ORDER BY o.uid
         .fetch_all(ex)
         .await
         .context("read open solana.orders")
+}
+
+/// Pending sponsored orders whose stored creation transaction died at
+/// `block_height` and that carry no `invalid` event yet. Orders past
+/// `valid_to` are left out: they expired either way, and the bound keeps the
+/// scan small.
+pub async fn unrecorded_dead_creations(
+    ex: impl PgExecutor<'_>,
+    now_unix: i64,
+    block_height: i64,
+) -> Result<Vec<ByteArray<32>>> {
+    const QUERY: &str = r#"
+SELECT o.uid
+FROM solana.orders o
+LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+WHERE o.valid_to >= $1
+  AND o.presigned_transaction IS NOT NULL
+  AND p.order_uid IS NULL
+  AND o.last_valid_block_height < $2
+  AND NOT EXISTS (
+      SELECT 1 FROM solana.order_events e
+      WHERE e.order_uid = o.uid AND e.label = $3
+  )
+ORDER BY o.uid
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(now_unix)
+        .bind(block_height)
+        .bind(OrderEventLabel::Invalid)
+        .fetch_all(ex)
+        .await
+        .context("read unrecorded dead solana.orders creations")
 }
 
 /// Latest slot the indexer fully processed. `None` before the indexer's first
@@ -551,7 +583,13 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{in_flight_orders, last_indexed_slot, open_orders, skip_settlement_window},
+        super::{
+            in_flight_orders,
+            last_indexed_slot,
+            open_orders,
+            skip_settlement_window,
+            unrecorded_dead_creations,
+        },
         bigdecimal::BigDecimal,
         chain_types::solana::Pubkey,
         database::byte_array::ByteArray,
@@ -717,6 +755,77 @@ WHERE uid = $1
         assert_eq!(uids(orders), vec![1, 5, 6]);
     }
 
+    /// A pending sponsored order counts once the chain passes its stored
+    /// creation height, until it carries an `invalid` event. Other events do
+    /// not stop it. Orders created on chain or past `valid_to` never count.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_unrecorded_dead_creations_skip_recorded_ones() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+
+        for table in ["order_events", "trades", "order_pda", "orders"] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+
+        // Creations dying at height 150: pending (1), created on chain (2),
+        // pending but past `valid_to` (3).
+        for (n, valid_to) in [(1, 2_000), (2, 2_000), (3, 500)] {
+            insert_order(
+                &mut tx,
+                n,
+                valid_to,
+                true,
+                database::solana::OrderKind::Sell,
+            )
+            .await;
+            sqlx::query(
+                r#"
+UPDATE solana.orders
+SET presigned_transaction = '\x01', last_valid_block_height = 150
+WHERE uid = $1
+                "#,
+            )
+            .bind(ByteArray([n; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        insert_pda(&mut tx, 2, false, 0, 0).await;
+
+        async fn dead(tx: &mut PgTransaction<'_>, height: i64) -> Vec<u8> {
+            unrecorded_dead_creations(&mut **tx, 1_000, height)
+                .await
+                .unwrap()
+                .iter()
+                .map(|uid| uid.0[0])
+                .collect()
+        }
+        async fn record(tx: &mut PgTransaction<'_>, label: database::solana::OrderEventLabel) {
+            sqlx::query(
+                r#"
+INSERT INTO solana.order_events (order_uid, timestamp, label)
+VALUES ($1, now(), $2)
+                "#,
+            )
+            .bind(ByteArray([1u8; 32]))
+            .bind(label)
+            .execute(&mut **tx)
+            .await
+            .unwrap();
+        }
+
+        assert!(dead(&mut tx, 150).await.is_empty());
+        assert_eq!(dead(&mut tx, 151).await, vec![1]);
+        record(&mut tx, database::solana::OrderEventLabel::Ready).await;
+        assert_eq!(dead(&mut tx, 151).await, vec![1]);
+        record(&mut tx, database::solana::OrderEventLabel::Invalid).await;
+        assert!(dead(&mut tx, 151).await.is_empty());
+    }
+
     /// Held: an order of a winning solution through its deadline slot plus
     /// the blockhash lifetime, a timed-out window included. Released: after
     /// that, once a settlement of the auction trades the order, or once the
@@ -834,7 +943,7 @@ WHERE uid = $1
         for order in [1u8, 3] {
             sqlx::query(
                 "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
-                 sell_amount, buy_amount, fee_amount) VALUES ($1, 0, $2, 10, 20, 0)",
+                 sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 0, $2, 10, 20, 0, 10)",
             )
             .bind([9u8; 64])
             .bind(ByteArray([order; 32]))

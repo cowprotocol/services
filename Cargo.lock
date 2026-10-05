@@ -1499,7 +1499,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "base64 0.22.1",
  "bigdecimal",
  "bincode",
  "chain-types",
@@ -1524,7 +1523,9 @@ dependencies = [
  "solana-sdk",
  "solana-system-interface 3.2.0",
  "solana-testlib",
+ "solana-token",
  "spl-associated-token-account-interface",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "sqlx",
  "thiserror 1.0.69",
@@ -2852,6 +2853,7 @@ dependencies = [
  "cow-contract-cowprotocoltoken",
  "cow-contract-cowswapethflow",
  "cow-contract-cowswaponchainorders",
+ "cow-contract-deadlinecheck",
  "cow-contract-erc1271signaturevalidator",
  "cow-contract-erc20",
  "cow-contract-erc20mintable",
@@ -3289,6 +3291,17 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-cowswaponchainorders"
+version = "0.1.0"
+dependencies = [
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
+ "anyhow",
+]
+
+[[package]]
+name = "cow-contract-deadlinecheck"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
@@ -4565,6 +4578,8 @@ dependencies = [
  "derive_more 1.0.0",
  "num",
  "number",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6239,12 +6254,12 @@ dependencies = [
  "chrono",
  "const-hex",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "hex-literal",
  "maplit",
  "num",
  "number",
  "serde",
- "serde-ext",
  "serde_json",
  "serde_with",
  "strum",
@@ -6777,6 +6792,7 @@ dependencies = [
  "prometheus-metric-storage",
  "reqwest 0.13.4",
  "serde",
+ "serde-ext",
  "serde_json",
  "serde_with",
  "shared",
@@ -7163,6 +7179,7 @@ dependencies = [
  "contracts",
  "dashmap",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "event-bus-dto",
  "futures",
@@ -8705,6 +8722,7 @@ dependencies = [
  "dashmap",
  "database",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "futures",
  "gas-price-estimation",
@@ -9242,6 +9260,7 @@ name = "solana-driver"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "bincode",
  "chrono",
  "clap",
@@ -9269,6 +9288,7 @@ dependencies = [
  "solana-system-interface 3.2.0",
  "solana-testlib",
  "spl-associated-token-account-interface",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -9689,7 +9709,10 @@ dependencies = [
  "solana-compute-budget-interface",
  "solana-sdk",
  "solana-system-interface 3.2.0",
+ "solana-testlib",
+ "solana-token",
  "spl-associated-token-account-interface",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "sqlx",
  "thiserror 1.0.69",
@@ -10328,6 +10351,7 @@ dependencies = [
  "base64 0.22.1",
  "serde_json",
  "solana-sdk",
+ "spl-token-2022-interface 2.1.0",
  "spl-token-interface",
  "tempfile",
 ]
@@ -10337,6 +10361,17 @@ name = "solana-time-utils"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ced92c60aa76ec4780a9d93f3bd64dfa916e1b998eacc6f1c110f3f444f02c9"
+
+[[package]]
+name = "solana-token"
+version = "0.1.0"
+dependencies = [
+ "cow-settlement-interface",
+ "moka",
+ "solana-sdk",
+ "solana-testlib",
+ "spl-token-2022-interface 2.1.0",
+]
 
 [[package]]
 name = "solana-transaction"
@@ -10576,6 +10611,7 @@ dependencies = [
  "const-hex",
  "contracts",
  "derive_more 1.0.0",
+ "eth-domain-types",
  "ethrpc",
  "futures",
  "glob",
@@ -10625,6 +10661,7 @@ dependencies = [
  "bytes-hex",
  "chrono",
  "const-hex",
+ "eth-domain-types",
  "number",
  "serde",
  "serde-ext",
