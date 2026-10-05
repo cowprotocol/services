@@ -237,9 +237,9 @@ paths:
             state PDA (`WrongDelegate`), an intent without the on-chain flag
             (`InvalidIntentFlags`), equal mints or wSOL sold for native SOL
             (`SameBuyAndSellToken`), a zero amount (`ZeroAmount`), a native
-            SOL buy under 890880 lamports (the rent-exempt minimum of an empty
-            account), partially fillable, or paying an account the System
-            Program does not own (`InvalidNativeBuy`), a missing
+            SOL buy paying an account the System Program does not own, or
+            whose payout can leave the wallet under its rent-exempt minimum,
+            890880 lamports for an empty wallet (`InvalidNativeBuy`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
             validity (`InsufficientValidTo`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
@@ -273,8 +273,9 @@ paths:
             The body could not be parsed (`InvalidRequestBody`), buy and sell
             token are the same, wSOL for native SOL included
             (`SameBuyAndSellToken`), the amount is zero
-            (`ZeroAmount`), a native SOL buy is quoted under 890880 lamports,
-            the rent-exempt minimum of an empty account (`InvalidNativeBuy`),
+            (`ZeroAmount`), a native SOL buy would leave its wallet under the
+            rent-exempt minimum, 890880 lamports for an empty wallet
+            (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
             (default two minutes) or further than the configured maximum
             (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
