@@ -183,8 +183,8 @@ fn settleable_orders(
 
 /// Drop orders whose buy token account cannot receive the payout at
 /// `FinalizeSettle`. A native SOL buy pays a wallet instead, which must be
-/// missing or owned by the System Program. Returns the kept orders and the
-/// uids of the dropped ones.
+/// missing or owned by the System Program and stay rent-exempt after the
+/// payout. Returns the kept orders and the uids of the dropped ones.
 fn receivable_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
@@ -195,7 +195,7 @@ fn receivable_orders(
         }
         let account = Pubkey::new_from_array(order.buy_token_account.0);
         match accounts.get(&account) {
-            found if order.buys_native_sol() => found.is_none_or(receivable_wallet),
+            found if order.buys_native_sol() => receivable_native_payout(order, found),
             Some(found) => {
                 receivable_token_account(found, &Pubkey::new_from_array(order.buy_token.0))
             }
@@ -420,20 +420,11 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
         .map(|mint| Pubkey::new_from_array(mint.0))
 }
 
-/// Drop native SOL buys the settlement cannot pay out. A payout under the
-/// rent-exempt minimum of an empty wallet reverts the whole settlement, and a
-/// partial fill can land under it. A wSOL sell reaches solvers as wSOL for
-/// wSOL. Returns the kept orders and the uids of the dropped ones.
+/// Drop native SOL buys that sell wSOL: they reach solvers as wSOL for wSOL.
+/// Returns the kept orders and the uids of the dropped ones.
 fn payable_orders(orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
-    // TODO: use the cluster's rent, refreshed periodically. The SDK default is
-    // above it since SIMD-0437, so this floor also drops small payouts that
-    // would settle.
-    let min_payout = Rent::default().minimum_balance(0);
     let (payable, unpayable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
-        !order.buys_native_sol()
-            || (order.buy_amount >= min_payout
-                && !order.partially_fillable
-                && order.sell_token.0 != native_mint::ID.to_bytes())
+        !order.buys_native_sol() || order.sell_token.0 != native_mint::ID.to_bytes()
     });
     (
         payable,
@@ -445,6 +436,21 @@ fn payable_orders(orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
 /// or a sysvar revert the settlement, a program-owned account strands them.
 fn receivable_wallet(account: &Account) -> bool {
     account.owner == solana_system_interface::program::ID
+}
+
+/// Whether `wallet` can take the order's native SOL payout. A credit that
+/// leaves a wallet under its rent-exempt minimum reverts the settlement, so a
+/// wallet under it takes only a fill-or-kill payout that lifts it over. That
+/// payout is at least `buy_amount`. A missing wallet counts as empty.
+fn receivable_native_payout(order: &Order, wallet: Option<&Account>) -> bool {
+    // TODO: use the cluster's rent, refreshed periodically. The SDK default is
+    // above it since SIMD-0437, so this floor also drops small payouts that
+    // would settle.
+    let (lamports, len) = wallet.map_or((0, 0), |wallet| (wallet.lamports, wallet.data.len()));
+    let floor = Rent::default().minimum_balance(len);
+    wallet.is_none_or(receivable_wallet)
+        && (lamports >= floor
+            || (!order.partially_fillable && lamports.saturating_add(order.buy_amount) >= floor))
 }
 
 #[cfg(test)]
@@ -535,9 +541,10 @@ mod tests {
     }
 
     /// A native SOL buy pays its wallet directly: a missing or system-owned
-    /// wallet receives it, an account of another program does not. A pending
-    /// sponsored native buy gets the same check. Only the sell mint follows
-    /// the wallets in the lookup.
+    /// wallet receives it, an account of another program does not. The funded
+    /// system wallet takes even a payout under the rent-exempt minimum. A
+    /// pending sponsored native buy gets the same check. Only the sell mint
+    /// follows the wallets in the lookup.
     #[tokio::test]
     async fn native_buys_pay_system_wallets() {
         let system_wallet = serde_json::json!({
@@ -561,11 +568,15 @@ mod tests {
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
         let native = |wallet, created_on_chain| Order {
             buy_token: NATIVE_SOL,
+            buy_amount: 1_000_000_000,
             ..order(wallet, created_on_chain)
         };
         let orders = vec![
             native([0x01; 32], true),
-            native([0x02; 32], true),
+            Order {
+                buy_amount: 1,
+                ..native([0x02; 32], true)
+            },
             native([0x03; 32], true),
             native([0x04; 32], false),
         ];
@@ -579,35 +590,72 @@ mod tests {
         assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
     }
 
-    /// Native SOL buys stay out under the rent-exempt minimum of an empty
-    /// account, when partially fillable, and when they sell wSOL. Token buys
-    /// pass whatever their amount.
+    /// Native SOL buys that sell wSOL stay out. Other native buys pass whatever
+    /// their amount, and so do token buys selling wSOL.
     #[test]
     fn drops_native_buys_the_settlement_cannot_pay() {
-        let native = |buy_amount| Order {
+        let wsol = ChainPubkey(native_mint::ID.to_bytes());
+        let native = Order {
             buy_token: NATIVE_SOL,
-            buy_amount,
+            buy_amount: 1,
             ..order([0x01; 32], true)
         };
         let orders = vec![
-            native(890_880),
-            native(890_879),
+            native.clone(),
             Order {
                 partially_fillable: true,
-                ..native(1_000_000_000)
+                ..native.clone()
             },
             Order {
-                sell_token: ChainPubkey(native_mint::ID.to_bytes()),
-                ..native(1_000_000_000)
+                sell_token: wsol,
+                ..native
             },
             Order {
-                buy_amount: 1,
+                sell_token: wsol,
                 ..order([0x02; 32], true)
             },
         ];
         let (kept, dropped) = payable_orders(orders.clone());
-        assert_eq!(kept, [orders[0].clone(), orders[4].clone()]);
-        assert_eq!(dropped.len(), 3);
+        assert_eq!(
+            kept,
+            [orders[0].clone(), orders[1].clone(), orders[3].clone()]
+        );
+        assert_eq!(dropped.len(), 1);
+    }
+
+    /// A wallet at the rent-exempt minimum takes any payout, partial fills
+    /// included. A wallet under it, or a missing one, takes only a
+    /// fill-or-kill payout that lifts it over. The minimum grows with the
+    /// wallet's data.
+    #[test]
+    fn native_payouts_leave_wallets_rent_exempt() {
+        let floor = Rent::default().minimum_balance(0);
+        let native = |buy_amount, partially_fillable| Order {
+            buy_token: NATIVE_SOL,
+            buy_amount,
+            partially_fillable,
+            ..order([0x01; 32], true)
+        };
+        let wallet =
+            |lamports, len| Account::new(lamports, len, &solana_system_interface::program::ID);
+        let cases = [
+            (None, native(floor, false), true),
+            (None, native(floor - 1, false), false),
+            (None, native(u64::MAX, true), false),
+            (Some(wallet(floor, 0)), native(1, true), true),
+            (Some(wallet(floor - 1, 0)), native(u64::MAX, false), true),
+            (Some(wallet(floor - 1_000, 0)), native(1_000, false), true),
+            (Some(wallet(floor - 1_000, 0)), native(999, false), false),
+            (Some(wallet(floor - 1_000, 0)), native(1_000, true), false),
+            (Some(wallet(floor, 8)), native(1, false), false),
+        ];
+        for (account, order, receivable) in cases {
+            assert_eq!(
+                receivable_native_payout(&order, account.as_ref()),
+                receivable,
+                "{account:?} {order:?}"
+            );
+        }
     }
 
     /// The gauge reads the last cut's count, zero once the reason clears.
