@@ -257,10 +257,11 @@ impl ResolvedSettlement {
             .map(|order| {
                 let amounts = executed_amounts(order, &self.settlement.solution)?;
                 let sell_program = self.token_programs.get(order.sell_token)?;
-                let buy_program = (!order.buys_native_sol())
-                    .then(|| self.token_programs.get(order.buy_token))
-                    .transpose()?;
-                SettlementOrder::new(order, &payer, amounts, sell_program, buy_program)
+                // A native SOL buy is paid in lamports, which no token program
+                // moves.
+                let checked_push = !order.buys_native_sol()
+                    && transfer_checked(self.token_programs.get(order.buy_token)?);
+                SettlementOrder::new(order, &payer, amounts, sell_program, checked_push)
             })
             .collect::<Result<_, Error>>()?;
 
@@ -730,8 +731,8 @@ struct SettlementOrder {
 
 impl SettlementOrder {
     /// Build a settlement order from a domain order: its intent, its sell-mint
-    /// pull into the payer's sell ATA, and its buy-mint push. `buy_program` is
-    /// `None` for a native SOL buy, which is paid in lamports.
+    /// pull into the payer's sell ATA, and its buy-mint push, made with
+    /// `TransferChecked` when `checked_push` is set.
     ///
     /// The swap output lands in the buy-mint buffer PDA, or the payer's wSOL
     /// ATA for a native SOL buy (see `infra/solver/dto/auction.rs`), so the
@@ -742,7 +743,7 @@ impl SettlementOrder {
         payer: &Pubkey,
         amounts: ExecutedAmounts,
         sell_program: TokenProgram,
-        buy_program: Option<TokenProgram>,
+        checked_push: bool,
     ) -> Result<Self, Error> {
         Ok(Self {
             intent: order.try_into()?,
@@ -752,7 +753,7 @@ impl SettlementOrder {
             }],
             buy_amount: amounts.buy,
             checked_pull: transfer_checked(sell_program),
-            checked_push: buy_program.is_some_and(transfer_checked),
+            checked_push,
         })
     }
 }
@@ -1827,23 +1828,44 @@ mod tests {
         assert_eq!(pushes, expected);
     }
 
+    /// A Token-2022 sell paid out in native SOL: the pull carries the sell
+    /// mint for `TransferChecked`, the lamport payout carries the placeholder
+    /// since no token program moves it.
     #[test]
-    fn only_token_2022_mints_move_with_transfer_checked() {
-        let order = test_order(&pubkey(0xaa));
-        let checked = |sell, buy| {
-            let amounts = ExecutedAmounts {
-                sell: 1_000,
-                buy: 2_000,
-            };
-            let order = SettlementOrder::new(&order, &pubkey(0xbb), amounts, sell, buy).unwrap();
-            (order.checked_pull, order.checked_push)
+    fn native_sol_payouts_are_never_transfer_checked() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let wallet = pubkey(0x68);
+        let order = native_sol_order(&program_id, wallet, pubkey(0x45));
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+        let resolved = ResolvedSettlement {
+            settlement,
+            lookup_tables: Vec::new(),
+            missing_buffers: Vec::new(),
+            missing_atas: Vec::new(),
+            token_programs: TokenPrograms(HashMap::from([
+                (order.sell_token, TokenProgram::Token2022),
+                (native_mint::ID, TokenProgram::SplToken),
+            ])),
         };
-        let (spl, token_2022) = (TokenProgram::SplToken, TokenProgram::Token2022);
-        assert_eq!(checked(spl, Some(spl)), (false, false));
-        assert_eq!(checked(token_2022, Some(token_2022)), (true, true));
-        assert_eq!(checked(spl, Some(token_2022)), (false, true));
-        // A native SOL buy is paid in lamports, which no token program moves.
-        assert_eq!(checked(token_2022, None), (true, false));
+
+        let instructions = resolved.instructions(payer).unwrap();
+        // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
+        // Transfer, FinalizeSettle].
+        let begin = &instructions[1];
+        let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+        assert_eq!(
+            *begin_input.orders.iter().next().unwrap().sell_mint,
+            order.sell_token
+        );
+        let finalize = &instructions[5];
+        let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        let finalize_input =
+            FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+        let push = finalize_input.pushes.iter().next().unwrap();
+        assert_eq!((*push.destination, *push.mint), (wallet, MINT_PLACEHOLDER));
     }
 
     /// An order trading two Token-2022 mints, paying out to the owner's
