@@ -47,21 +47,21 @@ mod tests {
     #[test]
     fn native_payouts_leave_wallets_rent_exempt() {
         let floor = Rent::default().minimum_balance(0);
-        let wallet = |lamports, len| Some(Account::new(lamports, len, &Pubkey::default()));
-        for (account, buy_amount, partially_fillable, receivable) in [
+        let funded = |lamports, len| Some(Account::new(lamports, len, &Pubkey::default()));
+        for (wallet, buy_amount, partially_fillable, receivable) in [
             (None, floor, false, true),
             (None, floor - 1, false, false),
             (None, u64::MAX, true, false),
-            (wallet(floor, 0), 1, true, true),
-            (wallet(floor - 1, 0), u64::MAX, false, true),
-            (wallet(floor - 1_000, 0), 1_000, false, true),
-            (wallet(floor - 1_000, 0), 999, false, false),
-            (wallet(floor, 8), 1, false, false),
+            (funded(floor, 0), 1, true, true),
+            (funded(floor - 1, 0), u64::MAX, false, true),
+            (funded(floor - 1_000, 0), 1_000, false, true),
+            (funded(floor - 1_000, 0), 999, false, false),
+            (funded(floor, 8), 1, false, false),
         ] {
             assert_eq!(
-                receivable_native_payout(account.as_ref(), buy_amount, partially_fillable),
+                receivable_native_payout(wallet.as_ref(), buy_amount, partially_fillable),
                 receivable,
-                "{account:?} {buy_amount} {partially_fillable}"
+                "{wallet:?} {buy_amount} {partially_fillable}"
             );
         }
     }
