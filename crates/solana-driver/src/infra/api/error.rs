@@ -87,7 +87,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::FailedToCreate(_) => Kind::FailedToCreate,
             competition::Error::SimulationFailed { .. } => Kind::SimulationFailed,
             competition::Error::TransactionTooLarge { .. } => Kind::TransactionTooLarge,
-            competition::Error::PriorityFee(_) => Kind::PriorityFeeTooHigh,
+            competition::Error::PriorityFeeTooHigh(_) => Kind::PriorityFeeTooHigh,
             competition::Error::TaskPanicked => Kind::Unknown,
             // The solver is responsible for valid solutions. Map validation
             // errors to SolverFailed, as the EVM driver does. Map compile,

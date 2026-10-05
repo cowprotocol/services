@@ -384,13 +384,13 @@ impl Competition {
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?;
 
-        let estimate = self.estimate_priority_fee(&resolved, cu_estimate).await?;
-
-        let latest = self
-            .blockchain
-            .latest_confirmed_blockhash()
-            .await
-            .map_err(Error::Rpc)?;
+        let (estimate, latest) =
+            tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
+                self.blockchain
+                    .latest_confirmed_blockhash()
+                    .await
+                    .map_err(Error::Rpc)
+            },)?;
         let transaction = resolved.encode(
             self.solver.keypair(),
             latest.blockhash,
@@ -534,7 +534,7 @@ impl Competition {
         resolved: &super::settlement::ResolvedSettlement,
         cu_estimate: Option<u32>,
     ) -> Result<priority_fee::Estimate, Error> {
-        let writable = resolved.writable_accounts(self.solver.pubkey())?;
+        let writable = resolved.writable_accounts()?;
         let fees = self
             .blockchain
             .recent_prioritization_fees(&writable)
@@ -678,7 +678,7 @@ pub(crate) enum Error {
     /// The transaction's priority fee is over the configured budget. Nothing
     /// was sent.
     #[error(transparent)]
-    PriorityFee(#[from] priority_fee::OverBudget),
+    PriorityFeeTooHigh(#[from] priority_fee::OverBudget),
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -777,7 +777,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::TransactionTooLarge { .. } => "transaction_too_large",
-        Error::PriorityFee(_) => "priority_fee_too_high",
+        Error::PriorityFeeTooHigh(_) => "priority_fee_too_high",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",

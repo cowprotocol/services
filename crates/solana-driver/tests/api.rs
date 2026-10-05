@@ -15,10 +15,7 @@ use {
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     solana_driver::{
-        domain::{
-            priority_fee::{Percentile, PriorityFeePolicy, RecentSlots},
-            solver_fee::SolverFee,
-        },
+        domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
         infra::{
             api::Api,
             blockchain::{Solana, associated_token_address},
@@ -104,10 +101,9 @@ async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
 /// Pays whatever the mock RPC reports and never refuses.
 fn priority_fee() -> PriorityFeePolicy {
     PriorityFeePolicy {
-        percentile: Percentile::try_from(50).unwrap(),
-        recent_slots: RecentSlots::try_from(150).unwrap(),
+        percentile: 50,
+        recent_slots: 150,
         min_compute_unit_price: 0,
-        max_compute_unit_price: u64::MAX,
         max_priority_fee_lamports: u64::MAX,
     }
 }
@@ -550,16 +546,22 @@ async fn settle_rejects_a_passed_submission_deadline() {
     assert_eq!(json["kind"], "DeadlineExceeded");
 }
 
-/// The mock RPC reports a 10_000 micro-lamport fee and the engine sends no
-/// compute unit estimate, so the fee is computed at the 1.4M unit ceiling:
-/// 14_000 lamports, over a budget of 1.
+/// The RPC reports a 10_000 micro-lamport fee and the engine sends no compute
+/// unit estimate, so the fee is computed at the 1.4M unit ceiling: 14_000
+/// lamports, one over the budget.
 #[tokio::test]
 async fn settle_refuses_a_priority_fee_over_budget() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
     let (solver, _) = solver_with_keypair(engine);
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
     let api = Api {
+        blockchain: blockchain_with(mocks).await,
         priority_fee: PriorityFeePolicy {
-            max_priority_fee_lamports: 1,
+            max_priority_fee_lamports: 13_999,
             ..priority_fee()
         },
         ..api_with(vec![solver]).await

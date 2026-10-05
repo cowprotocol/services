@@ -34,8 +34,6 @@ pub struct SolanaRPC {
 }
 
 impl SolanaRPC {
-    /// Addresses `getRecentPrioritizationFees` accepts per request.
-    const PRIORITIZATION_FEE_ADDRESSES: usize = 128;
     /// Signatures requested per page of
     /// [`SolanaRPC::signatures_for_address`].
     pub const SIGNATURES_PAGE: usize = 1000;
@@ -228,20 +226,11 @@ impl SolanaRPC {
     /// The prioritization fee, in micro-lamports per compute unit, that
     /// landed a transaction locking `addresses` as writable in each of the
     /// node's recent slots (up to 150), or the slot's lowest fee when none
-    /// did. Only the first [`SolanaRPC::PRIORITIZATION_FEE_ADDRESSES`]
-    /// addresses are sent.
+    /// did.
     pub async fn recent_prioritization_fees(
         &self,
         addresses: &[Pubkey],
     ) -> Result<Vec<RpcPrioritizationFee>, Error> {
-        if addresses.len() > Self::PRIORITIZATION_FEE_ADDRESSES {
-            tracing::warn!(
-                addresses = addresses.len(),
-                limit = Self::PRIORITIZATION_FEE_ADDRESSES,
-                "truncating prioritization fee addresses"
-            );
-        }
-        let addresses = &addresses[..addresses.len().min(Self::PRIORITIZATION_FEE_ADDRESSES)];
         self.inner.get_recent_prioritization_fees(addresses).await
     }
 

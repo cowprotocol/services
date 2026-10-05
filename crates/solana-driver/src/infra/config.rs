@@ -1,7 +1,10 @@
 //! Configuration of infrastructural components.
 
 use {
-    crate::domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
+    crate::domain::{
+        priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
+        solver_fee::SolverFee,
+    },
     configs::shared::LoggingConfig,
     serde::Deserialize,
     serde_ext::{
@@ -39,10 +42,14 @@ pub async fn load(path: &Path) -> Config {
             )
         }
     });
-    // `clamp` panics on an inverted band.
+    let priority_fee = &config.priority_fee;
     assert!(
-        config.priority_fee.min_compute_unit_price <= config.priority_fee.max_compute_unit_price,
-        "priority-fee: min-compute-unit-price is above max-compute-unit-price"
+        priority_fee.percentile <= 100,
+        "priority-fee: percentile is above 100"
+    );
+    assert!(
+        (1..=MAX_RECENT_SLOTS).contains(&priority_fee.recent_slots),
+        "priority-fee: recent-slots is outside 1..={MAX_RECENT_SLOTS}"
     );
     config
 }
@@ -56,6 +63,7 @@ pub struct Config {
     /// RPC client configuration.
     pub rpc: Rpc,
     /// The priority fee policy for transactions.
+    #[serde(default)]
     pub priority_fee: PriorityFeePolicy,
     /// HTTP API server configuration.
     pub http: Http,
@@ -169,9 +177,7 @@ mod tests {
         assert_eq!(config.logging.filter, "info,solana_driver=debug");
         assert_eq!(config.logging.stderr_threshold, None);
         assert!(!config.logging.use_json);
-        assert_eq!(config.priority_fee.min_compute_unit_price, 1_000);
-        assert_eq!(config.priority_fee.max_compute_unit_price, 1_000_000);
-        assert_eq!(config.priority_fee.max_priority_fee_lamports, 1_000_000);
+        assert_eq!(config.priority_fee, PriorityFeePolicy::default());
     }
 
     #[test]
