@@ -24,7 +24,7 @@ pub async fn load(path: &Path) -> Config {
         .await
         .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
 
-    toml::de::from_str(&data).unwrap_or_else(|err| {
+    let config: Config = toml::de::from_str(&data).unwrap_or_else(|err| {
         if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
             panic!("failed to parse TOML config at {path:?}: {err:#?}")
         } else {
@@ -33,7 +33,15 @@ pub async fn load(path: &Path) -> Config {
                  parsing error but this may leak secrets."
             )
         }
-    })
+    });
+    // The settlement client pins the state PDA to the interface crate's
+    // program id, so the driver can only settle against that deployment.
+    assert_eq!(
+        config.chain.settlement_program_id,
+        cow_settlement_interface::ID,
+        "chain.settlement-program-id must be the settlement interface's program id"
+    );
+    config
 }
 
 /// Configuration of infrastructural components.
@@ -75,8 +83,8 @@ fn default_settlement_program_id() -> Pubkey {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Chain {
-    /// On-chain program id of the settlement contract. Defaults to the
-    /// official deployment the interface crate exports.
+    /// On-chain program id of the settlement contract. Only the deployment
+    /// the interface crate exports is accepted, which is also the default.
     #[serde(
         default = "default_settlement_program_id",
         deserialize_with = "deserialize_solana_pubkey_b58"
