@@ -179,10 +179,10 @@ pub struct Rpc {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Sponsoring {
-    /// Path to the funder keypair countersigning sponsored creation
-    /// transactions. TODO: plaintext keypair paths are temporary. Secrets
-    /// must not live in the config or its repository long term.
-    pub funder_keypair: std::path::PathBuf,
+    /// The funder countersigning sponsored creation transactions as their fee
+    /// payer. Its pubkey must match the orderbook's `sponsoring.funder`, the
+    /// fee payer pinned at placement.
+    pub funder: cow_solana_signer::Config,
 }
 
 /// On-chain addresses: programs and mints.

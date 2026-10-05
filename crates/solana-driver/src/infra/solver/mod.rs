@@ -9,10 +9,8 @@ use {
         domain::{self, order_uid::OrderUid, solver_fee::SolverFee},
         infra::{config, solver::dto::auction::Auction},
     },
-    solana_sdk::{
-        pubkey::Pubkey,
-        signer::{Signer, keypair::Keypair},
-    },
+    cow_solana_signer::Signer,
+    solana_sdk::pubkey::Pubkey,
     std::{collections::HashSet, num::NonZero, sync::Arc},
     thiserror::Error,
 };
@@ -23,7 +21,7 @@ pub mod dto;
 #[derive(Clone)]
 pub struct Solver {
     name: String,
-    keypair: Arc<Keypair>,
+    signer: Arc<Signer>,
     client: reqwest::Client,
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
@@ -36,14 +34,14 @@ impl Solver {
         &self.name
     }
 
-    /// The solver's on-chain identity, derived from its signer keypair.
+    /// The solver's on-chain identity, derived from its signer.
     pub fn pubkey(&self) -> Pubkey {
-        self.keypair.pubkey()
+        self.signer.pubkey()
     }
 
-    /// The solver's settlement signer keypair.
-    pub(crate) fn keypair(&self) -> &Keypair {
-        &self.keypair
+    /// The solver's settlement signer.
+    pub(crate) fn signer(&self) -> &Signer {
+        &self.signer
     }
 
     /// The auction-id stride this solver participates at, when throttled.
@@ -56,25 +54,21 @@ impl Solver {
         self.solver_fee
     }
 
-    /// Build a solver client from its configuration.
-    ///
-    /// Loads the signer keypair from `config.signer_keypair`.
-    pub fn new(config: &config::Solver) -> Result<Self, Error> {
-        let keypair = solana_sdk::signer::keypair::read_keypair_file(&config.signer_keypair)
-            .map_err(|error| Error::SignerKeypair {
-                solver: config.name.clone(),
-                path: config.signer_keypair.clone(),
-                error: error.to_string().into(),
-            })?;
-        let keypair = Arc::new(keypair);
+    /// Build a solver client from its configuration, loading the signer the
+    /// config names: a local keypair file or an AWS KMS key.
+    pub async fn new(config: &config::Solver) -> Result<Self, Error> {
+        let signer = config.signer.load().await.map_err(|error| Error::Signer {
+            solver: config.name.clone(),
+            error,
+        })?;
         tracing::info!(
             solver = %config.name,
-            pubkey = %keypair.pubkey(),
-            "loaded solver keypair"
+            pubkey = %signer.pubkey(),
+            "loaded solver signer"
         );
         Ok(Self {
             name: config.name.clone(),
-            keypair,
+            signer: Arc::new(signer),
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
@@ -165,13 +159,12 @@ pub enum Error {
     /// The request body could not be serialized.
     #[error("JSON serialization error: {0}")]
     Serialize(#[from] serde_json::Error),
-    /// The signer keypair could not be loaded from the configured path.
-    #[error("failed to load signer keypair for solver {solver} from {path}: {error}")]
-    SignerKeypair {
+    /// The configured signer could not be loaded.
+    #[error("failed to load the signer for solver {solver}: {error}")]
+    Signer {
         solver: String,
-        path: std::path::PathBuf,
         #[source]
-        error: Box<dyn std::error::Error + Send + Sync>,
+        error: cow_solana_signer::Error,
     },
 }
 
@@ -189,10 +182,11 @@ mod tests {
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
-            signer_keypair: keypair_path,
+            signer: cow_solana_signer::Config::Keypair(keypair_path),
             solve_every_nth_auction: None,
             solver_fee_bps: None,
         })
+        .await
         .expect("solver construction should succeed");
         let auction = domain::Auction {
             id: Some(domain::Id::new(1).unwrap()),

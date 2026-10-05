@@ -2,7 +2,7 @@
 
 use {
     base64::Engine,
-    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
+    cow_solana_rpc::{Mocks, MocksMap, RpcRequest, SolanaRPC},
     database::{
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
@@ -186,8 +186,9 @@ async fn quote_validation_rejects_bad_orders() {
     }
 }
 
-/// A native SOL buy quoted under the rent-exempt minimum of an empty account
-/// answers `InvalidNativeBuy`, since placement would reject the order.
+/// Without sponsoring the quote reads no wallet, so a native SOL buy quoted
+/// under the rent-exempt minimum of an empty account answers
+/// `InvalidNativeBuy`.
 #[tokio::test]
 async fn quote_rejects_a_native_buy_under_the_payout_floor() {
     for (buy_amount, expected) in [
@@ -208,6 +209,68 @@ async fn quote_rejects_a_native_buy_under_the_payout_floor() {
             Duration::from_secs(1),
         ))
         .await;
+        let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+        body["sellToken"] = serde_json::json!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+        body["buyToken"] = serde_json::json!("11111111111111111111111111111111");
+        let (status, kind) = post_quote(addr, body).await;
+        assert_eq!((status, kind.as_str()), expected);
+    }
+}
+
+/// With sponsoring on, a native SOL buy quoted under the rent-exempt minimum
+/// of an empty account reads its wallet: a funded wallet takes the payout, a
+/// wallet the payout leaves under the minimum does not. The lookups answer
+/// the sell mint, then the wallet.
+#[tokio::test]
+async fn quote_reads_the_wallet_of_a_small_native_buy() {
+    let floor = solana_sdk::rent::Rent::default().minimum_balance(0);
+    for (lamports, buy_amount, expected) in [
+        (floor, 1, (reqwest::StatusCode::OK, "")),
+        (1_000, floor - 1_000, (reqwest::StatusCode::OK, "")),
+        (
+            1_000,
+            floor - 1_001,
+            (reqwest::StatusCode::BAD_REQUEST, "InvalidNativeBuy"),
+        ),
+    ] {
+        let driver = spawn_mock_driver(serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": buy_amount.to_string(),
+            "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        }))
+        .await;
+        let wallet = solana_sdk::account::Account {
+            lamports,
+            owner: solana_system_interface::program::ID,
+            ..Default::default()
+        };
+        let mocks = MocksMap::from_iter([
+            (
+                RpcRequest::GetMultipleAccounts,
+                accounts_response(&[Some(mint_account(spl_token_interface::ID))]),
+            ),
+            (
+                RpcRequest::GetMultipleAccounts,
+                accounts_response(&[Some(wallet)]),
+            ),
+        ]);
+        let api = Api {
+            quoter: Quoter::new(
+                vec![format!("http://{driver}/").parse().unwrap()],
+                Duration::from_secs(1),
+            ),
+            sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+                funder: solana_sdk::pubkey::Pubkey::new_unique(),
+                settlement_program: cow_settlement_interface::id(),
+                rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
+                max_priority_fee_lamports: 100_000,
+                mints: Default::default(),
+            }),
+            ..mock_api()
+        };
+        let (listener, addr) = api.bind().await.unwrap();
+        let shutdown = CancellationToken::new();
+        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
         let mut body = quote_body(serde_json::json!({"validFor": 1800}));
         body["sellToken"] = serde_json::json!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
         body["buyToken"] = serde_json::json!("11111111111111111111111111111111");
@@ -980,27 +1043,14 @@ async fn create_order_rejects_invalid_submissions() {
         );
     }
 
-    // Native SOL buys: a payout under the rent-exempt minimum, a partially
-    // fillable order, and wSOL sold for native SOL.
-    let mut partial = native_buy_intent(owner.pubkey(), 1_000_000_000);
-    partial.flags.partially_fillable = true;
+    // wSOL sold for native SOL.
     let mut unwrap = native_buy_intent(owner.pubkey(), 1_000_000_000);
     unwrap.sell.mint = spl_token_interface::native_mint::ID;
-    for (intent, expected) in [
-        (
-            native_buy_intent(owner.pubkey(), 890_879),
-            "InvalidNativeBuy",
-        ),
-        (partial, "InvalidNativeBuy"),
-        (unwrap, "SameBuyAndSellToken"),
-    ] {
-        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
-        let (status, kind) = post_order(addr, transaction).await;
-        assert_eq!(
-            (status, kind.as_str()),
-            (reqwest::StatusCode::BAD_REQUEST, expected)
-        );
-    }
+    let (status, kind) = post_order(addr, creation_tx(funder, &owner, &unwrap, vec![], true)).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "SameBuyAndSellToken")
+    );
 
     // A well-formed transaction whose blockhash already died.
     let addr = spawn_sponsored_server(
@@ -1016,29 +1066,63 @@ async fn create_order_rejects_invalid_submissions() {
     );
 }
 
-/// A native SOL buy pays a wallet the System Program owns: an account of
-/// another program is rejected, a system wallet passes on to the blockhash
-/// check. The lookup answers the sell mint, then the wallet.
+/// A native SOL buy pays a wallet the System Program owns and leaves it
+/// rent-exempt: an account of another program is rejected, and so is a payout
+/// that can leave the wallet under the minimum. A passing order moves on to
+/// the blockhash check. The lookup answers the sell mint, then the wallet.
 #[tokio::test]
 async fn create_order_checks_the_native_buy_wallet() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
-    let intent = native_buy_intent(owner.pubkey(), 1_000_000_000);
-    for (wallet_owner, expected) in [
-        (spl_token_interface::ID, "InvalidNativeBuy"),
-        (solana_system_interface::program::ID, "BlockhashExpired"),
-    ] {
-        let wallet = solana_sdk::account::Account {
-            lamports: 2_039_280,
-            owner: wallet_owner,
+    let floor = solana_sdk::rent::Rent::default().minimum_balance(0);
+    let system = solana_system_interface::program::ID;
+    let wallet = |lamports, owner| {
+        Some(solana_sdk::account::Account {
+            lamports,
+            owner,
             ..Default::default()
-        };
+        })
+    };
+    let buy = |buy_amount| native_buy_intent(owner.pubkey(), buy_amount);
+    let partial = |buy_amount| {
+        let mut intent = buy(buy_amount);
+        intent.flags.partially_fillable = true;
+        intent
+    };
+    for (index, (account, intent, expected)) in [
+        (
+            wallet(2_039_280, spl_token_interface::ID),
+            buy(1_000_000_000),
+            "InvalidNativeBuy",
+        ),
+        (
+            wallet(2_039_280, system),
+            buy(1_000_000_000),
+            "BlockhashExpired",
+        ),
+        (None, buy(floor - 1), "InvalidNativeBuy"),
+        (None, partial(1_000_000_000), "InvalidNativeBuy"),
+        (
+            wallet(1_000, system),
+            buy(floor - 1_000),
+            "BlockhashExpired",
+        ),
+        (
+            wallet(1_000, system),
+            buy(floor - 1_001),
+            "InvalidNativeBuy",
+        ),
+        (wallet(floor, system), partial(1), "BlockhashExpired"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let addr = spawn_sponsored_server_with(
             PgPool::connect_lazy("postgresql://").unwrap(),
             funder,
             sponsored_mocks(
                 false,
-                accounts_response(&[Some(mint_account(spl_token_interface::ID)), Some(wallet)]),
+                accounts_response(&[Some(mint_account(spl_token_interface::ID)), account]),
             ),
         )
         .await;
@@ -1046,7 +1130,8 @@ async fn create_order_checks_the_native_buy_wallet() {
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
             (status, kind.as_str()),
-            (reqwest::StatusCode::BAD_REQUEST, expected)
+            (reqwest::StatusCode::BAD_REQUEST, expected),
+            "case {index}"
         );
     }
 }
