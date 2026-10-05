@@ -20,6 +20,7 @@ use {
     axum::{Json, http::StatusCode},
     bigdecimal::ToPrimitive,
     cow_settlement_interface::{
+        SettlementError,
         data::intent::{
             Asset,
             ENCODED_NATIVE_SOL_TRANSFER,
@@ -28,7 +29,7 @@ use {
             hash_bytes,
         },
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
-        pda::{order::find_order_pda, state::find_state_pda},
+        pda::{order::find_order_pda, state::STATE_PDA},
     },
     database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
@@ -316,8 +317,13 @@ fn validate(
     if *input.created_by != sponsoring.funder {
         return Err(PlacementError::WrongRentPayer);
     }
-    let intent = OrderIntent::try_from(&input.intent_bytes)
-        .map_err(|_| PlacementError::InvalidTransaction("the intent bytes do not decode"))?;
+    let intent = OrderIntent::try_from(&input.intent_bytes).map_err(|err| {
+        if err == SettlementError::ZeroOrderAmount.into() {
+            PlacementError::ZeroAmount
+        } else {
+            PlacementError::InvalidTransaction("the intent bytes do not decode")
+        }
+    })?;
     let uid = hash_bytes(&input.intent_bytes);
     if !intent.flags.created_on_chain {
         return Err(PlacementError::InvalidIntentFlags);
@@ -343,13 +349,10 @@ fn validate(
     if intent.sell.mint == buy_mint {
         return Err(PlacementError::SameBuyAndSellToken);
     }
-    if intent.sell_amount == 0 || intent.buy_amount == 0 {
-        return Err(PlacementError::ZeroAmount);
-    }
     // A native payout under the rent-exempt minimum of an empty account
     // reverts the whole settlement, and a partial fill can land under it.
     let native_buy = matches!(intent.buy, Asset::Native(_));
-    if native_buy && intent.buy_amount < super::min_native_payout() {
+    if native_buy && intent.buy_amount.get() < super::min_native_payout() {
         return Err(PlacementError::InvalidNativeBuy(
             "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
         ));
@@ -372,7 +375,7 @@ fn validate(
     // The preparation instructions may only follow the template: each step
     // at most once, in template order. The buy-account creation is mandatory
     // for a token buy, everything else is omittable.
-    let state_pda = find_state_pda(&sponsoring.settlement_program).0;
+    let state_pda = STATE_PDA;
     let mut last_step = 0;
     let mut token_programs = Vec::new();
     for preparation in preparations {
@@ -805,8 +808,8 @@ fn build_order(
         buy_token: ByteArray(buy_mint.to_bytes()),
         sell_token_account: ByteArray(intent.sell.token_account.to_bytes()),
         buy_token_account: ByteArray(buy_token_account.to_bytes()),
-        sell_amount: intent.sell_amount,
-        buy_amount: intent.buy_amount,
+        sell_amount: intent.sell_amount.get(),
+        buy_amount: intent.buy_amount.get(),
         valid_to: intent.valid_to,
         kind: match intent.flags.kind {
             IntentOrderKind::Sell => OrderKind::Sell,

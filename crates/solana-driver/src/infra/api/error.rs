@@ -101,7 +101,8 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 | settlement::Error::Overfill(_)
                 | settlement::Error::LimitPriceViolated(_)
                 | settlement::Error::OrderPdaMismatch(..)
-                | settlement::Error::OrderIntentMismatch(..) => Kind::SolverFailed,
+                | settlement::Error::OrderIntentMismatch(..)
+                | settlement::Error::ZeroAmount(_) => Kind::SolverFailed,
                 // The order expired between solve and settle: not solver
                 // fault.
                 settlement::Error::OrderExpired(_) => Kind::DeadlineExceeded,

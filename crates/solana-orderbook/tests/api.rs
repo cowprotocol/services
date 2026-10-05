@@ -658,8 +658,8 @@ fn sponsored_intent(
                 token_account: buy_token_account,
             },
         ),
-        sell_amount: 1_000,
-        buy_amount: 2_000,
+        sell_amount: std::num::NonZeroU64::new(1_000).unwrap(),
+        buy_amount: std::num::NonZeroU64::new(2_000).unwrap(),
         valid_to: u32::MAX,
         flags: cow_settlement_interface::data::intent::Flags {
             created_on_chain: true,
@@ -678,7 +678,7 @@ fn native_buy_intent(
 ) -> cow_settlement_interface::data::intent::OrderIntent {
     let mut intent = sponsored_intent(owner, false);
     intent.buy = cow_settlement_interface::data::intent::Asset::Native(owner);
-    intent.buy_amount = buy_amount;
+    intent.buy_amount = std::num::NonZeroU64::new(buy_amount).unwrap();
     intent
 }
 
@@ -697,7 +697,7 @@ fn ata(
 
 /// The settlement state PDA delegations must target.
 fn state_pda() -> solana_sdk::pubkey::Pubkey {
-    cow_settlement_interface::pda::state::find_state_pda(&cow_settlement_interface::id()).0
+    cow_settlement_interface::pda::state::STATE_PDA
 }
 
 /// The full whitelisted preparation prefix for a native-sell intent: create
@@ -762,16 +762,35 @@ fn creation_tx_wrapped(
     sign: bool,
 ) -> String {
     let mut instructions = preparations;
-    instructions.push(
-        cow_settlement_client::instruction::CreateOrder {
-            program_id: cow_settlement_interface::id(),
-            owner: owner.pubkey(),
-            created_by: funder,
-            intent,
-        }
-        .into(),
-    );
+    instructions.push(create_order(funder, owner.pubkey(), intent));
     instructions.extend(trailing);
+    signed_creation_tx(funder, owner, instructions, sign)
+}
+
+/// The `CreateOrder` instruction creating `intent` for `owner` at the
+/// funder's expense.
+fn create_order(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: solana_sdk::pubkey::Pubkey,
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+) -> solana_sdk::instruction::Instruction {
+    cow_settlement_client::instruction::CreateOrder {
+        program_id: cow_settlement_interface::id(),
+        owner,
+        created_by: funder,
+        intent,
+    }
+    .into()
+}
+
+/// `instructions` as a creation transaction with the funder as fee payer and
+/// the owner signed when `sign`.
+fn signed_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+    instructions: Vec<solana_sdk::instruction::Instruction>,
+    sign: bool,
+) -> String {
     let message = solana_sdk::message::Message::new_with_blockhash(
         &instructions,
         Some(&funder),
@@ -950,8 +969,8 @@ async fn create_order_rejects_invalid_submissions() {
         );
     }
 
-    // Intent-level rejections: the funder as owner, equal mints, zero
-    // amounts, and a validTo below the minimum validity.
+    // Intent-level rejections: the funder as owner, equal mints, and a
+    // validTo below the minimum validity.
     let mut funder_owned = sponsored_intent(owner.pubkey(), false);
     funder_owned.owner = funder;
     let mut same_token = sponsored_intent(owner.pubkey(), false);
@@ -961,14 +980,11 @@ async fn create_order_rejects_invalid_submissions() {
             token_account: same_token.buy.encode().1,
         },
     );
-    let mut zero_amount = sponsored_intent(owner.pubkey(), false);
-    zero_amount.sell_amount = 0;
     let mut expiring = sponsored_intent(owner.pubkey(), false);
     expiring.valid_to = u32::try_from(chrono::Utc::now().timestamp() + 30).unwrap();
     for (intent, expected) in [
         (funder_owned, "InvalidTransaction"),
         (same_token, "SameBuyAndSellToken"),
-        (zero_amount, "ZeroAmount"),
         (expiring, "InsufficientValidTo"),
     ] {
         let destination = destination_creation(funder, owner.pubkey(), &intent);
@@ -979,6 +995,21 @@ async fn create_order_rejects_invalid_submissions() {
             (reqwest::StatusCode::BAD_REQUEST, expected)
         );
     }
+
+    // A zero sell amount, which only the encoded bytes can carry.
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let mut create = create_order(funder, owner.pubkey(), &intent);
+    let sell_amount = create.data.len()
+        - cow_settlement_interface::data::intent::EncodedOrderIntent::SIZE
+        + cow_settlement_interface::data::intent::fixtures::SELL_AMOUNT_OFFSET;
+    create.data[sell_amount..sell_amount + size_of::<u64>()].fill(0);
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    let transaction = signed_creation_tx(funder, &owner, vec![destination, create], true);
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "ZeroAmount")
+    );
 
     // Native SOL buys: a payout under the rent-exempt minimum, a partially
     // fillable order, and wSOL sold for native SOL.
@@ -1322,8 +1353,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         &db::Quote {
             sell_token: ByteArray(intent.sell.mint.to_bytes()),
             buy_token: ByteArray(intent.buy.encode().0.to_bytes()),
-            sell_amount: intent.sell_amount,
-            buy_amount: intent.buy_amount,
+            sell_amount: intent.sell_amount.get(),
+            buy_amount: intent.buy_amount.get(),
             kind: OrderKind::Sell,
             solver: ByteArray([0xDD; 32]),
             expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
@@ -1379,8 +1410,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         &db::Quote {
             sell_token: ByteArray([0x99; 32]),
             buy_token: ByteArray(other.buy.encode().0.to_bytes()),
-            sell_amount: other.sell_amount,
-            buy_amount: other.buy_amount,
+            sell_amount: other.sell_amount.get(),
+            buy_amount: other.buy_amount.get(),
             kind: OrderKind::Sell,
             solver: ByteArray([0xDD; 32]),
             expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
@@ -1412,8 +1443,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         &db::Quote {
             sell_token: ByteArray(late.sell.mint.to_bytes()),
             buy_token: ByteArray(late.buy.encode().0.to_bytes()),
-            sell_amount: late.sell_amount,
-            buy_amount: late.buy_amount,
+            sell_amount: late.sell_amount.get(),
+            buy_amount: late.buy_amount.get(),
             kind: OrderKind::Sell,
             solver: ByteArray([0xDD; 32]),
             expiration: chrono::Utc::now() - chrono::Duration::seconds(1),
@@ -1510,7 +1541,7 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
             &state_pda(),
             &owner.pubkey(),
             &[],
-            intent.sell_amount,
+            intent.sell_amount.get(),
         )
         .unwrap(),
         spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(

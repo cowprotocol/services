@@ -52,8 +52,8 @@ fn test_order_intent() -> OrderIntent {
             mint: pubkey(0x44),
             token_account: buy_token_account(),
         }),
-        sell_amount: 1_000,
-        buy_amount: 2_000,
+        sell_amount: NonZero::new(1_000).unwrap(),
+        buy_amount: NonZero::new(2_000).unwrap(),
         // Far future so the settle path's order-expiry check passes.
         valid_to: u32::MAX,
         flags: Flags {

@@ -433,7 +433,7 @@ fn decode_settlement(
             | SettlementInstruction::TransferAuthority
             | SettlementInstruction::AddSolver
             | SettlementInstruction::RemoveSolver
-            | SettlementInstruction::CreateSelfOrder => Ok(Vec::new()),
+            | SettlementInstruction::CreateSettlementOwnedOrder => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -526,8 +526,8 @@ fn order_created(
         sell_mint: to_sdk_pubkey(intent.sell.mint),
         buy_token_account: to_sdk_pubkey(buy_token_account),
         buy_mint: to_sdk_pubkey(buy_mint),
-        sell_amount: intent.sell_amount,
-        buy_amount: intent.buy_amount,
+        sell_amount: intent.sell_amount.get(),
+        buy_amount: intent.buy_amount.get(),
         valid_to: intent.valid_to,
         kind: match intent.flags.kind {
             InterfaceOrderKind::Sell => OrderKind::Sell,
