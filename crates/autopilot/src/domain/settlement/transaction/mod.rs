@@ -75,11 +75,12 @@ impl Transaction {
         authenticator: &impl Authenticator,
     ) -> Result<Self, Error> {
         // Find trace call to settlement contract
-        let (calldata, callers) = find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
-            .map(|(trace, path)| (trace.input.clone(), path.clone()))
-            // All transactions emitting settlement events should have a /settle call,
-            // otherwise it's an execution client bug
-            .ok_or(Error::MissingCalldata)?;
+        let (calldata, callers) =
+            find_settlement_trace_and_callers(&transaction.trace_calls, settlement_contract)
+                .map(|(trace, path)| (trace.input.clone(), path.clone()))
+                // All transactions emitting settlement events should have a /settle call,
+                // otherwise it's an execution client bug
+                .ok_or(Error::MissingCalldata)?;
 
         // Find solver (submission address)
         // In cases of solvers using EOA to submit solutions, the address is the
