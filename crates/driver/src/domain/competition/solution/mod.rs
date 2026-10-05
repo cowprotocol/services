@@ -10,7 +10,7 @@ use {
         infra::{
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
-            solver::{ManageNativeToken, Solver},
+            solver::Solver,
         },
     },
     alloy::network::TxSigner,
@@ -171,7 +171,7 @@ impl Solution {
                             sell: jit.order().sell,
                             buy: jit.order().buy,
                             signature: jit.order().signature.clone(),
-                            receiver: Some(jit.order().receiver),
+                            receiver: jit.order().receiver,
                             created: u32::try_from(Utc::now().timestamp())
                                 .unwrap_or(u32::MIN)
                                 .into(),
@@ -556,9 +556,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
-        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, solver_native_token).await
+        let auction_id = auction.auction_id().ok_or(Error::MissingAuctionId)?;
+        Settlement::new(self, auction, auction_id, eth, simulator).await
     }
 
     /// Swap this quote solution's single user order for the real signed
@@ -840,6 +840,8 @@ pub mod error {
         FastPathLimitNotMet,
         #[error(transparent)]
         Math(#[from] Math),
+        #[error("auction has no id (quote auctions cannot be settled)")]
+        MissingAuctionId,
     }
 
     // Custom conversion function because clippy wants us to box this

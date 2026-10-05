@@ -102,7 +102,7 @@ impl Trade {
     pub fn receiver(&self) -> eth::Address {
         match self {
             Trade::Fulfillment(fulfillment) => fulfillment.order().receiver(),
-            Trade::Jit(jit) => jit.order().receiver,
+            Trade::Jit(jit) => jit.order().receiver.resolve(jit.order().signature.signer),
         }
     }
 }

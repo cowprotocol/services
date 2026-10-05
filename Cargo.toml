@@ -140,6 +140,7 @@ solana-rpc-client-api = "4"
 solana-sdk = "4"
 solana-system-interface = "3"
 solana-testlib = { path = "crates/solana-testlib" }
+solana-token = { path = "crates/solana-token" }
 solana-transaction-status-client-types = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }

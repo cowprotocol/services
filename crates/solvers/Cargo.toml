@@ -24,6 +24,7 @@ clap = { workspace = true, features = ["derive", "env"] }
 configs = { workspace = true }
 const-hex = { workspace = true }
 derive_more = { workspace = true }
+eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 futures = { workspace = true }
 hmac = { workspace = true }

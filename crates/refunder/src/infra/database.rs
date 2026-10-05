@@ -64,9 +64,6 @@ impl DbRead for Postgres {
             .with_context(|| format!("read ethflow order {uid:?}"))?
             .with_context(|| format!("missing ethflow order {uid:?}"))?;
 
-        let receiver = order
-            .receiver
-            .with_context(|| format!("order {uid:?} missing receiver"))?;
         let sell_amount = big_decimal_to_u256(&order.sell_amount)
             .with_context(|| format!("order {uid:?} invalid sell_amount"))?;
         let buy_amount = big_decimal_to_u256(&order.buy_amount)
@@ -76,7 +73,7 @@ impl DbRead for Postgres {
 
         Ok(EthFlowOrder::Data {
             buyToken: Address::from(order.buy_token.0),
-            receiver: Address::from(receiver.0),
+            receiver: Address::from(order.receiver.0),
             sellAmount: sell_amount,
             buyAmount: buy_amount,
             appData: order.app_data.0.into(),

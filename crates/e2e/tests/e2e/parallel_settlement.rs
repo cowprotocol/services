@@ -307,7 +307,7 @@ async fn solve_order(
                 "created": model::time::now_in_epoch_seconds(),
                 "validTo": order.valid_to,
                 "kind": "buy",
-                "receiver": null,
+                "receiver": format!("{:?}", Address::ZERO),
                 "owner": format!("{owner:?}"),
                 "partiallyFillable": false,
                 "executed": "0",

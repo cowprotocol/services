@@ -155,7 +155,8 @@ pub(crate) struct Order {
     created: u32,
     valid_to: u32,
     kind: Kind,
-    receiver: Option<eth::Address>,
+    #[serde(default)]
+    receiver: eth::Receiver,
     owner: eth::Address,
     partially_fillable: bool,
     /// Always zero if the order is not partially fillable.
