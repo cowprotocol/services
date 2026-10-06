@@ -121,9 +121,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             )
                         })
                         .collect(),
-                    enable_simulation_strategy: solver_config
-                        .bad_order_detection
-                        .enable_simulation_strategy,
                     enable_metrics_strategy: solver_config
                         .bad_order_detection
                         .enable_metrics_strategy,

@@ -18,7 +18,6 @@
 use {
     crate::domain::competition::{Auction, order::Uid},
     eth_domain_types as eth,
-    futures::{StreamExt, stream::FuturesUnordered},
     std::{collections::HashMap, fmt, time::Instant},
 };
 
@@ -50,7 +49,6 @@ pub struct Detector {
     /// tokens that get detected incorrectly by the automatic detectors get
     /// listed here and therefore have a higher precedence.
     hardcoded: HashMap<eth::TokenAddress, Quality>,
-    simulation_detector: Option<bad_tokens::simulation::Detector>,
     metrics: Option<bad_orders::metrics::Detector>,
 }
 
@@ -62,16 +60,6 @@ impl Detector {
             hardcoded: config,
             ..Default::default()
         }
-    }
-
-    /// Enables detection of unsupported tokens via simulation based detection
-    /// methods.
-    pub fn with_simulation_detector(
-        &mut self,
-        detector: bad_tokens::simulation::Detector,
-    ) -> &mut Self {
-        self.simulation_detector = Some(detector);
-        self
     }
 
     /// Enables detection of unsupported tokens based on heuristics.
@@ -86,10 +74,9 @@ impl Detector {
 
         // reuse the original allocation
         let supported_orders = std::mem::take(&mut auction.orders);
-        let mut token_quality_checks = FuturesUnordered::new();
         let mut removed_uids = Vec::new();
 
-        let mut supported_orders: Vec<_> = supported_orders
+        let supported_orders: Vec<_> = supported_orders
             .into_iter()
             .filter(|order| {
                 self.metrics
@@ -98,8 +85,8 @@ impl Detector {
                     .is_none_or(|q| q != Quality::Unsupported)
             })
             .filter_map(|order| {
-                let sell = self.get_token_quality(order.sell.token, now);
-                let buy = self.get_token_quality(order.buy.token, now);
+                let sell = self.get_token_quality(order.sell.token);
+                let buy = self.get_token_quality(order.buy.token);
                 match (sell, buy) {
                     // both tokens supported => keep order
                     (Quality::Supported, Quality::Supported) => Some(order),
@@ -108,42 +95,15 @@ impl Detector {
                         removed_uids.push(order.uid);
                         None
                     }
-                    // sell token quality is unknown => keep order if token is supported
-                    (Quality::Unknown, _) => {
-                        let Some(detector) = &self.simulation_detector else {
-                            // we can't determine quality => assume order is
-                            // good
-                            return Some(order);
-                        };
-                        let check_tokens_fut = async move {
-                            let quality = detector.determine_sell_token_quality(&order, now).await;
-                            (order, quality)
-                        };
-                        token_quality_checks.push(check_tokens_fut);
-                        None
-                    }
-                    // buy token quality is unknown => keep order (because we can't
-                    // determine quality and assume it's good)
-                    (_, Quality::Unknown) => Some(order),
+                    // we can't determine quality and assume it's good
+                    (Quality::Unknown, _) | (_, Quality::Unknown) => Some(order),
                 }
             })
             .collect();
 
-        while let Some((order, quality)) = token_quality_checks.next().await {
-            if quality == Quality::Supported {
-                supported_orders.push(order);
-            } else {
-                removed_uids.push(order.uid);
-            }
-        }
-
         auction.orders = supported_orders;
         if !removed_uids.is_empty() && !auction.is_quote() {
             tracing::debug!(orders = ?removed_uids, "ignored orders with unsupported tokens");
-        }
-
-        if let Some(detector) = &self.simulation_detector {
-            detector.evict_outdated_entries();
         }
 
         auction
@@ -163,16 +123,11 @@ impl Detector {
         }
     }
 
-    fn get_token_quality(&self, token: eth::TokenAddress, now: Instant) -> Quality {
-        match self.hardcoded.get(&token) {
-            None | Some(Quality::Unknown) => (),
-            Some(quality) => return *quality,
-        }
-
-        self.simulation_detector
-            .as_ref()
-            .map(|d| d.get_quality(&token, now))
-            .unwrap_or(Quality::Unknown)
+    fn get_token_quality(&self, token: eth::TokenAddress) -> Quality {
+        let Some(quality) = self.hardcoded.get(&token) else {
+            return Quality::Unknown;
+        };
+        *quality
     }
 }
 
