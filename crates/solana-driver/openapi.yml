@@ -229,6 +229,13 @@ components:
             - $ref: "#/components/schemas/Address"
         appData:
           $ref: "#/components/schemas/AppData"
+        creation:
+          description: |-
+            The owner-signed creation transaction of an order not created on
+            chain yet. The driver simulates it ahead of the settlement when
+            judging a solution.
+          allOf:
+            - $ref: "#/components/schemas/Transaction"
       required:
         - uid
         - owner

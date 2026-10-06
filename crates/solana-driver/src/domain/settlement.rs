@@ -935,7 +935,11 @@ mod tests {
                 multiple_accounts_json(accounts),
             ),
         ]);
-        Solana::new(SolanaRPC::new_mock_with_mocks_map(mocks), pubkey(0xaa))
+        Solana::new(
+            SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            pubkey(0xaa),
+        )
     }
 
     fn resolve_for_test(settlement: Settlement) -> ResolvedSettlement {

@@ -6,6 +6,10 @@ settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"
+# Serves only `simulateBundle`; must support that Jito extension.
+# TODO: temporary split; a single endpoint will serve every method soon and
+# this key goes away.
+bundle-endpoint = "https://bundles.example.com"
 request-timeout = "10s"
 
 [http]

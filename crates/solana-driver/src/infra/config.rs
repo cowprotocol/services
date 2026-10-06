@@ -90,6 +90,13 @@ pub struct Chain {
 pub struct Rpc {
     /// RPC endpoint to connect to.
     pub endpoint: url::Url,
+    /// RPC endpoint for `simulateBundle` only, so a metered plan on the main
+    /// endpoint is spared its cost.
+    ///
+    /// TODO: the split is temporary. Once a single endpoint serves every
+    /// method, drop this field and `Solana::bundle_rpc` and route the call
+    /// through `endpoint`.
+    pub bundle_endpoint: url::Url,
     /// Timeout for individual RPC requests.
     #[serde(with = "humantime_serde")]
     pub request_timeout: Duration,
@@ -142,6 +149,10 @@ mod tests {
         assert_eq!(
             config.rpc.endpoint.as_str(),
             "https://api.mainnet-beta.solana.com/"
+        );
+        assert_eq!(
+            config.rpc.bundle_endpoint.as_str(),
+            "https://bundles.example.com/"
         );
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
