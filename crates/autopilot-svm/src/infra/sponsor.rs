@@ -21,6 +21,16 @@ pub struct Sponsor {
     max_displaced_creations: usize,
 }
 
+/// A stored sponsored creation the indexer has not seen on chain.
+struct PendingCreation {
+    uid: IntentHash,
+    /// The order account the creation opens.
+    order_pda: Pubkey,
+    /// The owner-signed transaction as stored, countersigned at send time.
+    bytes: Vec<u8>,
+    transaction: VersionedTransaction,
+}
+
 /// The stored creation's blockhash is past its last valid height, so the
 /// creation can never land.
 #[derive(Debug, thiserror::Error)]
@@ -54,7 +64,7 @@ impl Sponsor {
         let uids: Vec<Vec<u8>> = uids.map(|uid| uid.0.to_vec()).collect();
         let pending = db::pending_creations(&self.pool, &uids).await?;
         let mut creations = Vec::with_capacity(pending.len());
-        for (uid, bytes) in pending {
+        for (uid, _, bytes) in pending {
             let creation = match self.countersign(&bytes).await {
                 Err(err) if err.is::<BlockhashExpired>() => {
                     self.expire(&uid).await;
@@ -70,59 +80,84 @@ impl Sponsor {
 
     /// Send the creations of the given pending sponsored orders without a
     /// settlement, at most `max_displaced_creations` of them, so the orders
-    /// outlive their creation blockhash. Skips a creation that opens an
-    /// account with the funder's lamports, since that rent goes to the
-    /// account's owner. Failures only log: the order keeps its stored
-    /// creation and the cut drops it once the blockhash dies.
-    pub async fn create_displaced(&self, uids: impl Iterator<Item = IntentHash>) {
+    /// outlive their creation blockhash. Returns the orders whose creation
+    /// went out. Failures only log: the order keeps its stored creation and
+    /// the cut drops it once the blockhash dies.
+    pub async fn create_displaced(
+        &self,
+        uids: impl Iterator<Item = IntentHash>,
+    ) -> Vec<IntentHash> {
         let uids: Vec<Vec<u8>> = uids.map(|uid| uid.0.to_vec()).collect();
         if uids.is_empty() || self.max_displaced_creations == 0 {
-            return;
+            return Vec::new();
         }
         let pending = match db::pending_creations(&self.pool, &uids).await {
             Ok(pending) => pending,
             Err(err) => {
                 tracing::warn!(?err, "failed to read displaced sponsored creations");
-                return;
+                return Vec::new();
             }
         };
-        let pending: Vec<(Vec<u8>, Vec<u8>, VersionedTransaction)> = pending
+        let pending = pending
             .into_iter()
-            .filter_map(|(uid, bytes)| match bincode::deserialize(&bytes) {
-                Ok(creation) => Some((uid, bytes, creation)),
-                Err(err) => {
-                    let order_uid = const_hex::encode_prefixed(&uid);
-                    tracing::warn!(%order_uid, ?err, "stored creation does not decode");
-                    None
+            .filter_map(|(uid, order_pda, bytes)| {
+                let order_uid = const_hex::encode_prefixed(&uid);
+                let decoded = (|| {
+                    anyhow::Ok(PendingCreation {
+                        uid: IntentHash(uid.as_slice().try_into()?),
+                        order_pda: Pubkey::try_from(order_pda.as_slice())?,
+                        transaction: bincode::deserialize(&bytes)?,
+                        bytes,
+                    })
+                })();
+                match decoded {
+                    Ok(creation) => Some(creation),
+                    Err(err) => {
+                        tracing::warn!(%order_uid, ?err, "stored creation does not decode");
+                        None
+                    }
                 }
             })
             .collect();
+        self.send_displaced(pending).await
+    }
+
+    /// Send the creatable ones among the pending creations, in order, up to
+    /// the cap. A creation whose order account exists landed earlier and
+    /// waits for the indexer, so it is not sent again. One that opens an
+    /// account with the funder's lamports is skipped, since that rent goes
+    /// to the account's owner.
+    async fn send_displaced(&self, pending: Vec<PendingCreation>) -> Vec<IntentHash> {
         let funder = self.signer.pubkey();
         let existing = match self
             .rpc
-            .multiple_accounts(
-                pending
-                    .iter()
-                    .flat_map(|(_, _, creation)| funder_paid_accounts(creation, &funder)),
-            )
+            .multiple_accounts(pending.iter().flat_map(|creation| {
+                funder_paid_accounts(&creation.transaction, &funder)
+                    .into_iter()
+                    .chain([creation.order_pda])
+            }))
             .await
         {
             Ok(existing) => existing,
             Err(err) => {
-                tracing::warn!(?err, "funder-paid account lookup failed");
-                return;
+                tracing::warn!(?err, "displaced creation account lookup failed");
+                return Vec::new();
             }
         };
         let creatable = pending
             .iter()
-            .filter(|(_, _, creation)| !opens_funder_paid_account(creation, &funder, &existing))
+            .filter(|creation| {
+                !existing.contains_key(&creation.order_pda)
+                    && !opens_funder_paid_account(&creation.transaction, &funder, &existing)
+            })
             .take(self.max_displaced_creations);
-        for (uid, bytes, _) in creatable {
-            let order_uid = const_hex::encode_prefixed(uid);
-            let signed = match self.countersign(bytes).await {
+        let mut sent = Vec::new();
+        for creation in creatable {
+            let order_uid = const_hex::encode_prefixed(creation.uid.0);
+            let signed = match self.countersign(&creation.bytes).await {
                 Ok(signed) => signed,
                 Err(err) if err.is::<BlockhashExpired>() => {
-                    self.expire(uid).await;
+                    self.expire(&creation.uid.0).await;
                     continue;
                 }
                 Err(err) => {
@@ -130,19 +165,21 @@ impl Sponsor {
                     continue;
                 }
             };
-            let sent = async {
+            let submitted = async {
                 let transaction: VersionedTransaction = bincode::deserialize(&signed)?;
                 anyhow::Ok(self.rpc.send_transaction(&transaction).await?)
             };
-            match sent.await {
+            match submitted.await {
                 Ok(signature) => {
-                    tracing::info!(%order_uid, %signature, "sent a displaced order's creation")
+                    tracing::info!(%order_uid, %signature, "sent a displaced order's creation");
+                    sent.push(creation.uid);
                 }
                 Err(err) => {
                     tracing::warn!(%order_uid, ?err, "failed to send a displaced creation")
                 }
             }
         }
+        sent
     }
 
     /// Lower a dead creation's stored deadline below the chain height, which
@@ -234,7 +271,7 @@ fn opens_funder_paid_account(
 mod tests {
     use {
         super::*,
-        cow_solana_rpc::{Mocks, RpcRequest},
+        cow_solana_rpc::{Mocks, MocksMap, RpcRequest},
         solana_sdk::{
             hash::Hash,
             message::Message,
@@ -334,6 +371,69 @@ mod tests {
         ));
         let existing = HashMap::from([(funder_paid, Account::default())]);
         assert!(!opens_funder_paid_account(&creation, &funder, &existing));
+    }
+
+    /// A creation whose order account already exists landed earlier and
+    /// waits for the indexer, so it is not sent again.
+    #[tokio::test]
+    async fn landed_creations_are_not_resent() {
+        let funder = Keypair::new();
+        let creation = |order_pda: Pubkey| {
+            let message = Message::new_with_blockhash(
+                &[solana_sdk::instruction::Instruction::new_with_bytes(
+                    Pubkey::new_unique(),
+                    &[],
+                    vec![
+                        solana_sdk::instruction::AccountMeta::new(funder.pubkey(), true),
+                        solana_sdk::instruction::AccountMeta::new(order_pda, false),
+                    ],
+                )],
+                Some(&funder.pubkey()),
+                &Hash::new_unique(),
+            );
+            let transaction = VersionedTransaction {
+                signatures: vec![Signature::default()],
+                message: solana_sdk::message::VersionedMessage::Legacy(message),
+            };
+            PendingCreation {
+                uid: IntentHash(order_pda.to_bytes()),
+                order_pda,
+                bytes: bincode::serialize(&transaction).unwrap(),
+                transaction,
+            }
+        };
+        let landed = creation(Pubkey::new_unique());
+        let fresh = creation(Pubkey::new_unique());
+        // The lookup finds the landed order's account and not the fresh
+        // one's. Every blockhash check passes, and the mock answers a send
+        // with the sent transaction's own signature.
+        let valid = serde_json::json!({
+            "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+            "value": true,
+        });
+        let mocks: MocksMap = [
+            (
+                RpcRequest::GetMultipleAccounts,
+                serde_json::json!({
+                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                    "value": [solana_testlib::account_json(&Account::default()), null],
+                }),
+            ),
+            (RpcRequest::IsBlockhashValid, valid.clone()),
+            (RpcRequest::IsBlockhashValid, valid),
+        ]
+        .into_iter()
+        .collect();
+        let sponsor = Sponsor::new(
+            Signer::Keypair(funder.insecure_clone()),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
+            10,
+        );
+
+        let fresh_uid = fresh.uid;
+        let sent = sponsor.send_displaced(vec![landed, fresh]).await;
+        assert_eq!(sent, vec![fresh_uid]);
     }
 
     /// A dead blockhash refuses the countersign.
