@@ -732,6 +732,10 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         // Dropped: buy side fully received.
         insert_order(&mut tx, 8, 2_000, true, database::solana::OrderKind::Buy).await;
         insert_pda(&mut tx, 8, false, 0, 2_000).await;
+        // Kept: buy side partially received; the sell counter must not leak
+        // into `executed`.
+        insert_order(&mut tx, 11, 2_000, true, database::solana::OrderKind::Buy).await;
+        insert_pda(&mut tx, 11, false, 300, 500).await;
         // A pending sponsored order whose creation dies at height 150: kept
         // while the chain is below that height or the height is unknown,
         // dropped after.
@@ -756,15 +760,15 @@ WHERE uid = $1
             .iter()
             .map(|order| order.executed.to_u64().unwrap())
             .collect();
-        assert_eq!(executed, vec![0, 999, 0, 0]);
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(executed, vec![0, 999, 0, 0, 500]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         // Boundary: still alive when the chain height equals the stored height.
         let orders = open_orders(&mut *tx, 1_000, Some(150)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 11]);
     }
 
     /// A pending sponsored order counts once the chain passes its stored
