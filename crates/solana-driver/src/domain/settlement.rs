@@ -26,13 +26,14 @@ use {
         pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         token_program::TokenProgram,
     },
+    cow_solana_signer::Signer,
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_sdk::{
         hash::Hash,
         instruction::Instruction,
         message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0},
         pubkey::Pubkey,
-        signer::{Signer, keypair::Keypair},
+        signature::Signature,
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::transfer,
@@ -355,17 +356,37 @@ impl ResolvedSettlement {
         Ok(instructions)
     }
 
-    /// Encode the resolved settlement as a signed v0 transaction.
-    pub fn encode(self, signer: &Keypair, blockhash: Hash) -> Result<VersionedTransaction, Error> {
-        let instructions = self.instructions(signer.pubkey())?;
-        let message = MessageV0::try_compile(
-            &signer.pubkey(),
+    /// Compile the resolved settlement into the v0 message `payer` signs.
+    fn message(&self, payer: Pubkey, blockhash: Hash) -> Result<MessageV0, Error> {
+        let instructions = self.instructions(payer)?;
+        Ok(MessageV0::try_compile(
+            &payer,
             &instructions,
             &self.lookup_tables,
             blockhash,
-        )?;
-        let transaction = VersionedTransaction::try_new(VersionedMessage::V0(message), &[signer])?;
-        Ok(transaction)
+        )?)
+    }
+
+    /// Encode the resolved settlement as a signed v0 transaction.
+    pub async fn encode(
+        self,
+        signer: &Signer,
+        blockhash: Hash,
+    ) -> Result<VersionedTransaction, Error> {
+        let message = self.message(signer.pubkey(), blockhash)?;
+        Ok(signer.sign(message).await?)
+    }
+
+    /// The resolved settlement as an unsigned transaction for `payer`.
+    /// Signatures and the blockhash are fixed-size, so it has the signed
+    /// transaction's wire size.
+    pub fn unsigned(&self, payer: Pubkey) -> Result<VersionedTransaction, Error> {
+        let message = self.message(payer, Hash::default())?;
+        let signatures = vec![Signature::default(); message.header.num_required_signatures.into()];
+        Ok(VersionedTransaction {
+            signatures,
+            message: VersionedMessage::V0(message),
+        })
     }
 }
 
@@ -781,7 +802,7 @@ pub enum Error {
     Compile(#[from] solana_sdk::message::CompileError),
     /// The transaction failed to sign.
     #[error("failed to sign transaction: {0}")]
-    Sign(#[from] solana_sdk::signer::SignerError),
+    Sign(#[from] cow_solana_signer::Error),
     /// The instruction index does not fit in `u16`.
     #[error("instruction index does not fit in u16")]
     InstructionIndexOverflow,
@@ -803,6 +824,7 @@ mod tests {
         },
         cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
         serde_json::Value,
+        solana_sdk::signer::keypair::Keypair,
         solana_testlib::{
             account_json,
             mint_account_json,
@@ -973,6 +995,24 @@ mod tests {
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
         assert_eq!(begin_input.orders.iter().count(), 1);
+    }
+
+    /// The unsigned transaction has the signed one's wire size.
+    #[tokio::test]
+    async fn unsigned_has_the_signed_wire_size() {
+        let program_id = pubkey(0xaa);
+        let signer = Signer::Keypair(Keypair::new());
+        let order = test_order(&program_id);
+        let uid = order.uid;
+        let settlement = test_settlement(&[order], &[trade(uid, 1_000, 2_000)]).unwrap();
+        let resolved = resolve_for_test(settlement);
+
+        let unsigned = resolved.unsigned(signer.pubkey()).unwrap();
+        let signed = resolved.encode(&signer, Hash::new_unique()).await.unwrap();
+        assert_eq!(
+            bincode::serialized_size(&unsigned).unwrap(),
+            bincode::serialized_size(&signed).unwrap()
+        );
     }
 
     /// The sell tokens are pulled into the payer's sell ATA, not a buffer, so
