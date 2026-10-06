@@ -2,7 +2,7 @@
 
 use {
     super::order_uid::OrderUid,
-    solana_sdk::{instruction::Instruction, pubkey::Pubkey},
+    solana_sdk::{instruction::Instruction, message::v1, pubkey::Pubkey},
     std::{collections::HashMap, num::NonZero},
 };
 
@@ -31,6 +31,23 @@ pub struct Solution {
     pub address_lookup_tables: Vec<Pubkey>,
     /// Optional solver estimate of total settlement compute units.
     pub cu_estimate: Option<u32>,
+    pub transaction_version: TransactionVersion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransactionVersion {
+    V0,
+    V1,
+}
+
+impl TransactionVersion {
+    pub fn max_transaction_bytes(self) -> u64 {
+        match self {
+            // solana_packet::PACKET_DATA_SIZE, without adding the dependency.
+            Self::V0 => 1232,
+            Self::V1 => v1::MAX_TRANSACTION_SIZE as u64,
+        }
+    }
 }
 
 /// A fulfillment of one auction order.

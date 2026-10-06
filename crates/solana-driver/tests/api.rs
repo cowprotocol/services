@@ -444,8 +444,12 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
         "accounts": [],
         "instructionData": "AAAA".repeat(411),
     }]);
+    // The same payload fits v1 and must survive the solve-time filter.
+    let mut v1 = solution(3, oversized.clone());
+    v1["transactionVersion"] = serde_json::json!(1);
+    v1["cuEstimate"] = serde_json::json!(1_000_000);
     let engine = spawn_mock_solver_engine(serde_json::json!({
-        "solutions": [solution(1, serde_json::json!([])), solution(2, oversized)],
+        "solutions": [solution(1, serde_json::json!([])), solution(2, oversized), v1],
     }))
     .await;
     let (solver, _) = solver_with_keypair(engine).await;
@@ -458,7 +462,7 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert_eq!(response_ids(&response.json().await.unwrap()), [1]);
+    assert_eq!(response_ids(&response.json().await.unwrap()), [1, 3]);
 }
 
 #[tokio::test]
