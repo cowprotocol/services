@@ -45,7 +45,7 @@ impl Default for PriorityFeePolicy {
         Self {
             percentile: 75,
             recent_slots: 50,
-            min_compute_unit_price: 1_000,
+            min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
         }
     }

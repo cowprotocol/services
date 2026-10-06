@@ -20,7 +20,7 @@ request-timeout = "10s"
 percentile = 75
 recent-slots = 50
 # The lowest compute unit price, in micro-lamports per compute unit.
-min-compute-unit-price = 1000
+min-compute-unit-price = 10000
 # The most a transaction pays in priority fee (price times compute unit
 # limit), in lamports. A transaction over it is refused as over budget.
 max-priority-fee-lamports = 1000000
