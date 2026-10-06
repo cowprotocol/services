@@ -197,6 +197,9 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
+          version: v1.7.1
       - uses: ./.github/actions/setup-rust-cache
         with:
           shared-key: tests
@@ -270,6 +273,9 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
+          version: v1.7.1
       - uses: ./.github/actions/setup-rust-cache
         with:
           shared-key: tests
@@ -341,6 +347,9 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install stable --profile minimal
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # anvil 1.8.0 changed trace/call semantics that the e2e and driver tests rely on
+          version: v1.7.1
       - uses: ./.github/actions/setup-rust-cache
         with:
           shared-key: tests
