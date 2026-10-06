@@ -96,18 +96,23 @@ async fn penalty_cap(web3: Web3) {
     .unwrap();
 
     // Once the order gets settled, the trade exposes the cap of the auction
-    // that settled it.
+    // that settled it. The autopilot links the trade to its auction after
+    // the trade itself lands, so poll for `penalty_cap_native` instead of
+    // reading it in one shot.
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
-        !services.get_trades(&uid).await.unwrap().is_empty()
+        services
+            .get_trades(&uid)
+            .await
+            .ok()
+            .and_then(|trades| trades.into_iter().next())
+            .and_then(|trade| trade.penalty_cap_native)
+            .is_some_and(|cap| !cap.is_zero())
     })
     .await
-    .unwrap();
+    .expect("settled trade carries the auction's penalty cap");
     let trade = services.get_trades(&uid).await.unwrap().remove(0);
-    let cap = trade
-        .penalty_cap_native
-        .expect("settled trade carries the auction's penalty cap");
-    assert!(!cap.is_zero());
+    let cap = trade.penalty_cap_native.unwrap();
     let caps = crate::database::penalty_caps_of_order(services.db(), &uid).await;
     assert!(
         caps.iter()

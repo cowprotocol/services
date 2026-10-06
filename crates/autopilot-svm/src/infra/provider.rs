@@ -539,6 +539,7 @@ mod tests {
             app_data: AppData([0; 32]),
             created_on_chain,
             executed: 0,
+            creation: None,
         }
     }
 

@@ -3798,8 +3798,12 @@ dependencies = [
 name = "cow-solana-rpc"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "bincode",
  "futures",
  "itertools 0.14.0",
+ "serde",
+ "serde_json",
  "solana-commitment-config",
  "solana-rpc-client",
  "solana-rpc-client-api",

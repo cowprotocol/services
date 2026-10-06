@@ -11,9 +11,9 @@ use {
         infra::api::routes::Kind,
     },
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, serde_as},
+    serde_with::{DisplayFromStr, base64::Base64, serde_as},
     solana_sdk::pubkey::Pubkey,
-    std::{fmt, str::FromStr},
+    std::{collections::HashMap, fmt, str::FromStr},
 };
 
 /// Application-specific data attached to a Solana order: 32 opaque bytes.
@@ -84,6 +84,11 @@ pub struct Order {
     #[serde(default)]
     #[serde_as(as = "DisplayFromStr")]
     executed: u64,
+    /// The owner-signed creation transaction of an order not created on
+    /// chain yet, serialized and base64-encoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
+    creation: Option<Vec<u8>>,
 }
 
 impl From<Order> for domain::Order {
@@ -112,6 +117,8 @@ impl From<Order> for domain::Order {
 pub enum Error {
     #[error("invalid auction id")]
     InvalidAuctionId,
+    #[error("a creation transaction does not decode")]
+    InvalidCreation,
 }
 
 impl From<domain::auction::InvalidAuctionId> for Error {
@@ -124,12 +131,20 @@ impl SolveRequest {
     /// Convert the wire request into a domain auction.
     pub fn into_domain(self) -> Result<domain::Auction, Error> {
         let id = domain::auction::Id::try_from(self.id)?;
+        let mut creations = HashMap::new();
+        for order in &self.orders {
+            if let Some(bytes) = &order.creation {
+                let creation = bincode::deserialize(bytes).map_err(|_| Error::InvalidCreation)?;
+                creations.insert(order.uid, creation);
+            }
+        }
         Ok(domain::Auction {
             id: Some(id),
             orders: self.orders.into_iter().map(Into::into).collect(),
             // Placeholder; the domain does not consume it yet.
             deadline_slot: domain::Slot(0),
             deadline: self.deadline,
+            creations,
         })
     }
 }
@@ -158,6 +173,7 @@ mod tests {
             order_pda: Pubkey::new_from_array([0x77; 32]),
             app_data: AppData([0; 32]),
             executed: 0,
+            creation: Some(vec![1, 2, 3]),
         }
     }
 
@@ -189,6 +205,7 @@ mod tests {
                 "orderPda": pubkey(0x77).to_string(),
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "executed": "0",
+                "creation": "AQID",
             }]
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);
@@ -200,6 +217,24 @@ mod tests {
             .remove("executed");
         let parsed: SolveRequest = serde_json::from_value(expected).unwrap();
         assert_eq!(parsed.orders[0].executed, 0);
+    }
+
+    #[test]
+    fn into_domain_decodes_creations() {
+        let transaction = solana_sdk::transaction::VersionedTransaction::default();
+        let request = SolveRequest {
+            id: 7,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
+            orders: vec![Order {
+                creation: Some(bincode::serialize(&transaction).unwrap()),
+                ..order()
+            }],
+        };
+        let auction = request.into_domain().unwrap();
+        assert_eq!(
+            auction.creations.get(&OrderUid([0x11; 32])),
+            Some(&transaction)
+        );
     }
 
     #[test]

@@ -237,6 +237,13 @@ components:
             to `0`.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        creation:
+          description: |-
+            The owner-signed creation transaction of an order not created on
+            chain yet. The driver simulates it ahead of the settlement when
+            judging a solution.
+          allOf:
+            - $ref: "#/components/schemas/Transaction"
       required:
         - uid
         - owner
@@ -384,6 +391,7 @@ components:
         - QuotingFailed
         - SimulationFailed
         - TransactionTooLarge
+        - PriorityFeeTooHigh
         - Unknown
   responses:
     BadRequest:

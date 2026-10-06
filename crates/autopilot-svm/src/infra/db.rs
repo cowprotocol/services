@@ -31,6 +31,7 @@ pub struct OrderRow {
     pub app_data: ByteArray<32>,
     pub created_on_chain: bool,
     pub executed: BigDecimal,
+    pub creation: Option<Vec<u8>>,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -53,7 +54,8 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        CASE o.kind
            WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
            ELSE COALESCE(p.amount_received, 0)
-       END AS executed
+       END AS executed,
+       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
@@ -575,6 +577,7 @@ impl TryFrom<OrderRow> for Order {
             app_data: AppData(row.app_data.0),
             created_on_chain: row.created_on_chain,
             executed: to_amount(&row.executed).context("executed")?,
+            creation: row.creation,
         })
     }
 }
@@ -619,6 +622,7 @@ mod tests {
             app_data: ByteArray([0; 32]),
             created_on_chain: true,
             executed: BigDecimal::from(0u64),
+            creation: None,
         }
     }
 
@@ -761,6 +765,8 @@ WHERE uid = $1
             .map(|order| order.executed.to_u64().unwrap())
             .collect();
         assert_eq!(executed, vec![0, 999, 0, 0, 500]);
+        let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
+        assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);

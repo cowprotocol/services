@@ -42,6 +42,9 @@ pub struct Order {
     /// The cumulative fill on the order's own side: sell-token units for a
     /// sell order, buy-token units for a buy order.
     pub executed: u64,
+    /// The owner-signed creation transaction of a pending sponsored order,
+    /// serialized. `None` for an order created on chain.
+    pub creation: Option<Vec<u8>>,
 }
 
 impl Order {
@@ -138,6 +141,7 @@ mod tests {
             app_data: AppData([0; 32]),
             created_on_chain: true,
             executed: 0,
+            creation: None,
         }
     }
 
