@@ -290,6 +290,14 @@ impl SolanaRPC {
     ) -> Result<Signature, Error> {
         self.inner.send_and_confirm_transaction(transaction).await
     }
+
+    /// Send a versioned transaction without waiting for it to land.
+    pub async fn send_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, Error> {
+        self.inner.send_transaction(transaction).await
+    }
 }
 
 /// One transaction's execution inside a simulated bundle.

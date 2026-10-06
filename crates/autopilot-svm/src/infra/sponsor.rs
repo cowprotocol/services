@@ -1,4 +1,4 @@
-//! Countersigning of sponsored creation transactions for winning solutions.
+//! Countersigning of pending sponsored creation transactions.
 
 use {
     crate::infra::{db, order_events},
@@ -7,12 +7,17 @@ use {
     cow_solana_rpc::SolanaRPC,
     cow_solana_signer::Signer,
     database::solana::OrderEventLabel,
-    solana_sdk::transaction::VersionedTransaction,
+    solana_sdk::{account::Account, pubkey::Pubkey, transaction::VersionedTransaction},
     sqlx::PgPool,
+    std::collections::HashMap,
 };
 
+/// Most creations one `Sponsor::create_displaced` call sends. The funder pays
+/// for each one, and its order may never fill.
+const MAX_DISPLACED_CREATIONS: usize = 2;
+
 /// Holds the funder signer and countersigns the stored creation transactions
-/// of winning sponsored orders right before their settlement is dispatched.
+/// of pending sponsored orders.
 pub struct Sponsor {
     signer: Signer,
     rpc: SolanaRPC,
@@ -54,6 +59,83 @@ impl Sponsor {
             creations.push(creation);
         }
         Ok(creations)
+    }
+
+    /// Send the creations of the given pending sponsored orders without a
+    /// settlement, at most `MAX_DISPLACED_CREATIONS`, so the orders outlive
+    /// their creation blockhash. Skips a creation that opens an account with
+    /// the funder's lamports, since that rent goes to the account's owner.
+    /// Failures only log: the order keeps its stored creation and the cut
+    /// drops it once the blockhash dies.
+    pub async fn create_displaced(&self, uids: impl Iterator<Item = IntentHash>) {
+        let uids: Vec<Vec<u8>> = uids.map(|uid| uid.0.to_vec()).collect();
+        if uids.is_empty() {
+            return;
+        }
+        let pending = match db::pending_creations(&self.pool, &uids).await {
+            Ok(pending) => pending,
+            Err(err) => {
+                tracing::warn!(?err, "failed to read displaced sponsored creations");
+                return;
+            }
+        };
+        let pending: Vec<(Vec<u8>, Vec<u8>, VersionedTransaction)> = pending
+            .into_iter()
+            .filter_map(|(uid, bytes)| match bincode::deserialize(&bytes) {
+                Ok(creation) => Some((uid, bytes, creation)),
+                Err(err) => {
+                    let order_uid = const_hex::encode_prefixed(&uid);
+                    tracing::warn!(%order_uid, ?err, "stored creation does not decode");
+                    None
+                }
+            })
+            .collect();
+        let funder = self.signer.pubkey();
+        let existing = match self
+            .rpc
+            .multiple_accounts(
+                pending
+                    .iter()
+                    .flat_map(|(_, _, creation)| funder_paid_accounts(creation, &funder)),
+            )
+            .await
+        {
+            Ok(existing) => existing,
+            Err(err) => {
+                tracing::warn!(?err, "funder-paid account lookup failed");
+                return;
+            }
+        };
+        let creatable = pending
+            .iter()
+            .filter(|(_, _, creation)| !opens_funder_paid_account(creation, &funder, &existing))
+            .take(MAX_DISPLACED_CREATIONS);
+        for (uid, bytes, _) in creatable {
+            let order_uid = const_hex::encode_prefixed(uid);
+            let signed = match self.countersign(bytes).await {
+                Ok(signed) => signed,
+                Err(err) if err.is::<BlockhashExpired>() => {
+                    self.expire(uid).await;
+                    continue;
+                }
+                Err(err) => {
+                    tracing::warn!(%order_uid, ?err, "failed to countersign a displaced creation");
+                    continue;
+                }
+            };
+            let sent = async {
+                let transaction: VersionedTransaction = bincode::deserialize(&signed)?;
+                anyhow::Ok(self.rpc.send_transaction(&transaction).await?)
+            };
+            match sent.await {
+                Ok(signature) => {
+                    tracing::info!(%order_uid, %signature, "sent a displaced order's creation")
+                }
+                Err(err) => {
+                    tracing::warn!(%order_uid, ?err, "failed to send a displaced creation")
+                }
+            }
+        }
     }
 
     /// Lower a dead creation's stored deadline below the chain height, which
@@ -107,6 +189,38 @@ impl Sponsor {
         }
         bincode::serialize(&transaction).context("serialize countersigned creation")
     }
+}
+
+/// The associated token accounts a creation opens with the funder as payer.
+/// Creations carry no lookup tables, so the static keys resolve every index.
+fn funder_paid_accounts(creation: &VersionedTransaction, funder: &Pubkey) -> Vec<Pubkey> {
+    let keys = creation.message.static_account_keys();
+    creation
+        .message
+        .instructions()
+        .iter()
+        .filter(|instruction| {
+            keys.get(usize::from(instruction.program_id_index))
+                == Some(&spl_associated_token_account_interface::program::ID)
+        })
+        .filter_map(|instruction| {
+            let payer = keys.get(usize::from(*instruction.accounts.first()?))?;
+            let account = keys.get(usize::from(*instruction.accounts.get(1)?))?;
+            (payer == funder).then_some(*account)
+        })
+        .collect()
+}
+
+/// Whether the creation opens a new account with the funder's lamports. An
+/// account already in `existing` costs nothing to create idempotently.
+fn opens_funder_paid_account(
+    creation: &VersionedTransaction,
+    funder: &Pubkey,
+    existing: &HashMap<Pubkey, Account>,
+) -> bool {
+    funder_paid_accounts(creation, funder)
+        .iter()
+        .any(|account| !existing.contains_key(account))
 }
 
 #[cfg(test)]
@@ -168,6 +282,50 @@ mod tests {
         let signed: VersionedTransaction = bincode::deserialize(&signed).unwrap();
         assert!(signed.signatures[0].verify(funder.pubkey().as_ref(), &serialized));
         assert!(signed.signatures[1].verify(owner.pubkey().as_ref(), &serialized));
+    }
+
+    /// Only an account the funder pays for and the chain does not hold yet
+    /// blocks a displaced creation.
+    #[test]
+    fn missing_funder_paid_accounts_block_a_displaced_creation() {
+        let funder = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let funder_paid = Pubkey::new_unique();
+        let create = |payer: Pubkey, account: Pubkey| {
+            solana_sdk::instruction::Instruction::new_with_bytes(
+                spl_associated_token_account_interface::program::ID,
+                &[1],
+                vec![
+                    solana_sdk::instruction::AccountMeta::new(payer, true),
+                    solana_sdk::instruction::AccountMeta::new(account, false),
+                    solana_sdk::instruction::AccountMeta::new_readonly(owner, false),
+                    solana_sdk::instruction::AccountMeta::new_readonly(Pubkey::new_unique(), false),
+                    solana_sdk::instruction::AccountMeta::new_readonly(Pubkey::new_unique(), false),
+                    solana_sdk::instruction::AccountMeta::new_readonly(Pubkey::new_unique(), false),
+                ],
+            )
+        };
+        let message = Message::new_with_blockhash(
+            &[
+                create(funder, funder_paid),
+                create(owner, Pubkey::new_unique()),
+            ],
+            Some(&funder),
+            &Hash::new_unique(),
+        );
+        let creation = VersionedTransaction {
+            signatures: vec![Signature::default(); 2],
+            message: solana_sdk::message::VersionedMessage::Legacy(message),
+        };
+
+        assert_eq!(funder_paid_accounts(&creation, &funder), vec![funder_paid]);
+        assert!(opens_funder_paid_account(
+            &creation,
+            &funder,
+            &HashMap::new()
+        ));
+        let existing = HashMap::from([(funder_paid, Account::default())]);
+        assert!(!opens_funder_paid_account(&creation, &funder, &existing));
     }
 
     /// A dead blockhash refuses the countersign.

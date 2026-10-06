@@ -8,7 +8,7 @@ use {
             observation::SettlementWindows,
             sponsor::Sponsor,
         },
-        run_loop::SettlementExecutor,
+        run_loop::{RankingInfo, SettlementExecutor},
     },
     async_trait::async_trait,
     std::sync::Arc,
@@ -155,6 +155,23 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     .expire_when_due(auction_id, solver, uid, deadline)
                     .await;
             });
+        }
+
+        // TODO: a workaround, not a final solution. The arbitrator picks one
+        // winner per directed token pair, so other orders on that pair wait,
+        // and a pending sponsored order dies with its creation blockhash after
+        // a few lost auctions. Creating it on chain lets it wait like any
+        // other order.
+        if let Some(sponsor) = &self.sponsor {
+            let executing = ranking.winning_order_uids();
+            sponsor
+                .create_displaced(
+                    ranking
+                        .considered_order_uids()
+                        .into_iter()
+                        .filter(|uid| !executing.contains(uid)),
+                )
+                .await;
         }
     }
 }
