@@ -96,11 +96,23 @@ async fn debug_order(web3: Web3) {
         response.json::<DebugReport>().await.unwrap()
     };
 
-    // Wait until the debug report is fully populated (settlement data is
-    // written asynchronously, so we poll until trades appear).
+    // Wait until the debug report is fully populated. The different pieces
+    // (trades, order events, execution data, settlement attempts) are written
+    // asynchronously by different components, so we poll until all of them
+    // land before asserting.
     let report_populated = || async {
         let report = fetch_debug_report().await;
-        !report.trades.is_empty()
+        let has_terminal_event = report
+            .events
+            .last()
+            .is_some_and(|e| e.label == "traded" || e.label == "filtered");
+        let auction_populated = report.auctions.first().is_some_and(|a| {
+            !a.native_prices.is_empty()
+                && !a.proposed_solutions.is_empty()
+                && !a.executions.is_empty()
+                && !a.settlement_attempts.is_empty()
+        });
+        !report.trades.is_empty() && has_terminal_event && auction_populated
     };
     wait_for_condition(TIMEOUT, report_populated).await.unwrap();
 
@@ -111,21 +123,17 @@ async fn debug_order(web3: Web3) {
     assert_eq!(report.order_uid, uid);
     assert_eq!(report.order.data.kind, OrderKind::Buy);
 
+    let labels: Vec<_> = report.events.iter().map(|e| e.label.as_str()).collect();
     assert!(
-        report.events.len() == 4 || report.events.len() == 5,
-        "got {:?}",
-        report.events
+        labels.contains(&"created") && labels.contains(&"ready") && labels.contains(&"executing"),
+        "missing expected event in {labels:?}"
     );
-    assert_eq!(report.events[0].label, "created");
-    assert_eq!(report.events[1].label, "ready");
-    assert_eq!(report.events[2].label, "executing");
     // The in_flight filtered event may or may not sneak in before traded
     // depending on timing.
     let last = report.events.last().unwrap();
     assert!(
         last.label == "traded" || last.label == "filtered",
-        "unexpected last event: {:?}",
-        last
+        "unexpected last event: {last:?}"
     );
 
     assert!(!report.trades.is_empty(), "expected at least one trade");

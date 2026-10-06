@@ -232,11 +232,12 @@ impl SolanaRPC {
             .map(|response| response.value)
     }
 
-    /// Simulate the transactions as one atomic bundle without sending them,
-    /// signatures unverified and blockhashes replaced by the node's latest,
-    /// so partially signed and stale transactions still simulate. One result
-    /// per executed transaction, in order, ending at the first failure. A
-    /// node without the Jito extension answers with an error.
+    /// Simulate the transactions as one atomic bundle on the confirmed bank
+    /// without sending them, signatures unverified and blockhashes replaced by
+    /// the node's latest, so partially signed and stale transactions still
+    /// simulate. One result per executed transaction, in order, ending at
+    /// the first failure. A node without the Jito extension answers with an
+    /// error.
     pub async fn simulate_bundle(
         &self,
         transactions: &[VersionedTransaction],
@@ -259,6 +260,10 @@ impl SolanaRPC {
                 "transactionEncoding": "base64",
                 "skipSigVerify": true,
                 "replaceRecentBlockhash": true,
+                // Jito defaults to the confirmed bank, but another provider
+                // may default to processed or tip and disagree with this
+                // crate's confirmed reads.
+                "simulationBank": { "commitment": CommitmentConfig::confirmed() },
             },
         ]);
         #[derive(Deserialize)]

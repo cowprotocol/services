@@ -809,12 +809,21 @@ async fn fast_path_penalty_cap(web3: Web3) {
         "fast-path competition row should carry a positive penalty cap, got {caps:?}",
     );
 
-    // The settled trade exposes that same cap for accounting.
-    let trade = services.get_trades(&uid).await.unwrap().remove(0);
-    let cap = trade
-        .penalty_cap_native
-        .expect("settled fast-path trade carries the auction's penalty cap");
-    assert!(!cap.is_zero());
+    // The settled trade exposes that same cap for accounting. The autopilot
+    // links the trade to its auction after the order is already marked
+    // `Fulfilled`, so give it a moment to populate `penalty_cap_native`.
+    wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
+        services
+            .get_trades(&uid)
+            .await
+            .ok()
+            .and_then(|trades| trades.into_iter().next())
+            .and_then(|trade| trade.penalty_cap_native)
+            .is_some_and(|cap| !cap.is_zero())
+    })
+    .await
+    .expect("settled fast-path trade carries the auction's penalty cap");
 }
 
 /// Regression test for the quoter/solver fast-path cache split.
