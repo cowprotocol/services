@@ -2,6 +2,7 @@ use {
     alloy_primitives::{Address, B256, U256},
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
+    eth_domain_types::Receiver,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -58,8 +59,8 @@ pub struct Order {
     pub penalty_cap_native: Option<U256>,
     pub valid_to: u32,
     pub kind: Kind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<Address>,
+    #[serde(default)]
+    pub receiver: Receiver,
     pub owner: Address,
     pub partially_fillable: bool,
     pub pre_interactions: Vec<InteractionData>,

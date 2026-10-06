@@ -544,13 +544,15 @@ paths:
         solvers have responded. Each emitted quote carries an `id` that can be
         referenced when placing an order.
 
-        The `priceQuality` field of the request body is ignored: this endpoint
-        always queries all solvers and attempts verification, and each emitted
-        quote carries its own `verified` flag. A verified quote ranks above an
-        unverified one regardless of amount, so a later quote may report a lower
-        `out_amount`. Individual solver errors are not streamed; if no solver
-        returns a usable quote, a terminal event named `error` is sent with a
-        `PriceEstimationError` body before the stream closes.
+        The `priceQuality` field uses the same estimator and ranking semantics
+        as `POST /api/v1/quote`. `verified` attempts verification and prefers a
+        verified quote over an unverified one regardless of amount, so a later
+        quote may report a lower `out_amount`. `optimal` skips verification and
+        ranks all responses by their promised price. `fast` is not supported
+        because the streaming endpoint already returns the first usable quote
+        as soon as it arrives. Individual solver errors are not streamed; if no
+        solver returns a usable quote, a terminal event named `error` is sent
+        with a `PriceEstimationError` body before the stream closes.
       requestBody:
         description: The order parameters to compute quotes for.
         required: true
@@ -1948,7 +1950,8 @@ components:
           `InvalidNativeSellToken`, `QuoteNotVerified`, `SameBuyAndSellToken`,
           `SellAmountDoesNotCoverFee`, `TokenTemporarilySuspended`,
           `TradingOutsideAllowedWindow`, `UnsupportedBuyTokenDestination`,
-          `UnsupportedOrderType`, `UnsupportedSellTokenSource`,
+          `UnsupportedOrderType`, `UnsupportedPriceQuality`,
+          `UnsupportedSellTokenSource`,
           `UnsupportedToken`
         * 403: `Forbidden`
         * 404: `NoLiquidity`
@@ -1975,6 +1978,7 @@ components:
             - TradingOutsideAllowedWindow
             - UnsupportedBuyTokenDestination
             - UnsupportedOrderType
+            - UnsupportedPriceQuality
             - UnsupportedSellTokenSource
             - UnsupportedToken
         description:
@@ -2119,14 +2123,6 @@ components:
               allOf:
                 - $ref: "#/components/schemas/PriceQuality"
               default: verified
-            fastPath:
-              description: >
-                Signals that this quote is intended for fast-path
-                (out-of-competition) execution. Propagated to the solver.
-                Mutually exclusive with the `appData` `validFrom` field: an
-                order that sets both is rejected.
-              type: boolean
-              default: false
             signingScheme:
               allOf:
                 - $ref: "#/components/schemas/SigningScheme"

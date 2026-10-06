@@ -11,6 +11,7 @@ use {
     crate::infra::blockchain::{
         AccountsSnapshot,
         InvalidAddressLookupTableReason,
+        InvalidMintReason,
         Solana,
         TokenAccountState,
         associated_token_address,
@@ -31,6 +32,7 @@ use {
         pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
         token_program::TokenProgram,
     },
+    cow_solana_signer::Signer,
     solana_builtins_default_costs::{
         BuiltinMigrationFeatureIndex,
         MIGRATING_BUILTINS_COSTS,
@@ -43,11 +45,12 @@ use {
         instruction::Instruction,
         message::{AddressLookupTableAccount, VersionedMessage, v0::Message as MessageV0, v1},
         pubkey::Pubkey,
-        signer::{Signer, keypair::Keypair},
+        signature::Signature,
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::transfer,
     spl_token_interface::native_mint,
+    std::collections::{HashMap, HashSet},
 };
 
 /// A validated settlement.
@@ -91,7 +94,24 @@ pub(crate) struct ResolvedSettlement {
     missing_atas: Vec<Ata>,
     /// Cluster feature state used only for v1's missing-CU-estimate fallback.
     active_builtin_migrations: [bool; MIGRATING_BUILTINS_COSTS.len()],
+    token_programs: TokenPrograms,
 }
+
+/// The token program of every mint in [`Settlement::mints`].
+struct TokenPrograms(HashMap<Pubkey, TokenProgram>);
+
+impl TokenPrograms {
+    /// `mint`'s token program. A miss means `mint` is outside
+    /// [`Settlement::mints`].
+    fn get(&self, mint: Pubkey) -> Result<TokenProgram, UnresolvedMint> {
+        self.0.get(&mint).copied().ok_or(UnresolvedMint(mint))
+    }
+}
+
+/// A token program lookup for a mint outside [`Settlement::mints`].
+#[derive(Debug, PartialEq, thiserror::Error)]
+#[error("no token program resolved for mint {0}")]
+pub struct UnresolvedMint(pub Pubkey);
 
 impl Settlement {
     /// Build a settlement and validate its orders.
@@ -122,7 +142,8 @@ impl Settlement {
         blockchain: &Solana,
         payer: Pubkey,
     ) -> Result<ResolvedSettlement, ResolveError> {
-        // V1 carries all account addresses inline; lookup tables are irrelevant.
+        // V1 carries all account addresses inline; lookup tables are
+        // irrelevant.
         let lookup_keys = match self.solution.transaction_version {
             TransactionVersion::V0 => self.solution.address_lookup_tables.as_slice(),
             TransactionVersion::V1 => &[],
@@ -132,7 +153,21 @@ impl Settlement {
         let migration_features = (0..MIGRATING_BUILTINS_COSTS.len())
             .filter(|_| needs_cu_default)
             .map(|index| *get_migration_feature_id(index));
-        let (buffers, payer_atas) = self.setup_accounts(payer);
+        // ATA addresses derive from the mint's token program, so the mints are
+        // read before the accounts derived from them.
+        let token_programs = blockchain
+            .token_programs(self.mints())
+            .await
+            .map_err(ResolveError::Rpc)?
+            .into_iter()
+            .map(|(mint, program)| {
+                program
+                    .map(|program| (mint, program))
+                    .map_err(|reason| ResolveError::InvalidMint { mint, reason })
+            })
+            .collect::<Result<_, _>>()
+            .map(TokenPrograms)?;
+        let (buffers, payer_atas) = self.setup_accounts(payer, &token_programs)?;
 
         let addresses = lookup_keys
             .iter()
@@ -159,8 +194,14 @@ impl Settlement {
         let active_builtin_migrations = std::array::from_fn(|index| {
             needs_cu_default && snapshot.is_feature_active(get_migration_feature_id(index))
         });
-        let (missing_buffers, missing_atas) =
-            accounts_to_create(&self.orders, &buffers, &payer_atas, payer, &snapshot)?;
+        let (missing_buffers, missing_atas) = accounts_to_create(
+            &self.orders,
+            &buffers,
+            &payer_atas,
+            payer,
+            &snapshot,
+            &token_programs,
+        )?;
 
         Ok(ResolvedSettlement {
             settlement: self,
@@ -168,13 +209,37 @@ impl Settlement {
             missing_buffers,
             missing_atas,
             active_builtin_migrations,
+            token_programs,
         })
+    }
+
+    /// Every mint the settlement moves: the sell mints, the token buy mints,
+    /// and wSOL when an order buys native SOL.
+    fn mints(&self) -> HashSet<Pubkey> {
+        let wsol = self
+            .orders
+            .iter()
+            .any(Order::buys_native_sol)
+            .then_some(native_mint::ID);
+        self.orders
+            .iter()
+            .flat_map(|order| {
+                let buy = (!order.buys_native_sol()).then_some(order.buy_token);
+                [Some(order.sell_token), buy]
+            })
+            .flatten()
+            .chain(wsol)
+            .collect()
     }
 
     /// The buffer PDAs and payer ATAs the settlement needs: a buffer per
     /// token buy mint, a payer ATA per sell mint, and the payer's wSOL ATA when
     /// an order buys native SOL.
-    fn setup_accounts(&self, payer: Pubkey) -> (Vec<SetupAccount>, Vec<SetupAccount>) {
+    fn setup_accounts(
+        &self,
+        payer: Pubkey,
+        token_programs: &TokenPrograms,
+    ) -> Result<(Vec<SetupAccount>, Vec<SetupAccount>), ResolveError> {
         let buffers = self
             .orders
             .iter()
@@ -191,14 +256,21 @@ impl Settlement {
             .iter()
             .map(|order| order.sell_token)
             .chain(wsol)
-            .map(|mint| SetupAccount::new_ata(mint, payer))
-            .collect();
-        (buffers, payer_atas)
+            .map(|mint| {
+                Ok(SetupAccount::new_ata(
+                    mint,
+                    payer,
+                    token_programs.get(mint)?,
+                ))
+            })
+            .collect::<Result<_, ResolveError>>()?;
+        Ok((buffers, payer_atas))
     }
 }
 
 impl ResolvedSettlement {
-    // Match Agave's v0 default over top-level instructions, including migrated builtins.
+    // Match Agave's v0 default over top-level instructions, including migrated
+    // builtins.
     fn default_compute_unit_limit(&self, instructions: &[Instruction]) -> u32 {
         instructions
             .iter()
@@ -225,7 +297,8 @@ impl ResolvedSettlement {
             .iter()
             .map(|order| {
                 let amounts = executed_amounts(order, &self.settlement.solution)?;
-                Ok(SettlementOrder::new(order, &payer, amounts))
+                let sell_program = self.token_programs.get(order.sell_token)?;
+                Ok(SettlementOrder::new(order, &payer, amounts, sell_program))
             })
             .collect::<Result<_, Error>>()?;
 
@@ -260,26 +333,35 @@ impl ResolvedSettlement {
         {
             instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(cu_limit));
         }
-        // Insert a `CreateBuffers` instruction when buffer accounts are
-        // missing.
-        if !self.missing_buffers.is_empty() {
-            instructions.push(
-                CreateBuffers {
-                    program_id: self.settlement.program_id,
-                    payer,
-                    // The driver only routes classic SPL mints, see the
-                    // token-2022 TODO on the blockchain token helpers.
-                    token_program: TokenProgram::SplToken,
-                    mints: &self.missing_buffers,
+        // Insert a `CreateBuffers` instruction per token program with missing
+        // buffer accounts: one instruction creates buffers under one program.
+        for program in TokenProgram::ALL {
+            let mut mints = Vec::new();
+            for mint in &self.missing_buffers {
+                if self.token_programs.get(*mint)? == program {
+                    mints.push(*mint);
                 }
-                .into(),
-            );
+            }
+            if !mints.is_empty() {
+                instructions.push(
+                    CreateBuffers {
+                        program_id: self.settlement.program_id,
+                        payer,
+                        token_program: program,
+                        mints: &mints,
+                    }
+                    .into(),
+                );
+            }
         }
-        // An SPL transfer into an uninitialized account reverts, so every ATA
+        // A token transfer into an uninitialized account reverts, so every ATA
         // the settlement transfers into must exist before `BeginSettle` runs.
         for ata in &self.missing_atas {
             instructions.push(create_associated_token_account_idempotent(
-                &payer, &ata.owner, &ata.mint,
+                &payer,
+                &ata.owner,
+                &ata.mint,
+                self.token_programs.get(ata.mint)?,
             ));
         }
 
@@ -298,8 +380,8 @@ impl ResolvedSettlement {
                 solver: payer,
                 finalize_ix_index,
                 auction_id: self.settlement.auction_id.get(),
-                // Both token programs stay enabled until the driver settles
-                // token-2022 end to end and can pick per settlement.
+                // `None` enables both token programs, so one settlement can
+                // move mints of both.
                 only_token_program: None,
                 orders: &initialized_intents,
             }
@@ -320,18 +402,19 @@ impl ResolvedSettlement {
         Ok(instructions)
     }
 
-    /// Encode the resolved settlement using the solver's requested transaction format.
-    pub fn encode(self, signer: &Keypair, blockhash: Hash) -> Result<VersionedTransaction, Error> {
-        let instructions = self.instructions(signer.pubkey())?;
+    /// Compile the settlement into the transaction format requested by the
+    /// solver.
+    fn message(&self, payer: Pubkey, blockhash: Hash) -> Result<VersionedMessage, Error> {
+        let instructions = self.instructions(payer)?;
         let message = match self.settlement.solution.transaction_version {
             TransactionVersion::V0 => VersionedMessage::V0(MessageV0::try_compile(
-                &signer.pubkey(),
+                &payer,
                 &instructions,
                 &self.lookup_tables,
                 blockhash,
             )?),
             TransactionVersion::V1 => VersionedMessage::V1(v1::Message::try_compile_with_config(
-                &signer.pubkey(),
+                &payer,
                 &instructions,
                 blockhash,
                 v1::TransactionConfig {
@@ -347,8 +430,30 @@ impl ResolvedSettlement {
                 },
             )?),
         };
-        let transaction = VersionedTransaction::try_new(message, &[signer])?;
-        Ok(transaction)
+        Ok(message)
+    }
+
+    /// Encode the resolved settlement as a signed transaction.
+    pub async fn encode(
+        self,
+        signer: &Signer,
+        blockhash: Hash,
+    ) -> Result<VersionedTransaction, Error> {
+        let message = self.message(signer.pubkey(), blockhash)?;
+        Ok(signer.sign(message).await?)
+    }
+
+    /// The resolved settlement as an unsigned transaction for `payer`.
+    /// Signatures and the blockhash are fixed-size, so it has the signed
+    /// transaction's wire size.
+    pub fn unsigned(&self, payer: Pubkey) -> Result<VersionedTransaction, Error> {
+        let message = self.message(payer, Hash::default())?;
+        let signatures =
+            vec![Signature::default(); message.header().num_required_signatures.into()];
+        Ok(VersionedTransaction {
+            signatures,
+            message,
+        })
     }
 }
 
@@ -374,9 +479,10 @@ impl SetupAccount {
         Self { mint, address }
     }
 
-    /// Returns a Solver's associated token account for the given mint.
-    fn new_ata(mint: Pubkey, owner: Pubkey) -> Self {
-        let address = associated_token_address(&owner, &mint);
+    /// Returns a Solver's associated token account for the given mint under
+    /// the mint's token program.
+    fn new_ata(mint: Pubkey, owner: Pubkey, program: TokenProgram) -> Self {
+        let address = associated_token_address(&owner, &mint, program);
         Self { mint, address }
     }
 }
@@ -390,13 +496,14 @@ fn token_buys(orders: &[Order]) -> impl Iterator<Item = &Order> {
 /// The setup accounts the settlement must create before `BeginSettle`, each
 /// list sorted and deduplicated: the mints whose buffer PDA is missing on
 /// chain, and the missing ATAs, both the payer's ATAs and the orders' buy
-/// ATAs.
+/// ATAs. `token_program` resolves the program a buy ATA derives under.
 fn accounts_to_create(
     orders: &[Order],
     buffers: &[SetupAccount],
     payer_atas: &[SetupAccount],
     payer: Pubkey,
     snapshot: &AccountsSnapshot,
+    token_programs: &TokenPrograms,
 ) -> Result<(Vec<Pubkey>, Vec<Ata>), ResolveError> {
     let mut missing_buffers = missing_setup_accounts(buffers, snapshot)?;
     missing_buffers.sort_unstable();
@@ -417,17 +524,17 @@ fn accounts_to_create(
 
     // Checked against the chain again rather than taken from the solve-time
     // resolution: an account closed since would revert the payout.
-    let missing_user_atas = token_buys(orders)
-        .filter(|order| {
-            snapshot.token_account_needs_creation(order.buy_token_account)
-                && order.buy_token_account_is_ata()
-        })
-        .map(|order| Ata {
-            owner: order.owner,
-            mint: order.buy_token,
-        });
-
-    let mut missing_atas: Vec<Ata> = missing_user_atas.chain(missing_payer_atas).collect();
+    let mut missing_atas: Vec<Ata> = missing_payer_atas.collect();
+    for order in token_buys(orders) {
+        if snapshot.token_account_needs_creation(order.buy_token_account)
+            && order.buy_token_account_is_ata(token_programs.get(order.buy_token)?)
+        {
+            missing_atas.push(Ata {
+                owner: order.owner,
+                mint: order.buy_token,
+            });
+        }
+    }
     missing_atas.sort_unstable();
     missing_atas.dedup();
 
@@ -500,6 +607,15 @@ pub(crate) enum ResolveError {
         mint: Pubkey,
         owner: Pubkey,
     },
+    /// A mint the settlement moves is missing on chain or is not a mint of
+    /// either token program.
+    #[error("invalid mint {mint}: {reason}")]
+    InvalidMint {
+        mint: Pubkey,
+        reason: InvalidMintReason,
+    },
+    #[error(transparent)]
+    UnresolvedMint(#[from] UnresolvedMint),
 }
 
 impl From<&Order> for OrderIntent {
@@ -669,12 +785,18 @@ impl SettlementOrder {
     ///
     /// The swap output lands in the buy-mint buffer PDA, or the payer's wSOL
     /// ATA for a native SOL buy (see `infra/solver/dto/auction.rs`), so the
-    /// sell tokens are pulled into the payer's sell ATA rather than a buffer.
-    fn new(order: &Order, payer: &Pubkey, amounts: ExecutedAmounts) -> Self {
+    /// sell tokens are pulled into the payer's sell ATA, derived under the sell
+    /// mint's token program, rather than a buffer.
+    fn new(
+        order: &Order,
+        payer: &Pubkey,
+        amounts: ExecutedAmounts,
+        sell_program: TokenProgram,
+    ) -> Self {
         Self {
             intent: order.into(),
             pulls: vec![Pull {
-                destination: associated_token_address(payer, &order.sell_token),
+                destination: associated_token_address(payer, &order.sell_token, sell_program),
                 amount: amounts.sell,
             }],
             buy_amount: amounts.buy,
@@ -704,7 +826,7 @@ fn native_payout_funding(
     let total = payouts
         .try_fold(0, u64::checked_add)
         .ok_or(Error::ExecutedAmountOverflow)?;
-    let wsol_ata = associated_token_address(payer, &native_mint::ID);
+    let wsol_ata = associated_token_address(payer, &native_mint::ID, TokenProgram::SplToken);
     Ok(vec![
         require_token_balance(&wsol_ata, payer, total),
         close_token_account(&wsol_ata, payer, payer),
@@ -747,10 +869,12 @@ pub enum Error {
     Compile(#[from] solana_sdk::message::CompileError),
     /// The transaction failed to sign.
     #[error("failed to sign transaction: {0}")]
-    Sign(#[from] solana_sdk::signer::SignerError),
+    Sign(#[from] cow_solana_signer::Error),
     /// The instruction index does not fit in `u16`.
     #[error("instruction index does not fit in u16")]
     InstructionIndexOverflow,
+    #[error(transparent)]
+    UnresolvedMint(#[from] UnresolvedMint),
 }
 
 #[cfg(test)]
@@ -765,9 +889,16 @@ mod tests {
                 settle::{BeginSettleInput, FinalizeSettleInput},
             },
         },
-        cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
+        cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
         serde_json::Value,
-        solana_testlib::multiple_accounts_json,
+        solana_sdk::signer::keypair::Keypair,
+        solana_testlib::{
+            account_json,
+            mint_account_json,
+            multiple_accounts_json,
+            token_2022_mint,
+            token_account_json,
+        },
         std::slice,
     };
 
@@ -843,19 +974,41 @@ mod tests {
         )
     }
 
-    /// Answers `getMultipleAccounts` with `accounts` in the settlement's
-    /// request order: lookup tables, buffer PDAs, payer ATAs, the token
-    /// buys' buy token accounts.
-    fn blockchain(accounts: impl IntoIterator<Item = Value>) -> Solana {
-        let mocks = Mocks::from([(
-            RpcRequest::GetMultipleAccounts,
-            multiple_accounts_json(accounts),
-        )]);
-        Solana::new(SolanaRPC::new_mock_with_mocks(mocks), pubkey(0xaa))
+    /// Every mint of the settlement under the SPL Token program.
+    fn spl_token_programs(settlement: &Settlement) -> TokenPrograms {
+        TokenPrograms(
+            settlement
+                .mints()
+                .into_iter()
+                .map(|mint| (mint, TokenProgram::SplToken))
+                .collect(),
+        )
+    }
+
+    /// Answers the settlement's two `getMultipleAccounts` lookups in order:
+    /// `mints` for the mint accounts, then `accounts` for the lookup tables,
+    /// buffer PDAs, payer ATAs and the token buys' buy token accounts, each in
+    /// the settlement's request order.
+    fn blockchain(
+        mints: impl IntoIterator<Item = Value>,
+        accounts: impl IntoIterator<Item = Value>,
+    ) -> Solana {
+        let mocks = MocksMap::from_iter([
+            (
+                RpcRequest::GetMultipleAccounts,
+                multiple_accounts_json(mints),
+            ),
+            (
+                RpcRequest::GetMultipleAccounts,
+                multiple_accounts_json(accounts),
+            ),
+        ]);
+        Solana::new(SolanaRPC::new_mock_with_mocks_map(mocks), pubkey(0xaa))
     }
 
     fn resolve_for_test(settlement: Settlement) -> ResolvedSettlement {
         ResolvedSettlement {
+            token_programs: spl_token_programs(&settlement),
             settlement,
             lookup_tables: Vec::new(),
             missing_buffers: Vec::new(),
@@ -913,6 +1066,28 @@ mod tests {
         assert_eq!(begin_input.orders.iter().count(), 1);
     }
 
+    /// The unsigned transaction has the signed one's wire size.
+    #[tokio::test]
+    async fn unsigned_has_the_signed_wire_size() {
+        let program_id = pubkey(0xaa);
+        let signer = Signer::Keypair(Keypair::new());
+        let order = test_order(&program_id);
+        let uid = order.uid;
+        let settlement = test_settlement(&[order], &[trade(uid, 1_000, 2_000)]).unwrap();
+        for version in [TransactionVersion::V0, TransactionVersion::V1] {
+            let mut settlement = settlement.clone();
+            settlement.solution.transaction_version = version;
+            let resolved = resolve_for_test(settlement);
+            let unsigned = resolved.unsigned(signer.pubkey()).unwrap();
+            let signed = resolved.encode(&signer, Hash::new_unique()).await.unwrap();
+            assert_eq!(
+                wincode::serialized_size(&unsigned).unwrap(),
+                wincode::serialized_size(&signed).unwrap()
+            );
+            signed.verify_and_hash_message().unwrap();
+        }
+    }
+
     /// The sell tokens are pulled into the payer's sell ATA, not a buffer, so
     /// that the solver's swap (whose output lands in the buy-mint buffer) can
     /// spend them directly.
@@ -931,7 +1106,10 @@ mod tests {
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
         let destination = begin_input.orders.iter().next().unwrap().destinations[0];
-        assert_eq!(destination, associated_token_address(&payer, &sell_token),);
+        assert_eq!(
+            destination,
+            associated_token_address(&payer, &sell_token, TokenProgram::SplToken),
+        );
     }
 
     /// Pin: a fill that respects the user's limit still validates after the
@@ -1275,6 +1453,7 @@ mod tests {
         )
         .unwrap();
         let resolved = ResolvedSettlement {
+            token_programs: spl_token_programs(&settlement),
             settlement,
             lookup_tables: Vec::new(),
             missing_buffers,
@@ -1300,21 +1479,29 @@ mod tests {
         assert_eq!(finalize_input.begin_ix_index, 3);
     }
 
-    /// The lookup answers in order: buffer PDA, payer sell ATA and the
-    /// order's buy account, all absent. The buy account is the owner's
-    /// associated token account, so it joins the accounts to create.
+    /// Both mints are SPL Token mints. The account lookup answers in order:
+    /// buffer PDA, payer sell ATA and the order's buy account, all absent. The
+    /// buy account is the owner's associated token account, so it joins the
+    /// accounts to create.
     #[tokio::test]
     async fn resolves_a_missing_buy_ata_as_an_account_to_create() {
         let program_id = pubkey(0xaa);
         let payer = pubkey(0xbb);
         let order = test_order_with(&program_id, |order| {
-            order.buy_token_account = associated_token_address(&order.owner, &order.buy_token);
+            order.buy_token_account =
+                associated_token_address(&order.owner, &order.buy_token, TokenProgram::SplToken);
         });
         let settlement =
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
 
         let resolved = settlement
-            .resolve_accounts(&blockchain([Value::Null, Value::Null, Value::Null]), payer)
+            .resolve_accounts(
+                &blockchain(
+                    [mint_account_json(), mint_account_json()],
+                    [Value::Null, Value::Null, Value::Null],
+                ),
+                payer,
+            )
             .await
             .unwrap();
 
@@ -1333,9 +1520,10 @@ mod tests {
         assert_eq!(resolved.missing_atas, expected);
     }
 
-    /// The lookup answers in order: the payer's sell ATA and wSOL ATA, both
-    /// absent. A native SOL buy has no buffer and no buy account to look up
-    /// or create; the payer's wSOL ATA is created for the swap output.
+    /// The sell mint and wSOL are SPL Token mints. The account lookup answers
+    /// in order: the payer's sell ATA and wSOL ATA, both absent. A native SOL
+    /// buy has no buffer and no buy account to look up or create; the payer's
+    /// wSOL ATA is created for the swap output.
     #[tokio::test]
     async fn a_native_sol_buy_adds_the_payers_wsol_ata_and_no_buy_ata() {
         let program_id = pubkey(0xaa);
@@ -1345,7 +1533,13 @@ mod tests {
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
 
         let resolved = settlement
-            .resolve_accounts(&blockchain([Value::Null, Value::Null]), payer)
+            .resolve_accounts(
+                &blockchain(
+                    [mint_account_json(), mint_account_json()],
+                    [Value::Null, Value::Null],
+                ),
+                payer,
+            )
             .await
             .unwrap();
 
@@ -1372,6 +1566,7 @@ mod tests {
         let settlement =
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
         let resolved = ResolvedSettlement {
+            token_programs: spl_token_programs(&settlement),
             settlement,
             lookup_tables: Vec::new(),
             missing_buffers: Vec::new(),
@@ -1396,7 +1591,7 @@ mod tests {
         assert_eq!(accounts[0], payer);
         assert_eq!(
             accounts[1],
-            associated_token_address(&order.owner, &order.buy_token)
+            associated_token_address(&order.owner, &order.buy_token, TokenProgram::SplToken)
         );
         assert_eq!(accounts[2], order.owner);
         assert_eq!(accounts[3], order.buy_token);
@@ -1405,10 +1600,11 @@ mod tests {
     #[tokio::test]
     async fn v1_encodes_native_sol_and_missing_buy_ata_settlement() {
         let program_id = pubkey(0xaa);
-        let signer = Keypair::new();
+        let signer = Signer::Keypair(Keypair::new());
         let payer = signer.pubkey();
         let token_buy = test_order_with(&program_id, |order| {
-            order.buy_token_account = associated_token_address(&order.owner, &order.buy_token);
+            order.buy_token_account =
+                associated_token_address(&order.owner, &order.buy_token, TokenProgram::SplToken);
         });
         let native_buy = native_sol_order(&program_id, pubkey(0x68), pubkey(0x45));
         let mut settlement = test_settlement(
@@ -1424,9 +1620,10 @@ mod tests {
         // V1 ignores even unavailable ALTs. Fetch the buffer, three payer
         // ATAs, the user's buy ATA, then builtin-migration feature accounts.
         settlement.solution.address_lookup_tables = vec![pubkey(0xff)];
+        let mints = vec![mint_account_json(); settlement.mints().len()];
         let resolved = settlement
             .resolve_accounts(
-                &blockchain(vec![Value::Null; 5 + MIGRATING_BUILTINS_COSTS.len()]),
+                &blockchain(mints, vec![Value::Null; 5 + MIGRATING_BUILTINS_COSTS.len()]),
                 payer,
             )
             .await
@@ -1456,7 +1653,7 @@ mod tests {
             5
         );
         let expected_cu = resolved.default_compute_unit_limit(&instructions);
-        let transaction = resolved.encode(&signer, Hash::new_unique()).unwrap();
+        let transaction = resolved.encode(&signer, Hash::new_unique()).await.unwrap();
         let VersionedMessage::V1(message) = &transaction.message else {
             panic!("expected v1 settlement");
         };
@@ -1496,7 +1693,9 @@ mod tests {
         )
         .unwrap();
 
-        let (buffers, payer_atas) = settlement.setup_accounts(payer);
+        let (buffers, payer_atas) = settlement
+            .setup_accounts(payer, &spl_token_programs(&settlement))
+            .unwrap();
         let buffer_mints: Vec<Pubkey> = buffers.iter().map(|account| account.mint).collect();
         assert_eq!(buffer_mints, vec![token_buy.buy_token]);
         let mut ata_mints: Vec<Pubkey> = payer_atas.iter().map(|account| account.mint).collect();
@@ -1539,7 +1738,7 @@ mod tests {
         // Transfer, FinalizeSettle].
         assert_eq!(instructions.len(), 6);
         let state_pda = find_state_pda(&program_id).0;
-        let wsol_ata = associated_token_address(&payer, &native_mint::ID);
+        let wsol_ata = associated_token_address(&payer, &native_mint::ID, TokenProgram::SplToken);
         assert_eq!(
             instructions[2],
             spl_token_interface::instruction::transfer(
@@ -1576,6 +1775,232 @@ mod tests {
             .collect();
         native_pushes.sort_unstable();
         assert_eq!(native_pushes, vec![(wallet_a, 2_000), (wallet_b, 1_000)]);
+    }
+
+    /// The settlement reads the mint of every sell and token buy, plus wSOL
+    /// for a native SOL buy, never the native SOL marker itself.
+    #[test]
+    fn settlement_mints_include_wsol_for_native_sol_buys() {
+        let program_id = pubkey(0xaa);
+        let token_buy = test_order(&program_id);
+        let native_buy = native_sol_order(&program_id, pubkey(0x68), pubkey(0x45));
+        let settlement = test_settlement(
+            &[token_buy.clone(), native_buy.clone()],
+            &[
+                trade(token_buy.uid, 1_000, 2_000),
+                trade(native_buy.uid, 1_000, 2_000),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            settlement.mints(),
+            HashSet::from([
+                token_buy.sell_token,
+                token_buy.buy_token,
+                native_buy.sell_token,
+                native_mint::ID,
+            ])
+        );
+    }
+
+    /// Token-2022 mints settle beside SPL Token ones: each token program gets
+    /// its own `CreateBuffers`, and the payer's sell ATAs and the pulls into
+    /// them derive under the sell mint's program.
+    #[test]
+    fn token_2022_mints_settle_under_their_own_program() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let spl = test_order(&program_id);
+        let token_2022 = test_order_with(&program_id, |order| {
+            order.sell_token = pubkey(0x45);
+            order.buy_token = pubkey(0x46);
+            order.sell_token_account = pubkey(0x67);
+            order.buy_token_account = pubkey(0x68);
+        });
+        let settlement = test_settlement(
+            &[spl.clone(), token_2022.clone()],
+            &[
+                trade(spl.uid, 1_000, 2_000),
+                trade(token_2022.uid, 1_000, 2_000),
+            ],
+        )
+        .unwrap();
+        let resolved = ResolvedSettlement {
+            settlement,
+            lookup_tables: Vec::new(),
+            missing_buffers: vec![spl.buy_token, token_2022.buy_token],
+            active_builtin_migrations: [false; MIGRATING_BUILTINS_COSTS.len()],
+            missing_atas: vec![
+                Ata {
+                    owner: payer,
+                    mint: spl.sell_token,
+                },
+                Ata {
+                    owner: payer,
+                    mint: token_2022.sell_token,
+                },
+            ],
+            token_programs: TokenPrograms(HashMap::from([
+                (spl.sell_token, TokenProgram::SplToken),
+                (spl.buy_token, TokenProgram::SplToken),
+                (token_2022.sell_token, TokenProgram::Token2022),
+                (token_2022.buy_token, TokenProgram::Token2022),
+            ])),
+        };
+
+        let instructions = resolved.instructions(payer).unwrap();
+
+        // [SetComputeUnitLimit, CreateBuffers (SPL Token), CreateBuffers
+        // (Token-2022), CreateAtaIdempotent x2, BeginSettle, FinalizeSettle].
+        assert_eq!(instructions.len(), 7);
+        let create_buffers = |token_program, mint| -> Instruction {
+            CreateBuffers {
+                program_id,
+                payer,
+                token_program,
+                mints: &[mint],
+            }
+            .into()
+        };
+        assert_eq!(
+            instructions[1],
+            create_buffers(TokenProgram::SplToken, spl.buy_token)
+        );
+        assert_eq!(
+            instructions[2],
+            create_buffers(TokenProgram::Token2022, token_2022.buy_token)
+        );
+        assert_eq!(
+            instructions[3],
+            create_associated_token_account_idempotent(
+                &payer,
+                &payer,
+                &spl.sell_token,
+                TokenProgram::SplToken,
+            )
+        );
+        assert_eq!(
+            instructions[4],
+            create_associated_token_account_idempotent(
+                &payer,
+                &payer,
+                &token_2022.sell_token,
+                TokenProgram::Token2022,
+            )
+        );
+
+        let begin = &instructions[5];
+        let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+        let mut destinations: Vec<Pubkey> = begin_input
+            .orders
+            .iter()
+            .map(|order| order.destinations[0])
+            .collect();
+        destinations.sort_unstable();
+        let mut expected = vec![
+            associated_token_address(&payer, &spl.sell_token, TokenProgram::SplToken),
+            associated_token_address(&payer, &token_2022.sell_token, TokenProgram::Token2022),
+        ];
+        expected.sort_unstable();
+        assert_eq!(destinations, expected);
+    }
+
+    /// An order trading two Token-2022 mints, paying out to the owner's
+    /// Token-2022 associated token account. The chain answers both mints as
+    /// Token-2022 and every setup account as absent, so the settlement creates
+    /// the buffer and both ATAs under Token-2022.
+    #[tokio::test]
+    async fn a_token_2022_order_settles_under_token_2022() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order_with(&program_id, |order| {
+            order.buy_token_account =
+                associated_token_address(&order.owner, &order.buy_token, TokenProgram::Token2022);
+        });
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+        let mint = account_json(&token_2022_mint(&[], |_| ()));
+
+        let resolved = settlement
+            .resolve_accounts(
+                &blockchain(
+                    [mint.clone(), mint],
+                    [Value::Null, Value::Null, Value::Null],
+                ),
+                payer,
+            )
+            .await
+            .unwrap();
+        let instructions = resolved.instructions(payer).unwrap();
+
+        // [SetComputeUnitLimit, CreateBuffers, CreateAtaIdempotent x2,
+        // BeginSettle, FinalizeSettle].
+        assert_eq!(instructions.len(), 6);
+        assert_eq!(
+            instructions[1],
+            CreateBuffers {
+                program_id,
+                payer,
+                token_program: TokenProgram::Token2022,
+                mints: &[order.buy_token],
+            }
+            .into()
+        );
+        for (owner, mint) in [(payer, order.sell_token), (order.owner, order.buy_token)] {
+            assert!(
+                instructions[2..4].contains(&create_associated_token_account_idempotent(
+                    &payer,
+                    &owner,
+                    &mint,
+                    TokenProgram::Token2022
+                ))
+            );
+        }
+        let begin = &instructions[4];
+        let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+        assert_eq!(
+            begin_input.orders.iter().next().unwrap().destinations[0],
+            associated_token_address(&payer, &order.sell_token, TokenProgram::Token2022)
+        );
+    }
+
+    /// The mint lookup answers absent for both mints, then a token account at
+    /// both mints' addresses. Each fails the resolution with the matching
+    /// reason.
+    #[tokio::test]
+    async fn an_invalid_mint_fails_the_resolution() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order(&program_id);
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+        let token_account = token_account_json(&order.sell_token, &order.owner);
+
+        for (mints, expected) in [
+            (
+                [Value::Null, Value::Null],
+                InvalidMintReason::AccountNotFound,
+            ),
+            (
+                [token_account.clone(), token_account],
+                InvalidMintReason::NotAMint,
+            ),
+        ] {
+            let Err(err) = settlement
+                .clone()
+                .resolve_accounts(&blockchain(mints, []), payer)
+                .await
+            else {
+                panic!("an invalid mint fails the resolution");
+            };
+            assert!(
+                matches!(err, ResolveError::InvalidMint { mint, reason } if [order.sell_token, order.buy_token].contains(&mint) && reason == expected),
+                "{err}"
+            );
+        }
     }
 
     /// app_data is a determinant of the order uid. If the code regressed to

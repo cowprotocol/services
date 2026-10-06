@@ -10,7 +10,7 @@ use {
         infra::{
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
-            solver::{ManageNativeToken, Solver},
+            solver::Solver,
         },
     },
     alloy::network::TxSigner,
@@ -93,10 +93,19 @@ pub struct LimitPrices {
 }
 
 /// Whether `order` describes the same trade as `quoted`: same tokens, side and
-/// target amount. A partial check, not full order equality.
-fn compare_orders(order: &competition::Order, quoted: &competition::Order) -> bool {
-    order.sell.token == quoted.sell.token
-        && order.buy.token == quoted.buy.token
+/// target amount. Native ETH and WETH are treated as the same token: the
+/// orderbook rewrites buy-ETH quote requests to WETH before they hit the
+/// driver, so a cached fast-path solution's order holds WETH while the signed
+/// order carried into `/settle_fast_path` still carries the ETH marker.
+fn compare_orders(
+    order: &competition::Order,
+    quoted: &competition::Order,
+    weth: eth::WrappedNativeToken,
+) -> bool {
+    order.buy.token.as_erc20(weth) == quoted.buy.token.as_erc20(weth)
+        // only the BUY side has a sentinel value for ETH so sell tokens
+        // get compared as they are
+        && order.sell.token == quoted.sell.token
         && order.side == quoted.side
         && order.target() == quoted.target()
 }
@@ -162,7 +171,7 @@ impl Solution {
                             sell: jit.order().sell,
                             buy: jit.order().buy,
                             signature: jit.order().signature.clone(),
-                            receiver: Some(jit.order().receiver),
+                            receiver: jit.order().receiver,
                             created: u32::try_from(Utc::now().timestamp())
                                 .unwrap_or(u32::MIN)
                                 .into(),
@@ -547,9 +556,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
-        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, solver_native_token).await
+        let auction_id = auction.auction_id().ok_or(Error::MissingAuctionId)?;
+        Settlement::new(self, auction, auction_id, eth, simulator).await
     }
 
     /// Swap this quote solution's single user order for the real signed
@@ -573,7 +582,7 @@ impl Solution {
             return Err(error::Error::FastPathTradeCount(self.user_trades().count()));
         };
 
-        if !compare_orders(&order, user.order()) {
+        if !compare_orders(&order, user.order(), self.weth) {
             return Err(error::Error::FastPathOrderMismatch);
         }
 
@@ -831,6 +840,8 @@ pub mod error {
         FastPathLimitNotMet,
         #[error(transparent)]
         Math(#[from] Math),
+        #[error("auction has no id (quote auctions cannot be settled)")]
+        MissingAuctionId,
     }
 
     // Custom conversion function because clippy wants us to box this

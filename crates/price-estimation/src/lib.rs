@@ -6,6 +6,7 @@ use {
     crate::trade_finding::QuoteExecution,
     alloy::primitives::{Address, U256},
     anyhow::Result,
+    eth_domain_types::Receiver,
     futures::{future::BoxFuture, stream::BoxStream},
     model::order::OrderKind,
     number::nonzero::NonZeroU256,
@@ -173,18 +174,15 @@ pub struct Verification {
     /// This address needs to have the `sell_token`.
     pub from: Address,
     /// This address will receive the `buy_token`.
-    pub receiver: Address,
+    pub receiver: Receiver,
     /// App data provided with the quote that encodes things like
     /// hooks and custom wrappers.
     pub app_data: Arc<String>,
 }
 
 impl Verification {
-    pub fn effective_receiver(&self) -> &Address {
-        match self.receiver.is_zero() {
-            true => &self.from,
-            false => &self.receiver,
-        }
+    pub fn effective_receiver(&self) -> Address {
+        self.receiver.resolve(self.from)
     }
 }
 

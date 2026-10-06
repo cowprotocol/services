@@ -3,8 +3,9 @@
 pub mod dto;
 
 use {
+    super::mint::{ensure_settleable, token_mints},
     crate::infra::{
-        api::{State, ValidationParameters, error, extract},
+        api::{Sponsoring, State, ValidationParameters, error, extract},
         db,
         quoter,
     },
@@ -38,6 +39,9 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
+    if let Some(sponsoring) = state.sponsoring() {
+        check_mints(sponsoring, &request).await?;
+    }
 
     let (kind, amount) = request.side.kind_and_amount();
     let quoted = state
@@ -57,16 +61,7 @@ pub async fn quote(
         .map_err(|quoter::Error::NoQuotes| {
             error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
-    // A native SOL buy under the floor cannot be placed.
-    if request.buy_token == ENCODED_NATIVE_SOL_TRANSFER
-        && quoted.buy_amount < super::min_native_payout()
-    {
-        return Err(error::reply(
-            StatusCode::BAD_REQUEST,
-            "InvalidNativeBuy",
-            "a native SOL buy must pay at least the rent-exempt minimum of an empty account",
-        ));
-    }
+    check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
     let expiration = now + state.quote_expiry();
     // A failed insert answers without an id instead of failing the quote,
@@ -116,6 +111,61 @@ pub async fn quote(
         verified: false,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// Reject a mint the settlement program cannot move. The chain read goes
+/// through the sponsoring RPC client, so the check is skipped without
+/// sponsoring and when the read fails: placement and the autopilot check the
+/// mints again.
+async fn check_mints(sponsoring: &Sponsoring, request: &dto::Request) -> Result<(), error::Reply> {
+    let mints: Vec<Pubkey> = token_mints(request.sell_token, request.buy_token).collect();
+    let lookup = sponsoring.mints.lookup(mints.iter().copied());
+    match sponsoring.rpc.multiple_accounts(lookup.unread()).await {
+        Ok(accounts) => ensure_settleable(&lookup.resolve(&accounts), mints),
+        Err(err) => {
+            tracing::warn!(?err, "mint lookup failed, quoting unchecked");
+            Ok(())
+        }
+    }
+}
+
+/// Reject a native SOL buy whose payout would leave its wallet under the
+/// rent-exempt minimum, checked as fill-or-kill since the quote names no fill
+/// policy. Only a payout an empty wallet cannot take reads the wallet, through
+/// the sponsoring RPC client. Without sponsoring, or when the read fails, the
+/// wallet counts as empty.
+async fn check_native_payout(
+    sponsoring: Option<&Sponsoring>,
+    request: &dto::Request,
+    buy_amount: u64,
+) -> Result<(), error::Reply> {
+    if request.buy_token != ENCODED_NATIVE_SOL_TRANSFER
+        || super::receivable_native_payout(None, buy_amount, false)
+    {
+        return Ok(());
+    }
+    let wallet = request.receiver.unwrap_or(request.from);
+    let account = match sponsoring {
+        Some(sponsoring) => match sponsoring.rpc.multiple_accounts([wallet]).await {
+            Ok(mut accounts) => accounts.remove(&wallet),
+            Err(err) => {
+                tracing::warn!(
+                    ?err,
+                    "native buy wallet lookup failed, assuming it is empty"
+                );
+                None
+            }
+        },
+        None => None,
+    };
+    if super::receivable_native_payout(account.as_ref(), buy_amount, false) {
+        return Ok(());
+    }
+    Err(error::reply(
+        StatusCode::BAD_REQUEST,
+        "InvalidNativeBuy",
+        "a native SOL buy must leave its wallet rent-exempt",
+    ))
 }
 
 /// The checks an order must pass before it is worth quoting.
