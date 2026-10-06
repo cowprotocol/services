@@ -48,6 +48,11 @@ pub struct SolveRequest {
     /// Timestamp deadline for answering `/solve`.
     deadline: chrono::DateTime<chrono::Utc>,
     orders: Vec<Order>,
+    /// The lamports one atom of each auction token is worth, scaled by 10^9.
+    /// Tokens without a price are absent.
+    #[serde(default)]
+    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
+    native_prices: HashMap<Pubkey, u64>,
 }
 
 /// One solvable order in the auction.
@@ -139,6 +144,7 @@ impl SolveRequest {
             deadline_slot: domain::Slot(0),
             deadline: self.deadline,
             creations,
+            native_prices: self.native_prices,
         })
     }
 }
@@ -179,6 +185,7 @@ mod tests {
             id: 7,
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![order()],
+            native_prices: HashMap::from([(pubkey(0x33), 1_500_000_000)]),
         };
         let expected = serde_json::json!({
             "id": 7,
@@ -198,9 +205,21 @@ mod tests {
                 "orderPda": pubkey(0x77).to_string(),
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "creation": "AQID",
-            }]
+            }],
+            "nativePrices": {"4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4": "1500000000"},
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);
+    }
+
+    #[test]
+    fn native_prices_are_optional() {
+        let request: SolveRequest = serde_json::from_value(serde_json::json!({
+            "id": 7,
+            "deadline": "2026-01-01T00:00:00Z",
+            "orders": [],
+        }))
+        .unwrap();
+        assert!(request.native_prices.is_empty());
     }
 
     #[test]
@@ -213,6 +232,7 @@ mod tests {
                 creation: Some(bincode::serialize(&transaction).unwrap()),
                 ..order()
             }],
+            native_prices: HashMap::new(),
         };
         let auction = request.into_domain().unwrap();
         assert_eq!(
@@ -227,6 +247,7 @@ mod tests {
             id: 0,
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![order()],
+            native_prices: HashMap::new(),
         };
         let err = request
             .into_domain()

@@ -270,6 +270,7 @@ mod tests {
                 missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
+            tokens: HashMap::new(),
         }
     }
 
@@ -400,6 +401,7 @@ mod tests {
                 missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
+            tokens: HashMap::new(),
         };
         let solutions = Solutions {
             solutions: vec![Solution {

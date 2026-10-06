@@ -7,8 +7,9 @@ use {
     super::order::OrderUid,
     crate::dex,
     serde::Deserialize,
-    serde_with::serde_as,
+    serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
+    std::collections::HashMap,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -24,6 +25,21 @@ pub struct Auction {
     pub orders: Vec<Order>,
     /// Absolute deadline by which solutions must be returned.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The priced tokens, by mint.
+    #[serde(default)]
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    pub tokens: HashMap<Pubkey, Token>,
+}
+
+/// One priced auction token.
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// The lamports one atom of the token is worth, scaled by 10^9, unlike
+    /// the EVM reference price's 10^18. Decimal string on the wire.
+    #[serde_as(as = "DisplayFromStr")]
+    pub reference_price: u64,
 }
 
 /// One order to quote.
@@ -123,6 +139,9 @@ mod tests {
                 "side": "sell",
             }],
             "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(1).to_string()): {"referencePrice": "1500000000"},
+            },
         });
 
         let auction: Auction = serde_json::from_value(json).unwrap();
@@ -140,5 +159,18 @@ mod tests {
             (1_000, 2_000)
         );
         assert_eq!(order.side, dex::Side::Sell);
+        assert_eq!(auction.tokens[&pubkey(1)].reference_price, 1_500_000_000);
+    }
+
+    #[test]
+    fn tokens_are_optional() {
+        let auction: Auction = serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "taker": pubkey(3).to_string(),
+            "orders": [],
+            "deadline": "2026-01-01T00:00:00Z",
+        }))
+        .unwrap();
+        assert!(auction.tokens.is_empty());
     }
 }

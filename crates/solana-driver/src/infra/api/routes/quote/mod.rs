@@ -97,5 +97,6 @@ fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
         deadline_slot: Slot(0),
         deadline: request.deadline,
         creations: std::collections::HashMap::new(),
+        native_prices: std::collections::HashMap::new(),
     }
 }

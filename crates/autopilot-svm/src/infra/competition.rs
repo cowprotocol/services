@@ -43,6 +43,7 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
             id: auction.id,
             deadline: chrono::Utc::now() + self.solve_deadline,
             orders: auction.orders.iter().map(dto::Order::from).collect(),
+            native_prices: auction.native_prices.clone(),
         };
         let by_uid: HashMap<IntentHash, &Order> = auction
             .orders

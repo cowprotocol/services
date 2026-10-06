@@ -22,6 +22,10 @@ pub struct SolveRequest {
     /// Deadline for answering `/solve`.
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub orders: Vec<Order>,
+    /// The lamports one atom of each auction token is worth, scaled by 10^9.
+    /// Tokens without a price are absent.
+    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
+    pub native_prices: HashMap<Pubkey, u64>,
 }
 
 /// One solvable order in the auction.
@@ -184,9 +188,14 @@ mod tests {
             id: 7,
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![Order::from(&order())],
+            native_prices: HashMap::from([(Pubkey([0x33; 32]), 1_500_000_000)]),
         };
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["deadline"], "2026-01-01T00:00:00Z");
+        assert_eq!(
+            json["nativePrices"],
+            serde_json::json!({"4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4": "1500000000"})
+        );
         assert_eq!(
             json["orders"][0]["uid"],
             "0x1111111111111111111111111111111111111111111111111111111111111111"

@@ -408,6 +408,23 @@ async fn solve_flags_a_missing_buy_token_account_to_the_engine() {
     );
 }
 
+#[tokio::test]
+async fn solve_forwards_native_prices_to_the_engine() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    request["nativePrices"] = serde_json::json!({ (pubkey(0x33).to_string()): "1500000000" });
+
+    call_solve_with(addr, request).await;
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(
+        request["tokens"],
+        serde_json::json!({ (pubkey(0x33).to_string()): { "referencePrice": "1500000000" } })
+    );
+}
+
 /// An absent buy token account that is not the owner's associated token
 /// account is nothing the settlement can create, so the payout would revert:
 /// the driver drops the order and, with nothing left to fill, never calls the

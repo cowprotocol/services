@@ -7,12 +7,16 @@ use {
         domain::{self, Side, order_uid::OrderUid, solver_fee::SolverFee},
         infra::blockchain::associated_token_address,
     },
-    cow_settlement_interface::{pda::buffer::find_buffer_pda, token_program::TokenProgram},
+    cow_settlement_interface::{
+        data::intent::ENCODED_NATIVE_SOL_TRANSFER,
+        pda::buffer::find_buffer_pda,
+        token_program::TokenProgram,
+    },
     serde::Serialize,
-    serde_with::serde_as,
+    serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
     spl_token_interface::native_mint,
-    std::collections::HashSet,
+    std::collections::{HashMap, HashSet},
 };
 
 /// The auction the driver posts to `/solve`.
@@ -28,6 +32,20 @@ pub struct Auction {
     pub orders: Vec<Order>,
     /// Absolute deadline by which solutions must be returned.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The priced tokens, by mint.
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    pub tokens: HashMap<Pubkey, Token>,
+}
+
+/// One priced auction token.
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// The lamports one atom of the token is worth, scaled by 10^9, unlike
+    /// the EVM reference price's 10^18.
+    #[serde_as(as = "DisplayFromStr")]
+    pub reference_price: u64,
 }
 
 /// One order to quote.
@@ -169,18 +187,27 @@ impl Auction {
                 })
                 .collect(),
             deadline: auction.deadline,
+            tokens: auction
+                .native_prices
+                .iter()
+                .map(|(&token, &reference_price)| {
+                    // Engines see native SOL buys as wSOL buys, see
+                    // `Order::new`.
+                    let mint = if token == ENCODED_NATIVE_SOL_TRANSFER {
+                        native_mint::ID
+                    } else {
+                        token
+                    };
+                    (mint, Token { reference_price })
+                })
+                .collect(),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        crate::domain::Side,
-        cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
-        serde_json::json,
-    };
+    use {super::*, crate::domain::Side, serde_json::json};
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -209,6 +236,9 @@ mod tests {
                 "side": "sell",
             }],
             "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(1).to_string()): {"referencePrice": "1500000000"},
+            },
         });
 
         let expected = Auction {
@@ -230,6 +260,12 @@ mod tests {
             deadline: chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
                 .unwrap()
                 .with_timezone(&chrono::Utc),
+            tokens: HashMap::from([(
+                pubkey(1),
+                Token {
+                    reference_price: 1_500_000_000,
+                },
+            )]),
         };
 
         let actual = serde_json::to_value(&expected).unwrap();
@@ -334,6 +370,29 @@ mod tests {
         assert_eq!(
             order.buy_destination,
             associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken)
+        );
+    }
+
+    #[test]
+    fn a_native_sol_buy_is_priced_under_the_wsol_mint() {
+        let native_buy = domain::Order {
+            buy_token: ENCODED_NATIVE_SOL_TRANSFER,
+            ..domain_order(Side::Sell)
+        };
+        let auction = domain::Auction {
+            id: None,
+            orders: vec![native_buy],
+            deadline_slot: domain::Slot(0),
+            deadline: chrono::Utc::now(),
+            creations: HashMap::new(),
+            native_prices: HashMap::from([(ENCODED_NATIVE_SOL_TRANSFER, 1_000_000_000)]),
+        };
+
+        let wire = Auction::new(&auction, pubkey(3), pubkey(0xaa), None, &HashSet::new());
+
+        assert_eq!(
+            wire.tokens[&wire.orders[0].buy_mint].reference_price,
+            1_000_000_000
         );
     }
 }
