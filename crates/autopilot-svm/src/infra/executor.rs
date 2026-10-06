@@ -25,14 +25,14 @@ pub struct DriverExecutor {
     /// Countersigns pending sponsored creations. Absent, winners dispatch
     /// without creations, and one containing a pending sponsored order fails
     /// at the driver.
-    sponsor: Option<Sponsor>,
+    sponsor: Option<Arc<Sponsor>>,
 }
 
 impl DriverExecutor {
     pub fn new(
         drivers: Vec<Arc<Driver>>,
         windows: SettlementWindows,
-        sponsor: Option<Sponsor>,
+        sponsor: Option<Arc<Sponsor>>,
     ) -> Self {
         Self {
             drivers,
@@ -164,14 +164,17 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
         // other order.
         if let Some(sponsor) = &self.sponsor {
             let executing = ranking.winning_order_uids();
-            sponsor
-                .create_displaced(
-                    ranking
-                        .considered_order_uids()
-                        .into_iter()
-                        .filter(|uid| !executing.contains(uid)),
-                )
-                .await;
+            let displaced: Vec<_> = ranking
+                .considered_order_uids()
+                .into_iter()
+                .filter(|uid| !executing.contains(uid))
+                .collect();
+            // Detached: the creations go out while the loop runs the next
+            // cycle.
+            let sponsor = Arc::clone(sponsor);
+            tokio::spawn(async move {
+                sponsor.create_displaced(displaced.into_iter()).await;
+            });
         }
     }
 }

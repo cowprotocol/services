@@ -10,6 +10,7 @@ use {
     solana_sdk::{account::Account, pubkey::Pubkey, transaction::VersionedTransaction},
     sqlx::PgPool,
     std::collections::HashMap,
+    tokio::sync::Mutex,
 };
 
 /// Holds the funder signer and countersigns the stored creation transactions
@@ -19,6 +20,9 @@ pub struct Sponsor {
     rpc: SolanaRPC,
     pool: PgPool,
     max_displaced_creations: usize,
+    /// Held while displaced creations go out. A cycle that finds a run in
+    /// flight skips instead of signing the same creations again.
+    displacing: Mutex<()>,
 }
 
 /// A stored sponsored creation the indexer has not seen on chain.
@@ -49,6 +53,7 @@ impl Sponsor {
             rpc,
             pool,
             max_displaced_creations,
+            displacing: Mutex::new(()),
         }
     }
 
@@ -126,8 +131,13 @@ impl Sponsor {
     /// the cap. A creation whose order account exists landed earlier and
     /// waits for the indexer, so it is not sent again. One that opens an
     /// account with the funder's lamports is skipped, since that rent goes
-    /// to the account's owner.
+    /// to the account's owner. A run still in flight makes the call skip,
+    /// the next cycle picks up what is still pending.
     async fn send_displaced(&self, pending: Vec<PendingCreation>) -> Vec<IntentHash> {
+        let Ok(_displacing) = self.displacing.try_lock() else {
+            tracing::debug!("displaced creations still going out, skipping the cycle");
+            return Vec::new();
+        };
         let funder = self.signer.pubkey();
         let existing = match self
             .rpc
@@ -281,6 +291,32 @@ mod tests {
         },
     };
 
+    /// A pending creation the funder pays for that opens `order_pda`.
+    fn pending_creation(funder: &Keypair, order_pda: Pubkey) -> PendingCreation {
+        let message = Message::new_with_blockhash(
+            &[solana_sdk::instruction::Instruction::new_with_bytes(
+                Pubkey::new_unique(),
+                &[],
+                vec![
+                    solana_sdk::instruction::AccountMeta::new(funder.pubkey(), true),
+                    solana_sdk::instruction::AccountMeta::new(order_pda, false),
+                ],
+            )],
+            Some(&funder.pubkey()),
+            &Hash::new_unique(),
+        );
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::default()],
+            message: solana_sdk::message::VersionedMessage::Legacy(message),
+        };
+        PendingCreation {
+            uid: IntentHash(order_pda.to_bytes()),
+            order_pda,
+            bytes: bincode::serialize(&transaction).unwrap(),
+            transaction,
+        }
+    }
+
     /// Countersigning fills exactly the funder's slot and leaves the owner's
     /// signature intact and valid.
     #[tokio::test]
@@ -378,32 +414,8 @@ mod tests {
     #[tokio::test]
     async fn landed_creations_are_not_resent() {
         let funder = Keypair::new();
-        let creation = |order_pda: Pubkey| {
-            let message = Message::new_with_blockhash(
-                &[solana_sdk::instruction::Instruction::new_with_bytes(
-                    Pubkey::new_unique(),
-                    &[],
-                    vec![
-                        solana_sdk::instruction::AccountMeta::new(funder.pubkey(), true),
-                        solana_sdk::instruction::AccountMeta::new(order_pda, false),
-                    ],
-                )],
-                Some(&funder.pubkey()),
-                &Hash::new_unique(),
-            );
-            let transaction = VersionedTransaction {
-                signatures: vec![Signature::default()],
-                message: solana_sdk::message::VersionedMessage::Legacy(message),
-            };
-            PendingCreation {
-                uid: IntentHash(order_pda.to_bytes()),
-                order_pda,
-                bytes: bincode::serialize(&transaction).unwrap(),
-                transaction,
-            }
-        };
-        let landed = creation(Pubkey::new_unique());
-        let fresh = creation(Pubkey::new_unique());
+        let landed = pending_creation(&funder, Pubkey::new_unique());
+        let fresh = pending_creation(&funder, Pubkey::new_unique());
         // The lookup finds the landed order's account and not the fresh
         // one's. Every blockhash check passes, and the mock answers a send
         // with the sent transaction's own signature.
@@ -434,6 +446,42 @@ mod tests {
         let fresh_uid = fresh.uid;
         let sent = sponsor.send_displaced(vec![landed, fresh]).await;
         assert_eq!(sent, vec![fresh_uid]);
+    }
+
+    /// A cycle that finds a run still in flight skips instead of signing the
+    /// same creations again.
+    #[tokio::test]
+    async fn a_run_in_flight_makes_the_next_cycle_skip() {
+        let funder = Keypair::new();
+        let fresh = pending_creation(&funder, Pubkey::new_unique());
+        // Nothing but the run in flight stops the send.
+        let mocks: MocksMap = [
+            (
+                RpcRequest::GetMultipleAccounts,
+                serde_json::json!({
+                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                    "value": [null],
+                }),
+            ),
+            (
+                RpcRequest::IsBlockhashValid,
+                serde_json::json!({
+                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                    "value": true,
+                }),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let sponsor = Sponsor::new(
+            Signer::Keypair(funder.insecure_clone()),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
+            10,
+        );
+
+        let _in_flight = sponsor.displacing.lock().await;
+        assert!(sponsor.send_displaced(vec![fresh]).await.is_empty());
     }
 
     /// A dead blockhash refuses the countersign.
