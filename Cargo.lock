@@ -1431,7 +1431,6 @@ dependencies = [
  "app-data",
  "async-trait",
  "axum",
- "bad-tokens",
  "bigdecimal",
  "brotli",
  "bytes",
@@ -2058,24 +2057,6 @@ dependencies = [
  "object",
  "rustc-demangle",
  "windows-link",
-]
-
-[[package]]
-name = "bad-tokens"
-version = "0.1.0"
-dependencies = [
- "alloy-json-rpc",
- "alloy-primitives",
- "alloy-provider",
- "alloy-rpc-types",
- "alloy-rpc-types-trace",
- "alloy-sol-types",
- "alloy-transport",
- "anyhow",
- "contracts",
- "ethrpc",
- "model",
- "tracing",
 ]
 
 [[package]]
@@ -4290,7 +4271,6 @@ dependencies = [
  "app-data",
  "async-trait",
  "axum",
- "bad-tokens",
  "balance-overrides",
  "bigdecimal",
  "bytes",
@@ -6764,7 +6744,6 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
- "bad-tokens",
  "balance-overrides",
  "bigdecimal",
  "cached",
@@ -7170,7 +7149,6 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
- "bad-tokens",
  "balance-overrides",
  "bigdecimal",
  "bytes-hex",
@@ -8712,7 +8690,6 @@ dependencies = [
  "arc-swap",
  "async-stream",
  "async-trait",
- "bad-tokens",
  "balance-overrides",
  "bigdecimal",
  "bytes-hex",
