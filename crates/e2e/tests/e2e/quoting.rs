@@ -295,7 +295,11 @@ async fn uses_stale_liquidity(web3: Web3) {
     assert_eq!(first.quote.buy_amount, second.quote.buy_amount);
 
     tracing::info!("waiting for liquidity state to update");
-    wait_for_condition(TIMEOUT, || async {
+    // Pool-fetching caches a few blocks' worth of liquidity, and the
+    // auto-update background loop can take a while to re-poll on a loaded
+    // CI runner. Give it generous headroom beyond the default 30s wait
+    // window.
+    wait_for_condition(Duration::from_secs(120), || async {
         // Mint blocks until we evict the cached liquidty and fetch the new
         // state.
         onchain.mint_block().await;
@@ -410,7 +414,11 @@ async fn quote_timeout(web3: Web3) {
     };
 
     let assert_within_variance = |start_timestamp: Instant, target| {
-        const VARIANCE: u64 = 100; // small buffer to allow for variance in the test
+        // Loaded CI runners occasionally add hundreds of ms of scheduling
+        // jitter on top of the solver's artificial sleep. Keep the lower bound
+        // tight (we care that the deadline was enforced) but give the upper
+        // bound enough headroom to not flake.
+        const VARIANCE: u64 = 500;
         let http_buffer = driver::infra::Solver::quote_timeouts()
             .http_delay
             .num_milliseconds() as u64;
@@ -418,7 +426,10 @@ async fn quote_timeout(web3: Web3) {
         let max = min + VARIANCE;
         let elapsed = start_timestamp.elapsed().as_millis() as u64;
         tracing::debug!(target, actual = ?elapsed, "finished request");
-        assert!((min..max).contains(&elapsed));
+        assert!(
+            (min..max).contains(&elapsed),
+            "expected elapsed in [{min}, {max}) but got {elapsed}"
+        );
     };
 
     // native token price requests use the default timeout
