@@ -34,6 +34,8 @@ pub struct Api {
     pub blockchain: Arc<Solana>,
     /// The solver engines.
     pub solvers: Vec<Solver>,
+    /// The priority fee policy for transactions.
+    pub priority_fee: domain::priority_fee::PriorityFeePolicy,
 }
 
 impl Api {
@@ -73,6 +75,7 @@ impl Api {
                 solver,
                 self.blockchain.clone(),
                 buy_token_accounts.clone(),
+                self.priority_fee,
             );
             let state = State::new(competition, solve_every_nth_auction);
 

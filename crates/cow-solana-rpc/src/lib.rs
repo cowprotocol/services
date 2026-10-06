@@ -28,7 +28,7 @@ pub use {
     solana_rpc_client_api::{
         client_error::Error,
         request::RpcRequest,
-        response::{RpcSimulateTransactionResult, UiTransactionError},
+        response::{RpcPrioritizationFee, RpcSimulateTransactionResult, UiTransactionError},
     },
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
 };
@@ -230,6 +230,17 @@ impl SolanaRPC {
             .simulate_transaction(transaction)
             .await
             .map(|response| response.value)
+    }
+
+    /// The prioritization fee, in micro-lamports per compute unit, that
+    /// landed a transaction locking `addresses` as writable in each of the
+    /// node's recent slots (up to 150), or the slot's lowest fee when none
+    /// did.
+    pub async fn recent_prioritization_fees(
+        &self,
+        addresses: &[Pubkey],
+    ) -> Result<Vec<RpcPrioritizationFee>, Error> {
+        self.inner.get_recent_prioritization_fees(addresses).await
     }
 
     /// Simulate the transactions as one atomic bundle on the confirmed bank
