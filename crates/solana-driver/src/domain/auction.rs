@@ -72,7 +72,8 @@ pub struct Auction {
     pub deadline_slot: Slot,
     /// Absolute deadline by which solver engines must return solutions. The
     /// driver derives each request's timeout as the time left until this
-    /// instant. It skips the request if the deadline has passed.
+    /// instant. It skips the request if the deadline has passed. A solve
+    /// narrows the autopilot's deadline to the engine's share of it.
     pub deadline: chrono::DateTime<chrono::Utc>,
     /// The owner-signed creation transaction of each order not created on
     /// chain yet, by uid. It lacks the funder's signature, so it can only be

@@ -43,6 +43,13 @@ const MAX_TRANSACTION_BYTES: u64 = 1232;
 /// applies only under the `increase_tx_account_lock_limit` feature, inactive
 /// on mainnet.
 const MAX_TRANSACTION_ACCOUNTS: usize = 64;
+/// Reserved for the `/solve` response to reach the autopilot, which discards
+/// a late one. The EVM driver's `http-time-buffer` default.
+const HTTP_TIME_BUFFER: chrono::Duration = chrono::Duration::milliseconds(500);
+/// The solver engine's share of the time left before the driver deadline;
+/// the solution simulations get the rest. The EVM driver's
+/// `solving-share-of-deadline` default.
+const SOLVING_SHARE_OF_DEADLINE_PERCENT: i32 = 80;
 
 /// Cache key for a proposed solution.
 ///
@@ -97,6 +104,9 @@ impl Competition {
         auction_id: Id,
         mut auction: Auction,
     ) -> Result<Vec<Solution>, Error> {
+        let now = chrono::Utc::now();
+        let driver_deadline = auction.deadline - HTTP_TIME_BUFFER;
+        auction.deadline = now + (driver_deadline - now) * SOLVING_SHARE_OF_DEADLINE_PERCENT / 100;
         let buy_token_accounts = auction
             .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
             .await
@@ -111,15 +121,15 @@ impl Competition {
         let solutions = self
             .compute_solutions(&auction, &buy_token_accounts.missing)
             .await?;
+        if solutions.is_empty() {
+            return Ok(Vec::new());
+        }
         auction.drop_landed_creations(&self.blockchain).await;
-        // The autopilot discards a late response, so the simulations get half
-        // the remaining window. A timeout is no verdict.
-        let window = auction
-            .deadline
+        // A timeout is no verdict.
+        let window = driver_deadline
             .signed_duration_since(chrono::Utc::now())
             .to_std()
-            .unwrap_or_default()
-            / 2;
+            .unwrap_or_default();
         let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
             let auction = &auction;
             async move {
@@ -244,8 +254,8 @@ impl Competition {
         for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
             if let Some(err) = &result.err {
                 // Named here because the bundle endpoint may return no logs
-                // for a failed leg.
-                tracing::warn!(
+                // for a failed leg. `solve` warns about the dropped solution.
+                tracing::debug!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
                     leg,

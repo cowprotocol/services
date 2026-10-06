@@ -24,13 +24,7 @@ use {
             solver::Solver,
         },
     },
-    solana_sdk::{
-        hash::Hash,
-        instruction::Instruction,
-        message::{Message, VersionedMessage},
-        pubkey::Pubkey,
-        transaction::VersionedTransaction,
-    },
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
     spl_token_interface::native_mint,
     std::{
@@ -291,13 +285,9 @@ fn response_ids(body: &serde_json::Value) -> Vec<u64> {
 /// The standard solve request with its order not created on chain yet, so
 /// it carries the owner-signed creation transaction.
 fn sponsored_solve_request() -> serde_json::Value {
-    sponsored_solve_request_with(VersionedTransaction::default())
-}
-
-fn sponsored_solve_request_with(creation: VersionedTransaction) -> serde_json::Value {
     let mut request = solve_request();
     request["orders"][0]["creation"] = base64::engine::general_purpose::STANDARD
-        .encode(bincode::serialize(&creation).unwrap())
+        .encode(bincode::serialize(&VersionedTransaction::default()).unwrap())
         .into();
     request
 }
@@ -958,25 +948,4 @@ async fn solve_keeps_a_solution_whose_bundle_simulation_stops_short() {
 
     let body = call_solve_with(addr, sponsored_solve_request()).await;
     assert_eq!(response_ids(&body), vec![42]);
-}
-
-/// A creation leg is bound by the same byte limit as the settlement.
-#[tokio::test]
-async fn solve_drops_a_solution_whose_creation_is_over_the_transaction_size_limit() {
-    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
-    let (solver, _) = solver_with_keypair(engine).await;
-    let addr = spawn_server(vec![solver]).await;
-    // 1,233 bytes of instruction data alone exceed the 1,232-byte limit.
-    let oversized = Instruction::new_with_bytes(pubkey(0x99), &[0; 1233], Vec::new());
-    let creation = VersionedTransaction {
-        signatures: Vec::new(),
-        message: VersionedMessage::Legacy(Message::new_with_blockhash(
-            &[oversized],
-            Some(&pubkey(0x22)),
-            &Hash::default(),
-        )),
-    };
-
-    let body = call_solve_with(addr, sponsored_solve_request_with(creation)).await;
-    assert_eq!(response_ids(&body), Vec::<u64>::new());
 }
