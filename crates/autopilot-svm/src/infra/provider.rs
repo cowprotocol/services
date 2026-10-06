@@ -110,8 +110,9 @@ impl DbAuctionProvider {
                 return (orders, Vec::new(), Vec::new(), Vec::new());
             }
         };
-        let (orders, unsettleable) = settleable_orders(orders, &lookup.resolve(&accounts));
-        let (orders, unreceivable) = receivable_orders(orders, &accounts);
+        let verdicts = lookup.resolve(&accounts);
+        let (orders, unsettleable) = settleable_orders(orders, &verdicts);
+        let (orders, unreceivable) = receivable_orders(orders, &accounts, &verdicts);
         let (orders, unfunded) = funded_orders(orders, &accounts);
         (orders, unsettleable, unreceivable, unfunded)
     }
@@ -166,7 +167,8 @@ impl DbAuctionProvider {
 }
 
 /// Whether the cut checks the order's buy token account. A pending sponsored
-/// token buy skips the check, its creation transaction creates the account.
+/// token buy skips the check: placement vetted the account, and its creation
+/// transaction may be what creates it.
 fn buy_account_checked(order: &Order) -> bool {
     order.created_on_chain || order.buys_native_sol()
 }
@@ -197,27 +199,37 @@ fn settleable_orders(
 }
 
 /// Drop orders whose buy token account cannot receive the payout at
-/// `FinalizeSettle`. A native SOL buy pays a wallet instead, which must be
-/// missing or owned by the System Program and stay rent-exempt after the
-/// payout. Returns the kept orders and the uids of the dropped ones.
+/// `FinalizeSettle` and is not the owner's missing associated token account,
+/// which the settlement creates under the buy mint's token program. A native
+/// SOL buy pays a wallet instead, which must be missing or owned by the System
+/// Program and stay rent-exempt after the payout. Returns the kept orders and
+/// the uids of the dropped ones.
 fn receivable_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
+    verdicts: &HashMap<Pubkey, MintVerdict>,
 ) -> (Vec<Order>, Vec<IntentHash>) {
     let (orders, unreceivable): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
         if !buy_account_checked(order) {
             return true;
         }
         let account = Pubkey::new_from_array(order.buy_token_account.0);
+        let buy_mint = Pubkey::new_from_array(order.buy_token.0);
         match accounts.get(&account) {
             found if order.buys_native_sol() => receivable_native_payout(order, found),
-            Some(found) => {
-                receivable_token_account(found, &Pubkey::new_from_array(order.buy_token.0))
+            Some(found)
+                if found.owner != solana_system_interface::program::ID
+                    || !found.data.is_empty() =>
+            {
+                receivable_token_account(found, &buy_mint)
             }
-            None => false,
-            // TODO: flip on once the buy token account rent is priced,
-            // with the program that owns the buy mint account.
-            // None => account == associated_token_address(order, &program),
+            // Missing, or a lamports-only system account the idempotent
+            // create allocates over.
+            _ => verdicts.get(&buy_mint).is_some_and(|verdict| {
+                verdict.is_ok_and(|program| {
+                    account == associated_token_address(order, &program.address())
+                })
+            }),
         }
     });
     (
@@ -415,13 +427,6 @@ fn indexer_lags(tip: u64, indexed: Option<i64>, max_lag: u64) -> bool {
 /// The order owner's associated token account for the buy mint under the
 /// mint's token `program`, the one account a settlement can create for the
 /// payout when it does not exist yet.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the receivable check that uses it is held until solvers price the ATA rent"
-    )
-)]
 fn associated_token_address(order: &Order, program: &Pubkey) -> Pubkey {
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
         &Pubkey::new_from_array(order.owner.0),
@@ -553,13 +558,14 @@ mod tests {
         )
     }
 
-    /// The lookup answers for the four created orders in candidate order:
+    /// The lookup answers for the five created orders in candidate order:
     /// initialized with the buy mint, initialized with a wrong mint, absent
     /// at an arbitrary address, absent at the owner's associated token
-    /// address. Their shared sell token account follows, funded, then the
-    /// sell and buy mints. An absent account is dropped either way while the
-    /// settlement creating it is held. The pending sponsored order is exempt
-    /// from the check.
+    /// address, a lamports-only system account at another owner's associated
+    /// token address. Their shared sell token account follows, funded, then
+    /// the sell and buy mints. Only the two associated token accounts are the
+    /// settlement's to create. The pending sponsored order is exempt from the
+    /// check.
     #[tokio::test]
     async fn drops_created_orders_with_unreceivable_buy_accounts() {
         let response = serde_json::json!({
@@ -569,6 +575,7 @@ mod tests {
                 crate::tests::token_account_json([0x99; 32]),
                 null,
                 null,
+                account_json(&Account::new(890_880, 0, &solana_system_interface::program::ID)),
                 funded_sell_account(),
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
@@ -577,24 +584,24 @@ mod tests {
         let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
         let ata =
             associated_token_address(&order([0; 32], true), &spl_token_interface::ID).to_bytes();
+        let prefunded = |buy_token_account| Order {
+            owner: ChainPubkey([0x23; 32]),
+            ..order(buy_token_account, true)
+        };
+        let prefunded_ata =
+            associated_token_address(&prefunded([0; 32]), &spl_token_interface::ID).to_bytes();
         let orders = vec![
             order([0x01; 32], true),
             order([0x02; 32], false),
             order([0x03; 32], true),
             order([0x04; 32], true),
             order(ata, true),
+            prefunded(prefunded_ata),
         ];
         let (kept, _, dropped, _) = provider.checked_orders(orders).await;
         let kept: Vec<[u8; 32]> = kept.iter().map(|order| order.buy_token_account.0).collect();
-        assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
-        assert_eq!(
-            dropped,
-            [
-                IntentHash([0x03; 32]),
-                IntentHash([0x04; 32]),
-                IntentHash(ata)
-            ]
-        );
+        assert_eq!(kept, [[0x01; 32], [0x02; 32], ata, prefunded_ata]);
+        assert_eq!(dropped, [IntentHash([0x03; 32]), IntentHash([0x04; 32])]);
     }
 
     /// A native SOL buy pays its wallet directly: a missing or system-owned

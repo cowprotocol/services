@@ -858,7 +858,7 @@ fn creation_tx_wrapped(
     base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
 }
 
-/// The mandatory buy-account creation step for the intent.
+/// The buy-account creation step for the intent.
 fn destination_creation(
     funder: solana_sdk::pubkey::Pubkey,
     owner: solana_sdk::pubkey::Pubkey,
@@ -883,7 +883,7 @@ fn buy_mint(
 }
 
 /// A sponsored creation transaction with an arbitrary SPL sell and only the
-/// mandatory buy-account creation in front of `CreateOrder`.
+/// buy-account creation in front of `CreateOrder`.
 fn sponsored_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
@@ -1136,6 +1136,97 @@ async fn create_order_checks_the_native_buy_wallet() {
     }
 }
 
+/// A bundle that does not create the buy token account needs one the
+/// settlement can pay out to as is, or the owner's associated token account
+/// under the buy mint's token program, which the settlement creates when
+/// missing. A custom receiver's missing account needs the creation in the
+/// bundle. A passing order moves on to the blockhash check. The lookup
+/// answers the sell and buy mints, then the buy token account when the bundle
+/// does not create it.
+#[tokio::test]
+async fn create_order_checks_an_uncreated_buy_token_account() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::new_unique();
+    let owned = sponsored_intent(owner.pubkey(), false);
+    let mint = buy_mint(&owned);
+    let mut received = sponsored_intent(owner.pubkey(), false);
+    received.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint,
+            token_account: ata(receiver, mint),
+        },
+    );
+    let classic = solana_testlib::account_json(&mint_account(spl_token_interface::ID));
+    let token_2022 = solana_testlib::account_json(&mint_account(spl_token_2022_interface::ID));
+    let receiving = solana_testlib::token_account_json(&mint, &receiver);
+    let prefunded = solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 890_880,
+        owner: solana_system_interface::program::ID,
+        ..Default::default()
+    });
+    let creation = destination_creation(funder, receiver, &received);
+
+    for (index, (intent, preparations, accounts, expected)) in [
+        (
+            &owned,
+            vec![],
+            vec![classic.clone(), classic.clone()],
+            "BlockhashExpired",
+        ),
+        // The idempotent create allocates over a lamports-only system account.
+        (
+            &owned,
+            vec![],
+            vec![classic.clone(), classic.clone(), prefunded],
+            "BlockhashExpired",
+        ),
+        // The settlement would create the owner's Token-2022 account, not
+        // the SPL Token one the intent names.
+        (
+            &owned,
+            vec![],
+            vec![token_2022.clone(), token_2022],
+            "InvalidTransaction",
+        ),
+        (
+            &received,
+            vec![],
+            vec![classic.clone(), classic.clone()],
+            "InvalidTransaction",
+        ),
+        (
+            &received,
+            vec![creation],
+            vec![classic.clone(), classic.clone()],
+            "BlockhashExpired",
+        ),
+        (
+            &received,
+            vec![],
+            vec![classic.clone(), classic, receiving],
+            "BlockhashExpired",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            sponsored_mocks(false, solana_testlib::multiple_accounts_json(accounts)),
+        )
+        .await;
+        let transaction = creation_tx(funder, &owner, intent, preparations, true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected),
+            "case {index}"
+        );
+    }
+}
+
 /// A message header that leaves the owner outside the signer region is
 /// rejected: on chain the creation would demand the owner's signature, so
 /// accepting it would only defer the failure past a won auction.
@@ -1202,8 +1293,6 @@ async fn create_order_checks_the_preparation_template() {
     };
 
     for (preparations, expected) in [
-        // The buy-account creation is mandatory.
-        (vec![], "InvalidTransaction"),
         // A program outside the template never rides on the funder's fee.
         (
             vec![solana_sdk::instruction::Instruction::new_with_bytes(
@@ -1312,7 +1401,7 @@ async fn create_order_checks_the_mints_on_chain() {
     let intent = sponsored_intent(owner.pubkey(), false);
     let classic = Some(mint_account(spl_token_interface::ID));
     let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
-    // Only the mandatory buy account creation, under SPL Token.
+    // Only the buy account creation, under SPL Token.
     let plain = sponsored_creation_tx(funder, &owner, true);
     let token_2022_approve = creation_tx(
         funder,
