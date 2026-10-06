@@ -36,6 +36,10 @@ const TOKEN_PROGRAM_CACHE_CAPACITY: u64 = 10_000;
 /// The Solana blockchain adapter.
 pub struct Solana {
     rpc: SolanaRPC,
+    /// Serves `simulateBundle`, which `rpc` need not support.
+    /// TODO: temporary; collapse into `rpc` once a single endpoint serves
+    /// every method, see `config::Rpc::bundle_endpoint`.
+    bundle_rpc: SolanaRPC,
     program_id: Pubkey,
     /// The token program of each mint looked up so far. Entries never expire:
     /// a mint's owner changes only if the mint is closed and re-created.
@@ -43,10 +47,10 @@ pub struct Solana {
 }
 
 impl Solana {
-    /// Build the adapter from the RPC client and the settlement program id.
-    pub fn new(rpc: SolanaRPC, program_id: Pubkey) -> Self {
+    pub fn new(rpc: SolanaRPC, bundle_rpc: SolanaRPC, program_id: Pubkey) -> Self {
         Self {
             rpc,
+            bundle_rpc,
             program_id,
             token_programs: Cache::new(TOKEN_PROGRAM_CACHE_CAPACITY),
         }
@@ -84,6 +88,14 @@ impl Solana {
         transaction: &VersionedTransaction,
     ) -> Result<cow_solana_rpc::RpcSimulateTransactionResult, Error> {
         self.rpc.simulate_transaction(transaction).await
+    }
+
+    /// See [`SolanaRPC::simulate_bundle`].
+    pub async fn simulate_bundle(
+        &self,
+        transactions: &[VersionedTransaction],
+    ) -> Result<Vec<cow_solana_rpc::RpcSimulateBundleTransactionResult>, Error> {
+        self.bundle_rpc.simulate_bundle(transactions).await
     }
 
     /// Send a signed transaction and wait for confirmation.
@@ -155,7 +167,11 @@ mod tests {
             RpcRequest::GetMultipleAccounts,
             multiple_accounts_json([mint_account_json(), serde_json::Value::Null]),
         )]);
-        let solana = Solana::new(SolanaRPC::new_mock_with_mocks(mocks), Pubkey::new_unique());
+        let solana = Solana::new(
+            SolanaRPC::new_mock_with_mocks(mocks.clone()),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            Pubkey::new_unique(),
+        );
 
         let expected = HashMap::from([
             (mint, Ok(TokenProgram::SplToken)),

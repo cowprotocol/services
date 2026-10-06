@@ -44,8 +44,14 @@ pub async fn run(args: Args) {
         futures::future::try_join_all(config.solvers.iter().map(solver::Solver::new))
             .await
             .expect("failed to load solver signers");
+    let bundle_rpc = SolanaRPC::new_with_timeout_and_commitment(
+        &config.rpc.bundle_endpoint,
+        config.rpc.request_timeout,
+        CommitmentConfig::confirmed(),
+    );
     let blockchain = Arc::new(blockchain::Solana::new(
         rpc,
+        bundle_rpc,
         config.chain.settlement_program_id,
     ));
     let api = Api {

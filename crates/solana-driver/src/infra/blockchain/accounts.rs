@@ -33,6 +33,10 @@ impl AccountsSnapshot {
         Self { accounts }
     }
 
+    pub fn exists(&self, address: &Pubkey) -> bool {
+        self.accounts.contains_key(address)
+    }
+
     /// Return the address lookup table at `key` for the v0 message compiler.
     ///
     /// # Requirements
