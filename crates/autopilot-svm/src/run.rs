@@ -139,6 +139,7 @@ async fn run(config: Config) {
                     CommitmentConfig::confirmed(),
                 ),
                 pool.clone(),
+                sponsoring.max_displaced_creations,
             ))
         }
         None => None,

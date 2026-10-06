@@ -12,16 +12,13 @@ use {
     std::collections::HashMap,
 };
 
-/// Most creations one `Sponsor::create_displaced` call sends. The funder pays
-/// for each one, and its order may never fill.
-const MAX_DISPLACED_CREATIONS: usize = 2;
-
 /// Holds the funder signer and countersigns the stored creation transactions
 /// of pending sponsored orders.
 pub struct Sponsor {
     signer: Signer,
     rpc: SolanaRPC,
     pool: PgPool,
+    max_displaced_creations: usize,
 }
 
 /// The stored creation's blockhash is past its last valid height, so the
@@ -31,8 +28,18 @@ pub struct Sponsor {
 struct BlockhashExpired;
 
 impl Sponsor {
-    pub fn new(signer: Signer, rpc: SolanaRPC, pool: PgPool) -> Self {
-        Self { signer, rpc, pool }
+    pub fn new(
+        signer: Signer,
+        rpc: SolanaRPC,
+        pool: PgPool,
+        max_displaced_creations: usize,
+    ) -> Self {
+        Self {
+            signer,
+            rpc,
+            pool,
+            max_displaced_creations,
+        }
     }
 
     /// The fully signed creation transactions the given orders still need on
@@ -62,14 +69,14 @@ impl Sponsor {
     }
 
     /// Send the creations of the given pending sponsored orders without a
-    /// settlement, at most `MAX_DISPLACED_CREATIONS`, so the orders outlive
-    /// their creation blockhash. Skips a creation that opens an account with
-    /// the funder's lamports, since that rent goes to the account's owner.
-    /// Failures only log: the order keeps its stored creation and the cut
-    /// drops it once the blockhash dies.
+    /// settlement, at most `max_displaced_creations` of them, so the orders
+    /// outlive their creation blockhash. Skips a creation that opens an
+    /// account with the funder's lamports, since that rent goes to the
+    /// account's owner. Failures only log: the order keeps its stored
+    /// creation and the cut drops it once the blockhash dies.
     pub async fn create_displaced(&self, uids: impl Iterator<Item = IntentHash>) {
         let uids: Vec<Vec<u8>> = uids.map(|uid| uid.0.to_vec()).collect();
-        if uids.is_empty() {
+        if uids.is_empty() || self.max_displaced_creations == 0 {
             return;
         }
         let pending = match db::pending_creations(&self.pool, &uids).await {
@@ -109,7 +116,7 @@ impl Sponsor {
         let creatable = pending
             .iter()
             .filter(|(_, _, creation)| !opens_funder_paid_account(creation, &funder, &existing))
-            .take(MAX_DISPLACED_CREATIONS);
+            .take(self.max_displaced_creations);
         for (uid, bytes, _) in creatable {
             let order_uid = const_hex::encode_prefixed(uid);
             let signed = match self.countersign(bytes).await {
@@ -274,6 +281,7 @@ mod tests {
                 }),
             )])),
             PgPool::connect_lazy("postgresql://").unwrap(),
+            0,
         );
         let signed = sponsor
             .countersign(&bincode::serialize(&transaction).unwrap())
@@ -358,6 +366,7 @@ mod tests {
                 }),
             )])),
             PgPool::connect_lazy("postgresql://").unwrap(),
+            0,
         );
         let result = sponsor
             .countersign(&bincode::serialize(&transaction).unwrap())
@@ -422,6 +431,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 2000, 2000, 'sell'::solana.OrderKind, fals
                     (RpcRequest::GetBlockHeight, serde_json::json!(1_000u64)),
                 ])),
                 pool.clone(),
+                0,
             );
             let err = sponsor
                 .countersign_creations(std::iter::once(IntentHash([n; 32])))
