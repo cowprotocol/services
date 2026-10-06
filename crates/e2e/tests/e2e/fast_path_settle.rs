@@ -813,6 +813,7 @@ async fn fast_path_penalty_cap(web3: Web3) {
     // links the trade to its auction after the order is already marked
     // `Fulfilled`, so give it a moment to populate `penalty_cap_native`.
     wait_for_condition(TIMEOUT, || async {
+        onchain.mint_block().await;
         services
             .get_trades(&uid)
             .await
