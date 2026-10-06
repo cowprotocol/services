@@ -22,7 +22,6 @@ use {
 };
 
 pub mod bad_orders;
-pub mod bad_tokens;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Quality {
