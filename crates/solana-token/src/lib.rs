@@ -166,6 +166,17 @@ impl MintLookup<'_> {
     }
 }
 
+/// The rent-exempt minimum, in lamports, of an associated token account
+/// under `program` at the SDK's default rent: 165 bytes under SPL Token, 170
+/// under Token-2022, whose associated token accounts carry the immutable owner
+/// extension.
+pub fn ata_rent(program: TokenProgram) -> u64 {
+    match program {
+        TokenProgram::SplToken => 2_039_280,
+        TokenProgram::Token2022 => 2_074_080,
+    }
+}
+
 /// Whether the settlement's plain `Transfer` of `mint` lands in the token
 /// account at `account`: initialized, unfrozen, holding `mint`, and not set
 /// to refuse transfers without a memo or outside confidential balances.
@@ -191,6 +202,7 @@ fn refuses_non_confidential_credits(state: &StateWithExtensions<'_, TokenAccount
 mod tests {
     use {
         super::*,
+        solana_sdk::{program_pack::Pack, rent::Rent},
         solana_testlib::{classic_mint, token_2022_account, token_2022_mint},
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
@@ -343,6 +355,23 @@ mod tests {
                 (fee, Err(UnsettleableMint::TransferFee)),
                 (absent, Err(UnsettleableMint::NotAMint)),
             ])
+        );
+    }
+
+    #[test]
+    fn ata_rents_are_the_default_minimums_of_the_account_layouts() {
+        let rent = Rent::default();
+        assert_eq!(
+            ata_rent(TokenProgram::SplToken),
+            rent.minimum_balance(TokenAccount::LEN)
+        );
+        let token_2022_len = ExtensionType::try_calculate_account_len::<TokenAccount>(&[
+            ExtensionType::ImmutableOwner,
+        ])
+        .unwrap();
+        assert_eq!(
+            ata_rent(TokenProgram::Token2022),
+            rent.minimum_balance(token_2022_len)
         );
     }
 

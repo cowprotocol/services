@@ -321,6 +321,9 @@ async fn quote_answers_in_the_evm_shape() {
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
+                // Without sponsoring the buy token account is not read, so it
+                // counts as a missing Token-2022 one.
+                "executionCostLamports": "2074080",
                 "kind": "sell",
                 "partiallyFillable": false,
             },
@@ -384,6 +387,65 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["funder"], serde_json::json!(funder.to_string()));
+}
+
+/// A sponsoring deployment prices the rent of a missing buy token account by
+/// the buy mint's token program, read with the mints. The lookups answer the
+/// mints, then the owner and its associated token account.
+#[tokio::test]
+async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    for (buy_program, cost) in [
+        (spl_token_interface::ID, "2039280"),
+        (spl_token_2022_interface::ID, "2074080"),
+    ] {
+        let mints = accounts_response(&[
+            Some(mint_account(spl_token_interface::ID)),
+            Some(mint_account(buy_program)),
+        ]);
+        let mocks = MocksMap::from_iter([
+            (RpcRequest::GetMultipleAccounts, mints),
+            (
+                RpcRequest::GetMultipleAccounts,
+                accounts_response(&[None, None]),
+            ),
+        ]);
+        let api = Api {
+            quoter: Quoter::new(
+                vec![format!("http://{driver}/").parse().unwrap()],
+                Duration::from_secs(1),
+            ),
+            sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+                funder: solana_sdk::pubkey::Pubkey::new_unique(),
+                settlement_program: cow_settlement_interface::id(),
+                rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
+                max_priority_fee_lamports: 100_000,
+                mints: Default::default(),
+            }),
+            ..mock_api()
+        };
+        let (listener, addr) = api.bind().await.unwrap();
+        let shutdown = CancellationToken::new();
+        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/quote"))
+            .json(&quote_body(serde_json::json!({"validFor": 1800})))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(
+            json["quote"]["executionCostLamports"], cost,
+            "{buy_program}"
+        );
+    }
 }
 
 /// With several drivers configured, the best answer wins: the largest buy

@@ -524,7 +524,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         receiver:
-          description: The buy token account proceeds land in. Echoed back untouched.
+          description: >-
+            Where the proceeds land instead of `from`: a buy token account, or a
+            wallet, paid into its associated token account for the buy mint or,
+            for native SOL, directly. Echoed back untouched.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         kind:
@@ -593,6 +596,7 @@ components:
         - buyAmount
         - validTo
         - feeAmount
+        - executionCostLamports
         - kind
         - partiallyFillable
       properties:
@@ -619,6 +623,15 @@ components:
           description: Always zero. No component charges a fee.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        executionCostLamports:
+          description: >-
+            The rent, in lamports, of the buy token account when it is
+            missing, zero when it exists. The network fee is not included.
+            Zero for anonymous quotes and native SOL buys. Without sponsoring,
+            or when the account cannot be read, the rent of a missing
+            Token-2022 account.
+          type: string
+          example: "2039280"
         kind:
           $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
