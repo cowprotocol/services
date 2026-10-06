@@ -175,6 +175,7 @@ async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubk
         signer: cow_solana_signer::Config::Keypair(keypair_path),
         solve_every_nth_auction: None,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
+        max_native_shortfall_bps: None,
     })
     .await
     .expect("solver construction should succeed");
@@ -196,6 +197,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         signer: cow_solana_signer::Config::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
         solver_fee_bps: None,
+        max_native_shortfall_bps: None,
     })
     .await
     .expect("solver construction should succeed")
