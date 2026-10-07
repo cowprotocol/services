@@ -447,12 +447,13 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
 }
 
 /// Drop orders whose sell token account cannot fund a fill: their settlement
-/// would revert at `BeginSettle`. A fill-or-kill order needs what is left to
-/// sell; a partially fillable one needs any balance, which the driver scales
-/// its remainder down to, as on EVM. The kept orders carry the balance for
-/// that. A pending sponsored order skips the check, its creation transaction
-/// can wrap and approve the sell funds. Returns the kept orders and the uids
-/// of the dropped ones.
+/// would revert at `BeginSettle`. A fill-or-kill order needs its whole sell
+/// amount. A partially fillable one is scaled down to its balance, as on EVM,
+/// and needs a balance that leaves both legs above zero: the driver drops an
+/// order scaled to a zero leg, so sending it would only repeat every cut.
+/// The kept orders carry the balance for the driver. A pending sponsored
+/// order skips the check, its creation transaction can wrap and approve the
+/// sell funds. Returns the kept orders and the uids of the dropped ones.
 fn funded_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
@@ -467,16 +468,16 @@ fn funded_orders(
             let balance = accounts
                 .get(&Pubkey::new_from_array(order.sell_token_account.0))
                 .map_or(0, |account| funded_sell_balance(account, &order));
-            let needed = if order.partially_fillable {
-                1
+            order.sell_balance = Some(balance);
+            let funded = if order.partially_fillable {
+                !order.available().has_zero_leg()
             } else {
-                order.remaining().sell
+                balance >= order.sell_amount
             };
-            if balance < needed {
+            if !funded {
                 unfunded.push(order.uid);
                 return None;
             }
-            order.sell_balance = Some(balance);
             Some(order)
         })
         .collect();
@@ -822,10 +823,11 @@ mod tests {
     /// A created fill-or-kill order needs its full sell amount both held and
     /// approved in an initialized account of its sell mint, under either
     /// token program; a partially filled one needs only its remainder. A
-    /// partially fillable order needs any balance and carries it to the
-    /// driver. The orders share one receivable buy token account, answered
-    /// first, and the sell and buy mints come last. The pending sponsored
-    /// order is exempt from the check.
+    /// partially fillable order needs a balance its legs scale to without
+    /// hitting zero and carries it to the driver: a buy of 10 for 1000 needs
+    /// 100, the price of one buy atom. The orders share one receivable buy
+    /// token account, answered first, and the sell and buy mints come last.
+    /// The pending sponsored order is exempt from the check.
     #[tokio::test]
     async fn drops_created_orders_their_sell_account_cannot_fund() {
         let sell =
@@ -846,6 +848,8 @@ mod tests {
                 sell(999, Some(999)),
                 token_2022,
                 sell(600, Some(600)),
+                sell(99, Some(99)),
+                sell(100, Some(100)),
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
             ],
@@ -875,6 +879,16 @@ mod tests {
                 executed: 400,
                 ..partial(0x5a)
             },
+            Order {
+                kind: OrderKind::Buy,
+                buy_amount: 10,
+                ..partial(0x5b)
+            },
+            Order {
+                kind: OrderKind::Buy,
+                buy_amount: 10,
+                ..partial(0x5c)
+            },
         ];
         let (kept, unsettleable, unreceivable, unfunded) = provider.checked_orders(orders).await;
         let kept: Vec<(IntentHash, Option<u64>)> = kept
@@ -889,6 +903,7 @@ mod tests {
                 (IntentHash([0x58; 32]), None),
                 (IntentHash([0x59; 32]), Some(1_000)),
                 (IntentHash([0x5a; 32]), Some(600)),
+                (IntentHash([0x5c; 32]), Some(100)),
             ]
         );
         assert!(unsettleable.is_empty());
@@ -896,6 +911,7 @@ mod tests {
         assert_eq!(
             unfunded,
             (0x51..=0x56)
+                .chain([0x5b])
                 .map(|byte| IntentHash([byte; 32]))
                 .collect::<Vec<_>>()
         );

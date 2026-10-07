@@ -58,24 +58,57 @@ impl Order {
     }
 
     /// The amounts still open to fill: the order-side target less `executed`,
-    /// the other leg scaled in proportion. Rounds like the driver's
-    /// `Order::remaining`, the sell leg down and the buy leg up, so the cut
-    /// judges an order by the legs the driver sends to solvers.
+    /// the other leg scaled in proportion.
     ///
     /// TODO: duplicate of the driver's `Order::remaining`; unify the two.
     pub fn remaining(&self) -> Remaining {
-        let (target, other) = match self.kind {
+        let (target, _) = self.legs();
+        self.scaled(target.saturating_sub(self.executed))
+    }
+
+    /// What a solver may fill: `remaining` scaled down to `sell_balance` for
+    /// a partially fillable order. A fill-or-kill order keeps its remainder.
+    /// The cut judges an order by the legs the driver sends to solvers.
+    ///
+    /// TODO: duplicate of the driver's `Order::available`; unify the two.
+    pub fn available(&self) -> Remaining {
+        let remaining = self.remaining();
+        let Some(balance) = self.sell_balance else {
+            return remaining;
+        };
+        if !self.partially_fillable || balance >= remaining.sell {
+            return remaining;
+        }
+        let open = match self.kind {
+            OrderKind::Sell => balance,
+            // The largest buy whose sell leg, rounded down, fits the balance.
+            // `balance < sell_amount`, so the quotient fits u64.
+            OrderKind::Buy => fits(
+                u128::from(self.buy_amount) * u128::from(balance) / u128::from(self.sell_amount),
+            ),
+        };
+        self.scaled(open)
+    }
+
+    /// The signed order-side target and the other leg.
+    fn legs(&self) -> (u64, u64) {
+        match self.kind {
             OrderKind::Sell => (self.sell_amount, self.buy_amount),
             OrderKind::Buy => (self.buy_amount, self.sell_amount),
-        };
-        let open = target.saturating_sub(self.executed);
+        }
+    }
+
+    /// The legs for `open` of the order-side target, the other leg scaled in
+    /// proportion. Rounds like the driver, the sell leg down and the buy leg
+    /// up, so the scaled limit is never looser than the signed one.
+    fn scaled(&self, open: u64) -> Remaining {
         if open == 0 {
             return Remaining { sell: 0, buy: 0 };
         }
+        let (target, other) = self.legs();
         let scaled = u128::from(other) * u128::from(open);
         let target = u128::from(target);
         // `open <= target`, so the quotient never exceeds `other`.
-        let fits = |leg: u128| u64::try_from(leg).expect("a scaled leg fits u64");
         match self.kind {
             OrderKind::Sell => Remaining {
                 sell: open,
@@ -87,6 +120,11 @@ impl Order {
             },
         }
     }
+}
+
+/// Narrows a leg scaled from, and bounded by, `u64` amounts.
+fn fits(leg: u128) -> u64 {
+    u64::try_from(leg).expect("a scaled leg fits u64")
 }
 
 /// What is left of an order to fill, see [`Order::remaining`].
@@ -196,6 +234,66 @@ mod tests {
                 buy: 600
             }
         );
+    }
+
+    /// The sell balance caps a partially fillable order like in the driver:
+    /// 400 of 1000 sold leaves 600, a balance of 300 halves both legs; 400
+    /// of 1000 bought leaves 600 for 600, a balance of 333 buys 333. A buy
+    /// order whose balance is under the price of one buy atom scales to
+    /// nothing: 10 to buy for 1000, 99 buys 0 and 100 buys 1. A
+    /// fill-or-kill order keeps its remainder.
+    #[test]
+    fn available_scales_the_remainder_down_to_the_sell_balance() {
+        let sell = Order {
+            partially_fillable: true,
+            executed: 400,
+            sell_balance: Some(300),
+            ..order(1_000)
+        };
+        assert_eq!(
+            sell.remaining(),
+            Remaining {
+                sell: 600,
+                buy: 600
+            }
+        );
+        assert_eq!(
+            sell.available(),
+            Remaining {
+                sell: 300,
+                buy: 300
+            }
+        );
+        assert_eq!(
+            Order {
+                partially_fillable: false,
+                ..sell.clone()
+            }
+            .available(),
+            sell.remaining()
+        );
+        let buy = Order {
+            kind: OrderKind::Buy,
+            sell_balance: Some(333),
+            ..sell
+        };
+        assert_eq!(
+            buy.available(),
+            Remaining {
+                sell: 333,
+                buy: 333
+            }
+        );
+
+        let dust = |balance| Order {
+            kind: OrderKind::Buy,
+            buy_amount: 10,
+            partially_fillable: true,
+            sell_balance: Some(balance),
+            ..order(1_000)
+        };
+        assert!(dust(99).available().has_zero_leg());
+        assert_eq!(dust(100).available(), Remaining { sell: 100, buy: 1 });
     }
 
     #[test]
