@@ -349,6 +349,9 @@ impl ResolvedSettlement {
                 // move mints of both.
                 only_token_program: None,
                 orders: &initialized_intents,
+                // The mint rule refuses hook programs, so no transfer needs
+                // extra accounts.
+                extra_transfer_accounts: &[],
             }
             .into(),
         );
@@ -360,6 +363,7 @@ impl ResolvedSettlement {
                 begin_ix_index,
                 only_token_program: None,
                 orders: &finalized_intents,
+                extra_transfer_accounts: &[],
             }
             .into(),
         );
