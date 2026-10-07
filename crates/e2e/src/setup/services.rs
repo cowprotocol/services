@@ -435,6 +435,11 @@ impl<'a> Services<'a> {
     }
 
     async fn wait_until_autopilot_ready(&self) {
+        // Autopilot cuts (and archives) its first auction a few milliseconds
+        // after seeing a new block. Poll on a tight 5 ms interval so we don't
+        // sit idle through the default 50 ms cadence between the moment a
+        // minted block triggers the run-loop and the moment the auction row
+        // lands in the database.
         let is_up = || async {
             let mut db = self.db.acquire().await.unwrap();
             const QUERY: &str = "SELECT COUNT(*) FROM auctions";
@@ -445,7 +450,7 @@ impl<'a> Services<'a> {
             self.mint_block().await;
             count > 0
         };
-        wait_for_condition(TIMEOUT, is_up)
+        crate::setup::wait_for_condition_with_interval(TIMEOUT, Duration::from_millis(5), is_up)
             .await
             .expect("waiting for autopilot timed out");
     }

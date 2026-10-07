@@ -44,6 +44,20 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 /// is reached Err is returned.
 pub async fn wait_for_condition<Fut>(
     timeout: Duration,
+    condition: impl FnMut() -> Fut,
+) -> Result<()>
+where
+    Fut: Future<Output: AwaitableCondition>,
+{
+    wait_for_condition_with_interval(timeout, Duration::from_millis(50), condition).await
+}
+
+/// Like [`wait_for_condition`] but allows the caller to pick the sleep interval
+/// between polls. Useful when the expected ready time is well below the default
+/// 50 ms cadence and polling faster materially lowers the tail wait.
+pub async fn wait_for_condition_with_interval<Fut>(
+    timeout: Duration,
+    interval: Duration,
     mut condition: impl FnMut() -> Fut,
 ) -> Result<()>
 where
@@ -51,7 +65,7 @@ where
 {
     let start = std::time::Instant::now();
     while !condition().await.was_successful() {
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(interval).await;
         if start.elapsed() > timeout {
             return Err(anyhow!("timeout"));
         }
