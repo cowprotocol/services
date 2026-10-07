@@ -7,21 +7,8 @@
 mod accounts;
 mod token;
 
-pub use {
-    accounts::{
-        AccountsSnapshot,
-        InvalidAddressLookupTableReason,
-        InvalidMintReason,
-        TokenAccountState,
-    },
-    token::{
-        associated_token_address,
-        close_token_account,
-        create_associated_token_account_idempotent,
-        require_token_balance,
-    },
-};
 use {
+    crate::domain::Slot,
     cow_settlement_interface::token_program::TokenProgram,
     cow_solana_rpc::{
         Error,
@@ -36,13 +23,27 @@ use {
     solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
     std::collections::HashMap,
 };
+pub use {
+    accounts::{
+        AccountsSnapshot,
+        InvalidAddressLookupTableReason,
+        InvalidMintReason,
+        TokenAccountState,
+    },
+    token::{
+        associated_token_address,
+        close_token_account,
+        create_associated_token_account_idempotent,
+        require_token_balance,
+    },
+};
 
 /// How many mints the token program cache holds.
 const TOKEN_PROGRAM_CACHE_CAPACITY: u64 = 10_000;
 
 /// A simulated transaction's outcome and the slot it ran against.
 pub struct TransactionSimulation {
-    pub slot: crate::domain::Slot,
+    pub slot: Slot,
     pub err: Option<UiTransactionError>,
     pub logs: Option<Vec<String>>,
 }
@@ -50,7 +51,7 @@ pub struct TransactionSimulation {
 /// A simulated bundle's per-transaction results, in order and ending at the
 /// first failure, and the slot it ran against.
 pub struct BundleSimulation {
-    pub slot: crate::domain::Slot,
+    pub slot: Slot,
     pub results: Vec<RpcSimulateBundleTransactionResult>,
 }
 
@@ -109,7 +110,7 @@ impl Solana {
     ) -> Result<TransactionSimulation, Error> {
         let response = self.rpc.simulate_transaction(transaction).await?;
         Ok(TransactionSimulation {
-            slot: crate::domain::Slot(response.context.slot),
+            slot: Slot(response.context.slot),
             err: response.value.err,
             logs: response.value.logs,
         })
@@ -122,7 +123,7 @@ impl Solana {
     ) -> Result<BundleSimulation, Error> {
         let response = self.bundle_rpc.simulate_bundle(transactions).await?;
         Ok(BundleSimulation {
-            slot: crate::domain::Slot(response.context.slot),
+            slot: Slot(response.context.slot),
             results: response.value,
         })
     }
