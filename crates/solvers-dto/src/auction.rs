@@ -25,6 +25,9 @@ pub struct Auction {
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote_id: Option<i64>,
+    /// `true` when this is a fast-path quote request; absent otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast_path: bool,
     pub tokens: HashMap<Address, Token>,
     pub orders: Vec<Order>,
     pub liquidity: Vec<Liquidity>,

@@ -217,7 +217,10 @@ impl Order {
         let sell_token_metadata = tokens.get(&self.sell().token);
 
         competition::Auction::new(
-            auction::Kind::Quote(self.quote_id),
+            auction::Kind::Quote {
+                id: self.quote_id,
+                fast_path: self.enable_fast_path,
+            },
             vec![competition::Order {
                 data: std::sync::Arc::new(competition::order::OrderData {
                     uid: Default::default(),
