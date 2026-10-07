@@ -6,7 +6,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
-    std::time::Duration,
+    std::time::{Duration, Instant},
     url::Url,
 };
 
@@ -41,13 +41,69 @@ pub enum Kind {
     Buy,
 }
 
-/// What a driver quoted.
-#[derive(Debug)]
-pub struct Quote {
-    pub sell_amount: u64,
-    pub buy_amount: u64,
-    /// The solver that produced the quote.
+/// What the competition was asked for. Mirrors the EVM `QuoteRequest` so both
+/// chains describe a quote request the same way.
+#[serde_as]
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuoteRequest {
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_token: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_token: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub amount: u64,
+    pub kind: Kind,
+}
+
+/// What one driver quoted. Mirrors the EVM `QuoteResponse`; `driver` is the
+/// Solana analogue of the EVM's `estimator`, naming who produced the quote.
+#[serde_as]
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuoteResponse {
+    pub driver: String,
+    #[serde_as(as = "DisplayFromStr")]
     pub solver: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_amount: u64,
+    pub elapsed_ms: u64,
+}
+
+/// Every driver that answered, best first. Mirrors the EVM `QuoteCompetition`:
+/// the losing quotes are kept rather than discarded, so the competition that
+/// produced a quote stays visible after the fact.
+///
+/// Guaranteed non-empty by construction.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Competition {
+    pub request: QuoteRequest,
+    quotes: Vec<QuoteResponse>,
+}
+
+/// Order the quotes best first: the largest buy for a sell order, the
+/// smallest sell for a buy order.
+fn rank(quotes: &mut [QuoteResponse], kind: Kind) {
+    match kind {
+        Kind::Sell => quotes.sort_by_key(|quote| std::cmp::Reverse(quote.buy_amount)),
+        Kind::Buy => quotes.sort_by_key(|quote| quote.sell_amount),
+    }
+}
+
+impl Competition {
+    /// The winning quote: the largest buy for a sell order, the smallest sell
+    /// for a buy order.
+    pub fn winner(&self) -> &QuoteResponse {
+        self.quotes.first().expect("non-empty by construction")
+    }
+
+    /// All quotes, best first. Guaranteed non-empty.
+    pub fn quotes(&self) -> &[QuoteResponse] {
+        &self.quotes
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -91,27 +147,45 @@ impl Quoter {
         }
     }
 
-    /// Quote `order` on every driver concurrently and return the best answer:
-    /// the largest buy for a sell order, the smallest sell for a buy order.
-    pub async fn quote(&self, order: &Order) -> Result<Quote, Error> {
+    /// Quote `order` on every driver concurrently and return the whole
+    /// competition, ranked best first: the largest buy for a sell order, the
+    /// smallest sell for a buy order.
+    ///
+    /// The competition is logged as one JSON object under the same message
+    /// the EVM orderbook uses, so a single parser serves both chains.
+    pub async fn quote(&self, order: &Order) -> Result<Competition, Error> {
         let quotes = join_all(
             self.endpoints
                 .iter()
                 .map(|endpoint| self.quote_one(endpoint, order)),
         )
         .await;
-        let quotes = quotes.into_iter().flatten();
-        match order.kind {
-            Kind::Sell => quotes.max_by_key(|quote| quote.buy_amount),
-            Kind::Buy => quotes.min_by_key(|quote| quote.sell_amount),
+        // Rank rather than pick, so the drivers that lost stay on the record.
+        let mut quotes: Vec<_> = quotes.into_iter().flatten().collect();
+        rank(&mut quotes, order.kind);
+        if quotes.is_empty() {
+            return Err(Error::NoQuotes);
         }
-        .ok_or(Error::NoQuotes)
+        let competition = Competition {
+            request: QuoteRequest {
+                sell_token: order.sell_token,
+                buy_token: order.buy_token,
+                amount: order.amount,
+                kind: order.kind,
+            },
+            quotes,
+        };
+        match serde_json::to_string(&competition) {
+            Ok(json) => tracing::debug!(competition = %json, "computed quote"),
+            Err(err) => tracing::warn!(?err, "failed to serialize quote competition"),
+        }
+        Ok(competition)
     }
 
     /// Quote `order` on one driver. Failures are logged and swallowed: a
     /// driver rejecting the quote found no route, which is a routine outcome,
     /// while anything else is that driver misbehaving.
-    async fn quote_one(&self, endpoint: &Url, order: &Order) -> Option<Quote> {
+    async fn quote_one(&self, endpoint: &Url, order: &Order) -> Option<QuoteResponse> {
         let url = endpoint.join("quote").expect("valid /quote path");
         let body = RequestBody {
             sell_token: order.sell_token,
@@ -120,6 +194,7 @@ impl Quoter {
             kind: order.kind,
             deadline: chrono::Utc::now() + self.timeout.saturating_sub(RESPONSE_RESERVE),
         };
+        let start = Instant::now();
         let response = self
             .client
             .post(url)
@@ -144,10 +219,96 @@ impl Quoter {
             .await
             .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote response malformed"))
             .ok()?;
-        Some(Quote {
+        Some(QuoteResponse {
+            driver: endpoint.to_string(),
+            solver: quoted.solver,
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
-            solver: quoted.solver,
+            elapsed_ms: start.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn response(driver: &str, sell_amount: u64, buy_amount: u64) -> QuoteResponse {
+        QuoteResponse {
+            driver: driver.to_owned(),
+            solver: Pubkey::new_from_array([7; 32]),
+            sell_amount,
+            buy_amount,
+            elapsed_ms: 1,
+        }
+    }
+
+    fn competition(kind: Kind, mut quotes: Vec<QuoteResponse>) -> Competition {
+        rank(&mut quotes, kind);
+        Competition {
+            request: QuoteRequest {
+                sell_token: Pubkey::new_from_array([1; 32]),
+                buy_token: Pubkey::new_from_array([2; 32]),
+                amount: 100,
+                kind,
+            },
+            quotes,
+        }
+    }
+
+    /// A sell order wants the most buy; a buy order the least sell. Either
+    /// way every driver that answered stays on the record, so the losers can
+    /// be seen after the fact.
+    #[test]
+    fn the_competition_ranks_best_first_and_keeps_the_losers() {
+        let sell = competition(
+            Kind::Sell,
+            vec![
+                response("mid", 100, 200),
+                response("best", 100, 300),
+                response("worst", 100, 100),
+            ],
+        );
+        assert_eq!(sell.winner().driver, "best");
+        assert_eq!(
+            sell.quotes().iter().map(|q| &*q.driver).collect::<Vec<_>>(),
+            ["best", "mid", "worst"]
+        );
+
+        let buy = competition(
+            Kind::Buy,
+            vec![
+                response("mid", 200, 100),
+                response("best", 100, 100),
+                response("worst", 300, 100),
+            ],
+        );
+        assert_eq!(buy.winner().driver, "best");
+        assert_eq!(
+            buy.quotes().iter().map(|q| &*q.driver).collect::<Vec<_>>(),
+            ["best", "mid", "worst"]
+        );
+    }
+
+    /// The competition is logged as JSON so one parser serves both chains.
+    /// Pubkeys are base58 and amounts are strings, matching the API's own
+    /// encoding rather than Rust's `Debug`.
+    #[test]
+    fn the_competition_serializes_for_the_log_line() {
+        let json =
+            serde_json::to_value(competition(Kind::Sell, vec![response("driver", 100, 300)]))
+                .unwrap();
+        assert_eq!(json["request"]["kind"], "sell");
+        assert_eq!(json["request"]["amount"], "100");
+        assert_eq!(
+            json["request"]["sellToken"],
+            Pubkey::new_from_array([1; 32]).to_string()
+        );
+        assert_eq!(json["quotes"][0]["driver"], "driver");
+        assert_eq!(json["quotes"][0]["buyAmount"], "300");
+        assert_eq!(
+            json["quotes"][0]["solver"],
+            Pubkey::new_from_array([7; 32]).to_string()
+        );
     }
 }

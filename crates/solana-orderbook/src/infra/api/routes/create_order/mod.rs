@@ -250,7 +250,15 @@ async fn place(
         }
         return Err(Failure::internal(err, "sponsored order insert"));
     }
-    Ok((StatusCode::CREATED, Json(const_hex::encode_prefixed(uid.0))))
+    // Same message and field names as the EVM orderbook's `post_order`, so the
+    // order can be tied back to the quote request that produced it.
+    let order_uid = const_hex::encode_prefixed(uid.0);
+    let quote_id = quote.as_ref().map(|quote| quote.quote_id);
+    let quote_solver = quote
+        .as_ref()
+        .map(|quote| Pubkey::new_from_array(quote.solver.0));
+    tracing::debug!(%order_uid, ?quote_id, ?quote_solver, "order created");
+    Ok((StatusCode::CREATED, Json(order_uid)))
 }
 
 /// Check the transaction is exactly the sponsored-creation shape and derive
@@ -474,14 +482,15 @@ async fn link_quote(
     id: i64,
     order: &db::SponsoredOrder,
 ) -> Option<db::OrderQuote> {
+    let order_uid = const_hex::encode_prefixed(order.uid.0);
     let quote = match db::read_quote(pool, id).await {
         Ok(Some(quote)) => quote,
         Ok(None) => {
-            tracing::warn!(id, "quote link dropped, no such quote");
+            tracing::warn!(id, %order_uid, "quote link dropped, no such quote");
             return None;
         }
         Err(err) => {
-            tracing::warn!(id, ?err, "quote link dropped, lookup failed");
+            tracing::warn!(id, %order_uid, ?err, "quote link dropped, lookup failed");
             return None;
         }
     };
@@ -491,13 +500,28 @@ async fn link_quote(
         OrderKind::Sell => quote.sell_amount.to_u64() == Some(order.sell_amount),
         OrderKind::Buy => quote.buy_amount.to_u64() == Some(order.buy_amount),
     };
-    let matches = quote.sell_token == order.sell_token
-        && quote.buy_token == order.buy_token
-        && quote.kind == order.kind
+    // Named individually so the log says which predicate failed: "does not
+    // match" over five conjuncts is not a diagnosis.
+    let sell_token_matches = quote.sell_token == order.sell_token;
+    let buy_token_matches = quote.buy_token == order.buy_token;
+    let kind_matches = quote.kind == order.kind;
+    let unexpired = quote.expiration > chrono::Utc::now();
+    let matches = sell_token_matches
+        && buy_token_matches
+        && kind_matches
         && fixed_amount_matches
-        && quote.expiration > chrono::Utc::now();
+        && unexpired;
     if !matches {
-        tracing::warn!(id, "quote link dropped, the quote does not match the order");
+        tracing::warn!(
+            id,
+            %order_uid,
+            sell_token_matches,
+            buy_token_matches,
+            kind_matches,
+            fixed_amount_matches,
+            unexpired,
+            "quote link dropped, the quote does not match the order"
+        );
         return None;
     }
     Some(db::OrderQuote {

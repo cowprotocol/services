@@ -44,7 +44,7 @@ pub async fn quote(
     }
 
     let (kind, amount) = request.side.kind_and_amount();
-    let quoted = state
+    let competition = state
         .quoter()
         .quote(&quoter::Order {
             sell_token: request.sell_token,
@@ -61,6 +61,9 @@ pub async fn quote(
         .map_err(|quoter::Error::NoQuotes| {
             error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
         })?;
+    // The stored quote is the winner; the rest of the competition stays in the
+    // log line the quoter emitted.
+    let quoted = competition.winner();
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
     let expiration = now + state.quote_expiry();
