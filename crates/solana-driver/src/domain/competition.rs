@@ -8,7 +8,7 @@ use {
         auction::Id,
         buy_token_accounts::BuyTokenAccountCache,
         order_uid::OrderUid,
-        priority_fee::{self, PriorityFeePolicy},
+        priority_fee::{self, MAX_COMPUTE_UNIT_LIMIT, PriorityFeePolicy},
         program_error::ProgramError,
         settlement::ResolveError,
         solution::Solution,
@@ -152,7 +152,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -162,9 +162,10 @@ impl Competition {
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
             match &verdict {
-                Ok(()) => tracing::info!(
+                Ok(units_consumed) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    units_consumed,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -189,6 +190,13 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
+            // The priority fee is paid on the declared limit, not the units
+            // consumed, and an undeclared one is priced at the 1.4M ceiling.
+            if let Ok(Some(units)) = verdict {
+                solution
+                    .cu_estimate
+                    .get_or_insert(self.priority_fee.compute_unit_limit_factor.limit(units));
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -209,20 +217,29 @@ impl Competition {
     /// creations of its orders not created on chain yet. Any failure would
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
-    /// driver could not find out.
+    /// driver could not find out. A pass returns the compute units the
+    /// settlement consumed, when the node reports them.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<u64>, Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
-        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
+        // Without a solver limit, the settlement declares one derived from the
+        // units consumed here. Declaring the ceiling measures them without the
+        // runtime's lower default failing the settlement, and makes the size
+        // check count the limit instruction, whose size is fixed.
+        let simulated = Solution {
+            cu_estimate: solution.cu_estimate.or(Some(MAX_COMPUTE_UNIT_LIMIT)),
+            ..solution.clone()
+        };
+        let settlement = super::Settlement::new(program_id, auction_id, orders, simulated)?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?;
@@ -283,7 +300,7 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(())
+        Ok(results.last().and_then(|result| result.units_consumed))
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -816,8 +833,8 @@ struct Metrics {
     /// loaded. The runtime caps a transaction at 64.
     #[metric(buckets(16., 24., 32., 40., 48., 56., 64., 80.))]
     transaction_accounts: prometheus::Histogram,
-    /// Solver-estimated compute-unit limit for the settlement. The maximum is
-    /// 1.4M per transaction.
+    /// The settlement's declared compute-unit limit. The maximum is 1.4M per
+    /// transaction.
     #[metric(buckets(
         100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
     ))]

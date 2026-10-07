@@ -66,7 +66,7 @@ pub struct Settlement {
 /// [`Settlement::resolve_accounts`]: lookup tables and the setup accounts
 /// the settlement transaction requires.
 ///
-/// The transaction sets its compute budget (the solver's optional unit limit
+/// The transaction sets its compute budget (the solution's optional unit limit
 /// and the driver's unit price) and creates the missing setup accounts
 /// (buy-mint buffer PDAs, the payer's sell-mint ATAs and its wSOL ATA for
 /// native SOL buys, the orders' buy-mint ATAs), then runs `BeginSettle` (pulls
@@ -294,7 +294,7 @@ impl ResolvedSettlement {
         // Start populating the instruction list.
         let mut instructions = Vec::new();
 
-        // Without a solver estimate the runtime's default limit applies.
+        // Without an estimate the runtime's default limit applies.
         if let Some(cu_limit) = self.settlement.solution.cu_estimate {
             instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(cu_limit));
         }

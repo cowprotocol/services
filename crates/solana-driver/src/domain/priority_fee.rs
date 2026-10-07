@@ -17,7 +17,7 @@ use {
 /// transaction that declares no limit. The runtime's own default for such a
 /// transaction is lower (200k units per non-builtin instruction and 3k per
 /// builtin, up to this ceiling), so this is the conservative pick.
-const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
@@ -38,6 +38,12 @@ pub struct PriorityFeePolicy {
     /// The most a transaction pays in priority fee, in lamports. A transaction
     /// over it is refused.
     pub max_priority_fee_lamports: u64,
+    /// The compute unit limit a settlement declares when its solver sent
+    /// none, as a multiple of the units its simulation consumed, at least 1.
+    /// Unlike EVM gas, the priority fee is paid on the whole limit, so the
+    /// headroom costs; a limit that drifted too low fails the settle-time
+    /// simulation before anything is sent.
+    pub compute_unit_limit_factor: ComputeUnitLimitFactor,
 }
 
 impl Default for PriorityFeePolicy {
@@ -47,7 +53,46 @@ impl Default for PriorityFeePolicy {
             recent_slots: 50,
             min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
+            compute_unit_limit_factor: ComputeUnitLimitFactor(11_000),
         }
+    }
+}
+
+const BPS: u64 = 10_000;
+
+/// A multiple of a transaction's simulated compute units, at least 1, held in
+/// basis points so the limit is exact: in floating point, 85_000 × 1.1 rounds
+/// up to 93_501.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "f64")]
+pub struct ComputeUnitLimitFactor(u64);
+
+#[derive(Debug, thiserror::Error)]
+#[error("compute-unit-limit-factor must be a finite number of at least 1, got {0}")]
+pub struct InvalidComputeUnitLimitFactor(f64);
+
+impl TryFrom<f64> for ComputeUnitLimitFactor {
+    type Error = InvalidComputeUnitLimitFactor;
+
+    fn try_from(factor: f64) -> Result<Self, Self::Error> {
+        // Under 1 the limit is below the units the transaction consumes, so it
+        // always fails.
+        if factor >= 1.0 && factor.is_finite() {
+            Ok(Self((factor * BPS as f64).round() as u64))
+        } else {
+            Err(InvalidComputeUnitLimitFactor(factor))
+        }
+    }
+}
+
+impl ComputeUnitLimitFactor {
+    /// The limit for a transaction that consumed `units` in simulation,
+    /// rounded up and capped at the runtime's ceiling.
+    pub(crate) fn limit(self, units: u64) -> u32 {
+        let limit = units.saturating_mul(self.0).div_ceil(BPS);
+        u32::try_from(limit)
+            .unwrap_or(u32::MAX)
+            .min(MAX_COMPUTE_UNIT_LIMIT)
     }
 }
 
@@ -137,7 +182,30 @@ mod tests {
             recent_slots: MAX_RECENT_SLOTS,
             min_compute_unit_price: 0,
             max_priority_fee_lamports: u64::MAX,
+            ..PriorityFeePolicy::default()
         }
+    }
+
+    #[test]
+    fn compute_unit_limit_factor_is_parsed_and_at_least_one() {
+        let parse = |toml: &str| toml::de::from_str::<PriorityFeePolicy>(toml);
+        let factor = |toml: &str| parse(toml).unwrap().compute_unit_limit_factor;
+
+        assert_eq!(
+            factor("compute-unit-limit-factor = 1.1").limit(85_000),
+            93_500
+        );
+        assert_eq!(
+            factor("compute-unit-limit-factor = 1").limit(85_000),
+            85_000
+        );
+        assert_eq!(
+            factor("compute-unit-limit-factor = 1.1").limit(2_000_000),
+            MAX_COMPUTE_UNIT_LIMIT
+        );
+        assert!(parse("compute-unit-limit-factor = 0.9").is_err());
+        assert!(parse("compute-unit-limit-factor = nan").is_err());
+        assert!(parse("compute-unit-limit-factor = inf").is_err());
     }
 
     /// Only the most recent slots count, whatever order the node lists them

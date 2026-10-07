@@ -24,7 +24,7 @@ use {
             solver::Solver,
         },
     },
-    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
     solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
     spl_token_interface::native_mint,
     std::{
@@ -107,6 +107,7 @@ fn priority_fee() -> PriorityFeePolicy {
         recent_slots: 150,
         min_compute_unit_price: 0,
         max_priority_fee_lamports: u64::MAX,
+        ..PriorityFeePolicy::default()
     }
 }
 
@@ -612,6 +613,62 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "PriorityFeeTooHigh");
+}
+
+/// The engine sends no compute unit estimate and the solve-time simulation
+/// consumed 85_000 units, so the settlement declares the default 1.1x that:
+/// 93_500 units at the RPC's 10_000 micro-lamport fee is 935 lamports, over a
+/// 934 lamport budget. Within a 935 one the settlement reaches the send, which
+/// the mock RPC fails by answering with another signature.
+#[tokio::test]
+async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
+    for (budget, kind) in [(934, "PriorityFeeTooHigh"), (935, "FailedToSubmit")] {
+        let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+        let (solver, _) = solver_with_keypair(engine).await;
+        let mut mocks = Mocks::new();
+        mocks.insert(
+            RpcRequest::GetRecentPrioritizationFees,
+            serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+        );
+        mocks.insert(
+            SIMULATE_BUNDLE,
+            serde_json::json!({
+                "context": { "slot": 1 },
+                "value": { "transactionResults": [
+                    { "err": null, "logs": [], "unitsConsumed": 85_000 },
+                ] },
+            }),
+        );
+        mocks.insert(
+            RpcRequest::SendTransaction,
+            serde_json::json!(Signature::default().to_string()),
+        );
+        let api = Api {
+            priority_fee: PriorityFeePolicy {
+                max_priority_fee_lamports: budget,
+                ..priority_fee()
+            },
+            ..api_with(vec![solver], mocks).await
+        };
+        let (listener, addr) = api.bind().await.unwrap();
+        let shutdown = CancellationToken::new();
+        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+        let body = call_solve(addr).await;
+        let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/mock/settle"))
+            .json(&serde_json::json!({
+                "auctionId": 7,
+                "solutionId": solution_id,
+                "submissionDeadlineSlot": 1_000_000,
+            }))
+            .send()
+            .await
+            .unwrap();
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(json["kind"], kind, "budget {budget}");
+    }
 }
 
 #[tokio::test]
