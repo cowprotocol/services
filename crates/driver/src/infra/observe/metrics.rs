@@ -28,8 +28,6 @@ pub struct Metrics {
     /// How many orders detected by specific solver and strategy.
     #[metric(labels("solver"))]
     pub bad_orders_detected: prometheus::IntCounterVec,
-    /// How many tokens detected by specific solver and strategy.
-    pub bad_tokens_detected: prometheus::IntCounter,
     /// Time spent in the auction preprocessing stage.
     #[metric(
         labels("stage"),

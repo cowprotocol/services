@@ -636,7 +636,6 @@ mod tests {
             response_size_limit_max_bytes: 1024,
             bad_order_detection: BadOrderDetection {
                 tokens_supported: Default::default(),
-                enable_simulation_strategy: false,
                 enable_metrics_strategy: false,
                 metrics_strategy_failure_ratio: 0.9,
                 metrics_strategy_required_measurements: 20,
@@ -728,7 +727,6 @@ impl Error {
 pub struct BadOrderDetection {
     /// Tokens that are explicitly allow- or deny-listed.
     pub tokens_supported: HashMap<eth::TokenAddress, risk_detector::Quality>,
-    pub enable_simulation_strategy: bool,
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
     pub metrics_strategy_required_measurements: u32,

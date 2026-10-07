@@ -4,6 +4,7 @@
 use {
     cow_settlement_interface::SettlementError,
     solana_sdk::pubkey::Pubkey,
+    spl_token_2022_interface::error::TokenError as Token2022Error,
     spl_token_interface::error::TokenError,
 };
 
@@ -69,6 +70,10 @@ impl ProgramError {
                 .map(|err| format!("{err:?}"))
         } else if program == spl_token_interface::ID {
             TokenError::try_from(code)
+                .ok()
+                .map(|err| format!("{err:?}"))
+        } else if program == spl_token_2022_interface::ID {
+            Token2022Error::try_from(code)
                 .ok()
                 .map(|err| format!("{err:?}"))
         } else if program == JUPITER {
@@ -158,6 +163,32 @@ mod tests {
         assert_eq!(
             ProgramError::from_logs(SETTLEMENT, &token_cpi),
             error(spl_token_interface::ID, 1, Some("InsufficientFunds"))
+        );
+
+        // The same failure under Token-2022, which shares the classic codes.
+        let token_2022_cpi = logs(&[
+            "Program C7PXyLpLQBh3Ce7e9DNj3rDVUvwqa5orDwQG5hs1rfNi invoke [1]",
+            "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [2]",
+            "Program log: Instruction: TransferChecked",
+            "Program log: Error: insufficient funds",
+            "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb failed: custom program error: 0x1",
+            "Program C7PXyLpLQBh3Ce7e9DNj3rDVUvwqa5orDwQG5hs1rfNi failed: custom program error: \
+             0x1",
+        ]);
+        assert_eq!(
+            ProgramError::from_logs(SETTLEMENT, &token_2022_cpi),
+            error(spl_token_2022_interface::ID, 1, Some("InsufficientFunds"))
+        );
+
+        // A code only Token-2022 defines.
+        let extension = logs(&[
+            "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb invoke [1]",
+            "Program TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb failed: custom program error: \
+             0x25",
+        ]);
+        assert_eq!(
+            ProgramError::from_logs(SETTLEMENT, &extension),
+            error(spl_token_2022_interface::ID, 37, Some("NonTransferable"))
         );
 
         let own = logs(&[
