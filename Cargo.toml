@@ -178,20 +178,6 @@ winner-selection = { path = "crates/winner-selection" }
 yellowstone-grpc-client = "13.4.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
-# Replace selected transitive dependencies with empty stubs to prune
-# resolver-only entries from Cargo.lock that otherwise surface in
-# `cargo audit`. The stubs are never compiled because the real crates
-# are only reachable through disabled optional features.
-#
-# - sqlx-mysql: the sqlx `mysql` feature is not enabled anywhere, but
-#   cargo still resolves the backend and drags in the vulnerable `rsa`
-#   crate (RUSTSEC-2023-0071).
-# - derivative: only reached through unused ark-ff 0.3/0.4 features of
-#   `ruint`; the upstream is unmaintained (RUSTSEC-2024-0388).
-[patch.crates-io]
-sqlx-mysql = { path = "stubs/sqlx-mysql" }
-derivative = { path = "stubs/derivative" }
-
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
 

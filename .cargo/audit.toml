@@ -1,4 +1,22 @@
 # cargo-audit configuration
+#
+# Each ignored advisory is reachable only through a disabled optional
+# dependency. Cargo lists optional deps in Cargo.lock for determinism,
+# so cargo-audit flags them even though the code is never compiled.
+# `cargo tree -e all --workspace` confirms the crates below are not in
+# the actual build graph.
 
 [advisories]
-ignore = []
+ignore = [
+  # rsa - Marvin Attack timing sidechannel (RUSTSEC-2023-0071).
+  # Pulled in exclusively through `sqlx-mysql`. The sqlx `mysql` feature
+  # is not enabled anywhere in this workspace (we only use `postgres`),
+  # so neither sqlx-mysql nor its rsa dependency is ever compiled.
+  "RUSTSEC-2023-0071",
+
+  # derivative - Unmaintained (RUSTSEC-2024-0388).
+  # Pulled in exclusively through the `ark-ff-03` / `ark-ff-04` optional
+  # features of `ruint`. Neither feature is enabled anywhere in this
+  # workspace, so ark-ff 0.3/0.4 and derivative are never compiled.
+  "RUSTSEC-2024-0388",
+]
