@@ -240,7 +240,6 @@ async fn run<F, Fut, T>(
     if let Some(mut node) = node {
         node.kill().await;
     }
-    services::clear_database().await;
 
     if let Err(err) = result {
         panic::resume_unwind(err);
