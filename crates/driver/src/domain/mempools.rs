@@ -6,11 +6,12 @@ use {
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::{Context, anyhow},
-    eth_domain_types::{self as eth, BlockNo, TxId},
+    eth_domain_types::{self as eth, BlockNo},
     ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
+    std::ops::RangeInclusive,
     thiserror::Error,
     tracing::Instrument,
 };
@@ -97,15 +98,22 @@ impl Mempools {
         Ok(res?.tx_hash)
     }
 
-    /// A mempool is disabled if all of the following are true:
-    /// * the settlement may revert (see [`EncodedSettlement::may_revert`])
-    /// * the pool has revert protection enabled (see
-    ///   [`Self::revert_protection`])
-    /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
+    /// A mempool is disabled if either:
+    /// * builders are configured and it does not submit to them, since then
+    ///   only the builders get the settlement
+    /// * the settlement may revert (see [`EncodedSettlement::may_revert`]),
+    ///   revert protection is enabled (see [`Self::revert_protection`]) and
+    ///   reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
     fn is_disabled(&self, mempool: &infra::Mempool, settlement: &EncodedSettlement) -> bool {
-        settlement.may_revert
+        let builders_only = !mempool.submits_to_builders()
+            && self
+                .mempools
+                .iter()
+                .any(infra::Mempool::submits_to_builders);
+        let revert_risk = settlement.may_revert
             && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.reverts_can_get_mined()
+            && mempool.reverts_can_get_mined();
+        builders_only || revert_risk
     }
 
     /// Defines if the mempools are configured in a way that guarantees that
@@ -180,8 +188,8 @@ impl Mempools {
             .gas_price()
             .await
             .context("failed to compute current gas price")?;
-        let submission_block = self.ethereum.current_block().borrow().number.into();
-        let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
+        let current_block = self.ethereum.current_block().borrow().number.into();
+        let blocks_until_deadline = submission_deadline.saturating_sub(current_block);
 
         // if there is still a tx pending we also have to make sure we outbid
         // that one enough to make the node replace it in the mempool
@@ -204,7 +212,7 @@ impl Mempools {
         );
 
         tracing::debug!(
-            ?submission_block,
+            ?current_block,
             ?blocks_until_deadline,
             ?replacement_gas_price,
             ?current_gas_price,
@@ -212,6 +220,9 @@ impl Mempools {
             ?signer,
             "submitting settlement tx"
         );
+        // A mempool tx stays valid until the deadline. A bundle names a single
+        // block, so builders get one bundle for each block in this range.
+        let blocks = current_block.0 + 1..=submission_deadline.0;
         let hash = mempool
             .submit(
                 tx.clone(),
@@ -219,6 +230,7 @@ impl Mempools {
                 settlement.gas.limit,
                 signer,
                 nonce,
+                blocks.clone(),
             )
             .await?;
 
@@ -237,13 +249,13 @@ impl Mempools {
                 match receipt {
                     TxStatus::Executed { block_number } => return Ok(SubmissionSuccess {
                         tx_hash: hash,
-                        submitted_at_block: submission_block,
+                        submitted_at_block: current_block,
                         included_in_block: block_number,
                     }),
                     TxStatus::Reverted { block_number } => {
                         return Err(Error::Revert {
                             tx_id: hash,
-                            submitted_at_block: submission_block,
+                            submitted_at_block: current_block,
                             reverted_at_block: block_number,
                         })
                     }
@@ -257,11 +269,11 @@ impl Mempools {
                                 "exceeded submission deadline, cancelling"
                             );
                             let _ = self
-                                .cancel(mempool, final_gas_price, signer, nonce)
+                                .cancel(mempool, final_gas_price, signer, nonce, blocks.clone())
                                 .await;
                             return Err(Error::Expired {
                                 tx_id: hash,
-                                submitted_at_block: submission_block,
+                                submitted_at_block: current_block,
                                 submission_deadline,
                             });
                         }
@@ -274,7 +286,7 @@ impl Mempools {
                         let (gas, mined, pending_nonce) = futures::join!(
                             self.ethereum.estimate_gas(tx.clone()),
                             self.ethereum
-                                .successful_settlement_block(hash, submission_block.0),
+                                .successful_settlement_block(hash, current_block.0),
                             self.ethereum.pending_transaction_count(signer),
                         );
 
@@ -291,7 +303,7 @@ impl Mempools {
                             );
                             return Ok(SubmissionSuccess {
                                 tx_hash: hash,
-                                submitted_at_block: submission_block,
+                                submitted_at_block: current_block,
                                 included_in_block,
                             });
                         }
@@ -303,9 +315,11 @@ impl Mempools {
                                 err = ?gas.as_ref().err(),
                                 "tx started failing in mempool, cancelling"
                             );
-                            let _ = self.cancel(mempool, final_gas_price, signer, nonce).await;
+                            let _ = self
+                                .cancel(mempool, final_gas_price, signer, nonce, blocks.clone())
+                                .await;
                             return Err(Error::SimulationRevert {
-                                submitted_at_block: submission_block,
+                                submitted_at_block: current_block,
                                 reverted_at_block: block.number.into(),
                             });
                         } else if let Err(err) = &pending_nonce {
@@ -347,7 +361,7 @@ impl Mempools {
                 return Ok(SubmissionSuccess {
                     tx_hash: hash,
                     included_in_block: block_number,
-                    submitted_at_block: submission_block,
+                    submitted_at_block: current_block,
                 });
             }
         }
@@ -362,7 +376,13 @@ impl Mempools {
         original_tx_gas_price: Eip1559Estimation,
         signer: eth::Address,
         nonce: u64,
-    ) -> Result<TxId, Error> {
+        blocks: RangeInclusive<u64>,
+    ) -> Result<(), Error> {
+        if mempool.submits_to_builders() {
+            // The bundles already sent expire with the deadline and a reverting
+            // one is never mined, so there is nothing to cancel.
+            return Ok(());
+        }
         let fallback_gas_price = original_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT);
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, signer, nonce)
@@ -398,8 +418,10 @@ impl Mempools {
                 CANCELLATION_GAS_AMOUNT.into(),
                 signer,
                 nonce,
+                blocks,
             )
-            .await
+            .await?;
+        Ok(())
     }
 
     /// Computes minimum price to replace the last tx that was submitted
@@ -672,7 +694,8 @@ impl Error {
 /// so it was neither mined nor is it still queued). While the tx is still
 /// queued the revert is just our own pending tx re-applied, a false positive,
 /// so we keep waiting. A failed nonce lookup counts as "unknown" and never
-/// cancels.
+/// cancels. A bundle never reaches the node's mempool, so for builders the
+/// re-simulation alone decides.
 fn requires_cancellation<E>(
     resimulation_reverted: bool,
     pending_nonce: &Result<u64, E>,

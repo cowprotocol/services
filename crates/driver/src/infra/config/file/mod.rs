@@ -179,9 +179,24 @@ struct Mempool {
     /// Informs the submission logic whether a reverting transaction will
     /// actually be mined or just ignored. This is an advanced feature
     /// for private mempools so for most configured mempools you have to
-    /// assume reverting transactions will get mined eventually.
+    /// assume reverting transactions will get mined eventually. Ignored when
+    /// `builders` is set, since a reverting bundle is never mined.
     #[serde(default = "default_mines_reverting_txs")]
     mines_reverting_txs: bool,
+    /// Block builders to send the settlement to as `eth_sendBundle` bundles.
+    /// When this is non-empty `url` only serves nonce and txpool queries.
+    #[serde(default)]
+    builders: Vec<Builder>,
+}
+
+/// A block builder that accepts bundles over `eth_sendBundle`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct Builder {
+    /// Name for better logging and metrics.
+    name: String,
+    /// The RPC URL to send the bundles to.
+    url: Url,
 }
 
 #[derive(Debug, Deserialize)]
