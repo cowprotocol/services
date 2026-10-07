@@ -258,14 +258,6 @@ pub struct Remaining {
 }
 
 impl Remaining {
-    /// The open amount on the order's own side.
-    pub fn target(self, side: Side) -> u64 {
-        match side {
-            Side::Sell => self.sell,
-            Side::Buy => self.buy,
-        }
-    }
-
     /// Whether a leg scaled down to nothing. The program only accepts a fill
     /// moving zero on that side, so no engine can fill the order.
     pub fn has_zero_leg(self) -> bool {
@@ -575,7 +567,6 @@ mod tests {
                 buy: 2_000
             }
         );
-        assert_eq!(order.remaining().target(Side::Sell), 1_000);
     }
 
     /// 999 of 1000 sold leaves 1 to sell; the 2000 buy limit scales to 2,
@@ -604,7 +595,6 @@ mod tests {
             ..order(1, pubkey(0x66))
         };
         assert_eq!(order.remaining(), Remaining { sell: 0, buy: 1 });
-        assert_eq!(order.remaining().target(Side::Buy), 1);
         assert!(order.remaining().has_zero_leg());
         assert!(
             !Order {

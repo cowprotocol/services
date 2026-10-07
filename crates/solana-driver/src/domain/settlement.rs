@@ -665,11 +665,11 @@ fn validate_orders(
         }
 
         let amounts = executed_amounts(order, solution)?;
-        let filled = match order.side {
-            Side::Sell => amounts.sell,
-            Side::Buy => amounts.buy,
+        let remaining = order.remaining();
+        let (filled, target) = match order.side {
+            Side::Sell => (amounts.sell, remaining.sell),
+            Side::Buy => (amounts.buy, remaining.buy),
         };
-        let target = order.remaining().target(order.side);
 
         // A non-partially-fillable order must be filled exactly.
         if !order.partially_fillable && filled != target {
