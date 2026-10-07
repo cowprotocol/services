@@ -23,7 +23,14 @@ pub use {
 };
 use {
     cow_settlement_interface::token_program::TokenProgram,
-    cow_solana_rpc::{Error, LatestBlockhash, RpcPrioritizationFee, SolanaRPC},
+    cow_solana_rpc::{
+        Error,
+        LatestBlockhash,
+        RpcPrioritizationFee,
+        RpcSimulateBundleTransactionResult,
+        SolanaRPC,
+        UiTransactionError,
+    },
     itertools::{Either, Itertools},
     moka::sync::Cache,
     solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
@@ -32,6 +39,20 @@ use {
 
 /// How many mints the token program cache holds.
 const TOKEN_PROGRAM_CACHE_CAPACITY: u64 = 10_000;
+
+/// A simulated transaction's outcome and the slot it ran against.
+pub struct TransactionSimulation {
+    pub slot: u64,
+    pub err: Option<UiTransactionError>,
+    pub logs: Option<Vec<String>>,
+}
+
+/// A simulated bundle's per-transaction results, in order and ending at the
+/// first failure, and the slot it ran against.
+pub struct BundleSimulation {
+    pub slot: u64,
+    pub results: Vec<RpcSimulateBundleTransactionResult>,
+}
 
 /// The Solana blockchain adapter.
 pub struct Solana {
@@ -81,21 +102,29 @@ impl Solana {
         self.rpc.recent_prioritization_fees(addresses).await
     }
 
-    /// Simulate a signed transaction without sending it. Returns the
-    /// simulation result including logs and any error.
+    /// Simulate a signed transaction without sending it.
     pub async fn simulate_transaction(
         &self,
         transaction: &VersionedTransaction,
-    ) -> Result<cow_solana_rpc::RpcSimulateTransactionResult, Error> {
-        self.rpc.simulate_transaction(transaction).await
+    ) -> Result<TransactionSimulation, Error> {
+        let response = self.rpc.simulate_transaction(transaction).await?;
+        Ok(TransactionSimulation {
+            slot: response.context.slot,
+            err: response.value.err,
+            logs: response.value.logs,
+        })
     }
 
     /// See [`SolanaRPC::simulate_bundle`].
     pub async fn simulate_bundle(
         &self,
         transactions: &[VersionedTransaction],
-    ) -> Result<Vec<cow_solana_rpc::RpcSimulateBundleTransactionResult>, Error> {
-        self.bundle_rpc.simulate_bundle(transactions).await
+    ) -> Result<BundleSimulation, Error> {
+        let response = self.bundle_rpc.simulate_bundle(transactions).await?;
+        Ok(BundleSimulation {
+            slot: response.context.slot,
+            results: response.value,
+        })
     }
 
     /// Send a signed transaction and wait for confirmation.
