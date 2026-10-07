@@ -1,0 +1,21 @@
+[package]
+name = "sqlx-mysql"
+version = "0.8.6"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "Empty stub for sqlx-mysql — this workspace only uses the postgres backend. The real sqlx-mysql pulls in the vulnerable 'rsa' crate (RUSTSEC-2023-0071)."
+
+# No-op features matching sqlx-mysql's public feature flags so that any
+# consumer enabling them (even transitively) still resolves cleanly.
+[features]
+any = []
+bigdecimal = []
+chrono = []
+json = []
+migrate = []
+offline = []
+rust_decimal = []
+serde = []
+time = []
+uuid = []

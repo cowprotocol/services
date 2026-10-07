@@ -178,6 +178,14 @@ winner-selection = { path = "crates/winner-selection" }
 yellowstone-grpc-client = "13.4.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
+# Replace sqlx-mysql with an empty stub. The sqlx `mysql` feature is not
+# enabled anywhere in this workspace, but cargo still resolves optional
+# dependencies into Cargo.lock, which drags in the vulnerable `rsa` crate
+# (RUSTSEC-2023-0071). The stub keeps the resolution happy without the
+# transitive dependency.
+[patch.crates-io]
+sqlx-mysql = { path = "stubs/sqlx-mysql" }
+
 [workspace.lints]
 clippy.cast_possible_wrap = "deny"
 
