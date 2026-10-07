@@ -61,6 +61,12 @@ pub struct Order {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<Base64>")]
     pub creation: Option<Vec<u8>>,
+    /// What the sell token account can fund, for the driver to scale a
+    /// partially fillable order's remainder down to. Absent for a pending
+    /// sponsored order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub sell_balance: Option<u64>,
 }
 
 /// Whether the order sells or buys an exact amount.
@@ -92,6 +98,7 @@ impl From<&auction::Order> for Order {
             app_data: order.app_data,
             executed: order.executed,
             creation: order.creation.clone(),
+            sell_balance: order.sell_balance,
         }
     }
 }
@@ -177,6 +184,7 @@ mod tests {
             created_on_chain: true,
             executed: 400,
             creation: None,
+            sell_balance: Some(500),
         }
     }
 
@@ -200,6 +208,7 @@ mod tests {
         assert_eq!(json["orders"][0]["sellAmount"], "18446744073709551615");
         assert_eq!(json["orders"][0]["kind"], "sell");
         assert_eq!(json["orders"][0]["executed"], "400");
+        assert_eq!(json["orders"][0]["sellBalance"], "500");
         assert_eq!(
             json["orders"][0]["appData"],
             "0x0000000000000000000000000000000000000000000000000000000000000000"

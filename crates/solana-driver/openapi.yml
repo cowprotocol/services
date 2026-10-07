@@ -237,6 +237,14 @@ components:
             to `0`.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        sellBalance:
+          description: |-
+            What the order's sell token account can fund: the amount both
+            held and approved to a delegate. A partially fillable order's
+            remainder is scaled down to it before solvers see it. Absent for
+            a pending sponsored order, whose creation funds it.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         creation:
           description: |-
             The owner-signed creation transaction of an order not created on

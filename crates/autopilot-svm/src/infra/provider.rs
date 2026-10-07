@@ -446,39 +446,60 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
         .map(|mint| Pubkey::new_from_array(mint.0))
 }
 
-/// Drop orders whose sell token account cannot fund what is left to sell:
-/// their settlement would revert at `BeginSettle`. Solvers see the remaining
-/// legs and may fill all of them, so the remainder is the bar, partially
-/// fillable or not. A pending sponsored order skips the check, its creation
-/// transaction can wrap and approve the sell funds. Returns the kept orders
-/// and the uids of the dropped ones.
+/// Drop orders whose sell token account cannot fund a fill: their settlement
+/// would revert at `BeginSettle`. A fill-or-kill order needs what is left to
+/// sell; a partially fillable one needs any balance, which the driver scales
+/// its remainder down to, as on EVM. The kept orders carry the balance for
+/// that. A pending sponsored order skips the check, its creation transaction
+/// can wrap and approve the sell funds. Returns the kept orders and the uids
+/// of the dropped ones.
 fn funded_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
 ) -> (Vec<Order>, Vec<IntentHash>) {
-    let (funded, unfunded): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
-        !order.created_on_chain
-            || accounts
+    let mut unfunded = Vec::new();
+    let funded = orders
+        .into_iter()
+        .filter_map(|mut order| {
+            if !order.created_on_chain {
+                return Some(order);
+            }
+            let balance = accounts
                 .get(&Pubkey::new_from_array(order.sell_token_account.0))
-                .is_some_and(|account| funded_token_account(account, order))
-    });
-    (
-        funded,
-        unfunded.into_iter().map(|order| order.uid).collect(),
-    )
+                .map_or(0, |account| funded_sell_balance(account, &order));
+            let needed = if order.partially_fillable {
+                1
+            } else {
+                order.remaining().sell
+            };
+            if balance < needed {
+                unfunded.push(order.uid);
+                return None;
+            }
+            order.sell_balance = Some(balance);
+            Some(order)
+        })
+        .collect();
+    (funded, unfunded)
 }
 
-/// An initialized, unfrozen account of either token program holding the
-/// order's sell mint, with what is left to sell both held and approved to a
-/// delegate: anything else fails the pull at settlement. Any delegate passes
-/// because the cut does not know the settlement's state PDA.
-fn funded_token_account(account: &Account, order: &Order) -> bool {
-    [spl_token_interface::ID, spl_token_2022_interface::ID].contains(&account.owner)
-        && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
-            state.base.state == AccountState::Initialized
-                && state.base.mint.to_bytes() == order.sell_token.0
-                && state.base.amount.min(state.base.delegated_amount) >= order.remaining().sell
-        })
+/// What the account can fund of the order's sell side: the amount both held
+/// and approved to a delegate, in an initialized, unfrozen account of either
+/// token program holding the order's sell mint. Anything else funds nothing,
+/// the pull at settlement fails. Any delegate passes because the cut does not
+/// know the settlement's state PDA.
+fn funded_sell_balance(account: &Account, order: &Order) -> u64 {
+    if ![spl_token_interface::ID, spl_token_2022_interface::ID].contains(&account.owner) {
+        return 0;
+    }
+    StateWithExtensions::<TokenAccount>::unpack(&account.data).map_or(0, |state| {
+        if state.base.state != AccountState::Initialized
+            || state.base.mint.to_bytes() != order.sell_token.0
+        {
+            return 0;
+        }
+        state.base.amount.min(state.base.delegated_amount)
+    })
 }
 
 /// Drop orders a prior fill left with a leg scaled down to zero: no solver
@@ -560,6 +581,7 @@ mod tests {
             created_on_chain,
             executed: 0,
             creation: None,
+            sell_balance: None,
         }
     }
 
@@ -797,10 +819,11 @@ mod tests {
         crate::tests::sell_token_account_json([0x33; 32], 1_000, Some(1_000))
     }
 
-    /// A created order needs its full sell amount both held and approved in
-    /// an initialized account of its sell mint, partially fillable or not,
-    /// under either token program; a partially filled one needs only its
-    /// remainder. The orders share one receivable buy token account, answered
+    /// A created fill-or-kill order needs its full sell amount both held and
+    /// approved in an initialized account of its sell mint, under either
+    /// token program; a partially filled one needs only its remainder. A
+    /// partially fillable order needs any balance and carries it to the
+    /// driver. The orders share one receivable buy token account, answered
     /// first, and the sell and buy mints come last. The pending sponsored
     /// order is exempt from the check.
     #[tokio::test]
@@ -819,6 +842,7 @@ mod tests {
                 sell(1_000, None),
                 crate::tests::sell_token_account_json([0x99; 32], 1_000, Some(1_000)),
                 null,
+                sell(0, Some(1_000)),
                 sell(999, Some(999)),
                 token_2022,
                 sell(600, Some(600)),
@@ -832,6 +856,10 @@ mod tests {
             sell_token_account: ChainPubkey([account; 32]),
             ..order([0x01; 32], created_on_chain)
         };
+        let partial = |account| Order {
+            partially_fillable: true,
+            ..selling(account, true)
+        };
         let orders = vec![
             selling(0x50, true),
             selling(0x51, true),
@@ -839,27 +867,28 @@ mod tests {
             selling(0x53, true),
             selling(0x54, true),
             selling(0x55, true),
+            partial(0x56),
+            partial(0x57),
+            selling(0x58, false),
+            selling(0x59, true),
             Order {
-                partially_fillable: true,
-                ..selling(0x56, true)
-            },
-            selling(0x57, false),
-            selling(0x58, true),
-            Order {
-                partially_fillable: true,
                 executed: 400,
-                ..selling(0x59, true)
+                ..partial(0x5a)
             },
         ];
         let (kept, unsettleable, unreceivable, unfunded) = provider.checked_orders(orders).await;
-        let kept: Vec<IntentHash> = kept.iter().map(|order| order.uid).collect();
+        let kept: Vec<(IntentHash, Option<u64>)> = kept
+            .iter()
+            .map(|order| (order.uid, order.sell_balance))
+            .collect();
         assert_eq!(
             kept,
             [
-                IntentHash([0x50; 32]),
-                IntentHash([0x57; 32]),
-                IntentHash([0x58; 32]),
-                IntentHash([0x59; 32])
+                (IntentHash([0x50; 32]), Some(1_000)),
+                (IntentHash([0x57; 32]), Some(999)),
+                (IntentHash([0x58; 32]), None),
+                (IntentHash([0x59; 32]), Some(1_000)),
+                (IntentHash([0x5a; 32]), Some(600)),
             ]
         );
         assert!(unsettleable.is_empty());

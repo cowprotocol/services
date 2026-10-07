@@ -116,8 +116,8 @@ impl Competition {
             .await
             .map_err(Error::BuyTokenAccounts)?;
         auction.orders.retain(|order| {
-            if order.remaining().has_zero_leg() {
-                tracing::debug!(order = %order.uid, "dropping order, nothing left to fill");
+            if order.available().has_zero_leg() {
+                tracing::debug!(order = %order.uid, "dropping order, nothing fillable");
                 return false;
             }
             !buy_token_accounts.unreceivable.contains(&order.uid)

@@ -45,6 +45,10 @@ pub struct Order {
     /// The owner-signed creation transaction of a pending sponsored order,
     /// serialized. `None` for an order created on chain.
     pub creation: Option<Vec<u8>>,
+    /// What the sell token account can fund at the cut: the held amount
+    /// capped by the delegated one. `None` for a pending sponsored order,
+    /// whose creation funds it.
+    pub sell_balance: Option<u64>,
 }
 
 impl Order {
@@ -150,6 +154,7 @@ mod tests {
             created_on_chain: true,
             executed: 0,
             creation: None,
+            sell_balance: None,
         }
     }
 

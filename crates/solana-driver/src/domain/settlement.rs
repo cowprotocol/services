@@ -665,10 +665,10 @@ fn validate_orders(
         }
 
         let amounts = executed_amounts(order, solution)?;
-        let remaining = order.remaining();
+        let available = order.available();
         let (filled, target) = match order.side {
-            Side::Sell => (amounts.sell, remaining.sell),
-            Side::Buy => (amounts.buy, remaining.buy),
+            Side::Sell => (amounts.sell, available.sell),
+            Side::Buy => (amounts.buy, available.buy),
         };
 
         // A non-partially-fillable order must be filled exactly.
@@ -676,9 +676,9 @@ fn validate_orders(
             return Err(Error::NotExactlyFilled(order.uid));
         }
 
-        // `executed` can lag a settlement that just landed, so the program's
-        // cumulative check stays the authority; this one only saves a doomed
-        // transaction's fees.
+        // `executed` and the balance can lag a settlement that just landed,
+        // so the program's cumulative check and the pull stay the authority;
+        // this one only saves a doomed transaction's fees.
         if filled > target {
             return Err(Error::Overfill(order.uid));
         }
@@ -876,6 +876,7 @@ mod tests {
             order_pda: Pubkey::default(), // re-derived below
             app_data: [0x77; 32],
             executed: 0,
+            sell_balance: None,
         };
         customize(&mut order);
         let uid = OrderIntent::from(&order).uid();

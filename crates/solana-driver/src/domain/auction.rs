@@ -202,28 +202,64 @@ pub struct Order {
     /// The cumulative fill on the order's own side: sell-token units for a
     /// sell order, buy-token units for a buy order.
     pub executed: u64,
+    /// What the owner's sell token account can fund, as the autopilot read
+    /// it at the cut. `None` when unknown: a pending sponsored order, a
+    /// quote, an autopilot that predates balance scaling.
+    pub sell_balance: Option<u64>,
 }
 
 impl Order {
     /// The amounts still open to fill: the order-side target less `executed`,
-    /// the other leg scaled in proportion. Rounds like the EVM driver, the
-    /// sell leg down and the buy leg up, so the scaled limit is never looser
-    /// than the signed one.
+    /// the other leg scaled in proportion.
     ///
     /// TODO: duplicate of `autopilot-svm`'s `Order::remaining`; unify the two.
     pub fn remaining(&self) -> Remaining {
-        let (target, other) = match self.side {
+        let (target, _) = self.legs();
+        self.scaled(target.saturating_sub(self.executed))
+    }
+
+    /// What a solver may fill now: `remaining` scaled down to what the sell
+    /// token account can fund, like the EVM driver's `Order::available`. A
+    /// fill-or-kill order cannot shrink, so it keeps its remainder; the
+    /// autopilot drops it when the account cannot fund that.
+    pub fn available(&self) -> Remaining {
+        let remaining = self.remaining();
+        let Some(balance) = self.sell_balance else {
+            return remaining;
+        };
+        if !self.partially_fillable || balance >= remaining.sell {
+            return remaining;
+        }
+        let open = match self.side {
+            Side::Sell => balance,
+            // The largest buy whose sell leg, rounded down, fits the balance.
+            // `balance < sell_amount`, so the quotient fits u64.
+            Side::Buy => fits(
+                u128::from(self.buy_amount) * u128::from(balance) / u128::from(self.sell_amount),
+            ),
+        };
+        self.scaled(open)
+    }
+
+    /// The signed order-side target and the other leg.
+    fn legs(&self) -> (u64, u64) {
+        match self.side {
             Side::Sell => (self.sell_amount, self.buy_amount),
             Side::Buy => (self.buy_amount, self.sell_amount),
-        };
-        let open = target.saturating_sub(self.executed);
+        }
+    }
+
+    /// The legs for `open` of the order-side target, the other leg scaled in
+    /// proportion. Rounds like the EVM driver, the sell leg down and the buy
+    /// leg up, so the scaled limit is never looser than the signed one.
+    fn scaled(&self, open: u64) -> Remaining {
         if open == 0 {
             return Remaining { sell: 0, buy: 0 };
         }
+        let (target, other) = self.legs();
         let scaled = u128::from(other) * u128::from(open);
         let target = u128::from(target);
         // `open <= target`, so the quotient never exceeds `other`.
-        let fits = |leg: u128| u64::try_from(leg).expect("a scaled leg fits u64");
         match self.side {
             Side::Sell => Remaining {
                 sell: open,
@@ -248,6 +284,11 @@ impl Order {
     pub fn buys_native_sol(&self) -> bool {
         self.buy_token == ENCODED_NATIVE_SOL_TRANSFER
     }
+}
+
+/// Narrows a leg scaled from, and bounded by, `u64` amounts.
+fn fits(leg: u128) -> u64 {
+    u64::try_from(leg).expect("a scaled leg fits u64")
 }
 
 /// What is left of an order to fill, see [`Order::remaining`].
@@ -309,6 +350,7 @@ mod tests {
             order_pda: pubkey(0x77),
             app_data: [0; 32],
             executed: 0,
+            sell_balance: None,
         }
     }
 
@@ -565,6 +607,80 @@ mod tests {
             Remaining {
                 sell: 1_000,
                 buy: 2_000
+            }
+        );
+    }
+
+    /// The sell balance caps a partially fillable order: 400 of 1000 sold
+    /// leaves 600 to sell, a balance of 300 halves both legs. For a buy
+    /// order the balance bounds the sell leg: 400 of 2000 bought leaves
+    /// 1600 to buy for 800, a balance of 333 allows 666 to buy for 333. A
+    /// balance covering the remainder, an unknown one, or a fill-or-kill
+    /// order leave the remainder alone.
+    #[test]
+    fn available_scales_the_remainder_down_to_the_sell_balance() {
+        let sell = Order {
+            partially_fillable: true,
+            executed: 400,
+            sell_balance: Some(300),
+            ..order(1, pubkey(0x66))
+        };
+        assert_eq!(
+            sell.remaining(),
+            Remaining {
+                sell: 600,
+                buy: 1_200
+            }
+        );
+        assert_eq!(
+            sell.available(),
+            Remaining {
+                sell: 300,
+                buy: 600
+            }
+        );
+        for unscaled in [
+            Order {
+                sell_balance: Some(600),
+                ..sell.clone()
+            },
+            Order {
+                sell_balance: None,
+                ..sell.clone()
+            },
+            Order {
+                partially_fillable: false,
+                ..sell.clone()
+            },
+        ] {
+            assert_eq!(unscaled.available(), sell.remaining(), "{unscaled:?}");
+        }
+        assert_eq!(
+            Order {
+                sell_balance: Some(0),
+                ..sell.clone()
+            }
+            .available(),
+            Remaining { sell: 0, buy: 0 }
+        );
+
+        let buy = Order {
+            side: Side::Buy,
+            sell_balance: Some(333),
+            ..sell
+        };
+        assert_eq!(
+            buy.remaining(),
+            Remaining {
+                sell: 800,
+                buy: 1_600
+            }
+        );
+        assert_eq!(
+            buy.available(),
+            Remaining {
+                sell: 333,
+                buy: 666
             }
         );
     }
