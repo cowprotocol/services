@@ -157,6 +157,34 @@ impl Account {
     }
 }
 
+/// Lets an account sign the `X-Flashbots-Signature` header of builder requests.
+#[async_trait::async_trait]
+impl alloy::signers::Signer for Account {
+    async fn sign_hash(&self, hash: &alloy::primitives::B256) -> alloy::signers::Result<Signature> {
+        Account::sign_hash(self, hash).await
+    }
+
+    fn address(&self) -> Address {
+        TxSigner::address(self)
+    }
+
+    fn chain_id(&self) -> Option<alloy::primitives::ChainId> {
+        match self {
+            Account::PrivateKey(signer) => alloy::signers::Signer::chain_id(signer),
+            Account::Kms(signer) => alloy::signers::Signer::chain_id(signer),
+            Account::Address(_) => None,
+        }
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<alloy::primitives::ChainId>) {
+        match self {
+            Account::PrivateKey(signer) => alloy::signers::Signer::set_chain_id(signer, chain_id),
+            Account::Kms(signer) => alloy::signers::Signer::set_chain_id(signer, chain_id),
+            Account::Address(_) => {}
+        }
+    }
+}
+
 impl From<PrivateKeySigner> for Account {
     fn from(value: PrivateKeySigner) -> Self {
         Self::PrivateKey(value)
