@@ -292,6 +292,8 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             OrderFilterReason::InFlight,
             held_out.into_iter().map(|order| order.uid).collect(),
         );
+        let (orders, unfillable) = fillable_orders(orders);
+        self.track_filtered_orders(OrderFilterReason::ZeroRemainingLeg, unfillable);
         let (orders, unpayable) = payable_orders(orders);
         self.track_filtered_orders(OrderFilterReason::UnpayableNativeBuy, unpayable);
         let (orders, unsettleable, unreceivable, unfunded) = self.checked_orders(orders).await;
@@ -366,6 +368,8 @@ fn auction_snapshot(tip: u64, auction: &crate::domain::auction::Auction) -> serd
 enum OrderFilterReason {
     /// A settlement from an earlier auction can still land.
     InFlight,
+    /// A prior fill scaled a remaining leg down to zero.
+    ZeroRemainingLeg,
     /// The settlement cannot pay out the native SOL buy.
     UnpayableNativeBuy,
     /// The settlement program cannot move the sell or buy mint.
@@ -380,6 +384,7 @@ impl OrderFilterReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::InFlight => "in_flight",
+            Self::ZeroRemainingLeg => "zero_remaining_leg",
             Self::UnpayableNativeBuy => "unpayable_native_buy",
             Self::UnsettleableMint => "unsettleable_mint",
             Self::UnreceivableBuyTokenAccount => "unreceivable_buy_token_account",
@@ -474,6 +479,19 @@ fn funded_token_account(account: &Account, order: &Order) -> bool {
                 && state.base.mint.to_bytes() == order.sell_token.0
                 && state.base.amount.min(state.base.delegated_amount) >= order.remaining().sell
         })
+}
+
+/// Drop orders a prior fill left with a leg scaled down to zero: no solver
+/// can fill them, so they would go out in every cut until they expire.
+/// Returns the kept orders and the uids of the dropped ones.
+fn fillable_orders(orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
+    let (fillable, unfillable): (Vec<_>, Vec<_>) = orders
+        .into_iter()
+        .partition(|order| !order.remaining().has_zero_leg());
+    (
+        fillable,
+        unfillable.into_iter().map(|order| order.uid).collect(),
+    )
 }
 
 /// Drop native SOL buys that sell wSOL: they reach solvers as wSOL for wSOL.
@@ -650,6 +668,22 @@ mod tests {
             .map(|order| order.buy_token_account.0)
             .collect();
         assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
+    }
+
+    /// 1999 of 2000 bought leaves 1 to buy and scales the 1000 sell limit
+    /// down to 0, so no solver can fill the order; 1998 leaves 1 to sell.
+    #[test]
+    fn drops_orders_with_a_remaining_leg_scaled_to_zero() {
+        let buy = |executed| Order {
+            kind: OrderKind::Buy,
+            partially_fillable: true,
+            executed,
+            ..order([0x01; 32], true)
+        };
+        let orders = vec![order([0x01; 32], true), buy(1_998), buy(1_999)];
+        let (kept, dropped) = fillable_orders(orders.clone());
+        assert_eq!(kept, [orders[0].clone(), orders[1].clone()]);
+        assert_eq!(dropped, [orders[2].uid]);
     }
 
     /// Native SOL buys that sell wSOL stay out. Other native buys pass whatever
