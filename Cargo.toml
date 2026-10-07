@@ -21,7 +21,6 @@ alloy-provider = { version = "2.4.1", default-features = false }
 alloy-rpc-client = { version = "2.4.1", default-features = false }
 alloy-rpc-types = { version = "2.4.1", default-features = false }
 alloy-rpc-types-eth = { version = "2.4.1", default-features = false }
-alloy-rpc-types-trace = { version = "2.4.1", default-features = false }
 alloy-signer = { version = "2.4.1", default-features = false }
 alloy-signer-local = { version = "2.4.1", default-features = false }
 alloy-sol-types = { version = "1.6.1" }
@@ -39,7 +38,6 @@ aws-sdk-kms = { version = "1.49.0", default-features = false }
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
 backtrace = { version = "0.3.76", default-features = false }
-bad-tokens = { path = "crates/bad-tokens" }
 balance-overrides = { path = "crates/balance-overrides" }
 base64 = "0.22.1"
 bigdecimal = "0.4"
@@ -48,7 +46,7 @@ brotli = "8"
 bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
-cached = { version = "0.49.3", default-features = false }
+cached = { version = "0.55.1", default-features = false }
 chain = { path = "crates/chain" }
 chain-types = { path = "crates/chain-types" }
 chrono = { version = "0.4.38", default-features = false, features = ["serde"] }
@@ -105,7 +103,6 @@ opentelemetry-otlp = "0.32"
 opentelemetry_sdk = "0.32"
 order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
-paste = "1.0"
 pin-project-lite = "0.2.14"
 pool-indexer = { path = "crates/pool-indexer" }
 prettyplease = "0.2.37"

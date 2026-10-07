@@ -22,7 +22,6 @@ use {
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
-    bad_tokens::list_based::DenyListedTokens,
     configs::price_estimation::PriceEstimation,
     contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
@@ -33,7 +32,7 @@ use {
     reqwest::Url,
     simulator::{self, simulation_builder::SettlementSimulator, tenderly},
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
-    token_info::TokenInfoFetching,
+    token_info::{DenyListedTokens, TokenInfoFetching},
 };
 
 #[derive(Clone)]

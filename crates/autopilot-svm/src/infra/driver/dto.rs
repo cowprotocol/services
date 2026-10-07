@@ -53,6 +53,11 @@ pub struct Order {
     pub order_pda: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     pub app_data: AppData,
+    /// The owner-signed creation transaction of an order not created on
+    /// chain yet, serialized and base64-encoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
+    pub creation: Option<Vec<u8>>,
 }
 
 /// Whether the order sells or buys an exact amount.
@@ -82,6 +87,7 @@ impl From<&auction::Order> for Order {
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
             app_data: order.app_data,
+            creation: order.creation.clone(),
         }
     }
 }
@@ -165,6 +171,7 @@ mod tests {
             order_pda: Pubkey([0x77; 32]),
             app_data: AppData([0; 32]),
             created_on_chain: true,
+            creation: None,
         }
     }
 
@@ -201,6 +208,16 @@ mod tests {
             serde_json::from_value::<SolveRequest>(json).unwrap(),
             request
         );
+        // A creation travels as base64, the literal the driver's test pins.
+        let sponsored = SolveRequest {
+            orders: vec![Order {
+                creation: Some(vec![1, 2, 3]),
+                ..Order::from(&order())
+            }],
+            ..request
+        };
+        let json = serde_json::to_value(&sponsored).unwrap();
+        assert_eq!(json["orders"][0]["creation"], "AQID");
 
         let solve = SolveResponse {
             solutions: vec![Solution {

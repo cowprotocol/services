@@ -9,10 +9,10 @@ use {
     },
     alloy::primitives::Address,
     anyhow::anyhow,
-    bad_tokens::list_based::DenyListedTokens,
     futures::FutureExt,
     model::order::BUY_ETH_ADDRESS,
     std::sync::Arc,
+    token_info::DenyListedTokens,
     tracing::instrument,
 };
 
