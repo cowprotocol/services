@@ -495,6 +495,7 @@ impl Solver {
             res.as_deref(),
             self.config.name.as_str(),
             started_at.elapsed(),
+            solver_timeout,
             auction.is_quote(),
         );
         let res = res?;
