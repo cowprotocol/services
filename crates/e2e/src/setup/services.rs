@@ -906,64 +906,45 @@ impl<'a> Services<'a> {
     }
 }
 
-pub async fn clear_database() {
-    tracing::info!("Clearing database.");
-
-    async fn truncate_tables() -> Result<(), sqlx::Error> {
-        let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await?;
-        let mut db = db.begin().await?;
-        database::clear_DANGER_(&mut db).await?;
-        db.commit().await
-    }
-
-    // This operation can fail when postgres detects a deadlock.
-    // It will terminate one of the deadlocking requests and if it decideds
-    // to terminate this request we need to retry it.
-    let mut attempt = 0;
-    loop {
-        match truncate_tables().await {
-            Ok(_) => return,
-            Err(err) => {
-                tracing::error!(?err, "failed to truncate tables");
-            }
-        }
-        attempt += 1;
-        if attempt >= 10 {
-            panic!("repeatedly failed to clear DB");
-        }
-    }
-}
-
-pub async fn ensure_e2e_readonly_user() {
+/// Opens a single transaction that first ensures the e2e read-only role
+/// exists and then clears the database. Running both inside one tx on one
+/// connection avoids the catalog deadlock we'd hit if the role-setup GRANTs
+/// and the TRUNCATE ran on separate backends concurrently and both touched
+/// `pg_class` for the same tables.
+pub async fn prepare_database_for_test() {
     use sqlx::{Executor, Row};
 
-    tracing::info!("Ensuring read-only user exists");
+    tracing::info!("Preparing database for test.");
     let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL)
         .await
         .expect("Database connection error");
-
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly')")
-            .fetch_one(&mut db)
-            .await
-            .expect("failed to check for readonly role");
-    if exists {
-        return;
-    }
-
     let mut db: sqlx::Transaction<'_, sqlx::Postgres> = db
         .begin()
         .await
         .expect("Database transaction creation error");
-    let current_db: String = db
-        .fetch_one("SELECT current_database();")
-        .await
-        .expect("Current database name fetching error")
-        .get(0);
 
-    db.execute(
-        format!(
-            r#"
+    // Serialize concurrent setup attempts across processes (e.g. a developer
+    // running two `cargo nextest` invocations against the same database). The
+    // lock is released automatically when the transaction ends.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('cow_e2e_readonly_user')::bigint)")
+        .execute(&mut *db)
+        .await
+        .expect("failed to acquire advisory lock for readonly user setup");
+
+    let readonly_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly')")
+            .fetch_one(&mut *db)
+            .await
+            .expect("failed to check for readonly role");
+    if !readonly_exists {
+        let current_db: String = db
+            .fetch_one("SELECT current_database();")
+            .await
+            .expect("Current database name fetching error")
+            .get(0);
+        db.execute(
+            format!(
+                r#"
     CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
     GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
     GRANT USAGE ON SCHEMA public TO readonly;
@@ -972,13 +953,19 @@ pub async fn ensure_e2e_readonly_user() {
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
     "#
+            )
+            .as_str(),
         )
-        .as_str(),
-    )
-    .await
-    .expect("Read-only user creation failed");
+        .await
+        .expect("Read-only user creation failed");
+        tracing::info!("Read-only user created");
+    }
+
+    database::clear_DANGER_(&mut db)
+        .await
+        .expect("failed to clear database");
+
     db.commit().await.expect("Transaction commit error");
-    tracing::info!("Read only user created");
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;

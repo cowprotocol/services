@@ -214,19 +214,16 @@ async fn run<F, Fut, T>(
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
-    // Spawn the node, clear the database, and ensure the read-only user exists
-    // all concurrently — none of them depend on each other.
+    // Spawn the node concurrently with the database preparation. Role setup
+    // and the TRUNCATE run inside the same postgres transaction so they can't
+    // deadlock on `pg_class` with each other.
     let node_fut = async {
         match fork {
             Some((fork, block_number)) => Node::forked(fork, block_number).await,
             None => Node::new().await,
         }
     };
-    let (node, (), ()) = tokio::join!(
-        node_fut,
-        services::clear_database(),
-        services::ensure_e2e_readonly_user()
-    );
+    let (node, ()) = tokio::join!(node_fut, services::prepare_database_for_test());
 
     let node = Arc::new(Mutex::new(Some(node)));
     let node_panic_handle = node.clone();
