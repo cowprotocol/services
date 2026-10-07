@@ -6,7 +6,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
-    std::time::Duration,
+    std::time::{Duration, Instant},
     url::Url,
 };
 
@@ -42,8 +42,12 @@ pub enum Kind {
 }
 
 /// What a driver quoted.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Quote {
+    /// The driver that answered, by its endpoint.
+    pub driver: String,
+    /// How long the driver took to answer.
+    pub elapsed: Duration,
     pub sell_amount: u64,
     pub buy_amount: u64,
     /// The solver that produced the quote.
@@ -127,6 +131,7 @@ impl Quoter {
             kind: order.kind,
             deadline: chrono::Utc::now() + self.timeout.saturating_sub(RESPONSE_RESERVE),
         };
+        let start = Instant::now();
         let response = self
             .client
             .post(url)
@@ -152,6 +157,8 @@ impl Quoter {
             .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote response malformed"))
             .ok()?;
         Some(Quote {
+            driver: endpoint.to_string(),
+            elapsed: start.elapsed(),
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             solver: quoted.solver,
