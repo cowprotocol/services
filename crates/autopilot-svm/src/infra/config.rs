@@ -186,13 +186,9 @@ pub struct Sponsoring {
     /// Most creations sent per auction for pending sponsored orders that
     /// appear only in losing solutions, so the orders outlive their creation
     /// blockhash. The funder pays for each, and its order may never fill.
-    /// Zero sends none.
-    #[serde(default = "default_max_displaced_creations")]
+    /// Zero, the default, sends none.
+    #[serde(default)]
     pub max_displaced_creations: usize,
-}
-
-const fn default_max_displaced_creations() -> usize {
-    10
 }
 
 /// On-chain addresses: programs and mints.
