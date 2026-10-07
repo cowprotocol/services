@@ -619,10 +619,9 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     assert_eq!(json["kind"], "PriorityFeeTooHigh");
 }
 
-/// Asserts that settling the engine's only solution prices its priority fee
-/// at `lamports`: a budget one lamport under refuses it, a budget of exactly
-/// that lets it through. The RPC quotes 10_000 micro-lamports per compute unit
-/// and the solve-time bundle simulation reports `units` per leg.
+/// Asserts that settling the engine's only solution costs exactly `lamports`
+/// of priority fee at an RPC price of 10_000 micro-lamports per compute unit,
+/// with the solve-time bundle simulation reporting `units` per leg.
 async fn assert_settle_priced_at(
     engine_response: serde_json::Value,
     request: serde_json::Value,

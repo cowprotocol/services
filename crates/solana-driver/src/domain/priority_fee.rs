@@ -92,7 +92,6 @@ impl TryFrom<f64> for ComputeUnitLimitFactor {
 const ATA_CREATION_HEADROOM: u64 = 10_000;
 
 impl ComputeUnitLimitFactor {
-    /// The limit for a transaction that consumed `units` in simulation.
     pub(crate) fn limit(self, units: u64) -> u32 {
         let limit = units
             .saturating_mul(self.0)

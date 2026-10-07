@@ -190,10 +190,7 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
-            // The priority fee is paid on the declared limit, not the units
-            // consumed, and an undeclared one is priced at the 1.4M ceiling.
-            // A node reporting 0 units does not meter them, and a 0 limit fits
-            // no transaction.
+            // 0 means the node did not meter the units, not a free settlement.
             if let Ok(Some(units)) = verdict
                 && units > 0
             {
@@ -235,11 +232,9 @@ impl Competition {
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
-        // Without a solver `cu_estimate`, the settlement declares a limit
-        // derived from the units consumed here. Declaring the ceiling
-        // measures them without the runtime's lower default failing the
-        // settlement, and makes the size check count the limit instruction,
-        // whose size is fixed.
+        // Without a solver `cu_estimate`, declaring the ceiling keeps the
+        // runtime's lower default from failing the simulation, and makes the
+        // size check count the limit instruction the settlement will carry.
         let simulated = Solution {
             cu_estimate: solution.cu_estimate.or(Some(MAX_COMPUTE_UNIT_LIMIT)),
             ..solution.clone()
