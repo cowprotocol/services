@@ -109,23 +109,20 @@ impl Sponsor {
 
     /// Send the creations of the given pending sponsored orders without a
     /// settlement, at most `max_displaced_creations` of them, so the orders
-    /// outlive their creation blockhash. Returns the orders whose creation
-    /// went out. A creation that can never land is expired, which drops its
-    /// order from the next cut. Other failures only log: the order keeps its
-    /// stored creation and the cut drops it once the blockhash dies.
-    pub async fn create_displaced(
-        &self,
-        uids: impl Iterator<Item = IntentHash>,
-    ) -> Vec<IntentHash> {
+    /// outlive their creation blockhash. A creation that can never land is
+    /// expired, which drops its order from the next cut. Other failures only
+    /// log: the order keeps its stored creation and the cut drops it once the
+    /// blockhash dies.
+    pub async fn create_displaced(&self, uids: impl Iterator<Item = IntentHash>) {
         let uids: Vec<Vec<u8>> = uids.map(|uid| uid.0.to_vec()).collect();
         if uids.is_empty() || self.max_displaced_creations == 0 {
-            return Vec::new();
+            return;
         }
         let pending = match db::pending_creations(&self.pool, &uids).await {
             Ok(pending) => pending,
             Err(err) => {
                 tracing::warn!(?err, "failed to read displaced sponsored creations");
-                return Vec::new();
+                return;
             }
         };
         let pending = pending
@@ -146,10 +143,12 @@ impl Sponsor {
             })
             .collect();
         let Displaced { sent, dead } = self.send_displaced(pending).await;
+        metrics()
+            .displaced_creations_sent
+            .inc_by(u64::try_from(sent.len()).unwrap_or(u64::MAX));
         for uid in dead {
             self.expire(&uid.0).await;
         }
-        sent
     }
 
     /// Send the creatable ones among the pending creations, in order, up to
@@ -352,6 +351,18 @@ fn opens_funder_paid_account(
     funder_paid_accounts(creation, funder)
         .iter()
         .any(|account| !existing.contains_key(account))
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "sponsor")]
+struct Metrics {
+    /// Displaced creations sent without a settlement. Each one costs the
+    /// funder a fee, so the rate is the spend signal the cap bounds.
+    displaced_creations_sent: prometheus::IntCounter,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
 #[cfg(test)]
