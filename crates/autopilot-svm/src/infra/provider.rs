@@ -449,14 +449,19 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
 /// Drop orders whose sell token account cannot fund a fill: their settlement
 /// would revert at `BeginSettle`. A fill-or-kill order needs what is left to
 /// sell; a partially fillable one needs any balance, which the driver scales
-/// its remainder down to, as on EVM. The kept orders carry the balance for
-/// that. A pending sponsored order skips the check, its creation transaction
-/// can wrap and approve the sell funds. Returns the kept orders and the uids
-/// of the dropped ones.
+/// its remainder down to, as on EVM. The kept orders carry the balance they
+/// took for that. Orders selling from one account draw on one balance in cut
+/// order, each taking at most its remainder, like the EVM driver's per-token
+/// allocation. A pending sponsored order skips the check, its creation
+/// transaction can wrap and approve the sell funds. Returns the kept orders
+/// and the uids of the dropped ones.
 fn funded_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
 ) -> (Vec<Order>, Vec<IntentHash>) {
+    // Keyed by mint too: an order on a mismatched mint funds nothing and must
+    // not zero the balance for the orders on the account's real mint.
+    let mut balances = HashMap::<(ChainPubkey, ChainPubkey), u64>::new();
     let mut unfunded = Vec::new();
     let funded = orders
         .into_iter()
@@ -464,19 +469,25 @@ fn funded_orders(
             if !order.created_on_chain {
                 return Some(order);
             }
-            let balance = accounts
-                .get(&Pubkey::new_from_array(order.sell_token_account.0))
-                .map_or(0, |account| funded_sell_balance(account, &order));
-            let needed = if order.partially_fillable {
-                1
+            let balance = balances
+                .entry((order.sell_token_account, order.sell_token))
+                .or_insert_with(|| {
+                    accounts
+                        .get(&Pubkey::new_from_array(order.sell_token_account.0))
+                        .map_or(0, |account| funded_sell_balance(account, &order))
+                });
+            let remaining = order.remaining().sell;
+            let taken = if order.partially_fillable {
+                remaining.min(*balance)
             } else {
-                order.remaining().sell
+                remaining
             };
-            if balance < needed {
+            if taken == 0 || taken > *balance {
                 unfunded.push(order.uid);
                 return None;
             }
-            order.sell_balance = Some(balance);
+            *balance -= taken;
+            order.sell_balance = Some(taken);
             Some(order)
         })
         .collect();
@@ -644,8 +655,8 @@ mod tests {
     /// wallet receives it, an account of another program does not. The funded
     /// system wallet takes even a payout under the rent-exempt minimum. A
     /// pending sponsored native buy gets the same check. After the wallets the
-    /// lookup reads the created orders' shared sell token account, funded, and
-    /// only the sell mint.
+    /// lookup reads the created orders' shared sell token account, funded for
+    /// both kept orders, and only the sell mint.
     #[tokio::test]
     async fn native_buys_pay_system_wallets() {
         let system_wallet = serde_json::json!({
@@ -663,7 +674,7 @@ mod tests {
                 system_wallet,
                 crate::tests::token_account_json([0x44; 32]),
                 crate::tests::token_account_json([0x44; 32]),
-                funded_sell_account(),
+                crate::tests::sell_token_account_json([0x33; 32], 2_000, Some(2_000)),
                 crate::tests::mint_account_json(6),
             ],
         });
@@ -898,6 +909,86 @@ mod tests {
             (0x51..=0x56)
                 .map(|byte| IntentHash([byte; 32]))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    /// A sell token account of `order()`'s mint holding and approving `amount`.
+    fn sell_account(amount: u64) -> Account {
+        use solana_sdk::program_pack::Pack;
+        let mut data = vec![0; TokenAccount::LEN];
+        TokenAccount {
+            mint: Pubkey::new_from_array([0x33; 32]),
+            amount,
+            delegate: Some(Pubkey::new_from_array([0xde; 32])).into(),
+            delegated_amount: amount,
+            state: AccountState::Initialized,
+            ..TokenAccount::default()
+        }
+        .pack_into_slice(&mut data);
+        Account {
+            owner: spl_token_interface::ID,
+            data,
+            ..Default::default()
+        }
+    }
+
+    /// Orders selling from one account draw on one balance in cut order. On
+    /// an account funded with 1000: two partially fillable orders of 1000
+    /// leave the second nothing; a fill-or-kill 600 leaves a partially
+    /// fillable 400; a partially fillable order taking all 1000 drops the
+    /// fill-or-kill after it, one taking only its 300 does not. Another
+    /// account of the owner is its own balance.
+    #[test]
+    fn orders_sharing_a_sell_account_split_its_balance() {
+        let accounts = HashMap::from([
+            (Pubkey::new_from_array([0x50; 32]), sell_account(1_000)),
+            (Pubkey::new_from_array([0x51; 32]), sell_account(1_000)),
+        ]);
+        let selling = |account: u8, uid: u8, partially_fillable, sell_amount| Order {
+            uid: IntentHash([uid; 32]),
+            sell_token_account: ChainPubkey([account; 32]),
+            partially_fillable,
+            sell_amount,
+            ..order([0x01; 32], true)
+        };
+        let funded = |orders: Vec<Order>| {
+            let (kept, unfunded) = funded_orders(orders, &accounts);
+            let kept: Vec<(u8, Option<u64>)> = kept
+                .iter()
+                .map(|order| (order.uid.0[0], order.sell_balance))
+                .collect();
+            let unfunded: Vec<u8> = unfunded.iter().map(|uid| uid.0[0]).collect();
+            (kept, unfunded)
+        };
+
+        assert_eq!(
+            funded(vec![
+                selling(0x50, 1, true, 1_000),
+                selling(0x50, 2, true, 1_000),
+                selling(0x51, 3, true, 1_000),
+            ]),
+            (vec![(1, Some(1_000)), (3, Some(1_000))], vec![2])
+        );
+        assert_eq!(
+            funded(vec![
+                selling(0x50, 1, false, 600),
+                selling(0x50, 2, true, 1_000),
+            ]),
+            (vec![(1, Some(600)), (2, Some(400))], vec![])
+        );
+        assert_eq!(
+            funded(vec![
+                selling(0x50, 1, true, 1_000),
+                selling(0x50, 2, false, 600),
+            ]),
+            (vec![(1, Some(1_000))], vec![2])
+        );
+        assert_eq!(
+            funded(vec![
+                selling(0x50, 1, true, 300),
+                selling(0x50, 2, false, 600),
+            ]),
+            (vec![(1, Some(300)), (2, Some(600))], vec![])
         );
     }
 
