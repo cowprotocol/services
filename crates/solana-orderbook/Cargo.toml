@@ -56,6 +56,7 @@ url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 cow-settlement-client = { workspace = true }
+cow-settlement-interface = { workspace = true, features = ["test-fixtures"] }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 solana-testlib = { workspace = true }
 spl-token-2022-interface = { workspace = true }

@@ -26,10 +26,6 @@ use {
 
 pub struct Solver(Arc<Inner>);
 
-/// The amount of time we aim the solver to finish before the final deadline is
-/// reached.
-const DEADLINE_SLACK: chrono::Duration = chrono::Duration::milliseconds(500);
-
 pub struct Config {
     pub weth: eth::WethAddress,
     pub base_tokens: Vec<eth::TokenAddress>,
@@ -112,12 +108,7 @@ impl Solver {
         // the real async things. For larger settlements, this can block in the
         // 100s of ms.
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let remaining = auction
-            .deadline
-            .clone()
-            .reduce(DEADLINE_SLACK)
-            .remaining()
-            .unwrap_or_default();
+        let remaining = auction.deadline.clone().remaining().unwrap_or_default();
 
         let inner = self.0.clone();
         let span = tracing::Span::current();

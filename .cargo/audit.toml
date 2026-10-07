@@ -1,27 +1,20 @@
 # cargo-audit configuration
-# Excludes known vulnerabilities from issue #3338 that require non-trivial upgrades
-# Only NEW vulnerabilities will cause CI to fail
 
 [advisories]
-# Known vulnerabilities that are tracked in https://github.com/cowprotocol/services/issues/3338
 ignore = [
-  # rsa - Marvin Attack timing sidechannel (RUSTSEC-2023-0071)
-  # No patch available yet (cryptography vulnerability)
+  # ----------------------------------------------------------------
+  # Each ignored advisory below is reachable only through a disabled
+  # optional dependency. Cargo lists optional deps in Cargo.lock for
+  # determinism, so cargo-audit flags them even though the code is
+  # never compiled.
+
+  # rsa - Marvin Attack timing sidechannel (RUSTSEC-2023-0071).
+  # Pulled in exclusively through `sqlx-mysql`. Unused because we use
+  # postgres.
   "RUSTSEC-2023-0071",
 
-  # derivative - Unmaintained (RUSTSEC-2024-0388)
-  # Evaluate alternatives (tracked in #3338)
+  # derivative - Unmaintained (RUSTSEC-2024-0388).
+  # Pulled in exclusively through the `ark-ff-03` / `ark-ff-04` optional
+  # features of `ruint`.
   "RUSTSEC-2024-0388",
-
-  # instant - Unmaintained (RUSTSEC-2024-0384)
-  # Use web-time instead (tracked in #3338)
-  "RUSTSEC-2024-0384",
-
-  # paste - Unmaintained (RUSTSEC-2024-0436)
-  # Archived upstream (tracked in #3338)
-  "RUSTSEC-2024-0436",
-
-  # model crate - data race in Shared (RUSTSEC-2020-0140)
-  # Internal crate issue (tracked in #3338)
-  "RUSTSEC-2020-0140",
 ]

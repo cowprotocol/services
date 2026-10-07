@@ -121,9 +121,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             )
                         })
                         .collect(),
-                    enable_simulation_strategy: solver_config
-                        .bad_order_detection
-                        .enable_simulation_strategy,
                     enable_metrics_strategy: solver_config
                         .bad_order_detection
                         .enable_metrics_strategy,
@@ -373,7 +370,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
-        simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,

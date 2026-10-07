@@ -44,7 +44,10 @@ use {
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     futures::StreamExt,
     solana_sdk::pubkey::Pubkey,
-    std::sync::{Arc, atomic::AtomicU64},
+    std::{
+        num::NonZeroU64,
+        sync::{Arc, atomic::AtomicU64},
+    },
 };
 
 fn pubkey(n: u8) -> Pubkey {
@@ -363,8 +366,8 @@ fn sample_intent() -> OrderIntent {
             mint: InterfacePubkey::new_from_array([0x55; 32]),
             token_account: InterfacePubkey::new_from_array([0x22; 32]),
         }),
-        sell_amount: 1_000,
-        buy_amount: 2_000,
+        sell_amount: NonZeroU64::new(1_000).unwrap(),
+        buy_amount: NonZeroU64::new(2_000).unwrap(),
         valid_to: 42,
         flags: Flags {
             created_on_chain: true,
@@ -796,8 +799,8 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
             mint: InterfacePubkey::new_from_array([0x55; 32]),
             token_account: InterfacePubkey::new_from_array([0x22; 32]),
         }),
-        sell_amount: 1_000,
-        buy_amount: 1_234,
+        sell_amount: NonZeroU64::new(1_000).unwrap(),
+        buy_amount: NonZeroU64::new(1_234).unwrap(),
         valid_to: 42,
         flags: Flags {
             created_on_chain: true,
@@ -810,6 +813,7 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 
     let begin = cow_settlement_client::instruction::BeginSettle {
         only_token_program: None,
+        extra_transfer_accounts: &[],
         program_id: settlement,
         solver,
         finalize_ix_index: 1,
@@ -826,16 +830,19 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
                     amount: 700,
                 },
             ],
+            use_transfer_checked: false,
         }],
     }
     .into();
     let finalize = cow_settlement_client::instruction::FinalizeSettle {
         only_token_program: None,
+        extra_transfer_accounts: &[],
         program_id: settlement,
         begin_ix_index: 0,
         orders: &[cow_settlement_client::instruction::FinalizedIntent {
             intent: &intent,
             amount: 1_234,
+            use_transfer_checked: false,
         }],
     }
     .into();

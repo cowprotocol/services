@@ -23,7 +23,6 @@ alloy = {
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
-bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes = { workspace = true }
