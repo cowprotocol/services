@@ -42,7 +42,7 @@ const TOKEN_PROGRAM_CACHE_CAPACITY: u64 = 10_000;
 
 /// A simulated transaction's outcome and the slot it ran against.
 pub struct TransactionSimulation {
-    pub slot: u64,
+    pub slot: crate::domain::Slot,
     pub err: Option<UiTransactionError>,
     pub logs: Option<Vec<String>>,
 }
@@ -50,7 +50,7 @@ pub struct TransactionSimulation {
 /// A simulated bundle's per-transaction results, in order and ending at the
 /// first failure, and the slot it ran against.
 pub struct BundleSimulation {
-    pub slot: u64,
+    pub slot: crate::domain::Slot,
     pub results: Vec<RpcSimulateBundleTransactionResult>,
 }
 
@@ -109,7 +109,7 @@ impl Solana {
     ) -> Result<TransactionSimulation, Error> {
         let response = self.rpc.simulate_transaction(transaction).await?;
         Ok(TransactionSimulation {
-            slot: response.context.slot,
+            slot: crate::domain::Slot(response.context.slot),
             err: response.value.err,
             logs: response.value.logs,
         })
@@ -122,7 +122,7 @@ impl Solana {
     ) -> Result<BundleSimulation, Error> {
         let response = self.bundle_rpc.simulate_bundle(transactions).await?;
         Ok(BundleSimulation {
-            slot: response.context.slot,
+            slot: crate::domain::Slot(response.context.slot),
             results: response.value,
         })
     }

@@ -11,6 +11,7 @@ use {
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
         settlement::ResolveError,
+        slot::Slot,
         solution::Solution,
     },
     crate::infra::{
@@ -171,7 +172,7 @@ impl Competition {
                 Ok(slot) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
-                    slot,
+                    slot = %slot,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -223,7 +224,7 @@ impl Competition {
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<u64, Error> {
+    ) -> Result<Slot, Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
@@ -274,7 +275,7 @@ impl Competition {
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
                     program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
                     logs = ?result.logs,
-                    slot,
+                    slot = %slot,
                     "bundle simulation failed"
                 );
                 return Err(Error::SimulationFailed {
@@ -658,7 +659,7 @@ impl Competition {
             // the settle task's log. The message leaves out the signature, so
             // the log cannot be broadcast.
             tracing::warn!(
-                slot = simulation.slot,
+                slot = %simulation.slot,
                 logs = ?simulation.logs,
                 message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
