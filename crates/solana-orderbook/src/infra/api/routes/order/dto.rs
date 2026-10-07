@@ -51,6 +51,41 @@ pub struct Order {
     /// stored transaction can no longer land and a fresh signature is needed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_valid_block_height: Option<u64>,
+    /// The quote this order was placed against. Absent for an order placed
+    /// without one, and for orders created directly on chain. Mirrors the EVM
+    /// order's `quote`, minus the gas fields Solana has no analogue for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote: Option<Quote>,
+}
+
+/// The quote an order was placed against.
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    /// The `solana.quotes` id the order was placed with.
+    pub quote_id: i64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_amount: BigDecimal,
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_amount: BigDecimal,
+    /// The solver that produced the quote.
+    #[serde_as(as = "DisplayFromStr")]
+    pub solver: Pubkey,
+}
+
+impl Quote {
+    /// The quote columns joined onto the order row, when all of them are
+    /// present. They are written together, so a partial row is a bug rather
+    /// than a case to render.
+    fn new(row: &OrderRow) -> Option<Self> {
+        Some(Self {
+            quote_id: row.quote_id?,
+            sell_amount: row.quote_sell_amount.clone()?,
+            buy_amount: row.quote_buy_amount.clone()?,
+            solver: Pubkey::new_from_array(row.quote_solver?.0),
+        })
+    }
 }
 
 /// Which amount the order fixes.
@@ -84,6 +119,7 @@ impl Order {
     pub fn new(row: OrderRow, now_unix: i64, block_height: Option<i64>) -> Self {
         let status = status(&row, now_unix, block_height);
         let kind = kind(&row);
+        let quote = Quote::new(&row);
         Self {
             uid: const_hex::encode_prefixed(row.uid.0),
             owner: Pubkey::new_from_array(row.owner.0),
@@ -105,6 +141,7 @@ impl Order {
             last_valid_block_height: row
                 .last_valid_block_height
                 .map(|height| height.try_into().expect("block height fits u64")),
+            quote,
         }
     }
 }
@@ -162,6 +199,10 @@ mod tests {
             amount_received: 0.into(),
             cancellation_timestamp: None,
             last_valid_block_height: None,
+            quote_id: None,
+            quote_sell_amount: None,
+            quote_buy_amount: None,
+            quote_solver: None,
         }
     }
 
@@ -242,5 +283,29 @@ mod tests {
         };
         let json = serde_json::to_value(Order::new(pending, 1_500, None)).unwrap();
         assert_eq!(json["lastValidBlockHeight"], 250);
+    }
+
+    /// The quote rides along when the order was placed against one, and the
+    /// field disappears entirely when it was not.
+    #[test]
+    fn the_linked_quote_is_served_with_the_order() {
+        let json = serde_json::to_value(Order::new(row(), 1_500, None)).unwrap();
+        assert!(json.get("quote").is_none());
+
+        let quoted = OrderRow {
+            quote_id: Some(42),
+            quote_sell_amount: Some(1_000.into()),
+            quote_buy_amount: Some(510.into()),
+            quote_solver: Some(ByteArray([0x99; 32])),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(quoted, 1_500, None)).unwrap();
+        assert_eq!(json["quote"]["quoteId"], 42);
+        assert_eq!(json["quote"]["sellAmount"], "1000");
+        assert_eq!(json["quote"]["buyAmount"], "510");
+        assert_eq!(
+            json["quote"]["solver"],
+            Pubkey::new_from_array([0x99; 32]).to_string()
+        );
     }
 }
