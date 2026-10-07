@@ -304,8 +304,10 @@ impl<'a> Services<'a> {
             ..orderbook_config
         };
 
-        self.start_autopilot(None, autopilot_config).await;
-        self.start_api(orderbook_config).await;
+        tokio::join!(
+            self.start_autopilot(None, autopilot_config),
+            self.start_api(orderbook_config),
+        );
     }
 
     /// Starts a basic version of the protocol with a single external solver.
@@ -413,9 +415,10 @@ impl<'a> Services<'a> {
             colocation::LiquidityProvider::UniswapV2,
         );
 
-        self.start_autopilot(Some(Duration::from_secs(11)), autopilot_config)
-            .await;
-        self.start_api(orderbook_config).await;
+        tokio::join!(
+            self.start_autopilot(Some(Duration::from_secs(11)), autopilot_config),
+            self.start_api(orderbook_config),
+        );
     }
 
     async fn wait_for_api_to_come_up() {
