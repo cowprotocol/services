@@ -9,7 +9,7 @@ use {
     database::solana::OrderEventLabel,
     solana_sdk::{account::Account, pubkey::Pubkey, transaction::VersionedTransaction},
     sqlx::PgPool,
-    std::collections::HashMap,
+    std::collections::{HashMap, HashSet},
     tokio::sync::Mutex,
 };
 
@@ -30,6 +30,7 @@ pub struct Sponsor {
 /// A stored sponsored creation the indexer has not seen on chain.
 struct PendingCreation {
     uid: IntentHash,
+    owner: Pubkey,
     /// The order account the creation opens.
     order_pda: Pubkey,
     /// The owner-signed transaction as stored, countersigned at send time.
@@ -110,6 +111,7 @@ impl Sponsor {
             .filter_map(|stored| match bincode::deserialize(&stored.transaction) {
                 Ok(transaction) => Some(PendingCreation {
                     uid: IntentHash(stored.uid.0),
+                    owner: Pubkey::new_from_array(stored.owner.0),
                     order_pda: Pubkey::new_from_array(stored.order_pda.0),
                     bytes: stored.transaction,
                     transaction,
@@ -125,7 +127,8 @@ impl Sponsor {
     }
 
     /// Send the creatable ones among the pending creations, in order, up to
-    /// the cap. A creation whose order account exists landed earlier and
+    /// the cap and at most one per owner, so a single user cannot take the
+    /// whole cap. A creation whose order account exists landed earlier and
     /// waits for the indexer, so it is not sent again. One that opens an
     /// account with the funder's lamports is skipped, since that rent goes
     /// to the account's owner. A run still in flight makes the call skip,
@@ -151,12 +154,14 @@ impl Sponsor {
                 return Vec::new();
             }
         };
+        let mut owners = HashSet::new();
         let creatable = pending
             .iter()
             .filter(|creation| {
                 !existing.contains_key(&creation.order_pda)
                     && !opens_funder_paid_account(&creation.transaction, &funder, &existing)
             })
+            .filter(|creation| owners.insert(creation.owner))
             .take(self.max_displaced_creations);
         let mut sent = Vec::new();
         for creation in creatable {
@@ -288,8 +293,9 @@ mod tests {
         },
     };
 
-    /// A pending creation the funder pays for that opens `order_pda`.
-    fn pending_creation(funder: &Keypair, order_pda: Pubkey) -> PendingCreation {
+    /// A pending creation of `owner`'s order the funder pays for that opens
+    /// `order_pda`.
+    fn pending_creation(funder: &Keypair, owner: Pubkey, order_pda: Pubkey) -> PendingCreation {
         let message = Message::new_with_blockhash(
             &[solana_sdk::instruction::Instruction::new_with_bytes(
                 Pubkey::new_unique(),
@@ -308,10 +314,40 @@ mod tests {
         };
         PendingCreation {
             uid: IntentHash(order_pda.to_bytes()),
+            owner,
             order_pda,
             bytes: bincode::serialize(&transaction).unwrap(),
             transaction,
         }
+    }
+
+    /// Mocks for one `send_displaced` run: the account lookup answers
+    /// `accounts`, every blockhash check of the `sends` passes, and the mock
+    /// answers a send with the sent transaction's own signature.
+    fn displaced_mocks(accounts: Vec<serde_json::Value>, sends: usize) -> MocksMap {
+        let context = serde_json::json!({"slot": 1u64, "apiVersion": "2.0.0"});
+        std::iter::once((
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({"context": context, "value": accounts}),
+        ))
+        .chain(std::iter::repeat_n(
+            (
+                RpcRequest::IsBlockhashValid,
+                serde_json::json!({"context": context, "value": true}),
+            ),
+            sends,
+        ))
+        .collect()
+    }
+
+    /// A sponsor over `mocks` with the given displaced creation cap.
+    fn sponsor(funder: &Keypair, mocks: MocksMap, max_displaced_creations: usize) -> Sponsor {
+        Sponsor::new(
+            Signer::Keypair(funder.insecure_clone()),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
+            max_displaced_creations,
+        )
     }
 
     /// Countersigning fills exactly the funder's slot and leaves the owner's
@@ -411,32 +447,19 @@ mod tests {
     #[tokio::test]
     async fn landed_creations_are_not_resent() {
         let funder = Keypair::new();
-        let landed = pending_creation(&funder, Pubkey::new_unique());
-        let fresh = pending_creation(&funder, Pubkey::new_unique());
+        let landed = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
+        let fresh = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
         // The lookup finds the landed order's account and not the fresh
-        // one's. Every blockhash check passes, and the mock answers a send
-        // with the sent transaction's own signature.
-        let valid = serde_json::json!({
-            "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-            "value": true,
-        });
-        let mocks: MocksMap = [
-            (
-                RpcRequest::GetMultipleAccounts,
-                serde_json::json!({
-                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-                    "value": [solana_testlib::account_json(&Account::default()), null],
-                }),
+        // one's.
+        let sponsor = sponsor(
+            &funder,
+            displaced_mocks(
+                vec![
+                    solana_testlib::account_json(&Account::default()),
+                    serde_json::Value::Null,
+                ],
+                2,
             ),
-            (RpcRequest::IsBlockhashValid, valid.clone()),
-            (RpcRequest::IsBlockhashValid, valid),
-        ]
-        .into_iter()
-        .collect();
-        let sponsor = Sponsor::new(
-            Signer::Keypair(funder.insecure_clone()),
-            SolanaRPC::new_mock_with_mocks_map(mocks),
-            PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
             10,
         );
 
@@ -450,35 +473,55 @@ mod tests {
     #[tokio::test]
     async fn a_run_in_flight_makes_the_next_cycle_skip() {
         let funder = Keypair::new();
-        let fresh = pending_creation(&funder, Pubkey::new_unique());
+        let fresh = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
         // Nothing but the run in flight stops the send.
-        let mocks: MocksMap = [
-            (
-                RpcRequest::GetMultipleAccounts,
-                serde_json::json!({
-                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-                    "value": [null],
-                }),
-            ),
-            (
-                RpcRequest::IsBlockhashValid,
-                serde_json::json!({
-                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
-                    "value": true,
-                }),
-            ),
-        ]
-        .into_iter()
-        .collect();
-        let sponsor = Sponsor::new(
-            Signer::Keypair(funder.insecure_clone()),
-            SolanaRPC::new_mock_with_mocks_map(mocks),
-            PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
+        let sponsor = sponsor(
+            &funder,
+            displaced_mocks(vec![serde_json::Value::Null], 1),
             10,
         );
 
         let _in_flight = sponsor.displacing.lock().await;
         assert!(sponsor.send_displaced(vec![fresh]).await.is_empty());
+    }
+
+    /// An owner gets one creation per run, so a single user cannot take the
+    /// whole cap.
+    #[tokio::test]
+    async fn one_creation_per_owner_per_run() {
+        let funder = Keypair::new();
+        let owner = Pubkey::new_unique();
+        let first = pending_creation(&funder, owner, Pubkey::new_unique());
+        let second = pending_creation(&funder, owner, Pubkey::new_unique());
+        let other = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
+        let sponsor = sponsor(
+            &funder,
+            displaced_mocks(vec![serde_json::Value::Null; 3], 2),
+            10,
+        );
+
+        let (first_uid, other_uid) = (first.uid, other.uid);
+        let sent = sponsor.send_displaced(vec![first, second, other]).await;
+        assert_eq!(sent, vec![first_uid, other_uid]);
+    }
+
+    /// The cap bounds a run.
+    #[tokio::test]
+    async fn the_cap_bounds_a_run() {
+        let funder = Keypair::new();
+        let first = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
+        let second = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
+        let sponsor = sponsor(
+            &funder,
+            displaced_mocks(vec![serde_json::Value::Null; 2], 1),
+            1,
+        );
+
+        let first_uid = first.uid;
+        assert_eq!(
+            sponsor.send_displaced(vec![first, second]).await,
+            vec![first_uid]
+        );
     }
 
     /// A dead blockhash refuses the countersign.

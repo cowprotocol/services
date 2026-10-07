@@ -135,6 +135,7 @@ pub struct LandedWindow {
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct StoredCreation {
     pub uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
     /// The order account the creation opens.
     pub order_pda: ByteArray<32>,
     /// The owner-signed creation transaction, bincode-encoded.
@@ -148,7 +149,7 @@ pub async fn pending_creations(
     uids: &[Vec<u8>],
 ) -> Result<Vec<StoredCreation>> {
     const QUERY: &str = r#"
-SELECT o.uid, o.order_pda, o.presigned_transaction AS transaction
+SELECT o.uid, o.owner, o.order_pda, o.presigned_transaction AS transaction
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.uid = ANY($1)
