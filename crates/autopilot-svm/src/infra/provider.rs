@@ -518,7 +518,7 @@ mod tests {
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
             ExtensionType,
-            transfer_fee::TransferFeeConfig,
+            non_transferable::NonTransferable,
         },
     };
 
@@ -847,8 +847,8 @@ mod tests {
     /// answer left, so reading the mints again would judge them all missing.
     #[tokio::test]
     async fn drops_orders_on_mints_the_program_cannot_move() {
-        let fee_mint = token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
-            mint.init_extension::<TransferFeeConfig>(true).unwrap();
+        let locked_mint = token_2022_mint(&[ExtensionType::NonTransferable], |mint| {
+            mint.init_extension::<NonTransferable>(true).unwrap();
         });
         // The pending sponsored orders skip the buy account check, so the
         // lookup reads only the mints, in first-seen order: 0x33, 0x44, 0x88,
@@ -858,7 +858,7 @@ mod tests {
             "value": [
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
-                account_json(&fee_mint),
+                account_json(&locked_mint),
                 null,
             ],
         });
