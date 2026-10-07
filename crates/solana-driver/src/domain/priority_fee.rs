@@ -39,10 +39,9 @@ pub struct PriorityFeePolicy {
     /// over it is refused.
     pub max_priority_fee_lamports: u64,
     /// The compute unit limit a settlement declares when its solver sent
-    /// none, as a multiple of the units its simulation consumed, at least 1.
-    /// Unlike EVM gas, the priority fee is paid on the whole limit, so the
-    /// headroom costs; a limit that drifted too low fails the settle-time
-    /// simulation before anything is sent.
+    /// none, as a multiple of the units its simulation consumed, at least 1,
+    /// plus a fixed allowance for one account creation. Unlike EVM gas, the
+    /// priority fee is paid on the whole limit, so the headroom costs.
     pub compute_unit_limit_factor: ComputeUnitLimitFactor,
 }
 
@@ -85,11 +84,20 @@ impl TryFrom<f64> for ComputeUnitLimitFactor {
     }
 }
 
+/// What an idempotent ATA creation costs over its no-op: on mainnet 13_413
+/// units when it creates the account against 4_339 when the account exists.
+/// The settlement creates the payer's wSOL ATA regardless, because a native
+/// SOL settlement in flight can close it, so a simulation that found it open
+/// undercounts a transaction that lands after it closed.
+const ATA_CREATION_HEADROOM: u64 = 10_000;
+
 impl ComputeUnitLimitFactor {
-    /// The limit for a transaction that consumed `units` in simulation,
-    /// rounded up and capped at the runtime's ceiling.
+    /// The limit for a transaction that consumed `units` in simulation.
     pub(crate) fn limit(self, units: u64) -> u32 {
-        let limit = units.saturating_mul(self.0).div_ceil(BPS);
+        let limit = units
+            .saturating_mul(self.0)
+            .div_ceil(BPS)
+            .saturating_add(ATA_CREATION_HEADROOM);
         u32::try_from(limit)
             .unwrap_or(u32::MAX)
             .min(MAX_COMPUTE_UNIT_LIMIT)
@@ -193,11 +201,11 @@ mod tests {
 
         assert_eq!(
             factor("compute-unit-limit-factor = 1.1").limit(85_000),
-            93_500
+            103_500
         );
         assert_eq!(
             factor("compute-unit-limit-factor = 1").limit(85_000),
-            85_000
+            95_000
         );
         assert_eq!(
             factor("compute-unit-limit-factor = 1.1").limit(2_000_000),

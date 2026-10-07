@@ -192,7 +192,11 @@ impl Competition {
             }
             // The priority fee is paid on the declared limit, not the units
             // consumed, and an undeclared one is priced at the 1.4M ceiling.
-            if let Ok(Some(units)) = verdict {
+            // A node reporting 0 units does not meter them, and a 0 limit fits
+            // no transaction.
+            if let Ok(Some(units)) = verdict
+                && units > 0
+            {
                 solution
                     .cu_estimate
                     .get_or_insert(self.priority_fee.compute_unit_limit_factor.limit(units));
@@ -646,6 +650,7 @@ impl Competition {
             .observe(estimate.compute_unit_price as f64);
         tracing::info!(
             compute_unit_price = estimate.compute_unit_price,
+            compute_unit_limit = ?cu_estimate,
             priority_fee_lamports = estimate.lamports,
             "priority fee estimated"
         );
@@ -678,7 +683,10 @@ impl Competition {
                 err: err.clone(),
             });
         }
-        tracing::debug!("settlement simulation passed");
+        tracing::debug!(
+            units_consumed = simulation.units_consumed,
+            "settlement simulation passed"
+        );
         Ok(())
     }
 }

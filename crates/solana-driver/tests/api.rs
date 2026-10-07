@@ -298,8 +298,12 @@ fn response_ids(body: &serde_json::Value) -> Vec<u64> {
 /// it carries the owner-signed creation transaction.
 fn sponsored_solve_request() -> serde_json::Value {
     let mut request = solve_request();
+    let creation = VersionedTransaction {
+        signatures: vec![Signature::default()],
+        ..VersionedTransaction::default()
+    };
     request["orders"][0]["creation"] = base64::engine::general_purpose::STANDARD
-        .encode(bincode::serialize(&VersionedTransaction::default()).unwrap())
+        .encode(bincode::serialize(&creation).unwrap())
         .into();
     request
 }
@@ -615,28 +619,34 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     assert_eq!(json["kind"], "PriorityFeeTooHigh");
 }
 
-/// The engine sends no compute unit estimate and the solve-time simulation
-/// consumed 85_000 units, so the settlement declares the default 1.1x that:
-/// 93_500 units at the RPC's 10_000 micro-lamport fee is 935 lamports, over a
-/// 934 lamport budget. Within a 935 one the settlement reaches the send, which
-/// the mock RPC fails by answering with another signature.
-#[tokio::test]
-async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
-    for (budget, kind) in [(934, "PriorityFeeTooHigh"), (935, "FailedToSubmit")] {
-        let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+/// Asserts that settling the engine's only solution prices its priority fee
+/// at `lamports`: a budget one lamport under refuses it, a budget of exactly
+/// that lets it through. The RPC quotes 10_000 micro-lamports per compute unit
+/// and the solve-time bundle simulation reports `units` per leg.
+async fn assert_settle_priced_at(
+    engine_response: serde_json::Value,
+    request: serde_json::Value,
+    units: &[u64],
+    factor: f64,
+    lamports: u64,
+) {
+    for budget in [lamports - 1, lamports] {
+        let engine = spawn_mock_solver_engine(engine_response.clone()).await;
         let (solver, _) = solver_with_keypair(engine).await;
         let mut mocks = Mocks::new();
         mocks.insert(
             RpcRequest::GetRecentPrioritizationFees,
             serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
         );
+        let legs: Vec<_> = units
+            .iter()
+            .map(|units| serde_json::json!({ "err": null, "logs": [], "unitsConsumed": units }))
+            .collect();
         mocks.insert(
             SIMULATE_BUNDLE,
             serde_json::json!({
                 "context": { "slot": 1 },
-                "value": { "transactionResults": [
-                    { "err": null, "logs": [], "unitsConsumed": 85_000 },
-                ] },
+                "value": { "transactionResults": legs },
             }),
         );
         mocks.insert(
@@ -646,6 +656,7 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
         let api = Api {
             priority_fee: PriorityFeePolicy {
                 max_priority_fee_lamports: budget,
+                compute_unit_limit_factor: factor.try_into().unwrap(),
                 ..priority_fee()
             },
             ..api_with(vec![solver], mocks).await
@@ -654,7 +665,7 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
         let shutdown = CancellationToken::new();
         tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
 
-        let body = call_solve(addr).await;
+        let body = call_solve_with(addr, request.clone()).await;
         let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
         let response = reqwest::Client::new()
             .post(format!("http://{addr}/mock/settle"))
@@ -666,9 +677,37 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
             .send()
             .await
             .unwrap();
-        let json: serde_json::Value = response.json().await.unwrap();
-        assert_eq!(json["kind"], kind, "budget {budget}");
+        let json: serde_json::Value = response.json().await.unwrap_or_default();
+        assert_eq!(
+            json["kind"] == "PriorityFeeTooHigh",
+            budget < lamports,
+            "budget {budget}: {json}"
+        );
     }
+}
+
+/// 85_000 units at a 1.2 factor plus the 10_000 unit ATA allowance is a
+/// 112_000 unit limit: 1_120 lamports.
+#[tokio::test]
+async fn settle_prices_the_priority_fee_at_the_derived_compute_unit_limit() {
+    let engine = engine_response(&[(42, "2000")]);
+    assert_settle_priced_at(engine, solve_request(), &[85_000], 1.2, 1_120).await;
+}
+
+/// The creation leg's units do not count: pricing it would give 610_000
+/// units, 6_100 lamports.
+#[tokio::test]
+async fn settle_derives_the_limit_from_the_settlement_leg_of_a_sponsored_bundle() {
+    let engine = engine_response(&[(42, "2000")]);
+    let units = [500_000, 85_000];
+    assert_settle_priced_at(engine, sponsored_solve_request(), &units, 1.2, 1_120).await;
+}
+
+#[tokio::test]
+async fn settle_prices_the_priority_fee_at_the_solvers_compute_unit_estimate() {
+    let mut engine = engine_response(&[(42, "2000")]);
+    engine["solutions"][0]["cuEstimate"] = 50_000.into();
+    assert_settle_priced_at(engine, solve_request(), &[85_000], 1.2, 500).await;
 }
 
 #[tokio::test]

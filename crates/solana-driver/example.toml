@@ -25,8 +25,9 @@ min-compute-unit-price = 10000
 # limit), in lamports. A transaction over it is refused as over budget.
 max-priority-fee-lamports = 1000000
 # The compute unit limit a settlement declares when its solver sends none, as
-# a multiple of the units its simulation consumed, at least 1. The priority
-# fee is paid on the whole limit, so headroom costs.
+# a multiple of the units its simulation consumed, at least 1, plus a fixed
+# allowance for one account creation. The priority fee is paid on the whole
+# limit, so headroom costs.
 compute-unit-limit-factor = 1.1
 
 [http]
