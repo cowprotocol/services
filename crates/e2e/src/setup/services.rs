@@ -165,7 +165,7 @@ impl<'a> Services<'a> {
         config: configs::autopilot::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
-        let min_solve_time = min_solve_time.unwrap_or(Duration::from_secs(2));
+        let min_solve_time = min_solve_time.unwrap_or(Duration::from_millis(500));
         let ethflow_contracts = self
             .contracts
             .ethflows
