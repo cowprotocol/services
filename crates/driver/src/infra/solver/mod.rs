@@ -457,9 +457,12 @@ impl Solver {
             });
         }
 
-        let timeout = match deadlines.solvers().remaining() {
-            Ok(timeout) => timeout,
-            Err(_) => {
+        let (driver_timeout, solver_timeout) = match (
+            deadlines.driver().remaining(),
+            deadlines.solvers().remaining(),
+        ) {
+            (Ok(driver_timeout), Ok(solver_timeout)) => (driver_timeout, solver_timeout),
+            _ => {
                 tracing::warn!("auction deadline exceeded before sending request to solver");
                 return Ok(Default::default());
             }
@@ -469,13 +472,20 @@ impl Solver {
             .post(url.clone())
             .body(body)
             .headers(tracing_headers())
-            .timeout(timeout);
+            // Using the driver timeout here gives solvers a little grace period so that
+            // they don't necessarily **have to** add a buffer on their end as well. They
+            // are still supposed to respond before `solver_timeout`.
+            // Solvers responding too late may not leave the driver enough time to do the
+            // post-processing but in that case enforcing the `solver_timeout` here would
+            // produce the same result (no solution).
+            .timeout(driver_timeout);
+
         if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
         super::observe::sending_solve_request(
             self.config.name.as_str(),
-            timeout,
+            solver_timeout,
             auction.is_quote(),
         );
         let started_at = std::time::Instant::now();
