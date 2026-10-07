@@ -20,8 +20,10 @@ pub struct Sponsor {
     rpc: SolanaRPC,
     pool: PgPool,
     max_displaced_creations: usize,
-    /// Held while displaced creations go out. A cycle that finds a run in
-    /// flight skips instead of signing the same creations again.
+    /// Held while a displaced-creation run sends. Runs are detached, so a
+    /// slow one would overlap the next cycles, resend the creations still
+    /// pending, and let more than `max_displaced_creations` go out at once. A
+    /// cycle that finds a run in flight skips.
     displacing: Mutex<()>,
 }
 
@@ -69,15 +71,15 @@ impl Sponsor {
         let uids: Vec<Vec<u8>> = uids.map(|uid| uid.0.to_vec()).collect();
         let pending = db::pending_creations(&self.pool, &uids).await?;
         let mut creations = Vec::with_capacity(pending.len());
-        for (uid, _, bytes) in pending {
-            let creation = match self.countersign(&bytes).await {
+        for stored in pending {
+            let creation = match self.countersign(&stored.transaction).await {
                 Err(err) if err.is::<BlockhashExpired>() => {
-                    self.expire(&uid).await;
+                    self.expire(&stored.uid.0).await;
                     Err(err)
                 }
                 creation => creation,
             }
-            .with_context(|| format!("order 0x{}", const_hex::encode(uid)))?;
+            .with_context(|| format!("order 0x{}", const_hex::encode(stored.uid.0)))?;
             creations.push(creation);
         }
         Ok(creations)
@@ -105,22 +107,17 @@ impl Sponsor {
         };
         let pending = pending
             .into_iter()
-            .filter_map(|(uid, order_pda, bytes)| {
-                let order_uid = const_hex::encode_prefixed(&uid);
-                let decoded = (|| {
-                    anyhow::Ok(PendingCreation {
-                        uid: IntentHash(uid.as_slice().try_into()?),
-                        order_pda: Pubkey::try_from(order_pda.as_slice())?,
-                        transaction: bincode::deserialize(&bytes)?,
-                        bytes,
-                    })
-                })();
-                match decoded {
-                    Ok(creation) => Some(creation),
-                    Err(err) => {
-                        tracing::warn!(%order_uid, ?err, "stored creation does not decode");
-                        None
-                    }
+            .filter_map(|stored| match bincode::deserialize(&stored.transaction) {
+                Ok(transaction) => Some(PendingCreation {
+                    uid: IntentHash(stored.uid.0),
+                    order_pda: Pubkey::new_from_array(stored.order_pda.0),
+                    bytes: stored.transaction,
+                    transaction,
+                }),
+                Err(err) => {
+                    let order_uid = const_hex::encode_prefixed(stored.uid.0);
+                    tracing::warn!(%order_uid, ?err, "stored creation does not decode");
+                    None
                 }
             })
             .collect();

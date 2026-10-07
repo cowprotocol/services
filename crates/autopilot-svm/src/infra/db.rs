@@ -130,14 +130,25 @@ pub struct LandedWindow {
     pub submitted_signature: ByteArray<64>,
 }
 
-/// The given orders the indexer has not seen on chain yet, oldest first, as
-/// `(uid, order PDA, stored creation transaction)`.
+/// A sponsored order's stored creation, for an order the indexer has not
+/// seen on chain yet.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct StoredCreation {
+    pub uid: ByteArray<32>,
+    /// The order account the creation opens.
+    pub order_pda: ByteArray<32>,
+    /// The owner-signed creation transaction, bincode-encoded.
+    pub transaction: Vec<u8>,
+}
+
+/// The stored creations of the given orders the indexer has not seen on
+/// chain yet, oldest first.
 pub async fn pending_creations(
     ex: impl PgExecutor<'_>,
     uids: &[Vec<u8>],
-) -> Result<Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>> {
+) -> Result<Vec<StoredCreation>> {
     const QUERY: &str = r#"
-SELECT o.uid, o.order_pda, o.presigned_transaction
+SELECT o.uid, o.order_pda, o.presigned_transaction AS transaction
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.uid = ANY($1)
