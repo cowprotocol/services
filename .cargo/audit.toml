@@ -20,8 +20,4 @@ ignore = [
   # paste - Unmaintained (RUSTSEC-2024-0436)
   # Archived upstream (tracked in #3338)
   "RUSTSEC-2024-0436",
-
-  # model crate - data race in Shared (RUSTSEC-2020-0140)
-  # Internal crate issue (tracked in #3338)
-  "RUSTSEC-2020-0140",
 ]
