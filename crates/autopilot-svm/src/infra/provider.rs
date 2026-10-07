@@ -260,6 +260,20 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(_) => {}
             Err(err) => tracing::warn!(?err, "indexer slot read failed"),
         }
+        // An order with a settlement in flight stays out until the
+        // settlement cannot land any more: a second winner could
+        // double-settle it. A failed read skips the cut rather than cutting
+        // without the hold. The hold is read before the orders: a trade the
+        // indexer commits in between then releases an order the cut has not
+        // read yet, instead of releasing one read with a stale `executed`.
+        let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
+        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
+            Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
+            Err(err) => {
+                tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
+                return None;
+            }
+        };
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
         // cut drops the dead ones.
@@ -271,18 +285,6 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         if let Some(height) = block_height {
             self.record_dead_creations(now, height).await;
         }
-        // An order with a settlement in flight stays out until the
-        // settlement cannot land any more: a second winner could
-        // double-settle it. A failed read skips the cut rather than cutting
-        // without the hold.
-        let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
-        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
-            Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
-            Err(err) => {
-                tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
-                return None;
-            }
-        };
         let (orders, held_out): (Vec<_>, Vec<_>) = orders
             .into_iter()
             .partition(|order| !held.contains(&order.uid));
