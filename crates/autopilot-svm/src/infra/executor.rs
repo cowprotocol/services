@@ -12,6 +12,7 @@ use {
     },
     async_trait::async_trait,
     std::sync::Arc,
+    tracing::Instrument,
     winner_selection::state::RankedItem,
 };
 
@@ -170,11 +171,14 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 .filter(|uid| !executing.contains(uid))
                 .collect();
             // Detached: the creations go out while the loop runs the next
-            // cycle.
+            // cycle. The auction span stays on for the logs.
             let sponsor = Arc::clone(sponsor);
-            tokio::spawn(async move {
-                sponsor.create_displaced(displaced.into_iter()).await;
-            });
+            tokio::spawn(
+                async move {
+                    sponsor.create_displaced(displaced.into_iter()).await;
+                }
+                .instrument(tracing::Span::current()),
+            );
         }
     }
 }
