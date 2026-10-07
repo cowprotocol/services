@@ -929,12 +929,20 @@ pub async fn clear_database() {
 pub async fn ensure_e2e_readonly_user() {
     use sqlx::{Executor, Row};
 
-    const PSQL_DUPLICATE_OBJECT_ERROR_CODE: &str = "42710";
-
     tracing::info!("Ensuring read-only user exists");
     let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL)
         .await
         .expect("Database connection error");
+
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly')")
+            .fetch_one(&mut db)
+            .await
+            .expect("failed to check for readonly role");
+    if exists {
+        return;
+    }
+
     let mut db: sqlx::Transaction<'_, sqlx::Postgres> = db
         .begin()
         .await
@@ -945,10 +953,9 @@ pub async fn ensure_e2e_readonly_user() {
         .expect("Current database name fetching error")
         .get(0);
 
-    let res = db
-        .execute(
-            format!(
-                r#"
+    db.execute(
+        format!(
+            r#"
     CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
     GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
     GRANT USAGE ON SCHEMA public TO readonly;
@@ -957,29 +964,13 @@ pub async fn ensure_e2e_readonly_user() {
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
     "#
-            )
-            .as_str(),
         )
-        .await;
-
-    match res {
-        Err(sqlx::Error::Database(e))
-            if e.code()
-                .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
-        {
-            // this is considered expected, if multiple tests are run against
-            // the same database
-            tracing::info!("Read-only user already exists! {:?}", e);
-        }
-        Err(e) => {
-            tracing::error!("Read-only user creation failed {:?}", e);
-            panic!("Read-only user creation failed {:?}", e);
-        }
-        Ok(_) => {
-            tracing::info!("Read only user created");
-            db.commit().await.expect("Transaction commit error");
-        }
-    }
+        .as_str(),
+    )
+    .await
+    .expect("Read-only user creation failed");
+    db.commit().await.expect("Transaction commit error");
+    tracing::info!("Read only user created");
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;
