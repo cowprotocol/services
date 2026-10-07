@@ -58,11 +58,11 @@ const-hex = "1.17.0"
 contracts = { path = "contracts/generated/contracts-facade" }
 cow-settlement-client = {
   git = "https://github.com/cowprotocol/solana-programs",
-  rev = "ba85a19c3c70479d01784ae05a1e3edcda9624ce"
+  rev = "da9865d2d6501820672397d690352d2818f286b9"
 }
 cow-settlement-interface = {
   git = "https://github.com/cowprotocol/solana-programs",
-  rev = "ba85a19c3c70479d01784ae05a1e3edcda9624ce"
+  rev = "da9865d2d6501820672397d690352d2818f286b9"
 }
 cow-solana-rpc = { path = "crates/cow-solana-rpc" }
 cow-solana-signer = { path = "crates/cow-solana-signer" }
