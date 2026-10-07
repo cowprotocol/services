@@ -92,6 +92,14 @@ pub struct Remaining {
     pub buy: u64,
 }
 
+impl Remaining {
+    /// Whether a leg scaled down to nothing. The program only accepts a fill
+    /// moving zero on that side, so no solver can fill the order.
+    pub fn has_zero_leg(self) -> bool {
+        self.sell == 0 || self.buy == 0
+    }
+}
+
 /// The cut auction the loop fans out to solvers.
 #[derive(Clone, Debug)]
 pub struct Auction {
