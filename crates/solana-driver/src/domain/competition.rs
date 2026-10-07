@@ -235,10 +235,11 @@ impl Competition {
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
-        // Without a solver limit, the settlement declares one derived from the
-        // units consumed here. Declaring the ceiling measures them without the
-        // runtime's lower default failing the settlement, and makes the size
-        // check count the limit instruction, whose size is fixed.
+        // Without a solver `cu_estimate`, the settlement declares a limit
+        // derived from the units consumed here. Declaring the ceiling
+        // measures them without the runtime's lower default failing the
+        // settlement, and makes the size check count the limit instruction,
+        // whose size is fixed.
         let simulated = Solution {
             cu_estimate: solution.cu_estimate.or(Some(MAX_COMPUTE_UNIT_LIMIT)),
             ..solution.clone()
