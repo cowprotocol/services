@@ -99,7 +99,6 @@ opentelemetry-otlp = "0.32"
 opentelemetry_sdk = "0.32"
 order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
-paste = "1.0"
 pin-project-lite = "0.2.14"
 pool-indexer = { path = "crates/pool-indexer" }
 prettyplease = "0.2.37"
