@@ -4,10 +4,15 @@ use {
     crate::infra::{db, order_events},
     anyhow::{Context, Result, ensure},
     chain_types::solana::IntentHash,
-    cow_solana_rpc::SolanaRPC,
+    cow_solana_rpc::{SolanaRPC, UiTransactionError},
     cow_solana_signer::Signer,
     database::solana::OrderEventLabel,
-    solana_sdk::{account::Account, pubkey::Pubkey, transaction::VersionedTransaction},
+    solana_sdk::{
+        account::Account,
+        pubkey::Pubkey,
+        signature::Signature,
+        transaction::{TransactionError, VersionedTransaction},
+    },
     sqlx::PgPool,
     std::collections::{HashMap, HashSet},
     tokio::sync::Mutex,
@@ -43,6 +48,22 @@ struct PendingCreation {
 #[derive(Debug, thiserror::Error)]
 #[error("the creation blockhash expired")]
 struct BlockhashExpired;
+
+/// What a displaced-creation run did.
+#[derive(Debug, Default, PartialEq)]
+struct Displaced {
+    /// Orders whose creation went out.
+    sent: Vec<IntentHash>,
+    /// Orders whose creation can never land: its blockhash died, or it
+    /// landed and failed.
+    dead: Vec<IntentHash>,
+}
+
+/// A landed creation's on-chain failure.
+struct LandedFailure {
+    err: UiTransactionError,
+    logs: Option<Vec<String>>,
+}
 
 impl Sponsor {
     pub fn new(
@@ -89,8 +110,9 @@ impl Sponsor {
     /// Send the creations of the given pending sponsored orders without a
     /// settlement, at most `max_displaced_creations` of them, so the orders
     /// outlive their creation blockhash. Returns the orders whose creation
-    /// went out. Failures only log: the order keeps its stored creation and
-    /// the cut drops it once the blockhash dies.
+    /// went out. A creation that can never land is expired, which drops its
+    /// order from the next cut. Other failures only log: the order keeps its
+    /// stored creation and the cut drops it once the blockhash dies.
     pub async fn create_displaced(
         &self,
         uids: impl Iterator<Item = IntentHash>,
@@ -123,7 +145,11 @@ impl Sponsor {
                 }
             })
             .collect();
-        self.send_displaced(pending).await
+        let Displaced { sent, dead } = self.send_displaced(pending).await;
+        for uid in dead {
+            self.expire(&uid.0).await;
+        }
+        sent
     }
 
     /// Send the creatable ones among the pending creations, in order, up to
@@ -131,12 +157,14 @@ impl Sponsor {
     /// whole cap. A creation whose order account exists landed earlier and
     /// waits for the indexer, so it is not sent again. One that opens an
     /// account with the funder's lamports is skipped, since that rent goes
-    /// to the account's owner. A run still in flight makes the call skip,
-    /// the next cycle picks up what is still pending.
-    async fn send_displaced(&self, pending: Vec<PendingCreation>) -> Vec<IntentHash> {
+    /// to the account's owner. One the node reports as already processed
+    /// landed in an earlier run: if it failed on chain it can never land,
+    /// so it is dead. A run still in flight makes the call skip, the next
+    /// cycle picks up what is still pending.
+    async fn send_displaced(&self, pending: Vec<PendingCreation>) -> Displaced {
         let Ok(_displacing) = self.displacing.try_lock() else {
             tracing::debug!("displaced creations still going out, skipping the cycle");
-            return Vec::new();
+            return Displaced::default();
         };
         let funder = self.signer.pubkey();
         let existing = match self
@@ -151,7 +179,7 @@ impl Sponsor {
             Ok(existing) => existing,
             Err(err) => {
                 tracing::warn!(?err, "displaced creation account lookup failed");
-                return Vec::new();
+                return Displaced::default();
             }
         };
         let mut owners = HashSet::new();
@@ -163,13 +191,13 @@ impl Sponsor {
             })
             .filter(|creation| owners.insert(creation.owner))
             .take(self.max_displaced_creations);
-        let mut sent = Vec::new();
+        let mut displaced = Displaced::default();
         for creation in creatable {
             let order_uid = const_hex::encode_prefixed(creation.uid.0);
             let signed = match self.countersign(&creation.bytes).await {
                 Ok(signed) => signed,
                 Err(err) if err.is::<BlockhashExpired>() => {
-                    self.expire(&creation.uid.0).await;
+                    displaced.dead.push(creation.uid);
                     continue;
                 }
                 Err(err) => {
@@ -177,21 +205,68 @@ impl Sponsor {
                     continue;
                 }
             };
-            let submitted = async {
-                let transaction: VersionedTransaction = bincode::deserialize(&signed)?;
-                anyhow::Ok(self.rpc.send_transaction(&transaction).await?)
+            let transaction: VersionedTransaction = match bincode::deserialize(&signed) {
+                Ok(transaction) => transaction,
+                Err(err) => {
+                    tracing::warn!(%order_uid, ?err, "countersigned creation does not decode");
+                    continue;
+                }
             };
-            match submitted.await {
+            match self.rpc.send_transaction(&transaction).await {
                 Ok(signature) => {
                     tracing::info!(%order_uid, %signature, "sent a displaced order's creation");
-                    sent.push(creation.uid);
+                    displaced.sent.push(creation.uid);
+                }
+                Err(err)
+                    if matches!(
+                        err.get_transaction_error(),
+                        Some(TransactionError::AlreadyProcessed)
+                    ) =>
+                {
+                    let signature = transaction.signatures[0];
+                    match self.landed_failure(&signature).await {
+                        Ok(Some(failure)) => {
+                            tracing::warn!(
+                                %order_uid,
+                                %signature,
+                                err = %failure.err,
+                                logs = ?failure.logs,
+                                "a displaced creation landed and failed, dropping the order"
+                            );
+                            displaced.dead.push(creation.uid);
+                        }
+                        Ok(None) => tracing::info!(
+                            %order_uid,
+                            %signature,
+                            "a displaced creation landed in an earlier run"
+                        ),
+                        Err(err) => tracing::warn!(
+                            %order_uid,
+                            %signature,
+                            ?err,
+                            "failed to fetch a landed displaced creation"
+                        ),
+                    }
                 }
                 Err(err) => {
                     tracing::warn!(%order_uid, ?err, "failed to send a displaced creation")
                 }
             }
         }
-        sent
+        displaced
+    }
+
+    /// How a creation the node remembers as processed failed on chain, or
+    /// `None` when it executed fine. The lookup is at confirmed commitment,
+    /// so a creation processed but not yet confirmed answers with an error.
+    async fn landed_failure(&self, signature: &Signature) -> Result<Option<LandedFailure>> {
+        let landed = self.rpc.transaction(signature).await?;
+        let meta = landed
+            .transaction
+            .meta
+            .context("the landed creation carries no status")?;
+        let logs: Option<Vec<String>> = meta.log_messages.into();
+        Ok(meta.err.map(|err| LandedFailure { err, logs }))
     }
 
     /// Lower a dead creation's stored deadline below the chain height, which
@@ -340,11 +415,17 @@ mod tests {
         .collect()
     }
 
-    /// A sponsor over `mocks` with the given displaced creation cap.
-    fn sponsor(funder: &Keypair, mocks: MocksMap, max_displaced_creations: usize) -> Sponsor {
+    /// A sponsor over `mocks` with the given displaced creation cap. Each
+    /// of `failures` fails one request with its transaction error first.
+    fn sponsor(
+        funder: &Keypair,
+        mocks: MocksMap,
+        failures: impl IntoIterator<Item = (RpcRequest, TransactionError)>,
+        max_displaced_creations: usize,
+    ) -> Sponsor {
         Sponsor::new(
             Signer::Keypair(funder.insecure_clone()),
-            SolanaRPC::new_mock_with_mocks_map(mocks),
+            SolanaRPC::new_mock_with_failures(mocks, failures),
             PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
             max_displaced_creations,
         )
@@ -460,11 +541,12 @@ mod tests {
                 ],
                 2,
             ),
+            [],
             10,
         );
 
         let fresh_uid = fresh.uid;
-        let sent = sponsor.send_displaced(vec![landed, fresh]).await;
+        let sent = sponsor.send_displaced(vec![landed, fresh]).await.sent;
         assert_eq!(sent, vec![fresh_uid]);
     }
 
@@ -478,11 +560,15 @@ mod tests {
         let sponsor = sponsor(
             &funder,
             displaced_mocks(vec![serde_json::Value::Null], 1),
+            [],
             10,
         );
 
         let _in_flight = sponsor.displacing.lock().await;
-        assert!(sponsor.send_displaced(vec![fresh]).await.is_empty());
+        assert_eq!(
+            sponsor.send_displaced(vec![fresh]).await,
+            Displaced::default()
+        );
     }
 
     /// An owner gets one creation per run, so a single user cannot take the
@@ -497,11 +583,15 @@ mod tests {
         let sponsor = sponsor(
             &funder,
             displaced_mocks(vec![serde_json::Value::Null; 3], 2),
+            [],
             10,
         );
 
         let (first_uid, other_uid) = (first.uid, other.uid);
-        let sent = sponsor.send_displaced(vec![first, second, other]).await;
+        let sent = sponsor
+            .send_displaced(vec![first, second, other])
+            .await
+            .sent;
         assert_eq!(sent, vec![first_uid, other_uid]);
     }
 
@@ -514,13 +604,117 @@ mod tests {
         let sponsor = sponsor(
             &funder,
             displaced_mocks(vec![serde_json::Value::Null; 2], 1),
+            [],
             1,
         );
 
         let first_uid = first.uid;
         assert_eq!(
-            sponsor.send_displaced(vec![first, second]).await,
+            sponsor.send_displaced(vec![first, second]).await.sent,
             vec![first_uid]
+        );
+    }
+
+    /// A `getTransaction` answer for a landed creation, failed with `err`
+    /// when given. The transaction body is not read.
+    fn landed_json(err: Option<serde_json::Value>) -> serde_json::Value {
+        let status = match &err {
+            Some(err) => serde_json::json!({"Err": err}),
+            None => serde_json::json!({"Ok": null}),
+        };
+        serde_json::json!({
+            "slot": 1u64,
+            "transaction": "unread",
+            "meta": {
+                "err": err,
+                "status": status,
+                "fee": 5000u64,
+                "preBalances": [],
+                "postBalances": [],
+                "logMessages": ["Program log: boom"],
+            },
+        })
+    }
+
+    /// A creation the node remembers as processed landed in an earlier run.
+    /// One that failed on chain can never land, so its order is dead.
+    #[tokio::test]
+    async fn a_landed_and_failed_creation_is_dead() {
+        let funder = Keypair::new();
+        let creation = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
+        let mut mocks = displaced_mocks(vec![serde_json::Value::Null], 1);
+        mocks.insert(
+            RpcRequest::GetTransaction,
+            landed_json(Some(
+                serde_json::json!({"InstructionError": [0, {"Custom": 1}]}),
+            )),
+        );
+        let sponsor = sponsor(
+            &funder,
+            mocks,
+            [(
+                RpcRequest::SendTransaction,
+                TransactionError::AlreadyProcessed,
+            )],
+            10,
+        );
+
+        let uid = creation.uid;
+        assert_eq!(
+            sponsor.send_displaced(vec![creation]).await,
+            Displaced {
+                sent: vec![],
+                dead: vec![uid],
+            }
+        );
+    }
+
+    /// A creation that landed fine between the account lookup and the send
+    /// waits for the indexer like any landed one.
+    #[tokio::test]
+    async fn a_creation_that_landed_fine_is_left_alone() {
+        let funder = Keypair::new();
+        let creation = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
+        let mut mocks = displaced_mocks(vec![serde_json::Value::Null], 1);
+        mocks.insert(RpcRequest::GetTransaction, landed_json(None));
+        let sponsor = sponsor(
+            &funder,
+            mocks,
+            [(
+                RpcRequest::SendTransaction,
+                TransactionError::AlreadyProcessed,
+            )],
+            10,
+        );
+
+        assert_eq!(
+            sponsor.send_displaced(vec![creation]).await,
+            Displaced::default()
+        );
+    }
+
+    /// A dead blockhash makes the creation dead without a send.
+    #[tokio::test]
+    async fn a_dead_blockhash_makes_the_creation_dead() {
+        let funder = Keypair::new();
+        let creation = pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique());
+        let mut mocks = displaced_mocks(vec![serde_json::Value::Null], 0);
+        mocks.insert(
+            RpcRequest::IsBlockhashValid,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": false,
+            }),
+        );
+        let sponsor = sponsor(&funder, mocks, [], 10);
+
+        let uid = creation.uid;
+        assert_eq!(
+            sponsor.send_displaced(vec![creation]).await,
+            Displaced {
+                sent: vec![],
+                dead: vec![uid],
+            }
         );
     }
 
