@@ -9,8 +9,4 @@ ignore = [
   # No patch available yet (cryptography vulnerability)
   "RUSTSEC-2023-0071",
 
-  # derivative - Unmaintained (RUSTSEC-2024-0388)
-  # Evaluate alternatives (tracked in #3338)
-  "RUSTSEC-2024-0388",
-
 ]
