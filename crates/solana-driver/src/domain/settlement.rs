@@ -1,7 +1,14 @@
 //! Settlement encoding.
 
 use {
-    super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{
+        Order,
+        Side,
+        auction::Id,
+        order_uid::OrderUid,
+        solution::Solution,
+        solver_fee::BPS_DENOMINATOR,
+    },
     crate::infra::blockchain::{
         AccountsSnapshot,
         InvalidAddressLookupTableReason,
@@ -88,6 +95,9 @@ pub(crate) struct ResolvedSettlement {
     /// whenever the settlement uses it. Sorted and deduplicated.
     missing_atas: Vec<Ata>,
     token_programs: TokenPrograms,
+    /// The largest share of the native SOL payouts that the payer's own SOL
+    /// covers when the swap output falls short. `None` covers nothing.
+    max_native_shortfall: Option<MaxNativeShortfall>,
 }
 
 /// The token program of every mint in [`Settlement::mints`].
@@ -192,6 +202,7 @@ impl Settlement {
             missing_buffers,
             missing_atas,
             token_programs,
+            max_native_shortfall: None,
         })
     }
 
@@ -251,6 +262,12 @@ impl Settlement {
 }
 
 impl ResolvedSettlement {
+    /// Let the payer's own SOL cover native SOL payout shortfalls up to `max`.
+    pub(crate) fn with_max_native_shortfall(mut self, max: Option<MaxNativeShortfall>) -> Self {
+        self.max_native_shortfall = max;
+        self
+    }
+
     /// Build the settlement instruction list.
     fn instructions(&self) -> Result<Vec<Instruction>, Error> {
         let payer = self.payer;
@@ -289,7 +306,7 @@ impl ResolvedSettlement {
                 )
             })
             .unzip();
-        let funding = native_payout_funding(&payer, &settlement_orders)?;
+        let funding = native_payout_funding(&payer, &settlement_orders, self.max_native_shortfall)?;
 
         // Start populating the instruction list.
         let mut instructions = Vec::new();
@@ -790,6 +807,35 @@ impl SettlementOrder {
     }
 }
 
+/// The largest share of the native SOL payouts, in basis points below 100%,
+/// that the payer's own SOL covers when the swap output falls short of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(try_from = "u16")]
+pub struct MaxNativeShortfall(u16);
+
+#[derive(Debug, thiserror::Error)]
+#[error("max native shortfall must be below {} bps, got {0}", BPS_DENOMINATOR)]
+pub struct ShortfallOutOfRange(u16);
+
+impl TryFrom<u16> for MaxNativeShortfall {
+    type Error = ShortfallOutOfRange;
+
+    fn try_from(bps: u16) -> Result<Self, Self::Error> {
+        (bps < BPS_DENOMINATOR)
+            .then_some(Self(bps))
+            .ok_or(ShortfallOutOfRange(bps))
+    }
+}
+
+impl MaxNativeShortfall {
+    /// The least swap output that still funds `payouts`. Rounds up, so the
+    /// payer never covers more than the capped share.
+    fn required_output(self, payouts: u64) -> u64 {
+        let covered = u128::from(payouts) * u128::from(self.0) / u128::from(BPS_DENOMINATOR);
+        payouts - u64::try_from(covered).expect("a share below 100% of a u64 fits in u64")
+    }
+}
+
 /// Whether the settlement moves a mint of `program` with `TransferChecked`.
 /// Every Token-2022 mint takes it, so no extension (transfer fee, transfer
 /// hook, pausable) has to be parsed to know which ones refuse a plain
@@ -799,14 +845,16 @@ fn transfer_checked(program: TokenProgram) -> bool {
 }
 
 /// The instructions that fund the state PDA's native SOL payouts: check that
-/// the payer's wSOL ATA holds the payouts, close it to unwrap the swap output,
-/// then transfer exactly the payouts to the state PDA. The check reverts the
-/// settlement when the route delivered less, so the payer's own SOL never
-/// covers the gap. Only pushes move lamports out of the state PDA, so any
-/// excess would stay there. Empty without a native SOL buy.
+/// the payer's wSOL ATA holds the payouts less the `max_shortfall` share, close
+/// it to unwrap the swap output, then transfer exactly the payouts to the
+/// state PDA. The payer's own SOL covers a gap within `max_shortfall`, and the
+/// check reverts the settlement on a larger one. Only pushes move lamports out
+/// of the state PDA, so any excess would stay there. Empty without a native
+/// SOL buy.
 fn native_payout_funding(
     payer: &Pubkey,
     orders: &[SettlementOrder],
+    max_shortfall: Option<MaxNativeShortfall>,
 ) -> Result<Vec<Instruction>, Error> {
     let mut payouts = orders
         .iter()
@@ -819,9 +867,10 @@ fn native_payout_funding(
     let total = payouts
         .try_fold(0, u64::checked_add)
         .ok_or(Error::ExecutedAmountOverflow)?;
+    let required = max_shortfall.map_or(total, |max| max.required_output(total));
     let wsol_ata = associated_token_address(payer, &native_mint::ID, TokenProgram::SplToken);
     Ok(vec![
-        require_token_balance(&wsol_ata, payer, total),
+        require_token_balance(&wsol_ata, payer, required),
         close_token_account(&wsol_ata, payer, payer),
         transfer(payer, &STATE_PDA, total),
     ])
@@ -1013,6 +1062,7 @@ mod tests {
             lookup_tables: Vec::new(),
             missing_buffers: Vec::new(),
             missing_atas: Vec::new(),
+            max_native_shortfall: None,
         }
     }
 
@@ -1466,6 +1516,7 @@ mod tests {
             lookup_tables: Vec::new(),
             missing_buffers,
             missing_atas,
+            max_native_shortfall: None,
         };
 
         let instructions = resolved.instructions().unwrap();
@@ -1582,6 +1633,7 @@ mod tests {
                 owner: order.owner,
                 mint: order.buy_token,
             }],
+            max_native_shortfall: None,
         };
 
         let instructions = resolved.instructions().unwrap();
@@ -1764,6 +1816,56 @@ mod tests {
         assert_eq!(native_pushes, vec![(wallet_a, 2_000), (wallet_b, 1_000)]);
     }
 
+    /// With a shortfall cap, the wSOL check asks for the payouts less the
+    /// capped share while the transfer still moves the full payouts, so the
+    /// payer's own SOL covers the gap.
+    #[test]
+    fn a_capped_native_sol_shortfall_is_covered_by_the_payer() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = native_sol_order(&program_id, pubkey(0x68), pubkey(0x45));
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+
+        let instructions = resolve_for_test(settlement, payer)
+            .with_max_native_shortfall(Some(MaxNativeShortfall::try_from(40).unwrap()))
+            .instructions()
+            .unwrap();
+        // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
+        // Transfer, FinalizeSettle]. 40 bps of 2_000 is 8.
+        let wsol_ata = associated_token_address(&payer, &native_mint::ID, TokenProgram::SplToken);
+        assert_eq!(
+            instructions[2],
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::ID,
+                &wsol_ata,
+                &wsol_ata,
+                &payer,
+                &[],
+                1_992,
+            )
+            .unwrap()
+        );
+        assert_eq!(instructions[4], transfer(&payer, &STATE_PDA, 2_000));
+    }
+
+    /// The payer covers at most the capped share of the payouts, and the
+    /// largest whole amount within it.
+    #[test]
+    fn required_output_is_the_exact_boundary_of_the_cap() {
+        for bps in [0u16, 1, 40, 9_999] {
+            let max = MaxNativeShortfall::try_from(bps).unwrap();
+            for payouts in [0u64, 1, 2, 9_999, 10_000, 123_456_789, u64::MAX] {
+                let required = max.required_output(payouts);
+                assert!(required <= payouts, "bps={bps} payouts={payouts}");
+                let covered = u128::from(payouts - required);
+                let cap = u128::from(payouts) * u128::from(bps);
+                assert!(covered * 10_000 <= cap, "bps={bps} payouts={payouts}");
+                assert!((covered + 1) * 10_000 > cap, "bps={bps} payouts={payouts}");
+            }
+        }
+    }
+
     /// The settlement reads the mint of every sell and token buy, plus wSOL
     /// for a native SOL buy, never the native SOL marker itself.
     #[test]
@@ -1834,6 +1936,7 @@ mod tests {
                 (token_2022.sell_token, TokenProgram::Token2022),
                 (token_2022.buy_token, TokenProgram::Token2022),
             ])),
+            max_native_shortfall: None,
         };
 
         let instructions = resolved.instructions().unwrap();
@@ -1941,6 +2044,7 @@ mod tests {
                 (order.sell_token, TokenProgram::Token2022),
                 (native_mint::ID, TokenProgram::SplToken),
             ])),
+            max_native_shortfall: None,
         };
 
         let instructions = resolved.instructions().unwrap();
