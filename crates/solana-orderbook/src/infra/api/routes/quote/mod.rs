@@ -19,6 +19,8 @@ use {
         token_program::TokenProgram,
     },
     database::{byte_array::ByteArray, solana::OrderKind},
+    serde::Serialize,
+    serde_with::{DisplayFromStr, serde_as},
     solana_sdk::{
         account::{Account, from_account},
         pubkey::Pubkey,
@@ -28,7 +30,7 @@ use {
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
-    std::{collections::HashMap, num::NonZero, time::Duration},
+    std::{cmp::Reverse, collections::HashMap, num::NonZero, time::Duration},
 };
 
 /// How long a quoted order stays valid when the request names no validity.
@@ -113,13 +115,24 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
-    let (quoted, costs) = best(quotes, kind, buy_token_ata_costs, price).ok_or_else(|| {
-        error::reply(
-            StatusCode::BAD_REQUEST,
-            "SellAmountDoesNotCoverFee",
-            "the quoted amount does not cover the execution cost",
-        )
-    })?;
+    let ranked = rank(quotes, kind, buy_token_ata_costs, price);
+    // Logged before the winner is taken, so a competition no quote survives
+    // is on the record too.
+    let competition = competition(&request, kind, amount, buy_token_ata_costs, &ranked);
+    match serde_json::to_string(&competition) {
+        Ok(json) => tracing::debug!(competition = %json, "computed quote"),
+        Err(err) => tracing::warn!(?err, "failed to serialize the quote competition"),
+    }
+    let (quoted, costs) = ranked
+        .into_iter()
+        .find_map(|(_, netted)| netted)
+        .ok_or_else(|| {
+            error::reply(
+                StatusCode::BAD_REQUEST,
+                "SellAmountDoesNotCoverFee",
+                "the quoted amount does not cover the execution cost",
+            )
+        })?;
     quoted.count_win(order.kind);
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
@@ -187,23 +200,121 @@ pub async fn quote(
     }))
 }
 
-/// The best of `quotes` once each has its execution cost taken out: the
-/// largest buy for a sell order, the smallest sell for a buy order. Returned
-/// with the cost it absorbed. `rent` is the buy token account's, `price` the
-/// native price of the token the cost comes out of. `None` when no quote can
-/// absorb its cost.
-fn best(
+/// Every quote paired with itself once its execution cost is taken out, best
+/// first: the largest netted buy for a sell order, the smallest netted sell
+/// for a buy order. A quote that cannot absorb its cost has no netted side and
+/// ranks last, so the first netted quote is the winner. `rent` is the buy token
+/// account's, `price` the native price of the token the cost comes out of.
+fn rank(
     quotes: Vec<quoter::Quote>,
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
-) -> Option<(quoter::Quote, Costs)> {
-    let netted = quotes
+) -> Vec<(quoter::Quote, Option<(quoter::Quote, Costs)>)> {
+    let mut ranked: Vec<_> = quotes
         .into_iter()
-        .filter_map(|quote| net(quote, kind, rent, price));
+        .map(|quote| {
+            let netted = net(quote.clone(), kind, rent, price);
+            (quote, netted)
+        })
+        .collect();
     match kind {
-        dto::Kind::Sell => netted.max_by_key(|(quote, _)| quote.buy_amount),
-        dto::Kind::Buy => netted.min_by_key(|(quote, _)| quote.sell_amount),
+        dto::Kind::Sell => ranked.sort_by_key(|(_, netted)| {
+            (
+                netted.is_none(),
+                netted.as_ref().map(|(q, _)| Reverse(q.buy_amount)),
+            )
+        }),
+        dto::Kind::Buy => ranked
+            .sort_by_key(|(_, netted)| (netted.is_none(), netted.as_ref().map(|(q, _)| q.sell_amount))),
+    }
+    ranked
+}
+
+/// The quote competition as the `computed quote` log line carries it: one
+/// JSON object under the EVM orderbook's message, so one parser reads both
+/// chains. Every driver that answered is kept, best first, so the losers stay
+/// on the record.
+#[derive(Serialize)]
+struct Competition<'a> {
+    request: CompetitionRequest,
+    quotes: Vec<CompetitionQuote<'a>>,
+}
+
+#[serde_as]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompetitionRequest {
+    #[serde_as(as = "DisplayFromStr")]
+    sell_token: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    buy_token: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    amount: u64,
+    kind: dto::Kind,
+    /// Rent of the buy token account, part of every quote's execution cost.
+    #[serde_as(as = "DisplayFromStr")]
+    buy_token_ata_costs: u64,
+}
+
+/// One driver's answer. `sell_amount` and `buy_amount` are what the trader
+/// would get, after the execution cost, and what the quotes are ranked by;
+/// `quoted_*` are what the driver returned.
+#[serde_as]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompetitionQuote<'a> {
+    driver: &'a str,
+    #[serde_as(as = "DisplayFromStr")]
+    solver: Pubkey,
+    /// `None` when the quote cannot absorb its execution cost.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    sell_amount: Option<u64>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    buy_amount: Option<u64>,
+    #[serde_as(as = "DisplayFromStr")]
+    quoted_sell_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    quoted_buy_amount: u64,
+    /// In lamports.
+    #[serde_as(as = "DisplayFromStr")]
+    network_fee: u64,
+    elapsed_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<&'static str>,
+}
+
+fn competition<'a>(
+    request: &dto::Request,
+    kind: dto::Kind,
+    amount: u64,
+    rent: u64,
+    ranked: &'a [(quoter::Quote, Option<(quoter::Quote, Costs)>)],
+) -> Competition<'a> {
+    Competition {
+        request: CompetitionRequest {
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
+            amount,
+            kind,
+            buy_token_ata_costs: rent,
+        },
+        quotes: ranked
+            .iter()
+            .map(|(quote, netted)| CompetitionQuote {
+                driver: &quote.driver,
+                solver: quote.solver,
+                sell_amount: netted.as_ref().map(|(q, _)| q.sell_amount),
+                buy_amount: netted.as_ref().map(|(q, _)| q.buy_amount),
+                quoted_sell_amount: quote.sell_amount,
+                quoted_buy_amount: quote.buy_amount,
+                network_fee: quote.network_fee,
+                elapsed_ms: quote.elapsed.as_millis().try_into().unwrap_or(u64::MAX),
+                error: netted
+                    .is_none()
+                    .then_some("the quoted amount does not cover the execution cost"),
+            })
+            .collect(),
     }
 }
 
@@ -606,6 +717,8 @@ mod tests {
 
     fn quote(sell_amount: u64, buy_amount: u64, network_fee: u64) -> quoter::Quote {
         quoter::Quote {
+            driver: "http://driver/".to_owned(),
+            elapsed: Duration::from_millis(1),
             sell_amount,
             buy_amount,
             solver: Pubkey::default(),
@@ -616,6 +729,18 @@ mod tests {
 
     fn price(native_price: u64) -> NonZero<u64> {
         NonZero::new(native_price).unwrap()
+    }
+
+    /// The winner of [`rank`].
+    fn best(
+        quotes: Vec<quoter::Quote>,
+        kind: dto::Kind,
+        rent: u64,
+        price: NonZero<u64>,
+    ) -> Option<quoter::Quote> {
+        rank(quotes, kind, rent, price)
+            .into_iter()
+            .find_map(|(_, netted)| netted)
     }
 
     fn legs(quote: &quoter::Quote) -> (u64, u64) {
@@ -703,6 +828,73 @@ mod tests {
                 lamport_an_atom
             )
             .is_none()
+        );
+    }
+
+    /// Every quote stays on the record, best netted first, and one that
+    /// cannot absorb its cost ranks last rather than disappearing.
+    #[test]
+    fn the_competition_keeps_every_quote_best_first() {
+        let lamport_an_atom = price(PRICE_UNIT);
+        let named = |driver: &str, buy_amount, fee| quoter::Quote {
+            driver: driver.to_owned(),
+            ..quote(1_000, buy_amount, fee)
+        };
+        let ranked = rank(
+            vec![
+                named("raw-best", 5_100, 200),
+                named("dropped", 10, 0),
+                named("best", 5_000, 0),
+            ],
+            dto::Kind::Sell,
+            50,
+            lamport_an_atom,
+        );
+        let order = ranked
+            .iter()
+            .map(|(quote, netted)| (&*quote.driver, netted.as_ref().map(|q| q.buy_amount)))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order,
+            [
+                ("best", Some(4_950)),
+                ("raw-best", Some(4_850)),
+                ("dropped", None)
+            ]
+        );
+    }
+
+    /// The log line is JSON a parser can read: base58 pubkeys and amounts as
+    /// strings, the API's own encoding rather than Rust's `Debug`.
+    #[test]
+    fn the_competition_serializes_for_the_log_line() {
+        let ranked = rank(
+            vec![quote(1_000, 5_000, 400), quote(1_000, 10, 0)],
+            dto::Kind::Sell,
+            100,
+            price(PRICE_UNIT),
+        );
+        let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
+        let json =
+            serde_json::to_value(competition(&request, dto::Kind::Sell, 1_000, 100, &ranked))
+                .unwrap();
+        assert_eq!(json["request"]["kind"], "sell");
+        assert_eq!(json["request"]["amount"], "1000");
+        assert_eq!(json["request"]["buyTokenAtaCosts"], "100");
+        assert_eq!(json["request"]["sellToken"], request.sell_token.to_string());
+        let winner = &json["quotes"][0];
+        assert_eq!(winner["driver"], "http://driver/");
+        assert_eq!(winner["solver"], Pubkey::default().to_string());
+        assert_eq!(winner["buyAmount"], "4500");
+        assert_eq!(winner["quotedBuyAmount"], "5000");
+        assert_eq!(winner["networkFee"], "400");
+        assert_eq!(winner["elapsedMs"], 1);
+        assert!(winner.get("error").is_none());
+        let dropped = &json["quotes"][1];
+        assert!(dropped["buyAmount"].is_null());
+        assert_eq!(
+            dropped["error"],
+            "the quoted amount does not cover the execution cost"
         );
     }
 
