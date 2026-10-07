@@ -318,6 +318,13 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
         "order settled under auction {settled_in} but the fast path staged {fast_path_auction}",
     );
 
+    // The fast-path auction records the quote it settled.
+    assert_eq!(
+        crate::database::fast_path_quote_id_of_auction(services.db(), fast_path_auction).await,
+        Some(quote_id),
+        "fast-path auction {fast_path_auction} should map to quote {quote_id}",
+    );
+
     // Signed at the quote, and the fast path settles at exactly the
     // autopilot's adjusted bid — the fill lands on the signed amounts to the
     // wei.
