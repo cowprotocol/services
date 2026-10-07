@@ -12,7 +12,6 @@ use {
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
-    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     configs::orderbook::Configuration,
@@ -44,7 +43,7 @@ use {
         order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    token_info::{CachedTokenInfoFetcher, DenyListedTokens, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
 };
 

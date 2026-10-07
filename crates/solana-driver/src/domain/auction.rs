@@ -17,8 +17,8 @@ use {
         token_program::TokenProgram,
     },
     serde::Serialize,
-    solana_sdk::pubkey::Pubkey,
-    std::{fmt, sync::Arc},
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    std::{collections::HashMap, fmt, sync::Arc},
 };
 
 /// The autopilot-assigned identifier of an auction.
@@ -72,8 +72,13 @@ pub struct Auction {
     pub deadline_slot: Slot,
     /// Absolute deadline by which solver engines must return solutions. The
     /// driver derives each request's timeout as the time left until this
-    /// instant. It skips the request if the deadline has passed.
+    /// instant. It skips the request if the deadline has passed. A solve
+    /// narrows the autopilot's deadline to the engine's share of it.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The owner-signed creation transaction of each order not created on
+    /// chain yet, by uid. It lacks the funder's signature, so it can only be
+    /// simulated ahead of a settlement, never sent.
+    pub creations: HashMap<OrderUid, VersionedTransaction>,
 }
 
 impl Auction {
@@ -146,6 +151,34 @@ impl Auction {
             }
         }
         Ok(resolved)
+    }
+
+    /// Drop the creations whose order PDA already exists on chain: an earlier
+    /// settlement attempt landed them and the autopilot still ships them
+    /// until the indexer catches up. Simulating one fails on the existing
+    /// account and would veto a settlement that no longer needs it. A failed
+    /// lookup keeps every creation and leaves the verdict to the simulation.
+    pub(super) async fn drop_landed_creations(&mut self, blockchain: &Solana) {
+        if self.creations.is_empty() {
+            return;
+        }
+        let pdas = self
+            .orders
+            .iter()
+            .filter(|order| self.creations.contains_key(&order.uid))
+            .map(|order| order.order_pda);
+        let snapshot = match blockchain.accounts_snapshot(pdas).await {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                tracing::warn!(?err, "could not check which creations already landed");
+                return;
+            }
+        };
+        for order in &self.orders {
+            if snapshot.exists(&order.order_pda) && self.creations.remove(&order.uid).is_some() {
+                tracing::info!(order_uid = %order.uid, "creation already landed, settling without it");
+            }
+        }
     }
 }
 
@@ -235,6 +268,7 @@ mod tests {
             orders,
             deadline_slot: Slot(0),
             deadline: chrono::Utc::now(),
+            creations: HashMap::new(),
         }
     }
 
@@ -261,7 +295,15 @@ mod tests {
                 multiple_accounts_json(accounts),
             ),
         ]);
-        Solana::new(SolanaRPC::new_mock_with_mocks_map(mocks), pubkey(0xaa))
+        blockchain_with_mocks_map(mocks)
+    }
+
+    fn blockchain_with_mocks_map(mocks: MocksMap) -> Solana {
+        Solana::new(
+            SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            pubkey(0xaa),
+        )
     }
 
     /// The buy mint is an SPL Token mint. The account lookup answers in
@@ -409,6 +451,60 @@ mod tests {
             )
             .await
             .expect_err("a failed lookup fails the resolution");
+    }
+
+    /// The lookup answers in order: the first order's PDA exists, the
+    /// second's does not.
+    #[tokio::test]
+    async fn drops_the_creations_whose_order_pda_exists() {
+        let existing = json!({
+            "lamports": 1u64,
+            "data": ["", "base64"],
+            "owner": pubkey(0xaa).to_string(),
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 0u64,
+        });
+        let mocks = MocksMap::from_iter([(
+            RpcRequest::GetMultipleAccounts,
+            multiple_accounts_json([existing, Value::Null]),
+        )]);
+        let mut auction = auction(vec![
+            order(1, pubkey(0x66)),
+            Order {
+                order_pda: pubkey(0x78),
+                ..order(2, pubkey(0x66))
+            },
+        ]);
+        auction.creations = HashMap::from([
+            (OrderUid([1; 32]), VersionedTransaction::default()),
+            (OrderUid([2; 32]), VersionedTransaction::default()),
+        ]);
+
+        auction
+            .drop_landed_creations(&blockchain_with_mocks_map(mocks))
+            .await;
+
+        assert_eq!(
+            auction.creations.keys().collect::<Vec<_>>(),
+            [&OrderUid([2; 32])]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_lookup_keeps_every_creation() {
+        let mocks = MocksMap::from_iter([(
+            RpcRequest::GetMultipleAccounts,
+            json!("not an account list"),
+        )]);
+        let mut auction = auction(vec![order(1, pubkey(0x66))]);
+        auction.creations = HashMap::from([(OrderUid([1; 32]), VersionedTransaction::default())]);
+
+        auction
+            .drop_landed_creations(&blockchain_with_mocks_map(mocks))
+            .await;
+
+        assert_eq!(auction.creations.len(), 1);
     }
 
     #[test]

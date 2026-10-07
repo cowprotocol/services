@@ -16,7 +16,6 @@ use {
     anyhow::{Result, anyhow},
     app_data::{AppDataHash, ExecutionMode, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
-    bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
     contracts::{HooksTrampoline, WETH9},
     eth_domain_types::Receiver,
@@ -48,6 +47,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
+    token_info::DenyListedTokens,
     tracing::instrument,
 };
 

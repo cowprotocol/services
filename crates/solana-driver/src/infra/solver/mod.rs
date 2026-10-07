@@ -101,10 +101,6 @@ impl Solver {
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
 
         // Calculate the time remaining until the auction's deadline.
-        //
-        // TODO: Split the deadline budget between solver time and driver
-        // processing time. Give the solver a configurable fraction of the
-        // remaining time and reserve the rest for building the transaction.
         let timeout = {
             let remaining = auction.deadline.signed_duration_since(chrono::Utc::now());
             if remaining <= chrono::Duration::zero() {
@@ -194,6 +190,7 @@ mod tests {
             deadline_slot: domain::Slot(1),
             // Well in the past: the request must be skipped entirely.
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
+            creations: std::collections::HashMap::new(),
         };
 
         let solutions = solver

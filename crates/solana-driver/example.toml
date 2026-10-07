@@ -6,7 +6,24 @@ settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"
+# Serves only `simulateBundle`; must support that Jito extension.
+# TODO: temporary split; a single endpoint will serve every method soon and
+# this key goes away.
+bundle-endpoint = "https://bundles.example.com"
 request-timeout = "10s"
+
+[priority-fee]
+# Optional; the values below are the defaults.
+# The percentile of the fees recently paid over a transaction's writable
+# accounts to use as the compute unit price, 0..=100, ranging over the most
+# recent `recent-slots` slots, 1..=150.
+percentile = 75
+recent-slots = 50
+# The lowest compute unit price, in micro-lamports per compute unit.
+min-compute-unit-price = 10000
+# The most a transaction pays in priority fee (price times compute unit
+# limit), in lamports. A transaction over it is refused as over budget.
+max-priority-fee-lamports = 1000000
 
 [http]
 bind-address = "0.0.0.0:8080"

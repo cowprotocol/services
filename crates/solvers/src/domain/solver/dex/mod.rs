@@ -52,10 +52,6 @@ pub struct Dex {
     internalize_interactions: bool,
 }
 
-/// The amount of time we aim the solver to finish before the final deadline is
-/// reached.
-const DEADLINE_SLACK: chrono::Duration = chrono::Duration::milliseconds(500);
-
 impl Dex {
     pub fn new(dex: infra::dex::Dex, config: infra::config::dex::Config) -> Self {
         let rate_limiter = rate_limit::RateLimiter::from_strategy(
@@ -88,12 +84,7 @@ impl Dex {
             }
         };
 
-        let deadline = auction
-            .deadline
-            .clone()
-            .reduce(DEADLINE_SLACK)
-            .remaining()
-            .unwrap_or_default();
+        let deadline = auction.deadline.clone().remaining().unwrap_or_default();
         if tokio::time::timeout(deadline, solve_orders).await.is_err() {
             tracing::debug!("reached deadline; stopping to solve");
         }
