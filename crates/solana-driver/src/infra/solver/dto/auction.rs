@@ -47,12 +47,14 @@ pub struct Order {
     /// payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
-    /// Sell-mint units left to fill: for a sell order the amount to fill,
+    /// Sell-mint units a fill may take now, what prior fills left scaled to
+    /// what the owner's account funds: for a sell order the amount to fill,
     /// for a buy order the most the fill may take.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub sell_amount: u64,
-    /// Buy-mint units left to fill: for a buy order the amount to fill, for
-    /// a sell order the least the fill must deliver.
+    /// Buy-mint units a fill may deliver now, scaled like `sell_amount`: for
+    /// a buy order the amount to fill, for a sell order the least the fill
+    /// must deliver.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_amount: u64,
     /// Sell amount for a sell, buy amount for a buy.
@@ -109,10 +111,10 @@ impl Order {
         missing_buy_token_account: bool,
     ) -> Self {
         let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
-        let remaining = order.remaining();
+        let available = order.available();
         let (sell_amount, buy_amount) = match order.side {
-            Side::Sell => (remaining.sell, tighten(Side::Sell, remaining.buy)),
-            Side::Buy => (tighten(Side::Buy, remaining.sell), remaining.buy),
+            Side::Sell => (available.sell, tighten(Side::Sell, available.buy)),
+            Side::Buy => (tighten(Side::Buy, available.sell), available.buy),
         };
         let (buy_mint, buy_destination) = if order.buys_native_sol() {
             (
@@ -262,7 +264,28 @@ mod tests {
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
             executed: 0,
+            sell_balance: None,
         }
+    }
+
+    /// A partially fillable order whose account holds less than its remainder
+    /// goes out scaled to the balance: 500 of 1000 held sells 500 for 500.
+    #[test]
+    fn the_sell_balance_caps_the_legs_sent_to_solvers() {
+        let order = domain::Order {
+            partially_fillable: true,
+            sell_balance: Some(500),
+            ..domain_order(Side::Sell)
+        };
+        let order = Order::new(&order, pubkey(3), pubkey(0xaa), None, false);
+        assert_eq!(
+            (order.sell_amount, order.buy_amount, order.amount),
+            (500, 500, 500)
+        );
+        assert_eq!(
+            (order.full_sell_amount, order.full_buy_amount),
+            (1_000, 1_000)
+        );
     }
 
     #[test]

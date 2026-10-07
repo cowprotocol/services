@@ -89,6 +89,11 @@ pub struct Order {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<Base64>")]
     creation: Option<Vec<u8>>,
+    /// What the sell token account can fund. Absent for a pending sponsored
+    /// order and from an autopilot that predates balance scaling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    sell_balance: Option<u64>,
 }
 
 impl From<Order> for domain::Order {
@@ -108,6 +113,7 @@ impl From<Order> for domain::Order {
             order_pda: order.order_pda,
             app_data: order.app_data.0,
             executed: order.executed,
+            sell_balance: order.sell_balance,
         }
     }
 }
@@ -174,6 +180,7 @@ mod tests {
             app_data: AppData([0; 32]),
             executed: 0,
             creation: Some(vec![1, 2, 3]),
+            sell_balance: Some(500),
         }
     }
 
@@ -206,17 +213,19 @@ mod tests {
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "executed": "0",
                 "creation": "AQID",
+                "sellBalance": "500",
             }]
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);
 
-        // An autopilot that predates partial fills sends no `executed`.
-        expected["orders"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("executed");
+        // An autopilot that predates partial fills sends no `executed`, one
+        // that predates balance scaling no `sellBalance`.
+        let order = expected["orders"][0].as_object_mut().unwrap();
+        order.remove("executed");
+        order.remove("sellBalance");
         let parsed: SolveRequest = serde_json::from_value(expected).unwrap();
         assert_eq!(parsed.orders[0].executed, 0);
+        assert_eq!(parsed.orders[0].sell_balance, None);
     }
 
     #[test]

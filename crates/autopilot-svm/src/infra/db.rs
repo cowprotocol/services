@@ -578,6 +578,7 @@ impl TryFrom<OrderRow> for Order {
             created_on_chain: row.created_on_chain,
             executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
+            sell_balance: None,
         })
     }
 }
