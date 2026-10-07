@@ -48,7 +48,7 @@ brotli = "8"
 bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
-cached = { version = "0.49.3", default-features = false }
+cached = { version = "0.55.1", default-features = false }
 chain = { path = "crates/chain" }
 chain-types = { path = "crates/chain-types" }
 chrono = { version = "0.4.38", default-features = false, features = ["serde"] }

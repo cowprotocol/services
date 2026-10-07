@@ -13,10 +13,6 @@ ignore = [
   # Evaluate alternatives (tracked in #3338)
   "RUSTSEC-2024-0388",
 
-  # instant - Unmaintained (RUSTSEC-2024-0384)
-  # Use web-time instead (tracked in #3338)
-  "RUSTSEC-2024-0384",
-
   # paste - Unmaintained (RUSTSEC-2024-0436)
   # Archived upstream (tracked in #3338)
   "RUSTSEC-2024-0436",
