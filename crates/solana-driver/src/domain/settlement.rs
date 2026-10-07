@@ -1196,6 +1196,24 @@ mod tests {
         assert_eq!(err, Error::Overfill(order.uid));
     }
 
+    /// A buy order caps on its buy leg: 400 of 2000 bought leaves 1600, and
+    /// the 1000 sell limit scales to 800. Buying 1600 passes and 1601 is
+    /// rejected even though the sell leg stays within its limit.
+    #[test]
+    fn caps_a_partially_filled_buy_order_at_its_remaining_amount() {
+        let program_id = pubkey(0xaa);
+        let order = test_order_with(&program_id, |order| {
+            order.side = Side::Buy;
+            order.partially_fillable = true;
+            order.executed = 400;
+        });
+        test_settlement(slice::from_ref(&order), &[trade(order.uid, 800, 1_600)])
+            .expect("filling the remainder must pass");
+        let err = test_settlement(slice::from_ref(&order), &[trade(order.uid, 800, 1_601)])
+            .expect_err("a fill over the remainder must be rejected");
+        assert_eq!(err, Error::Overfill(order.uid));
+    }
+
     /// An order filled for more than its target is rejected.
     #[test]
     fn rejects_an_overfilled_order() {

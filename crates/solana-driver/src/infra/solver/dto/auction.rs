@@ -309,8 +309,10 @@ mod tests {
     }
 
     /// 400 of 1000 sold: 600 is left to sell, the 1000 buy limit scales to
-    /// 600 and the fee tightens that to 600 / 0.95 = 631.6. The signed
-    /// amounts go out untouched.
+    /// 600 and the fee tightens that to 600 / 0.95 = 631.6. 400 of 1000
+    /// bought: 600 is left to buy, the sell limit scales to 600 and the fee
+    /// tightens that to 600 / 1.05 = 571.4. The signed amounts go out
+    /// untouched.
     #[test]
     fn a_partially_filled_order_sends_the_remaining_legs() {
         let fee = Some(SolverFee::try_from(500).unwrap());
@@ -329,6 +331,20 @@ mod tests {
             (1_000, 1_000)
         );
         assert!(order.partially_fillable);
+
+        let buy = domain::Order {
+            side: Side::Buy,
+            ..sell
+        };
+        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), fee, false);
+        assert_eq!(
+            (order.sell_amount, order.buy_amount, order.amount),
+            (571, 600, 600)
+        );
+        assert_eq!(
+            (order.full_sell_amount, order.full_buy_amount),
+            (1_000, 1_000)
+        );
     }
 
     #[test]
