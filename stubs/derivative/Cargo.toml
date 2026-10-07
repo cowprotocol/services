@@ -1,0 +1,15 @@
+[package]
+name = "derivative"
+version = "2.2.0"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "Empty stub for 'derivative'. Only pulled in by unused optional 'ark-ff' 0.3/0.4 features of 'ruint'; the stub prevents cargo from resolving the unmaintained upstream (RUSTSEC-2024-0388)."
+
+[lib]
+proc-macro = true
+
+# No-op feature flags matching the public feature set of the real
+# `derivative` crate so that any consumer enabling them resolves cleanly.
+[features]
+use_core = []
