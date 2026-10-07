@@ -1929,6 +1929,7 @@ mod tests {
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
         let resolved = ResolvedSettlement {
             settlement,
+            payer,
             lookup_tables: Vec::new(),
             missing_buffers: Vec::new(),
             missing_atas: Vec::new(),
@@ -1938,7 +1939,7 @@ mod tests {
             ])),
         };
 
-        let instructions = resolved.instructions(payer).unwrap();
+        let instructions = resolved.instructions().unwrap();
         // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
         // Transfer, FinalizeSettle].
         let begin = &instructions[1];
