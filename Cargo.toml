@@ -48,7 +48,7 @@ brotli = "8"
 bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
-cached = { version = "0.49.3", default-features = false }
+cached = { version = "0.55.1", default-features = false }
 chain = { path = "crates/chain" }
 chain-types = { path = "crates/chain-types" }
 chrono = { version = "0.4.38", default-features = false, features = ["serde"] }
@@ -99,7 +99,6 @@ opentelemetry-otlp = "0.32"
 opentelemetry_sdk = "0.32"
 order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
-paste = "1.0"
 pin-project-lite = "0.2.14"
 pool-indexer = { path = "crates/pool-indexer" }
 prettyplease = "0.2.37"
