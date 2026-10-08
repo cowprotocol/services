@@ -22,6 +22,21 @@ const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
 
+/// Headroom over the simulated compute units, in percent, for the state that
+/// moves between simulation and inclusion.
+const SIMULATION_MARGIN_PERCENT: u128 = 30;
+
+/// The compute unit limit for a transaction whose simulation consumed
+/// `units`: the usage plus margin, at most the runtime's ceiling. Zero units
+/// measured nothing, so no limit.
+pub(crate) fn limit_from_simulation(units: u64) -> Option<u32> {
+    if units == 0 {
+        return None;
+    }
+    let limit = u128::from(units) * (100 + SIMULATION_MARGIN_PERCENT) / 100;
+    Some(limit.min(u128::from(MAX_COMPUTE_UNIT_LIMIT)) as u32)
+}
+
 /// The priority fee policy. Fields left out of the config take their
 /// [`Default`] value.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -205,6 +220,14 @@ mod tests {
             ..policy
         };
         assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+    }
+
+    #[test]
+    fn simulated_units_get_a_margin_up_to_the_ceiling() {
+        assert_eq!(limit_from_simulation(100_000), Some(130_000));
+        assert_eq!(limit_from_simulation(1_200_000), Some(1_400_000));
+        assert_eq!(limit_from_simulation(u64::MAX), Some(1_400_000));
+        assert_eq!(limit_from_simulation(0), None);
     }
 
     #[test]

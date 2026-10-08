@@ -102,7 +102,8 @@ impl Competition {
 
     /// Solve the auction, drop the solutions whose settlement provably fails
     /// (over the byte limit or failing in simulation), and cache the rest for
-    /// a later `settle`.
+    /// a later `settle`. A solution without an engine compute unit estimate
+    /// takes its simulated usage plus margin as the limit.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -162,11 +163,12 @@ impl Competition {
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
             match &verdict {
-                Ok(()) => tracing::info!(
+                Ok(units_consumed) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
                     elapsed_ms,
                     window_ms,
+                    ?units_consumed,
                     "solution simulation passed"
                 ),
                 Err(error) if proves_failure(error) => {
@@ -189,6 +191,12 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
+            let mut solution = solution;
+            if solution.cu_estimate.is_none()
+                && let Ok(Some(units)) = verdict
+            {
+                solution.cu_estimate = priority_fee::limit_from_simulation(units);
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -209,13 +217,14 @@ impl Competition {
     /// creations of its orders not created on chain yet. Any failure would
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
-    /// driver could not find out.
+    /// driver could not find out. A pass carries the compute units the
+    /// settlement consumed, when the endpoint reports them.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<u64>, Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
@@ -284,7 +293,7 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(())
+        Ok(results.last().and_then(|result| result.units_consumed))
     }
 
     /// Send the auction to the solver engine and return its deduplicated
