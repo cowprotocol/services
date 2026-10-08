@@ -174,7 +174,6 @@ relative-slippage = "0.1"
 account = "{account}"
 merge-solutions = {merge_solutions}
 fast-path-enabled = true
-enable-simulation-bad-token-detection = true
 enable-metrics-bad-order-detection = true
 http-time-buffer = "100ms"
 solving-share-of-deadline = 1.0

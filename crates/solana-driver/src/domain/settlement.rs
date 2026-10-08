@@ -23,7 +23,7 @@ use {
     },
     cow_settlement_interface::{
         data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
-        pda::{buffer::find_buffer_pda, order::find_order_pda, state::find_state_pda},
+        pda::{buffer::find_buffer_pda, order::find_order_pda, state::STATE_PDA},
         token_program::TokenProgram,
     },
     cow_solana_signer::Signer,
@@ -39,7 +39,10 @@ use {
     },
     solana_system_interface::instruction::transfer,
     spl_token_interface::native_mint,
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        num::NonZeroU64,
+    },
 };
 
 /// A validated settlement.
@@ -260,7 +263,11 @@ impl ResolvedSettlement {
             .map(|order| {
                 let amounts = executed_amounts(order, &self.settlement.solution)?;
                 let sell_program = self.token_programs.get(order.sell_token)?;
-                Ok(SettlementOrder::new(order, &payer, amounts, sell_program))
+                // A native SOL buy is paid in lamports, which no token program
+                // moves.
+                let checked_push = !order.buys_native_sol()
+                    && transfer_checked(self.token_programs.get(order.buy_token)?);
+                SettlementOrder::new(order, &payer, amounts, sell_program, checked_push)
             })
             .collect::<Result<_, Error>>()?;
 
@@ -272,16 +279,17 @@ impl ResolvedSettlement {
                     InitializedIntent {
                         intent: &data.intent,
                         pulls: data.pulls.as_slice(),
+                        use_transfer_checked: data.checked_pull,
                     },
                     FinalizedIntent {
                         intent: &data.intent,
                         amount: data.buy_amount,
+                        use_transfer_checked: data.checked_push,
                     },
                 )
             })
             .unzip();
-        let funding =
-            native_payout_funding(&self.settlement.program_id, &payer, &settlement_orders)?;
+        let funding = native_payout_funding(&payer, &settlement_orders)?;
 
         // Start populating the instruction list.
         let mut instructions = Vec::new();
@@ -341,6 +349,9 @@ impl ResolvedSettlement {
                 // move mints of both.
                 only_token_program: None,
                 orders: &initialized_intents,
+                // The mint rule refuses hook programs, so no transfer needs
+                // extra accounts.
+                extra_transfer_accounts: &[],
             }
             .into(),
         );
@@ -352,6 +363,7 @@ impl ResolvedSettlement {
                 begin_ix_index,
                 only_token_program: None,
                 orders: &finalized_intents,
+                extra_transfer_accounts: &[],
             }
             .into(),
         );
@@ -579,17 +591,22 @@ pub(crate) enum ResolveError {
     UnresolvedMint(#[from] UnresolvedMint),
 }
 
-impl From<&Order> for OrderIntent {
-    fn from(order: &Order) -> Self {
-        OrderIntent {
+impl TryFrom<&Order> for OrderIntent {
+    type Error = Error;
+
+    /// The program refuses an intent selling or buying zero, so such an order
+    /// has no intent.
+    fn try_from(order: &Order) -> Result<Self, Error> {
+        let amount = |amount| NonZeroU64::new(amount).ok_or(Error::ZeroAmount(order.uid));
+        Ok(OrderIntent {
             owner: order.owner,
             sell: TokenAsset {
                 mint: order.sell_token,
                 token_account: order.sell_token_account,
             },
             buy: Asset::decode(order.buy_token, order.buy_token_account),
-            sell_amount: order.sell_amount,
-            buy_amount: order.buy_amount,
+            sell_amount: amount(order.sell_amount)?,
+            buy_amount: amount(order.buy_amount)?,
             valid_to: order.valid_to,
             // Every auction order exists as a PDA the owner created with
             // `CreateOrder`, and the program only accepts that instruction
@@ -604,7 +621,7 @@ impl From<&Order> for OrderIntent {
                 partially_fillable: order.partially_fillable,
             },
             app_data: order.app_data,
-        }
+        })
     }
 }
 
@@ -648,7 +665,7 @@ fn validate_orders(
         // intent. This closes the intent → uid → PDA chain: the wire
         // `order_pda` is only trusted once it derives from a uid that
         // itself matches the intent.
-        let intent_uid = OrderIntent::from(order).uid();
+        let intent_uid = OrderIntent::try_from(order)?.uid();
         if intent_uid != Hash::new_from_array(order.uid.0) {
             return Err(Error::OrderIntentMismatch(intent_uid, order.uid));
         }
@@ -738,11 +755,16 @@ struct SettlementOrder {
     intent: OrderIntent,
     pulls: Vec<Pull>,
     buy_amount: u64,
+    /// Whether the sell tokens are pulled with `TransferChecked`.
+    checked_pull: bool,
+    /// Whether the buy tokens are pushed with `TransferChecked`.
+    checked_push: bool,
 }
 
 impl SettlementOrder {
     /// Build a settlement order from a domain order: its intent, its sell-mint
-    /// pull into the payer's sell ATA, and its buy-mint push.
+    /// pull into the payer's sell ATA, and its buy-mint push, made with
+    /// `TransferChecked` when `checked_push` is set.
     ///
     /// The swap output lands in the buy-mint buffer PDA, or the payer's wSOL
     /// ATA for a native SOL buy (see `infra/solver/dto/auction.rs`), so the
@@ -753,16 +775,27 @@ impl SettlementOrder {
         payer: &Pubkey,
         amounts: ExecutedAmounts,
         sell_program: TokenProgram,
-    ) -> Self {
-        Self {
-            intent: order.into(),
+        checked_push: bool,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            intent: order.try_into()?,
             pulls: vec![Pull {
                 destination: associated_token_address(payer, &order.sell_token, sell_program),
                 amount: amounts.sell,
             }],
             buy_amount: amounts.buy,
-        }
+            checked_pull: transfer_checked(sell_program),
+            checked_push,
+        })
     }
+}
+
+/// Whether the settlement moves a mint of `program` with `TransferChecked`.
+/// Every Token-2022 mint takes it, so no extension (transfer fee, transfer
+/// hook, pausable) has to be parsed to know which ones refuse a plain
+/// `Transfer`. It costs the mint account and about 1300 CU per transfer.
+fn transfer_checked(program: TokenProgram) -> bool {
+    program == TokenProgram::Token2022
 }
 
 /// The instructions that fund the state PDA's native SOL payouts: check that
@@ -772,7 +805,6 @@ impl SettlementOrder {
 /// covers the gap. Only pushes move lamports out of the state PDA, so any
 /// excess would stay there. Empty without a native SOL buy.
 fn native_payout_funding(
-    program_id: &Pubkey,
     payer: &Pubkey,
     orders: &[SettlementOrder],
 ) -> Result<Vec<Instruction>, Error> {
@@ -791,7 +823,7 @@ fn native_payout_funding(
     Ok(vec![
         require_token_balance(&wsol_ata, payer, total),
         close_token_account(&wsol_ata, payer, payer),
-        transfer(payer, &find_state_pda(program_id).0, total),
+        transfer(payer, &STATE_PDA, total),
     ])
 }
 
@@ -825,6 +857,9 @@ pub enum Error {
     /// The uid is not the hash of the order's reconstructed intent.
     #[error("order uid {1} does not match the hash of its intent {0}")]
     OrderIntentMismatch(Hash, OrderUid),
+    /// The order sells or buys zero, which no intent encodes.
+    #[error("order {0} sells or buys zero")]
+    ZeroAmount(OrderUid),
     /// The transaction failed to compile.
     #[error("failed to compile transaction: {0}")]
     Compile(#[from] solana_sdk::message::CompileError),
@@ -847,7 +882,7 @@ mod tests {
             data::intent::ENCODED_NATIVE_SOL_TRANSFER,
             instruction::{
                 InstructionInputParsing,
-                settle::{BeginSettleInput, FinalizeSettleInput},
+                settle::{BeginSettleInput, FinalizeSettleInput, MINT_PLACEHOLDER},
             },
         },
         cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
@@ -887,7 +922,7 @@ mod tests {
             app_data: [0x77; 32],
         };
         customize(&mut order);
-        let uid = OrderIntent::from(&order).uid();
+        let uid = OrderIntent::try_from(&order).unwrap().uid();
         order.uid = OrderUid(uid.to_bytes());
         order.order_pda = find_order_pda(program_id, &uid).0;
         order
@@ -1004,11 +1039,20 @@ mod tests {
         // integrity check — not the trade look-up — rejects the order.
         let bogus_uid = OrderUid([0xff; 32]);
         order.uid = bogus_uid;
-        let intent_uid = OrderIntent::from(&order).uid();
+        let intent_uid = OrderIntent::try_from(&order).unwrap().uid();
 
         let err = test_settlement(&[order], &[trade(bogus_uid, 1_000, 2_000)])
             .expect_err("an order whose uid does not match its intent must be rejected");
         assert_eq!(err, Error::OrderIntentMismatch(intent_uid, bogus_uid));
+    }
+
+    #[test]
+    fn zero_amount_orders_are_rejected() {
+        let mut order = test_order(&pubkey(0xaa));
+        order.sell_amount = 0;
+        let err = test_settlement(&[order.clone()], &[trade(order.uid, 1_000, 2_000)])
+            .expect_err("an order selling zero has no intent");
+        assert_eq!(err, Error::ZeroAmount(order.uid));
     }
 
     /// Duplicate orders (same uid) are deduped, keeping the first occurrence.
@@ -1257,14 +1301,14 @@ mod tests {
     /// buy order offering nothing accepts only a free fill.
     #[test]
     fn a_zero_limit_leg_is_handled() {
+        // No intent encodes a zero leg, so zero it after the uid derivation.
         let program_id = pubkey(0xaa);
-        let sell_order = test_order_with(&program_id, |order| order.buy_amount = 0);
+        let mut sell_order = test_order(&program_id);
+        sell_order.buy_amount = 0;
         assert!(respects_limit(&sell_order, 1_000, 0));
 
-        let buy_order = test_order_with(&program_id, |order| {
-            order.side = Side::Buy;
-            order.sell_amount = 0;
-        });
+        let mut buy_order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        buy_order.sell_amount = 0;
         assert!(respects_limit(&buy_order, 0, 1_000));
         assert!(!respects_limit(&buy_order, 1, 1_000));
     }
@@ -1680,7 +1724,7 @@ mod tests {
         // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
         // Transfer, FinalizeSettle].
         assert_eq!(instructions.len(), 6);
-        let state_pda = find_state_pda(&program_id).0;
+        let state_pda = STATE_PDA;
         let wsol_ata = associated_token_address(&payer, &native_mint::ID, TokenProgram::SplToken);
         assert_eq!(
             instructions[2],
@@ -1833,21 +1877,88 @@ mod tests {
             )
         );
 
+        // The pulls land in the payer's ATAs under each mint's program, and
+        // only the Token-2022 order carries its sell mint for TransferChecked.
         let begin = &instructions[5];
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
-        let mut destinations: Vec<Pubkey> = begin_input
+        let mut pulls: Vec<(Pubkey, Pubkey)> = begin_input
             .orders
             .iter()
-            .map(|order| order.destinations[0])
+            .map(|order| (order.destinations[0], *order.sell_mint))
             .collect();
-        destinations.sort_unstable();
+        pulls.sort_unstable();
         let mut expected = vec![
-            associated_token_address(&payer, &spl.sell_token, TokenProgram::SplToken),
-            associated_token_address(&payer, &token_2022.sell_token, TokenProgram::Token2022),
+            (
+                associated_token_address(&payer, &spl.sell_token, TokenProgram::SplToken),
+                MINT_PLACEHOLDER,
+            ),
+            (
+                associated_token_address(&payer, &token_2022.sell_token, TokenProgram::Token2022),
+                token_2022.sell_token,
+            ),
         ];
         expected.sort_unstable();
-        assert_eq!(destinations, expected);
+        assert_eq!(pulls, expected);
+
+        // Likewise only the Token-2022 push carries its buy mint.
+        let finalize = &instructions[6];
+        let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        let finalize_input =
+            FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+        let mut pushes: Vec<(Pubkey, Pubkey)> = finalize_input
+            .pushes
+            .iter()
+            .map(|push| (*push.destination, *push.mint))
+            .collect();
+        pushes.sort_unstable();
+        let mut expected = vec![
+            (spl.buy_token_account, MINT_PLACEHOLDER),
+            (token_2022.buy_token_account, token_2022.buy_token),
+        ];
+        expected.sort_unstable();
+        assert_eq!(pushes, expected);
+    }
+
+    /// A Token-2022 sell paid out in native SOL: the pull carries the sell
+    /// mint for `TransferChecked`, the lamport payout carries the placeholder
+    /// since no token program moves it.
+    #[test]
+    fn native_sol_payouts_are_never_transfer_checked() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let wallet = pubkey(0x68);
+        let order = native_sol_order(&program_id, wallet, pubkey(0x45));
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+        let resolved = ResolvedSettlement {
+            settlement,
+            payer,
+            lookup_tables: Vec::new(),
+            missing_buffers: Vec::new(),
+            missing_atas: Vec::new(),
+            token_programs: TokenPrograms(HashMap::from([
+                (order.sell_token, TokenProgram::Token2022),
+                (native_mint::ID, TokenProgram::SplToken),
+            ])),
+        };
+
+        let instructions = resolved.instructions().unwrap();
+        // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
+        // Transfer, FinalizeSettle].
+        let begin = &instructions[1];
+        let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+        assert_eq!(
+            *begin_input.orders.iter().next().unwrap().sell_mint,
+            order.sell_token
+        );
+        let finalize = &instructions[5];
+        let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        let finalize_input =
+            FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+        let push = finalize_input.pushes.iter().next().unwrap();
+        assert_eq!((*push.destination, *push.mint), (wallet, MINT_PLACEHOLDER));
     }
 
     /// An order trading two Token-2022 mints, paying out to the owner's

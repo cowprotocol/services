@@ -1,23 +1,25 @@
 //! Which mints and token accounts the settlement program can move tokens
-//! through. The program moves tokens with a plain `Transfer`, which Token-2022
-//! refuses for several mint and account extensions.
+//! through. Token-2022 tokens move with `TransferChecked`, so only an
+//! extension's live setting blocks a mint: a charged fee, a hook program, a
+//! pause, non-transferability, or new accounts starting frozen.
 
 #![forbid(unsafe_code)]
 
 use {
     cow_settlement_interface::token_program::TokenProgram,
     moka::sync::Cache,
-    solana_sdk::{account::Account, pubkey::Pubkey},
+    solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey, rent::Rent},
     spl_token_2022_interface::{
         extension::{
             BaseStateWithExtensions,
+            ExtensionType,
             StateWithExtensions,
             confidential_transfer::ConfidentialTransferAccount,
             default_account_state::DefaultAccountState,
             memo_transfer::memo_required,
             non_transferable::NonTransferable,
             pausable::PausableConfig,
-            transfer_fee::TransferFeeConfig,
+            transfer_fee::{TransferFee, TransferFeeConfig},
             transfer_hook::TransferHook,
         },
         state::{Account as TokenAccount, AccountState, Mint},
@@ -25,8 +27,9 @@ use {
     std::{collections::HashMap, fmt, time::Duration},
 };
 
-/// How long a mint's verdict stays cached. The freeze authority can flip the
-/// default account state at any time, and a missing mint can be created.
+/// How long a mint's verdict stays cached. The pause switch, the fee schedule
+/// and the default account state can change at any time, and a missing mint
+/// can be created.
 const VERDICT_TTL: Duration = Duration::from_secs(60);
 
 /// How many mints the verdict cache holds.
@@ -37,15 +40,14 @@ const VERDICT_CAPACITY: u64 = 10_000;
 pub enum UnsettleableMint {
     /// The account is missing or not a mint of either token program.
     NotAMint,
-    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
-    /// at a zero fee.
+    /// The mint charges a transfer fee, so the buy account would receive less
+    /// than the pushed amount the program checks.
     TransferFee,
-    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
-    /// without a hook program.
+    /// A transfer hook program runs on every transfer, with extra accounts the
+    /// settlement does not pass.
     TransferHook,
-    /// Token-2022 rejects the program's plain `Transfer` for this mint, even
-    /// while it is not paused.
-    Pausable,
+    /// The mint is paused, which rejects every transfer until it is unpaused.
+    Paused,
     /// Token-2022 rejects every transfer of this mint's tokens.
     NonTransferable,
     /// New token accounts start frozen, so the buffer and payer account the
@@ -57,9 +59,9 @@ impl fmt::Display for UnsettleableMint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::NotAMint => "not a mint of the SPL Token or Token-2022 program",
-            Self::TransferFee => "Token-2022 transfer fee extension",
-            Self::TransferHook => "Token-2022 transfer hook extension",
-            Self::Pausable => "Token-2022 pausable extension",
+            Self::TransferFee => "Token-2022 transfer fee",
+            Self::TransferHook => "Token-2022 transfer hook program",
+            Self::Paused => "Token-2022 mint is paused",
             Self::NonTransferable => "Token-2022 non-transferable extension",
             Self::FrozenByDefault => "new token accounts start frozen",
         })
@@ -83,12 +85,23 @@ pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
     }) else {
         return Err(UnsettleableMint::NotAMint);
     };
-    if mint.get_extension::<TransferFeeConfig>().is_ok() {
+    if mint
+        .get_extension::<TransferFeeConfig>()
+        .is_ok_and(|config| {
+            charges_fee(&config.older_transfer_fee) || charges_fee(&config.newer_transfer_fee)
+        })
+    {
         Err(UnsettleableMint::TransferFee)
-    } else if mint.get_extension::<TransferHook>().is_ok() {
+    } else if mint
+        .get_extension::<TransferHook>()
+        .is_ok_and(|hook| Option::<Pubkey>::from(hook.program_id).is_some())
+    {
         Err(UnsettleableMint::TransferHook)
-    } else if mint.get_extension::<PausableConfig>().is_ok() {
-        Err(UnsettleableMint::Pausable)
+    } else if mint
+        .get_extension::<PausableConfig>()
+        .is_ok_and(|config| bool::from(config.paused))
+    {
+        Err(UnsettleableMint::Paused)
     } else if mint.get_extension::<NonTransferable>().is_ok() {
         Err(UnsettleableMint::NonTransferable)
     } else if mint
@@ -99,6 +112,15 @@ pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
     } else {
         Ok(program)
     }
+}
+
+/// Whether a fee schedule takes anything from a transfer: a rate in basis
+/// points under a positive cap. Both schedules of a mint count, the newer one
+/// takes effect at a later epoch. Without the current epoch a stale older
+/// schedule cannot be told from an active one, so a mint that dropped its fee
+/// to zero stays refused while the old schedule is still on it.
+fn charges_fee(fee: &TransferFee) -> bool {
+    u16::from(fee.transfer_fee_basis_points) > 0 && u64::from(fee.maximum_fee) > 0
 }
 
 /// The verdicts on the mints read so far, each kept for [`VERDICT_TTL`].
@@ -166,15 +188,37 @@ impl MintLookup<'_> {
     }
 }
 
-/// The rent-exempt minimum, in lamports, of an associated token account
-/// under `program` at the SDK's default rent: 165 bytes under SPL Token, 170
-/// under Token-2022, whose associated token accounts carry the immutable owner
-/// extension.
-pub fn ata_rent(program: TokenProgram) -> u64 {
-    match program {
-        TokenProgram::SplToken => 2_039_280,
-        TokenProgram::Token2022 => 2_074_080,
-    }
+/// The rent-exempt minimum, in lamports at the SDK's default rent, of a new
+/// associated token account of the mint at `mint`, `None` when it is no mint
+/// of either token program. A Token-2022 one carries the immutable owner
+/// extension and the account extensions the mint's own extensions require.
+pub fn ata_rent(mint: &Account) -> Option<u64> {
+    let len = match TokenProgram::try_from(&mint.owner).ok()? {
+        TokenProgram::SplToken => TokenAccount::LEN,
+        TokenProgram::Token2022 => {
+            let mint = StateWithExtensions::<Mint>::unpack(&mint.data).ok()?;
+            token_2022_ata_len(&mint.get_extension_types().ok()?)
+        }
+    };
+    Some(Rent::default().minimum_balance(len))
+}
+
+/// The [`ata_rent`] of the largest associated token account a mint passing
+/// [`mint_verdict`] can need: under a Token-2022 mint whose fee schedule takes
+/// nothing, whose hook names no program and whose pause switch is off.
+pub fn max_ata_rent() -> u64 {
+    Rent::default().minimum_balance(token_2022_ata_len(&[
+        ExtensionType::TransferFeeConfig,
+        ExtensionType::TransferHook,
+        ExtensionType::Pausable,
+    ]))
+}
+
+fn token_2022_ata_len(mint_extensions: &[ExtensionType]) -> usize {
+    let mut extensions = ExtensionType::get_required_init_account_extensions(mint_extensions);
+    extensions.push(ExtensionType::ImmutableOwner);
+    ExtensionType::try_calculate_account_len::<TokenAccount>(&extensions)
+        .expect("account extensions have fixed lengths")
 }
 
 /// Whether the settlement's plain `Transfer` of `mint` lands in the token
@@ -202,11 +246,9 @@ fn refuses_non_confidential_credits(state: &StateWithExtensions<'_, TokenAccount
 mod tests {
     use {
         super::*,
-        solana_sdk::{program_pack::Pack, rent::Rent},
         solana_testlib::{classic_mint, token_2022_account, token_2022_mint},
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
-            ExtensionType,
             StateWithExtensionsMut,
             memo_transfer::MemoTransfer,
             mint_close_authority::MintCloseAuthority,
@@ -214,11 +256,25 @@ mod tests {
         },
     };
 
-    /// The program moves classic mints and Token-2022 mints whose extensions
-    /// leave a plain transfer alone, a permanent delegate included, each under
-    /// its own token program. Transfer fee, transfer hook and pausable mints
-    /// fail it, paused or not, and so do non-transferable and
-    /// frozen-by-default mints.
+    /// A Token-2022 mint charging `basis_points` of every transfer up to
+    /// `maximum_fee` from the next fee epoch on.
+    fn fee_mint(basis_points: u16, maximum_fee: u64) -> Account {
+        token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
+            let fee = &mut mint
+                .init_extension::<TransferFeeConfig>(true)
+                .unwrap()
+                .newer_transfer_fee;
+            fee.transfer_fee_basis_points = basis_points.into();
+            fee.maximum_fee = maximum_fee.into();
+        })
+    }
+
+    /// The program moves classic mints and Token-2022 mints whose extension
+    /// settings leave the transfer whole, each under its own token program: a
+    /// permanent delegate, a fee schedule taking nothing, a hook without a
+    /// program and a pausable mint while not paused. A charged fee on either
+    /// schedule, a hook program, a pause, a non-transferable mint and
+    /// frozen-by-default accounts fail it.
     #[test]
     fn classifies_mints_by_their_extensions() {
         let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
@@ -247,8 +303,25 @@ mod tests {
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
+            mint_verdict(Some(&fee_mint(0, 0))),
+            Ok(TokenProgram::Token2022)
+        );
+        assert_eq!(
+            mint_verdict(Some(&fee_mint(100, 0))),
+            Ok(TokenProgram::Token2022)
+        );
+        assert_eq!(
+            mint_verdict(Some(&fee_mint(100, 1_000))),
+            Err(UnsettleableMint::TransferFee)
+        );
+        assert_eq!(
             with(ExtensionType::TransferFeeConfig, |mint| {
-                mint.init_extension::<TransferFeeConfig>(true).unwrap();
+                let older = &mut mint
+                    .init_extension::<TransferFeeConfig>(true)
+                    .unwrap()
+                    .older_transfer_fee;
+                older.transfer_fee_basis_points = 100u16.into();
+                older.maximum_fee = 1_000u64.into();
             }),
             Err(UnsettleableMint::TransferFee)
         );
@@ -256,19 +329,27 @@ mod tests {
             with(ExtensionType::TransferHook, |mint| {
                 mint.init_extension::<TransferHook>(true).unwrap();
             }),
-            Err(UnsettleableMint::TransferHook)
+            Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            with(ExtensionType::Pausable, |mint| {
-                mint.init_extension::<PausableConfig>(true).unwrap().paused = true.into();
+            with(ExtensionType::TransferHook, |mint| {
+                mint.init_extension::<TransferHook>(true)
+                    .unwrap()
+                    .program_id = Some(Pubkey::new_unique()).try_into().unwrap();
             }),
-            Err(UnsettleableMint::Pausable)
+            Err(UnsettleableMint::TransferHook)
         );
         assert_eq!(
             with(ExtensionType::Pausable, |mint| {
                 mint.init_extension::<PausableConfig>(true).unwrap();
             }),
-            Err(UnsettleableMint::Pausable)
+            Ok(TokenProgram::Token2022)
+        );
+        assert_eq!(
+            with(ExtensionType::Pausable, |mint| {
+                mint.init_extension::<PausableConfig>(true).unwrap().paused = true.into();
+            }),
+            Err(UnsettleableMint::Paused)
         );
         assert_eq!(
             with(ExtensionType::NonTransferable, |mint| {
@@ -328,15 +409,11 @@ mod tests {
             Pubkey::new_unique(),
             Pubkey::new_unique(),
         );
-        let fee_mint = token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
-            mint.init_extension::<TransferFeeConfig>(true).unwrap();
-        });
-
         let lookup = cache.lookup([classic, fee, classic]);
         assert_eq!(lookup.unread().collect::<Vec<_>>(), [classic, fee]);
         let verdicts = lookup.resolve(&HashMap::from([
             (classic, classic_mint(6)),
-            (fee, fee_mint),
+            (fee, fee_mint(100, 1_000)),
         ]));
         assert_eq!(
             verdicts,
@@ -358,20 +435,33 @@ mod tests {
         );
     }
 
+    /// A classic associated token account takes 165 bytes, a Token-2022 one
+    /// 170 with its immutable owner extension, plus the account extensions
+    /// the mint's own extensions add even when they leave the transfer whole.
+    /// The largest settleable mint needs [`max_ata_rent`].
     #[test]
-    fn ata_rents_are_the_default_minimums_of_the_account_layouts() {
-        let rent = Rent::default();
-        assert_eq!(
-            ata_rent(TokenProgram::SplToken),
-            rent.minimum_balance(TokenAccount::LEN)
+    fn ata_rent_grows_with_the_account_extensions_the_mint_adds() {
+        assert_eq!(ata_rent(&classic_mint(6)), Some(2_039_280));
+        assert_eq!(ata_rent(&token_2022_mint(&[], |_| {})), Some(2_074_080));
+        assert_eq!(ata_rent(&fee_mint(0, 0)), Some(2_157_600));
+        let largest = token_2022_mint(
+            &[
+                ExtensionType::TransferFeeConfig,
+                ExtensionType::TransferHook,
+                ExtensionType::Pausable,
+            ],
+            |mint| {
+                mint.init_extension::<TransferFeeConfig>(true).unwrap();
+                mint.init_extension::<TransferHook>(true).unwrap();
+                mint.init_extension::<PausableConfig>(true).unwrap();
+            },
         );
-        let token_2022_len = ExtensionType::try_calculate_account_len::<TokenAccount>(&[
-            ExtensionType::ImmutableOwner,
-        ])
-        .unwrap();
+        assert_eq!(mint_verdict(Some(&largest)), Ok(TokenProgram::Token2022));
+        assert_eq!(ata_rent(&largest), Some(max_ata_rent()));
+        assert_eq!(max_ata_rent(), 2_220_240);
         assert_eq!(
-            ata_rent(TokenProgram::Token2022),
-            rent.minimum_balance(token_2022_len)
+            ata_rent(&token_2022_account(&Pubkey::new_unique(), &[], |_| {})),
+            None
         );
     }
 

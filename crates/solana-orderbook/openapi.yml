@@ -625,11 +625,15 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         executionCostLamports:
           description: >-
-            The rent, in lamports, of the buy token account when it is
-            missing, zero when it exists. The network fee is not included.
-            Zero for anonymous quotes and native SOL buys. Without sponsoring,
-            or when the account cannot be read, the rent of a missing
-            Token-2022 account.
+            The rent, in lamports, of the buy token account when the payout
+            cannot land in an existing one, zero when it can. A Token-2022
+            account's rent covers the extensions the buy mint requires of it.
+            The network fee is not included. Zero for native SOL buys and for
+            anonymous quotes without a receiver. Without sponsoring, or when
+            the account cannot be read, the rent of the largest account a
+            supported mint can need. A missing account of a custom receiver is
+            created by the order's placement transaction, not the settlement,
+            so whoever pays that creation pays this rent.
           type: string
           example: "2039280"
         kind:
