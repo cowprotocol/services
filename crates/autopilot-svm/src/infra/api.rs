@@ -5,17 +5,21 @@ use {
     axum::{
         Json,
         Router,
-        extract::{Path, State},
+        extract::{Path, Query, State},
         http::StatusCode,
         response::{IntoResponse, Response},
         routing::get,
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    serde::Serialize,
+    serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
+    std::time::Duration,
     tokio::net::TcpListener,
 };
+
+/// The EVM autopilot's floor: shorter budgets leave the sources no time.
+const MIN_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// The `GET /native_price/{mint}` body: lamports per 10^9 atoms of the mint,
 /// the unit the auctions carry.
@@ -24,6 +28,12 @@ use {
 struct NativePrice {
     #[serde_as(as = "DisplayFromStr")]
     price: u64,
+}
+
+#[derive(Deserialize)]
+struct NativePriceQuery {
+    /// Without it the sources' own timeouts bound the lookup.
+    timeout_ms: Option<u64>,
 }
 
 /// Serve the API on `listener` until the task is dropped.
@@ -41,12 +51,24 @@ pub async fn serve(listener: TcpListener, prices: NativePrices) -> std::io::Resu
 }
 
 /// Handle `GET /native_price/{mint}`: 200 with the price, 404 for a mint no
-/// estimator prices, 429 while the sources are rate limited.
-async fn native_price(Path(mint): Path<String>, State(prices): State<NativePrices>) -> Response {
+/// estimator prices or none priced within `timeout_ms`, 429 while the sources
+/// are rate limited.
+async fn native_price(
+    Path(mint): Path<String>,
+    Query(query): Query<NativePriceQuery>,
+    State(prices): State<NativePrices>,
+) -> Response {
     let Ok(mint) = mint.parse::<Pubkey>() else {
         return (StatusCode::BAD_REQUEST, "Invalid mint").into_response();
     };
-    match prices.price(mint).await {
+    let budget = query.timeout_ms.map_or(Duration::MAX, |ms| {
+        Duration::from_millis(ms).max(MIN_TIMEOUT)
+    });
+    // EVM answers an estimator that ran out of time as no liquidity too.
+    match tokio::time::timeout(budget, prices.price(mint))
+        .await
+        .unwrap_or(Ok(None))
+    {
         Ok(Some(price)) => Json(NativePrice { price }).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "No liquidity").into_response(),
         Err(err) if err.is::<RateLimited>() => {
@@ -119,14 +141,8 @@ mod tests {
         );
     }
 
-    /// The sources' spent quota answers 429, so the orderbook can tell it
-    /// from a mint nobody prices.
-    #[tokio::test]
-    async fn rate_limited_sources_answer_429() {
-        let app = Router::new().route(
-            "/simple/token_price/solana",
-            get(|| async { StatusCode::TOO_MANY_REQUESTS }),
-        );
+    async fn coingecko(route: axum::routing::MethodRouter) -> NativePrices {
+        let app = Router::new().route("/simple/token_price/solana", route);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let coingecko = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -135,7 +151,7 @@ mod tests {
             cow_solana_rpc::RpcRequest::GetMultipleAccounts,
             solana_testlib::multiple_accounts_json([solana_testlib::account_json(&mint)]),
         )]));
-        let prices = NativePrices::new(
+        NativePrices::new(
             &crate::infra::config::NativePrices {
                 estimators: vec![crate::infra::config::NativePriceEstimator::CoinGecko {
                     endpoint: format!("http://{coingecko}/simple/token_price")
@@ -148,7 +164,14 @@ mod tests {
             },
             rpc,
             Pubkey::new_unique(),
-        );
+        )
+    }
+
+    /// The sources' spent quota answers 429, so the orderbook can tell it
+    /// from a mint nobody prices.
+    #[tokio::test]
+    async fn rate_limited_sources_answer_429() {
+        let prices = coingecko(get(|| async { StatusCode::TOO_MANY_REQUESTS })).await;
         let addr = spawn(prices).await;
 
         assert_eq!(
@@ -157,6 +180,20 @@ mod tests {
                 reqwest::StatusCode::TOO_MANY_REQUESTS,
                 "Rate limited".to_owned()
             )
+        );
+    }
+
+    /// The budget answers 404 before the source's own timeout would answer
+    /// 500.
+    #[tokio::test]
+    async fn lookups_past_the_budget_answer_404() {
+        let prices = coingecko(get(std::future::pending::<()>)).await;
+        let addr = spawn(prices).await;
+
+        let mint = Pubkey::new_unique();
+        assert_eq!(
+            fetch(addr, &format!("{mint}?timeout_ms=1")).await,
+            (reqwest::StatusCode::NOT_FOUND, "No liquidity".to_owned())
         );
     }
 }

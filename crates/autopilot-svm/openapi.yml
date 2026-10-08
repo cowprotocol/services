@@ -20,6 +20,18 @@ paths:
           schema:
             $ref: "#/components/schemas/Pubkey"
           required: true
+        - in: query
+          name: timeout_ms
+          description: |
+            Budget in milliseconds for the lookup, raised to 250ms when lower.
+            A lookup that outlives it answers 404. Without it the price
+            sources' own timeouts bound the lookup.
+          schema:
+            type: integer
+            format: int64
+            minimum: 250
+            example: 5000
+          required: false
       responses:
         "200":
           description: Native price retrieved successfully.
@@ -35,7 +47,7 @@ paths:
                 type: string
                 example: "Invalid mint"
         "404":
-          description: No estimator prices the mint.
+          description: No estimator prices the mint within `timeout_ms`.
           content:
             text/plain:
               schema:

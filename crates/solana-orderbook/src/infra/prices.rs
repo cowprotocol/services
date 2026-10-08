@@ -55,8 +55,9 @@ impl NativePrices {
         // `Url::join` resolves relative to the last slash and would drop a
         // final path segment of a base configured without a trailing slash.
         let url = format!(
-            "{}/native_price/{token}",
-            self.autopilot.as_str().trim_end_matches('/')
+            "{}/native_price/{token}?timeout_ms={}",
+            self.autopilot.as_str().trim_end_matches('/'),
+            self.timeout.as_millis()
         );
         let mut request = self.client.get(url).timeout(self.timeout);
         if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
@@ -116,6 +117,25 @@ mod tests {
         assert!(matches!(price(broken).await, Err(Error::Internal(_))));
         let dead = "http://127.0.0.1:1".parse().unwrap();
         assert!(matches!(price(dead).await, Err(Error::Internal(_))));
+    }
+
+    /// The stand-in echoes `timeout_ms` as the price.
+    #[tokio::test]
+    async fn sends_the_timeout() {
+        let app = axum::Router::new().route(
+            "/native_price/{mint}",
+            axum::routing::get(
+                |axum::extract::Query(query): axum::extract::Query<
+                    std::collections::HashMap<String, String>,
+                >| async move { format!(r#"{{"price":"{}"}}"#, query["timeout_ms"]) },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let autopilot = format!("http://{addr}").parse().unwrap();
+        assert_eq!(price(autopilot).await.unwrap(), 1000);
     }
 
     /// A base URL with a path keeps it, with or without a trailing slash.
