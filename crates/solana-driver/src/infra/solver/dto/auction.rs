@@ -200,7 +200,8 @@ impl Auction {
 }
 
 /// Engines see native SOL buys as wSOL buys, see `Order::new`, so a native
-/// SOL price is keyed under the wSOL mint.
+/// SOL price is keyed under the wSOL mint. An auction pricing both collides
+/// on the same value: a wSOL atom is a lamport, so either key is 10^9.
 fn tokens(native_prices: &HashMap<Pubkey, u64>) -> HashMap<Pubkey, Token> {
     native_prices
         .iter()
