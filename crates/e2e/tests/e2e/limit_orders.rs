@@ -566,13 +566,7 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
-            // The test asserts both orders land in the SAME competition (two
-            // winners per auction). With the default 200ms min_solve_time the
-            // autopilot sometimes cuts the auction before both solvers manage
-            // to submit a winning bid, so the two orders end up in separate
-            // auctions with one settlement tx each. A longer deadline lets
-            // both solvers reliably bid on the same auction.
-            Some(std::time::Duration::from_secs(2)),
+            None,
             Configuration {
                 drivers: vec![
                     Solver::new(
@@ -595,27 +589,23 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
         )
         .await;
 
-    // Wait for trade
+    // Wait until both trades landed in the SAME auction — i.e. both solvers
+    // bid as winners on the same cut. The naïve "both trades exist" wait
+    // races with the autopilot: with fast cycles the two orders can end up
+    // in separate auctions with one settlement tx each, which still satisfies
+    // "both trades exist" but makes the `transaction_hashes.len() == 2`
+    // assertion below fail. Wait for the specific state we're about to
+    // assert on.
     let indexed_trades = || async {
         onchain.mint_block().await;
-        let trade_a = services.get_trades(&uid_a).await.unwrap().first().cloned();
-        let trade_b = services.get_trades(&uid_b).await.unwrap().first().cloned();
-        match (trade_a, trade_b) {
-            (Some(trade_a), Some(trade_b)) => {
-                matches!(
-                    (
-                        services
-                            .get_solver_competition(trade_a.tx_hash.unwrap())
-                            .await,
-                        services
-                            .get_solver_competition(trade_b.tx_hash.unwrap())
-                            .await
-                    ),
-                    (Ok(_), Ok(_))
-                )
-            }
-            _ => false,
-        }
+        let trade_a = services.get_trades(&uid_a).await.unwrap().first().cloned()?;
+        let trade_b = services.get_trades(&uid_b).await.unwrap().first().cloned()?;
+        let competition_a = services
+            .get_solver_competition(trade_a.tx_hash?)
+            .await
+            .ok()?;
+        services.get_solver_competition(trade_b.tx_hash?).await.ok()?;
+        Some(competition_a.transaction_hashes.len() == 2)
     };
     wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
 
