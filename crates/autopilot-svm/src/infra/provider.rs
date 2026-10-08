@@ -32,6 +32,9 @@ pub struct DbAuctionProvider {
     /// Slots the indexer may lag behind the tip before cuts are skipped.
     max_indexer_lag: u64,
     prices: NativePrices,
+    /// The settlement state PDA: the delegate a sell token account must
+    /// approve for the settlement to pull from it.
+    state_pda: Pubkey,
     /// The verdicts on the mints the cuts read so far.
     mints: MintVerdicts,
     /// Block height of the last successful lookup.
@@ -39,12 +42,19 @@ pub struct DbAuctionProvider {
 }
 
 impl DbAuctionProvider {
-    pub fn new(pool: PgPool, rpc: SolanaRPC, max_indexer_lag: u64, prices: NativePrices) -> Self {
+    pub fn new(
+        pool: PgPool,
+        rpc: SolanaRPC,
+        max_indexer_lag: u64,
+        prices: NativePrices,
+        state_pda: Pubkey,
+    ) -> Self {
         Self {
             pool,
             rpc,
             max_indexer_lag,
             prices,
+            state_pda,
             mints: MintVerdicts::default(),
             last_block_height: Mutex::default(),
         }
@@ -112,7 +122,7 @@ impl DbAuctionProvider {
         };
         let (orders, unsettleable) = settleable_orders(orders, &lookup.resolve(&accounts));
         let (orders, unreceivable) = receivable_orders(orders, &accounts);
-        let (orders, unfunded) = funded_orders(orders, &accounts);
+        let (orders, unfunded) = funded_orders(orders, &accounts, &self.state_pda);
         (orders, unsettleable, unreceivable, unfunded)
     }
 
@@ -457,6 +467,7 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
 fn funded_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
+    state_pda: &Pubkey,
 ) -> (Vec<Order>, Vec<IntentHash>) {
     let mut unfunded = Vec::new();
     let funded = orders
@@ -467,7 +478,7 @@ fn funded_orders(
             }
             let balance = accounts
                 .get(&Pubkey::new_from_array(order.sell_token_account.0))
-                .map_or(0, |account| funded_sell_balance(account, &order));
+                .map_or(0, |account| funded_sell_balance(account, &order, state_pda));
             order.sell_balance = Some(balance);
             let funded = if order.partially_fillable {
                 !order.available().has_zero_leg()
@@ -485,17 +496,17 @@ fn funded_orders(
 }
 
 /// What the account can fund of the order's sell side: the amount both held
-/// and approved to a delegate, in an initialized, unfrozen account of either
-/// token program holding the order's sell mint. Anything else funds nothing,
-/// the pull at settlement fails. Any delegate passes because the cut does not
-/// know the settlement's state PDA.
-fn funded_sell_balance(account: &Account, order: &Order) -> u64 {
+/// and approved to the settlement state PDA, in an initialized, unfrozen
+/// account of either token program holding the order's sell mint. Anything
+/// else funds nothing, the pull at settlement fails.
+fn funded_sell_balance(account: &Account, order: &Order, state_pda: &Pubkey) -> u64 {
     if ![spl_token_interface::ID, spl_token_2022_interface::ID].contains(&account.owner) {
         return 0;
     }
     StateWithExtensions::<TokenAccount>::unpack(&account.data).map_or(0, |state| {
         if state.base.state != AccountState::Initialized
             || state.base.mint.to_bytes() != order.sell_token.0
+            || Option::from(state.base.delegate) != Some(*state_pda)
         {
             return 0;
         }
@@ -594,6 +605,7 @@ mod tests {
             SolanaRPC::new_mock_with_mocks(mocks),
             150,
             NativePrices::seeded([]),
+            Pubkey::new_from_array(crate::tests::STATE_PDA),
         )
     }
 
@@ -817,7 +829,12 @@ mod tests {
     /// The sell token account of `order()`, holding and approving its sell
     /// amount.
     fn funded_sell_account() -> serde_json::Value {
-        crate::tests::sell_token_account_json([0x33; 32], 1_000, Some(1_000))
+        crate::tests::sell_token_account_json(
+            [0x33; 32],
+            1_000,
+            Some(1_000),
+            crate::tests::STATE_PDA,
+        )
     }
 
     /// A created fill-or-kill order needs its full sell amount both held and
@@ -827,13 +844,28 @@ mod tests {
     /// hitting zero and carries it to the driver: a buy of 10 for 1000 needs
     /// 100, the price of one buy atom. The orders share one receivable buy
     /// token account, answered first, and the sell and buy mints come last.
-    /// The pending sponsored order is exempt from the check.
+    /// The pending sponsored order is exempt from the check. An account
+    /// approving another delegate funds nothing.
     #[tokio::test]
     async fn drops_created_orders_their_sell_account_cannot_fund() {
-        let sell =
-            |amount, approved| crate::tests::sell_token_account_json([0x33; 32], amount, approved);
+        let sell = |amount, approved| {
+            crate::tests::sell_token_account_json(
+                [0x33; 32],
+                amount,
+                approved,
+                crate::tests::STATE_PDA,
+            )
+        };
         let mut token_2022 = sell(1_000, Some(1_000));
         token_2022["owner"] = spl_token_2022_interface::ID.to_string().into();
+        let other_mint = crate::tests::sell_token_account_json(
+            [0x99; 32],
+            1_000,
+            Some(1_000),
+            crate::tests::STATE_PDA,
+        );
+        let other_delegate =
+            crate::tests::sell_token_account_json([0x33; 32], 1_000, Some(1_000), [0xBA; 32]);
         let response = serde_json::json!({
             "context": {"slot": 1u64, "apiVersion": "2.0.0"},
             "value": [
@@ -842,7 +874,7 @@ mod tests {
                 sell(999, Some(1_000)),
                 sell(1_000, Some(999)),
                 sell(1_000, None),
-                crate::tests::sell_token_account_json([0x99; 32], 1_000, Some(1_000)),
+                other_mint,
                 null,
                 sell(0, Some(1_000)),
                 sell(999, Some(999)),
@@ -850,6 +882,7 @@ mod tests {
                 sell(600, Some(600)),
                 sell(99, Some(99)),
                 sell(100, Some(100)),
+                other_delegate,
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
             ],
@@ -889,6 +922,7 @@ mod tests {
                 buy_amount: 10,
                 ..partial(0x5c)
             },
+            selling(0x5d, true),
         ];
         let (kept, unsettleable, unreceivable, unfunded) = provider.checked_orders(orders).await;
         let kept: Vec<(IntentHash, Option<u64>)> = kept
@@ -911,7 +945,7 @@ mod tests {
         assert_eq!(
             unfunded,
             (0x51..=0x56)
-                .chain([0x5b])
+                .chain([0x5b, 0x5d])
                 .map(|byte| IntentHash([byte; 32]))
                 .collect::<Vec<_>>()
         );

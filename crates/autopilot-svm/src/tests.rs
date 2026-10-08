@@ -104,20 +104,25 @@ pub(crate) fn token_account_json(mint: [u8; 32]) -> serde_json::Value {
     )
 }
 
+/// The settlement state PDA the test providers run under: the delegate the
+/// sell token account fixtures approve.
+pub(crate) const STATE_PDA: [u8; 32] = [0xDE; 32];
+
 /// A canned `getMultipleAccounts` entry: an initialized account of the
 /// classic SPL token program holding `amount` of `mint`, with `approved` of it
-/// delegated when given.
+/// delegated to `delegate` when given.
 pub(crate) fn sell_token_account_json(
     mint: [u8; 32],
     amount: u64,
     approved: Option<u64>,
+    delegate: [u8; 32],
 ) -> serde_json::Value {
     let mut data = vec![0; TokenAccount::LEN];
     TokenAccount {
         mint: solana_sdk::pubkey::Pubkey::new_from_array(mint),
         amount,
         delegate: approved
-            .map(|_| solana_sdk::pubkey::Pubkey::new_from_array([0xDE; 32]))
+            .map(|_| solana_sdk::pubkey::Pubkey::new_from_array(delegate))
             .into(),
         delegated_amount: approved.unwrap_or(0),
         state: AccountState::Initialized,
@@ -141,7 +146,7 @@ fn mock_rpc() -> SolanaRPC {
         "context": {"slot": 1u64, "apiVersion": "2.0.0"},
         "value": [
             token_account_json([0xAB; 32]),
-            sell_token_account_json([0xAA; 32], 1_000, Some(1_000)),
+            sell_token_account_json([0xAA; 32], 1_000, Some(1_000), STATE_PDA),
             mint_account_json(9),
             mint_account_json(9),
         ],
@@ -233,6 +238,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             mock_rpc(),
             150,
             NativePrices::seeded(test_prices()),
+            solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
         );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
@@ -252,6 +258,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             mock_rpc(),
             150,
             NativePrices::seeded(test_prices()),
+            solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
         )),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
@@ -340,6 +347,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         mock_rpc(),
         u64::MAX,
         NativePrices::seeded(test_prices()),
+        solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
     );
     assert!(
         held_provider.cut_auction(&(tip + 25)).await.is_none(),
