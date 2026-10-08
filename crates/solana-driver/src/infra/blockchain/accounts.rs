@@ -1,16 +1,12 @@
 //! Typed views of fetched on-chain accounts.
 //!
 //! Raw account state (owners, data bytes) stays behind the blockchain
-//! adapter. The domain receives decoded lookup tables, mint token programs and
-//! classified token-account states, never raw `Account`s.
+//! adapter. The domain receives mint token programs and classified
+//! token-account states, never raw `Account`s.
 
 use {
     cow_settlement_interface::token_program::TokenProgram,
-    solana_address_lookup_table_interface::{
-        program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
-        state::AddressLookupTable,
-    },
-    solana_sdk::{account::Account, message::AddressLookupTableAccount, pubkey::Pubkey},
+    solana_sdk::{account::Account, pubkey::Pubkey},
     solana_system_interface::program::ID as SYSTEM_PROGRAM_ID,
     spl_token_2022_interface::{
         extension::StateWithExtensions,
@@ -22,7 +18,7 @@ use {
 /// A point-in-time snapshot of accounts from one batched fetch.
 ///
 /// An account that does not exist on chain is not in the snapshot. Each
-/// interpretation method (ALT, mint, token account) reports a missing account
+/// interpretation method (mint, token account) reports a missing account
 /// for its key.
 pub struct AccountsSnapshot {
     accounts: HashMap<Pubkey, Account>,
@@ -35,48 +31,6 @@ impl AccountsSnapshot {
 
     pub fn exists(&self, address: &Pubkey) -> bool {
         self.accounts.contains_key(address)
-    }
-
-    /// Return the address lookup table at `key` for the v0 message compiler.
-    ///
-    /// # Requirements
-    ///
-    /// - The account must exist.
-    /// - The address-lookup-table program must own the account.
-    /// - The table must be active. Reject tables in the deactivation cool-down.
-    ///   The cool-down can finish before the transaction lands, and then the
-    ///   compiled indexes become stale.
-    ///
-    /// # Why these checks matter
-    ///
-    /// `MessageV0::try_compile` runs in this driver and does not read chain
-    /// state. It only sees the addresses that this method returns. The
-    /// Solana runtime resolves the real table account when it executes the
-    /// transaction. A missing, wrongly owned, inactive, or deactivating
-    /// table passes compilation and then fails on-chain after submission.
-    /// These checks reject bad tables before the driver sends the
-    /// transaction.
-    ///
-    /// These checks cannot catch a table extended in the snapshot's slot. Its
-    /// new addresses become usable only in the next slot.
-    pub fn lookup_table(
-        &self,
-        key: &Pubkey,
-    ) -> Result<AddressLookupTableAccount, InvalidAddressLookupTableReason> {
-        use InvalidAddressLookupTableReason::*;
-        let account = self.accounts.get(key).ok_or(AccountNotFound)?;
-        if account.owner != ADDRESS_LOOKUP_TABLE_PROGRAM_ID {
-            return Err(UnexpectedOwner);
-        }
-        let table =
-            AddressLookupTable::deserialize(&account.data).map_err(|_| DeserializeFailed)?;
-        if table.meta.deactivation_slot != u64::MAX {
-            return Err(Deactivated);
-        }
-        Ok(AddressLookupTableAccount {
-            key: *key,
-            addresses: table.addresses.to_vec(),
-        })
     }
 
     /// The token program of the mint at `mint`: the account's owner, when it is
@@ -170,28 +124,10 @@ pub enum InvalidMintReason {
     NotAMint,
 }
 
-/// Why the snapshot rejected an account as an address lookup table.
-#[derive(Debug, Clone, Copy, thiserror::Error)]
-pub enum InvalidAddressLookupTableReason {
-    /// The account does not exist on chain.
-    #[error("account not found")]
-    AccountNotFound,
-    /// The address-lookup-table program does not own the account.
-    #[error("unexpected owner")]
-    UnexpectedOwner,
-    /// The account data does not deserialize as an address lookup table.
-    #[error("failed to deserialize")]
-    DeserializeFailed,
-    /// The table is deactivated or deactivating.
-    #[error("deactivated")]
-    Deactivated,
-}
-
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        solana_address_lookup_table_interface::state::LookupTableMeta,
         solana_sdk::program_pack::Pack,
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
@@ -201,7 +137,6 @@ mod tests {
             mint_close_authority::MintCloseAuthority,
         },
         spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID,
-        std::borrow::Cow,
     };
 
     fn pubkey(byte: u8) -> Pubkey {
@@ -210,82 +145,6 @@ mod tests {
 
     fn snapshot(entries: impl IntoIterator<Item = (Pubkey, Account)>) -> AccountsSnapshot {
         AccountsSnapshot::new(entries.into_iter().collect())
-    }
-
-    /// A serialized lookup table that contains `addresses` and has the given
-    /// `deactivation_slot`. A slot of `u64::MAX` means the table is active.
-    fn serialized_table(deactivation_slot: u64, addresses: &[Pubkey]) -> Vec<u8> {
-        AddressLookupTable {
-            meta: LookupTableMeta {
-                deactivation_slot,
-                ..LookupTableMeta::default()
-            },
-            addresses: Cow::Borrowed(addresses),
-        }
-        .serialize_for_tests()
-        .unwrap()
-    }
-
-    fn table_account(data: Vec<u8>) -> Account {
-        Account {
-            owner: ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
-            data,
-            ..Account::default()
-        }
-    }
-
-    #[test]
-    fn resolves_an_active_lookup_table() {
-        let key = pubkey(0x11);
-        let addresses = vec![pubkey(0x22), pubkey(0x33)];
-        let snapshot = snapshot([(key, table_account(serialized_table(u64::MAX, &addresses)))]);
-
-        let table = snapshot.lookup_table(&key).unwrap();
-        assert_eq!(table.key, key);
-        assert_eq!(table.addresses, addresses);
-    }
-
-    #[test]
-    fn rejects_a_missing_lookup_table() {
-        let err = snapshot([]).lookup_table(&pubkey(0x11)).unwrap_err();
-        assert!(matches!(
-            err,
-            InvalidAddressLookupTableReason::AccountNotFound
-        ));
-    }
-
-    #[test]
-    fn rejects_a_lookup_table_with_a_foreign_owner() {
-        let key = pubkey(0x11);
-        let account = Account {
-            owner: pubkey(0xff),
-            data: serialized_table(u64::MAX, &[]),
-            ..Account::default()
-        };
-        let err = snapshot([(key, account)]).lookup_table(&key).unwrap_err();
-        assert!(matches!(
-            err,
-            InvalidAddressLookupTableReason::UnexpectedOwner
-        ));
-    }
-
-    #[test]
-    fn rejects_a_lookup_table_that_fails_to_deserialize() {
-        let key = pubkey(0x11);
-        let account = table_account(vec![0xff; 4]);
-        let err = snapshot([(key, account)]).lookup_table(&key).unwrap_err();
-        assert!(matches!(
-            err,
-            InvalidAddressLookupTableReason::DeserializeFailed
-        ));
-    }
-
-    #[test]
-    fn rejects_a_deactivated_lookup_table() {
-        let key = pubkey(0x11);
-        let account = table_account(serialized_table(5, &[pubkey(0x22)]));
-        let err = snapshot([(key, account)]).lookup_table(&key).unwrap_err();
-        assert!(matches!(err, InvalidAddressLookupTableReason::Deactivated));
     }
 
     #[test]

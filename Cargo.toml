@@ -139,7 +139,7 @@ solana-commitment-config = "3"
 solana-compute-budget-interface = "3"
 solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
-solana-rpc-client = "4"
+solana-rpc-client = "4.2.2"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
 solana-system-interface = "3"
@@ -178,6 +178,7 @@ tracing-opentelemetry = "0.33.0"
 tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
+wincode = "0.5.5"
 winner-selection = { path = "crates/winner-selection" }
 yellowstone-grpc-client = "13.4.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }

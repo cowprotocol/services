@@ -132,7 +132,6 @@ mod tests {
                     in_amount: 1_000,
                     out_amount: 2_000,
                     instructions: vec![],
-                    address_lookup_tables: vec![],
                 }),
             };
             async move { result }

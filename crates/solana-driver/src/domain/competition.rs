@@ -18,6 +18,7 @@ use {
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
+        message::{VersionedMessage, v1},
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -35,10 +36,6 @@ const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
 /// deadline slot into a wall-clock confirmation timeout. This is mainnet's
 /// target; other clusters can drift.
 const SLOT_DURATION_MS: u64 = 400;
-/// The network's per-transaction byte ceiling,
-/// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
-/// rejects a larger transaction before it simulates anything.
-const MAX_TRANSACTION_BYTES: u64 = 1232;
 /// The runtime's per-transaction account lock limit, counting static keys and
 /// lookup-table loaded addresses. The SDK's `MAX_TX_ACCOUNT_LOCKS` (128)
 /// applies only under the `increase_tx_account_lock_limit` feature, inactive
@@ -234,13 +231,7 @@ impl Competition {
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
         bundle.push(resolved.unsigned()?);
-        if let Some(size) = bundle
-            .iter()
-            .filter_map(encoded_size)
-            .find(|size| *size > MAX_TRANSACTION_BYTES)
-        {
-            return Err(Error::TransactionTooLarge { size });
-        }
+        bundle.iter().try_for_each(check_size)?;
         if let Some(accounts) = bundle
             .iter()
             .map(account_count)
@@ -417,7 +408,6 @@ impl Competition {
     /// Deferred work:
     /// - admission semaphore(1),
     /// - pre-submission simulation,
-    /// - ALT caching,
     /// - re-sending / retry loop.
     async fn process_settle_request(
         self: &Arc<Self>,
@@ -479,17 +469,10 @@ impl Competition {
                     .map_err(Error::Rpc)
             },)?;
         let transaction = resolved
-            .encode(
-                self.solver.signer(),
-                latest.blockhash,
-                estimate.compute_unit_price,
-            )
+            .encode(self.solver.signer(), latest.blockhash, estimate)
             .await?;
-        if let Some(size) = observe_transaction(&transaction, cu_estimate)
-            && size > MAX_TRANSACTION_BYTES
-        {
-            return Err(Error::TransactionTooLarge { size });
-        }
+        observe_transaction(&transaction, cu_estimate);
+        check_size(&transaction)?;
 
         self.simulate_settlement(&transaction).await?;
 
@@ -516,7 +499,7 @@ impl Competition {
         // the send. A confirmation that never returns must still leave it in
         // the logs.
         if let Some(signature) = transaction.signatures.first() {
-            tracing::info!(%signature, "submitting settlement");
+            tracing::info!(%signature, version = ?transaction.version(), "submitting settlement");
         }
 
         // TODO: a provably unsent transaction (connect failure at send time)
@@ -782,10 +765,10 @@ pub(crate) enum Error {
     /// without naming a failure, so the settlement went unexecuted.
     #[error("bundle simulation executed {executed} of {legs} transactions without an error")]
     IncompleteSimulation { executed: usize, legs: usize },
-    /// An encoded transaction exceeds the network's per-transaction ceiling.
+    /// An encoded transaction exceeds the network's ceiling for its version.
     /// Nothing was sent.
-    #[error("transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
-    TransactionTooLarge { size: u64 },
+    #[error("transaction is {size} bytes, over the {limit} limit")]
+    TransactionTooLarge { size: u64, limit: u64 },
     /// The transaction's priority fee is over the configured budget. Nothing
     /// was sent.
     #[error(transparent)]
@@ -815,11 +798,11 @@ struct Metrics {
     #[metric(labels("outcome", "solver"))]
     solve_simulations: prometheus::IntCounterVec,
     /// Serialized settlement transaction size in bytes. The network rejects a
-    /// transaction over 1232 bytes.
-    #[metric(buckets(600., 800., 1000., 1100., 1200., 1232., 1400., 1600.))]
+    /// v1 transaction over 4096 bytes.
+    #[metric(buckets(1000., 1500., 2000., 2500., 3000., 3500., 4096.))]
     transaction_bytes: prometheus::Histogram,
-    /// Settlement transaction account count, static keys plus lookup-table
-    /// loaded. The runtime caps a transaction at 64.
+    /// Settlement transaction account count. The runtime caps a transaction
+    /// at 64.
     #[metric(buckets(16., 24., 32., 40., 48., 56., 64., 80.))]
     transaction_accounts: prometheus::Histogram,
     /// Solver-estimated compute-unit limit for the settlement. The maximum is
@@ -838,14 +821,10 @@ fn metrics() -> &'static Metrics {
 }
 
 /// Record the built transaction's footprint against the per-transaction bytes,
-/// account, and compute-unit ceilings, and hand back the wire size it measured.
-fn observe_transaction(
-    transaction: &VersionedTransaction,
-    cu_estimate: Option<u32>,
-) -> Option<u64> {
+/// account, and compute-unit ceilings.
+fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u32>) {
     let metrics = metrics();
-    let bytes = encoded_size(transaction);
-    if let Some(bytes) = bytes {
+    if let Some(bytes) = encoded_size(transaction) {
         metrics.transaction_bytes.observe(bytes as f64);
     }
     metrics
@@ -854,12 +833,30 @@ fn observe_transaction(
     if let Some(cu) = cu_estimate {
         metrics.compute_units.observe(f64::from(cu));
     }
-    bytes
+}
+
+/// The network's byte ceiling for the transaction's version: v1 for the
+/// settlement, v0 for the autopilot's order creations. An RPC node rejects a
+/// larger transaction before it simulates anything.
+fn max_transaction_bytes(transaction: &VersionedTransaction) -> u64 {
+    match transaction.message {
+        VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE as u64,
+        // `solana_packet::PACKET_DATA_SIZE` without the dependency.
+        VersionedMessage::Legacy(_) | VersionedMessage::V0(_) => 1232,
+    }
 }
 
 /// The transaction's wire size, `None` when it does not serialize.
 fn encoded_size(transaction: &VersionedTransaction) -> Option<u64> {
-    bincode::serialized_size(transaction).ok()
+    wincode::serialized_size(transaction).ok()
+}
+
+fn check_size(transaction: &VersionedTransaction) -> Result<(), Error> {
+    let limit = max_transaction_bytes(transaction);
+    match encoded_size(transaction) {
+        Some(size) if size > limit => Err(Error::TransactionTooLarge { size, limit }),
+        _ => Ok(()),
+    }
 }
 
 /// Total accounts a transaction resolves to: its static keys plus every

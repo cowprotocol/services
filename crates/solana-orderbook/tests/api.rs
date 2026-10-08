@@ -939,6 +939,46 @@ fn overpriced_creation_tx(
     )
 }
 
+/// The sponsored creation as a v1 message: its 5 SOL priority fee sits in the
+/// message config, where no compute-budget instruction shows it.
+fn v1_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    use solana_sdk::message::{VersionedMessage, v1};
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let instructions = [
+        destination_creation(funder, owner.pubkey(), &intent),
+        create_order(funder, owner.pubkey(), &intent),
+    ];
+    let message = VersionedMessage::V1(
+        v1::Message::try_compile_with_config(
+            &funder,
+            &instructions,
+            solana_sdk::hash::Hash::new_unique(),
+            v1::TransactionConfig::empty().with_priority_fee(5_000_000_000),
+        )
+        .unwrap(),
+    );
+    let serialized = message.serialize();
+    let signers = usize::from(message.header().num_required_signatures);
+    let signatures = message.static_account_keys()[..signers]
+        .iter()
+        .map(|key| {
+            if *key == owner.pubkey() {
+                owner.sign_message(&serialized)
+            } else {
+                solana_sdk::signature::Signature::default()
+            }
+        })
+        .collect();
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message,
+    };
+    base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
+}
+
 /// A Lighthouse instruction over one account, the shape Phantom injects.
 fn lighthouse(
     discriminator: u8,
@@ -1019,6 +1059,8 @@ async fn create_order_rejects_invalid_submissions() {
         ),
         // The funder pays the priority fee, so an outsized price is refused.
         (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
+        // Nor can a v1 message hide one in its config.
+        (v1_creation_tx(funder, &owner), "InvalidTransaction"),
         // A lighthouse assertion is fine, anything outside that range is not.
         (
             lighthouse_memory_creation_tx(funder, &owner),

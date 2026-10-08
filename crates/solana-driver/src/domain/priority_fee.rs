@@ -17,7 +17,7 @@ use {
 /// transaction that declares no limit. The runtime's own default for such a
 /// transaction is lower (200k units per non-builtin instruction and 3k per
 /// builtin, up to this ceiling), so this is the conservative pick.
-const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
@@ -52,12 +52,12 @@ impl Default for PriorityFeePolicy {
 }
 
 /// A transaction's estimated priority fee.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Estimate {
     /// Micro-lamports per compute unit.
     pub(crate) compute_unit_price: u64,
     /// The priority fee the transaction pays at that price, in lamports.
-    pub(crate) lamports: u128,
+    pub(crate) lamports: u64,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -84,16 +84,16 @@ impl PriorityFeePolicy {
         let limit = compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
         // Micro-lamports per unit times units, rounded up to whole lamports.
         let lamports = (u128::from(compute_unit_price) * u128::from(limit)).div_ceil(1_000_000);
-        if lamports > u128::from(self.max_priority_fee_lamports) {
-            return Err(OverBudget {
+        match u64::try_from(lamports) {
+            Ok(lamports) if lamports <= self.max_priority_fee_lamports => Ok(Estimate {
+                compute_unit_price,
+                lamports,
+            }),
+            _ => Err(OverBudget {
                 lamports,
                 cap: self.max_priority_fee_lamports,
-            });
+            }),
         }
-        Ok(Estimate {
-            compute_unit_price,
-            lamports,
-        })
     }
 
     /// The configured percentile of the most recent slots' fees, raised to the

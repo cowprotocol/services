@@ -27,8 +27,6 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     /// Solana instructions to execute as part of the settlement.
     pub interactions: Vec<Instruction>,
-    /// Address lookup tables the interactions assume.
-    pub address_lookup_tables: Vec<Pubkey>,
     /// Optional solver estimate of total settlement compute units.
     pub cu_estimate: Option<u32>,
 }

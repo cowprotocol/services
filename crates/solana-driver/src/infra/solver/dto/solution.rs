@@ -46,10 +46,6 @@ pub struct Solution {
     /// Optional solver estimate of total settlement compute units.
     #[serde(default)]
     pub cu_estimate: Option<u32>,
-    /// The address lookup tables the interactions assume.
-    #[serde(default)]
-    #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]
-    pub address_lookup_tables: Vec<Pubkey>,
 }
 
 /// A fulfillment of one auction order.
@@ -194,7 +190,6 @@ impl Solutions {
                     trades,
                     interactions,
                     cu_estimate,
-                    address_lookup_tables,
                 } = solution;
                 // Under uniform prices a second trade of one order says
                 // nothing a larger first one would not, and the readers
@@ -235,8 +230,10 @@ impl Solutions {
                     prices,
                     trades,
                     interactions: interactions.into_iter().map(Into::into).collect(),
-                    address_lookup_tables,
-                    cu_estimate,
+                    // The runtime clamps a v1 limit but charges its priority
+                    // fee in full, and the driver prices the fee at the limit.
+                    cu_estimate: cu_estimate
+                        .map(|limit| limit.min(domain::priority_fee::MAX_COMPUTE_UNIT_LIMIT)),
                 })
             })
             .collect()
@@ -301,7 +298,6 @@ mod tests {
                     "executedAmount": "1001",
                 }],
                 "interactions": [],
-                "addressLookupTables": [],
             }],
         });
         let solutions: Solutions = serde_json::from_value(bad).unwrap();
@@ -354,7 +350,6 @@ mod tests {
                     "executedAmount": "1000",
                 }],
                 "interactions": [],
-                "addressLookupTables": [],
             }],
         });
         let solutions: Solutions = serde_json::from_value(bad).unwrap();
@@ -378,7 +373,6 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
-                address_lookup_tables: vec![],
             }],
         };
         let domain = solutions
@@ -403,7 +397,6 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
-                address_lookup_tables: vec![],
             }],
         };
         let err = solutions
@@ -454,7 +447,6 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
-                address_lookup_tables: vec![],
             }],
         };
         let domain = solutions.into_domain(&auction, pubkey(6)).unwrap();
@@ -511,7 +503,6 @@ mod tests {
                     }],
                     "instructionData": "3q0=",
                 }],
-                "addressLookupTables": [pubkey(7).to_string()],
             }]
         });
 
@@ -533,11 +524,46 @@ mod tests {
                     instruction_data: vec![0xde, 0xad],
                 }],
                 cu_estimate: None,
-                address_lookup_tables: vec![pubkey(7)],
             }],
         };
 
         let actual: Solutions = serde_json::from_value(json).unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn caps_the_compute_unit_estimate_at_the_runtime_ceiling() {
+        let solutions = Solutions {
+            solutions: vec![Solution {
+                id: 1,
+                prices: HashMap::from([(pubkey(1), nz(2_000)), (pubkey(2), nz(1_000))]),
+                trades: vec![Trade {
+                    order_uid: OrderUid([8; 32]),
+                    executed_amount: 1_000,
+                }],
+                interactions: vec![],
+                cu_estimate: Some(2_000_000),
+            }],
+        };
+        let domain = solutions
+            .into_domain(&sample_auction_dto(), pubkey(6))
+            .unwrap();
+        assert_eq!(domain[0].cu_estimate, Some(1_400_000));
+    }
+
+    /// Settlements are v1 and load no lookup tables, so the tables a solver
+    /// still sends are ignored rather than rejected.
+    #[test]
+    fn address_lookup_tables_are_ignored() {
+        let json = json!({
+            "solutions": [{
+                "id": 1,
+                "prices": {},
+                "trades": [],
+                "interactions": [],
+                "addressLookupTables": [pubkey(7).to_string()],
+            }]
+        });
+        assert!(serde_json::from_value::<Solutions>(json).is_ok());
     }
 }
