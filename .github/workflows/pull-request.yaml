@@ -311,10 +311,10 @@ jobs:
 
   run-flaky-test:
     # To hunt flaky tests set `if` to true. The job loops the full local_node
-    # e2e suite for ~3 hours. Each nextest invocation uses --no-fail-fast and
-    # --failure-output immediate, so every failure (with its panic message) is
-    # printed inline in the CI log stream — comb through the job log after the
-    # run to see which tests are still unstable.
+    # AND forked_node e2e suites for ~3 hours. Each nextest invocation uses
+    # --no-fail-fast and --failure-output immediate, so every failure (with its
+    # panic message) is printed inline in the CI log stream — comb through the
+    # job log after the run to see which tests are still unstable.
     if: ${{ true }}
     timeout-minutes: 200
     runs-on: ubuntu-latest
@@ -346,30 +346,38 @@ jobs:
           tool: nextest
       - run: docker compose -f docker-compose.yaml up -d db
       - run: docker compose -f docker-compose.yaml up migrations --abort-on-container-failure
+      # pool_indexer local_node tests read from the pool-indexer schema which
+      # is not covered by the base migrations.
+      - run: docker compose -f docker-compose.yaml up migrations-pool-indexer --abort-on-container-failure
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - name: Loop local_node e2e tests for 3 hours
+      - name: Loop local_node and forked_node e2e tests for 3 hours
         shell: bash
         run: |
           deadline=$((SECONDS + 10800))  # 3 hours
           attempt=1
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            echo "::group::attempt $attempt at $(date -u +%H:%M:%S)"
-            # Bypass `just test-e2e` here because it hardcodes
-            # `--failure-output final` which conflicts with the setting we
-            # want for a flaky-hunting run. --no-fail-fast keeps a single
-            # iteration going past individual failures;
-            # --failure-output immediate prints each failure (with its panic
-            # message) inline so the CI log stream has everything we need;
-            # `|| true` prevents a failed iteration from aborting the loop.
-            cargo nextest run -p e2e 'local_node' \
+          # Bypass `just test-e2e` here because it hardcodes
+          # `--failure-output final` which conflicts with the setting we want
+          # for a flaky-hunting run. --no-fail-fast keeps a single iteration
+          # going past individual failures; --failure-output immediate prints
+          # each failure (with its panic message) inline so the CI log stream
+          # has everything we need; `|| true` prevents a failed iteration from
+          # aborting the loop.
+          run_suite() {
+            local filter=$1
+            echo "::group::$filter attempt $attempt at $(date -u +%H:%M:%S)"
+            cargo nextest run -p e2e "$filter" \
               --test-threads 1 \
               --run-ignored ignored-only \
               --no-fail-fast \
               --failure-output immediate \
               || true
             echo "::endgroup::"
+          }
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run_suite local_node
+            run_suite forked_node
             attempt=$((attempt + 1))
           done
 
