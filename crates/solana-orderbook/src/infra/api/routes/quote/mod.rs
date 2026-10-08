@@ -679,6 +679,8 @@ mod tests {
         let exists = sponsoring(multiple_accounts_json([
             serde_json::Value::Null,
             token_account_json(&request.buy_token, &request.from),
+            account_json(&classic_mint(6)),
+            account_json(&create_account_for_test(&mainnet_rent())),
         ]));
         let failing = sponsoring(serde_json::json!("not an account list"));
         for (sponsoring, program) in [

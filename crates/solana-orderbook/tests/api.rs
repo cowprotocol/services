@@ -396,8 +396,8 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
 }
 
 /// A sponsoring deployment prices the rent of a missing buy token account by
-/// the buy mint: its token program and, under Token-2022, the account
-/// extensions the mint's own extensions add, a fee schedule taking nothing
+/// the buy mint: a classic one, a Token-2022 one, and the account extensions
+/// a Token-2022 mint's own extensions add, a fee schedule taking nothing
 /// included, at the cluster's rent. The lookups answer the mints, then the
 /// owner, its associated token account, the buy mint and the rent sysvar.
 #[tokio::test]

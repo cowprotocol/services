@@ -636,9 +636,9 @@ components:
             native SOL buys and for anonymous quotes without a receiver.
             Without sponsoring, or when the account cannot be read, the rent
             of the largest account a supported mint can need at the SDK's
-            default rent. A missing account of a custom receiver is created by
-            the order's placement transaction, not the settlement, so whoever
-            pays that creation pays this rent.
+            default rent. A sponsored placement creates the missing account,
+            for `from` and for a custom receiver alike, and its payer, the
+            funder or the owner, pays this rent.
           type: string
           example: "1488440"
         kind:
