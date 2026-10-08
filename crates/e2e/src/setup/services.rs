@@ -233,12 +233,80 @@ impl<'a> Services<'a> {
 
     /// Starts a basic version of the protocol with a single baseline solver.
     pub async fn start_protocol(&self, solver: TestAccount) {
-        self.start_protocol_with_args(
-            configs::autopilot::Configuration::test("test_solver", solver.address()),
-            configs::orderbook::Configuration::test_default(),
-            solver,
-        )
-        .await;
+        self.start_protocol_inner(solver, None).await;
+    }
+
+    /// Like [`start_protocol`] but with an explicit `min_solve_time`. Use this
+    /// for tests whose solver/driver chain is latency-sensitive — forked tests
+    /// in particular can struggle with the default 200ms when the fork RPC is
+    /// slow (e.g. on CI).
+    pub async fn start_protocol_with_min_solve_time(
+        &self,
+        solver: TestAccount,
+        min_solve_time: Duration,
+    ) {
+        self.start_protocol_inner(solver, Some(min_solve_time)).await;
+    }
+
+    async fn start_protocol_inner(
+        &self,
+        solver: TestAccount,
+        min_solve_time: Option<Duration>,
+    ) {
+        let autopilot_config =
+            configs::autopilot::Configuration::test("test_solver", solver.address());
+        let orderbook_config = configs::orderbook::Configuration::test_default();
+
+        colocation::start_driver(
+            self.contracts,
+            vec![
+                colocation::start_baseline_solver_with_solver_fee(
+                    "test_solver".into(),
+                    solver.clone(),
+                    *self.contracts.weth.address(),
+                    vec![],
+                    1,
+                    true,
+                    0,
+                )
+                .await,
+            ],
+            colocation::LiquidityProvider::UniswapV2,
+        );
+
+        let test_quoter = ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver");
+
+        let autopilot_config = Configuration {
+            order_quoting: OrderQuoting {
+                price_estimation_drivers: vec![test_quoter.clone()],
+                ..autopilot_config.order_quoting
+            },
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..autopilot_config.shared
+            },
+            ..autopilot_config
+        };
+        let orderbook_config = configs::orderbook::Configuration {
+            order_quoting: OrderQuoting {
+                price_estimation_drivers: vec![test_quoter],
+                ..orderbook_config.order_quoting
+            },
+            shared: SharedConfig {
+                gas_estimators: vec![GasEstimatorType::Driver {
+                    url: Url::from_str("http://localhost:11088/gasprice").unwrap(),
+                }],
+                ..orderbook_config.shared
+            },
+            ..orderbook_config
+        };
+
+        tokio::join!(
+            self.start_autopilot(min_solve_time, autopilot_config),
+            self.start_api(orderbook_config),
+        );
     }
 
     pub async fn start_protocol_with_args(

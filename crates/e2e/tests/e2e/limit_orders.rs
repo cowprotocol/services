@@ -202,9 +202,13 @@ async fn single_limit_order_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Place Orders
+    // Place Orders. Give the solver a generous deadline — on CI the forked
+    // RPC calls add enough latency that the default 200ms min_solve_time can
+    // occasionally cause the driver to miss its submission window.
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    services
+        .start_protocol_with_min_solve_time(solver, std::time::Duration::from_secs(2))
+        .await;
 
     let order = OrderCreation {
         sell_token: *token_a.address(),
@@ -562,7 +566,13 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
-            None,
+            // The test asserts both orders land in the SAME competition (two
+            // winners per auction). With the default 200ms min_solve_time the
+            // autopilot sometimes cuts the auction before both solvers manage
+            // to submit a winning bid, so the two orders end up in separate
+            // auctions with one settlement tx each. A longer deadline lets
+            // both solvers reliably bid on the same auction.
+            Some(std::time::Duration::from_secs(2)),
             Configuration {
                 drivers: vec![
                     Solver::new(
