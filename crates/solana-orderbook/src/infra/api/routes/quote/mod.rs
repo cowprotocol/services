@@ -155,22 +155,15 @@ async fn check_mints(
 }
 
 /// The rent of the quoted order's buy token account, zero when the payout
-/// lands in an existing one: the `receiver` itself, an associated token
-/// account of the buy mint, or the associated token account of the
-/// `receiver`, or of `from` without one. Lamports already at
-/// the associated token account's address count against the rent, as the ATA
-/// program tops a pre-funded account up instead of paying it in full. An
-/// account at either address that cannot take the payout is refused as
-/// `InvalidBuyTokenAccount`:
-/// the idempotent creation leaves it as is, so the order would never fill. A
-/// native SOL buy pays out to a wallet, and an anonymous quote without a
-/// `receiver` names no account to read: neither owes rent. The read goes
-/// through the sponsoring RPC client and fetches the buy mint and the rent
-/// sysvar along with the account candidates: the verdict cache keeps no
-/// account data, the mint's own extensions size the account, and the
-/// cluster's rent prices it. Without sponsoring, without the buy mint's token
-/// program, or when the read fails, the account costs the most a settleable
-/// mint can need at the SDK's default rent.
+/// lands in an existing one. An existing account that cannot take the payout
+/// is refused: the placement's idempotent creation leaves it as is, so the
+/// order would never fill. A native SOL buy pays out to a wallet, and an
+/// anonymous quote without a `receiver` names no account to read. The read
+/// fetches the buy mint again, as the verdict cache keeps no account data and
+/// the mint's extensions size the account, and the rent sysvar, as the SDK's
+/// default rent is above the cluster's. Without sponsoring, the buy mint's
+/// token program, or a successful read, the account costs the most a
+/// settleable mint can need at that default.
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
@@ -225,9 +218,9 @@ async fn buy_account_rent(
     }
     let pre_funded = match accounts.get(&ata) {
         Some(account) if receivable_token_account(account, &request.buy_token) => return Ok(0),
-        // Only the ATA program allocates at its address, so anything there
-        // but lamports in a system account is a token account the idempotent
-        // creation leaves as is.
+        // Only the ATA program allocates at its address: anything there but a
+        // system account's lamports, which the creation tops up to the
+        // minimum, is a token account it leaves as is.
         Some(account)
             if account.owner != solana_system_interface::program::ID
                 || !account.data.is_empty() =>
@@ -252,9 +245,6 @@ fn invalid_buy_token_account(account: Pubkey, reason: &str) -> error::Reply {
     )
 }
 
-/// The accounts that may be the quoted order's buy token account: the
-/// `receiver`, or `from` without one, then its associated token account of
-/// the buy mint under `program`.
 fn buy_token_account_candidates(request: &dto::Request, program: TokenProgram) -> [Pubkey; 2] {
     let recipient = request.receiver.unwrap_or(request.from);
     let ata = associated_token_account(&recipient, &request.buy_token, program);
@@ -387,8 +377,6 @@ mod tests {
         }
     }
 
-    /// A sponsoring deployment whose RPC answers the account read with
-    /// `accounts`.
     fn sponsoring(accounts: serde_json::Value) -> Sponsoring {
         Sponsoring {
             funder: Pubkey::new_unique(),
@@ -402,8 +390,6 @@ mod tests {
         }
     }
 
-    /// A frozen token account of `mint` owned by `owner`, in the JSON shape a
-    /// `getMultipleAccounts` mock answers with.
     fn frozen_token_account_json(mint: &Pubkey, owner: &Pubkey) -> serde_json::Value {
         let mut data = vec![0; TokenAccount::LEN];
         TokenAccount {
@@ -422,12 +408,7 @@ mod tests {
     }
 
     /// The account read answers the recipient, its associated token account,
-    /// the buy mint, then the rent sysvar. The payout lands in a recipient
-    /// that is an associated token account of the mint, or else in the
-    /// associated token account. A missing associated token account owes the
-    /// mint's rent at
-    /// the cluster's rent; lamports already at its address pay part of it,
-    /// or all of it.
+    /// the buy mint, then the rent sysvar.
     #[tokio::test]
     async fn a_missing_buy_token_account_owes_its_rent() {
         let (owner, mint, receiver) = (
@@ -546,12 +527,8 @@ mod tests {
         );
     }
 
-    /// An account the payout cannot land in, at the recipient or at the
-    /// associated token account, is refused: a frozen token account, another
-    /// mint's, or anything at the associated token account's address but a
-    /// system account holding only lamports. So is a receiving token account
-    /// of the mint away from its owner's associated address, which the
-    /// placement cannot create idempotently.
+    /// A receiving token account away from its owner's associated address is
+    /// refused too: the placement cannot create it idempotently.
     #[tokio::test]
     async fn an_unreceivable_buy_token_account_is_refused() {
         let (owner, mint, receiver) = (
@@ -659,10 +636,8 @@ mod tests {
         }
     }
 
-    /// Without the sponsoring RPC, without the buy mint's token program, or
-    /// when the read fails, the buy token account costs the most a settleable
-    /// mint can need at the SDK's default rent, even for an SPL Token mint.
-    /// An anonymous quote naming a `receiver` has an account to price.
+    /// Even an SPL Token mint is priced at the Token-2022 ceiling unread, and
+    /// an anonymous quote naming a `receiver` has an account to price.
     #[tokio::test]
     async fn an_unread_buy_token_account_owes_the_largest_rent() {
         let largest = max_ata_rent(&Rent::default());

@@ -455,8 +455,6 @@ mod tests {
     /// A classic associated token account takes 165 bytes, a Token-2022 one
     /// 170 with its immutable owner extension, plus the account extensions
     /// the mint's own extensions add even when they leave the transfer whole.
-    /// The largest settleable mint needs [`max_ata_rent`]. The lamports
-    /// follow the rent given.
     #[test]
     fn ata_rent_grows_with_the_account_extensions_the_mint_adds() {
         let rent = &rent_per_byte();
@@ -502,8 +500,7 @@ mod tests {
 
     /// A confidential transfer mint asks nothing of its accounts at creation —
     /// the confidential extension is configured on each account afterwards —
-    /// so the rent stays the plain Token-2022 one, under what the largest
-    /// settleable mint needs.
+    /// so the rent stays the plain Token-2022 one.
     #[test]
     fn confidential_mints_keep_the_plain_token_2022_rent() {
         let mint = token_2022_mint(&[ExtensionType::ConfidentialTransferMint], |mint| {
