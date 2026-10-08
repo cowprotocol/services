@@ -71,14 +71,6 @@ struct Config {
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
 
-    /// How long should the token quality computed by the simulation
-    /// based logic be cached.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_simulation_bad_token_max_age"
-    )]
-    simulation_bad_token_max_age: Duration,
-
     /// Configuration for the app-data fetching.
     #[serde(default, flatten)]
     app_data_fetching: AppDataFetching,
@@ -836,10 +828,6 @@ fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
 }
 
-fn default_simulation_bad_token_max_age() -> Duration {
-    Duration::from_secs(600)
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -850,11 +838,6 @@ pub struct BadOrderDetectionConfig {
     /// the groups that contain it.
     #[serde(default)]
     pub token_supported: HashMap<String, bool>,
-
-    /// Whether the solver opted into detecting unsupported
-    /// tokens with `trace_callMany` based simulation.
-    #[serde(default, rename = "enable-simulation-bad-token-detection")]
-    pub enable_simulation_strategy: bool,
 
     /// Whether the solver opted into detecting unsupported
     /// orders with metrics-based detection. Orders that continue to result

@@ -84,11 +84,21 @@ pub struct Order {
     order_pda: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     app_data: AppData,
+    /// The cumulative fill on the order's own side. Absent from an autopilot
+    /// that predates partial fills.
+    #[serde(default)]
+    #[serde_as(as = "DisplayFromStr")]
+    executed: u64,
     /// The owner-signed creation transaction of an order not created on
     /// chain yet, serialized and base64-encoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<Base64>")]
     creation: Option<Vec<u8>>,
+    /// What the sell token account can fund. Absent for a pending sponsored
+    /// order and from an autopilot that predates balance scaling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    sell_balance: Option<u64>,
 }
 
 impl From<Order> for domain::Order {
@@ -107,6 +117,8 @@ impl From<Order> for domain::Order {
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
             app_data: order.app_data.0,
+            executed: order.executed,
+            sell_balance: order.sell_balance,
         }
     }
 }
@@ -172,7 +184,9 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::new_from_array([0x77; 32]),
             app_data: AppData([0; 32]),
+            executed: 0,
             creation: Some(vec![1, 2, 3]),
+            sell_balance: Some(500),
         }
     }
 
@@ -187,7 +201,7 @@ mod tests {
             orders: vec![order()],
             native_prices: HashMap::from([(pubkey(0x33), 1_500_000_000)]),
         };
-        let expected = serde_json::json!({
+        let mut expected = serde_json::json!({
             "id": 7,
             "deadline": "2026-01-01T00:00:00Z",
             "orders": [{
@@ -204,11 +218,22 @@ mod tests {
                 "partiallyFillable": false,
                 "orderPda": pubkey(0x77).to_string(),
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "executed": "0",
                 "creation": "AQID",
+                "sellBalance": "500",
             }],
             "nativePrices": {"4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4": "1500000000"},
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);
+
+        // An autopilot that predates partial fills sends no `executed`, one
+        // that predates balance scaling no `sellBalance`.
+        let order = expected["orders"][0].as_object_mut().unwrap();
+        order.remove("executed");
+        order.remove("sellBalance");
+        let parsed: SolveRequest = serde_json::from_value(expected).unwrap();
+        assert_eq!(parsed.orders[0].executed, 0);
+        assert_eq!(parsed.orders[0].sell_balance, None);
     }
 
     #[test]

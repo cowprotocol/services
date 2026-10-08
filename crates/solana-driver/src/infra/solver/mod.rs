@@ -6,7 +6,12 @@
 
 use {
     crate::{
-        domain::{self, order_uid::OrderUid, solver_fee::SolverFee},
+        domain::{
+            self,
+            order_uid::OrderUid,
+            settlement::MaxNativeShortfall,
+            solver_fee::SolverFee,
+        },
         infra::{config, solver::dto::auction::Auction},
     },
     cow_solana_signer::Signer,
@@ -26,6 +31,7 @@ pub struct Solver {
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
     solver_fee: Option<SolverFee>,
+    max_native_shortfall: Option<MaxNativeShortfall>,
 }
 
 impl Solver {
@@ -54,6 +60,12 @@ impl Solver {
         self.solver_fee
     }
 
+    /// The largest share of the native SOL payouts the solver's own SOL
+    /// covers, `None` when it covers none.
+    pub fn max_native_shortfall(&self) -> Option<MaxNativeShortfall> {
+        self.max_native_shortfall
+    }
+
     /// Build a solver client from its configuration, loading the signer the
     /// config names: a local keypair file or an AWS KMS key.
     pub async fn new(config: &config::Solver) -> Result<Self, Error> {
@@ -73,6 +85,7 @@ impl Solver {
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
             solver_fee: config.solver_fee_bps,
+            max_native_shortfall: config.max_native_shortfall_bps,
         })
     }
 
@@ -181,6 +194,7 @@ mod tests {
             signer: cow_solana_signer::Config::Keypair(keypair_path),
             solve_every_nth_auction: None,
             solver_fee_bps: None,
+            max_native_shortfall_bps: None,
         })
         .await
         .expect("solver construction should succeed");

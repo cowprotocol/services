@@ -131,7 +131,7 @@ async fn run(config: Config) {
                 .await
                 .expect("load the funder signer");
             tracing::info!(funder = %signer.pubkey(), "loaded the funder signer");
-            Some(Sponsor::new(
+            Some(Arc::new(Sponsor::new(
                 signer,
                 SolanaRPC::new_with_timeout_and_commitment(
                     &config.rpc.endpoint,
@@ -139,7 +139,8 @@ async fn run(config: Config) {
                     CommitmentConfig::confirmed(),
                 ),
                 pool.clone(),
-            ))
+                sponsoring.max_displaced_creations,
+            )))
         }
         None => None,
     };

@@ -7,7 +7,6 @@ use {
     account_balances::{BalanceFetching, Query},
     alloy::primitives::{Address, U256},
     anyhow::{Context, Result},
-    bad_tokens::list_based::DenyListedTokens,
     database::order_events::{
         OrderEventLabel,
         OrderFilterReason::{
@@ -36,6 +35,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
+    token_info::DenyListedTokens,
     tokio::sync::Mutex,
     tracing::instrument,
 };
@@ -736,7 +736,6 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{Address, B256},
-        bad_tokens::list_based::DenyListedTokens,
         eth_domain_types::Receiver,
         futures::FutureExt,
         maplit::{btreemap, hashset},
@@ -752,6 +751,7 @@ mod tests {
                 NativePriceUpdater,
             },
         },
+        token_info::DenyListedTokens,
     };
 
     #[tokio::test]

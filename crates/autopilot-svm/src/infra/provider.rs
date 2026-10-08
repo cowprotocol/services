@@ -260,6 +260,20 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(_) => {}
             Err(err) => tracing::warn!(?err, "indexer slot read failed"),
         }
+        // An order with a settlement in flight stays out until the
+        // settlement cannot land any more: a second winner could
+        // double-settle it. A failed read skips the cut rather than cutting
+        // without the hold. The hold is read before the orders: a trade the
+        // indexer commits in between then releases an order the cut has not
+        // read yet, instead of releasing one read with a stale `executed`.
+        let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
+        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
+            Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
+            Err(err) => {
+                tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
+                return None;
+            }
+        };
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
         // cut drops the dead ones.
@@ -271,18 +285,6 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         if let Some(height) = block_height {
             self.record_dead_creations(now, height).await;
         }
-        // An order with a settlement in flight stays out until the
-        // settlement cannot land any more: a second winner could
-        // double-settle it. A failed read skips the cut rather than cutting
-        // without the hold.
-        let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
-        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
-            Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
-            Err(err) => {
-                tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
-                return None;
-            }
-        };
         let (orders, held_out): (Vec<_>, Vec<_>) = orders
             .into_iter()
             .partition(|order| !held.contains(&order.uid));
@@ -290,6 +292,8 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             OrderFilterReason::InFlight,
             held_out.into_iter().map(|order| order.uid).collect(),
         );
+        let (orders, unfillable) = fillable_orders(orders);
+        self.track_filtered_orders(OrderFilterReason::ZeroRemainingLeg, unfillable);
         let (orders, unpayable) = payable_orders(orders);
         self.track_filtered_orders(OrderFilterReason::UnpayableNativeBuy, unpayable);
         let (orders, unsettleable, unreceivable, unfunded) = self.checked_orders(orders).await;
@@ -364,6 +368,8 @@ fn auction_snapshot(tip: u64, auction: &crate::domain::auction::Auction) -> serd
 enum OrderFilterReason {
     /// A settlement from an earlier auction can still land.
     InFlight,
+    /// A prior fill scaled a remaining leg down to zero.
+    ZeroRemainingLeg,
     /// The settlement cannot pay out the native SOL buy.
     UnpayableNativeBuy,
     /// The settlement program cannot move the sell or buy mint.
@@ -378,6 +384,7 @@ impl OrderFilterReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::InFlight => "in_flight",
+            Self::ZeroRemainingLeg => "zero_remaining_leg",
             Self::UnpayableNativeBuy => "unpayable_native_buy",
             Self::UnsettleableMint => "unsettleable_mint",
             Self::UnreceivableBuyTokenAccount => "unreceivable_buy_token_account",
@@ -439,39 +446,74 @@ fn token_mints(order: &Order) -> impl Iterator<Item = Pubkey> {
         .map(|mint| Pubkey::new_from_array(mint.0))
 }
 
-/// Drop orders whose sell token account cannot fund the sell amount: their
-/// settlement would revert at `BeginSettle`. A partially fillable order needs
-/// the full amount too, since solvers see and may fill all of it. A pending
-/// sponsored order skips the check, its creation transaction can wrap and
-/// approve the sell funds. Returns the kept orders and the uids of the
-/// dropped ones.
+/// Drop orders whose sell token account cannot fund a fill: their settlement
+/// would revert at `BeginSettle`. A fill-or-kill order needs its whole sell
+/// amount. A partially fillable one is scaled down to its balance, as on EVM,
+/// and needs a balance that leaves both legs above zero: the driver drops an
+/// order scaled to a zero leg, so sending it would only repeat every cut.
+/// The kept orders carry the balance for the driver. A pending sponsored
+/// order skips the check, its creation transaction can wrap and approve the
+/// sell funds. Returns the kept orders and the uids of the dropped ones.
 fn funded_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
 ) -> (Vec<Order>, Vec<IntentHash>) {
-    let (funded, unfunded): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
-        !order.created_on_chain
-            || accounts
+    let mut unfunded = Vec::new();
+    let funded = orders
+        .into_iter()
+        .filter_map(|mut order| {
+            if !order.created_on_chain {
+                return Some(order);
+            }
+            let balance = accounts
                 .get(&Pubkey::new_from_array(order.sell_token_account.0))
-                .is_some_and(|account| funded_token_account(account, order))
-    });
-    (
-        funded,
-        unfunded.into_iter().map(|order| order.uid).collect(),
-    )
+                .map_or(0, |account| funded_sell_balance(account, &order));
+            order.sell_balance = Some(balance);
+            let funded = if order.partially_fillable {
+                !order.available().has_zero_leg()
+            } else {
+                balance >= order.sell_amount
+            };
+            if !funded {
+                unfunded.push(order.uid);
+                return None;
+            }
+            Some(order)
+        })
+        .collect();
+    (funded, unfunded)
 }
 
-/// An initialized, unfrozen account of either token program holding the
-/// order's sell mint, with the sell amount both held and approved to a
-/// delegate: anything else fails the pull at settlement. Any delegate passes
-/// because the cut does not know the settlement's state PDA.
-fn funded_token_account(account: &Account, order: &Order) -> bool {
-    [spl_token_interface::ID, spl_token_2022_interface::ID].contains(&account.owner)
-        && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
-            state.base.state == AccountState::Initialized
-                && state.base.mint.to_bytes() == order.sell_token.0
-                && state.base.amount.min(state.base.delegated_amount) >= order.sell_amount
-        })
+/// What the account can fund of the order's sell side: the amount both held
+/// and approved to a delegate, in an initialized, unfrozen account of either
+/// token program holding the order's sell mint. Anything else funds nothing,
+/// the pull at settlement fails. Any delegate passes because the cut does not
+/// know the settlement's state PDA.
+fn funded_sell_balance(account: &Account, order: &Order) -> u64 {
+    if ![spl_token_interface::ID, spl_token_2022_interface::ID].contains(&account.owner) {
+        return 0;
+    }
+    StateWithExtensions::<TokenAccount>::unpack(&account.data).map_or(0, |state| {
+        if state.base.state != AccountState::Initialized
+            || state.base.mint.to_bytes() != order.sell_token.0
+        {
+            return 0;
+        }
+        state.base.amount.min(state.base.delegated_amount)
+    })
+}
+
+/// Drop orders a prior fill left with a leg scaled down to zero: no solver
+/// can fill them, so they would go out in every cut until they expire.
+/// Returns the kept orders and the uids of the dropped ones.
+fn fillable_orders(orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
+    let (fillable, unfillable): (Vec<_>, Vec<_>) = orders
+        .into_iter()
+        .partition(|order| !order.remaining().has_zero_leg());
+    (
+        fillable,
+        unfillable.into_iter().map(|order| order.uid).collect(),
+    )
 }
 
 /// Drop native SOL buys that sell wSOL: they reach solvers as wSOL for wSOL.
@@ -518,7 +560,7 @@ mod tests {
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
             ExtensionType,
-            transfer_fee::TransferFeeConfig,
+            non_transferable::NonTransferable,
         },
     };
 
@@ -538,7 +580,9 @@ mod tests {
             order_pda: ChainPubkey([0x77; 32]),
             app_data: AppData([0; 32]),
             created_on_chain,
+            executed: 0,
             creation: None,
+            sell_balance: None,
         }
     }
 
@@ -647,6 +691,22 @@ mod tests {
             .map(|order| order.buy_token_account.0)
             .collect();
         assert_eq!(kept, [[0x01; 32], [0x02; 32]]);
+    }
+
+    /// 1999 of 2000 bought leaves 1 to buy and scales the 1000 sell limit
+    /// down to 0, so no solver can fill the order; 1998 leaves 1 to sell.
+    #[test]
+    fn drops_orders_with_a_remaining_leg_scaled_to_zero() {
+        let buy = |executed| Order {
+            kind: OrderKind::Buy,
+            partially_fillable: true,
+            executed,
+            ..order([0x01; 32], true)
+        };
+        let orders = vec![order([0x01; 32], true), buy(1_998), buy(1_999)];
+        let (kept, dropped) = fillable_orders(orders.clone());
+        assert_eq!(kept, [orders[0].clone(), orders[1].clone()]);
+        assert_eq!(dropped, [orders[2].uid]);
     }
 
     /// Native SOL buys that sell wSOL stay out. Other native buys pass whatever
@@ -760,11 +820,14 @@ mod tests {
         crate::tests::sell_token_account_json([0x33; 32], 1_000, Some(1_000))
     }
 
-    /// A created order needs its full sell amount both held and approved in
-    /// an initialized account of its sell mint, partially fillable or not,
-    /// under either token program. The orders share one receivable buy token
-    /// account, answered first, and the sell and buy mints come last. The
-    /// pending sponsored order is exempt from the check.
+    /// A created fill-or-kill order needs its full sell amount both held and
+    /// approved in an initialized account of its sell mint, under either
+    /// token program; a partially filled one needs only its remainder. A
+    /// partially fillable order needs a balance its legs scale to without
+    /// hitting zero and carries it to the driver: a buy of 10 for 1000 needs
+    /// 100, the price of one buy atom. The orders share one receivable buy
+    /// token account, answered first, and the sell and buy mints come last.
+    /// The pending sponsored order is exempt from the check.
     #[tokio::test]
     async fn drops_created_orders_their_sell_account_cannot_fund() {
         let sell =
@@ -781,8 +844,12 @@ mod tests {
                 sell(1_000, None),
                 crate::tests::sell_token_account_json([0x99; 32], 1_000, Some(1_000)),
                 null,
+                sell(0, Some(1_000)),
                 sell(999, Some(999)),
                 token_2022,
+                sell(600, Some(600)),
+                sell(99, Some(99)),
+                sell(100, Some(100)),
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
             ],
@@ -793,6 +860,10 @@ mod tests {
             sell_token_account: ChainPubkey([account; 32]),
             ..order([0x01; 32], created_on_chain)
         };
+        let partial = |account| Order {
+            partially_fillable: true,
+            ..selling(account, true)
+        };
         let orders = vec![
             selling(0x50, true),
             selling(0x51, true),
@@ -800,21 +871,39 @@ mod tests {
             selling(0x53, true),
             selling(0x54, true),
             selling(0x55, true),
+            partial(0x56),
+            partial(0x57),
+            selling(0x58, false),
+            selling(0x59, true),
             Order {
-                partially_fillable: true,
-                ..selling(0x56, true)
+                executed: 400,
+                ..partial(0x5a)
             },
-            selling(0x57, false),
-            selling(0x58, true),
+            Order {
+                kind: OrderKind::Buy,
+                buy_amount: 10,
+                ..partial(0x5b)
+            },
+            Order {
+                kind: OrderKind::Buy,
+                buy_amount: 10,
+                ..partial(0x5c)
+            },
         ];
         let (kept, unsettleable, unreceivable, unfunded) = provider.checked_orders(orders).await;
-        let kept: Vec<IntentHash> = kept.iter().map(|order| order.uid).collect();
+        let kept: Vec<(IntentHash, Option<u64>)> = kept
+            .iter()
+            .map(|order| (order.uid, order.sell_balance))
+            .collect();
         assert_eq!(
             kept,
             [
-                IntentHash([0x50; 32]),
-                IntentHash([0x57; 32]),
-                IntentHash([0x58; 32])
+                (IntentHash([0x50; 32]), Some(1_000)),
+                (IntentHash([0x57; 32]), Some(999)),
+                (IntentHash([0x58; 32]), None),
+                (IntentHash([0x59; 32]), Some(1_000)),
+                (IntentHash([0x5a; 32]), Some(600)),
+                (IntentHash([0x5c; 32]), Some(100)),
             ]
         );
         assert!(unsettleable.is_empty());
@@ -822,6 +911,7 @@ mod tests {
         assert_eq!(
             unfunded,
             (0x51..=0x56)
+                .chain([0x5b])
                 .map(|byte| IntentHash([byte; 32]))
                 .collect::<Vec<_>>()
         );
@@ -847,8 +937,8 @@ mod tests {
     /// answer left, so reading the mints again would judge them all missing.
     #[tokio::test]
     async fn drops_orders_on_mints_the_program_cannot_move() {
-        let fee_mint = token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
-            mint.init_extension::<TransferFeeConfig>(true).unwrap();
+        let locked_mint = token_2022_mint(&[ExtensionType::NonTransferable], |mint| {
+            mint.init_extension::<NonTransferable>(true).unwrap();
         });
         // The pending sponsored orders skip the buy account check, so the
         // lookup reads only the mints, in first-seen order: 0x33, 0x44, 0x88,
@@ -858,7 +948,7 @@ mod tests {
             "value": [
                 crate::tests::mint_account_json(6),
                 crate::tests::mint_account_json(6),
-                account_json(&fee_mint),
+                account_json(&locked_mint),
                 null,
             ],
         });
