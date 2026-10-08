@@ -8,11 +8,7 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::{
-        client_error::ErrorKind,
-        request::MAX_MULTIPLE_ACCOUNTS,
-        response::Response,
-    },
+    solana_rpc_client_api::{request::MAX_MULTIPLE_ACCOUNTS, response::Response},
     solana_sdk::{
         account::Account,
         hash::Hash,
@@ -26,8 +22,8 @@ use {
 pub use {
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::{
-        client_error::Error,
-        request::RpcRequest,
+        client_error::{Error, ErrorKind},
+        request::{RpcError, RpcRequest, RpcResponseErrorData},
         response::{RpcPrioritizationFee, RpcSimulateTransactionResult, UiTransactionError},
     },
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,

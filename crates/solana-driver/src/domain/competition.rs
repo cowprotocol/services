@@ -15,7 +15,7 @@ use {
     },
     crate::infra::{blockchain::Solana, solver::Solver},
     base64::{Engine, prelude::BASE64_STANDARD},
-    cow_solana_rpc::RpcPrioritizationFee,
+    cow_solana_rpc::{ErrorKind, RpcError, RpcPrioritizationFee, RpcResponseErrorData},
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
@@ -839,23 +839,42 @@ impl Error {
         err: cow_solana_rpc::UiTransactionError,
         logs: Option<&[String]>,
     ) -> Self {
-        // The meter running out inside program code, a CPI callee's included,
-        // fails as `ProgramFailedToComplete` with this log line. Only a
-        // syscall or CPI charge over the limit fails as
-        // `ComputationalBudgetExceeded`.
-        let cu_exceeded = matches!(
-            err.clone().into(),
-            TransactionError::InstructionError(_, InstructionError::ComputationalBudgetExceeded)
-        ) || logs.is_some_and(|logs| {
-            logs.iter()
-                .any(|log| log.contains("exceeded CUs meter at BPF instruction"))
-        });
         Self::SimulationFailed {
             program_error: logs.and_then(|logs| ProgramError::from_logs(program_id, logs)),
+            cu_exceeded: compute_units_exceeded(&err.clone().into(), logs),
             err,
-            cu_exceeded,
         }
     }
+}
+
+/// Whether a transaction failed for running out of its compute unit limit.
+fn compute_units_exceeded(err: &TransactionError, logs: Option<&[String]>) -> bool {
+    // The meter running out inside program code, a CPI callee's included,
+    // fails as `ProgramFailedToComplete` with this log line. Only a syscall
+    // or CPI charge over the limit fails as `ComputationalBudgetExceeded`.
+    matches!(
+        err,
+        TransactionError::InstructionError(_, InstructionError::ComputationalBudgetExceeded)
+    ) || logs.is_some_and(|logs| {
+        logs.iter()
+            .any(|log| log.contains("exceeded CUs meter at BPF instruction"))
+    })
+}
+
+/// Whether a sent transaction ran out of its compute unit limit, in the
+/// node's preflight simulation or on chain. Only the preflight carries logs,
+/// so on chain the meter running out inside program code is not told apart
+/// from the program's other failures.
+fn submit_exceeded_compute_units(err: &cow_solana_rpc::Error) -> bool {
+    let logs = match err.kind() {
+        ErrorKind::RpcError(RpcError::RpcResponseError {
+            data: RpcResponseErrorData::SendTransactionPreflightFailure(preflight),
+            ..
+        }) => preflight.logs.as_deref(),
+        _ => None,
+    };
+    err.get_transaction_error()
+        .is_some_and(|err| compute_units_exceeded(&err, logs))
 }
 
 /// Per-settlement observability: attempt outcomes and the built transaction's
@@ -955,6 +974,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::TooManyPendingSettlements => "throttled",
         Error::Rpc(_) => "rpc_failed",
         Error::BuyTokenAccounts(_) => "rpc_failed",
+        Error::FailedToSubmit { err } if submit_exceeded_compute_units(err) => "cu_exceeded",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed {
@@ -1009,6 +1029,41 @@ mod tests {
             )),
             "simulation_failed"
         );
+    }
+
+    /// A sent settlement that outgrew its limit counts the same way, whether
+    /// the node's preflight simulation refused it or it failed on chain.
+    #[test]
+    fn labels_a_send_that_exceeded_the_compute_budget() {
+        let on_chain = |err| Error::FailedToSubmit {
+            err: TransactionError::InstructionError(2, err).into(),
+        };
+        assert_eq!(
+            error_label(&on_chain(InstructionError::ComputationalBudgetExceeded)),
+            "cu_exceeded"
+        );
+        assert_eq!(
+            error_label(&on_chain(InstructionError::ProgramFailedToComplete)),
+            "submit_failed"
+        );
+
+        let preflight = Error::FailedToSubmit {
+            err: ErrorKind::RpcError(RpcError::RpcResponseError {
+                code: -32002,
+                message: "Transaction simulation failed".to_owned(),
+                data: RpcResponseErrorData::SendTransactionPreflightFailure(
+                    serde_json::from_value(serde_json::json!({
+                        "err": { "InstructionError": [2, "ProgramFailedToComplete"] },
+                        "logs": [
+                            "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: exceeded CUs meter at BPF instruction"
+                        ],
+                    }))
+                    .unwrap(),
+                ),
+            })
+            .into(),
+        };
+        assert_eq!(error_label(&preflight), "cu_exceeded");
     }
 
     /// Addresses loaded from lookup tables count toward the account lock
