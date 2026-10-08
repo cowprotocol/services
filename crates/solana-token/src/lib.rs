@@ -74,8 +74,8 @@ pub type MintVerdict = Result<TokenProgram, UnsettleableMint>;
 /// The verdict on the mint at `account`, which is `None` when the account
 /// does not exist.
 ///
-/// TODO(BE-344): a permanent delegate mint passes, although its issuer can
-/// move the buffer's balance of the token, retained fees included.
+/// A permanent delegate mint passes, although its issuer can move the buffer's
+/// balance of the token between settlements: PYUSD and every xStock carry one.
 pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
     let Some((program, mint)) = account.and_then(|account| {
         let program = TokenProgram::try_from(&account.owner).ok()?;
