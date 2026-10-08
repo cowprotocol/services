@@ -65,3 +65,7 @@ filter = "info,autopilot_svm=debug"
 # Ed25519 key so the private key never reaches the autopilot.
 # funder = { keypair = "/path/to/funder-keypair.json" }
 # funder = { kms-key = "arn:aws:kms:eu-central-1:123456789012:key/11111111-2222-3333-4444-555555555555" }
+# Most creations sent per auction for pending sponsored orders that appear
+# only in losing solutions, at most one per owner. The funder pays for each,
+# and the order may never fill. Zero, the default, sends none.
+# max-displaced-creations = 10
