@@ -264,25 +264,41 @@ async fn call_solve(addr: SocketAddr) -> serde_json::Value {
 }
 
 async fn call_solve_with(addr: SocketAddr, request: serde_json::Value) -> serde_json::Value {
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/solve"))
-        .json(&request)
-        .send()
-        .await
-        .unwrap();
+    let response = post_solve(addr, &request).await;
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     response.json().await.unwrap()
 }
 
 /// Post a `/solve` and return the HTTP status, without asserting on it.
 async fn solve_status(addr: SocketAddr) -> reqwest::StatusCode {
-    reqwest::Client::new()
-        .post(format!("http://{addr}/mock/solve"))
-        .json(&solve_request())
-        .send()
-        .await
-        .unwrap()
-        .status()
+    post_solve(addr, &solve_request()).await.status()
+}
+
+/// The standard solve request with its order partially fillable, of the given
+/// kind, and `executed` already filled, plus the order's uid, which the flags
+/// change.
+fn partial_fill_request(kind: OrderKind, executed: &str) -> (String, serde_json::Value) {
+    let intent = OrderIntent {
+        flags: Flags {
+            kind,
+            partially_fillable: true,
+            ..test_order_intent().flags
+        },
+        ..test_order_intent()
+    };
+    let uid = format!("0x{}", const_hex::encode(intent.uid().to_bytes()));
+    let order_pda = find_order_pda(&cow_settlement_interface::id(), &intent.uid()).0;
+    let mut request = solve_request();
+    let order = &mut request["orders"][0];
+    order["uid"] = serde_json::json!(uid);
+    order["orderPda"] = serde_json::json!(order_pda.to_string());
+    order["kind"] = serde_json::json!(match kind {
+        OrderKind::Sell => "sell",
+        OrderKind::Buy => "buy",
+    });
+    order["partiallyFillable"] = serde_json::json!(true);
+    order["executed"] = serde_json::json!(executed);
+    (uid, request)
 }
 
 /// The solution ids in a `/solve` response body, in response order.
@@ -408,6 +424,65 @@ async fn solve_flags_a_missing_buy_token_account_to_the_engine() {
         request["orders"][0]["missingBuyTokenAccount"],
         serde_json::json!(true)
     );
+}
+
+/// 400 of the order's 1000 already sold: the engine is asked for the 600
+/// left, with the buy limit scaled to 1200 and the signed amounts alongside,
+/// and a fill of the remainder comes back. A fill over the remainder is an
+/// invalid engine response.
+#[tokio::test]
+async fn solve_sends_a_partially_filled_order_as_its_remainder() {
+    let (uid, request) = partial_fill_request(OrderKind::Sell, "400");
+    let engine_fill = |executed: &str| {
+        serde_json::json!({ "solutions": [{
+            "id": 1,
+            "prices": {
+                (pubkey(0x33).to_string()): "2000",
+                (pubkey(0x44).to_string()): "1000",
+            },
+            "trades": [{ "orderUid": &uid, "executedAmount": executed }],
+            "interactions": [],
+        }]})
+    };
+
+    let (engine, requests) = spawn_recording_solver_engine(engine_fill("600")).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let body = call_solve_with(addr, request.clone()).await;
+    assert_eq!(response_ids(&body), vec![1]);
+    assert_eq!(body["solutions"][0]["orders"][&uid]["executedSell"], "600");
+    let sent = requests.lock().unwrap().take().unwrap();
+    let sent = &sent["orders"][0];
+    assert_eq!(sent["sellAmount"], "600");
+    assert_eq!(sent["buyAmount"], "1200");
+    assert_eq!(sent["amount"], "600");
+    assert_eq!(sent["fullSellAmount"], "1000");
+    assert_eq!(sent["fullBuyAmount"], "2000");
+    assert_eq!(sent["partiallyFillable"], true);
+
+    let (engine, _) = spawn_recording_solver_engine(engine_fill("601")).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let response = post_solve(addr, &request).await;
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "SolverFailed");
+}
+
+/// A buy order with 1999 of its 2000 received has 1 left to buy, and its
+/// 1000 sell limit scales to 0: the program only accepts a fill selling
+/// nothing, so no engine can fill it. The driver drops it and, with nothing
+/// left, never calls the engine.
+#[tokio::test]
+async fn solve_drops_an_order_with_nothing_left_to_fill() {
+    let (_, request) = partial_fill_request(OrderKind::Buy, "1999");
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve_with(addr, request).await;
+    assert!(response_ids(&body).is_empty());
+    assert!(requests.lock().unwrap().is_none());
 }
 
 /// An absent buy token account that is not the owner's associated token
