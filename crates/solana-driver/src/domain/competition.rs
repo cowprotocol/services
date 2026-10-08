@@ -899,7 +899,8 @@ struct Metrics {
     /// The settlement's declared compute-unit limit. The maximum is 1.4M per
     /// transaction.
     #[metric(buckets(
-        100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
+        25_000., 50_000., 75_000., 100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000.,
+        1_400_000.
     ))]
     compute_units: prometheus::Histogram,
     /// The transaction's compute unit price, in micro-lamports per unit.
