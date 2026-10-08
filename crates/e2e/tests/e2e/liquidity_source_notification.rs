@@ -207,7 +207,12 @@ http-timeout = "10s"
 
     services
         .start_autopilot(
-            None,
+            // The liquorice_solver's response-to-settlement chain crosses two
+            // mocked external HTTP services (Liquorice API + the mock
+            // solver). The 200 ms default min_solve_time leaves too little
+            // margin for all those hops on a forked network; give it 2 s so
+            // the solution reliably lands before the driver's deadline.
+            Some(std::time::Duration::from_secs(2)),
             Configuration {
                 order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
                     "test_quoter",
