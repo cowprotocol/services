@@ -310,9 +310,13 @@ jobs:
       - run: node_modules/.bin/spectral lint crates/solana-orderbook/openapi.yml
 
   run-flaky-test:
-    # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
-    if: ${{ false }}
-    timeout-minutes: 60
+    # To hunt flaky tests set `if` to true. The job loops the full local_node
+    # e2e suite for ~3 hours. Each nextest invocation uses --no-fail-fast and
+    # --failure-output immediate, so every failure (with its panic message) is
+    # printed inline in the CI log stream — comb through the job log after the
+    # run to see which tests are still unstable.
+    if: ${{ true }}
+    timeout-minutes: 200
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
@@ -345,15 +349,20 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - name: Run test in a loop
+      - name: Loop local_node e2e tests for 3 hours
+        shell: bash
         run: |
+          deadline=$((SECONDS + 10800))  # 3 hours
           attempt=1
-          while true; do
-            echo "Running test attempt #$attempt"
-            if ! just test-e2e forked_node_mainnet_repay_debt_with_collateral_of_safe; then
-              exit 1
-            fi
-            attempt=$((attempt+1))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            echo "::group::attempt $attempt at $(date -u +%H:%M:%S)"
+            # --no-fail-fast keeps the suite going past individual failures.
+            # --failure-output immediate prints each failure (with its panic
+            # message) inline so the CI log stream has everything we need.
+            # `|| true` prevents a failed iteration from aborting the 3h loop.
+            just test-e2e local_node --no-fail-fast --failure-output immediate || true
+            echo "::endgroup::"
+            attempt=$((attempt + 1))
           done
 
   generated-contracts:
