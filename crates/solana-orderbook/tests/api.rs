@@ -327,7 +327,8 @@ async fn quote_answers_in_the_evm_shape() {
                 "appData": body["appData"],
                 "feeAmount": "0",
                 // Without sponsoring the buy token account is not read, so it
-                // counts as the costliest a settleable mint can need.
+                // counts as the costliest a settleable mint can need at the
+                // SDK's default rent.
                 "executionCostLamports": "2220240",
                 "kind": "sell",
                 "partiallyFillable": false,
@@ -397,8 +398,8 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
 /// A sponsoring deployment prices the rent of a missing buy token account by
 /// the buy mint: its token program and, under Token-2022, the account
 /// extensions the mint's own extensions add, a fee schedule taking nothing
-/// included. The lookups answer the mints, then the owner, its associated
-/// token account and the buy mint.
+/// included, at the cluster's rent. The lookups answer the mints, then the
+/// owner, its associated token account, the buy mint and the rent sysvar.
 #[tokio::test]
 async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
     let driver = spawn_mock_driver(serde_json::json!({
@@ -411,10 +412,14 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
         solana_testlib::token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
             mint.init_extension::<TransferFeeConfig>(true).unwrap();
         });
+    // The mainnet rent since SIMD-0437, under the SDK's default.
+    let rent = solana_sdk::account::create_account_for_test(
+        &solana_sdk::rent::Rent::with_lamports_per_byte(5080),
+    );
     for (buy_mint, cost) in [
-        (mint_account(spl_token_interface::ID), "2039280"),
-        (mint_account(spl_token_2022_interface::ID), "2074080"),
-        (free_fee_mint, "2157600"),
+        (mint_account(spl_token_interface::ID), "1488440"),
+        (mint_account(spl_token_2022_interface::ID), "1513840"),
+        (free_fee_mint, "1574800"),
     ] {
         let mints = accounts_response(&[
             Some(mint_account(spl_token_interface::ID)),
@@ -424,7 +429,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
             (RpcRequest::GetMultipleAccounts, mints),
             (
                 RpcRequest::GetMultipleAccounts,
-                accounts_response(&[None, None, Some(buy_mint)]),
+                accounts_response(&[None, None, Some(buy_mint), Some(rent.clone())]),
             ),
         ]);
         let api = Api {

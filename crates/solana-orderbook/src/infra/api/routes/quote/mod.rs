@@ -16,7 +16,7 @@ use {
         token_program::TokenProgram,
     },
     database::{byte_array::ByteArray, solana::OrderKind},
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{account::from_account, pubkey::Pubkey, rent::Rent, sysvar},
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
@@ -153,10 +153,12 @@ async fn check_mints(
 /// account of the `receiver`, or of `from` without one. A native SOL buy pays
 /// out to a wallet, and an anonymous quote without a `receiver` names no
 /// account to read: neither owes rent. The read goes through the sponsoring
-/// RPC client and fetches the buy mint along with the account candidates: the
-/// verdict cache keeps no account data, and the mint's own extensions size
-/// the rent. Without it, without the buy mint's token program, or when the
-/// read fails, the account costs the most a settleable mint can need.
+/// RPC client and fetches the buy mint and the rent sysvar along with the
+/// account candidates: the verdict cache keeps no account data, the mint's
+/// own extensions size the account, and the cluster's rent prices it. Without
+/// sponsoring, without the buy mint's token program, or when the read fails,
+/// the account costs the most a settleable mint can need at the SDK's
+/// default rent.
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
@@ -168,20 +170,24 @@ async fn buy_account_rent(
         return 0;
     }
     let (Some(sponsoring), Some(program)) = (sponsoring, buy_program) else {
-        return max_ata_rent();
+        return max_ata_rent(&Rent::default());
     };
     let [recipient, ata] = buy_token_account_candidates(request, program);
     let accounts = match sponsoring
         .rpc
-        .multiple_accounts([recipient, ata, request.buy_token])
+        .multiple_accounts([recipient, ata, request.buy_token, sysvar::rent::ID])
         .await
     {
         Ok(accounts) => accounts,
         Err(err) => {
             tracing::warn!(?err, "buy token account lookup failed, charging its rent");
-            return max_ata_rent();
+            return max_ata_rent(&Rent::default());
         }
     };
+    let rent = accounts
+        .get(&sysvar::rent::ID)
+        .and_then(|account| from_account::<Rent, _>(account))
+        .unwrap_or_default();
     let receives = |key| {
         accounts
             .get(key)
@@ -192,8 +198,8 @@ async fn buy_account_rent(
     } else {
         accounts
             .get(&request.buy_token)
-            .and_then(ata_rent)
-            .unwrap_or_else(max_ata_rent)
+            .and_then(|mint| ata_rent(&rent, mint))
+            .unwrap_or_else(|| max_ata_rent(&rent))
     }
 }
 
@@ -299,7 +305,7 @@ mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-        solana_sdk::account::Account,
+        solana_sdk::account::{Account, create_account_for_test},
         solana_testlib::{
             account_json,
             classic_mint,
@@ -308,6 +314,11 @@ mod tests {
             token_account_json,
         },
     };
+
+    /// The mainnet rent since SIMD-0437, under the SDK's default.
+    fn mainnet_rent() -> Rent {
+        Rent::with_lamports_per_byte(5080)
+    }
 
     fn request(from: Pubkey, buy_token: Pubkey, receiver: Option<Pubkey>) -> dto::Request {
         dto::Request {
@@ -339,10 +350,11 @@ mod tests {
     }
 
     /// The account read answers the recipient, its associated token account,
-    /// then the buy mint. The payout lands in a recipient that is a token
-    /// account of the mint, or else in the associated token account. Owing
-    /// the mint's rent: a missing associated token account, a wallet holding
-    /// only lamports at its address, or another mint's account there.
+    /// the buy mint, then the rent sysvar. The payout lands in a recipient
+    /// that is a token account of the mint, or else in the associated token
+    /// account. Owing the mint's rent at the cluster's rent: a missing
+    /// associated token account, a wallet holding only lamports at its
+    /// address, or another mint's account there.
     #[tokio::test]
     async fn a_missing_buy_token_account_owes_its_rent() {
         let (owner, mint, receiver) = (
@@ -359,6 +371,7 @@ mod tests {
         let other_mint_account = token_account_json(&Pubkey::new_unique(), &owner);
         let classic = account_json(&classic_mint(6));
         let token_2022 = account_json(&token_2022_mint(&[], |_| {}));
+        let rent = account_json(&create_account_for_test(&mainnet_rent()));
         let null = serde_json::Value::Null;
         for (receiver, accounts, program, cost) in [
             (
@@ -371,31 +384,31 @@ mod tests {
                 None,
                 [wallet.clone(), null.clone(), classic.clone()],
                 TokenProgram::SplToken,
-                2_039_280,
+                1_488_440,
             ),
             (
                 None,
                 [wallet.clone(), null.clone(), token_2022.clone()],
                 TokenProgram::Token2022,
-                2_074_080,
+                1_513_840,
             ),
             (
                 None,
                 [wallet.clone(), wallet.clone(), classic.clone()],
                 TokenProgram::SplToken,
-                2_039_280,
+                1_488_440,
             ),
             (
                 None,
                 [wallet.clone(), other_mint_account.clone(), classic.clone()],
                 TokenProgram::SplToken,
-                2_039_280,
+                1_488_440,
             ),
             (
                 None,
                 [wallet.clone(), null.clone(), null.clone()],
                 TokenProgram::SplToken,
-                max_ata_rent(),
+                max_ata_rent(&mainnet_rent()),
             ),
             (
                 Some(receiver),
@@ -413,16 +426,18 @@ mod tests {
                 Some(receiver),
                 [wallet.clone(), null.clone(), classic.clone()],
                 TokenProgram::SplToken,
-                2_039_280,
+                1_488_440,
             ),
             (
                 Some(receiver),
                 [null.clone(), null.clone(), classic.clone()],
                 TokenProgram::SplToken,
-                2_039_280,
+                1_488_440,
             ),
         ] {
-            let sponsoring = sponsoring(multiple_accounts_json(accounts.clone()));
+            let sponsoring = sponsoring(multiple_accounts_json(
+                accounts.iter().cloned().chain([rent.clone()]),
+            ));
             assert_eq!(
                 buy_account_rent(
                     Some(&sponsoring),
@@ -434,6 +449,16 @@ mod tests {
                 "{receiver:?} {accounts:?} {program:?}"
             );
         }
+        let without_rent_sysvar = sponsoring(multiple_accounts_json([wallet, null, classic]));
+        assert_eq!(
+            buy_account_rent(
+                Some(&without_rent_sysvar),
+                &request(owner, mint, None),
+                Some(TokenProgram::SplToken)
+            )
+            .await,
+            2_039_280
+        );
     }
 
     #[test]
@@ -492,19 +517,17 @@ mod tests {
 
     /// Without the sponsoring RPC, without the buy mint's token program, or
     /// when the read fails, the buy token account costs the most a settleable
-    /// mint can need, even for an SPL Token mint. An anonymous quote naming a
-    /// `receiver` has an account to price.
+    /// mint can need at the SDK's default rent, even for an SPL Token mint.
+    /// An anonymous quote naming a `receiver` has an account to price.
     #[tokio::test]
     async fn an_unread_buy_token_account_owes_the_largest_rent() {
+        let largest = max_ata_rent(&Rent::default());
         let anonymous = request(
             Pubkey::default(),
             Pubkey::new_unique(),
             Some(Pubkey::new_unique()),
         );
-        assert_eq!(
-            buy_account_rent(None, &anonymous, None).await,
-            max_ata_rent()
-        );
+        assert_eq!(buy_account_rent(None, &anonymous, None).await, largest);
         let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
         let exists = sponsoring(multiple_accounts_json([
             serde_json::Value::Null,
@@ -518,7 +541,7 @@ mod tests {
         ] {
             assert_eq!(
                 buy_account_rent(sponsoring, &request, program).await,
-                max_ata_rent()
+                largest
             );
         }
     }

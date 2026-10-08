@@ -188,11 +188,11 @@ impl MintLookup<'_> {
     }
 }
 
-/// The rent-exempt minimum, in lamports at the SDK's default rent, of a new
-/// associated token account of the mint at `mint`, `None` when it is no mint
-/// of either token program. A Token-2022 one carries the immutable owner
-/// extension and the account extensions the mint's own extensions require.
-pub fn ata_rent(mint: &Account) -> Option<u64> {
+/// The rent-exempt minimum under `rent`, in lamports, of a new associated
+/// token account of the mint at `mint`, `None` when it is no mint of either
+/// token program. A Token-2022 one carries the immutable owner extension and
+/// the account extensions the mint's own extensions require.
+pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
     let len = match TokenProgram::try_from(&mint.owner).ok()? {
         // A classic mint is exactly 82 bytes; any other account of the
         // program is a token account or a multisig.
@@ -203,14 +203,14 @@ pub fn ata_rent(mint: &Account) -> Option<u64> {
             token_2022_ata_len(&mint.get_extension_types().ok()?)
         }
     };
-    Some(Rent::default().minimum_balance(len))
+    Some(rent.minimum_balance(len))
 }
 
 /// The [`ata_rent`] of the largest associated token account a mint passing
 /// [`mint_verdict`] can need: under a Token-2022 mint whose fee schedule takes
 /// nothing, whose hook names no program and whose pause switch is off.
-pub fn max_ata_rent() -> u64 {
-    Rent::default().minimum_balance(token_2022_ata_len(&[
+pub fn max_ata_rent(rent: &Rent) -> u64 {
+    rent.minimum_balance(token_2022_ata_len(&[
         ExtensionType::TransferFeeConfig,
         ExtensionType::TransferHook,
         ExtensionType::Pausable,
@@ -439,15 +439,30 @@ mod tests {
         );
     }
 
+    /// A rent of one lamport per byte, so a rent-exempt minimum reads as the
+    /// account's length plus the 128-byte storage overhead.
+    fn rent_per_byte() -> Rent {
+        Rent::with_lamports_per_byte(1)
+    }
+
     /// A classic associated token account takes 165 bytes, a Token-2022 one
     /// 170 with its immutable owner extension, plus the account extensions
     /// the mint's own extensions add even when they leave the transfer whole.
-    /// The largest settleable mint needs [`max_ata_rent`].
+    /// The largest settleable mint needs [`max_ata_rent`]. The lamports
+    /// follow the rent given.
     #[test]
     fn ata_rent_grows_with_the_account_extensions_the_mint_adds() {
-        assert_eq!(ata_rent(&classic_mint(6)), Some(2_039_280));
-        assert_eq!(ata_rent(&token_2022_mint(&[], |_| {})), Some(2_074_080));
-        assert_eq!(ata_rent(&fee_mint(0, 0)), Some(2_157_600));
+        let rent = &rent_per_byte();
+        assert_eq!(ata_rent(rent, &classic_mint(6)), Some(128 + 165));
+        assert_eq!(
+            ata_rent(&Rent::default(), &classic_mint(6)),
+            Some(2_039_280)
+        );
+        assert_eq!(
+            ata_rent(rent, &token_2022_mint(&[], |_| {})),
+            Some(128 + 170)
+        );
+        assert_eq!(ata_rent(rent, &fee_mint(0, 0)), Some(128 + 182));
         let largest = token_2022_mint(
             &[
                 ExtensionType::TransferFeeConfig,
@@ -461,10 +476,13 @@ mod tests {
             },
         );
         assert_eq!(mint_verdict(Some(&largest)), Ok(TokenProgram::Token2022));
-        assert_eq!(ata_rent(&largest), Some(max_ata_rent()));
-        assert_eq!(max_ata_rent(), 2_220_240);
+        assert_eq!(ata_rent(rent, &largest), Some(max_ata_rent(rent)));
+        assert_eq!(max_ata_rent(rent), 128 + 191);
         assert_eq!(
-            ata_rent(&token_2022_account(&Pubkey::new_unique(), &[], |_| {})),
+            ata_rent(
+                rent,
+                &token_2022_account(&Pubkey::new_unique(), &[], |_| {})
+            ),
             None
         );
         let classic_account = Account {
@@ -472,7 +490,7 @@ mod tests {
             data: vec![0; TokenAccount::LEN],
             ..Account::default()
         };
-        assert_eq!(ata_rent(&classic_account), None);
+        assert_eq!(ata_rent(rent, &classic_account), None);
     }
 
     /// A confidential transfer mint asks nothing of its accounts at creation —
@@ -486,8 +504,9 @@ mod tests {
                 .unwrap();
         });
         assert_eq!(mint_verdict(Some(&mint)), Ok(TokenProgram::Token2022));
-        assert_eq!(ata_rent(&mint), Some(2_074_080));
-        assert!(ata_rent(&mint) <= Some(max_ata_rent()));
+        let rent = &rent_per_byte();
+        assert_eq!(ata_rent(rent, &mint), Some(128 + 170));
+        assert!(ata_rent(rent, &mint) <= Some(max_ata_rent(rent)));
     }
 
     /// A Token-2022 account receives the payout unless it holds another mint,
