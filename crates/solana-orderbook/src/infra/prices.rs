@@ -22,10 +22,8 @@ pub struct NativePrices {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// No estimator prices the token.
     #[error("no native price")]
     NoLiquidity,
-    /// The autopilot's price sources are rate limited.
     #[error("native price lookup rate limited")]
     RateLimited,
     #[error(transparent)]

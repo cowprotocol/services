@@ -503,7 +503,7 @@ async fn quote_checks_only_the_mints_it_can_read() {
 }
 
 /// A token the autopilot cannot price answers no liquidity even when a
-/// driver quotes the pair: an order on it would sit unscored in every auction.
+/// driver quotes the pair: an order on it would never enter an auction.
 #[tokio::test]
 async fn quote_without_a_native_price_is_no_liquidity() {
     let driver = spawn_mock_driver(serde_json::json!({

@@ -64,8 +64,8 @@ pub async fn quote(
                 error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
             })
     };
-    // An order on a token no estimator prices would sit unscored in every
-    // auction until it expires, so the quote fails before it is placed.
+    // The autopilot leaves an order on a token no estimator prices out of
+    // every auction, so the quote fails before such an order is placed.
     let prices = state.prices();
     let price = |token| async move {
         prices
