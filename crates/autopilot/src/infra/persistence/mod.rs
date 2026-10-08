@@ -394,6 +394,7 @@ impl Persistence {
                             .map(|cap| u256_to_big_decimal(&cap.0))
                     })
                     .collect(),
+                fast_path_quote_id: None,
             },
         )
         .await?;
@@ -1151,6 +1152,7 @@ impl Persistence {
             price_values,
             surplus_capturing_jit_order_owners: Vec::new(),
             penalty_caps_native: Some(vec![promotion.penalty_cap_native]),
+            fast_path_quote_id: Some(promotion.quote_id),
         };
 
         let policy_rows: Vec<_> = promotion

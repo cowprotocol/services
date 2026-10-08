@@ -51,6 +51,8 @@ pub struct Config<'a> {
     pub quote: bool,
     /// For quotes: the quote id the driver passes on in the `/solve` request.
     pub quote_id: Option<i64>,
+    /// Whether the driver should flag this `/solve` request as fast-path.
+    pub fast_path: bool,
     pub fee_handler: FeeHandler,
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
@@ -529,6 +531,9 @@ impl Solver {
                     if config.quote {
                         expected["quoteId"] =
                             config.quote_id.expect("quotes carry a quote id").to_string().into();
+                    }
+                    if config.fast_path {
+                        expected["fastPath"] = true.into();
                     }
                     check_solve_request(req, expected);
                     let mut state = state.0.lock().unwrap();

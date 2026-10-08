@@ -54,3 +54,8 @@ signer = { keypair = "/path/to/keypair.json" }
 # solver's sell ATA (buy orders). Bids and quotes shrink accordingly. Omit for
 # no fee.
 # solver-fee-bps = 500
+# The largest share of a settlement's native SOL payouts, in basis points
+# 0..10000, that the solver's own SOL covers when the swap delivers less SOL
+# than the payouts. A larger shortfall reverts the settlement. Omit to revert
+# on any shortfall.
+# max-native-shortfall-bps = 40
