@@ -3837,8 +3837,8 @@ dependencies = [
 
 [[package]]
 name = "cow-settlement-client"
-version = "0.4.1"
-source = "git+https://github.com/cowprotocol/solana-programs?rev=da9865d2d6501820672397d690352d2818f286b9#da9865d2d6501820672397d690352d2818f286b9"
+version = "0.5.0"
+source = "git+https://github.com/cowprotocol/solana-programs?rev=a79de88099523be8eb086aa6e2c4734690a2dd2d#a79de88099523be8eb086aa6e2c4734690a2dd2d"
 dependencies = [
  "cow-settlement-interface",
  "solana-program-error",
@@ -3846,8 +3846,8 @@ dependencies = [
 
 [[package]]
 name = "cow-settlement-interface"
-version = "0.4.1"
-source = "git+https://github.com/cowprotocol/solana-programs?rev=da9865d2d6501820672397d690352d2818f286b9#da9865d2d6501820672397d690352d2818f286b9"
+version = "0.5.0"
+source = "git+https://github.com/cowprotocol/solana-programs?rev=a79de88099523be8eb086aa6e2c4734690a2dd2d#a79de88099523be8eb086aa6e2c4734690a2dd2d"
 dependencies = [
  "arrayref",
  "const-crypto",
@@ -4629,7 +4629,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8193,7 +8193,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8252,7 +8252,7 @@ dependencies = [
  "security-framework 3.5.1",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -11433,7 +11433,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
