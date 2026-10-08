@@ -81,30 +81,58 @@ fn buy_token_account() -> Pubkey {
     associated_token_address(&pubkey(0x22), &pubkey(0x44), TokenProgram::SplToken)
 }
 
-/// A blockchain adapter that already knows the test order's mints as SPL
-/// Token mints, so that the mock RPC's answer to every account lookup,
-/// "absent", only ever reaches the token accounts. `mocks` answers the other
-/// requests.
+/// The mock RPC answers every account lookup with "absent", which must only
+/// ever reach the token accounts: this answers the test order's mints as SPL
+/// Token mints.
+fn mocks_with_mints(mut mocks: Mocks) -> Mocks {
+    mocks.insert(
+        RpcRequest::GetMultipleAccounts,
+        multiple_accounts_json([mint_account_json(), mint_account_json()]),
+    );
+    mocks
+}
+
+/// A blockchain adapter that already knows the test order's mints. `mocks`
+/// answers the other requests.
 async fn blockchain_with(mocks: Mocks) -> Arc<Solana> {
     let bundle_rpc = SolanaRPC::new_mock_with_mocks(mocks.clone());
     blockchain_with_bundle_rpc(mocks, bundle_rpc).await
 }
 
-async fn blockchain_with_bundle_rpc(mut mocks: Mocks, bundle_rpc: SolanaRPC) -> Arc<Solana> {
-    mocks.insert(
-        RpcRequest::GetMultipleAccounts,
-        multiple_accounts_json([mint_account_json(), mint_account_json()]),
-    );
-    let blockchain = Solana::new(
-        SolanaRPC::new_mock_with_mocks(mocks),
-        bundle_rpc,
-        cow_settlement_interface::id(),
-    );
+async fn blockchain_with_bundle_rpc(mocks: Mocks, bundle_rpc: SolanaRPC) -> Arc<Solana> {
+    let rpc = SolanaRPC::new_mock_with_mocks(mocks_with_mints(mocks));
+    blockchain_with_rpcs(rpc, bundle_rpc).await
+}
+
+async fn blockchain_with_rpcs(rpc: SolanaRPC, bundle_rpc: SolanaRPC) -> Arc<Solana> {
+    let blockchain = Solana::new(rpc, bundle_rpc, cow_settlement_interface::id());
     blockchain
         .token_programs([pubkey(0x33), pubkey(0x44)])
         .await
         .unwrap();
     Arc::new(blockchain)
+}
+
+/// A transaction as the RPC API carries it, base64 over bincode.
+fn decode_transaction(encoded: &serde_json::Value) -> VersionedTransaction {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.as_str().unwrap())
+        .unwrap();
+    bincode::deserialize(&bytes).unwrap()
+}
+
+/// Whether the transaction declares `limit` compute units.
+fn declares_compute_unit_limit(transaction: &VersionedTransaction, limit: u32) -> bool {
+    let expected = ComputeBudgetInstruction::set_compute_unit_limit(limit);
+    let keys = transaction.message.static_account_keys();
+    transaction
+        .message
+        .instructions()
+        .iter()
+        .any(|instruction| {
+            keys[usize::from(instruction.program_id_index)] == expected.program_id
+                && instruction.data == expected.data
+        })
 }
 
 /// Pays whatever the mock RPC reports and never refuses.
@@ -181,12 +209,7 @@ async fn spawn_recording_bundle_rpc() -> (SolanaRPC, Arc<Mutex<Vec<VersionedTran
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|encoded| {
-                    let bytes = base64::engine::general_purpose::STANDARD
-                        .decode(encoded.as_str().unwrap())
-                        .unwrap();
-                    bincode::deserialize(&bytes).unwrap()
-                })
+                .map(decode_transaction)
                 .collect();
             let results = vec![serde_json::json!({ "err": null, "logs": [] }); transactions.len()];
             *recorded.lock().unwrap() = transactions;
@@ -744,15 +767,18 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     assert_eq!(json["kind"], "PriorityFeeTooHigh");
 }
 
-/// Asserts that settling the engine's only solution costs exactly `lamports`
-/// of priority fee at an RPC price of 10_000 micro-lamports per compute unit,
-/// with the settle-time simulation reporting `units`.
-async fn assert_settle_priced_at(
+/// Asserts that settling the engine's only solution, with the settle-time
+/// simulation reporting `units`, sends a transaction declaring `limit`
+/// compute units and prices it at exactly that: at the RPC's 10_000
+/// micro-lamports per unit, a budget one lamport under `limit / 100` refuses
+/// it and nothing is sent.
+async fn assert_settle_declares(
     engine_response: serde_json::Value,
     units: u64,
     factor: f64,
-    lamports: u64,
+    limit: u32,
 ) {
+    let lamports = u64::from(limit) / 100;
     for budget in [lamports - 1, lamports] {
         let engine = spawn_mock_solver_engine(engine_response.clone()).await;
         let (solver, _) = solver_with_keypair(engine).await;
@@ -772,13 +798,17 @@ async fn assert_settle_priced_at(
             RpcRequest::SendTransaction,
             serde_json::json!(Signature::default().to_string()),
         );
+        let bundle_rpc = SolanaRPC::new_mock_with_mocks(mocks.clone());
+        let (rpc, requests) = SolanaRPC::new_mock_recording(mocks_with_mints(mocks));
         let api = Api {
+            addr: "0.0.0.0:0".parse().unwrap(),
+            blockchain: blockchain_with_rpcs(rpc, bundle_rpc).await,
+            solvers: vec![solver],
             priority_fee: PriorityFeePolicy {
                 max_priority_fee_lamports: budget,
                 compute_unit_limit_factor: factor,
                 ..priority_fee()
             },
-            ..api_with(vec![solver], mocks).await
         };
         let (listener, addr) = api.bind().await.unwrap();
         let shutdown = CancellationToken::new();
@@ -802,22 +832,36 @@ async fn assert_settle_priced_at(
             budget < lamports,
             "budget {budget}: {json}"
         );
+
+        let sent: Vec<VersionedTransaction> = requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(request, _)| *request == RpcRequest::SendTransaction)
+            .map(|(_, params)| decode_transaction(&params[0]))
+            .collect();
+        if budget < lamports {
+            assert!(sent.is_empty(), "budget {budget}: sent {}", sent.len());
+        } else {
+            assert_eq!(sent.len(), 1, "budget {budget}");
+            assert!(declares_compute_unit_limit(&sent[0], limit));
+        }
     }
 }
 
 /// 85_000 units at a 1.2 factor plus the 10_000 unit ATA allowance is a
 /// 112_000 unit limit: 1_120 lamports.
 #[tokio::test]
-async fn settle_prices_the_priority_fee_at_the_derived_compute_unit_limit() {
+async fn settle_declares_the_derived_compute_unit_limit() {
     let engine = engine_response(&[(42, "2000")]);
-    assert_settle_priced_at(engine, 85_000, 1.2, 1_120).await;
+    assert_settle_declares(engine, 85_000, 1.2, 112_000).await;
 }
 
 #[tokio::test]
-async fn settle_prices_the_priority_fee_at_the_solvers_compute_unit_estimate() {
+async fn settle_declares_the_solvers_compute_unit_estimate() {
     let mut engine = engine_response(&[(42, "2000")]);
     engine["solutions"][0]["cuEstimate"] = 50_000.into();
-    assert_settle_priced_at(engine, 85_000, 1.2, 500).await;
+    assert_settle_declares(engine, 85_000, 1.2, 50_000).await;
 }
 
 #[tokio::test]
@@ -1173,18 +1217,7 @@ async fn solve_simulates_a_settlement_without_an_estimate_at_the_compute_unit_ce
     assert_eq!(response_ids(&body), vec![42]);
 
     let settlement = bundle.lock().unwrap().pop().unwrap();
-    let limit = ComputeBudgetInstruction::set_compute_unit_limit(1_400_000);
-    let keys = settlement.message.static_account_keys();
-    assert!(
-        settlement
-            .message
-            .instructions()
-            .iter()
-            .any(
-                |instruction| keys[usize::from(instruction.program_id_index)] == limit.program_id
-                    && instruction.data == limit.data
-            )
-    );
+    assert!(declares_compute_unit_limit(&settlement, 1_400_000));
 }
 
 /// The other solve tests run against a mock that cannot simulate a bundle
