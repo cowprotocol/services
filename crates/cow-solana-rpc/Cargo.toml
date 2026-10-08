@@ -10,6 +10,7 @@ name = "cow_solana_rpc"
 path = "src/lib.rs"
 
 [dependencies]
+async-trait = { workspace = true, optional = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
 futures = { workspace = true }
@@ -26,7 +27,7 @@ url = { workspace = true }
 
 [features]
 # Enables mock constructors for tests.
-test-util = []
+test-util = ["dep:async-trait"]
 
 [lints]
 workspace = true

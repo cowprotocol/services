@@ -33,6 +33,7 @@ pub struct Auction {
     pub block: i64,
     pub id: i64,
     pub deadline: i64,
+    pub fast_path_quote_id: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -121,7 +122,7 @@ pub async fn load_by_id(
     after_block: Option<i64>,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION: &str = r#"
-        SELECT id, order_uids, price_tokens, price_values, block, deadline
+        SELECT id, order_uids, price_tokens, price_values, block, deadline, fast_path_quote_id
         FROM competition_auctions
         WHERE id = $1 AND ($2::bigint IS NULL OR deadline <= $2);
     "#;
@@ -718,6 +719,7 @@ mod tests {
             price_values: vec![BigDecimal::from(100)],
             surplus_capturing_jit_order_owners: vec![],
             penalty_caps_native: None,
+            fast_path_quote_id: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -765,6 +767,7 @@ mod tests {
             price_values: vec![order_limit_sell.clone()],
             surplus_capturing_jit_order_owners: vec![],
             penalty_caps_native: None,
+            fast_path_quote_id: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -942,6 +945,7 @@ mod tests {
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
                 penalty_caps_native: None,
+                fast_path_quote_id: None,
             },
         )
         .await
@@ -975,6 +979,7 @@ mod tests {
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
                 penalty_caps_native: None,
+                fast_path_quote_id: None,
             },
         )
         .await

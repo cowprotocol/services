@@ -8,10 +8,11 @@ use {
             observation::SettlementWindows,
             sponsor::Sponsor,
         },
-        run_loop::SettlementExecutor,
+        run_loop::{RankingInfo, SettlementExecutor},
     },
     async_trait::async_trait,
     std::sync::Arc,
+    tracing::Instrument,
     winner_selection::state::RankedItem,
 };
 
@@ -25,14 +26,14 @@ pub struct DriverExecutor {
     /// Countersigns pending sponsored creations. Absent, winners dispatch
     /// without creations, and one containing a pending sponsored order fails
     /// at the driver.
-    sponsor: Option<Sponsor>,
+    sponsor: Option<Arc<Sponsor>>,
 }
 
 impl DriverExecutor {
     pub fn new(
         drivers: Vec<Arc<Driver>>,
         windows: SettlementWindows,
-        sponsor: Option<Sponsor>,
+        sponsor: Option<Arc<Sponsor>>,
     ) -> Self {
         Self {
             drivers,
@@ -155,6 +156,29 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     .expire_when_due(auction_id, solver, uid, deadline)
                     .await;
             });
+        }
+
+        // TODO: a workaround, not a final solution. The arbitrator picks one
+        // winner per directed token pair, so other orders on that pair wait,
+        // and a pending sponsored order dies with its creation blockhash after
+        // a few lost auctions. Creating it on chain lets it wait like any
+        // other order.
+        if let Some(sponsor) = &self.sponsor {
+            let executing = ranking.winning_order_uids();
+            let displaced: Vec<_> = ranking
+                .considered_order_uids()
+                .into_iter()
+                .filter(|uid| !executing.contains(uid))
+                .collect();
+            // Detached: the creations go out while the loop runs the next
+            // cycle. The auction span stays on for the logs.
+            let sponsor = Arc::clone(sponsor);
+            tokio::spawn(
+                async move {
+                    sponsor.create_displaced(displaced.into_iter()).await;
+                }
+                .instrument(tracing::Span::current()),
+            );
         }
     }
 }
