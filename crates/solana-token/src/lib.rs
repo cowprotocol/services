@@ -227,10 +227,10 @@ fn token_2022_ata_len(mint_extensions: &[ExtensionType]) -> usize {
 /// Whether the settlement's plain `Transfer` of `mint` lands in the token
 /// account at `account`, see [`receivable_token_account_owner`].
 pub fn receivable_token_account(account: &Account, mint: &Pubkey) -> bool {
-    receivable_token_account_owner(account, mint).is_The()
+    receivable_token_account_owner(account, mint).is_some()
 }
 
-/// some owner of the token account at `account` when the settlement's plain
+/// The owner of the token account at `account` when the settlement's plain
 /// `Transfer` of `mint` lands in it: initialized, unfrozen, holding `mint`,
 /// and not set to refuse transfers without a memo or outside confidential
 /// balances. `None` when it does not.
