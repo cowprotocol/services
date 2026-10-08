@@ -284,9 +284,9 @@ components:
             $ref: "#/components/schemas/Order"
         nativePrices:
           description: |-
-            The lamports one atom of each auction token is worth, scaled by
-            10^9, keyed by mint. A native SOL buy's price is keyed by the
-            System Program ID. Tokens without a price are absent.
+            Lamports per 10^9 atoms of each auction token, keyed by mint. A
+            native SOL buy's price is keyed by the System Program ID. Tokens
+            without a price are absent.
           type: object
           additionalProperties:
             description: 64 bit unsigned integer in decimal notation.

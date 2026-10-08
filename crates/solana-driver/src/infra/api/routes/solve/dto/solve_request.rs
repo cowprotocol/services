@@ -48,8 +48,8 @@ pub struct SolveRequest {
     /// Timestamp deadline for answering `/solve`.
     deadline: chrono::DateTime<chrono::Utc>,
     orders: Vec<Order>,
-    /// The lamports one atom of each auction token is worth, scaled by 10^9.
-    /// Tokens without a price are absent.
+    /// Lamports per 10^9 atoms of each auction token. Tokens without a price
+    /// are absent.
     #[serde(default)]
     #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
     native_prices: HashMap<Pubkey, u64>,

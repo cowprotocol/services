@@ -79,9 +79,9 @@ pub struct Auction {
     /// chain yet, by uid. It lacks the funder's signature, so it can only be
     /// simulated ahead of a settlement, never sent.
     pub creations: HashMap<OrderUid, VersionedTransaction>,
-    /// The lamports one atom of each auction token is worth, scaled by 10^9.
-    /// A native SOL buy's price sits under [`ENCODED_NATIVE_SOL_TRANSFER`].
-    /// Tokens without a price are absent.
+    /// Lamports per 10^9 atoms of each auction token. A native SOL buy's
+    /// price sits under [`ENCODED_NATIVE_SOL_TRANSFER`]. Tokens without a
+    /// price are absent.
     pub native_prices: HashMap<Pubkey, u64>,
 }
 
