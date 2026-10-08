@@ -8,8 +8,9 @@ use {
         solana::{NATIVE_SOL, Solana},
     },
     cow_solana_rpc::SolanaRPC,
-    futures::{StreamExt, stream},
+    futures::{FutureExt, StreamExt, stream},
     moka::sync::Cache,
+    request_sharing::{BoxRequestSharing, RequestSharing},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
@@ -101,6 +102,9 @@ pub struct Inner {
     mints: Cache<Pubkey, (Instant, MintInfo)>,
     /// The tokens of the latest lookup, the set the refresher keeps fresh.
     maintained: Mutex<HashSet<Pubkey>>,
+    /// Single-token lookups in flight, so a burst of quotes on one uncached
+    /// token spends one source request instead of one each.
+    single_lookups: BoxRequestSharing<Pubkey, Result<Option<u64>, Arc<anyhow::Error>>>,
 }
 
 /// What pricing reads from a mint account.
@@ -204,6 +208,7 @@ impl NativePrices {
             prices: bounded(),
             mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
+            single_lookups: RequestSharing::labelled("native_price".to_owned()),
         });
         let refresher = Arc::clone(&inner);
         tokio::spawn(async move {
@@ -238,13 +243,27 @@ impl NativePrices {
     }
 
     /// The price of one token, see [`Self::prices`]. `None` for a token no
-    /// estimator prices. The refresher keeps maintaining the latest cut's
-    /// tokens: a quote lookup must not displace them.
-    pub async fn price(&self, token: Pubkey) -> Result<Option<u64>> {
+    /// estimator prices. Concurrent lookups of one token share one fetch and
+    /// so one error. The refresher keeps maintaining the latest cut's tokens:
+    /// a quote lookup must not displace them.
+    pub async fn price(&self, token: Pubkey) -> Result<Option<u64>, Arc<anyhow::Error>> {
         match self {
             Self::Denominated => Ok(Some(Solana::NATIVE_PRICE_DENOMINATOR)),
             Self::Configured(inner) => {
-                Ok(inner.lookup(HashSet::from([token])).await?.remove(&token))
+                let fetcher = Arc::clone(inner);
+                inner
+                    .single_lookups
+                    .shared_or_else(token, move |&token| {
+                        async move {
+                            fetcher
+                                .lookup(HashSet::from([token]))
+                                .await
+                                .map(|mut prices| prices.remove(&token))
+                                .map_err(Arc::new)
+                        }
+                        .boxed()
+                    })
+                    .await
             }
         }
     }
@@ -266,6 +285,7 @@ impl NativePrices {
             prices,
             mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
+            single_lookups: RequestSharing::labelled("native_price".to_owned()),
         }))
     }
 }
@@ -983,6 +1003,27 @@ mod tests {
             *inner.maintained.lock().unwrap(),
             HashSet::from([cut_a, cut_b])
         );
+    }
+
+    /// Concurrent lookups of one token share a fetch, so a burst of quotes
+    /// spends one source request.
+    #[tokio::test]
+    async fn concurrent_single_lookups_share_a_fetch() {
+        let token = Pubkey::new_unique();
+        let (endpoint, requests) = coingecko_server(serde_json::json!({
+            token.to_string(): { "sol": 0.005 },
+        }))
+        .await;
+        let prices = NativePrices::new(
+            &coingecko_config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+
+        let (first, second) = futures::join!(prices.price(token), prices.price(token));
+        assert_eq!(first.unwrap(), Some(5_000_000_000));
+        assert_eq!(second.unwrap(), Some(5_000_000_000));
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
     }
 
     /// A source answering 429 fails the lookup as rate limited when no other
