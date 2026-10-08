@@ -14,7 +14,7 @@ use {
         pda::order::find_order_pda,
         token_program::TokenProgram,
     },
-    cow_solana_rpc::{CommitmentConfig, Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
+    cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
     solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_driver::{
         domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
@@ -32,7 +32,6 @@ use {
         net::SocketAddr,
         num::NonZero,
         sync::{Arc, Mutex},
-        time::Duration,
     },
     tokio_util::sync::CancellationToken,
 };
@@ -96,10 +95,6 @@ fn mocks_with_mints(mut mocks: Mocks) -> Mocks {
 /// answers the other requests.
 async fn blockchain_with(mocks: Mocks) -> Arc<Solana> {
     let bundle_rpc = SolanaRPC::new_mock_with_mocks(mocks.clone());
-    blockchain_with_bundle_rpc(mocks, bundle_rpc).await
-}
-
-async fn blockchain_with_bundle_rpc(mocks: Mocks, bundle_rpc: SolanaRPC) -> Arc<Solana> {
     let rpc = SolanaRPC::new_mock_with_mocks(mocks_with_mints(mocks));
     blockchain_with_rpcs(rpc, bundle_rpc).await
 }
@@ -194,46 +189,6 @@ async fn spawn_recording_solver_engine(
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     (addr, requests)
-}
-
-/// A `simulateBundle` endpoint that passes every bundle and records the
-/// transactions of the last one it was sent.
-async fn spawn_recording_bundle_rpc() -> (SolanaRPC, Arc<Mutex<Vec<VersionedTransaction>>>) {
-    let bundle = Arc::new(Mutex::new(Vec::new()));
-    let recorded = Arc::clone(&bundle);
-    let app = axum::Router::new().route(
-        "/",
-        axum::routing::post(move |axum::Json(request): axum::Json<serde_json::Value>| {
-            let transactions: Vec<VersionedTransaction> = request["params"][0]
-                ["encodedTransactions"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(decode_transaction)
-                .collect();
-            let results = vec![serde_json::json!({ "err": null, "logs": [] }); transactions.len()];
-            *recorded.lock().unwrap() = transactions;
-            async move {
-                axum::Json(serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": request["id"],
-                    "result": {
-                        "context": { "slot": 1 },
-                        "value": { "transactionResults": results },
-                    },
-                }))
-            }
-        }),
-    );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let rpc = SolanaRPC::new_with_timeout_and_commitment(
-        &format!("http://{addr}").parse().unwrap(),
-        Duration::from_secs(5),
-        CommitmentConfig::confirmed(),
-    );
-    (rpc, bundle)
 }
 
 /// A solver client whose on-chain identity is a freshly generated keypair,
@@ -1204,10 +1159,21 @@ async fn solve_takes_part_every_nth_solve() {
 async fn solve_simulates_a_settlement_without_an_estimate_at_the_compute_unit_ceiling() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
     let (solver, _) = solver_with_keypair(engine).await;
-    let (bundle_rpc, bundle) = spawn_recording_bundle_rpc().await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        SIMULATE_BUNDLE,
+        serde_json::json!({
+            "context": { "slot": 1 },
+            "value": { "transactionResults": [{ "err": null, "logs": [] }] },
+        }),
+    );
+    let (bundle_rpc, requests) = SolanaRPC::new_mock_recording(mocks);
+    let rpc = SolanaRPC::new_mock_with_mocks(mocks_with_mints(Mocks::new()));
     let api = Api {
-        blockchain: blockchain_with_bundle_rpc(Mocks::new(), bundle_rpc).await,
-        ..api_with(vec![solver], Mocks::new()).await
+        addr: "0.0.0.0:0".parse().unwrap(),
+        blockchain: blockchain_with_rpcs(rpc, bundle_rpc).await,
+        solvers: vec![solver],
+        priority_fee: priority_fee(),
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -1216,7 +1182,12 @@ async fn solve_simulates_a_settlement_without_an_estimate_at_the_compute_unit_ce
     let body = call_solve(addr).await;
     assert_eq!(response_ids(&body), vec![42]);
 
-    let settlement = bundle.lock().unwrap().pop().unwrap();
+    let requests = requests.lock().unwrap();
+    let (_, params) = requests
+        .iter()
+        .find(|(request, _)| *request == SIMULATE_BUNDLE)
+        .unwrap();
+    let settlement = decode_transaction(&params[0]["encodedTransactions"][0]);
     assert!(declares_compute_unit_limit(&settlement, 1_400_000));
 }
 
