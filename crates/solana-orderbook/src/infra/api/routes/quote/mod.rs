@@ -156,8 +156,11 @@ async fn check_mints(
 
 /// The rent of the quoted order's buy token account, zero when the payout
 /// lands in an existing one: the `receiver` itself, or the associated token
-/// account of the `receiver`, or of `from` without one. An account at either
-/// address that cannot take the payout is refused as `InvalidBuyTokenAccount`:
+/// account of the `receiver`, or of `from` without one. Lamports already at
+/// the associated token account's address count against the rent, as the ATA
+/// program tops a pre-funded account up instead of paying it in full. An
+/// account at either address that cannot take the payout is refused as
+/// `InvalidBuyTokenAccount`:
 /// the idempotent creation leaves it as is, so the order would never fill. A
 /// native SOL buy pays out to a wallet, and an anonymous quote without a
 /// `receiver` names no account to read: neither owes rent. The read goes
@@ -206,8 +209,8 @@ async fn buy_account_rent(
         }
         _ => (),
     }
-    match accounts.get(&ata) {
-        Some(account) if receives(account) => Ok(0),
+    let pre_funded = match accounts.get(&ata) {
+        Some(account) if receives(account) => return Ok(0),
         // Only the ATA program allocates at its address, so anything there
         // but lamports in a system account is a token account the idempotent
         // creation leaves as is.
@@ -215,13 +218,16 @@ async fn buy_account_rent(
             if account.owner != solana_system_interface::program::ID
                 || !account.data.is_empty() =>
         {
-            Err(invalid_buy_token_account(ata))
+            return Err(invalid_buy_token_account(ata));
         }
-        _ => Ok(accounts
-            .get(&request.buy_token)
-            .and_then(|mint| ata_rent(&rent, mint))
-            .unwrap_or_else(|| max_ata_rent(&rent))),
-    }
+        Some(account) => account.lamports,
+        None => 0,
+    };
+    let lamports = accounts
+        .get(&request.buy_token)
+        .and_then(|mint| ata_rent(&rent, mint))
+        .unwrap_or_else(|| max_ata_rent(&rent));
+    Ok(lamports.saturating_sub(pre_funded))
 }
 
 fn invalid_buy_token_account(account: Pubkey) -> error::Reply {
@@ -401,9 +407,9 @@ mod tests {
     /// The account read answers the recipient, its associated token account,
     /// the buy mint, then the rent sysvar. The payout lands in a recipient
     /// that is a token account of the mint, or else in the associated token
-    /// account. Owing the mint's rent at the cluster's rent: a missing
-    /// associated token account, or a wallet holding only lamports at its
-    /// address.
+    /// account. A missing associated token account owes the mint's rent at
+    /// the cluster's rent; lamports already at its address pay part of it,
+    /// or all of it.
     #[tokio::test]
     async fn a_missing_buy_token_account_owes_its_rent() {
         let (owner, mint, receiver) = (
@@ -413,6 +419,11 @@ mod tests {
         );
         let wallet = account_json(&Account {
             lamports: 1_000_000_000,
+            owner: solana_system_interface::program::ID,
+            ..Default::default()
+        });
+        let pre_funded = account_json(&Account {
+            lamports: 1_000_000,
             owner: solana_system_interface::program::ID,
             ..Default::default()
         });
@@ -442,9 +453,15 @@ mod tests {
             ),
             (
                 None,
+                [wallet.clone(), pre_funded.clone(), classic.clone()],
+                TokenProgram::SplToken,
+                488_440,
+            ),
+            (
+                None,
                 [wallet.clone(), wallet.clone(), classic.clone()],
                 TokenProgram::SplToken,
-                1_488_440,
+                0,
             ),
             (
                 None,
