@@ -198,7 +198,7 @@ async fn buy_account_rent(
     };
     let rent = accounts
         .get(&sysvar::rent::ID)
-        .and_then(|account| from_account::<Rent, _>(account))
+        .and_then(from_account::<Rent, _>)
         .unwrap_or_default();
     let recipient_account = accounts.get(&recipient);
     if let Some(owner) = recipient_account
