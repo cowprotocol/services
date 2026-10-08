@@ -267,7 +267,7 @@ impl ResolvedSettlement {
         let payer = self.payer;
         // Prepare each order for settlement: resolve its executed amounts and
         // build its intent, sell-mint pull, and buy-mint push.
-        let settlement_orders: Vec<SettlementOrder> = self
+        let mut settlement_orders: Vec<SettlementOrder> = self
             .settlement
             .orders
             .iter()
@@ -281,6 +281,10 @@ impl ResolvedSettlement {
                 SettlementOrder::new(order, &payer, amounts, sell_program, checked_push)
             })
             .collect::<Result<_, Error>>()?;
+        // The program takes the orders strictly increasing by order PDA and
+        // pays order `i` of `BeginSettle` with push `i` of `FinalizeSettle`,
+        // so both instructions walk the orders in that order.
+        settlement_orders.sort_unstable_by_key(|order| order.order_pda);
 
         let (state_pda, state_bump) = find_state_pda(&self.settlement.program_id);
         let funding = native_payout_funding(
@@ -730,6 +734,8 @@ fn executed_amounts(order: &Order, solution: &Solution) -> Result<ExecutedAmount
 /// An order as prepared for the settlement transaction.
 struct SettlementOrder {
     intent: OrderIntent,
+    /// The order account under the settlement's program.
+    order_pda: Pubkey,
     pulls: Vec<Pull>,
     buy_amount: u64,
     /// Whether the sell tokens are pulled with `TransferChecked`.
@@ -756,6 +762,7 @@ impl SettlementOrder {
     ) -> Result<Self, Error> {
         Ok(Self {
             intent: order.try_into()?,
+            order_pda: order.order_pda,
             pulls: vec![Pull {
                 destination: associated_token_address(payer, &order.sell_token, sell_program),
                 amount: amounts.sell,
@@ -820,10 +827,7 @@ fn begin_settle(
     auction_id: i64,
     orders: &[SettlementOrder],
 ) -> Instruction {
-    let order_pdas: Vec<Pubkey> = orders
-        .iter()
-        .map(|order| find_order_pda(program_id, &order.intent.uid()).0)
-        .collect();
+    let order_pdas: Vec<Pubkey> = orders.iter().map(|order| order.order_pda).collect();
     let sell_token_accounts: Vec<Pubkey> = orders
         .iter()
         .map(|order| order.intent.sell.token_account)
@@ -855,49 +859,34 @@ fn begin_settle(
 
 /// The `FinalizeSettle` instruction pushing each order's proceeds: out of the
 /// buy mint's buffer, or out of the state PDA's lamports for a native SOL buy.
-/// The program pays order `i` of `BeginSettle` with push `i`, and `BeginSettle`
-/// lists its orders by order PDA, so the pushes are laid out the same way.
+/// One push per order in the orders' layout, as the program pays order `i` of
+/// `BeginSettle` with push `i`.
 fn finalize_settle(
     program_id: &Pubkey,
     (state_pda, state_bump): (Pubkey, u8),
     begin_ix_index: u16,
     orders: &[SettlementOrder],
 ) -> Instruction {
-    struct Push {
-        order_pda: Pubkey,
-        source: Pubkey,
-        bump: u8,
-        destination: Pubkey,
-        mint: Option<Pubkey>,
-        amount: u64,
-    }
-    let mut pushes: Vec<Push> = orders
-        .iter()
-        .map(|order| {
-            let (source, bump, destination, mint) = match &order.intent.buy {
-                Asset::Native(account) => (state_pda, state_bump, *account, None),
-                Asset::TokenProgram(token) => {
-                    let (buffer, bump) = find_buffer_pda(program_id, &token.mint);
-                    let mint = order.checked_push.then_some(token.mint);
-                    (buffer, bump, token.token_account, mint)
-                }
-            };
-            Push {
-                order_pda: find_order_pda(program_id, &order.intent.uid()).0,
-                source,
-                bump,
-                destination,
-                mint,
-                amount: order.buy_amount,
+    let mut source_buffers = Vec::with_capacity(orders.len());
+    let mut destinations = Vec::with_capacity(orders.len());
+    let mut mints = Vec::with_capacity(orders.len());
+    let mut bumps = Vec::with_capacity(orders.len());
+    let mut amounts = Vec::with_capacity(orders.len());
+    for order in orders {
+        let (source, bump, destination, mint) = match &order.intent.buy {
+            Asset::Native(account) => (state_pda, state_bump, *account, None),
+            Asset::TokenProgram(token) => {
+                let (buffer, bump) = find_buffer_pda(program_id, &token.mint);
+                let mint = order.checked_push.then_some(token.mint);
+                (buffer, bump, token.token_account, mint)
             }
-        })
-        .collect();
-    pushes.sort_unstable_by_key(|push| push.order_pda);
-    let source_buffers: Vec<_> = pushes.iter().map(|push| push.source).collect();
-    let destinations: Vec<_> = pushes.iter().map(|push| push.destination).collect();
-    let mints: Vec<_> = pushes.iter().map(|push| push.mint).collect();
-    let bumps: Vec<_> = pushes.iter().map(|push| push.bump).collect();
-    let amounts: Vec<_> = pushes.iter().map(|push| push.amount).collect();
+        };
+        source_buffers.push(source);
+        destinations.push(destination);
+        mints.push(mint);
+        bumps.push(bump);
+        amounts.push(order.buy_amount);
+    }
     FinalizeSettle {
         program_id: *program_id,
         state_pda,
@@ -1166,6 +1155,65 @@ mod tests {
         assert_ne!(state_pda, cow_settlement_interface::pda::state::STATE_PDA);
         assert_eq!(*begin_input.state_pda_account, state_pda);
         assert_eq!(*finalize_input.state_pda_account, state_pda);
+    }
+
+    /// The program pays order `i` of `BeginSettle` with push `i` of
+    /// `FinalizeSettle`, so push `i` carries the buy account and amount of the
+    /// order at position `i`, whichever order the orders came in.
+    #[test]
+    fn pushes_line_up_with_the_begin_settle_orders() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        for swapped in [false, true] {
+            let order_a = test_order(&program_id);
+            let order_b = test_order_with(&program_id, |order| {
+                order.sell_token = pubkey(0x45);
+                order.buy_token = pubkey(0x46);
+                order.sell_token_account = pubkey(0x67);
+                order.buy_token_account = pubkey(0x68);
+                order.sell_amount = 500;
+                order.buy_amount = 1_000;
+            });
+            let trades = [
+                trade(order_a.uid, 1_000, 2_000),
+                trade(order_b.uid, 500, 1_000),
+            ];
+            let orders = if swapped {
+                vec![order_b, order_a]
+            } else {
+                vec![order_a, order_b]
+            };
+            let settlement = test_settlement(&orders, &trades).unwrap();
+
+            let instructions = resolve_for_test(settlement, payer).instructions().unwrap();
+            let [begin, finalize] = instructions
+                .iter()
+                .filter(|instruction| instruction.program_id == program_id)
+                .collect::<Vec<_>>()[..]
+            else {
+                panic!("expected one BeginSettle and one FinalizeSettle");
+            };
+            let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+            let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+            let finalize_accounts: Vec<Pubkey> =
+                finalize.accounts.iter().map(|m| m.pubkey).collect();
+            let finalize_input =
+                FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+
+            let settled: Vec<_> = begin_input.orders.iter().collect();
+            let pushes: Vec<_> = finalize_input.pushes.iter().collect();
+            assert_eq!(settled.len(), 2);
+            assert_eq!(pushes.len(), 2);
+            assert!(settled[0].order_pda < settled[1].order_pda);
+            for (settled, push) in settled.iter().zip(&pushes) {
+                let order = orders
+                    .iter()
+                    .find(|order| order.order_pda == *settled.order_pda)
+                    .unwrap();
+                assert_eq!(*push.destination, order.buy_token_account);
+                assert_eq!(push.amount, order.buy_amount);
+            }
+        }
     }
 
     #[test]
