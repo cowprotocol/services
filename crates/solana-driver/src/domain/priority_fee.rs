@@ -99,17 +99,16 @@ pub(crate) struct OverBudget {
 impl PriorityFeePolicy {
     /// The priority fee for a transaction given the fees recently paid over its
     /// writable accounts and its compute unit limit, or the fee it would pay
-    /// when that is over the budget. An undeclared limit is priced at the
-    /// runtime's ceiling.
+    /// when that is over the budget.
     pub(crate) fn estimate(
         &self,
         fees: &[RpcPrioritizationFee],
-        compute_unit_limit: Option<u32>,
+        compute_unit_limit: u32,
     ) -> Result<Estimate, OverBudget> {
         let compute_unit_price = self.compute_unit_price(fees);
-        let limit = compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
         // Micro-lamports per unit times units, rounded up to whole lamports.
-        let lamports = (u128::from(compute_unit_price) * u128::from(limit)).div_ceil(1_000_000);
+        let lamports =
+            (u128::from(compute_unit_price) * u128::from(compute_unit_limit)).div_ceil(1_000_000);
         if lamports > u128::from(self.max_priority_fee_lamports) {
             return Err(OverBudget {
                 lamports,
@@ -216,19 +215,10 @@ mod tests {
     /// micro-lamport over 1 unit is 0.000001: both round up.
     #[test]
     fn lamports_round_up() {
-        let estimate = policy(50)
-            .estimate(&[fee(1, 1_500)], Some(200_001))
-            .unwrap();
+        let estimate = policy(50).estimate(&[fee(1, 1_500)], 200_001).unwrap();
         assert_eq!(estimate.lamports, 301);
-        let estimate = policy(50).estimate(&[fee(1, 1)], Some(1)).unwrap();
+        let estimate = policy(50).estimate(&[fee(1, 1)], 1).unwrap();
         assert_eq!(estimate.lamports, 1);
-    }
-
-    /// An undeclared limit is priced at the 1.4M ceiling.
-    #[test]
-    fn undeclared_limit_is_priced_at_the_ceiling() {
-        let estimate = policy(50).estimate(&[fee(1, 1_000)], None).unwrap();
-        assert_eq!(estimate.lamports, 1_400);
     }
 
     #[test]
@@ -238,7 +228,7 @@ mod tests {
             ..policy(50)
         };
         assert_eq!(
-            policy.estimate(&[fee(1, 1_500)], Some(200_000)),
+            policy.estimate(&[fee(1, 1_500)], 200_000),
             Err(OverBudget {
                 lamports: 300,
                 cap: 299
@@ -248,7 +238,7 @@ mod tests {
             max_priority_fee_lamports: 300,
             ..policy
         };
-        assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+        assert!(policy.estimate(&[fee(1, 1_500)], 200_000).is_ok());
     }
 
     #[test]

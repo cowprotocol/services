@@ -648,7 +648,7 @@ impl Competition {
         fees: &[RpcPrioritizationFee],
         compute_unit_limit: u32,
     ) -> Result<priority_fee::Estimate, Error> {
-        let estimate = self.priority_fee.estimate(fees, Some(compute_unit_limit))?;
+        let estimate = self.priority_fee.estimate(fees, compute_unit_limit)?;
         metrics()
             .compute_unit_price
             .observe(estimate.compute_unit_price as f64);
