@@ -280,9 +280,9 @@ paths:
             (default two minutes) or further than the configured maximum
             (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
             a mint the settlement program cannot move (`UnsupportedToken`),
-            or a buy token account that exists but cannot take the payout:
-            frozen, another mint's, or refusing plain credits
-            (`InvalidBuyTokenAccount`).
+            or a buy token account that exists but cannot take the payout,
+            frozen, another mint's, or refusing plain credits, or that is not
+            an associated token account (`InvalidBuyTokenAccount`).
           content:
             application/json:
               schema:
@@ -528,9 +528,10 @@ components:
             - $ref: "#/components/schemas/Pubkey"
         receiver:
           description: >-
-            Where the proceeds land instead of `from`: a buy token account, or a
-            wallet, paid into its associated token account for the buy mint or,
-            for native SOL, directly. Echoed back untouched.
+            Where the proceeds land instead of `from`: an associated token
+            account of the buy mint, or a wallet, paid into its associated token
+            account for the buy mint or, for native SOL, directly. Echoed back
+            untouched.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         kind:

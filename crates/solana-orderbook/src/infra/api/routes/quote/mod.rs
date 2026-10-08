@@ -16,13 +16,13 @@ use {
         token_program::TokenProgram,
     },
     database::{byte_array::ByteArray, solana::OrderKind},
-    solana_sdk::{
-        account::{Account, from_account},
-        pubkey::Pubkey,
-        rent::Rent,
-        sysvar,
+    solana_sdk::{account::from_account, pubkey::Pubkey, rent::Rent, sysvar},
+    solana_token::{
+        ata_rent,
+        max_ata_rent,
+        receivable_token_account,
+        receivable_token_account_owner,
     },
-    solana_token::{ata_rent, max_ata_rent, receivable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
     std::time::Duration,
@@ -155,8 +155,9 @@ async fn check_mints(
 }
 
 /// The rent of the quoted order's buy token account, zero when the payout
-/// lands in an existing one: the `receiver` itself, or the associated token
-/// account of the `receiver`, or of `from` without one. Lamports already at
+/// lands in an existing one: the `receiver` itself, an associated token
+/// account of the buy mint, or the associated token account of the
+/// `receiver`, or of `from` without one. Lamports already at
 /// the associated token account's address count against the rent, as the ATA
 /// program tops a pre-funded account up instead of paying it in full. An
 /// account at either address that cannot take the payout is refused as
@@ -199,18 +200,31 @@ async fn buy_account_rent(
         .get(&sysvar::rent::ID)
         .and_then(|account| from_account::<Rent, _>(account))
         .unwrap_or_default();
-    let receives = |account: &Account| receivable_token_account(account, &request.buy_token);
-    match accounts.get(&recipient) {
-        Some(account) if receives(account) => return Ok(0),
-        // A token account of another mint, frozen, or refusing plain credits
-        // is no wallet whose associated token account could take the payout.
-        Some(account) if TokenProgram::try_from(&account.owner).is_ok() => {
-            return Err(invalid_buy_token_account(recipient));
-        }
-        _ => (),
+    let recipient_account = accounts.get(&recipient);
+    if let Some(owner) = recipient_account
+        .and_then(|account| receivable_token_account_owner(account, &request.buy_token))
+    {
+        // The placement proves receivability with the ATA program's idempotent
+        // creation, which fails on any account but the owner's associated one.
+        return if recipient == associated_token_account(&owner, &request.buy_token, program) {
+            Ok(0)
+        } else {
+            Err(invalid_buy_token_account(
+                recipient,
+                "is not an associated token account",
+            ))
+        };
+    }
+    // A token account of another mint, frozen, or refusing plain credits is
+    // no wallet whose associated token account could take the payout.
+    if recipient_account.is_some_and(|account| TokenProgram::try_from(&account.owner).is_ok()) {
+        return Err(invalid_buy_token_account(
+            recipient,
+            "cannot receive the payout",
+        ));
     }
     let pre_funded = match accounts.get(&ata) {
-        Some(account) if receives(account) => return Ok(0),
+        Some(account) if receivable_token_account(account, &request.buy_token) => return Ok(0),
         // Only the ATA program allocates at its address, so anything there
         // but lamports in a system account is a token account the idempotent
         // creation leaves as is.
@@ -218,7 +232,7 @@ async fn buy_account_rent(
             if account.owner != solana_system_interface::program::ID
                 || !account.data.is_empty() =>
         {
-            return Err(invalid_buy_token_account(ata));
+            return Err(invalid_buy_token_account(ata, "cannot receive the payout"));
         }
         Some(account) => account.lamports,
         None => 0,
@@ -230,11 +244,11 @@ async fn buy_account_rent(
     Ok(lamports.saturating_sub(pre_funded))
 }
 
-fn invalid_buy_token_account(account: Pubkey) -> error::Reply {
+fn invalid_buy_token_account(account: Pubkey, reason: &str) -> error::Reply {
     error::reply(
         StatusCode::BAD_REQUEST,
         "InvalidBuyTokenAccount",
-        format!("the buy token account {account} cannot receive the payout"),
+        format!("the buy token account {account} {reason}"),
     )
 }
 
@@ -243,12 +257,12 @@ fn invalid_buy_token_account(account: Pubkey) -> error::Reply {
 /// the buy mint under `program`.
 fn buy_token_account_candidates(request: &dto::Request, program: TokenProgram) -> [Pubkey; 2] {
     let recipient = request.receiver.unwrap_or(request.from);
-    let ata = get_associated_token_address_with_program_id(
-        &recipient,
-        &request.buy_token,
-        &program.address(),
-    );
+    let ata = associated_token_account(&recipient, &request.buy_token, program);
     [recipient, ata]
+}
+
+fn associated_token_account(owner: &Pubkey, mint: &Pubkey, program: TokenProgram) -> Pubkey {
+    get_associated_token_address_with_program_id(owner, mint, &program.address())
 }
 
 /// Reject a native SOL buy whose payout would leave its wallet under the
@@ -340,7 +354,10 @@ mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-        solana_sdk::{account::create_account_for_test, program_pack::Pack},
+        solana_sdk::{
+            account::{Account, create_account_for_test},
+            program_pack::Pack,
+        },
         solana_testlib::{
             account_json,
             classic_mint,
@@ -406,8 +423,9 @@ mod tests {
 
     /// The account read answers the recipient, its associated token account,
     /// the buy mint, then the rent sysvar. The payout lands in a recipient
-    /// that is a token account of the mint, or else in the associated token
-    /// account. A missing associated token account owes the mint's rent at
+    /// that is an associated token account of the mint, or else in the
+    /// associated token account. A missing associated token account owes the
+    /// mint's rent at
     /// the cluster's rent; lamports already at its address pay part of it,
     /// or all of it.
     #[tokio::test]
@@ -428,6 +446,8 @@ mod tests {
             ..Default::default()
         });
         let token_account = token_account_json(&mint, &owner);
+        let receiver_owner = Pubkey::new_unique();
+        let receiver_ata = associated_token_account(&receiver_owner, &mint, TokenProgram::SplToken);
         let classic = account_json(&classic_mint(6));
         let token_2022 = account_json(&token_2022_mint(&[], |_| {}));
         let rent = account_json(&create_account_for_test(&mainnet_rent()));
@@ -470,8 +490,12 @@ mod tests {
                 max_ata_rent(&mainnet_rent()),
             ),
             (
-                Some(receiver),
-                [token_account.clone(), null.clone(), classic.clone()],
+                Some(receiver_ata),
+                [
+                    token_account_json(&mint, &receiver_owner),
+                    null.clone(),
+                    classic.clone(),
+                ],
                 TokenProgram::SplToken,
                 0,
             ),
@@ -525,7 +549,9 @@ mod tests {
     /// An account the payout cannot land in, at the recipient or at the
     /// associated token account, is refused: a frozen token account, another
     /// mint's, or anything at the associated token account's address but a
-    /// system account holding only lamports.
+    /// system account holding only lamports. So is a receiving token account
+    /// of the mint away from its owner's associated address, which the
+    /// placement cannot create idempotently.
     #[tokio::test]
     async fn an_unreceivable_buy_token_account_is_refused() {
         let (owner, mint, receiver) = (
@@ -539,6 +565,7 @@ mod tests {
             ..Default::default()
         });
         let frozen = frozen_token_account_json(&mint, &owner);
+        let auxiliary = token_account_json(&mint, &owner);
         let other_mint_account = token_account_json(&Pubkey::new_unique(), &owner);
         let system_account_with_data = account_json(&Account {
             lamports: 1_000_000_000,
@@ -559,7 +586,11 @@ mod tests {
                 [wallet.clone(), system_account_with_data, classic.clone()],
             ),
             (Some(receiver), [frozen, null.clone(), classic.clone()]),
-            (Some(receiver), [other_mint_account, null, classic]),
+            (
+                Some(receiver),
+                [other_mint_account, null.clone(), classic.clone()],
+            ),
+            (Some(receiver), [auxiliary, null, classic]),
         ] {
             let sponsoring = sponsoring(multiple_accounts_json(accounts.clone()));
             let (status, body) = buy_account_rent(

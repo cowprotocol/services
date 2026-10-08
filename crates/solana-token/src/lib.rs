@@ -225,16 +225,23 @@ fn token_2022_ata_len(mint_extensions: &[ExtensionType]) -> usize {
 }
 
 /// Whether the settlement's plain `Transfer` of `mint` lands in the token
-/// account at `account`: initialized, unfrozen, holding `mint`, and not set
-/// to refuse transfers without a memo or outside confidential balances.
+/// account at `account`, see [`receivable_token_account_owner`].
 pub fn receivable_token_account(account: &Account, mint: &Pubkey) -> bool {
-    TokenProgram::try_from(&account.owner).is_ok()
-        && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
-            state.base.state == AccountState::Initialized
-                && state.base.mint == *mint
-                && !memo_required(&state)
-                && !refuses_non_confidential_credits(&state)
-        })
+    receivable_token_account_owner(account, mint).is_some()
+}
+
+/// The owner of the token account at `account` when the settlement's plain
+/// `Transfer` of `mint` lands in it: initialized, unfrozen, holding `mint`,
+/// and not set to refuse transfers without a memo or outside confidential
+/// balances. `None` when it does not.
+pub fn receivable_token_account_owner(account: &Account, mint: &Pubkey) -> Option<Pubkey> {
+    TokenProgram::try_from(&account.owner).ok()?;
+    let state = StateWithExtensions::<TokenAccount>::unpack(&account.data).ok()?;
+    (state.base.state == AccountState::Initialized
+        && state.base.mint == *mint
+        && !memo_required(&state)
+        && !refuses_non_confidential_credits(&state))
+    .then_some(state.base.owner)
 }
 
 /// Whether the account's confidential transfer extension refuses credits to
