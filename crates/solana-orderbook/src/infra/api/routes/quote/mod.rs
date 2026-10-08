@@ -49,10 +49,7 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
-    let buy_program = match state.sponsoring() {
-        Some(sponsoring) => check_mints(sponsoring, &request).await?,
-        None => None,
-    };
+    let buy_program = check_mints(state.sponsoring(), &request).await?;
 
     let (kind, amount) = request.side.kind_and_amount();
     let order = quoter::Order {
@@ -127,29 +124,52 @@ pub async fn quote(
     }))
 }
 
-/// Reject a mint the settlement program cannot move, and return the buy
-/// mint's token program: `None` for a native SOL buy or when the read fails.
-/// The chain read goes through the sponsoring RPC client, so the check is
-/// skipped without sponsoring and when the read fails: placement and the
-/// autopilot check the mints again.
+/// Reject a mint the settlement program cannot move, and tell the buy mint's
+/// token program. The chain read goes through the sponsoring RPC client, so
+/// the check is skipped without sponsoring and when the read fails: placement
+/// and the autopilot check the mints again.
 async fn check_mints(
-    sponsoring: &Sponsoring,
+    sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
-) -> Result<Option<TokenProgram>, error::Reply> {
+) -> Result<BuyProgram, error::Reply> {
+    let Some(sponsoring) = sponsoring else {
+        return Ok(BuyProgram::new(request, None));
+    };
     let mints: Vec<Pubkey> = token_mints(request.sell_token, request.buy_token).collect();
     let lookup = sponsoring.mints.lookup(mints.iter().copied());
     match sponsoring.rpc.multiple_accounts(lookup.unread()).await {
         Ok(accounts) => {
             let verdicts = lookup.resolve(&accounts);
             ensure_settleable(&verdicts, mints)?;
-            Ok(verdicts
+            let program = verdicts
                 .get(&request.buy_token)
                 .copied()
-                .and_then(Result::ok))
+                .and_then(Result::ok);
+            Ok(BuyProgram::new(request, program))
         }
         Err(err) => {
             tracing::warn!(?err, "mint lookup failed, quoting unchecked");
-            Ok(None)
+            Ok(BuyProgram::new(request, None))
+        }
+    }
+}
+
+/// The buy mint's token program, as far as the quote's mint check knows it.
+#[derive(Clone, Copy, Debug)]
+enum BuyProgram {
+    /// A native SOL buy pays out to a wallet, not a token account.
+    Native,
+    Known(TokenProgram),
+    /// No sponsoring RPC to read the mints, or the read failed.
+    Unread,
+}
+
+impl BuyProgram {
+    fn new(request: &dto::Request, program: Option<TokenProgram>) -> Self {
+        if request.buy_token == ENCODED_NATIVE_SOL_TRANSFER {
+            Self::Native
+        } else {
+            program.map_or(Self::Unread, Self::Known)
         }
     }
 }
@@ -165,14 +185,14 @@ async fn check_mints(
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
-    buy_program: Option<TokenProgram>,
+    buy_program: BuyProgram,
 ) -> Result<u64, error::Reply> {
-    if request.buy_token == ENCODED_NATIVE_SOL_TRANSFER
+    if matches!(buy_program, BuyProgram::Native)
         || request.receiver.unwrap_or(request.from) == Pubkey::default()
     {
         return Ok(0);
     }
-    let (Some(sponsoring), Some(program)) = (sponsoring, buy_program) else {
+    let (Some(sponsoring), BuyProgram::Known(program)) = (sponsoring, buy_program) else {
         return Ok(max_ata_rent(&Rent::default()));
     };
     let [recipient, ata] = buy_token_account_candidates(request, program);
@@ -504,7 +524,7 @@ mod tests {
                 buy_account_rent(
                     Some(&sponsoring),
                     &request(owner, mint, receiver),
-                    Some(program)
+                    BuyProgram::Known(program)
                 )
                 .await
                 .unwrap(),
@@ -517,7 +537,7 @@ mod tests {
             buy_account_rent(
                 Some(&without_rent_sysvar),
                 &request(owner, mint, None),
-                Some(TokenProgram::SplToken)
+                BuyProgram::Known(TokenProgram::SplToken)
             )
             .await
             .unwrap(),
@@ -571,7 +591,7 @@ mod tests {
             let (status, body) = buy_account_rent(
                 Some(&sponsoring),
                 &request(owner, mint, receiver),
-                Some(TokenProgram::SplToken),
+                BuyProgram::Known(TokenProgram::SplToken),
             )
             .await
             .unwrap_err();
@@ -627,7 +647,9 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                buy_account_rent(None, &request, None).await.unwrap(),
+                buy_account_rent(None, &request, BuyProgram::new(&request, None))
+                    .await
+                    .unwrap(),
                 0,
                 "{request:?}"
             );
@@ -645,7 +667,9 @@ mod tests {
             Some(Pubkey::new_unique()),
         );
         assert_eq!(
-            buy_account_rent(None, &anonymous, None).await.unwrap(),
+            buy_account_rent(None, &anonymous, BuyProgram::Unread)
+                .await
+                .unwrap(),
             largest
         );
         let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
@@ -657,9 +681,9 @@ mod tests {
         ]));
         let failing = sponsoring(serde_json::json!("not an account list"));
         for (sponsoring, program) in [
-            (None, Some(TokenProgram::SplToken)),
-            (Some(&exists), None),
-            (Some(&failing), Some(TokenProgram::SplToken)),
+            (None, BuyProgram::Known(TokenProgram::SplToken)),
+            (Some(&exists), BuyProgram::Unread),
+            (Some(&failing), BuyProgram::Known(TokenProgram::SplToken)),
         ] {
             assert_eq!(
                 buy_account_rent(sponsoring, &request, program)
