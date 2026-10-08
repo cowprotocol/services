@@ -432,7 +432,8 @@ async fn solve_forwards_native_prices_to_the_engine() {
     let (solver, _) = solver_with_keypair(engine).await;
     let addr = spawn_server(vec![solver]).await;
     let mut request = solve_request();
-    request["nativePrices"] = serde_json::json!({ (pubkey(0x33).to_string()): "1500000000" });
+    request["tokens"] =
+        serde_json::json!({ (pubkey(0x33).to_string()): { "price": "1500000000" } });
 
     call_solve_with(addr, request).await;
 

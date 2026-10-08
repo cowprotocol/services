@@ -45,8 +45,12 @@ impl DriverCompetition {
             id: auction.id,
             deadline: chrono::Utc::now() + self.solve_deadline,
             orders: auction.orders.iter().map(dto::Order::from).collect(),
-            native_prices: if self.forward_prices {
-                auction.native_prices.clone()
+            tokens: if self.forward_prices {
+                auction
+                    .native_prices
+                    .iter()
+                    .map(|(&mint, &price)| (mint, dto::Token { price }))
+                    .collect()
             } else {
                 HashMap::new()
             },
@@ -194,7 +198,15 @@ mod tests {
                 .solve_request(&auction)
         };
 
-        assert_eq!(request(true).native_prices, auction.native_prices);
-        assert!(request(false).native_prices.is_empty());
+        assert_eq!(
+            request(true).tokens,
+            HashMap::from([(
+                Pubkey([0x11; 32]),
+                dto::Token {
+                    price: 1_000_000_000,
+                }
+            )])
+        );
+        assert!(request(false).tokens.is_empty());
     }
 }

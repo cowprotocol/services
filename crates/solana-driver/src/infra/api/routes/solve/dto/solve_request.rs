@@ -48,11 +48,21 @@ pub struct SolveRequest {
     /// Timestamp deadline for answering `/solve`.
     deadline: chrono::DateTime<chrono::Utc>,
     orders: Vec<Order>,
-    /// Lamports per 10^9 atoms of each auction token. Tokens without a price
-    /// are absent.
+    /// Reference data per auction token, keyed by mint. Tokens without a
+    /// price are absent.
     #[serde(default)]
-    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
-    native_prices: HashMap<Pubkey, u64>,
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    tokens: HashMap<Pubkey, Token>,
+}
+
+/// What the autopilot knows about an auction token.
+#[serde_as]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// Lamports per 10^9 atoms of the token.
+    #[serde_as(as = "DisplayFromStr")]
+    price: u64,
 }
 
 /// One solvable order in the auction.
@@ -156,7 +166,11 @@ impl SolveRequest {
             deadline_slot: domain::Slot(0),
             deadline: self.deadline,
             creations,
-            native_prices: self.native_prices,
+            native_prices: self
+                .tokens
+                .into_iter()
+                .map(|(mint, token)| (mint, token.price))
+                .collect(),
         })
     }
 }
@@ -199,7 +213,12 @@ mod tests {
             id: 7,
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![order()],
-            native_prices: HashMap::from([(pubkey(0x33), 1_500_000_000)]),
+            tokens: HashMap::from([(
+                pubkey(0x33),
+                Token {
+                    price: 1_500_000_000,
+                },
+            )]),
         };
         let mut expected = serde_json::json!({
             "id": 7,
@@ -222,7 +241,7 @@ mod tests {
                 "creation": "AQID",
                 "sellBalance": "500",
             }],
-            "nativePrices": {"4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4": "1500000000"},
+            "tokens": {"4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4": {"price": "1500000000"}},
         });
         assert_eq!(serde_json::to_value(&request).unwrap(), expected);
 
@@ -237,14 +256,33 @@ mod tests {
     }
 
     #[test]
-    fn native_prices_are_optional() {
+    fn tokens_are_optional() {
         let request: SolveRequest = serde_json::from_value(serde_json::json!({
             "id": 7,
             "deadline": "2026-01-01T00:00:00Z",
             "orders": [],
         }))
         .unwrap();
-        assert!(request.native_prices.is_empty());
+        assert!(request.tokens.is_empty());
+    }
+
+    #[test]
+    fn into_domain_keeps_the_token_prices() {
+        let request = SolveRequest {
+            id: 7,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
+            orders: vec![],
+            tokens: HashMap::from([(
+                pubkey(0x33),
+                Token {
+                    price: 1_500_000_000,
+                },
+            )]),
+        };
+        assert_eq!(
+            request.into_domain().unwrap().native_prices,
+            HashMap::from([(pubkey(0x33), 1_500_000_000)])
+        );
     }
 
     #[test]
@@ -257,7 +295,7 @@ mod tests {
                 creation: Some(bincode::serialize(&transaction).unwrap()),
                 ..order()
             }],
-            native_prices: HashMap::new(),
+            tokens: HashMap::new(),
         };
         let auction = request.into_domain().unwrap();
         assert_eq!(
@@ -272,7 +310,7 @@ mod tests {
             id: 0,
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![order()],
-            native_prices: HashMap::new(),
+            tokens: HashMap::new(),
         };
         let err = request
             .into_domain()
