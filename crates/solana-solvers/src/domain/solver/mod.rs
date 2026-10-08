@@ -57,8 +57,8 @@ impl<Q: Quote + Sync> Solver<Q> {
     /// of the auction still proceeds.
     ///
     /// TODO(BE-308): retry partially fillable orders at smaller amounts when
-    /// the swap undercuts the limit, like the EVM engine's `Fills`. The wire
-    /// carries no `partiallyFillable` yet.
+    /// the swap undercuts the limit, like the EVM engine's `Fills`. The
+    /// wire's `partiallyFillable` is ignored until then.
     pub async fn solve(&self, auction: &Auction) -> Vec<Solution> {
         let mut solutions = Vec::new();
         let solve_orders = async {
@@ -178,6 +178,7 @@ mod tests {
             full_sell_amount: 1_000,
             full_buy_amount: 0,
             side,
+            partially_fillable: false,
             missing_buy_token_account: false,
         }
     }
