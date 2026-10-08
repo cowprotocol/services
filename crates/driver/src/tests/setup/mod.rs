@@ -1024,6 +1024,7 @@ impl Setup {
                 ),
                 quote: self.quote,
                 quote_id: self.quote.then_some(self.quote_id),
+                fast_path: self.quote && self.quote_fast_path,
                 fee_handler: solver.fee_handler,
                 private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
