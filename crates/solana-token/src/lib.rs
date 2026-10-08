@@ -250,6 +250,7 @@ mod tests {
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
             StateWithExtensionsMut,
+            confidential_transfer::ConfidentialTransferMint,
             memo_transfer::MemoTransfer,
             mint_close_authority::MintCloseAuthority,
             permanent_delegate::PermanentDelegate,
@@ -463,6 +464,21 @@ mod tests {
             ata_rent(&token_2022_account(&Pubkey::new_unique(), &[], |_| {})),
             None
         );
+    }
+
+    /// A confidential transfer mint asks nothing of its accounts at creation —
+    /// the confidential extension is configured on each account afterwards —
+    /// so the rent stays the plain Token-2022 one, under what the largest
+    /// settleable mint needs.
+    #[test]
+    fn confidential_mints_keep_the_plain_token_2022_rent() {
+        let mint = token_2022_mint(&[ExtensionType::ConfidentialTransferMint], |mint| {
+            mint.init_extension::<ConfidentialTransferMint>(true)
+                .unwrap();
+        });
+        assert_eq!(mint_verdict(Some(&mint)), Ok(TokenProgram::Token2022));
+        assert_eq!(ata_rent(&mint), Some(2_074_080));
+        assert!(ata_rent(&mint) <= Some(max_ata_rent()));
     }
 
     /// A Token-2022 account receives the payout unless it holds another mint,
