@@ -78,9 +78,13 @@ async fn forked_mainnet_onchain_banned_user_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Place Order
+    // Place Order. Give the solver a generous deadline — on CI the forked
+    // RPC calls add enough latency that the default 200ms min_solve_time can
+    // occasionally cause the driver to miss its submission window.
     let services = Services::new(&onchain).await;
-    services.start_protocol(solver).await;
+    services
+        .start_protocol_with_min_solve_time(solver, std::time::Duration::from_secs(2))
+        .await;
 
     let result = services
         .submit_quote(&OrderQuoteRequest {
