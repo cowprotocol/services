@@ -340,7 +340,6 @@ impl SolanaRPC {
 pub struct RpcSimulateBundleTransactionResult {
     pub err: Option<UiTransactionError>,
     pub logs: Option<Vec<String>>,
-    pub units_consumed: Option<u64>,
 }
 
 /// One page of an address's transaction history.

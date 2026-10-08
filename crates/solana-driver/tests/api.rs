@@ -746,11 +746,10 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 
 /// Asserts that settling the engine's only solution costs exactly `lamports`
 /// of priority fee at an RPC price of 10_000 micro-lamports per compute unit,
-/// with the solve-time bundle simulation reporting `units` per leg.
+/// with the settle-time simulation reporting `units`.
 async fn assert_settle_priced_at(
     engine_response: serde_json::Value,
-    request: serde_json::Value,
-    units: &[u64],
+    units: u64,
     factor: f64,
     lamports: u64,
 ) {
@@ -762,15 +761,11 @@ async fn assert_settle_priced_at(
             RpcRequest::GetRecentPrioritizationFees,
             serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
         );
-        let legs: Vec<_> = units
-            .iter()
-            .map(|units| serde_json::json!({ "err": null, "logs": [], "unitsConsumed": units }))
-            .collect();
         mocks.insert(
-            SIMULATE_BUNDLE,
+            RpcRequest::SimulateTransaction,
             serde_json::json!({
                 "context": { "slot": 1 },
-                "value": { "transactionResults": legs },
+                "value": { "err": null, "logs": [], "unitsConsumed": units },
             }),
         );
         mocks.insert(
@@ -789,7 +784,7 @@ async fn assert_settle_priced_at(
         let shutdown = CancellationToken::new();
         tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
 
-        let body = call_solve_with(addr, request.clone()).await;
+        let body = call_solve(addr).await;
         let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
         let response = reqwest::Client::new()
             .post(format!("http://{addr}/mock/settle"))
@@ -815,23 +810,14 @@ async fn assert_settle_priced_at(
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_derived_compute_unit_limit() {
     let engine = engine_response(&[(42, "2000")]);
-    assert_settle_priced_at(engine, solve_request(), &[85_000], 1.2, 1_120).await;
-}
-
-/// The creation leg's units do not count: pricing it would give 610_000
-/// units, 6_100 lamports.
-#[tokio::test]
-async fn settle_derives_the_limit_from_the_settlement_leg_of_a_sponsored_bundle() {
-    let engine = engine_response(&[(42, "2000")]);
-    let units = [500_000, 85_000];
-    assert_settle_priced_at(engine, sponsored_solve_request(), &units, 1.2, 1_120).await;
+    assert_settle_priced_at(engine, 85_000, 1.2, 1_120).await;
 }
 
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_solvers_compute_unit_estimate() {
     let mut engine = engine_response(&[(42, "2000")]);
     engine["solutions"][0]["cuEstimate"] = 50_000.into();
-    assert_settle_priced_at(engine, solve_request(), &[85_000], 1.2, 500).await;
+    assert_settle_priced_at(engine, 85_000, 1.2, 500).await;
 }
 
 #[tokio::test]

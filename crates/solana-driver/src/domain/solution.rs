@@ -29,8 +29,7 @@ pub struct Solution {
     pub interactions: Vec<Instruction>,
     /// Address lookup tables the interactions assume.
     pub address_lookup_tables: Vec<Pubkey>,
-    /// The settlement's compute unit limit: the solver's estimate, else
-    /// derived from the solve-time simulation.
+    /// Optional solver estimate of total settlement compute units.
     pub cu_estimate: Option<u32>,
 }
 

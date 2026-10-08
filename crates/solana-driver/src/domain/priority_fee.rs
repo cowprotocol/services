@@ -124,7 +124,7 @@ impl PriorityFeePolicy {
 
     /// The configured percentile of the most recent slots' fees, raised to the
     /// floor. No fees at all give the floor.
-    fn compute_unit_price(&self, fees: &[RpcPrioritizationFee]) -> u64 {
+    pub(crate) fn compute_unit_price(&self, fees: &[RpcPrioritizationFee]) -> u64 {
         let prices: Vec<u64> = fees
             .iter()
             .sorted_unstable_by_key(|fee| Reverse(fee.slot))

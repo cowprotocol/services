@@ -15,9 +15,11 @@ use {
     },
     crate::infra::{blockchain::Solana, solver::Solver},
     base64::{Engine, prelude::BASE64_STANDARD},
+    cow_solana_rpc::RpcPrioritizationFee,
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
+        hash::Hash,
         instruction::InstructionError,
         pubkey::Pubkey,
         signature::Signature,
@@ -157,7 +159,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -167,10 +169,9 @@ impl Competition {
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
             match &verdict {
-                Ok(units_consumed) => tracing::info!(
+                Ok(()) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
-                    units_consumed,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -195,14 +196,6 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
-            // 0 means the node did not meter the units, not a free settlement.
-            if let Ok(Some(units)) = verdict
-                && units > 0
-            {
-                solution
-                    .cu_estimate
-                    .get_or_insert(self.priority_fee.compute_unit_limit(units));
-            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -223,35 +216,31 @@ impl Competition {
     /// creations of its orders not created on chain yet. Any failure would
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
-    /// driver could not find out. A pass returns the compute units the
-    /// settlement consumed, when the node reports them.
+    /// driver could not find out.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<Option<u64>, Error> {
+    ) -> Result<(), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
+        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
         // Without a solver `cu_estimate`, declaring the ceiling keeps the
         // runtime's lower default from failing the simulation, and makes the
         // size check count the limit instruction the settlement will carry.
-        let simulated = Solution {
-            cu_estimate: solution.cu_estimate.or(Some(MAX_COMPUTE_UNIT_LIMIT)),
-            ..solution.clone()
-        };
-        let settlement = super::Settlement::new(program_id, auction_id, orders, simulated)?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
-            .with_max_native_shortfall(self.solver.max_native_shortfall());
+            .with_max_native_shortfall(self.solver.max_native_shortfall())
+            .with_compute_unit_limit(solution.cu_estimate.unwrap_or(MAX_COMPUTE_UNIT_LIMIT));
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
-        bundle.push(resolved.unsigned()?);
+        bundle.push(resolved.unsigned(Hash::default(), 0)?);
         if let Some(size) = bundle
             .iter()
             .filter_map(encoded_size)
@@ -304,7 +293,7 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(results.last().and_then(|result| result.units_consumed))
+        Ok(())
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -482,32 +471,51 @@ impl Competition {
         // zero-timeout guard below aborts retryably when nothing remains.
         self.land_creations(&creations, deadline).await?;
 
+        // Without a solver estimate the transaction declares a limit derived
+        // from this simulation, the one closest to landing, so it simulates at
+        // the ceiling. The priority fee is paid on the whole declared limit.
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
-            .with_max_native_shortfall(self.solver.max_native_shortfall());
+            .with_max_native_shortfall(self.solver.max_native_shortfall())
+            .with_compute_unit_limit(cu_estimate.unwrap_or(MAX_COMPUTE_UNIT_LIMIT));
 
-        let (estimate, latest) =
-            tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
-                self.blockchain
-                    .latest_confirmed_blockhash()
-                    .await
-                    .map_err(Error::Rpc)
-            },)?;
+        let writable = resolved.writable_accounts()?;
+        let (fees, latest) = tokio::try_join!(
+            self.blockchain.recent_prioritization_fees(&writable),
+            self.blockchain.latest_confirmed_blockhash(),
+        )
+        .map_err(Error::Rpc)?;
+        // At the real price: the fee comes out of the payer's SOL, which can
+        // also fund native SOL payouts.
+        let simulated = resolved.unsigned(
+            latest.blockhash,
+            self.priority_fee.compute_unit_price(&fees),
+        )?;
+        if let Some(size) = observe_transaction(&simulated)
+            && size > MAX_TRANSACTION_BYTES
+        {
+            return Err(Error::TransactionTooLarge { size });
+        }
+        let units_consumed = self.simulate_settlement(&simulated).await?;
+
+        let cu_limit = cu_estimate.unwrap_or_else(|| {
+            units_consumed
+                // 0 means the node did not meter the units, not a free settlement.
+                .filter(|units| *units > 0)
+                .map_or(MAX_COMPUTE_UNIT_LIMIT, |units| {
+                    self.priority_fee.compute_unit_limit(units)
+                })
+        });
+        let estimate = self.estimate_priority_fee(&fees, cu_limit)?;
         let transaction = resolved
+            .with_compute_unit_limit(cu_limit)
             .encode(
                 self.solver.signer(),
                 latest.blockhash,
                 estimate.compute_unit_price,
             )
             .await?;
-        if let Some(size) = observe_transaction(&transaction, cu_estimate)
-            && size > MAX_TRANSACTION_BYTES
-        {
-            return Err(Error::TransactionTooLarge { size });
-        }
-
-        self.simulate_settlement(&transaction).await?;
 
         // A zero timeout still polls the send future once, which could
         // submit the transaction past the deadline, so handle it before the
@@ -632,34 +640,36 @@ impl Competition {
         Ok(())
     }
 
-    /// The priority fee for the settlement transaction, from the fees recently
-    /// paid over the accounts it writes.
-    async fn estimate_priority_fee(
+    /// The priority fee for the settlement transaction declaring
+    /// `compute_unit_limit`, from the fees recently paid over the accounts it
+    /// writes.
+    fn estimate_priority_fee(
         &self,
-        resolved: &super::settlement::ResolvedSettlement,
-        cu_estimate: Option<u32>,
+        fees: &[RpcPrioritizationFee],
+        compute_unit_limit: u32,
     ) -> Result<priority_fee::Estimate, Error> {
-        let writable = resolved.writable_accounts()?;
-        let fees = self
-            .blockchain
-            .recent_prioritization_fees(&writable)
-            .await
-            .map_err(Error::Rpc)?;
-        let estimate = self.priority_fee.estimate(&fees, cu_estimate)?;
+        let estimate = self.priority_fee.estimate(fees, Some(compute_unit_limit))?;
         metrics()
             .compute_unit_price
             .observe(estimate.compute_unit_price as f64);
+        metrics()
+            .compute_units
+            .observe(f64::from(compute_unit_limit));
         tracing::info!(
             compute_unit_price = estimate.compute_unit_price,
-            compute_unit_limit = cu_estimate,
+            compute_unit_limit,
             priority_fee_lamports = estimate.lamports,
             "priority fee estimated"
         );
         Ok(estimate)
     }
 
-    /// Simulate a settlement transaction before sending it.
-    async fn simulate_settlement(&self, transaction: &VersionedTransaction) -> Result<(), Error> {
+    /// Simulate a settlement transaction before sending it, and return the
+    /// compute units it consumed when the node reports them.
+    async fn simulate_settlement(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Option<u64>, Error> {
         tracing::debug!("simulating settlement transaction");
         let simulation = self
             .blockchain
@@ -686,7 +696,7 @@ impl Competition {
             units_consumed = simulation.units_consumed,
             "settlement simulation passed"
         );
-        Ok(())
+        Ok(simulation.units_consumed)
     }
 }
 
@@ -882,12 +892,9 @@ fn metrics() -> &'static Metrics {
     Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
-/// Record the built transaction's footprint against the per-transaction bytes,
-/// account, and compute-unit ceilings, and hand back the wire size it measured.
-fn observe_transaction(
-    transaction: &VersionedTransaction,
-    cu_estimate: Option<u32>,
-) -> Option<u64> {
+/// Record the built transaction's footprint against the per-transaction bytes
+/// and account ceilings, and hand back the wire size it measured.
+fn observe_transaction(transaction: &VersionedTransaction) -> Option<u64> {
     let metrics = metrics();
     let bytes = encoded_size(transaction);
     if let Some(bytes) = bytes {
@@ -896,9 +903,6 @@ fn observe_transaction(
     metrics
         .transaction_accounts
         .observe(account_count(transaction) as f64);
-    if let Some(cu) = cu_estimate {
-        metrics.compute_units.observe(f64::from(cu));
-    }
     bytes
 }
 
