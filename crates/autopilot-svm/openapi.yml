@@ -47,7 +47,9 @@ paths:
                 type: string
                 example: "Invalid mint"
         "404":
-          description: No estimator prices the mint within `timeout_ms`.
+          description: |
+            No estimator prices the mint within `timeout_ms`, or the lookup
+            failed.
           content:
             text/plain:
               schema:
@@ -60,13 +62,6 @@ paths:
               schema:
                 type: string
                 example: "Rate limited"
-        "500":
-          description: Internal server error.
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: "Internal error"
 components:
   schemas:
     Pubkey:

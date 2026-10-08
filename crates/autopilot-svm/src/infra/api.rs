@@ -50,9 +50,8 @@ pub async fn serve(listener: TcpListener, prices: NativePrices) -> std::io::Resu
     axum::serve(listener, app).await
 }
 
-/// Handle `GET /native_price/{mint}`: 200 with the price, 404 for a mint no
-/// estimator prices or none priced within `timeout_ms`, 429 while the sources
-/// are rate limited.
+/// Handle `GET /native_price/{mint}`: 200 with the price, 400 for a path that
+/// is no mint, 429 while the sources are rate limited, and 404 otherwise.
 async fn native_price(
     Path(mint): Path<String>,
     Query(query): Query<NativePriceQuery>,
@@ -64,7 +63,8 @@ async fn native_price(
     let budget = query.timeout_ms.map_or(Duration::MAX, |ms| {
         Duration::from_millis(ms).max(MIN_TIMEOUT)
     });
-    // EVM answers an estimator that ran out of time as no liquidity too.
+    // EVM answers an estimator that failed or ran out of time as no liquidity
+    // too.
     match tokio::time::timeout(budget, prices.price(mint))
         .await
         .unwrap_or(Ok(None))
@@ -76,7 +76,7 @@ async fn native_price(
         }
         Err(err) => {
             tracing::warn!(?err, %mint, "native price lookup failed");
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()
+            (StatusCode::NOT_FOUND, "No liquidity").into_response()
         }
     }
 }
@@ -183,16 +183,34 @@ mod tests {
         );
     }
 
-    /// The budget answers 404 before the source's own timeout would answer
-    /// 500.
+    /// A failed source answers 404 like a mint nobody prices, as EVM answers
+    /// a failed estimator.
+    #[tokio::test]
+    async fn failed_sources_answer_404() {
+        let prices = coingecko(get(|| async { StatusCode::INTERNAL_SERVER_ERROR })).await;
+        let addr = spawn(prices).await;
+
+        assert_eq!(
+            fetch(addr, &Pubkey::new_unique().to_string()).await,
+            (reqwest::StatusCode::NOT_FOUND, "No liquidity".to_owned())
+        );
+    }
+
+    /// The budget cuts a hung source short of the source's own timeout.
     #[tokio::test]
     async fn lookups_past_the_budget_answer_404() {
         let prices = coingecko(get(std::future::pending::<()>)).await;
         let addr = spawn(prices).await;
 
         let mint = Pubkey::new_unique();
+        let answer = tokio::time::timeout(
+            Duration::from_secs(1),
+            fetch(addr, &format!("{mint}?timeout_ms=1")),
+        )
+        .await
+        .expect("the budget, not the source timeout, ends the lookup");
         assert_eq!(
-            fetch(addr, &format!("{mint}?timeout_ms=1")).await,
+            answer,
             (reqwest::StatusCode::NOT_FOUND, "No liquidity".to_owned())
         );
     }
