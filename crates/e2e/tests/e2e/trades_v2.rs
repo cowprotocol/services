@@ -87,13 +87,21 @@ async fn trades_v2_endpoints(web3: Web3) {
 
     let trader2_uid = services.create_order(&order2).await.unwrap();
 
-    // Wait for all orders to be settled
+    // Wait for all orders to be settled. All three trader1 orders need to
+    // land before the pagination assertions below hold, not just the first.
     onchain.mint_block().await;
     let settlement_finished = || async {
-        let order1 = services.get_order(&trader1_uids[0]).await.unwrap();
         let order2 = services.get_order(&trader2_uid).await.unwrap();
-        !order1.metadata.executed_buy_amount.is_zero()
-            && !order2.metadata.executed_buy_amount.is_zero()
+        if order2.metadata.executed_buy_amount.is_zero() {
+            return false;
+        }
+        for uid in &trader1_uids {
+            let order = services.get_order(uid).await.unwrap();
+            if order.metadata.executed_buy_amount.is_zero() {
+                return false;
+            }
+        }
+        true
     };
     wait_for_condition(TIMEOUT, settlement_finished)
         .await

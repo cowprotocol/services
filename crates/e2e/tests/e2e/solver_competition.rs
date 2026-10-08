@@ -736,7 +736,12 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
     let config = Configuration::test_no_drivers();
     services
         .start_autopilot(
-            None,
+            // Give the mocked solvers more breathing room per auction. With the
+            // default 500ms min_solve_time, the autopilot cuts auctions faster
+            // than the solver competition for each one is observed; the wait
+            // loop below ends up repeatedly sampling in-progress auctions and
+            // can time out before catching the non-winning bid state.
+            Some(std::time::Duration::from_secs(2)),
             Configuration {
                 drivers: vec![
                     Solver::test("good_solver", good_solver_account.address()),
