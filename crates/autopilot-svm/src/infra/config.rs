@@ -183,6 +183,12 @@ pub struct Sponsoring {
     /// payer. Its pubkey must match the orderbook's `sponsoring.funder`, the
     /// fee payer pinned at placement.
     pub funder: cow_solana_signer::Config,
+    /// Most creations sent per auction for pending sponsored orders that
+    /// appear only in losing solutions, so the orders outlive their creation
+    /// blockhash. An owner gets at most one per auction. The funder pays for
+    /// each, and its order may never fill. Zero, the default, sends none.
+    #[serde(default)]
+    pub max_displaced_creations: usize,
 }
 
 /// On-chain addresses: programs and mints.
