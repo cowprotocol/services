@@ -90,12 +90,14 @@ tracing = { workspace = true }
 [dev-dependencies]
 alloy = { workspace = true, features = ["signer-mnemonic"] }
 app-data = { workspace = true, features = ["test_helpers"] }
+brotli = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 flate2 = { workspace = true }
 maplit = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
+tower = { workspace = true, features = ["util"] }
 
 [features]
 tokio-console = ["observe/tokio-console"]
