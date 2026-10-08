@@ -58,7 +58,6 @@ pub struct Config {
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
-    pub compress_solve_request: bool,
     pub auction_delta_checkpoint_interval: Duration,
 }
 
@@ -72,7 +71,6 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_winners_per_auction: value.max_winners_per_auction,
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
-            compress_solve_request: value.compress_solve_request,
             auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
@@ -573,6 +571,10 @@ impl RunLoop {
         Ok(())
     }
 
+    fn capabilities(&self) -> impl Iterator<Item = &infra::Capabilities> {
+        self.drivers.iter().map(|driver| &driver.capabilities)
+    }
+
     /// Builds the auction requests, if no drivers have opted-in to
     /// delta-auctions or if a checkpoint is due, the second request will
     /// effectively be a copy of the first.
@@ -583,23 +585,19 @@ impl RunLoop {
         let deadline = self.pick_solve_deadline();
         let trusted_tokens = self.trusted_tokens.all();
 
+        let with_brotli = full_body_needs_brotli(self.capabilities());
         let (request, delta_request) = tokio::join!(
-            solve::Request::new(
-                auction,
-                &trusted_tokens,
-                deadline,
-                self.config.compress_solve_request,
-            ),
+            solve::Request::new(auction, &trusted_tokens, deadline, with_brotli),
             async {
                 self.build_delta_request(auction, &trusted_tokens, deadline)
                     .await
             },
         );
-        Metrics::solve_request_body_size("full", request.body_size());
+        Metrics::solve_request_body_sizes("full", &request);
 
         // On checkpoint auctions the delta drivers receive the full body.
         let delta_request = delta_request.unwrap_or_else(|| request.clone());
-        Metrics::solve_request_body_size("delta", delta_request.body_size());
+        Metrics::solve_request_body_sizes("delta", &delta_request);
 
         (request, delta_request)
     }
@@ -614,7 +612,7 @@ impl RunLoop {
         let (request, delta_request) = self.build_auction_requests(auction).await;
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
-            let solve_request = if driver.supports_auction_deltas {
+            let solve_request = if driver.capabilities.auction_deltas {
                 delta_request.clone()
             } else {
                 request.clone()
@@ -666,24 +664,19 @@ impl RunLoop {
         if !self
             .drivers
             .iter()
-            .any(|driver| driver.supports_auction_deltas)
+            .any(|driver| driver.capabilities.auction_deltas)
         {
             return None;
         }
+        let with_brotli = delta_body_needs_brotli(self.capabilities());
         let previous = self
             .delta_state
             .lock()
             .unwrap()
             .advance(Instant::now(), auction)?;
         Some(
-            solve::Request::new_delta(
-                &previous,
-                auction,
-                trusted_tokens,
-                deadline,
-                self.config.compress_solve_request,
-            )
-            .await,
+            solve::Request::new_delta(&previous, auction, trusted_tokens, deadline, with_brotli)
+                .await,
         )
     }
 
@@ -934,9 +927,11 @@ struct Metrics {
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
     /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
     /// to the drivers that opted into incremental auctions. Both are equal on
-    /// checkpoint auctions and while no driver has opted in.
+    /// checkpoint auctions and while no driver has opted in. The `encoding`
+    /// label is `uncompressed` for the plain JSON and `br` for its brotli
+    /// compressed copy, which only exists while some driver accepts brotli.
     #[metric(
-        labels("kind"),
+        labels("kind", "encoding"),
         buckets(
             1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_000_000,
             3_000_000, 4_000_000
@@ -1086,12 +1081,27 @@ impl Metrics {
         });
     }
 
-    fn solve_request_body_size(kind: &str, size: usize) {
-        Self::get()
-            .solve_request_body_size
-            .with_label_values(&[kind])
-            .observe(size as f64)
+    fn solve_request_body_sizes(kind: &str, request: &solve::Request) {
+        let metric = &Self::get().solve_request_body_size;
+        metric
+            .with_label_values(&[kind, "uncompressed"])
+            .observe(request.body_size() as f64);
+        if let Some(size) = request.brotli_body_size() {
+            metric.with_label_values(&[kind, "br"]).observe(size as f64);
+        }
     }
+}
+
+/// Whether the full `/solve` body needs a brotli copy. Delta drivers receive
+/// the full body on checkpoint auctions, so any driver accepting brotli counts.
+fn full_body_needs_brotli<'a>(mut drivers: impl Iterator<Item = &'a infra::Capabilities>) -> bool {
+    drivers.any(|driver| driver.brotli)
+}
+
+/// Whether the delta `/solve` body needs a brotli copy, i.e. some driver
+/// receiving it accepts brotli.
+fn delta_body_needs_brotli<'a>(mut drivers: impl Iterator<Item = &'a infra::Capabilities>) -> bool {
+    drivers.any(|driver| driver.auction_deltas && driver.brotli)
 }
 
 /// Seconds from `from` to `to`, negative when `to` is the earlier instant.
@@ -1195,6 +1205,35 @@ mod tests {
             base_fee: Default::default(),
             observed_at: Instant::now(),
         }
+    }
+
+    fn capabilities(auction_deltas: bool, brotli: bool) -> infra::Capabilities {
+        infra::Capabilities {
+            auction_deltas,
+            brotli,
+        }
+    }
+
+    #[test]
+    fn no_brotli_copy_without_opted_in_drivers() {
+        let drivers = [capabilities(false, false), capabilities(true, false)];
+        assert!(!full_body_needs_brotli(drivers.iter()));
+        assert!(!delta_body_needs_brotli(drivers.iter()));
+    }
+
+    #[test]
+    fn full_body_compressed_for_full_auction_brotli_driver() {
+        let drivers = [capabilities(false, true), capabilities(true, false)];
+        assert!(full_body_needs_brotli(drivers.iter()));
+        assert!(!delta_body_needs_brotli(drivers.iter()));
+    }
+
+    #[test]
+    fn delta_brotli_driver_needs_both_bodies_compressed() {
+        // The delta driver receives the full body on checkpoint auctions.
+        let drivers = [capabilities(true, true), capabilities(false, false)];
+        assert!(full_body_needs_brotli(drivers.iter()));
+        assert!(delta_body_needs_brotli(drivers.iter()));
     }
 
     #[test]

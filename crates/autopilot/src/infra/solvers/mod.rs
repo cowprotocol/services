@@ -22,8 +22,29 @@ pub struct Driver {
     pub name: String,
     pub url: Url,
     pub submission_address: eth::Address,
-    pub supports_auction_deltas: bool,
+    pub capabilities: Capabilities,
     client: Client,
+}
+
+/// Optional `/solve` request features a driver opted into.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Capabilities {
+    /// Between checkpoints, receive only the difference to the previously
+    /// sent auction instead of the full auction.
+    pub auction_deltas: bool,
+    /// Receive brotli-compressed request bodies.
+    pub brotli: bool,
+}
+
+impl Capabilities {
+    /// The capabilities a configured driver opted into. Brotli additionally
+    /// requires `compress_solve_request` to be enabled.
+    pub fn new(driver: &configs::autopilot::solver::Solver, compress_solve_request: bool) -> Self {
+        Self {
+            auction_deltas: driver.supports_auction_deltas,
+            brotli: compress_solve_request && driver.supports_brotli,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -40,7 +61,7 @@ impl Driver {
         url: Url,
         name: String,
         submission_account: Account,
-        supports_auction_deltas: bool,
+        capabilities: Capabilities,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -60,7 +81,7 @@ impl Driver {
             ?name,
             ?url,
             ?submission_address,
-            supports_auction_deltas,
+            ?capabilities,
             "creating solver"
         );
 
@@ -73,12 +94,13 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
-            supports_auction_deltas,
+            capabilities,
         })
     }
 
     pub async fn solve(&self, request: solve::Request) -> Result<solve::Response> {
-        self.request_response("solve", request).await
+        self.request_response("solve", request.encoded(self.capabilities.brotli))
+            .await
     }
 
     pub async fn reveal(&self, request: reveal::Request) -> Result<reveal::Response> {
@@ -213,5 +235,128 @@ where
     fn body_to_string(&self) -> Cow<'_, str> {
         let serialized = serde_json::to_string(&self).expect("type should be JSON serializable");
         Cow::Owned(serialized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::domain,
+        alloy::primitives::Address,
+        axum::{body::Bytes, http::HeaderMap},
+        configs::autopilot::solver::Solver,
+        std::{
+            collections::HashSet,
+            sync::{Arc, Mutex},
+        },
+    };
+
+    #[test]
+    fn brotli_needs_global_switch_and_driver_opt_in() {
+        let driver = |supports_brotli| Solver {
+            supports_brotli,
+            ..Solver::test("solver", Address::ZERO)
+        };
+
+        for (compress_solve_request, supports_brotli, expected) in [
+            (false, false, false),
+            (false, true, false),
+            (true, false, false),
+            (true, true, true),
+        ] {
+            let capabilities = Capabilities::new(&driver(supports_brotli), compress_solve_request);
+            assert_eq!(
+                capabilities.brotli, expected,
+                "compress_solve_request={compress_solve_request} supports_brotli={supports_brotli}"
+            );
+        }
+    }
+
+    #[test]
+    fn auction_deltas_are_taken_from_the_driver_config() {
+        let driver = Solver {
+            supports_auction_deltas: true,
+            ..Solver::test("solver", Address::ZERO)
+        };
+        assert!(Capabilities::new(&driver, false).auction_deltas);
+    }
+
+    /// The `content-encoding` header and raw body of a `/solve` request.
+    type Received = Arc<Mutex<Option<(Option<String>, Bytes)>>>;
+
+    /// Serves `/solve` on a local port, recording the request it receives.
+    async fn mock_driver() -> (Url, Received) {
+        let received = Received::default();
+        let app = axum::Router::new().route(
+            "/solve",
+            axum::routing::post({
+                let received = Arc::clone(&received);
+                move |headers: HeaderMap, body: Bytes| async move {
+                    let encoding = headers
+                        .get(reqwest::header::CONTENT_ENCODING)
+                        .map(|value| value.to_str().unwrap().to_owned());
+                    *received.lock().unwrap() = Some((encoding, body));
+                    r#"{"solutions": []}"#
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (url, received)
+    }
+
+    async fn solve_request(with_brotli: bool) -> solve::Request {
+        let auction = domain::Auction {
+            id: 1,
+            block: 1,
+            orders: vec![],
+            prices: Default::default(),
+            surplus_capturing_jit_order_owners: vec![],
+        };
+        solve::Request::new(&auction, &HashSet::new(), chrono::Utc::now(), with_brotli).await
+    }
+
+    /// Sends a `/solve` request built with a brotli copy to a driver with
+    /// the given capability and returns what the driver received.
+    async fn send(brotli: bool) -> (Option<String>, Bytes) {
+        let (url, received) = mock_driver().await;
+        let driver = Driver::try_new(
+            url,
+            "solver".to_owned(),
+            Account::Address(Address::ZERO),
+            Capabilities {
+                auction_deltas: false,
+                brotli,
+            },
+        )
+        .await
+        .unwrap();
+
+        driver.solve(solve_request(true).await).await.unwrap();
+        received.lock().unwrap().take().unwrap()
+    }
+
+    #[tokio::test]
+    async fn opted_in_driver_receives_brotli_body() {
+        let (encoding, body) = send(true).await;
+
+        assert_eq!(encoding.as_deref(), Some("br"));
+        let mut decompressed = Vec::new();
+        brotli::BrotliDecompress(&mut body.as_ref(), &mut decompressed).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&decompressed).unwrap();
+        assert_eq!(json["kind"], "full");
+    }
+
+    #[tokio::test]
+    async fn other_drivers_receive_plain_json() {
+        let (encoding, body) = send(false).await;
+
+        assert_eq!(encoding, None);
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["kind"], "full");
     }
 }
