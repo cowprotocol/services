@@ -73,7 +73,7 @@ pub struct Settlement {
 /// [`Settlement::resolve_accounts`]: lookup tables and the setup accounts
 /// the settlement transaction requires.
 ///
-/// The transaction sets its compute budget (the solver's optional unit limit
+/// The transaction sets its compute budget (the solution's optional unit limit
 /// and the driver's unit price) and creates the missing setup accounts
 /// (buy-mint buffer PDAs, the payer's sell-mint ATAs and its wSOL ATA for
 /// native SOL buys, the orders' buy-mint ATAs), then runs `BeginSettle` (pulls
@@ -268,6 +268,12 @@ impl ResolvedSettlement {
         self
     }
 
+    /// Declare `limit` compute units in place of the solver's estimate.
+    pub(crate) fn with_compute_unit_limit(mut self, limit: u32) -> Self {
+        self.settlement.solution.cu_estimate = Some(limit);
+        self
+    }
+
     /// Build the settlement instruction list.
     fn instructions(&self) -> Result<Vec<Instruction>, Error> {
         let payer = self.payer;
@@ -311,7 +317,7 @@ impl ResolvedSettlement {
         // Start populating the instruction list.
         let mut instructions = Vec::new();
 
-        // Without a solver estimate the runtime's default limit applies.
+        // Without an estimate the runtime's default limit applies.
         if let Some(cu_limit) = self.settlement.solution.cu_estimate {
             instructions.push(ComputeBudgetInstruction::set_compute_unit_limit(cu_limit));
         }
@@ -434,11 +440,16 @@ impl ResolvedSettlement {
         Ok(signer.sign(message).await?)
     }
 
-    /// The resolved settlement as an unsigned transaction. Signatures, the
-    /// blockhash and the compute unit price are fixed-size, so it has the
-    /// signed transaction's wire size.
-    pub fn unsigned(&self) -> Result<VersionedTransaction, Error> {
-        let message = self.message(Hash::default(), 0)?;
+    /// The transaction [`encode`](Self::encode) signs, unsigned, for a
+    /// simulation that skips signature checks. Signatures, the blockhash and
+    /// the compute unit price are fixed-size, so it has the signed
+    /// transaction's wire size.
+    pub fn unsigned(
+        &self,
+        blockhash: Hash,
+        compute_unit_price: u64,
+    ) -> Result<VersionedTransaction, Error> {
+        let message = self.message(blockhash, compute_unit_price)?;
         let signatures = vec![Signature::default(); message.header.num_required_signatures.into()];
         Ok(VersionedTransaction {
             signatures,
@@ -1126,7 +1137,7 @@ mod tests {
         let settlement = test_settlement(&[order], &[trade(uid, 1_000, 2_000)]).unwrap();
         let resolved = resolve_for_test(settlement, signer.pubkey());
 
-        let unsigned = resolved.unsigned().unwrap();
+        let unsigned = resolved.unsigned(Hash::default(), 0).unwrap();
         let signed = resolved
             .encode(&signer, Hash::new_unique(), 1_500)
             .await

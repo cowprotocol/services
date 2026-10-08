@@ -47,6 +47,13 @@ pub async fn load(path: &Path) -> Config {
         (1..=MAX_RECENT_SLOTS).contains(&priority_fee.recent_slots),
         "priority-fee: recent-slots is outside 1..={MAX_RECENT_SLOTS}"
     );
+    // Under 1 the limit is below the units the settlement consumes, so it
+    // always fails.
+    assert!(
+        priority_fee.compute_unit_limit_factor.is_finite()
+            && priority_fee.compute_unit_limit_factor >= 1.0,
+        "priority-fee: compute-unit-limit-factor is not a finite number of at least 1"
+    );
     config
 }
 

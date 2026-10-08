@@ -17,14 +17,14 @@ use {
 /// transaction that declares no limit. The runtime's own default for such a
 /// transaction is lower (200k units per non-builtin instruction and 3k per
 /// builtin, up to this ceiling), so this is the conservative pick.
-const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
 
 /// The priority fee policy. Fields left out of the config take their
 /// [`Default`] value.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct PriorityFeePolicy {
     /// The percentile of the recent per-slot fees to use as the compute unit
@@ -38,6 +38,11 @@ pub struct PriorityFeePolicy {
     /// The most a transaction pays in priority fee, in lamports. A transaction
     /// over it is refused.
     pub max_priority_fee_lamports: u64,
+    /// The compute unit limit a settlement declares when its solver sent
+    /// none, as a multiple of the units its simulation consumed, at least 1,
+    /// plus a fixed allowance for one account creation. Unlike EVM gas, the
+    /// priority fee is paid on the whole limit, so the headroom costs.
+    pub compute_unit_limit_factor: f64,
 }
 
 impl Default for PriorityFeePolicy {
@@ -47,7 +52,28 @@ impl Default for PriorityFeePolicy {
             recent_slots: 50,
             min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
+            compute_unit_limit_factor: 1.1,
         }
+    }
+}
+
+/// What an idempotent ATA creation costs over its no-op: on mainnet 13_413
+/// units when it creates the account against 4_339 when the account exists.
+/// The settlement creates the payer's wSOL ATA regardless, because a native
+/// SOL settlement in flight can close it, so a simulation that found it open
+/// undercounts a transaction that lands after it closed.
+const ATA_CREATION_HEADROOM: u64 = 10_000;
+
+impl PriorityFeePolicy {
+    /// The compute unit limit for a settlement whose simulation consumed
+    /// `units`.
+    pub(crate) fn compute_unit_limit(&self, units: u64) -> u32 {
+        // Rounded, not ceiled: 85_000 × 1.1 is 93_500.00000000001 in floating
+        // point.
+        let scaled = (units as f64 * self.compute_unit_limit_factor).round() as u64;
+        u32::try_from(scaled.saturating_add(ATA_CREATION_HEADROOM))
+            .unwrap_or(u32::MAX)
+            .min(MAX_COMPUTE_UNIT_LIMIT)
     }
 }
 
@@ -73,17 +99,16 @@ pub(crate) struct OverBudget {
 impl PriorityFeePolicy {
     /// The priority fee for a transaction given the fees recently paid over its
     /// writable accounts and its compute unit limit, or the fee it would pay
-    /// when that is over the budget. An undeclared limit is priced at the
-    /// runtime's ceiling.
+    /// when that is over the budget.
     pub(crate) fn estimate(
         &self,
         fees: &[RpcPrioritizationFee],
-        compute_unit_limit: Option<u32>,
+        compute_unit_limit: u32,
     ) -> Result<Estimate, OverBudget> {
         let compute_unit_price = self.compute_unit_price(fees);
-        let limit = compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
         // Micro-lamports per unit times units, rounded up to whole lamports.
-        let lamports = (u128::from(compute_unit_price) * u128::from(limit)).div_ceil(1_000_000);
+        let lamports =
+            (u128::from(compute_unit_price) * u128::from(compute_unit_limit)).div_ceil(1_000_000);
         if lamports > u128::from(self.max_priority_fee_lamports) {
             return Err(OverBudget {
                 lamports,
@@ -98,7 +123,7 @@ impl PriorityFeePolicy {
 
     /// The configured percentile of the most recent slots' fees, raised to the
     /// floor. No fees at all give the floor.
-    fn compute_unit_price(&self, fees: &[RpcPrioritizationFee]) -> u64 {
+    pub(crate) fn compute_unit_price(&self, fees: &[RpcPrioritizationFee]) -> u64 {
         let prices: Vec<u64> = fees
             .iter()
             .sorted_unstable_by_key(|fee| Reverse(fee.slot))
@@ -137,7 +162,25 @@ mod tests {
             recent_slots: MAX_RECENT_SLOTS,
             min_compute_unit_price: 0,
             max_priority_fee_lamports: u64::MAX,
+            ..PriorityFeePolicy::default()
         }
+    }
+
+    #[test]
+    fn compute_unit_limit_scales_the_simulated_units() {
+        let policy = |toml: &str| toml::de::from_str::<PriorityFeePolicy>(toml).unwrap();
+
+        let policy_1_1 = policy("compute-unit-limit-factor = 1.1");
+        assert_eq!(policy_1_1.compute_unit_limit(85_000), 103_500);
+        assert_eq!(policy_1_1.compute_unit_limit(85_005), 103_506);
+        assert_eq!(
+            policy_1_1.compute_unit_limit(2_000_000),
+            MAX_COMPUTE_UNIT_LIMIT
+        );
+        assert_eq!(
+            policy("compute-unit-limit-factor = 1").compute_unit_limit(85_000),
+            95_000
+        );
     }
 
     /// Only the most recent slots count, whatever order the node lists them
@@ -172,19 +215,10 @@ mod tests {
     /// micro-lamport over 1 unit is 0.000001: both round up.
     #[test]
     fn lamports_round_up() {
-        let estimate = policy(50)
-            .estimate(&[fee(1, 1_500)], Some(200_001))
-            .unwrap();
+        let estimate = policy(50).estimate(&[fee(1, 1_500)], 200_001).unwrap();
         assert_eq!(estimate.lamports, 301);
-        let estimate = policy(50).estimate(&[fee(1, 1)], Some(1)).unwrap();
+        let estimate = policy(50).estimate(&[fee(1, 1)], 1).unwrap();
         assert_eq!(estimate.lamports, 1);
-    }
-
-    /// An undeclared limit is priced at the 1.4M ceiling.
-    #[test]
-    fn undeclared_limit_is_priced_at_the_ceiling() {
-        let estimate = policy(50).estimate(&[fee(1, 1_000)], None).unwrap();
-        assert_eq!(estimate.lamports, 1_400);
     }
 
     #[test]
@@ -194,7 +228,7 @@ mod tests {
             ..policy(50)
         };
         assert_eq!(
-            policy.estimate(&[fee(1, 1_500)], Some(200_000)),
+            policy.estimate(&[fee(1, 1_500)], 200_000),
             Err(OverBudget {
                 lamports: 300,
                 cap: 299
@@ -204,7 +238,7 @@ mod tests {
             max_priority_fee_lamports: 300,
             ..policy
         };
-        assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+        assert!(policy.estimate(&[fee(1, 1_500)], 200_000).is_ok());
     }
 
     #[test]

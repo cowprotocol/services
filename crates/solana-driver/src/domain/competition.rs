@@ -8,16 +8,19 @@ use {
         auction::Id,
         buy_token_accounts::BuyTokenAccountCache,
         order_uid::OrderUid,
-        priority_fee::{self, PriorityFeePolicy},
+        priority_fee::{self, MAX_COMPUTE_UNIT_LIMIT, PriorityFeePolicy},
         program_error::ProgramError,
         settlement::ResolveError,
         solution::Solution,
     },
     crate::infra::{blockchain::Solana, solver::Solver},
     base64::{Engine, prelude::BASE64_STANDARD},
+    cow_solana_rpc::{ErrorKind, RpcError, RpcPrioritizationFee, RpcResponseErrorData},
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
+        hash::Hash,
+        instruction::InstructionError,
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -227,13 +230,17 @@ impl Competition {
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
+        // Without a solver `cu_estimate`, declaring the ceiling keeps the
+        // runtime's lower default from failing the simulation, and makes the
+        // size check count the limit instruction the settlement will carry.
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
-            .with_max_native_shortfall(self.solver.max_native_shortfall());
+            .with_max_native_shortfall(self.solver.max_native_shortfall())
+            .with_compute_unit_limit(solution.cu_estimate.unwrap_or(MAX_COMPUTE_UNIT_LIMIT));
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
-        bundle.push(resolved.unsigned()?);
+        bundle.push(resolved.unsigned(Hash::default(), 0)?);
         if let Some(size) = bundle
             .iter()
             .filter_map(encoded_size)
@@ -273,13 +280,11 @@ impl Competition {
                     logs = ?result.logs,
                     "bundle simulation failed"
                 );
-                return Err(Error::SimulationFailed {
-                    program_error: result
-                        .logs
-                        .as_deref()
-                        .and_then(|logs| ProgramError::from_logs(program_id, logs)),
-                    err: err.clone(),
-                });
+                return Err(Error::simulation_failed(
+                    program_id,
+                    err.clone(),
+                    result.logs.as_deref(),
+                ));
             }
         }
         if results.len() < bundle.len() {
@@ -466,32 +471,51 @@ impl Competition {
         // zero-timeout guard below aborts retryably when nothing remains.
         self.land_creations(&creations, deadline).await?;
 
+        // Without a solver estimate the transaction declares a limit derived
+        // from this simulation, the one closest to landing, so it simulates at
+        // the ceiling. The priority fee is paid on the whole declared limit.
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
-            .with_max_native_shortfall(self.solver.max_native_shortfall());
+            .with_max_native_shortfall(self.solver.max_native_shortfall())
+            .with_compute_unit_limit(cu_estimate.unwrap_or(MAX_COMPUTE_UNIT_LIMIT));
 
-        let (estimate, latest) =
-            tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
-                self.blockchain
-                    .latest_confirmed_blockhash()
-                    .await
-                    .map_err(Error::Rpc)
-            },)?;
+        let writable = resolved.writable_accounts()?;
+        let (fees, latest) = tokio::try_join!(
+            self.blockchain.recent_prioritization_fees(&writable),
+            self.blockchain.latest_confirmed_blockhash(),
+        )
+        .map_err(Error::Rpc)?;
+        // At the real price: the fee comes out of the payer's SOL, which can
+        // also fund native SOL payouts.
+        let simulated = resolved.unsigned(
+            latest.blockhash,
+            self.priority_fee.compute_unit_price(&fees),
+        )?;
+        if let Some(size) = observe_transaction(&simulated)
+            && size > MAX_TRANSACTION_BYTES
+        {
+            return Err(Error::TransactionTooLarge { size });
+        }
+        let units_consumed = self.simulate_settlement(&simulated).await?;
+
+        let cu_limit = cu_estimate.unwrap_or_else(|| {
+            units_consumed
+                // 0 means the node did not meter the units, not a free settlement.
+                .filter(|units| *units > 0)
+                .map_or(MAX_COMPUTE_UNIT_LIMIT, |units| {
+                    self.priority_fee.compute_unit_limit(units)
+                })
+        });
+        let estimate = self.estimate_priority_fee(&fees, cu_limit)?;
         let transaction = resolved
+            .with_compute_unit_limit(cu_limit)
             .encode(
                 self.solver.signer(),
                 latest.blockhash,
                 estimate.compute_unit_price,
             )
             .await?;
-        if let Some(size) = observe_transaction(&transaction, cu_estimate)
-            && size > MAX_TRANSACTION_BYTES
-        {
-            return Err(Error::TransactionTooLarge { size });
-        }
-
-        self.simulate_settlement(&transaction).await?;
 
         // A zero timeout still polls the send future once, which could
         // submit the transaction past the deadline, so handle it before the
@@ -616,33 +640,36 @@ impl Competition {
         Ok(())
     }
 
-    /// The priority fee for the settlement transaction, from the fees recently
-    /// paid over the accounts it writes.
-    async fn estimate_priority_fee(
+    /// The priority fee for the settlement transaction declaring
+    /// `compute_unit_limit`, from the fees recently paid over the accounts it
+    /// writes.
+    fn estimate_priority_fee(
         &self,
-        resolved: &super::settlement::ResolvedSettlement,
-        cu_estimate: Option<u32>,
+        fees: &[RpcPrioritizationFee],
+        compute_unit_limit: u32,
     ) -> Result<priority_fee::Estimate, Error> {
-        let writable = resolved.writable_accounts()?;
-        let fees = self
-            .blockchain
-            .recent_prioritization_fees(&writable)
-            .await
-            .map_err(Error::Rpc)?;
-        let estimate = self.priority_fee.estimate(&fees, cu_estimate)?;
+        let estimate = self.priority_fee.estimate(fees, compute_unit_limit)?;
         metrics()
             .compute_unit_price
             .observe(estimate.compute_unit_price as f64);
+        metrics()
+            .compute_units
+            .observe(f64::from(compute_unit_limit));
         tracing::info!(
             compute_unit_price = estimate.compute_unit_price,
+            compute_unit_limit,
             priority_fee_lamports = estimate.lamports,
             "priority fee estimated"
         );
         Ok(estimate)
     }
 
-    /// Simulate a settlement transaction before sending it.
-    async fn simulate_settlement(&self, transaction: &VersionedTransaction) -> Result<(), Error> {
+    /// Simulate a settlement transaction before sending it, and return the
+    /// compute units it consumed when the node reports them.
+    async fn simulate_settlement(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Option<u64>, Error> {
         tracing::debug!("simulating settlement transaction");
         let simulation = self
             .blockchain
@@ -659,16 +686,17 @@ impl Competition {
                 message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
             );
-            return Err(Error::SimulationFailed {
-                program_error: simulation
-                    .logs
-                    .as_deref()
-                    .and_then(|logs| ProgramError::from_logs(self.blockchain.program_id(), logs)),
-                err: err.clone(),
-            });
+            return Err(Error::simulation_failed(
+                self.blockchain.program_id(),
+                err.clone(),
+                simulation.logs.as_deref(),
+            ));
         }
-        tracing::debug!("settlement simulation passed");
-        Ok(())
+        tracing::debug!(
+            units_consumed = simulation.units_consumed,
+            "settlement simulation passed"
+        );
+        Ok(simulation.units_consumed)
     }
 }
 
@@ -773,6 +801,8 @@ pub(crate) enum Error {
         #[source]
         err: cow_solana_rpc::UiTransactionError,
         program_error: Option<ProgramError>,
+        /// The transaction ran out of its compute unit limit.
+        cu_exceeded: bool,
     },
     /// The solve-time simulation did not answer within its share of the
     /// auction deadline.
@@ -803,6 +833,50 @@ pub(crate) enum Error {
     TaskPanicked,
 }
 
+impl Error {
+    fn simulation_failed(
+        program_id: Pubkey,
+        err: cow_solana_rpc::UiTransactionError,
+        logs: Option<&[String]>,
+    ) -> Self {
+        Self::SimulationFailed {
+            program_error: logs.and_then(|logs| ProgramError::from_logs(program_id, logs)),
+            cu_exceeded: compute_units_exceeded(&err.clone().into(), logs),
+            err,
+        }
+    }
+}
+
+/// Whether a transaction failed for running out of its compute unit limit.
+fn compute_units_exceeded(err: &TransactionError, logs: Option<&[String]>) -> bool {
+    // The meter running out inside program code, a CPI callee's included,
+    // fails as `ProgramFailedToComplete` with this log line. Only a syscall
+    // or CPI charge over the limit fails as `ComputationalBudgetExceeded`.
+    matches!(
+        err,
+        TransactionError::InstructionError(_, InstructionError::ComputationalBudgetExceeded)
+    ) || logs.is_some_and(|logs| {
+        logs.iter()
+            .any(|log| log.contains("exceeded CUs meter at BPF instruction"))
+    })
+}
+
+/// Whether a sent transaction ran out of its compute unit limit, in the
+/// node's preflight simulation or on chain. Only the preflight carries logs,
+/// so on chain the meter running out inside program code is not told apart
+/// from the program's other failures.
+fn submit_exceeded_compute_units(err: &cow_solana_rpc::Error) -> bool {
+    let logs = match err.kind() {
+        ErrorKind::RpcError(RpcError::RpcResponseError {
+            data: RpcResponseErrorData::SendTransactionPreflightFailure(preflight),
+            ..
+        }) => preflight.logs.as_deref(),
+        _ => None,
+    };
+    err.get_transaction_error()
+        .is_some_and(|err| compute_units_exceeded(&err, logs))
+}
+
 /// Per-settlement observability: attempt outcomes and the built transaction's
 /// footprint against the network's per-transaction ceilings.
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -822,10 +896,11 @@ struct Metrics {
     /// loaded. The runtime caps a transaction at 64.
     #[metric(buckets(16., 24., 32., 40., 48., 56., 64., 80.))]
     transaction_accounts: prometheus::Histogram,
-    /// Solver-estimated compute-unit limit for the settlement. The maximum is
-    /// 1.4M per transaction.
+    /// The settlement's declared compute-unit limit. The maximum is 1.4M per
+    /// transaction.
     #[metric(buckets(
-        100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
+        25_000., 50_000., 75_000., 100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000.,
+        1_400_000.
     ))]
     compute_units: prometheus::Histogram,
     /// The transaction's compute unit price, in micro-lamports per unit.
@@ -837,12 +912,9 @@ fn metrics() -> &'static Metrics {
     Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
-/// Record the built transaction's footprint against the per-transaction bytes,
-/// account, and compute-unit ceilings, and hand back the wire size it measured.
-fn observe_transaction(
-    transaction: &VersionedTransaction,
-    cu_estimate: Option<u32>,
-) -> Option<u64> {
+/// Record the built transaction's footprint against the per-transaction bytes
+/// and account ceilings, and hand back the wire size it measured.
+fn observe_transaction(transaction: &VersionedTransaction) -> Option<u64> {
     let metrics = metrics();
     let bytes = encoded_size(transaction);
     if let Some(bytes) = bytes {
@@ -851,9 +923,6 @@ fn observe_transaction(
     metrics
         .transaction_accounts
         .observe(account_count(transaction) as f64);
-    if let Some(cu) = cu_estimate {
-        metrics.compute_units.observe(f64::from(cu));
-    }
     bytes
 }
 
@@ -906,8 +975,12 @@ fn error_label(error: &Error) -> &'static str {
         Error::TooManyPendingSettlements => "throttled",
         Error::Rpc(_) => "rpc_failed",
         Error::BuyTokenAccounts(_) => "rpc_failed",
+        Error::FailedToSubmit { err } if submit_exceeded_compute_units(err) => "cu_exceeded",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
+        Error::SimulationFailed {
+            cu_exceeded: true, ..
+        } => "cu_exceeded",
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::SimulationTimedOut => "simulation_timed_out",
         Error::IncompleteSimulation { .. } => "simulation_incomplete",
@@ -923,6 +996,76 @@ fn error_label(error: &Error) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A settlement that outgrew its declared compute unit limit is counted
+    /// apart from the other simulation failures.
+    #[test]
+    fn labels_an_exceeded_compute_budget() {
+        let failed = |err, log: &str| {
+            Error::simulation_failed(
+                Pubkey::new_unique(),
+                TransactionError::InstructionError(2, err).into(),
+                Some(&[log.to_string()]),
+            )
+        };
+        let jupiter = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+        assert_eq!(
+            error_label(&failed(
+                InstructionError::ProgramFailedToComplete,
+                &format!("Program {jupiter} failed: exceeded CUs meter at BPF instruction"),
+            )),
+            "cu_exceeded"
+        );
+        assert_eq!(
+            error_label(&failed(
+                InstructionError::ComputationalBudgetExceeded,
+                &format!("Program {jupiter} failed: Computational budget exceeded"),
+            )),
+            "cu_exceeded"
+        );
+        assert_eq!(
+            error_label(&failed(
+                InstructionError::ProgramFailedToComplete,
+                &format!("Program {jupiter} failed: Access violation in stack frame 5"),
+            )),
+            "simulation_failed"
+        );
+    }
+
+    /// A sent settlement that outgrew its limit counts the same way, whether
+    /// the node's preflight simulation refused it or it failed on chain.
+    #[test]
+    fn labels_a_send_that_exceeded_the_compute_budget() {
+        let on_chain = |err| Error::FailedToSubmit {
+            err: TransactionError::InstructionError(2, err).into(),
+        };
+        assert_eq!(
+            error_label(&on_chain(InstructionError::ComputationalBudgetExceeded)),
+            "cu_exceeded"
+        );
+        assert_eq!(
+            error_label(&on_chain(InstructionError::ProgramFailedToComplete)),
+            "submit_failed"
+        );
+
+        let preflight = Error::FailedToSubmit {
+            err: ErrorKind::RpcError(RpcError::RpcResponseError {
+                code: -32002,
+                message: "Transaction simulation failed".to_owned(),
+                data: RpcResponseErrorData::SendTransactionPreflightFailure(
+                    serde_json::from_value(serde_json::json!({
+                        "err": { "InstructionError": [2, "ProgramFailedToComplete"] },
+                        "logs": [
+                            "Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: exceeded CUs meter at BPF instruction"
+                        ],
+                    }))
+                    .unwrap(),
+                ),
+            })
+            .into(),
+        };
+        assert_eq!(error_label(&preflight), "cu_exceeded");
+    }
 
     /// Addresses loaded from lookup tables count toward the account lock
     /// limit like static keys.

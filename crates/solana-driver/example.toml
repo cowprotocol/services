@@ -24,6 +24,10 @@ min-compute-unit-price = 10000
 # The most a transaction pays in priority fee (price times compute unit
 # limit), in lamports. A transaction over it is refused as over budget.
 max-priority-fee-lamports = 1000000
+# The compute unit limit a settlement declares when its solver sends none, as
+# a multiple of the units its simulation consumed, at least 1, plus a fixed
+# allowance for one account creation.
+compute-unit-limit-factor = 1.1
 
 [http]
 bind-address = "0.0.0.0:8080"

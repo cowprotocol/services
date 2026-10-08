@@ -8,11 +8,7 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::{
-        client_error::ErrorKind,
-        request::MAX_MULTIPLE_ACCOUNTS,
-        response::Response,
-    },
+    solana_rpc_client_api::{request::MAX_MULTIPLE_ACCOUNTS, response::Response},
     solana_sdk::{
         account::Account,
         hash::Hash,
@@ -26,8 +22,8 @@ use {
 pub use {
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::{
-        client_error::Error,
-        request::RpcRequest,
+        client_error::{Error, ErrorKind},
+        request::{RpcError, RpcRequest, RpcResponseErrorData},
         response::{RpcPrioritizationFee, RpcSimulateTransactionResult, UiTransactionError},
     },
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
@@ -106,6 +102,23 @@ impl SolanaRPC {
                 ),
             ),
         }
+    }
+
+    /// Creates a client answering from canned per-request responses and
+    /// recording the parameters of every request it answers, for tests.
+    #[cfg(feature = "test-util")]
+    pub fn new_mock_recording(mocks: Mocks) -> (Self, RecordedRequests) {
+        let sender = mock::RecordingSender::new(mocks);
+        let requests = sender.requests();
+        let rpc = Self {
+            inner: RpcClient::new_sender(
+                sender,
+                solana_rpc_client::rpc_client::RpcClientConfig::with_commitment(
+                    CommitmentConfig::default(),
+                ),
+            ),
+        };
+        (rpc, requests)
     }
 
     /// Fetch accounts by key. Accounts that do not exist are absent from the
@@ -375,6 +388,11 @@ impl From<BlockHeight> for u64 {
     }
 }
 
+/// The requests a [`SolanaRPC::new_mock_recording`] client answered, in
+/// order, with their parameters.
+#[cfg(feature = "test-util")]
+pub type RecordedRequests = std::sync::Arc<std::sync::Mutex<Vec<(RpcRequest, serde_json::Value)>>>;
+
 #[cfg(feature = "test-util")]
 mod mock {
     use {
@@ -384,8 +402,54 @@ mod mock {
             rpc_sender::{RpcSender, RpcTransportStats},
         },
         solana_sdk::transaction::TransactionError,
-        std::{collections::VecDeque, sync::Mutex},
+        std::{
+            collections::VecDeque,
+            sync::{Arc, Mutex},
+        },
     };
+
+    /// A mock sender that records the parameters of every request it answers
+    /// from the canned responses.
+    pub struct RecordingSender {
+        inner: MockSender,
+        requests: RecordedRequests,
+    }
+
+    impl RecordingSender {
+        pub fn new(mocks: Mocks) -> Self {
+            Self {
+                inner: MockSender::new_with_mocks("mock", mocks),
+                requests: RecordedRequests::default(),
+            }
+        }
+
+        pub fn requests(&self) -> RecordedRequests {
+            Arc::clone(&self.requests)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RpcSender for RecordingSender {
+        async fn send(
+            &self,
+            request: RpcRequest,
+            params: serde_json::Value,
+        ) -> Result<serde_json::Value, Error> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push((request, params.clone()));
+            self.inner.send(request, params).await
+        }
+
+        fn get_transport_stats(&self) -> RpcTransportStats {
+            self.inner.get_transport_stats()
+        }
+
+        fn url(&self) -> String {
+            self.inner.url()
+        }
+    }
 
     /// A mock sender that fails a request with its queued transaction errors
     /// before answering it from the canned responses.
