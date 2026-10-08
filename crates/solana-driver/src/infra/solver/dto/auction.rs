@@ -40,8 +40,7 @@ pub struct Auction {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
-    /// Lamports per 10^9 atoms of the token, unlike the EVM reference price's
-    /// wei per 10^18 atoms.
+    /// Lamports per 10^9 atoms of the token.
     #[serde_as(as = "DisplayFromStr")]
     pub reference_price: u64,
 }
