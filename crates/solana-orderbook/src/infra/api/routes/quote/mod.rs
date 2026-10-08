@@ -153,7 +153,9 @@ async fn check_mints(
 /// account of the `receiver`, or of `from` without one. A native SOL buy pays
 /// out to a wallet, and an anonymous quote without a `receiver` names no
 /// account to read: neither owes rent. The read goes through the sponsoring
-/// RPC client. Without it, without the buy mint's token program, or when the
+/// RPC client and fetches the buy mint along with the account candidates: the
+/// verdict cache keeps no account data, and the mint's own extensions size
+/// the rent. Without it, without the buy mint's token program, or when the
 /// read fails, the account costs the most a settleable mint can need.
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
