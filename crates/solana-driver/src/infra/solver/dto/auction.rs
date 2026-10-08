@@ -32,12 +32,10 @@ pub struct Auction {
     pub orders: Vec<Order>,
     /// Absolute deadline by which solutions must be returned.
     pub deadline: chrono::DateTime<chrono::Utc>,
-    /// The priced tokens, by mint.
     #[serde_as(as = "HashMap<DisplayFromStr, _>")]
     pub tokens: HashMap<Pubkey, Token>,
 }
 
-/// One priced auction token.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
