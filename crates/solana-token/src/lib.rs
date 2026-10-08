@@ -244,19 +244,31 @@ mod tests {
         },
     };
 
-    /// A Token-2022 mint with two fee schedules, each a rate in basis points
-    /// under a cap: `older` from epoch 0 and `newer` from `newer_epoch` on.
-    fn fee_mint(older: (u16, u64), newer_epoch: u64, newer: (u16, u64)) -> Account {
+    /// A fee schedule from `epoch` on that takes nothing.
+    fn no_fee(epoch: u64) -> TransferFee {
+        TransferFee {
+            epoch: epoch.into(),
+            ..TransferFee::default()
+        }
+    }
+
+    /// A fee schedule from `epoch` on that takes 1% of a transfer, at most
+    /// 1,000 atoms.
+    fn one_percent(epoch: u64) -> TransferFee {
+        TransferFee {
+            epoch: epoch.into(),
+            transfer_fee_basis_points: 100.into(),
+            maximum_fee: 1_000.into(),
+        }
+    }
+
+    /// A Token-2022 mint charging `older` until `newer` takes over at its
+    /// epoch.
+    fn fee_mint(older: TransferFee, newer: TransferFee) -> Account {
         token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
             let config = mint.init_extension::<TransferFeeConfig>(true).unwrap();
-            for (schedule, epoch, (basis_points, maximum_fee)) in [
-                (&mut config.older_transfer_fee, 0, older),
-                (&mut config.newer_transfer_fee, newer_epoch, newer),
-            ] {
-                schedule.epoch = epoch.into();
-                schedule.transfer_fee_basis_points = basis_points.into();
-                schedule.maximum_fee = maximum_fee.into();
-            }
+            config.older_transfer_fee = older;
+            config.newer_transfer_fee = newer;
         })
     }
 
@@ -300,15 +312,21 @@ mod tests {
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            judge(&fee_mint((0, 0), 0, (0, 0))),
+            judge(&fee_mint(no_fee(0), no_fee(0))),
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            judge(&fee_mint((0, 0), 0, (100, 0))),
+            judge(&fee_mint(
+                no_fee(0),
+                TransferFee {
+                    maximum_fee: 0.into(),
+                    ..one_percent(0)
+                }
+            )),
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            judge(&fee_mint((0, 0), 0, (100, 1_000))),
+            judge(&fee_mint(no_fee(0), one_percent(0))),
             Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
@@ -367,8 +385,8 @@ mod tests {
     /// epoch. Without the epoch both schedules count.
     #[test]
     fn a_fee_counts_while_live_or_pending() {
-        let dropped = fee_mint((100, 1_000), 10, (0, 0));
-        let scheduled = fee_mint((0, 0), 10, (100, 1_000));
+        let dropped = fee_mint(one_percent(0), no_fee(10));
+        let scheduled = fee_mint(no_fee(0), one_percent(10));
         assert_eq!(
             mint_verdict(Some(&dropped), Some(10)),
             Ok(TokenProgram::Token2022)
@@ -441,7 +459,7 @@ mod tests {
         );
         let verdicts = lookup.resolve(&HashMap::from([
             (classic, classic_mint(6)),
-            (dropped, fee_mint((100, 1_000), 10, (0, 0))),
+            (dropped, fee_mint(one_percent(0), no_fee(10))),
             (clock::ID, clock_at(10)),
         ]));
         assert_eq!(
@@ -477,7 +495,7 @@ mod tests {
         assert_eq!(
             lookup.resolve(&HashMap::from([(
                 dropped,
-                fee_mint((100, 1_000), 10, (0, 0))
+                fee_mint(one_percent(0), no_fee(10))
             )])),
             HashMap::from([(dropped, Err(UnsettleableMint::TransferFee))])
         );
