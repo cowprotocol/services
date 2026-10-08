@@ -1173,7 +1173,8 @@ async fn create_order_rejects_invalid_submissions() {
 /// A native SOL buy pays a wallet the System Program owns and leaves it
 /// rent-exempt: an account of another program is rejected, and so is a payout
 /// that can leave the wallet under the minimum. A passing order moves on to
-/// the blockhash check. The lookup answers the sell mint, then the wallet.
+/// the blockhash check. The lookup answers the sell mint, nothing for the
+/// Clock sysvar, then the wallet.
 #[tokio::test]
 async fn create_order_checks_the_native_buy_wallet() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
@@ -1226,7 +1227,7 @@ async fn create_order_checks_the_native_buy_wallet() {
             funder,
             sponsored_mocks(
                 false,
-                accounts_response(&[Some(mint_account(spl_token_interface::ID)), account]),
+                accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, account]),
             ),
         )
         .await;
@@ -1728,7 +1729,9 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
 }
 
 /// A native SOL buy lands without a buy account creation: the payout goes
-/// to the wallet itself, and creates it when the lookup finds none.
+/// to the wallet itself, and creates it when the lookup finds none. The
+/// lookup answers the sell mint, then nothing for the Clock sysvar and the
+/// wallet.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_a_native_buy() {
@@ -1749,7 +1752,7 @@ async fn solana_db_create_order_accepts_a_native_buy() {
         funder,
         sponsored_mocks(
             true,
-            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None]),
+            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, None]),
         ),
     )
     .await;

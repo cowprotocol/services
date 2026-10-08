@@ -115,11 +115,15 @@ impl Competition {
             .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
             .await
             .map_err(Error::BuyTokenAccounts)?;
-        auction
-            .orders
-            .retain(|order| !buy_token_accounts.unreceivable.contains(&order.uid));
+        auction.orders.retain(|order| {
+            if order.available().has_zero_leg() {
+                tracing::debug!(order = %order.uid, "dropping order, nothing fillable");
+                return false;
+            }
+            !buy_token_accounts.unreceivable.contains(&order.uid)
+        });
         if auction.orders.is_empty() {
-            tracing::info!("no receivable order left; skipping solving");
+            tracing::info!("no fillable order left; skipping solving");
             return Ok(Vec::new());
         }
         let solutions = self
@@ -225,7 +229,8 @@ impl Competition {
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
-            .await?;
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
         bundle.push(resolved.unsigned()?);
@@ -463,7 +468,8 @@ impl Competition {
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
-            .await?;
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
 
         let (estimate, latest) =
             tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {

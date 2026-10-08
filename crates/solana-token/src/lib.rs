@@ -8,7 +8,14 @@
 use {
     cow_settlement_interface::token_program::TokenProgram,
     moka::sync::Cache,
-    solana_sdk::{account::Account, program_pack::Pack, pubkey::Pubkey, rent::Rent},
+    solana_sdk::{
+        account::{Account, from_account},
+        clock::Clock,
+        program_pack::Pack,
+        pubkey::Pubkey,
+        rent::Rent,
+        sysvar::clock,
+    },
     spl_token_2022_interface::{
         extension::{
             BaseStateWithExtensions,
@@ -73,11 +80,13 @@ impl fmt::Display for UnsettleableMint {
 pub type MintVerdict = Result<TokenProgram, UnsettleableMint>;
 
 /// The verdict on the mint at `account`, which is `None` when the account
-/// does not exist.
+/// does not exist. A mint is refused while its fee schedule live at `epoch`
+/// charges or a charging newer schedule is pending, and without the epoch
+/// while either schedule charges.
 ///
-/// TODO(BE-344): a permanent delegate mint passes, although its issuer can
-/// move the buffer's balance of the token, retained fees included.
-pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
+/// A permanent delegate mint passes, although its issuer can move the buffer's
+/// balance of the token between settlements: PYUSD and every xStock carry one.
+pub fn mint_verdict(account: Option<&Account>, epoch: Option<u64>) -> MintVerdict {
     let Some((program, mint)) = account.and_then(|account| {
         let program = TokenProgram::try_from(&account.owner).ok()?;
         let mint = StateWithExtensions::<Mint>::unpack(&account.data).ok()?;
@@ -87,9 +96,7 @@ pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
     };
     if mint
         .get_extension::<TransferFeeConfig>()
-        .is_ok_and(|config| {
-            charges_fee(&config.older_transfer_fee) || charges_fee(&config.newer_transfer_fee)
-        })
+        .is_ok_and(|config| charges_fee(config, epoch))
     {
         Err(UnsettleableMint::TransferFee)
     } else if mint
@@ -114,12 +121,20 @@ pub fn mint_verdict(account: Option<&Account>) -> MintVerdict {
     }
 }
 
+/// Whether a transfer of the mint pays a fee at `epoch` or will once the
+/// newer schedule starts. Token-2022 applies the newer schedule from its
+/// epoch on and the older one before that, so without the epoch both count.
+fn charges_fee(config: &TransferFeeConfig, epoch: Option<u64>) -> bool {
+    let live = match epoch {
+        Some(epoch) => config.get_epoch_fee(epoch),
+        None => &config.older_transfer_fee,
+    };
+    takes_a_cut(live) || takes_a_cut(&config.newer_transfer_fee)
+}
+
 /// Whether a fee schedule takes anything from a transfer: a rate in basis
-/// points under a positive cap. Both schedules of a mint count, the newer one
-/// takes effect at a later epoch. Without the current epoch a stale older
-/// schedule cannot be told from an active one, so a mint that dropped its fee
-/// to zero stays refused while the old schedule is still on it.
-fn charges_fee(fee: &TransferFee) -> bool {
+/// points under a positive cap.
+fn takes_a_cut(fee: &TransferFee) -> bool {
     u16::from(fee.transfer_fee_basis_points) > 0 && u64::from(fee.maximum_fee) > 0
 }
 
@@ -170,17 +185,24 @@ pub struct MintLookup<'a> {
 }
 
 impl MintLookup<'_> {
-    /// The mints without a cached verdict, in first-seen order, for the
-    /// caller's chain read.
+    /// The accounts for the caller's chain read: the mints without a cached
+    /// verdict, in first-seen order, then the Clock sysvar whose epoch picks
+    /// each mint's live fee schedule. Nothing when every verdict was cached.
     pub fn unread(&self) -> impl Iterator<Item = Pubkey> + '_ {
-        self.unread.iter().copied()
+        let clock = (!self.unread.is_empty()).then_some(clock::ID);
+        self.unread.iter().copied().chain(clock)
     }
 
     /// Every mint's verdict. The unread mints are judged from `accounts`, a
-    /// mint absent from it as missing, and their verdicts are cached.
+    /// mint absent from it as missing, and their verdicts are cached. The
+    /// epoch comes from the Clock sysvar in `accounts`, if it is there.
     pub fn resolve(mut self, accounts: &HashMap<Pubkey, Account>) -> HashMap<Pubkey, MintVerdict> {
+        let epoch = accounts
+            .get(&clock::ID)
+            .and_then(from_account::<Clock, _>)
+            .map(|clock| clock.epoch);
         for mint in self.unread {
-            let verdict = mint_verdict(accounts.get(&mint));
+            let verdict = mint_verdict(accounts.get(&mint), epoch);
             self.cache.0.insert(mint, verdict);
             self.verdicts.insert(mint, verdict);
         }
@@ -256,6 +278,7 @@ fn refuses_non_confidential_credits(state: &StateWithExtensions<'_, TokenAccount
 mod tests {
     use {
         super::*,
+        solana_sdk::{account::create_account_for_test, clock::Clock},
         solana_testlib::{classic_mint, token_2022_account, token_2022_mint},
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
@@ -267,36 +290,57 @@ mod tests {
         },
     };
 
-    /// A Token-2022 mint charging `basis_points` of every transfer up to
-    /// `maximum_fee` from the next fee epoch on.
-    fn fee_mint(basis_points: u16, maximum_fee: u64) -> Account {
+    /// A fee schedule from `epoch` on that takes nothing.
+    fn no_fee(epoch: u64) -> TransferFee {
+        TransferFee {
+            epoch: epoch.into(),
+            ..TransferFee::default()
+        }
+    }
+
+    /// A fee schedule from `epoch` on that takes 1% of a transfer, at most
+    /// 1,000 atoms.
+    fn one_percent(epoch: u64) -> TransferFee {
+        TransferFee {
+            epoch: epoch.into(),
+            transfer_fee_basis_points: 100.into(),
+            maximum_fee: 1_000.into(),
+        }
+    }
+
+    /// A Token-2022 mint charging `older` until `newer` takes over at its
+    /// epoch.
+    fn fee_mint(older: TransferFee, newer: TransferFee) -> Account {
         token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
-            let fee = &mut mint
-                .init_extension::<TransferFeeConfig>(true)
-                .unwrap()
-                .newer_transfer_fee;
-            fee.transfer_fee_basis_points = basis_points.into();
-            fee.maximum_fee = maximum_fee.into();
+            let config = mint.init_extension::<TransferFeeConfig>(true).unwrap();
+            config.older_transfer_fee = older;
+            config.newer_transfer_fee = newer;
+        })
+    }
+
+    /// The Clock sysvar account at `epoch`.
+    fn clock_at(epoch: u64) -> Account {
+        create_account_for_test(&Clock {
+            epoch,
+            ..Clock::default()
         })
     }
 
     /// The program moves classic mints and Token-2022 mints whose extension
     /// settings leave the transfer whole, each under its own token program: a
     /// permanent delegate, a fee schedule taking nothing, a hook without a
-    /// program and a pausable mint while not paused. A charged fee on either
-    /// schedule, a hook program, a pause, a non-transferable mint and
-    /// frozen-by-default accounts fail it.
+    /// program and a pausable mint while not paused. A charged fee, a hook
+    /// program, a pause, a non-transferable mint and frozen-by-default
+    /// accounts fail it.
     #[test]
     fn classifies_mints_by_their_extensions() {
+        let judge = |account: &Account| mint_verdict(Some(account), Some(100));
         let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
-            mint_verdict(Some(&token_2022_mint(&[extension], init)))
+            judge(&token_2022_mint(&[extension], init))
         };
+        assert_eq!(judge(&classic_mint(6)), Ok(TokenProgram::SplToken));
         assert_eq!(
-            mint_verdict(Some(&classic_mint(6))),
-            Ok(TokenProgram::SplToken)
-        );
-        assert_eq!(
-            mint_verdict(Some(&token_2022_mint(&[], |_| {}))),
+            judge(&token_2022_mint(&[], |_| {})),
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
@@ -314,26 +358,21 @@ mod tests {
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            mint_verdict(Some(&fee_mint(0, 0))),
+            judge(&fee_mint(no_fee(0), no_fee(0))),
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            mint_verdict(Some(&fee_mint(100, 0))),
+            judge(&fee_mint(
+                no_fee(0),
+                TransferFee {
+                    maximum_fee: 0.into(),
+                    ..one_percent(0)
+                }
+            )),
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            mint_verdict(Some(&fee_mint(100, 1_000))),
-            Err(UnsettleableMint::TransferFee)
-        );
-        assert_eq!(
-            with(ExtensionType::TransferFeeConfig, |mint| {
-                let older = &mut mint
-                    .init_extension::<TransferFeeConfig>(true)
-                    .unwrap()
-                    .older_transfer_fee;
-                older.transfer_fee_basis_points = 100u16.into();
-                older.maximum_fee = 1_000u64.into();
-            }),
+            judge(&fee_mint(no_fee(0), one_percent(0))),
             Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
@@ -386,6 +425,40 @@ mod tests {
         );
     }
 
+    /// A mint is refused while the schedule live at the epoch charges or a
+    /// charging newer schedule is pending: a dropped fee stops counting once
+    /// its zero schedule is live, and a scheduled fee counts before its
+    /// epoch. Without the epoch both schedules count.
+    #[test]
+    fn a_fee_counts_while_live_or_pending() {
+        let dropped = fee_mint(one_percent(0), no_fee(10));
+        let scheduled = fee_mint(no_fee(0), one_percent(10));
+        assert_eq!(
+            mint_verdict(Some(&dropped), Some(10)),
+            Ok(TokenProgram::Token2022)
+        );
+        assert_eq!(
+            mint_verdict(Some(&dropped), Some(9)),
+            Err(UnsettleableMint::TransferFee)
+        );
+        assert_eq!(
+            mint_verdict(Some(&dropped), None),
+            Err(UnsettleableMint::TransferFee)
+        );
+        assert_eq!(
+            mint_verdict(Some(&scheduled), Some(9)),
+            Err(UnsettleableMint::TransferFee)
+        );
+        assert_eq!(
+            mint_verdict(Some(&scheduled), Some(10)),
+            Err(UnsettleableMint::TransferFee)
+        );
+        assert_eq!(
+            mint_verdict(Some(&scheduled), None),
+            Err(UnsettleableMint::TransferFee)
+        );
+    }
+
     /// A missing account, a token account and a mint layout under another
     /// program are no mints the program can move.
     #[test]
@@ -394,55 +467,83 @@ mod tests {
             owner: Pubkey::new_unique(),
             ..classic_mint(6)
         };
-        assert_eq!(mint_verdict(None), Err(UnsettleableMint::NotAMint));
         assert_eq!(
-            mint_verdict(Some(&token_2022_account(
-                &Pubkey::new_unique(),
-                &[],
-                |_| {}
-            ))),
+            mint_verdict(None, Some(100)),
             Err(UnsettleableMint::NotAMint)
         );
         assert_eq!(
-            mint_verdict(Some(&foreign)),
+            mint_verdict(
+                Some(&token_2022_account(&Pubkey::new_unique(), &[], |_| {})),
+                Some(100)
+            ),
+            Err(UnsettleableMint::NotAMint)
+        );
+        assert_eq!(
+            mint_verdict(Some(&foreign), Some(100)),
             Err(UnsettleableMint::NotAMint)
         );
     }
 
-    /// The second lookup reads only the mint the first one did not judge:
-    /// the cached verdicts stand without an account, and a mint missing from
-    /// the accounts handed in is judged missing.
+    /// A lookup reads the mints without a cached verdict and the Clock
+    /// sysvar after them, whose epoch judges a dropped fee as gone. The
+    /// second lookup reads only the mint the first one did not judge: the
+    /// cached verdicts stand without an account, and a mint missing from the
+    /// accounts handed in is judged missing. A lookup with every verdict
+    /// cached reads nothing.
     #[test]
-    fn a_lookup_reads_only_the_mints_without_a_cached_verdict() {
+    fn a_lookup_reads_the_clock_with_the_mints_without_a_cached_verdict() {
         let cache = MintVerdicts::default();
-        let (classic, fee, absent) = (
+        let (classic, dropped, absent) = (
             Pubkey::new_unique(),
             Pubkey::new_unique(),
             Pubkey::new_unique(),
         );
-        let lookup = cache.lookup([classic, fee, classic]);
-        assert_eq!(lookup.unread().collect::<Vec<_>>(), [classic, fee]);
+        let lookup = cache.lookup([classic, dropped, classic]);
+        assert_eq!(
+            lookup.unread().collect::<Vec<_>>(),
+            [classic, dropped, clock::ID]
+        );
         let verdicts = lookup.resolve(&HashMap::from([
             (classic, classic_mint(6)),
-            (fee, fee_mint(100, 1_000)),
+            (dropped, fee_mint(one_percent(0), no_fee(10))),
+            (clock::ID, clock_at(10)),
         ]));
         assert_eq!(
             verdicts,
             HashMap::from([
                 (classic, Ok(TokenProgram::SplToken)),
-                (fee, Err(UnsettleableMint::TransferFee)),
+                (dropped, Ok(TokenProgram::Token2022)),
             ])
         );
 
-        let lookup = cache.lookup([classic, fee, absent]);
-        assert_eq!(lookup.unread().collect::<Vec<_>>(), [absent]);
+        let lookup = cache.lookup([classic, dropped, absent]);
+        assert_eq!(lookup.unread().collect::<Vec<_>>(), [absent, clock::ID]);
         assert_eq!(
             lookup.resolve(&HashMap::new()),
             HashMap::from([
                 (classic, Ok(TokenProgram::SplToken)),
-                (fee, Err(UnsettleableMint::TransferFee)),
+                (dropped, Ok(TokenProgram::Token2022)),
                 (absent, Err(UnsettleableMint::NotAMint)),
             ])
+        );
+
+        let lookup = cache.lookup([classic, dropped]);
+        assert_eq!(lookup.unread().count(), 0);
+    }
+
+    /// Without a readable clock a lookup refuses a mint while either of its
+    /// schedules charges.
+    #[test]
+    fn a_lookup_without_the_clock_refuses_either_charging_schedule() {
+        let dropped = Pubkey::new_unique();
+        let cache = MintVerdicts::default();
+        let lookup = cache.lookup([dropped]);
+        assert_eq!(
+            lookup.resolve(&HashMap::from([(
+                dropped,
+                fee_mint(one_percent(0), no_fee(10))
+            )])),
+            HashMap::from([(dropped, Err(UnsettleableMint::TransferFee))])
         );
     }
 
@@ -467,7 +568,10 @@ mod tests {
             ata_rent(rent, &token_2022_mint(&[], |_| {})),
             Some(128 + 170)
         );
-        assert_eq!(ata_rent(rent, &fee_mint(0, 0)), Some(128 + 182));
+        assert_eq!(
+            ata_rent(rent, &fee_mint(no_fee(0), no_fee(0))),
+            Some(128 + 182)
+        );
         let largest = token_2022_mint(
             &[
                 ExtensionType::TransferFeeConfig,
@@ -480,7 +584,10 @@ mod tests {
                 mint.init_extension::<PausableConfig>(true).unwrap();
             },
         );
-        assert_eq!(mint_verdict(Some(&largest)), Ok(TokenProgram::Token2022));
+        assert_eq!(
+            mint_verdict(Some(&largest), None),
+            Ok(TokenProgram::Token2022)
+        );
         assert_eq!(ata_rent(rent, &largest), Some(max_ata_rent(rent)));
         assert_eq!(max_ata_rent(rent), 128 + 191);
         assert_eq!(
@@ -507,7 +614,7 @@ mod tests {
             mint.init_extension::<ConfidentialTransferMint>(true)
                 .unwrap();
         });
-        assert_eq!(mint_verdict(Some(&mint)), Ok(TokenProgram::Token2022));
+        assert_eq!(mint_verdict(Some(&mint), None), Ok(TokenProgram::Token2022));
         let rent = &rent_per_byte();
         assert_eq!(ata_rent(rent, &mint), Some(128 + 170));
         assert!(ata_rent(rent, &mint) <= Some(max_ata_rent(rent)));
