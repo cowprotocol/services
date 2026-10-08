@@ -33,6 +33,7 @@ pub struct Auction {
     pub block: i64,
     pub id: i64,
     pub deadline: i64,
+    pub fast_path_quote_id: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -121,7 +122,7 @@ pub async fn load_by_id(
     after_block: Option<i64>,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION: &str = r#"
-        SELECT id, order_uids, price_tokens, price_values, block, deadline
+        SELECT id, order_uids, price_tokens, price_values, block, deadline, fast_path_quote_id
         FROM competition_auctions
         WHERE id = $1 AND ($2::bigint IS NULL OR deadline <= $2);
     "#;

@@ -312,13 +312,13 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
     // reverted and the regular auction picked the order up instead.
     let trade = services.get_trades(&uid).await.unwrap().pop().unwrap();
     let tx_hash = trade.tx_hash.expect("settled trade has a transaction");
-    let settled_in = settled_competition(&services, tx_hash).await.auction_id;
+    let competition = settled_competition(&services, tx_hash).await;
     assert_eq!(
-        settled_in, fast_path_auction,
-        "order settled under auction {settled_in} but the fast path staged {fast_path_auction}",
+        competition.auction_id, fast_path_auction,
+        "order settled under auction {} but the fast path staged {fast_path_auction}",
+        competition.auction_id,
     );
-
-    // The fast-path auction records the quote it settled.
+    assert!(competition.fast_path, "expected a fast-path auction");
     assert_eq!(
         crate::database::fast_path_quote_id_of_auction(services.db(), fast_path_auction).await,
         Some(quote_id),
