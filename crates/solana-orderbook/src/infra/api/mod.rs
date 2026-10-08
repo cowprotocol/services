@@ -1,7 +1,7 @@
 //! HTTP API server.
 
 use {
-    super::quoter::Quoter,
+    super::{prices::NativePrices, quoter::Quoter},
     axum::{
         Router,
         http,
@@ -42,6 +42,8 @@ pub struct Api {
     pub pool: PgPool,
     /// The driver that quotes orders.
     pub quoter: Quoter,
+    /// The autopilot's native prices, which gate quotes.
+    pub prices: NativePrices,
     /// Bounds on a quoted order's `validTo`.
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
@@ -98,6 +100,7 @@ impl Api {
         let state = State::new(
             self.pool,
             self.quoter,
+            self.prices,
             self.validation,
             self.quote_expiry,
             self.sponsoring,
@@ -159,6 +162,7 @@ impl State {
     fn new(
         pool: PgPool,
         quoter: Quoter,
+        prices: NativePrices,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
         sponsoring: Option<Sponsoring>,
@@ -166,6 +170,7 @@ impl State {
         Self(Arc::new(Inner {
             pool,
             quoter,
+            prices,
             validation,
             quote_expiry,
             sponsoring,
@@ -182,6 +187,11 @@ impl State {
     /// The driver that quotes orders.
     pub fn quoter(&self) -> &Quoter {
         &self.0.quoter
+    }
+
+    /// The autopilot's native prices, which gate quotes.
+    pub fn prices(&self) -> &NativePrices {
+        &self.0.prices
     }
 
     /// Bounds on a quoted order's `validTo`.
@@ -235,6 +245,8 @@ struct Inner {
     pool: PgPool,
     /// The driver that quotes orders.
     quoter: Quoter,
+    /// The autopilot's native prices, which gate quotes.
+    prices: NativePrices,
     /// Bounds on a quoted order's `validTo`.
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.

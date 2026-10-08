@@ -5,6 +5,7 @@ pub mod api;
 pub mod config;
 pub mod db;
 pub mod observe;
+pub mod prices;
 pub mod quoter;
 
 pub use self::api::Api;

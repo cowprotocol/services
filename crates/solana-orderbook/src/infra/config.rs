@@ -76,6 +76,9 @@ pub struct Quoting {
     /// last path segment would be replaced rather than extended.
     #[serde(deserialize_with = "deserialize_urls_with_trailing_slash")]
     pub drivers: Vec<Url>,
+    /// Base URL of the autopilot, whose native price cache gates quotes: a
+    /// pair with a token no estimator prices answers `NoLiquidity`.
+    pub autopilot: Url,
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub timeout: Duration,
@@ -202,6 +205,7 @@ mod tests {
         assert_eq!(config.http.bind_address, "0.0.0.0:8080".parse().unwrap());
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
         assert_eq!(config.quoting.drivers[0].as_str(), "http://localhost:8000/");
+        assert_eq!(config.quoting.autopilot.as_str(), "http://localhost:12088/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
         assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
         assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
@@ -220,6 +224,7 @@ mod tests {
             r#"
             [quoting]
             drivers = ["http://driver/baseline"]
+            autopilot = "http://autopilot"
             "#,
         )
         .unwrap();

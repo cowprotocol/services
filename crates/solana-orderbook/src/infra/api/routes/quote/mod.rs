@@ -7,6 +7,7 @@ use {
     crate::infra::{
         api::{Sponsoring, State, ValidationParameters, error, extract},
         db,
+        prices,
         quoter,
     },
     axum::{Json, http::StatusCode},
@@ -44,23 +45,36 @@ pub async fn quote(
     }
 
     let (kind, amount) = request.side.kind_and_amount();
-    let quoted = state
-        .quoter()
-        .quote(&quoter::Order {
-            sell_token: request.sell_token,
-            buy_token: request.buy_token,
-            amount,
-            kind: match kind {
-                dto::Kind::Sell => quoter::Kind::Sell,
-                dto::Kind::Buy => quoter::Kind::Buy,
-            },
-        })
-        .await
-        // Every driver failure answers as no liquidity, the EVM mapping for
-        // estimator errors.
-        .map_err(|quoter::Error::NoQuotes| {
-            error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
-        })?;
+    let quote = async {
+        state
+            .quoter()
+            .quote(&quoter::Order {
+                sell_token: request.sell_token,
+                buy_token: request.buy_token,
+                amount,
+                kind: match kind {
+                    dto::Kind::Sell => quoter::Kind::Sell,
+                    dto::Kind::Buy => quoter::Kind::Buy,
+                },
+            })
+            .await
+            // Every driver failure answers as no liquidity, the EVM mapping for
+            // estimator errors.
+            .map_err(|quoter::Error::NoQuotes| {
+                error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
+            })
+    };
+    // An order on a token no estimator prices would sit unscored in every
+    // auction until it expires, so the quote fails before it is placed.
+    let prices = state.prices();
+    let price = |token| async move {
+        prices
+            .price(token)
+            .await
+            .map_err(|err| price_error(token, err))
+    };
+    let (quoted, _, _) =
+        futures::try_join!(quote, price(request.sell_token), price(request.buy_token))?;
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
     let expiration = now + state.quote_expiry();
@@ -111,6 +125,22 @@ pub async fn quote(
         verified: false,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// The EVM mapping of a failed native price: an unpriced or rate-limited
+/// token is no liquidity, anything else is the autopilot misbehaving.
+fn price_error(token: Pubkey, err: prices::Error) -> error::Reply {
+    match err {
+        prices::Error::NoLiquidity | prices::Error::RateLimited => error::reply(
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
+            format!("no native price for {token}"),
+        ),
+        prices::Error::Internal(err) => {
+            tracing::error!(?err, %token, "native price lookup failed");
+            error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+        }
+    }
 }
 
 /// Reject a mint the settlement program cannot move. The chain read goes
