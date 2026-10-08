@@ -16,7 +16,12 @@ use {
         token_program::TokenProgram,
     },
     database::{byte_array::ByteArray, solana::OrderKind},
-    solana_sdk::{account::from_account, pubkey::Pubkey, rent::Rent, sysvar},
+    solana_sdk::{
+        account::{Account, from_account},
+        pubkey::Pubkey,
+        rent::Rent,
+        sysvar,
+    },
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
@@ -63,6 +68,7 @@ pub async fn quote(
         state.quoter().quote(&order),
         buy_account_rent(state.sponsoring(), &request, buy_program),
     );
+    let execution_cost_lamports = execution_cost_lamports?;
     // Every driver failure answers as no liquidity, the EVM mapping for
     // estimator errors.
     let quoted = quoted.map_err(|quoter::Error::NoQuotes| {
@@ -150,27 +156,29 @@ async fn check_mints(
 
 /// The rent of the quoted order's buy token account, zero when the payout
 /// lands in an existing one: the `receiver` itself, or the associated token
-/// account of the `receiver`, or of `from` without one. A native SOL buy pays
-/// out to a wallet, and an anonymous quote without a `receiver` names no
-/// account to read: neither owes rent. The read goes through the sponsoring
-/// RPC client and fetches the buy mint and the rent sysvar along with the
-/// account candidates: the verdict cache keeps no account data, the mint's
-/// own extensions size the account, and the cluster's rent prices it. Without
-/// sponsoring, without the buy mint's token program, or when the read fails,
-/// the account costs the most a settleable mint can need at the SDK's
-/// default rent.
+/// account of the `receiver`, or of `from` without one. An account at either
+/// address that cannot take the payout is refused as `InvalidBuyTokenAccount`:
+/// the idempotent creation leaves it as is, so the order would never fill. A
+/// native SOL buy pays out to a wallet, and an anonymous quote without a
+/// `receiver` names no account to read: neither owes rent. The read goes
+/// through the sponsoring RPC client and fetches the buy mint and the rent
+/// sysvar along with the account candidates: the verdict cache keeps no
+/// account data, the mint's own extensions size the account, and the
+/// cluster's rent prices it. Without sponsoring, without the buy mint's token
+/// program, or when the read fails, the account costs the most a settleable
+/// mint can need at the SDK's default rent.
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
     buy_program: Option<TokenProgram>,
-) -> u64 {
+) -> Result<u64, error::Reply> {
     if request.buy_token == ENCODED_NATIVE_SOL_TRANSFER
         || request.receiver.unwrap_or(request.from) == Pubkey::default()
     {
-        return 0;
+        return Ok(0);
     }
     let (Some(sponsoring), Some(program)) = (sponsoring, buy_program) else {
-        return max_ata_rent(&Rent::default());
+        return Ok(max_ata_rent(&Rent::default()));
     };
     let [recipient, ata] = buy_token_account_candidates(request, program);
     let accounts = match sponsoring
@@ -181,26 +189,47 @@ async fn buy_account_rent(
         Ok(accounts) => accounts,
         Err(err) => {
             tracing::warn!(?err, "buy token account lookup failed, charging its rent");
-            return max_ata_rent(&Rent::default());
+            return Ok(max_ata_rent(&Rent::default()));
         }
     };
     let rent = accounts
         .get(&sysvar::rent::ID)
         .and_then(|account| from_account::<Rent, _>(account))
         .unwrap_or_default();
-    let receives = |key| {
-        accounts
-            .get(key)
-            .is_some_and(|account| receivable_token_account(account, &request.buy_token))
-    };
-    if receives(&recipient) || receives(&ata) {
-        0
-    } else {
-        accounts
+    let receives = |account: &Account| receivable_token_account(account, &request.buy_token);
+    match accounts.get(&recipient) {
+        Some(account) if receives(account) => return Ok(0),
+        // A token account of another mint, frozen, or refusing plain credits
+        // is no wallet whose associated token account could take the payout.
+        Some(account) if TokenProgram::try_from(&account.owner).is_ok() => {
+            return Err(invalid_buy_token_account(recipient));
+        }
+        _ => (),
+    }
+    match accounts.get(&ata) {
+        Some(account) if receives(account) => Ok(0),
+        // Only the ATA program allocates at its address, so anything there
+        // but lamports in a system account is a token account the idempotent
+        // creation leaves as is.
+        Some(account)
+            if account.owner != solana_system_interface::program::ID
+                || !account.data.is_empty() =>
+        {
+            Err(invalid_buy_token_account(ata))
+        }
+        _ => Ok(accounts
             .get(&request.buy_token)
             .and_then(|mint| ata_rent(&rent, mint))
-            .unwrap_or_else(|| max_ata_rent(&rent))
+            .unwrap_or_else(|| max_ata_rent(&rent))),
     }
+}
+
+fn invalid_buy_token_account(account: Pubkey) -> error::Reply {
+    error::reply(
+        StatusCode::BAD_REQUEST,
+        "InvalidBuyTokenAccount",
+        format!("the buy token account {account} cannot receive the payout"),
+    )
 }
 
 /// The accounts that may be the quoted order's buy token account: the
@@ -305,7 +334,7 @@ mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-        solana_sdk::account::{Account, create_account_for_test},
+        solana_sdk::{account::create_account_for_test, program_pack::Pack},
         solana_testlib::{
             account_json,
             classic_mint,
@@ -313,6 +342,7 @@ mod tests {
             token_2022_mint,
             token_account_json,
         },
+        spl_token_interface::state::{Account as TokenAccount, AccountState},
     };
 
     /// The mainnet rent since SIMD-0437, under the SDK's default.
@@ -349,12 +379,31 @@ mod tests {
         }
     }
 
+    /// A frozen token account of `mint` owned by `owner`, in the JSON shape a
+    /// `getMultipleAccounts` mock answers with.
+    fn frozen_token_account_json(mint: &Pubkey, owner: &Pubkey) -> serde_json::Value {
+        let mut data = vec![0; TokenAccount::LEN];
+        TokenAccount {
+            mint: *mint,
+            owner: *owner,
+            state: AccountState::Frozen,
+            ..TokenAccount::default()
+        }
+        .pack_into_slice(&mut data);
+        account_json(&Account {
+            lamports: 2_039_280,
+            owner: spl_token_interface::ID,
+            data,
+            ..Account::default()
+        })
+    }
+
     /// The account read answers the recipient, its associated token account,
     /// the buy mint, then the rent sysvar. The payout lands in a recipient
     /// that is a token account of the mint, or else in the associated token
     /// account. Owing the mint's rent at the cluster's rent: a missing
-    /// associated token account, a wallet holding only lamports at its
-    /// address, or another mint's account there.
+    /// associated token account, or a wallet holding only lamports at its
+    /// address.
     #[tokio::test]
     async fn a_missing_buy_token_account_owes_its_rent() {
         let (owner, mint, receiver) = (
@@ -368,7 +417,6 @@ mod tests {
             ..Default::default()
         });
         let token_account = token_account_json(&mint, &owner);
-        let other_mint_account = token_account_json(&Pubkey::new_unique(), &owner);
         let classic = account_json(&classic_mint(6));
         let token_2022 = account_json(&token_2022_mint(&[], |_| {}));
         let rent = account_json(&create_account_for_test(&mainnet_rent()));
@@ -395,12 +443,6 @@ mod tests {
             (
                 None,
                 [wallet.clone(), wallet.clone(), classic.clone()],
-                TokenProgram::SplToken,
-                1_488_440,
-            ),
-            (
-                None,
-                [wallet.clone(), other_mint_account.clone(), classic.clone()],
                 TokenProgram::SplToken,
                 1_488_440,
             ),
@@ -444,7 +486,8 @@ mod tests {
                     &request(owner, mint, receiver),
                     Some(program)
                 )
-                .await,
+                .await
+                .unwrap(),
                 cost,
                 "{receiver:?} {accounts:?} {program:?}"
             );
@@ -456,9 +499,62 @@ mod tests {
                 &request(owner, mint, None),
                 Some(TokenProgram::SplToken)
             )
-            .await,
+            .await
+            .unwrap(),
             2_039_280
         );
+    }
+
+    /// An account the payout cannot land in, at the recipient or at the
+    /// associated token account, is refused: a frozen token account, another
+    /// mint's, or anything at the associated token account's address but a
+    /// system account holding only lamports.
+    #[tokio::test]
+    async fn an_unreceivable_buy_token_account_is_refused() {
+        let (owner, mint, receiver) = (
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        );
+        let wallet = account_json(&Account {
+            lamports: 1_000_000_000,
+            owner: solana_system_interface::program::ID,
+            ..Default::default()
+        });
+        let frozen = frozen_token_account_json(&mint, &owner);
+        let other_mint_account = token_account_json(&Pubkey::new_unique(), &owner);
+        let system_account_with_data = account_json(&Account {
+            lamports: 1_000_000_000,
+            owner: solana_system_interface::program::ID,
+            data: vec![0; 8],
+            ..Default::default()
+        });
+        let classic = account_json(&classic_mint(6));
+        let null = serde_json::Value::Null;
+        for (receiver, accounts) in [
+            (None, [wallet.clone(), frozen.clone(), classic.clone()]),
+            (
+                None,
+                [wallet.clone(), other_mint_account.clone(), classic.clone()],
+            ),
+            (
+                None,
+                [wallet.clone(), system_account_with_data, classic.clone()],
+            ),
+            (Some(receiver), [frozen, null.clone(), classic.clone()]),
+            (Some(receiver), [other_mint_account, null, classic]),
+        ] {
+            let sponsoring = sponsoring(multiple_accounts_json(accounts.clone()));
+            let (status, body) = buy_account_rent(
+                Some(&sponsoring),
+                &request(owner, mint, receiver),
+                Some(TokenProgram::SplToken),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{receiver:?} {accounts:?}");
+            assert_eq!(body.error_type, "InvalidBuyTokenAccount");
+        }
     }
 
     #[test]
@@ -508,7 +604,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                buy_account_rent(None, &request, None).await,
+                buy_account_rent(None, &request, None).await.unwrap(),
                 0,
                 "{request:?}"
             );
@@ -527,7 +623,10 @@ mod tests {
             Pubkey::new_unique(),
             Some(Pubkey::new_unique()),
         );
-        assert_eq!(buy_account_rent(None, &anonymous, None).await, largest);
+        assert_eq!(
+            buy_account_rent(None, &anonymous, None).await.unwrap(),
+            largest
+        );
         let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
         let exists = sponsoring(multiple_accounts_json([
             serde_json::Value::Null,
@@ -540,7 +639,9 @@ mod tests {
             (Some(&failing), Some(TokenProgram::SplToken)),
         ] {
             assert_eq!(
-                buy_account_rent(sponsoring, &request, program).await,
+                buy_account_rent(sponsoring, &request, program)
+                    .await
+                    .unwrap(),
                 largest
             );
         }

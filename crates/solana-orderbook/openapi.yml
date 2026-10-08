@@ -279,7 +279,10 @@ paths:
             `validTo` is closer than the configured minimum
             (default two minutes) or further than the configured maximum
             (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
-            or a mint the settlement program cannot move (`UnsupportedToken`).
+            a mint the settlement program cannot move (`UnsupportedToken`),
+            or a buy token account that exists but cannot take the payout:
+            frozen, another mint's, or refusing plain credits
+            (`InvalidBuyTokenAccount`).
           content:
             application/json:
               schema:
