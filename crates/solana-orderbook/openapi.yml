@@ -528,10 +528,10 @@ components:
             - $ref: "#/components/schemas/Pubkey"
         receiver:
           description: >-
-            Where the proceeds land instead of `from`: an associated token
-            account of the buy mint, or a wallet, paid into its associated token
-            account for the buy mint or, for native SOL, directly. Echoed back
-            untouched.
+            Optional recipient of the proceeds, in place of `from`. Either a
+            wallet, paid into its associated token account for the buy mint (or
+            directly, for native SOL), or such an associated token account
+            itself. Echoed back untouched.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         kind:
@@ -629,16 +629,12 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         executionCostLamports:
           description: >-
-            The rent, in lamports at the cluster's rent, of the buy token
-            account when the payout cannot land in an existing one, zero when
-            it can. A Token-2022 account's rent covers the extensions the buy
-            mint requires of it. The network fee is not included. Zero for
-            native SOL buys and for anonymous quotes without a receiver.
-            Without sponsoring, or when the account cannot be read, the rent
-            of the largest account a supported mint can need at the SDK's
-            default rent. A sponsored placement creates the missing account,
-            for `from` and for a custom receiver alike, and its payer, the
-            funder or the owner, pays this rent.
+            Rent, in lamports at the cluster's rent, of the buy token account
+            when the placement must create it; zero when the payout lands in
+            an existing one, for native SOL buys, and for anonymous quotes
+            without a receiver. An upper bound when the account cannot be
+            read, without sponsoring included. The network fee is not
+            included.
           type: string
           example: "1488440"
         kind:
