@@ -18,6 +18,7 @@ use {
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
+        instruction::InstructionError,
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -196,7 +197,7 @@ impl Competition {
             {
                 solution
                     .cu_estimate
-                    .get_or_insert(self.priority_fee.compute_unit_limit_factor.limit(units));
+                    .get_or_insert(self.priority_fee.compute_unit_limit(units));
             }
             self.solutions.insert(
                 Key {
@@ -646,7 +647,7 @@ impl Competition {
             .observe(estimate.compute_unit_price as f64);
         tracing::info!(
             compute_unit_price = estimate.compute_unit_price,
-            compute_unit_limit = ?cu_estimate,
+            compute_unit_limit = cu_estimate,
             priority_fee_lamports = estimate.lamports,
             "priority fee estimated"
         );
@@ -923,6 +924,17 @@ fn error_label(error: &Error) -> &'static str {
         Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
+        Error::SimulationFailed { err, .. }
+            if matches!(
+                err.clone().into(),
+                TransactionError::InstructionError(
+                    _,
+                    InstructionError::ComputationalBudgetExceeded
+                )
+            ) =>
+        {
+            "cu_exceeded"
+        }
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::SimulationTimedOut => "simulation_timed_out",
         Error::IncompleteSimulation { .. } => "simulation_incomplete",
@@ -938,6 +950,24 @@ fn error_label(error: &Error) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A settlement that outgrew its declared compute unit limit is counted
+    /// apart from the other simulation failures.
+    #[test]
+    fn labels_an_exceeded_compute_budget() {
+        let failed = |err| Error::SimulationFailed {
+            err: TransactionError::InstructionError(2, err).into(),
+            program_error: None,
+        };
+        assert_eq!(
+            error_label(&failed(InstructionError::ComputationalBudgetExceeded)),
+            "cu_exceeded"
+        );
+        assert_eq!(
+            error_label(&failed(InstructionError::Custom(1))),
+            "simulation_failed"
+        );
+    }
 
     /// Addresses loaded from lookup tables count toward the account lock
     /// limit like static keys.

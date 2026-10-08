@@ -24,7 +24,7 @@ pub(crate) const MAX_RECENT_SLOTS: usize = 150;
 
 /// The priority fee policy. Fields left out of the config take their
 /// [`Default`] value.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
 pub struct PriorityFeePolicy {
     /// The percentile of the recent per-slot fees to use as the compute unit
@@ -42,7 +42,7 @@ pub struct PriorityFeePolicy {
     /// none, as a multiple of the units its simulation consumed, at least 1,
     /// plus a fixed allowance for one account creation. Unlike EVM gas, the
     /// priority fee is paid on the whole limit, so the headroom costs.
-    pub compute_unit_limit_factor: ComputeUnitLimitFactor,
+    pub compute_unit_limit_factor: f64,
 }
 
 impl Default for PriorityFeePolicy {
@@ -52,34 +52,7 @@ impl Default for PriorityFeePolicy {
             recent_slots: 50,
             min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
-            compute_unit_limit_factor: ComputeUnitLimitFactor(11_000),
-        }
-    }
-}
-
-const BPS: u64 = 10_000;
-
-/// A multiple of a transaction's simulated compute units, at least 1, held in
-/// basis points so the limit is exact: in floating point, 85_000 × 1.1 rounds
-/// up to 93_501.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
-#[serde(try_from = "f64")]
-pub struct ComputeUnitLimitFactor(u64);
-
-#[derive(Debug, thiserror::Error)]
-#[error("compute-unit-limit-factor must be a finite number of at least 1, got {0}")]
-pub struct InvalidComputeUnitLimitFactor(f64);
-
-impl TryFrom<f64> for ComputeUnitLimitFactor {
-    type Error = InvalidComputeUnitLimitFactor;
-
-    fn try_from(factor: f64) -> Result<Self, Self::Error> {
-        // Under 1 the limit is below the units the transaction consumes, so it
-        // always fails.
-        if factor >= 1.0 && factor.is_finite() {
-            Ok(Self((factor * BPS as f64).round() as u64))
-        } else {
-            Err(InvalidComputeUnitLimitFactor(factor))
+            compute_unit_limit_factor: 1.1,
         }
     }
 }
@@ -91,13 +64,14 @@ impl TryFrom<f64> for ComputeUnitLimitFactor {
 /// undercounts a transaction that lands after it closed.
 const ATA_CREATION_HEADROOM: u64 = 10_000;
 
-impl ComputeUnitLimitFactor {
-    pub(crate) fn limit(self, units: u64) -> u32 {
-        let limit = units
-            .saturating_mul(self.0)
-            .div_ceil(BPS)
-            .saturating_add(ATA_CREATION_HEADROOM);
-        u32::try_from(limit)
+impl PriorityFeePolicy {
+    /// The compute unit limit for a settlement whose simulation consumed
+    /// `units`.
+    pub(crate) fn compute_unit_limit(&self, units: u64) -> u32 {
+        // Rounded, not ceiled: 85_000 × 1.1 is 93_500.00000000001 in floating
+        // point.
+        let scaled = (units as f64 * self.compute_unit_limit_factor).round() as u64;
+        u32::try_from(scaled.saturating_add(ATA_CREATION_HEADROOM))
             .unwrap_or(u32::MAX)
             .min(MAX_COMPUTE_UNIT_LIMIT)
     }
@@ -194,25 +168,20 @@ mod tests {
     }
 
     #[test]
-    fn compute_unit_limit_factor_is_parsed_and_at_least_one() {
-        let parse = |toml: &str| toml::de::from_str::<PriorityFeePolicy>(toml);
-        let factor = |toml: &str| parse(toml).unwrap().compute_unit_limit_factor;
+    fn compute_unit_limit_scales_the_simulated_units() {
+        let policy = |toml: &str| toml::de::from_str::<PriorityFeePolicy>(toml).unwrap();
 
+        let policy_1_1 = policy("compute-unit-limit-factor = 1.1");
+        assert_eq!(policy_1_1.compute_unit_limit(85_000), 103_500);
+        assert_eq!(policy_1_1.compute_unit_limit(85_005), 103_506);
         assert_eq!(
-            factor("compute-unit-limit-factor = 1.1").limit(85_000),
-            103_500
-        );
-        assert_eq!(
-            factor("compute-unit-limit-factor = 1").limit(85_000),
-            95_000
-        );
-        assert_eq!(
-            factor("compute-unit-limit-factor = 1.1").limit(2_000_000),
+            policy_1_1.compute_unit_limit(2_000_000),
             MAX_COMPUTE_UNIT_LIMIT
         );
-        assert!(parse("compute-unit-limit-factor = 0.9").is_err());
-        assert!(parse("compute-unit-limit-factor = nan").is_err());
-        assert!(parse("compute-unit-limit-factor = inf").is_err());
+        assert_eq!(
+            policy("compute-unit-limit-factor = 1").compute_unit_limit(85_000),
+            95_000
+        );
     }
 
     /// Only the most recent slots count, whatever order the node lists them

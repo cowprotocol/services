@@ -14,7 +14,8 @@ use {
         pda::order::find_order_pda,
         token_program::TokenProgram,
     },
-    cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
+    cow_solana_rpc::{CommitmentConfig, Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
+    solana_compute_budget_interface::ComputeBudgetInstruction,
     solana_driver::{
         domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
         infra::{
@@ -31,6 +32,7 @@ use {
         net::SocketAddr,
         num::NonZero,
         sync::{Arc, Mutex},
+        time::Duration,
     },
     tokio_util::sync::CancellationToken,
 };
@@ -83,14 +85,19 @@ fn buy_token_account() -> Pubkey {
 /// Token mints, so that the mock RPC's answer to every account lookup,
 /// "absent", only ever reaches the token accounts. `mocks` answers the other
 /// requests.
-async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
+async fn blockchain_with(mocks: Mocks) -> Arc<Solana> {
+    let bundle_rpc = SolanaRPC::new_mock_with_mocks(mocks.clone());
+    blockchain_with_bundle_rpc(mocks, bundle_rpc).await
+}
+
+async fn blockchain_with_bundle_rpc(mut mocks: Mocks, bundle_rpc: SolanaRPC) -> Arc<Solana> {
     mocks.insert(
         RpcRequest::GetMultipleAccounts,
         multiple_accounts_json([mint_account_json(), mint_account_json()]),
     );
     let blockchain = Solana::new(
-        SolanaRPC::new_mock_with_mocks(mocks.clone()),
         SolanaRPC::new_mock_with_mocks(mocks),
+        bundle_rpc,
         cow_settlement_interface::id(),
     );
     blockchain
@@ -159,6 +166,51 @@ async fn spawn_recording_solver_engine(
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     (addr, requests)
+}
+
+/// A `simulateBundle` endpoint that passes every bundle and records the
+/// transactions of the last one it was sent.
+async fn spawn_recording_bundle_rpc() -> (SolanaRPC, Arc<Mutex<Vec<VersionedTransaction>>>) {
+    let bundle = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&bundle);
+    let app = axum::Router::new().route(
+        "/",
+        axum::routing::post(move |axum::Json(request): axum::Json<serde_json::Value>| {
+            let transactions: Vec<VersionedTransaction> = request["params"][0]
+                ["encodedTransactions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|encoded| {
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(encoded.as_str().unwrap())
+                        .unwrap();
+                    bincode::deserialize(&bytes).unwrap()
+                })
+                .collect();
+            let results = vec![serde_json::json!({ "err": null, "logs": [] }); transactions.len()];
+            *recorded.lock().unwrap() = transactions;
+            async move {
+                axum::Json(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {
+                        "context": { "slot": 1 },
+                        "value": { "transactionResults": results },
+                    },
+                }))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let rpc = SolanaRPC::new_with_timeout_and_commitment(
+        &format!("http://{addr}").parse().unwrap(),
+        Duration::from_secs(5),
+        CommitmentConfig::confirmed(),
+    );
+    (rpc, bundle)
 }
 
 /// A solver client whose on-chain identity is a freshly generated keypair,
@@ -298,12 +350,8 @@ fn response_ids(body: &serde_json::Value) -> Vec<u64> {
 /// it carries the owner-signed creation transaction.
 fn sponsored_solve_request() -> serde_json::Value {
     let mut request = solve_request();
-    let creation = VersionedTransaction {
-        signatures: vec![Signature::default()],
-        ..VersionedTransaction::default()
-    };
     request["orders"][0]["creation"] = base64::engine::general_purpose::STANDARD
-        .encode(bincode::serialize(&creation).unwrap())
+        .encode(bincode::serialize(&VersionedTransaction::default()).unwrap())
         .into();
     request
 }
@@ -655,7 +703,7 @@ async fn assert_settle_priced_at(
         let api = Api {
             priority_fee: PriorityFeePolicy {
                 max_priority_fee_lamports: budget,
-                compute_unit_limit_factor: factor.try_into().unwrap(),
+                compute_unit_limit_factor: factor,
                 ..priority_fee()
             },
             ..api_with(vec![solver], mocks).await
@@ -1040,6 +1088,40 @@ async fn solve_takes_part_every_nth_solve() {
 
     // Third solve (seq 2) takes part again, one full stride later.
     assert_eq!(solve_status(addr).await, reqwest::StatusCode::BAD_REQUEST);
+}
+
+/// Without a solver estimate the simulated settlement declares the runtime's
+/// ceiling, so its lower default cannot fail the simulation and the size
+/// check counts the limit instruction the settlement will carry.
+#[tokio::test]
+async fn solve_simulates_a_settlement_without_an_estimate_at_the_compute_unit_ceiling() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let (bundle_rpc, bundle) = spawn_recording_bundle_rpc().await;
+    let api = Api {
+        blockchain: blockchain_with_bundle_rpc(Mocks::new(), bundle_rpc).await,
+        ..api_with(vec![solver], Mocks::new()).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let body = call_solve(addr).await;
+    assert_eq!(response_ids(&body), vec![42]);
+
+    let settlement = bundle.lock().unwrap().pop().unwrap();
+    let limit = ComputeBudgetInstruction::set_compute_unit_limit(1_400_000);
+    let keys = settlement.message.static_account_keys();
+    assert!(
+        settlement
+            .message
+            .instructions()
+            .iter()
+            .any(
+                |instruction| keys[usize::from(instruction.program_id_index)] == limit.program_id
+                    && instruction.data == limit.data
+            )
+    );
 }
 
 /// The other solve tests run against a mock that cannot simulate a bundle
