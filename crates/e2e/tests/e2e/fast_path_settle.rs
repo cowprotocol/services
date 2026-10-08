@@ -906,13 +906,34 @@ async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
         .mint(*onchain.contracts().gp_settlement.address(), 100u64.eth())
         .await;
 
+    // Also give the settlement enough WETH (the buy token) to pay the user in
+    // full, so a short swap output alone can't fail the settle.
+    let [weth_funder] = onchain.make_accounts(20u64.eth()).await;
+    onchain
+        .contracts()
+        .weth
+        .deposit()
+        .from(weth_funder.address())
+        .value(sell_amount)
+        .send_and_watch()
+        .await
+        .unwrap();
+    onchain
+        .contracts()
+        .weth
+        .transfer(*onchain.contracts().gp_settlement.address(), sell_amount)
+        .from(weth_funder.address())
+        .send_and_watch()
+        .await
+        .unwrap();
+
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
     // Short exclusivity so the regular-auction fallback lands within the test
     // timeout after the fast-path settle fails.
     let exclusivity = Duration::from_secs(5);
 
-    colocation::start_driver_with_absolute_slippage(
+    colocation::start_driver_with_config_override(
         onchain.contracts(),
         vec![
             colocation::start_baseline_solver(
@@ -926,7 +947,8 @@ async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        ABSOLUTE_SLIPPAGE_WEI,
+        None,
+        Some(ABSOLUTE_SLIPPAGE_WEI),
     );
 
     let quoter = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");

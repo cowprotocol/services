@@ -1,5 +1,5 @@
 use {
-    super::{Auction, Order, order},
+    super::{Auction, NativePriceCache, Order, order},
     crate::{
         domain::{
             competition::order::{SellTokenBalance, app_data::AppData},
@@ -56,6 +56,7 @@ pub struct Utilities {
     liquidity_fetcher: infra::liquidity::Fetcher,
     tokens: tokens::Fetcher,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    native_price_cache: NativePriceCache,
 }
 
 impl std::fmt::Debug for Utilities {
@@ -139,6 +140,7 @@ impl DataAggregator {
         liquidity_fetcher: infra::liquidity::Fetcher,
         tokens: tokens::Fetcher,
         balance_fetcher: Arc<dyn BalanceFetching>,
+        native_price_cache: NativePriceCache,
     ) -> Self {
         Self {
             utilities: Arc::new(Utilities {
@@ -147,6 +149,7 @@ impl DataAggregator {
                 liquidity_fetcher,
                 tokens,
                 balance_fetcher,
+                native_price_cache,
             }),
             control: Mutex::new(ControlBlock {
                 auction_id: Default::default(),
@@ -241,6 +244,14 @@ impl Utilities {
                 .context("could not convert auction DTO to domain type")?;
             Arc::new(auction)
         };
+
+        // Record the auction's native prices for the fast path to reuse.
+        let observed_prices = auction_domain
+            .tokens()
+            .iter()
+            .filter_map(|token| token.price.map(|price| (token.address, price)))
+            .collect::<Vec<_>>();
+        self.native_price_cache.insert_many(observed_prices).await;
 
         Ok(auction_domain)
     }

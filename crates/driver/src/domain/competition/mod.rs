@@ -359,14 +359,6 @@ impl Competition {
             None => auction,
         };
 
-        // Record the auction's native prices for the fast path to reuse.
-        let observed_prices: Vec<(eth::TokenAddress, auction::Price)> = auction
-            .tokens()
-            .iter()
-            .filter_map(|token| token.price.map(|price| (token.address, price)))
-            .collect();
-        self.native_price_cache.insert_many(observed_prices).await;
-
         let liquidity = async {
             match self.solver.liquidity() {
                 solver::Liquidity::Fetch => tasks.liquidity.await,

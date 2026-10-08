@@ -132,15 +132,6 @@ pub fn start_driver(
     start_driver_with_config_override(contracts, solvers, liquidity, None, None)
 }
 
-pub fn start_driver_with_absolute_slippage(
-    contracts: &Contracts,
-    solvers: Vec<SolverEngine>,
-    liquidity: LiquidityProvider,
-    absolute_slippage: u128,
-) -> JoinHandle<()> {
-    start_driver_with_config_override(contracts, solvers, liquidity, None, Some(absolute_slippage))
-}
-
 pub fn start_driver_with_config_override(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
