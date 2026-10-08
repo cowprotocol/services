@@ -356,11 +356,19 @@ jobs:
           attempt=1
           while [ "$SECONDS" -lt "$deadline" ]; do
             echo "::group::attempt $attempt at $(date -u +%H:%M:%S)"
-            # --no-fail-fast keeps the suite going past individual failures.
+            # Bypass `just test-e2e` here because it hardcodes
+            # `--failure-output final` which conflicts with the setting we
+            # want for a flaky-hunting run. --no-fail-fast keeps a single
+            # iteration going past individual failures;
             # --failure-output immediate prints each failure (with its panic
-            # message) inline so the CI log stream has everything we need.
-            # `|| true` prevents a failed iteration from aborting the 3h loop.
-            just test-e2e local_node --no-fail-fast --failure-output immediate || true
+            # message) inline so the CI log stream has everything we need;
+            # `|| true` prevents a failed iteration from aborting the loop.
+            cargo nextest run -p e2e 'local_node' \
+              --test-threads 1 \
+              --run-ignored ignored-only \
+              --no-fail-fast \
+              --failure-output immediate \
+              || true
             echo "::endgroup::"
             attempt=$((attempt + 1))
           done
