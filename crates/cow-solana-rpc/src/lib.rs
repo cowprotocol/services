@@ -222,8 +222,8 @@ impl SolanaRPC {
     }
 
     /// Simulate a versioned transaction without sending it. The value holds
-    /// the simulation result including logs and any error, the context the
-    /// slot it ran against.
+    /// the simulation result including logs and any error; the context carries
+    /// the slot it ran against.
     pub async fn simulate_transaction(
         &self,
         transaction: &VersionedTransaction,
@@ -246,8 +246,9 @@ impl SolanaRPC {
     /// without sending them, signatures unverified and blockhashes replaced by
     /// the node's latest, so partially signed and stale transactions still
     /// simulate. The value holds one result per executed transaction, in
-    /// order, ending at the first failure; the context the slot simulated
-    /// against. A node without the Jito extension answers with an error.
+    /// order, ending at the first failure; the context carries the slot it
+    /// simulated against. A node without the Jito extension answers with an
+    /// error.
     pub async fn simulate_bundle(
         &self,
         transactions: &[VersionedTransaction],
