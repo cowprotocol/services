@@ -291,13 +291,11 @@ impl Competition {
                     logs = ?result.logs,
                     "bundle simulation failed"
                 );
-                return Err(Error::SimulationFailed {
-                    program_error: result
-                        .logs
-                        .as_deref()
-                        .and_then(|logs| ProgramError::from_logs(program_id, logs)),
-                    err: err.clone(),
-                });
+                return Err(Error::simulation_failed(
+                    program_id,
+                    err.clone(),
+                    result.logs.as_deref(),
+                ));
             }
         }
         if results.len() < bundle.len() {
@@ -678,13 +676,11 @@ impl Competition {
                 message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
             );
-            return Err(Error::SimulationFailed {
-                program_error: simulation
-                    .logs
-                    .as_deref()
-                    .and_then(|logs| ProgramError::from_logs(self.blockchain.program_id(), logs)),
-                err: err.clone(),
-            });
+            return Err(Error::simulation_failed(
+                self.blockchain.program_id(),
+                err.clone(),
+                simulation.logs.as_deref(),
+            ));
         }
         tracing::debug!(
             units_consumed = simulation.units_consumed,
@@ -795,6 +791,8 @@ pub(crate) enum Error {
         #[source]
         err: cow_solana_rpc::UiTransactionError,
         program_error: Option<ProgramError>,
+        /// The transaction ran out of its compute unit limit.
+        cu_exceeded: bool,
     },
     /// The solve-time simulation did not answer within its share of the
     /// auction deadline.
@@ -823,6 +821,31 @@ pub(crate) enum Error {
     /// The driver does not know whether the transaction reached the network.
     #[error("settle task panicked")]
     TaskPanicked,
+}
+
+impl Error {
+    fn simulation_failed(
+        program_id: Pubkey,
+        err: cow_solana_rpc::UiTransactionError,
+        logs: Option<&[String]>,
+    ) -> Self {
+        // The meter running out inside program code, a CPI callee's included,
+        // fails as `ProgramFailedToComplete` with this log line. Only a
+        // syscall or CPI charge over the limit fails as
+        // `ComputationalBudgetExceeded`.
+        let cu_exceeded = matches!(
+            err.clone().into(),
+            TransactionError::InstructionError(_, InstructionError::ComputationalBudgetExceeded)
+        ) || logs.is_some_and(|logs| {
+            logs.iter()
+                .any(|log| log.contains("exceeded CUs meter at BPF instruction"))
+        });
+        Self::SimulationFailed {
+            program_error: logs.and_then(|logs| ProgramError::from_logs(program_id, logs)),
+            err,
+            cu_exceeded,
+        }
+    }
 }
 
 /// Per-settlement observability: attempt outcomes and the built transaction's
@@ -930,17 +953,9 @@ fn error_label(error: &Error) -> &'static str {
         Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
-        Error::SimulationFailed { err, .. }
-            if matches!(
-                err.clone().into(),
-                TransactionError::InstructionError(
-                    _,
-                    InstructionError::ComputationalBudgetExceeded
-                )
-            ) =>
-        {
-            "cu_exceeded"
-        }
+        Error::SimulationFailed {
+            cu_exceeded: true, ..
+        } => "cu_exceeded",
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::SimulationTimedOut => "simulation_timed_out",
         Error::IncompleteSimulation { .. } => "simulation_incomplete",
@@ -961,16 +976,33 @@ mod tests {
     /// apart from the other simulation failures.
     #[test]
     fn labels_an_exceeded_compute_budget() {
-        let failed = |err| Error::SimulationFailed {
-            err: TransactionError::InstructionError(2, err).into(),
-            program_error: None,
+        let failed = |err, log: &str| {
+            Error::simulation_failed(
+                Pubkey::new_unique(),
+                TransactionError::InstructionError(2, err).into(),
+                Some(&[log.to_string()]),
+            )
         };
+        let jupiter = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
         assert_eq!(
-            error_label(&failed(InstructionError::ComputationalBudgetExceeded)),
+            error_label(&failed(
+                InstructionError::ProgramFailedToComplete,
+                &format!("Program {jupiter} failed: exceeded CUs meter at BPF instruction"),
+            )),
             "cu_exceeded"
         );
         assert_eq!(
-            error_label(&failed(InstructionError::Custom(1))),
+            error_label(&failed(
+                InstructionError::ComputationalBudgetExceeded,
+                &format!("Program {jupiter} failed: Computational budget exceeded"),
+            )),
+            "cu_exceeded"
+        );
+        assert_eq!(
+            error_label(&failed(
+                InstructionError::ProgramFailedToComplete,
+                &format!("Program {jupiter} failed: Access violation in stack frame 5"),
+            )),
             "simulation_failed"
         );
     }
