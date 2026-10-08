@@ -194,22 +194,25 @@ impl Auction {
                 })
                 .collect(),
             deadline: auction.deadline,
-            tokens: auction
-                .native_prices
-                .iter()
-                .map(|(&token, &reference_price)| {
-                    // Engines see native SOL buys as wSOL buys, see
-                    // `Order::new`.
-                    let mint = if token == ENCODED_NATIVE_SOL_TRANSFER {
-                        native_mint::ID
-                    } else {
-                        token
-                    };
-                    (mint, Token { reference_price })
-                })
-                .collect(),
+            tokens: tokens(&auction.native_prices),
         }
     }
+}
+
+/// Engines see native SOL buys as wSOL buys, see `Order::new`, so a native
+/// SOL price is keyed under the wSOL mint.
+fn tokens(native_prices: &HashMap<Pubkey, u64>) -> HashMap<Pubkey, Token> {
+    native_prices
+        .iter()
+        .map(|(&token, &reference_price)| {
+            let mint = if token == ENCODED_NATIVE_SOL_TRANSFER {
+                native_mint::ID
+            } else {
+                token
+            };
+            (mint, Token { reference_price })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -444,25 +447,17 @@ mod tests {
     }
 
     #[test]
-    fn a_native_sol_buy_is_priced_under_the_wsol_mint() {
-        let native_buy = domain::Order {
-            buy_token: ENCODED_NATIVE_SOL_TRANSFER,
-            ..domain_order(Side::Sell)
-        };
-        let auction = domain::Auction {
-            id: None,
-            orders: vec![native_buy],
-            deadline_slot: domain::Slot(0),
-            deadline: chrono::Utc::now(),
-            creations: HashMap::new(),
-            native_prices: HashMap::from([(ENCODED_NATIVE_SOL_TRANSFER, 1_000_000_000)]),
-        };
+    fn a_native_sol_price_is_keyed_under_the_wsol_mint() {
+        let tokens = tokens(&HashMap::from([(
+            ENCODED_NATIVE_SOL_TRANSFER,
+            1_000_000_000,
+        )]));
+        assert_eq!(tokens[&native_mint::ID].reference_price, 1_000_000_000);
+    }
 
-        let wire = Auction::new(&auction, pubkey(3), pubkey(0xaa), None, &HashSet::new());
-
-        assert_eq!(
-            wire.tokens[&wire.orders[0].buy_mint].reference_price,
-            1_000_000_000
-        );
+    #[test]
+    fn a_mint_price_keeps_its_key() {
+        let tokens = tokens(&HashMap::from([(pubkey(1), 1_500_000_000)]));
+        assert_eq!(tokens[&pubkey(1)].reference_price, 1_500_000_000);
     }
 }
