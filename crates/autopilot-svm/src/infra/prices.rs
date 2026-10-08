@@ -3,14 +3,24 @@
 use {
     crate::infra::config,
     anyhow::{Context, Result, anyhow},
-    chain_types::{ChainTypes, solana::Solana},
+    chain_types::{
+        ChainTypes,
+        solana::{NATIVE_SOL, Solana},
+    },
     cow_solana_rpc::SolanaRPC,
     futures::{StreamExt, stream},
     moka::sync::Cache,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
-    solana_sdk::{program_pack::Pack, pubkey::Pubkey},
-    spl_token_interface::state::Mint,
+    solana_sdk::pubkey::Pubkey,
+    spl_token_2022_interface::{
+        extension::{
+            BaseStateWithExtensions,
+            StateWithExtensions,
+            scaled_ui_amount::ScaledUiAmountConfig,
+        },
+        state::Mint,
+    },
     std::{
         collections::{HashMap, HashSet},
         sync::{Arc, Mutex},
@@ -47,6 +57,12 @@ const PRICES_CHUNK: usize = 20;
 /// stays bounded however many distinct mints the auctions see.
 const MAX_CACHE_SIZE: u64 = 20_000;
 
+/// How long a scaled UI amount mint stays cached: its issuer can replace the
+/// multiplier schedule, and a stale schedule misprices every atom of the mint
+/// by the change. Decimals never change, so every other mint stays until
+/// evicted.
+const MINT_TTL: Duration = Duration::from_secs(60);
+
 /// A cache capped at [`MAX_CACHE_SIZE`] entries.
 fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
     Cache::builder().max_capacity(MAX_CACHE_SIZE).build()
@@ -72,10 +88,21 @@ pub struct Inner {
     /// Fetched prices by mint. `None` records a mint no estimator prices, so
     /// unpriced mints are not refetched every cut.
     prices: Cache<Pubkey, (Instant, Option<u64>)>,
-    /// Mint decimals never change, so an entry stays until evicted.
-    decimals: Cache<Pubkey, u8>,
+    /// Read mints by read time. A scaled UI amount mint expires after
+    /// [`MINT_TTL`], the rest stay until evicted.
+    mints: Cache<Pubkey, (Instant, MintInfo)>,
     /// The tokens of the latest lookup, the set the refresher keeps fresh.
     maintained: Mutex<HashSet<Pubkey>>,
+}
+
+/// What pricing reads from a mint account.
+#[derive(Clone, Copy)]
+struct MintInfo {
+    decimals: u8,
+    /// The multiplier schedule of a mint with the scaled UI amount extension.
+    /// Such a mint displays one whole token as its multiplier's worth of
+    /// tokens.
+    scaled_ui_amount: Option<ScaledUiAmountConfig>,
 }
 
 /// One configured price source.
@@ -167,7 +194,7 @@ impl NativePrices {
             wrapped_native,
             ttl: config.ttl,
             prices: bounded(),
-            decimals: bounded(),
+            mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
         });
         let refresher = Arc::clone(&inner);
@@ -213,13 +240,19 @@ impl NativePrices {
             wrapped_native: Pubkey::default(),
             ttl: Duration::from_secs(u64::MAX),
             prices,
-            decimals: bounded(),
+            mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
         }))
     }
 }
 
 impl Inner {
+    /// Whether `token` is SOL, wrapped or native: it prices at the
+    /// denominator without a lookup.
+    fn is_sol(&self, token: &Pubkey) -> bool {
+        *token == self.wrapped_native || token.to_bytes() == NATIVE_SOL.0
+    }
+
     /// One refresher pass: refetch the maintained tokens nearing expiry, so
     /// lookups keep hitting fresh entries. A failed pass only logs, the
     /// entries then expire and the next lookup fetches inline.
@@ -251,7 +284,7 @@ impl Inner {
         let mut fetch = Vec::new();
         let now = Instant::now();
         for token in &tokens {
-            if *token == self.wrapped_native {
+            if self.is_sol(token) {
                 result.insert(*token, Solana::NATIVE_PRICE_DENOMINATOR);
                 continue;
             }
@@ -269,7 +302,7 @@ impl Inner {
             let mut maintained = self.maintained.lock().expect("maintained set poisoned");
             *maintained = tokens
                 .into_iter()
-                .filter(|token| *token != self.wrapped_native)
+                .filter(|token| !self.is_sol(token))
                 .collect();
         }
         if fetch.is_empty() {
@@ -288,14 +321,14 @@ impl Inner {
     /// Ask the sources in order for the tokens none of the earlier ones
     /// priced, and cache every verdict.
     async fn fetch_into_cache(&self, tokens: &[Pubkey]) -> Result<()> {
-        let decimals = self.decimals(tokens).await?;
+        let now = Instant::now();
+        let mints = self.mints(tokens, now).await?;
         // A token whose mint did not resolve cannot be scaled, so it counts
         // as unpriced until its entry expires.
         let (mut remaining, unpriceable): (Vec<_>, Vec<_>) = tokens
             .iter()
             .copied()
-            .partition(|token| decimals.contains_key(token));
-        let now = Instant::now();
+            .partition(|token| mints.contains_key(token));
         for token in unpriceable {
             self.prices.insert(token, (now, None));
         }
@@ -308,10 +341,7 @@ impl Inner {
             if remaining.is_empty() {
                 break;
             }
-            match source
-                .fetch(&remaining, &decimals, self.wrapped_native)
-                .await
-            {
+            match source.fetch(&remaining, &mints, self.wrapped_native).await {
                 Ok(priced) => {
                     remaining.retain(|token| match priced.get(token) {
                         Some(price) => {
@@ -341,19 +371,21 @@ impl Inner {
         Ok(())
     }
 
-    /// Decimals per mint, from the cache or the mint accounts on chain. A
-    /// mint that is missing or does not unpack (a token-2022 mint with
-    /// extensions, for example) is absent from the result: one odd token
-    /// must not fail the price lookup and with it every auction cut.
-    async fn decimals(&self, tokens: &[Pubkey]) -> Result<HashMap<Pubkey, u8>> {
+    /// The [`MintInfo`] per mint, from the cache or the mint accounts on
+    /// chain. A mint that is missing or does not unpack as a mint of either
+    /// token program is absent from the result: one odd token must not fail
+    /// the price lookup and with it every auction cut.
+    async fn mints(&self, tokens: &[Pubkey], now: Instant) -> Result<HashMap<Pubkey, MintInfo>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
         for token in tokens {
-            match self.decimals.get(token) {
-                Some(decimals) => {
-                    result.insert(*token, decimals);
+            match self.mints.get(token) {
+                Some((read, mint))
+                    if mint.scaled_ui_amount.is_none() || now.duration_since(read) < MINT_TTL =>
+                {
+                    result.insert(*token, mint);
                 }
-                None => fetch.push(*token),
+                _ => fetch.push(*token),
             }
         }
         if fetch.is_empty() {
@@ -373,10 +405,17 @@ impl Inner {
                 tracing::warn!(%token, "mint account not found, token unpriced");
                 continue;
             };
-            match Mint::unpack(&account.data) {
+            match StateWithExtensions::<Mint>::unpack(&account.data) {
                 Ok(mint) => {
-                    self.decimals.insert(token, mint.decimals);
-                    result.insert(token, mint.decimals);
+                    let info = MintInfo {
+                        decimals: mint.base.decimals,
+                        scaled_ui_amount: mint
+                            .get_extension::<ScaledUiAmountConfig>()
+                            .ok()
+                            .copied(),
+                    };
+                    self.mints.insert(token, (now, info));
+                    result.insert(token, info);
                 }
                 Err(err) => {
                     tracing::warn!(%token, ?err, "mint does not unpack, token unpriced");
@@ -401,7 +440,7 @@ impl Source {
     async fn fetch(
         &self,
         tokens: &[Pubkey],
-        decimals: &HashMap<Pubkey, u8>,
+        mints: &HashMap<Pubkey, MintInfo>,
         wrapped_native: Pubkey,
     ) -> Result<HashMap<Pubkey, u64>> {
         match self {
@@ -409,7 +448,7 @@ impl Source {
                 client,
                 endpoint,
                 api_key,
-            } => coingecko(client, endpoint, api_key.as_deref(), tokens, decimals).await,
+            } => coingecko(client, endpoint, api_key.as_deref(), tokens, mints).await,
             Self::Driver {
                 client,
                 endpoint,
@@ -434,7 +473,7 @@ async fn coingecko(
     endpoint: &Url,
     api_key: Option<&str>,
     tokens: &[Pubkey],
-    decimals: &HashMap<Pubkey, u8>,
+    mints: &HashMap<Pubkey, MintInfo>,
 ) -> Result<HashMap<Pubkey, u64>> {
     let base = route(endpoint, "solana")?;
     // A caching proxy in front of the API keys on the URL, so the mint order
@@ -480,16 +519,33 @@ async fn coingecko(
     {
         return Err(anyhow!("price response keys match no requested mint"));
     }
+    // CoinGecko prices a scaled UI amount mint per displayed token, and one
+    // whole token displays as the multiplier's worth of them.
+    let now = chrono::Utc::now().timestamp();
     Ok(tokens
         .iter()
         .filter_map(|token| {
+            let mint = &mints[token];
+            let multiplier = mint
+                .scaled_ui_amount
+                .map_or(1.0, |config| current_multiplier(&config, now));
             let price = quoted
                 .get(&token.to_string())
                 .and_then(|entry| entry.sol)
-                .and_then(|sol| scale(sol, decimals[token]))?;
+                .and_then(|sol| scale(sol * multiplier, mint.decimals))?;
             Some((*token, price))
         })
         .collect())
+}
+
+/// The multiplier in effect at `unix_timestamp`: the scheduled one from its
+/// timestamp on, the current one before.
+fn current_multiplier(config: &ScaledUiAmountConfig, unix_timestamp: i64) -> f64 {
+    if unix_timestamp >= i64::from(config.new_multiplier_effective_timestamp) {
+        config.new_multiplier.into()
+    } else {
+        config.multiplier.into()
+    }
 }
 
 /// Buy a fixed amount of wSOL with each token on the driver. The probe is
@@ -573,7 +629,12 @@ fn scale(price: f64, decimals: u8) -> Option<u64> {
 mod tests {
     use {
         super::*,
-        cow_solana_rpc::{Mocks, RpcRequest},
+        cow_solana_rpc::{Mocks, MocksMap, RpcRequest},
+        spl_token_2022_interface::extension::{
+            BaseStateWithExtensionsMut,
+            ExtensionType,
+            mint_close_authority::MintCloseAuthority,
+        },
         std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -670,18 +731,23 @@ mod tests {
         assert_eq!(scale(1e9, 0), None);
     }
 
-    /// The wrapped native mint is priced at the denominator without any
+    /// SOL, wrapped or native, is priced at the denominator without any
     /// lookup: the estimators here are dead and so is the RPC.
     #[tokio::test]
     async fn prices_the_native_mint_locally() {
         let wrapped = Pubkey::new_unique();
+        let native = Pubkey::new_from_array(NATIVE_SOL.0);
         let prices = NativePrices::new(
             &coingecko_config("http://127.0.0.1:1/".parse().unwrap()),
             SolanaRPC::new_mock_with_mocks(Mocks::default()),
             wrapped,
         );
-        let result = prices.prices(HashSet::from([wrapped])).await.unwrap();
+        let result = prices
+            .prices(HashSet::from([wrapped, native]))
+            .await
+            .unwrap();
         assert_eq!(result[&wrapped], Solana::NATIVE_PRICE_DENOMINATOR);
+        assert_eq!(result[&native], Solana::NATIVE_PRICE_DENOMINATOR);
     }
 
     /// Without sources every token prices at the denominator and nothing is
@@ -750,6 +816,33 @@ mod tests {
         let prices = NativePrices::new(
             &coingecko_config(endpoint),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+
+        let result = prices.prices(HashSet::from([listed])).await.unwrap();
+        assert_eq!(result.get(&listed), Some(&5_000_000_000));
+    }
+
+    /// A Token-2022 mint with extensions reads its decimals like a classic
+    /// mint, so its token gets priced.
+    #[tokio::test]
+    async fn token_2022_mints_with_extensions_are_priced() {
+        let listed = Pubkey::new_unique();
+        let (endpoint, _) =
+            coingecko_server(serde_json::json!({ listed.to_string(): { "sol": 0.005 } })).await;
+        let mint = solana_testlib::token_2022_mint(&[ExtensionType::MintCloseAuthority], |mint| {
+            mint.init_extension::<MintCloseAuthority>(true).unwrap();
+        });
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [solana_testlib::account_json(&mint)],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &coingecko_config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mocks),
             Pubkey::new_unique(),
         );
 
@@ -874,6 +967,114 @@ mod tests {
         let result = prices.prices(HashSet::from([token])).await.unwrap();
         // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
         assert_eq!(result.get(&token), Some(&5_000_000_000));
+    }
+
+    /// CoinGecko quotes a scaled UI amount mint per displayed token, so its
+    /// price counts the multiplier.
+    #[tokio::test]
+    async fn scaled_ui_amount_mints_price_through_their_multiplier() {
+        let token = Pubkey::new_unique();
+        let (coingecko, requests) =
+            coingecko_server(serde_json::json!({ token.to_string(): { "sol": 0.01 } })).await;
+        // One whole token displays as two, so it is worth two quoted ones.
+        let mint = solana_testlib::token_2022_mint(&[ExtensionType::ScaledUiAmount], |mint| {
+            let config = mint.init_extension::<ScaledUiAmountConfig>(true).unwrap();
+            config.multiplier = 2.0.into();
+            config.new_multiplier = 2.0.into();
+        });
+        let mocks = Mocks::from([(
+            RpcRequest::GetMultipleAccounts,
+            serde_json::json!({
+                "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                "value": [solana_testlib::account_json(&mint)],
+            }),
+        )]);
+        let prices = NativePrices::new(
+            &coingecko_config(coingecko),
+            SolanaRPC::new_mock_with_mocks(mocks),
+            Pubkey::new_unique(),
+        );
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        // 0.02 SOL per whole 6-decimals token: 0.02 * 10^12.
+        assert_eq!(result.get(&token), Some(&20_000_000_000));
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
+    }
+
+    /// Decimals never change, so a plain mint is read once. A scaled UI amount
+    /// mint is read again after [`MINT_TTL`]: its multiplier schedule may have
+    /// been replaced.
+    #[tokio::test]
+    async fn only_scaled_ui_amount_mints_are_read_again() {
+        let plain = Pubkey::new_unique();
+        let scaled = Pubkey::new_unique();
+        let scaled_mint = |multiplier: f64| {
+            solana_testlib::token_2022_mint(&[ExtensionType::ScaledUiAmount], |mint| {
+                let config = mint.init_extension::<ScaledUiAmountConfig>(true).unwrap();
+                config.multiplier = multiplier.into();
+                config.new_multiplier = multiplier.into();
+            })
+        };
+        // The first read answers both mints, the second answers only the
+        // scaled one with a new multiplier: a refetch of the plain mint would
+        // land that answer on it.
+        let mocks: MocksMap = [
+            (
+                RpcRequest::GetMultipleAccounts,
+                serde_json::json!({
+                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                    "value": [
+                        crate::tests::mint_account_json(6),
+                        solana_testlib::account_json(&scaled_mint(1.0)),
+                    ],
+                }),
+            ),
+            (
+                RpcRequest::GetMultipleAccounts,
+                serde_json::json!({
+                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                    "value": [solana_testlib::account_json(&scaled_mint(2.0))],
+                }),
+            ),
+        ]
+        .into_iter()
+        .collect();
+        let (endpoint, _) = coingecko_server(serde_json::json!({})).await;
+        let NativePrices::Configured(inner) = NativePrices::new(
+            &coingecko_config(endpoint),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            Pubkey::new_unique(),
+        ) else {
+            unreachable!("a configured source makes a configured lookup");
+        };
+
+        let now = Instant::now();
+        let mints = inner.mints(&[plain, scaled], now).await.unwrap();
+        assert!(mints[&plain].scaled_ui_amount.is_none());
+        assert_eq!(
+            f64::from(mints[&scaled].scaled_ui_amount.unwrap().multiplier),
+            1.0
+        );
+
+        let later = now + 2 * MINT_TTL;
+        let mints = inner.mints(&[plain, scaled], later).await.unwrap();
+        assert!(mints[&plain].scaled_ui_amount.is_none());
+        assert_eq!(
+            f64::from(mints[&scaled].scaled_ui_amount.unwrap().multiplier),
+            2.0
+        );
+    }
+
+    /// A scheduled multiplier applies from its timestamp on.
+    #[test]
+    fn scheduled_multipliers_apply_at_their_timestamp() {
+        let config = ScaledUiAmountConfig {
+            multiplier: 1.0.into(),
+            new_multiplier_effective_timestamp: 100i64.into(),
+            new_multiplier: 2.0.into(),
+            ..Default::default()
+        };
+        assert_eq!(current_multiplier(&config, 99), 1.0);
+        assert_eq!(current_multiplier(&config, 100), 2.0);
     }
 
     /// With every estimator down the lookup fails, with one of them down it

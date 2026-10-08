@@ -16,7 +16,9 @@ use {
         },
     },
     axum::{Json, http::StatusCode},
+    cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     solana_sdk::pubkey::Pubkey,
+    spl_token_interface::native_mint,
     tracing::Instrument,
 };
 
@@ -26,7 +28,10 @@ pub(crate) async fn quote(
     state: axum::extract::State<State>,
     LoggingJson(request): LoggingJson<dto::QuoteRequest>,
 ) -> Result<Json<dto::QuoteResponse>, (StatusCode, Json<ApiError>)> {
-    if request.sell_token == request.buy_token {
+    // wSOL and native SOL count as the same token.
+    let unwraps_sol =
+        request.sell_token == native_mint::ID && request.buy_token == ENCODED_NATIVE_SOL_TRANSFER;
+    if request.sell_token == request.buy_token || unwraps_sol {
         return Err(Kind::QuoteSameTokens.into());
     }
     let side = auction::Side::from(request.kind);
@@ -34,7 +39,7 @@ pub(crate) async fn quote(
 
     let solutions = state
         .competition()
-        .compute_solutions(&auction)
+        .compute_solutions(&auction, &Default::default())
         .instrument(tracing::info_span!(
             "/quote",
             solver = %state.competition().solver_name(),
@@ -88,8 +93,11 @@ fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
             partially_fillable: false,
             order_pda: Pubkey::default(),
             app_data: [0; 32],
+            executed: 0,
+            sell_balance: None,
         }],
         deadline_slot: Slot(0),
         deadline: request.deadline,
+        creations: std::collections::HashMap::new(),
     }
 }

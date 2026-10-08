@@ -21,7 +21,6 @@ alloy-provider = { version = "2.4.1", default-features = false }
 alloy-rpc-client = { version = "2.4.1", default-features = false }
 alloy-rpc-types = { version = "2.4.1", default-features = false }
 alloy-rpc-types-eth = { version = "2.4.1", default-features = false }
-alloy-rpc-types-trace = { version = "2.4.1", default-features = false }
 alloy-signer = { version = "2.4.1", default-features = false }
 alloy-signer-local = { version = "2.4.1", default-features = false }
 alloy-sol-types = { version = "1.6.1" }
@@ -30,15 +29,15 @@ alloy-transport-ws = { version = "2.4.1", default-features = false }
 anyhow = "1.0.100"
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
-async-nats = "0.48.0"
+async-nats = { version = "0.48.0", default-features = false, features = ["aws-lc-rs", "jetstream"] }
 async-stream = "0.3.5"
 async-trait = "0.1.80"
 autopilot = { path = "crates/autopilot" }
 aws-config = "1.5.1"
+aws-sdk-kms = { version = "1.49.0", default-features = false }
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
 backtrace = { version = "0.3.76", default-features = false }
-bad-tokens = { path = "crates/bad-tokens" }
 balance-overrides = { path = "crates/balance-overrides" }
 base64 = "0.22.1"
 bigdecimal = "0.4"
@@ -47,7 +46,7 @@ brotli = "8"
 bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
-cached = { version = "0.49.3", default-features = false }
+cached = { version = "0.55.1", default-features = false }
 chain = { path = "crates/chain" }
 chain-types = { path = "crates/chain-types" }
 chrono = { version = "0.4.38", default-features = false, features = ["serde"] }
@@ -57,9 +56,16 @@ console-subscriber = "0.5.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
 contracts = { path = "contracts/generated/contracts-facade" }
-cow-settlement-client = "0.4.1"
-cow-settlement-interface = "0.4.1"
+cow-settlement-client = {
+  git = "https://github.com/cowprotocol/solana-programs",
+  rev = "da9865d2d6501820672397d690352d2818f286b9"
+}
+cow-settlement-interface = {
+  git = "https://github.com/cowprotocol/solana-programs",
+  rev = "da9865d2d6501820672397d690352d2818f286b9"
+}
 cow-solana-rpc = { path = "crates/cow-solana-rpc" }
+cow-solana-signer = { path = "crates/cow-solana-signer" }
 dashmap = "6.1.0"
 database = { path = "crates/database" }
 derive_more = { version = "1.0.0", features = ["full"] }
@@ -97,7 +103,6 @@ opentelemetry-otlp = "0.32"
 opentelemetry_sdk = "0.32"
 order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
-paste = "1.0"
 pin-project-lite = "0.2.14"
 pool-indexer = { path = "crates/pool-indexer" }
 prettyplease = "0.2.37"
@@ -139,6 +144,7 @@ solana-rpc-client-api = "4"
 solana-sdk = "4"
 solana-system-interface = "3"
 solana-testlib = { path = "crates/solana-testlib" }
+solana-token = { path = "crates/solana-token" }
 solana-transaction-status-client-types = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }

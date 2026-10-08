@@ -320,9 +320,20 @@ impl Solver {
         self.config.account.clone()
     }
 
-    /// Timeout configuration for this solver.
-    pub fn timeouts(&self) -> Timeouts {
+    /// Timeout configuration for `/solve` requests for this solver.
+    pub fn solve_timeouts(&self) -> Timeouts {
         self.config.timeouts
+    }
+
+    /// Timeout configuration for `/quote` requests.
+    pub fn quote_timeouts() -> Timeouts {
+        Timeouts {
+            // quote requests are tiny so the network buffer can be small
+            http_delay: chrono::Duration::milliseconds(25),
+            // the driver doesn't do any post-processing for quote responses so we can use
+            // the entire time for computing solutions
+            solving_share_of_deadline: 1.0.try_into().expect("literal is in allowed range"),
+        }
     }
 
     /// Whether this solver supports fast-path (out-of-competition) execution.
@@ -386,6 +397,12 @@ impl Solver {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
 
+        let timeout_config = match auction.id {
+            auction::Kind::Quote(_) => Self::quote_timeouts(),
+            auction::Kind::Competition(_) => self.solve_timeouts(),
+        };
+        let deadlines = auction.deadline(timeout_config);
+
         let auction_dto = dto::auction::new(
             auction,
             liquidity,
@@ -394,7 +411,7 @@ impl Solver {
             self.config.solver_native_token,
             &flashloan_hints,
             &wrappers,
-            auction.deadline(self.timeouts()).solvers(),
+            deadlines.solvers(),
         );
 
         let url = shared::url::join(&self.config.endpoint, "solve");
@@ -440,9 +457,12 @@ impl Solver {
             });
         }
 
-        let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
-            Ok(timeout) => timeout,
-            Err(_) => {
+        let (driver_timeout, solver_timeout) = match (
+            deadlines.driver().remaining(),
+            deadlines.solvers().remaining(),
+        ) {
+            (Ok(driver_timeout), Ok(solver_timeout)) => (driver_timeout, solver_timeout),
+            _ => {
                 tracing::warn!("auction deadline exceeded before sending request to solver");
                 return Ok(Default::default());
             }
@@ -452,13 +472,20 @@ impl Solver {
             .post(url.clone())
             .body(body)
             .headers(tracing_headers())
-            .timeout(timeout);
+            // Using the driver timeout here gives solvers a little grace period so that
+            // they don't necessarily **have to** add a buffer on their end as well. They
+            // are still supposed to respond before `solver_timeout`.
+            // Solvers responding too late may not leave the driver enough time to do the
+            // post-processing but in that case enforcing the `solver_timeout` here would
+            // produce the same result (no solution).
+            .timeout(driver_timeout);
+
         if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
         super::observe::sending_solve_request(
             self.config.name.as_str(),
-            timeout,
+            solver_timeout,
             auction.is_quote(),
         );
         let started_at = std::time::Instant::now();
@@ -468,6 +495,7 @@ impl Solver {
             res.as_deref(),
             self.config.name.as_str(),
             started_at.elapsed(),
+            solver_timeout,
             auction.is_quote(),
         );
         let res = res?;
@@ -619,7 +647,6 @@ mod tests {
             response_size_limit_max_bytes: 1024,
             bad_order_detection: BadOrderDetection {
                 tokens_supported: Default::default(),
-                enable_simulation_strategy: false,
                 enable_metrics_strategy: false,
                 metrics_strategy_failure_ratio: 0.9,
                 metrics_strategy_required_measurements: 20,
@@ -711,7 +738,6 @@ impl Error {
 pub struct BadOrderDetection {
     /// Tokens that are explicitly allow- or deny-listed.
     pub tokens_supported: HashMap<eth::TokenAddress, risk_detector::Quality>,
-    pub enable_simulation_strategy: bool,
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
     pub metrics_strategy_required_measurements: u32,

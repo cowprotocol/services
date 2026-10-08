@@ -21,7 +21,6 @@ anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
-bad-tokens = { workspace = true }
 bigdecimal = { workspace = true }
 brotli = { workspace = true }
 bytes = { workspace = true }

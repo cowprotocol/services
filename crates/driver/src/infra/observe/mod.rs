@@ -13,7 +13,7 @@ use {
                 self,
                 Solution,
                 Solved,
-                solution::{self, Settlement},
+                solution::{self, Settlement, settlement::EncodedSettlement},
             },
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
@@ -340,21 +340,37 @@ pub fn solver_response(
     res: Result<&str, &http::Error>,
     solver: &str,
     compute_time: Duration,
+    solver_timeout: Duration,
     is_quote_request: bool,
 ) {
+    let metrics = metrics::get();
+    let kind = if is_quote_request { "quote" } else { "auction" };
     match res {
         Ok(res) => {
-            tracing::trace!(%endpoint, %res, "received response from solver")
+            tracing::trace!(%endpoint, %res, kind, "received response from solver")
         }
         Err(err) => {
-            tracing::warn!(%endpoint, ?err, "failed to receive response from solver")
+            tracing::warn!(%endpoint, ?err, kind, "failed to receive response from solver")
         }
     }
-    let kind = if is_quote_request { "quote" } else { "auction" };
-    metrics::get()
+    metrics
         .used_solve_time
         .with_label_values(&[solver, kind])
         .observe(compute_time.as_secs_f64());
+    if compute_time > solver_timeout {
+        let overrun = compute_time - solver_timeout;
+        tracing::trace!(
+            solver,
+            elapsed = ?compute_time,
+            ?solver_timeout,
+            ?overrun,
+            "solver exceeded its deadline",
+        );
+        metrics
+            .solver_deadline_overruns
+            .with_label_values(&[solver, kind])
+            .inc();
+    }
 }
 
 /// Log a single mempool submission attempt. Called inline from the racing
@@ -363,7 +379,7 @@ pub fn solver_response(
 /// once the race outcome is known.
 pub fn mempool_log(
     mempool: &Mempool,
-    settlement: &Settlement,
+    settlement: &EncodedSettlement,
     result: &Result<SubmissionSuccess, mempools::Error>,
 ) {
     match result {
@@ -429,6 +445,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::FastPathLimitNotMet => "FastPathLimitNotMet",
         competition::Error::FastPathInvalidOrder(_) => "FastPathInvalidOrder",
         competition::Error::FastPathSettlement(_) => "FastPathSettlement",
+        competition::Error::EncodingFailed(_) => "EncodingFailed",
     }
 }
 

@@ -94,6 +94,28 @@ async fn fast_path_quote_carries_no_solution_id() {
     test.quote().await.ok().no_solution_id();
 }
 
+/// A fast-path quote is only useful if the cached solution can actually be
+/// executed later. If the solver returns a solution with no interactions
+/// (e.g. because it can't commit to an execution path yet, as for RWA trades)
+/// the driver must refuse to serve the fast-path quote rather than cache an
+/// unsettleable solution.
+#[tokio::test]
+#[ignore]
+async fn fast_path_rejects_solution_without_interactions() {
+    let test = tests::setup()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution().no_interactions())
+        .solvers(vec![setup::test_solver().fast_path_enabled()])
+        .auction_id(42)
+        .quote()
+        .quote_fast_path()
+        .done()
+        .await;
+
+    test.quote().await.err().kind("QuotingFailed");
+}
+
 /// Set up a fast-path quote test: a fast-path solver quoting `ab_order`.
 async fn fast_path_test() -> setup::Test {
     tests::setup()
@@ -229,7 +251,7 @@ async fn with_quote_solver_fee() {
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .buy_amount(40u64.ether().into_wei()) // Set a limit to create slack
+                .buy_amount(40u64.ether().into_wei()), // Set a limit to create slack
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().solver_fee_bps(0)]) // No solver fee
@@ -250,7 +272,7 @@ async fn with_quote_solver_fee() {
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .buy_amount(40u64.ether().into_wei()) // Same limit to create slack
+                .buy_amount(40u64.ether().into_wei()), // Same limit to create slack
         )
         .solution(ab_solution())
         .solvers(vec![tests::setup::test_solver().solver_fee_bps(200)]) // 2% solver fee

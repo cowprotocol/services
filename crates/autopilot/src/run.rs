@@ -28,7 +28,6 @@ use {
     },
     account_balances::{self, BalanceSimulator},
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
-    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
@@ -54,7 +53,7 @@ use {
         sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
+    token_info::{CachedTokenInfoFetcher, DenyListedTokens, TokenInfoFetcher, TokenInfoFetching},
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };
@@ -456,6 +455,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             .unwrap(),
             standard_quote: chrono::Duration::from_std(
                 config.order_quoting.standard_offchain_quote_validity,
+            )
+            .unwrap(),
+            fast_path_quote: chrono::Duration::from_std(
+                config.order_quoting.fast_path_quote_validity,
             )
             .unwrap(),
         },

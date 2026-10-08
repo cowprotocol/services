@@ -28,10 +28,11 @@ pub struct Auction {
 
 /// One order to quote.
 ///
-/// The limit leg may arrive tightened by the driver's solver fee. Fills are
-/// checked against the tightened legs. The signed amounts are carried for
-/// external engines; a fill checked against them can be pushed under the
-/// limit by the fee.
+/// The legs are what is left of the order after prior fills, and the limit
+/// leg may arrive tightened by the driver's solver fee. Fills are checked
+/// against those legs. The signed amounts are carried for external engines;
+/// a fill checked against them can overfill a partially filled order or be
+/// pushed under the limit by the fee.
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,15 +43,20 @@ pub struct Order {
     pub sell_mint: Pubkey,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_mint: Pubkey,
-    /// The buy-mint buffer the swap output lands in.
+    /// The account the swap output lands in: the buy-mint buffer, or the
+    /// taker's wSOL ATA for an order buying native SOL. The route must leave
+    /// that ATA open: the settlement closes it after the swap to unwrap the
+    /// payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
-    /// Sell-mint units: for a sell order the amount to fill, for a buy order
-    /// the most the fill may take. Decimal string on the wire.
+    /// Sell-mint units left to fill: for a sell order the amount to fill,
+    /// for a buy order the most the fill may take. Decimal string on the
+    /// wire.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub sell_amount: u64,
-    /// Buy-mint units: for a buy order the amount to fill, for a sell order
-    /// the least the fill must deliver. Decimal string on the wire.
+    /// Buy-mint units left to fill: for a buy order the amount to fill, for
+    /// a sell order the least the fill must deliver. Decimal string on the
+    /// wire.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_amount: u64,
     /// Sell amount for a sell, buy amount for a buy. Decimal string on the
@@ -59,15 +65,28 @@ pub struct Order {
     /// TODO: remove once external engines read `sellAmount`/`buyAmount`.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub amount: u64,
-    /// The signed sell amount, before any solver-fee tightening. Decimal
-    /// string on the wire.
+    /// The signed sell amount, before prior fills and the solver fee.
+    /// Decimal string on the wire.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_sell_amount: u64,
-    /// The signed buy amount, before any solver-fee tightening. Decimal string
-    /// on the wire.
+    /// The signed buy amount, before prior fills and the solver fee. Decimal
+    /// string on the wire.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub full_buy_amount: u64,
     pub side: dex::Side,
+    /// Whether a fill may stop short of the order amount. Absent from a
+    /// driver that predates partial fills.
+    #[serde(default)]
+    pub partially_fillable: bool,
+    /// True when the order's buy token account does not exist on chain
+    /// yet. The driver's settlement creates it and the solver keypair pays
+    /// its rent, a cost the solution should price in.
+    ///
+    /// TODO(token-2022): a token-2022 account rents more bytes, so once
+    /// those mints are supported this boolean becomes a `setupCostLamports`
+    /// number and engines stop having to know the rent math.
+    #[serde(default)]
+    pub missing_buy_token_account: bool,
 }
 
 impl Order {
@@ -109,6 +128,7 @@ mod tests {
                 "fullSellAmount": "1000",
                 "fullBuyAmount": "2000",
                 "side": "sell",
+                "partiallyFillable": false,
             }],
             "deadline": "2026-01-01T00:00:00Z",
         });
@@ -128,5 +148,6 @@ mod tests {
             (1_000, 2_000)
         );
         assert_eq!(order.side, dex::Side::Sell);
+        assert!(!order.partially_fillable);
     }
 }

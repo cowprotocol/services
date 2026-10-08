@@ -43,8 +43,8 @@ impl Quote for Dex {
 /// does (`crates/solvers/src/domain/solver/dex/mod.rs`).
 ///
 /// TODO(BE-308): retry partially fillable orders at smaller amounts when the
-/// swap undercuts the limit, like the EVM engine's `Fills`; the wire carries
-/// no `partiallyFillable` yet.
+/// swap undercuts the limit, like the EVM engine's `Fills`; the wire's
+/// `partiallyFillable` is ignored until then.
 pub async fn solve<Q: Quote>(quoter: &Q, auction: &Auction) -> Vec<Solution> {
     let candidates = auction.orders.iter().enumerate().map(|(index, order)| {
         let dex_order = order.to_dex_order();
@@ -109,6 +109,8 @@ mod tests {
             full_sell_amount: 1_000,
             full_buy_amount: 0,
             side,
+            partially_fillable: false,
+            missing_buy_token_account: false,
         }
     }
 

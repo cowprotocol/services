@@ -71,14 +71,6 @@ struct Config {
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
 
-    /// How long should the token quality computed by the simulation
-    /// based logic be cached.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_simulation_bad_token_max_age"
-    )]
-    simulation_bad_token_max_age: Duration,
-
     /// Configuration for the app-data fetching.
     #[serde(default, flatten)]
     app_data_fetching: AppDataFetching,
@@ -485,6 +477,12 @@ struct ContractsConfig {
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::Address>,
+
+    /// Override the default address of the DeadlineCheck contract. A
+    /// call to this contract is injected as a pre-interaction at
+    /// `/settle` time so that the settlement reverts on-chain if it is
+    /// mined past its submission deadline.
+    deadline_check: Option<eth::Address>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -830,10 +828,6 @@ fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
 }
 
-fn default_simulation_bad_token_max_age() -> Duration {
-    Duration::from_secs(600)
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -844,11 +838,6 @@ pub struct BadOrderDetectionConfig {
     /// the groups that contain it.
     #[serde(default)]
     pub token_supported: HashMap<String, bool>,
-
-    /// Whether the solver opted into detecting unsupported
-    /// tokens with `trace_callMany` based simulation.
-    #[serde(default, rename = "enable-simulation-bad-token-detection")]
-    pub enable_simulation_strategy: bool,
 
     /// Whether the solver opted into detecting unsupported
     /// orders with metrics-based detection. Orders that continue to result

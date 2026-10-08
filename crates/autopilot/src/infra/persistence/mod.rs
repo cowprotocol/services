@@ -394,6 +394,7 @@ impl Persistence {
                             .map(|cap| u256_to_big_decimal(&cap.0))
                     })
                     .collect(),
+                fast_path_quote_id: None,
             },
         )
         .await?;
@@ -892,7 +893,7 @@ impl Persistence {
                                     kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
                                     signature: jit_order.signature.to_bytes(),
-                                    receiver: ByteArray(jit_order.receiver.0.0),
+                                    receiver: ByteArray(*jit_order.receiver.raw_bytes()),
                                     signing_scheme: match jit_order.signature.scheme() {
                                         DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
                                         DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
@@ -1151,6 +1152,7 @@ impl Persistence {
             price_values,
             surplus_capturing_jit_order_owners: Vec::new(),
             penalty_caps_native: Some(vec![promotion.penalty_cap_native]),
+            fast_path_quote_id: Some(promotion.quote_id),
         };
 
         let policy_rows: Vec<_> = promotion

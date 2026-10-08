@@ -6,7 +6,24 @@ settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [rpc]
 endpoint = "https://api.mainnet-beta.solana.com"
+# Serves only `simulateBundle`; must support that Jito extension.
+# TODO: temporary split; a single endpoint will serve every method soon and
+# this key goes away.
+bundle-endpoint = "https://bundles.example.com"
 request-timeout = "10s"
+
+[priority-fee]
+# Optional; the values below are the defaults.
+# The percentile of the fees recently paid over a transaction's writable
+# accounts to use as the compute unit price, 0..=100, ranging over the most
+# recent `recent-slots` slots, 1..=150.
+percentile = 75
+recent-slots = 50
+# The lowest compute unit price, in micro-lamports per compute unit.
+min-compute-unit-price = 10000
+# The most a transaction pays in priority fee (price times compute unit
+# limit), in lamports. A transaction over it is refused as over budget.
+max-priority-fee-lamports = 1000000
 
 [http]
 bind-address = "0.0.0.0:8080"
@@ -19,10 +36,10 @@ filter = "info,solana_driver=debug"
 [[solvers]]
 name = "baseline"
 endpoint = "http://localhost:8001"
-# Path to the solver's settlement signer keypair. The driver's on-chain
-# identity for this solver is derived from this keypair.
-# TODO: plaintext keypair paths are temporary; KMS is planned.
-signer-keypair = "/path/to/keypair.json"
+# The solver's settlement signer: a keypair file, or the id, alias, or ARN
+# of an AWS KMS Ed25519 key so the private key never reaches the driver.
+signer = { keypair = "/path/to/keypair.json" }
+# signer = { kms-key = "arn:aws:kms:eu-central-1:123456789012:key/11111111-2222-3333-4444-555555555555" }
 # Temporary staging knob: solve only auctions whose id is a multiple of this
 # value, sitting the rest out so other solvers win settlements to test
 # against. Omit to participate in every auction.
@@ -33,3 +50,8 @@ signer-keypair = "/path/to/keypair.json"
 # solver's sell ATA (buy orders). Bids and quotes shrink accordingly. Omit for
 # no fee.
 # solver-fee-bps = 500
+# The largest share of a settlement's native SOL payouts, in basis points
+# 0..10000, that the solver's own SOL covers when the swap delivers less SOL
+# than the payouts. A larger shortfall reverts the settlement. Omit to revert
+# on any shortfall.
+# max-native-shortfall-bps = 40

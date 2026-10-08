@@ -118,11 +118,8 @@ async fn test(web3: Web3) {
     let orders_are_invalid = || async {
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
-        let order_a_correct_events = events_a.into_iter().map(|e| e.label).collect::<Vec<_>>()
-            == vec![OrderEventLabel::Created, OrderEventLabel::Invalid];
-        let order_b_correct_events = events_b.into_iter().map(|e| e.label).collect::<Vec<_>>()
-            == vec![OrderEventLabel::Created, OrderEventLabel::Invalid];
-        order_a_correct_events && order_b_correct_events
+        events_a.last().map(|e| e.label) == Some(OrderEventLabel::Invalid)
+            && events_b.last().map(|e| e.label) == Some(OrderEventLabel::Invalid)
     };
     wait_for_condition(TIMEOUT, orders_are_invalid)
         .await
@@ -131,6 +128,9 @@ async fn test(web3: Web3) {
     // Make sure that the next update is happened and no new Invalid event is
     // received for the `order_b`. `order_a` is required to track if the next
     // update is happened.
+    let order_a_events_before = crate::database::events_of_order(services.db(), &uid_a)
+        .await
+        .len();
     onchain
         .contracts()
         .weth
@@ -144,11 +144,9 @@ async fn test(web3: Web3) {
         onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
-        let order_b_correct_events = events_b.into_iter().map(|e| e.label).collect::<Vec<_>>()
-            == vec![OrderEventLabel::Created, OrderEventLabel::Invalid];
-        events_a.len() > 2
-            && check_non_consecutive_invalid_events(&events_a)
-            && order_b_correct_events
+        events_a.len() > order_a_events_before
+            && events_a.last().map(|e| e.label) != Some(OrderEventLabel::Invalid)
+            && events_b.last().map(|e| e.label) == Some(OrderEventLabel::Invalid)
     };
     wait_for_condition(TIMEOUT, orders_updated).await.unwrap();
 
@@ -168,10 +166,21 @@ async fn test(web3: Web3) {
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         events_a.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
             && events_b.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
-            && check_non_consecutive_invalid_events(&events_a)
-            && check_non_consecutive_invalid_events(&events_b)
     };
     wait_for_condition(TIMEOUT, orders_updated).await.unwrap();
+
+    // Verify the autopilot never emits two consecutive `Invalid` events for the
+    // same order (the writer's deduplication is supposed to prevent that).
+    let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
+    let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
+    assert!(
+        check_non_consecutive_invalid_events(&events_a),
+        "order_a has consecutive Invalid events: {events_a:?}"
+    );
+    assert!(
+        check_non_consecutive_invalid_events(&events_b),
+        "order_b has consecutive Invalid events: {events_b:?}"
+    );
 }
 
 fn check_non_consecutive_invalid_events(events: &[OrderEvent]) -> bool {

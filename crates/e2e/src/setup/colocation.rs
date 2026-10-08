@@ -178,7 +178,6 @@ relative-slippage = "0.1"
 {absolute_slippage_line}account = "{account}"
 merge-solutions = {merge_solutions}
 fast-path-enabled = true
-enable-simulation-bad-token-detection = true
 enable-metrics-bad-order-detection = true
 http-time-buffer = "100ms"
 solving-share-of-deadline = 1.0
@@ -212,6 +211,7 @@ gp-v2-settlement = "{:?}"
 weth = "{:?}"
 balances = "{:?}"
 signatures = "{:?}"
+deadline-check = "{:?}"
 {flashloan_router_config}
 
 {solvers}
@@ -234,6 +234,7 @@ refresh-cooldown = "0s"
         contracts.weth.address(),
         contracts.balances.address(),
         contracts.signatures.address(),
+        contracts.deadline_check.address(),
     );
 
     let final_config = if let Some(override_str) = config_override {

@@ -1,0 +1,26 @@
+[package]
+name = "cow-solana-signer"
+version = "0.1.0"
+edition = "2024"
+description = "Solana signers for CoW Protocol: a local keypair or an AWS KMS Ed25519 key"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "cow_solana_signer"
+path = "src/lib.rs"
+
+[dependencies]
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-kms = { workspace = true, features = ["default-https-client", "rt-tokio"] }
+serde = { workspace = true }
+solana-sdk = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+solana-system-interface = { workspace = true }
+solana-testlib = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+toml = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,19 +1,29 @@
 //! One `Competition` per solver engine, mounted on the API under `/{name}`.
 
 use {
-    super::{Auction, Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
+    super::{
+        Auction,
+        Order,
+        Side,
+        auction::Id,
+        buy_token_accounts::BuyTokenAccountCache,
+        order_uid::OrderUid,
+        priority_fee::{self, PriorityFeePolicy},
+        program_error::ProgramError,
+        settlement::ResolveError,
+        solution::Solution,
+    },
     crate::infra::{blockchain::Solana, solver::Solver},
-    cow_settlement_interface::SettlementError,
+    base64::{Engine, prelude::BASE64_STANDARD},
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
-        instruction::InstructionError,
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -29,6 +39,18 @@ const SLOT_DURATION_MS: u64 = 400;
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.
 const MAX_TRANSACTION_BYTES: u64 = 1232;
+/// The runtime's per-transaction account lock limit, counting static keys and
+/// lookup-table loaded addresses. The SDK's `MAX_TX_ACCOUNT_LOCKS` (128)
+/// applies only under the `increase_tx_account_lock_limit` feature, inactive
+/// on mainnet.
+const MAX_TRANSACTION_ACCOUNTS: usize = 64;
+/// Reserved for the `/solve` response to reach the autopilot, which discards
+/// a late one. The EVM driver's `http-time-buffer` default.
+const HTTP_TIME_BUFFER: chrono::Duration = chrono::Duration::milliseconds(500);
+/// The solver engine's share of the time left before the driver deadline;
+/// the solution simulations get the rest. The EVM driver's
+/// `solving-share-of-deadline` default.
+const SOLVING_SHARE_OF_DEADLINE_PERCENT: i32 = 80;
 
 /// Cache key for a proposed solution.
 ///
@@ -51,14 +73,25 @@ struct CachedSolution {
 pub(crate) struct Competition {
     solver: Solver,
     blockchain: Arc<Solana>,
+    /// Shared with the driver's other solver engines, which solve the same
+    /// auction.
+    buy_token_accounts: BuyTokenAccountCache,
+    priority_fee: PriorityFeePolicy,
     solutions: Cache<Key, CachedSolution>,
 }
 
 impl Competition {
-    pub fn new(solver: Solver, blockchain: Arc<Solana>) -> Self {
+    pub fn new(
+        solver: Solver,
+        blockchain: Arc<Solana>,
+        buy_token_accounts: BuyTokenAccountCache,
+        priority_fee: PriorityFeePolicy,
+    ) -> Self {
         Self {
             solver,
             blockchain,
+            buy_token_accounts,
+            priority_fee,
             solutions: Cache::builder().time_to_live(SOLUTION_CACHE_TTL).build(),
         }
     }
@@ -67,12 +100,99 @@ impl Competition {
         self.solver.name()
     }
 
-    /// Solve the auction and cache each solution for a later `settle`.
-    pub async fn solve(&self, auction_id: Id, auction: &Auction) -> Result<Vec<Solution>, Error> {
-        let solutions = self.compute_solutions(auction).await?;
+    /// Solve the auction, drop the solutions whose settlement provably fails
+    /// (over the byte limit or failing in simulation), and cache the rest for
+    /// a later `settle`.
+    pub async fn solve(
+        &self,
+        auction_id: Id,
+        mut auction: Auction,
+    ) -> Result<Vec<Solution>, Error> {
+        let now = chrono::Utc::now();
+        let driver_deadline = auction.deadline - HTTP_TIME_BUFFER;
+        auction.deadline = now + (driver_deadline - now) * SOLVING_SHARE_OF_DEADLINE_PERCENT / 100;
+        let buy_token_accounts = auction
+            .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
+            .await
+            .map_err(Error::BuyTokenAccounts)?;
+        auction.orders.retain(|order| {
+            if order.available().has_zero_leg() {
+                tracing::debug!(order = %order.uid, "dropping order, nothing fillable");
+                return false;
+            }
+            !buy_token_accounts.unreceivable.contains(&order.uid)
+        });
+        if auction.orders.is_empty() {
+            tracing::info!("no fillable order left; skipping solving");
+            return Ok(Vec::new());
+        }
+        let solutions = self
+            .compute_solutions(&auction, &buy_token_accounts.missing)
+            .await?;
+        if solutions.is_empty() {
+            return Ok(Vec::new());
+        }
+        auction.drop_landed_creations(&self.blockchain).await;
+        // A timeout is no verdict.
+        let window = driver_deadline
+            .signed_duration_since(chrono::Utc::now())
+            .to_std()
+            .unwrap_or_default();
+        let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
+            let auction = &auction;
+            async move {
+                let started = Instant::now();
+                let verdict = tokio::time::timeout(
+                    window,
+                    self.simulate_solution(auction_id, auction, solution),
+                )
+                .await
+                .unwrap_or(Err(Error::SimulationTimedOut));
+                (verdict, started.elapsed())
+            }
+        }))
+        .await;
 
-        let auction = Arc::new(auction.clone());
-        for solution in &solutions {
+        let auction = Arc::new(auction);
+        let window_ms = window.as_millis() as u64;
+        let mut kept = Vec::new();
+        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+            metrics()
+                .solve_simulations
+                .with_label_values(&[
+                    verdict.as_ref().err().map_or("passed", error_label),
+                    self.solver.name(),
+                ])
+                .inc();
+            let elapsed_ms = elapsed.as_millis() as u64;
+            match &verdict {
+                Ok(()) => tracing::info!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    elapsed_ms,
+                    window_ms,
+                    "solution simulation passed"
+                ),
+                Err(error) if proves_failure(error) => {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        ?error,
+                        elapsed_ms,
+                        window_ms,
+                        "dropping solution, its settlement fails in simulation"
+                    );
+                    continue;
+                }
+                Err(error) => tracing::info!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    ?error,
+                    elapsed_ms,
+                    window_ms,
+                    "solution simulation inconclusive"
+                ),
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -83,17 +203,111 @@ impl Competition {
                     solution: solution.clone(),
                 },
             );
+            kept.push(solution);
         }
+        Ok(kept)
+    }
 
-        Ok(solutions)
+    /// Check the solution's settlement fits the network's byte and account
+    /// lock limits, then simulate it as one atomic bundle behind the
+    /// creations of its orders not created on chain yet. Any failure would
+    /// win the auction and then fail to settle. An error that
+    /// [`proves_failure`] is a verdict on the solution; any other means the
+    /// driver could not find out.
+    async fn simulate_solution(
+        &self,
+        auction_id: Id,
+        auction: &Auction,
+        solution: &Solution,
+    ) -> Result<(), Error> {
+        let program_id = self.blockchain.program_id();
+        let orders = orders_with_trades(auction.orders.clone(), solution);
+        let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
+            .iter()
+            .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
+            .unzip();
+        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
+        let resolved = settlement
+            .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
+        // The simulation skips signature checks and replaces every blockhash,
+        // so an unsigned transaction saves the signing and the fetch.
+        bundle.push(resolved.unsigned()?);
+        if let Some(size) = bundle
+            .iter()
+            .filter_map(encoded_size)
+            .find(|size| *size > MAX_TRANSACTION_BYTES)
+        {
+            return Err(Error::TransactionTooLarge { size });
+        }
+        if let Some(accounts) = bundle
+            .iter()
+            .map(account_count)
+            .find(|accounts| *accounts > MAX_TRANSACTION_ACCOUNTS)
+        {
+            return Err(Error::TooManyAccounts { accounts });
+        }
+        tracing::debug!(
+            solution_id = solution.id,
+            creations = ?creation_uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            bytes = bundle.iter().filter_map(encoded_size).sum::<u64>(),
+            "simulating settlement bundle"
+        );
+
+        let results = self
+            .blockchain
+            .simulate_bundle(&bundle)
+            .await
+            .map_err(Error::Rpc)?;
+        for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
+            if let Some(err) = &result.err {
+                // Named here because the bundle endpoint may return no logs
+                // for a failed leg. `solve` warns about the dropped solution.
+                tracing::debug!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    leg,
+                    creation = ?creation_uids.get(leg).map(ToString::to_string),
+                    program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
+                    logs = ?result.logs,
+                    "bundle simulation failed"
+                );
+                return Err(Error::SimulationFailed {
+                    program_error: result
+                        .logs
+                        .as_deref()
+                        .and_then(|logs| ProgramError::from_logs(program_id, logs)),
+                    err: err.clone(),
+                });
+            }
+        }
+        if results.len() < bundle.len() {
+            return Err(Error::IncompleteSimulation {
+                executed: results.len(),
+                legs: bundle.len(),
+            });
+        }
+        Ok(())
     }
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them.
-    pub async fn compute_solutions(&self, auction: &Auction) -> Result<Vec<Solution>, Error> {
+    ///
+    /// `missing_buy_token_accounts` marks the orders whose payout account the
+    /// settlement creates, so the engine can price its rent in.
+    pub async fn compute_solutions(
+        &self,
+        auction: &Auction,
+        missing_buy_token_accounts: &HashSet<OrderUid>,
+    ) -> Result<Vec<Solution>, Error> {
         let solutions = self
             .solver
-            .solve(auction, self.blockchain.program_id())
+            .solve(
+                auction,
+                self.blockchain.program_id(),
+                missing_buy_token_accounts,
+            )
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and
@@ -254,14 +468,23 @@ impl Competition {
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
-            .await?;
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
 
-        let latest = self
-            .blockchain
-            .latest_confirmed_blockhash()
-            .await
-            .map_err(Error::Rpc)?;
-        let transaction = resolved.encode(self.solver.keypair(), latest.blockhash)?;
+        let (estimate, latest) =
+            tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
+                self.blockchain
+                    .latest_confirmed_blockhash()
+                    .await
+                    .map_err(Error::Rpc)
+            },)?;
+        let transaction = resolved
+            .encode(
+                self.solver.signer(),
+                latest.blockhash,
+                estimate.compute_unit_price,
+            )
+            .await?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
         {
@@ -313,12 +536,7 @@ impl Competition {
             }
             Error::DeadlineExceeded
         })?
-        .map_err(|err| Error::FailedToSubmit {
-            settlement_error: err
-                .get_transaction_error()
-                .and_then(|err| settlement_error(program_id, &transaction, &err)),
-            err,
-        })?;
+        .map_err(|err| Error::FailedToSubmit { err })?;
 
         // TODO: drop this log once protocol fees are implemented.
         for fee in &volume_fees {
@@ -398,6 +616,31 @@ impl Competition {
         Ok(())
     }
 
+    /// The priority fee for the settlement transaction, from the fees recently
+    /// paid over the accounts it writes.
+    async fn estimate_priority_fee(
+        &self,
+        resolved: &super::settlement::ResolvedSettlement,
+        cu_estimate: Option<u32>,
+    ) -> Result<priority_fee::Estimate, Error> {
+        let writable = resolved.writable_accounts()?;
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&writable)
+            .await
+            .map_err(Error::Rpc)?;
+        let estimate = self.priority_fee.estimate(&fees, cu_estimate)?;
+        metrics()
+            .compute_unit_price
+            .observe(estimate.compute_unit_price as f64);
+        tracing::info!(
+            compute_unit_price = estimate.compute_unit_price,
+            priority_fee_lamports = estimate.lamports,
+            "priority fee estimated"
+        );
+        Ok(estimate)
+    }
+
     /// Simulate a settlement transaction before sending it.
     async fn simulate_settlement(&self, transaction: &VersionedTransaction) -> Result<(), Error> {
         tracing::debug!("simulating settlement transaction");
@@ -407,16 +650,20 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            // Only the program logs surface here, the error itself carries
-            // the failure and its decoded settlement error to the settle
-            // task's log.
-            tracing::warn!(logs = ?simulation.logs, "settlement simulation failed");
+            // Only the program logs and the message surface here, the error
+            // itself carries the failure and its program error to the settle
+            // task's log. The message leaves out the signature, so the log
+            // cannot be broadcast.
+            tracing::warn!(
+                logs = ?simulation.logs,
+                message = %BASE64_STANDARD.encode(transaction.message.serialize()),
+                "settlement simulation failed"
+            );
             return Err(Error::SimulationFailed {
-                settlement_error: settlement_error(
-                    self.blockchain.program_id(),
-                    transaction,
-                    &err.clone().into(),
-                ),
+                program_error: simulation
+                    .logs
+                    .as_deref()
+                    .and_then(|logs| ProgramError::from_logs(self.blockchain.program_id(), logs)),
                 err: err.clone(),
             });
         }
@@ -425,26 +672,18 @@ impl Competition {
     }
 }
 
-/// The settlement program's own error behind a failed transaction. Only the
-/// failing instruction's owner can interpret a custom code: a foreign
-/// program's code (a Jupiter route, for example) must not be read as ours,
-/// and a code newer than the interface crate decodes to nothing.
-fn settlement_error(
-    program_id: Pubkey,
-    transaction: &VersionedTransaction,
-    err: &TransactionError,
-) -> Option<SettlementError> {
-    let TransactionError::InstructionError(index, InstructionError::Custom(code)) = err else {
+/// The program whose instruction the error names. Programs are always static
+/// keys, never loaded from a lookup table.
+fn failing_program(transaction: &VersionedTransaction, err: &TransactionError) -> Option<Pubkey> {
+    let TransactionError::InstructionError(index, _) = err else {
         return None;
     };
     let message = &transaction.message;
     let instruction = message.instructions().get(usize::from(*index))?;
-    let program = message
+    message
         .static_account_keys()
-        .get(usize::from(instruction.program_id_index))?;
-    (*program == program_id)
-        .then(|| SettlementError::try_from(*code).ok())
-        .flatten()
+        .get(usize::from(instruction.program_id_index))
+        .copied()
 }
 
 struct VolumeFee {
@@ -516,25 +755,45 @@ pub(crate) enum Error {
     /// A pre-submission RPC read failed; nothing was submitted.
     #[error("rpc request failed: {0}")]
     Rpc(#[source] cow_solana_rpc::Error),
-    #[error("failed to submit or confirm settlement: {err}, settlement error {settlement_error:?}")]
+    /// The buy token account lookup failed; nothing was solved. The error is
+    /// shared because the cache hands the same failure to every engine
+    /// waiting on the lookup.
+    #[error("buy token account lookup failed: {0}")]
+    BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
+    #[error("failed to submit or confirm settlement: {err}")]
     FailedToSubmit {
         #[source]
         err: cow_solana_rpc::Error,
-        settlement_error: Option<SettlementError>,
     },
     #[error("failed to submit or confirm an order creation: {0}")]
     FailedToCreate(#[source] cow_solana_rpc::Error),
     /// The pre-submission simulation failed. The transaction was not sent.
-    #[error("settlement simulation failed: {err}, settlement error {settlement_error:?}")]
+    #[error("settlement simulation failed: {err}, program error {program_error:?}")]
     SimulationFailed {
         #[source]
         err: cow_solana_rpc::UiTransactionError,
-        settlement_error: Option<SettlementError>,
+        program_error: Option<ProgramError>,
     },
-    /// The encoded settlement exceeds the network's per-transaction ceiling.
+    /// The solve-time simulation did not answer within its share of the
+    /// auction deadline.
+    #[error("settlement simulation timed out")]
+    SimulationTimedOut,
+    /// The bundle simulation answered for fewer transactions than it was sent
+    /// without naming a failure, so the settlement went unexecuted.
+    #[error("bundle simulation executed {executed} of {legs} transactions without an error")]
+    IncompleteSimulation { executed: usize, legs: usize },
+    /// An encoded transaction exceeds the network's per-transaction ceiling.
     /// Nothing was sent.
-    #[error("settlement transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
+    #[error("transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
     TransactionTooLarge { size: u64 },
+    /// The transaction's priority fee is over the configured budget. Nothing
+    /// was sent.
+    #[error(transparent)]
+    PriorityFeeTooHigh(#[from] priority_fee::OverBudget),
+    /// A transaction locks more accounts than the runtime allows. Nothing was
+    /// sent.
+    #[error("transaction locks {accounts} accounts, over the {MAX_TRANSACTION_ACCOUNTS} limit")]
+    TooManyAccounts { accounts: usize },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -552,6 +811,9 @@ struct Metrics {
     /// Settlement attempts by final outcome and solver.
     #[metric(labels("outcome", "solver"))]
     outcomes: prometheus::IntCounterVec,
+    /// Solve-time settlement simulations by outcome and solver.
+    #[metric(labels("outcome", "solver"))]
+    solve_simulations: prometheus::IntCounterVec,
     /// Serialized settlement transaction size in bytes. The network rejects a
     /// transaction over 1232 bytes.
     #[metric(buckets(600., 800., 1000., 1100., 1200., 1232., 1400., 1600.))]
@@ -566,6 +828,9 @@ struct Metrics {
         100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
     ))]
     compute_units: prometheus::Histogram,
+    /// The transaction's compute unit price, in micro-lamports per unit.
+    #[metric(buckets(1_000., 10_000., 50_000., 100_000., 500_000., 1_000_000., 5_000_000.))]
+    compute_unit_price: prometheus::Histogram,
 }
 
 fn metrics() -> &'static Metrics {
@@ -613,22 +878,42 @@ fn account_count(transaction: &VersionedTransaction) -> usize {
     message.static_account_keys().len() + loaded
 }
 
+/// Whether the error proves the settlement fails on chain, as opposed to the
+/// driver failing to find out. Only a proof drops a solution at solve time:
+/// an unverified solution costs at most one failed settlement, a wrongly
+/// dropped one costs the auction its best solution.
+fn proves_failure(error: &Error) -> bool {
+    match error {
+        Error::Settlement(_)
+        | Error::SimulationFailed { .. }
+        | Error::TransactionTooLarge { .. }
+        | Error::TooManyAccounts { .. } => true,
+        Error::Resolve(error) => !matches!(error, ResolveError::Rpc(_)),
+        _ => false,
+    }
+}
+
 /// The metrics label for a finished settlement attempt.
 fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
-    let error = match result {
-        Ok(_) => return "submitted",
-        Err(error) => error,
-    };
+    result.as_ref().err().map_or("submitted", error_label)
+}
+
+fn error_label(error: &Error) -> &'static str {
     match error {
         Error::Solver(_) => "solver_failed",
         Error::SolutionNotAvailable => "solution_unavailable",
         Error::DeadlineExceeded => "deadline_exceeded",
         Error::TooManyPendingSettlements => "throttled",
         Error::Rpc(_) => "rpc_failed",
+        Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
+        Error::SimulationTimedOut => "simulation_timed_out",
+        Error::IncompleteSimulation { .. } => "simulation_incomplete",
         Error::TransactionTooLarge { .. } => "transaction_too_large",
+        Error::PriorityFeeTooHigh(_) => "priority_fee_too_high",
+        Error::TooManyAccounts { .. } => "too_many_accounts",
         Error::Resolve(_) => "resolve_failed",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
@@ -639,36 +924,28 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
 mod tests {
     use super::*;
 
-    /// Only a custom code from the settlement program's own instruction
-    /// decodes: a foreign program's code, an unknown code, and a non-custom
-    /// error read as nothing.
+    /// Addresses loaded from lookup tables count toward the account lock
+    /// limit like static keys.
     #[test]
-    fn decodes_only_own_custom_codes() {
-        let ours = Pubkey::new_unique();
-        let foreign = Pubkey::new_unique();
-        let message = solana_sdk::message::Message::new(
-            &[
-                solana_sdk::instruction::Instruction::new_with_bytes(foreign, &[], vec![]),
-                solana_sdk::instruction::Instruction::new_with_bytes(ours, &[], vec![]),
-            ],
-            Some(&Pubkey::new_unique()),
-        );
+    fn counts_lookup_table_accounts() {
+        let lookup = |writable_indexes, readonly_indexes| {
+            solana_sdk::message::v0::MessageAddressTableLookup {
+                account_key: Pubkey::new_unique(),
+                writable_indexes,
+                readonly_indexes,
+            }
+        };
         let transaction = VersionedTransaction {
             signatures: vec![],
-            message: solana_sdk::message::VersionedMessage::Legacy(message),
+            message: solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+                account_keys: vec![Pubkey::new_unique(); 3],
+                address_table_lookups: vec![
+                    lookup(vec![0, 1], vec![2, 3, 4]),
+                    lookup(vec![], vec![0]),
+                ],
+                ..Default::default()
+            }),
         };
-        let custom =
-            |index, code| TransactionError::InstructionError(index, InstructionError::Custom(code));
-
-        assert_eq!(
-            settlement_error(ours, &transaction, &custom(1, 16)),
-            Some(SettlementError::OrderExpired)
-        );
-        assert_eq!(settlement_error(ours, &transaction, &custom(0, 16)), None);
-        assert_eq!(settlement_error(ours, &transaction, &custom(1, 9999)), None);
-        assert_eq!(
-            settlement_error(ours, &transaction, &TransactionError::BlockhashNotFound),
-            None
-        );
+        assert_eq!(account_count(&transaction), 9);
     }
 }

@@ -70,7 +70,8 @@ pub fn new(
     }
 
     solvers_dto::auction::Auction {
-        id: auction.id(),
+        id: auction.auction_id().map(|id| id.0),
+        quote_id: auction.quote_id().map(|id| id.0),
         orders: auction
             .orders()
             .iter()

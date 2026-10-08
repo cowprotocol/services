@@ -123,19 +123,27 @@ async fn run(config: Config) {
         .map(|driver| Arc::new(Driver::new(driver.name.clone(), &driver.url)))
         .collect();
 
-    let sponsor = config.sponsoring.as_ref().map(|sponsoring| {
-        let keypair = solana_sdk::signer::keypair::read_keypair_file(&sponsoring.funder_keypair)
-            .expect("read the funder keypair");
-        Sponsor::new(
-            keypair,
-            SolanaRPC::new_with_timeout_and_commitment(
-                &config.rpc.endpoint,
-                config.rpc.request_timeout,
-                CommitmentConfig::confirmed(),
-            ),
-            pool.clone(),
-        )
-    });
+    let sponsor = match &config.sponsoring {
+        Some(sponsoring) => {
+            let signer = sponsoring
+                .funder
+                .load()
+                .await
+                .expect("load the funder signer");
+            tracing::info!(funder = %signer.pubkey(), "loaded the funder signer");
+            Some(Arc::new(Sponsor::new(
+                signer,
+                SolanaRPC::new_with_timeout_and_commitment(
+                    &config.rpc.endpoint,
+                    config.rpc.request_timeout,
+                    CommitmentConfig::confirmed(),
+                ),
+                pool.clone(),
+                sponsoring.max_displaced_creations,
+            )))
+        }
+        None => None,
+    };
 
     let auction_loop = AuctionLoop::new(
         Box::new(trigger),

@@ -5,7 +5,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
-    database::byte_array::ByteArray,
+    database::{byte_array::ByteArray, solana::OrderEventLabel},
     solana_sdk::clock::MAX_PROCESSING_AGE,
     sqlx::{PgExecutor, Postgres, QueryBuilder},
 };
@@ -30,6 +30,8 @@ pub struct OrderRow {
     pub order_pda: ByteArray<32>,
     pub app_data: ByteArray<32>,
     pub created_on_chain: bool,
+    pub executed: BigDecimal,
+    pub creation: Option<Vec<u8>>,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -48,7 +50,12 @@ pub async fn open_orders(
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.order_pda, o.app_data,
-       p.order_uid IS NOT NULL AS created_on_chain
+       p.order_uid IS NOT NULL AS created_on_chain,
+       CASE o.kind
+           WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
+           ELSE COALESCE(p.amount_received, 0)
+       END AS executed,
+       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.valid_to >= $1
@@ -78,6 +85,38 @@ ORDER BY o.uid
         .context("read open solana.orders")
 }
 
+/// Pending sponsored orders whose stored creation transaction died at
+/// `block_height` and that carry no `invalid` event yet. Orders past
+/// `valid_to` are left out: they expired either way, and the bound keeps the
+/// scan small.
+pub async fn unrecorded_dead_creations(
+    ex: impl PgExecutor<'_>,
+    now_unix: i64,
+    block_height: i64,
+) -> Result<Vec<ByteArray<32>>> {
+    const QUERY: &str = r#"
+SELECT o.uid
+FROM solana.orders o
+LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+WHERE o.valid_to >= $1
+  AND o.presigned_transaction IS NOT NULL
+  AND p.order_uid IS NULL
+  AND o.last_valid_block_height < $2
+  AND NOT EXISTS (
+      SELECT 1 FROM solana.order_events e
+      WHERE e.order_uid = o.uid AND e.label = $3
+  )
+ORDER BY o.uid
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(now_unix)
+        .bind(block_height)
+        .bind(OrderEventLabel::Invalid)
+        .fetch_all(ex)
+        .await
+        .context("read unrecorded dead solana.orders creations")
+}
+
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
@@ -96,25 +135,55 @@ pub struct LandedWindow {
     pub submitted_signature: ByteArray<64>,
 }
 
-/// The stored creation transactions of the given orders that do not exist on
-/// chain yet.
+/// A sponsored order's stored creation, for an order the indexer has not
+/// seen on chain yet.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct StoredCreation {
+    pub uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
+    /// The order account the creation opens.
+    pub order_pda: ByteArray<32>,
+    /// The owner-signed creation transaction, bincode-encoded.
+    pub transaction: Vec<u8>,
+}
+
+/// The stored creations of the given orders the indexer has not seen on
+/// chain yet, oldest first.
 pub async fn pending_creations(
     ex: impl PgExecutor<'_>,
     uids: &[Vec<u8>],
-) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+) -> Result<Vec<StoredCreation>> {
     const QUERY: &str = r#"
-SELECT o.uid, o.presigned_transaction
+SELECT o.uid, o.owner, o.order_pda, o.presigned_transaction AS transaction
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.uid = ANY($1)
   AND o.presigned_transaction IS NOT NULL
   AND p.order_uid IS NULL
+ORDER BY o.creation_timestamp, o.uid
     "#;
     sqlx::query_as(QUERY)
         .bind(uids)
         .fetch_all(ex)
         .await
         .context("read pending solana.orders creations")
+}
+
+/// Lower a pending sponsored creation's stored deadline to `height`, a height
+/// its blockhash is known dead at. Never raises it.
+pub async fn expire_creation(ex: impl PgExecutor<'_>, uid: &[u8], height: i64) -> Result<()> {
+    const QUERY: &str = r#"
+UPDATE solana.orders
+SET last_valid_block_height = LEAST(last_valid_block_height, $2)
+WHERE uid = $1 AND last_valid_block_height IS NOT NULL
+    "#;
+    sqlx::query(QUERY)
+        .bind(uid)
+        .bind(height)
+        .execute(ex)
+        .await
+        .context("expire the solana.orders creation")?;
+    Ok(())
 }
 
 /// Open a settlement-execution window for a dispatched settlement.
@@ -165,6 +234,35 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
         .execute(ex)
         .await
         .context("reject settlement execution window")?;
+    Ok(())
+}
+
+/// Record a winner skipped before dispatch as a window already closed as
+/// rejected. No transaction went out, so its orders are not in flight.
+pub async fn skip_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+    slot: i64,
+    deadline_slot: i64,
+) -> Result<()> {
+    const QUERY: &str = r#"
+INSERT INTO solana.settlement_executions
+    (auction_id, solver, solution_uid, start_timestamp, end_timestamp, start_slot, end_slot,
+     deadline_slot, outcome)
+VALUES ($1, $2, $3, now(), now(), $4, $4, $5, 'rejected')
+ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .bind(slot)
+        .bind(deadline_slot)
+        .execute(ex)
+        .await
+        .context("record skipped settlement execution window")?;
     Ok(())
 }
 
@@ -257,8 +355,8 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
 
 /// Orders inside a winning solution whose settlement transaction may still
 /// land: a blockhash lifetime past the deadline slot has not run out, no
-/// settlement of the auction traded the order yet, and the driver did not
-/// reject the solution before sending it. A timed-out window keeps the hold,
+/// settlement of the auction traded the order yet, and no `rejected` window
+/// says the solution never went out. A timed-out window keeps the hold,
 /// its transaction may land until the blockhash expires. Landing is checked
 /// per order through the settlement's trades: `settlements.solution_uid` is
 /// unattributed, and one solver may win several solutions of one auction.
@@ -491,6 +589,9 @@ impl TryFrom<OrderRow> for Order {
             order_pda: Pubkey(row.order_pda.0),
             app_data: AppData(row.app_data.0),
             created_on_chain: row.created_on_chain,
+            executed: to_amount(&row.executed).context("executed")?,
+            creation: row.creation,
+            sell_balance: None,
         })
     }
 }
@@ -505,8 +606,15 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use {
-        super::{in_flight_orders, last_indexed_slot, open_orders},
-        bigdecimal::BigDecimal,
+        super::{
+            in_flight_orders,
+            last_indexed_slot,
+            open_orders,
+            skip_settlement_window,
+            unrecorded_dead_creations,
+        },
+        bigdecimal::{BigDecimal, ToPrimitive},
+        chain_types::solana::Pubkey,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
     };
@@ -527,6 +635,8 @@ mod tests {
             order_pda: ByteArray([7; 32]),
             app_data: ByteArray([0; 32]),
             created_on_chain: true,
+            executed: BigDecimal::from(0u64),
+            creation: None,
         }
     }
 
@@ -640,6 +750,10 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         // Dropped: buy side fully received.
         insert_order(&mut tx, 8, 2_000, true, database::solana::OrderKind::Buy).await;
         insert_pda(&mut tx, 8, false, 0, 2_000).await;
+        // Kept: buy side partially received; the sell counter must not leak
+        // into `executed`.
+        insert_order(&mut tx, 11, 2_000, true, database::solana::OrderKind::Buy).await;
+        insert_pda(&mut tx, 11, false, 300, 500).await;
         // A pending sponsored order whose creation dies at height 150: kept
         // while the chain is below that height or the height is unknown,
         // dropped after.
@@ -660,14 +774,92 @@ WHERE uid = $1
             orders.iter().map(|order| order.uid.0[0]).collect()
         };
         let orders = open_orders(&mut *tx, 1_000, Some(100)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        let executed: Vec<u64> = orders
+            .iter()
+            .map(|order| order.executed.to_u64().unwrap())
+            .collect();
+        assert_eq!(executed, vec![0, 999, 0, 0, 500]);
+        let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
+        assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         // Boundary: still alive when the chain height equals the stored height.
         let orders = open_orders(&mut *tx, 1_000, Some(150)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 11]);
+    }
+
+    /// A pending sponsored order counts once the chain passes its stored
+    /// creation height, until it carries an `invalid` event. Other events do
+    /// not stop it. Orders created on chain or past `valid_to` never count.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_unrecorded_dead_creations_skip_recorded_ones() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+
+        for table in ["order_events", "trades", "order_pda", "orders"] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+
+        // Creations dying at height 150: pending (1), created on chain (2),
+        // pending but past `valid_to` (3).
+        for (n, valid_to) in [(1, 2_000), (2, 2_000), (3, 500)] {
+            insert_order(
+                &mut tx,
+                n,
+                valid_to,
+                true,
+                database::solana::OrderKind::Sell,
+            )
+            .await;
+            sqlx::query(
+                r#"
+UPDATE solana.orders
+SET presigned_transaction = '\x01', last_valid_block_height = 150
+WHERE uid = $1
+                "#,
+            )
+            .bind(ByteArray([n; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        insert_pda(&mut tx, 2, false, 0, 0).await;
+
+        async fn dead(tx: &mut PgTransaction<'_>, height: i64) -> Vec<u8> {
+            unrecorded_dead_creations(&mut **tx, 1_000, height)
+                .await
+                .unwrap()
+                .iter()
+                .map(|uid| uid.0[0])
+                .collect()
+        }
+        async fn record(tx: &mut PgTransaction<'_>, label: database::solana::OrderEventLabel) {
+            sqlx::query(
+                r#"
+INSERT INTO solana.order_events (order_uid, timestamp, label)
+VALUES ($1, now(), $2)
+                "#,
+            )
+            .bind(ByteArray([1u8; 32]))
+            .bind(label)
+            .execute(&mut **tx)
+            .await
+            .unwrap();
+        }
+
+        assert!(dead(&mut tx, 150).await.is_empty());
+        assert_eq!(dead(&mut tx, 151).await, vec![1]);
+        record(&mut tx, database::solana::OrderEventLabel::Ready).await;
+        assert_eq!(dead(&mut tx, 151).await, vec![1]);
+        record(&mut tx, database::solana::OrderEventLabel::Invalid).await;
+        assert!(dead(&mut tx, 151).await.is_empty());
     }
 
     /// Held: an order of a winning solution through its deadline slot plus
@@ -787,7 +979,7 @@ WHERE uid = $1
         for order in [1u8, 3] {
             sqlx::query(
                 "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
-                 sell_amount, buy_amount, fee_amount) VALUES ($1, 0, $2, 10, 20, 0)",
+                 sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 0, $2, 10, 20, 0, 10)",
             )
             .bind([9u8; 64])
             .bind(ByteArray([order; 32]))
@@ -799,6 +991,44 @@ WHERE uid = $1
                 if order == 1 { vec![3] } else { vec![] }
             );
         }
+    }
+
+    /// A winner skipped before dispatch holds none of its orders.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_a_skipped_winner_holds_nothing() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+        let solver = ByteArray([0xEE; 32]);
+        sqlx::query(
+            "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, order_uids, \
+             price_tokens, price_values) VALUES (77, 1, 100, '{}', '{}', '{}')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+             filtered_out, score) VALUES (77, 0, 7, $1, true, false, 1)",
+        )
+        .bind(solver)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, order_uid, \
+             executed_sell, executed_buy) VALUES (77, 0, $1, 10, 20)",
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(in_flight_orders(&pool, 50).await.unwrap().len(), 1);
+
+        skip_settlement_window(&pool, 77, Pubkey(solver.0), 0, 1, 100)
+            .await
+            .unwrap();
+        assert!(in_flight_orders(&pool, 50).await.unwrap().is_empty());
     }
 
     #[tokio::test]

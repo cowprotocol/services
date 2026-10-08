@@ -174,10 +174,8 @@ impl Solver {
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
+                "receiver": format!("0x{}", const_hex::encode(quote.order.receiver.raw_bytes())),
             });
-            if let Some(receiver) = quote.order.receiver {
-                order["receiver"] = json!(receiver.encode_hex_with_prefix());
-            }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
                     liquidity_provider: flashloan.liquidity_provider,
@@ -384,12 +382,12 @@ impl Solver {
                             jit.quoted_order.order = jit
                                 .quoted_order
                                 .order
-                                .receiver(Some(config.private_key.address()));
+                                .receiver(config.private_key.address().into());
                             let fee_amount = jit.quoted_order.order.solver_fee.unwrap_or_default();
                             let order = json!({
                                 "sellToken": config.blockchain.get_token(jit.quoted_order.order.sell_token),
                                 "buyToken": config.blockchain.get_token(jit.quoted_order.order.buy_token),
-                                "receiver": jit.quoted_order.order.receiver.unwrap_or_default().encode_hex_with_prefix(),
+                                "receiver": format!("0x{}", const_hex::encode(jit.quoted_order.order.receiver.raw_bytes())),
                                 "sellAmount": jit.quoted_order.order.sell_amount.to_string(),
                                 "buyAmount": jit.quoted_order.order.buy_amount.unwrap_or_default().to_string(),
                                 "validTo": jit.quoted_order.order.valid_to,
@@ -493,6 +491,7 @@ impl Solver {
                 balances: Some((*config.blockchain.balances.address()).into()),
                 signatures: Some((*config.blockchain.signatures.address()).into()),
                 flashloan_router: Some((*config.blockchain.flashloan_router.address()).into()),
+                deadline_check: Some((*config.blockchain.deadline_check.address()).into()),
             },
             &shared::current_block::Arguments {
                 block_stream_poll_interval: None,
@@ -518,13 +517,8 @@ impl Solver {
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let base_fee = eth.current_block().borrow().base_fee;
                     let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
-                    let expected = json!({
-                        // Regular auctions use a fixed id; quote auctions carry
-                        // the quote id.
-                        "id": match config.quote {
-                            false => "1".to_owned(),
-                            true => config.quote_id.expect("quotes carry a quote id").to_string(),
-                        },
+                    let mut expected = json!({
+                        "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,
                         "orders": orders_json,
                         "liquidity": [],
@@ -532,6 +526,10 @@ impl Solver {
                         "deadline": config.deadline.solvers(),
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
+                    if config.quote {
+                        expected["quoteId"] =
+                            config.quote_id.expect("quotes carry a quote id").to_string().into();
+                    }
                     check_solve_request(req, expected);
                     let mut state = state.0.lock().unwrap();
                     assert!(

@@ -12,7 +12,6 @@ app-data = { workspace = true }
 arc-swap = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
-bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes-hex = { workspace = true }
@@ -25,6 +24,7 @@ const-hex = { workspace = true }
 contracts = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
+eth-domain-types = { workspace = true }
 ethrpc = { workspace = true }
 event-bus-dto = { workspace = true }
 futures = { workspace = true }

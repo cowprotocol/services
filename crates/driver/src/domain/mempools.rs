@@ -1,7 +1,7 @@
 use {
-    super::competition::solution::{GasFeeOverride, settlement},
+    super::competition::solution::GasFeeOverride,
     crate::{
-        domain::{blockchain::TxStatus, competition::solution::Settlement},
+        domain::{blockchain::TxStatus, competition::solution::settlement::EncodedSettlement},
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
@@ -65,28 +65,33 @@ impl Mempools {
     /// failure errors.
     pub async fn execute(
         &self,
-        settlement: &Settlement,
+        settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
         let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
-        let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
-            |(mempool, stat)| {
-                async move {
-                    let result = self
-                        .submit(mempool, settlement, submission_deadline, mode)
-                        .instrument(tracing::info_span!("mempool", kind = %mempool))
-                        .await;
-                    // Log inline so errors from mempools that later get superseded still surface;
-                    // metrics are emitted from `update_metrics` once the race outcome is known.
-                    observe::mempool_log(mempool, settlement, &result);
-                    *stat = Outcome::from(&result);
-                    result
-                }
-                .boxed()
-            },
-        ))
+        let res = select_ok(
+            self.mempools
+                .iter()
+                .zip(stats.iter_mut())
+                .map(|(mempool, stat)| {
+                    async move {
+                        let result = self
+                            .submit(mempool, settlement, submission_deadline, mode)
+                            .instrument(tracing::info_span!("mempool", kind = %mempool))
+                            .await;
+                        // Log inline so errors from mempools that later get
+                        // superseded still surface;
+                        // metrics are emitted from `update_metrics` once the
+                        // race outcome is known.
+                        observe::mempool_log(mempool, settlement, &result);
+                        *stat = Outcome::from(&result);
+                        result
+                    }
+                    .boxed()
+                }),
+        )
         .await
         // Drop the remaining futures (and the mutable borrow on `stats` they
         // carry) so `update_metrics` can read `stats` below.
@@ -98,12 +103,12 @@ impl Mempools {
     }
 
     /// A mempool is disabled if all of the following are true:
-    /// * the settlement may revert (see [`Settlement::may_revert`])
+    /// * the settlement may revert (see [`EncodedSettlement::may_revert`])
     /// * the pool has revert protection enabled (see
     ///   [`Self::revert_protection`])
     /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
-    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
-        settlement.may_revert()
+    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &EncodedSettlement) -> bool {
+        settlement.may_revert
             && matches!(self.revert_protection(), RevertProtection::Enabled)
             && mempool.reverts_can_get_mined()
     }
@@ -124,7 +129,7 @@ impl Mempools {
     async fn submit(
         &self,
         mempool: &infra::mempool::Mempool,
-        settlement: &Settlement,
+        settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
@@ -132,8 +137,7 @@ impl Mempools {
             return Err(Error::Disabled);
         }
 
-        let tx = settlement.transaction(settlement::Internalization::Enable);
-        let tx = prepare_submission(tx, mode);
+        let tx = prepare_submission(&settlement.internalized, mode);
         let signer = tx.from;
 
         // Instantiate block stream and skip the current block before we submit
@@ -200,7 +204,7 @@ impl Mempools {
 
         let final_gas_price = apply_gas_fee_override(
             final_gas_price,
-            settlement.gas_fee_override(),
+            settlement.gas_fee_override,
             replacement_gas_price.as_ref(),
         );
 
