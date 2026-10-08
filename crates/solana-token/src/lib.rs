@@ -194,7 +194,10 @@ impl MintLookup<'_> {
 /// extension and the account extensions the mint's own extensions require.
 pub fn ata_rent(mint: &Account) -> Option<u64> {
     let len = match TokenProgram::try_from(&mint.owner).ok()? {
-        TokenProgram::SplToken => TokenAccount::LEN,
+        // A classic mint is exactly 82 bytes; any other account of the
+        // program is a token account or a multisig.
+        TokenProgram::SplToken if mint.data.len() == Mint::LEN => TokenAccount::LEN,
+        TokenProgram::SplToken => return None,
         TokenProgram::Token2022 => {
             let mint = StateWithExtensions::<Mint>::unpack(&mint.data).ok()?;
             token_2022_ata_len(&mint.get_extension_types().ok()?)
@@ -464,6 +467,12 @@ mod tests {
             ata_rent(&token_2022_account(&Pubkey::new_unique(), &[], |_| {})),
             None
         );
+        let classic_account = Account {
+            owner: TokenProgram::SplToken.address(),
+            data: vec![0; TokenAccount::LEN],
+            ..Account::default()
+        };
+        assert_eq!(ata_rent(&classic_account), None);
     }
 
     /// A confidential transfer mint asks nothing of its accounts at creation —
