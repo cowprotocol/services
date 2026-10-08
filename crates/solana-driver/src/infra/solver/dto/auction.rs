@@ -461,4 +461,14 @@ mod tests {
         let tokens = tokens(&HashMap::from([(pubkey(1), 1_500_000_000)]));
         assert_eq!(tokens[&pubkey(1)].reference_price, 1_500_000_000);
     }
+
+    #[test]
+    fn native_sol_and_wsol_prices_collapse_into_one_entry() {
+        let tokens = tokens(&HashMap::from([
+            (ENCODED_NATIVE_SOL_TRANSFER, 1_000_000_000),
+            (native_mint::ID, 1_000_000_000),
+        ]));
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[&native_mint::ID].reference_price, 1_000_000_000);
+    }
 }
