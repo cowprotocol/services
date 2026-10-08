@@ -225,7 +225,8 @@ async fn buy_account_rent(
     }
 }
 
-/// Whether the payout lands at `recipient`; a token account it cannot is refused.
+/// Whether the payout lands at `recipient`; a token account it cannot is
+/// refused.
 fn recipient_receives(
     recipient: Pubkey,
     account: &Account,
@@ -435,20 +436,137 @@ mod tests {
     }
 
     fn frozen_token_account_json(mint: &Pubkey, owner: &Pubkey) -> serde_json::Value {
+        account_json(&token_account(mint, owner, AccountState::Frozen))
+    }
+
+    fn token_account(mint: &Pubkey, owner: &Pubkey, state: AccountState) -> Account {
         let mut data = vec![0; TokenAccount::LEN];
         TokenAccount {
             mint: *mint,
             owner: *owner,
-            state: AccountState::Frozen,
+            state,
             ..TokenAccount::default()
         }
         .pack_into_slice(&mut data);
-        account_json(&Account {
+        Account {
             lamports: 2_039_280,
             owner: spl_token_interface::ID,
             data,
             ..Account::default()
-        })
+        }
+    }
+
+    fn system_account(lamports: u64, data_len: usize) -> Account {
+        Account {
+            lamports,
+            owner: solana_system_interface::program::ID,
+            data: vec![0; data_len],
+            ..Account::default()
+        }
+    }
+
+    #[test]
+    fn a_recipient_receives_at_its_owners_associated_token_account() {
+        let (mint, owner, program) = (
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            TokenProgram::SplToken,
+        );
+        let ata = associated_token_account(&owner, &mint, program);
+        let auxiliary = Pubkey::new_unique();
+        let receives = |recipient, account: &Account| {
+            recipient_receives(recipient, account, &mint, program)
+                .map_err(|(_, body)| body.description.clone())
+        };
+        assert_eq!(
+            receives(owner, &system_account(1_000_000_000, 0)),
+            Ok(false)
+        );
+        let pda = Account {
+            owner: Pubkey::new_unique(),
+            ..system_account(1_000_000_000, 0)
+        };
+        assert_eq!(receives(owner, &pda), Ok(false));
+        let initialized = token_account(&mint, &owner, AccountState::Initialized);
+        assert_eq!(receives(ata, &initialized), Ok(true));
+        assert_eq!(
+            receives(auxiliary, &initialized),
+            Err(format!(
+                "the buy token account {auxiliary} is not an associated token account"
+            ))
+        );
+        let cannot_receive = Err(format!(
+            "the buy token account {ata} cannot receive the payout"
+        ));
+        assert_eq!(
+            receives(ata, &token_account(&mint, &owner, AccountState::Frozen)),
+            cannot_receive
+        );
+        assert_eq!(
+            receives(
+                ata,
+                &token_account(&Pubkey::new_unique(), &owner, AccountState::Initialized)
+            ),
+            cannot_receive
+        );
+    }
+
+    #[test]
+    fn the_read_prices_the_account_by_its_mint_at_the_rent_sysvar() {
+        let mint = Pubkey::new_unique();
+        let rent = create_account_for_test(&mainnet_rent());
+        let read =
+            |entries: Vec<(Pubkey, Account)>| read_ata_rent(&entries.into_iter().collect(), &mint);
+        assert_eq!(
+            read(vec![
+                (mint, classic_mint(6)),
+                (sysvar::rent::ID, rent.clone())
+            ]),
+            1_488_440
+        );
+        assert_eq!(
+            read(vec![
+                (mint, token_2022_mint(&[], |_| {})),
+                (sysvar::rent::ID, rent.clone()),
+            ]),
+            1_513_840
+        );
+        assert_eq!(read(vec![(mint, classic_mint(6))]), 2_039_280);
+        assert_eq!(
+            read(vec![(sysvar::rent::ID, rent)]),
+            max_ata_rent(&mainnet_rent())
+        );
+    }
+
+    #[test]
+    fn the_associated_token_account_address_owes_what_it_lacks() {
+        let (mint, owner) = (Pubkey::new_unique(), Pubkey::new_unique());
+        let ata = associated_token_account(&owner, &mint, TokenProgram::SplToken);
+        let owed = |account: &Account| {
+            ata_rent_owed(ata, account, &mint, 1_488_440).map_err(|(status, _)| status)
+        };
+        assert_eq!(
+            owed(&token_account(&mint, &owner, AccountState::Initialized)),
+            Ok(0)
+        );
+        assert_eq!(owed(&system_account(1_000_000, 0)), Ok(488_440));
+        assert_eq!(owed(&system_account(2_000_000, 0)), Ok(0));
+        assert_eq!(
+            owed(&system_account(1_000_000, 8)),
+            Err(StatusCode::BAD_REQUEST)
+        );
+        assert_eq!(
+            owed(&token_account(&mint, &owner, AccountState::Frozen)),
+            Err(StatusCode::BAD_REQUEST)
+        );
+        assert_eq!(
+            owed(&token_account(
+                &Pubkey::new_unique(),
+                &owner,
+                AccountState::Initialized
+            )),
+            Err(StatusCode::BAD_REQUEST)
+        );
     }
 
     /// The account read answers the recipient, its associated token account,
