@@ -39,6 +39,8 @@ struct Response {
 }
 
 impl NativePrices {
+    /// `autopilot` is the base URL, ending in a slash so the route resolves
+    /// under its path.
     pub fn new(autopilot: Url, timeout: Duration) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -50,13 +52,13 @@ impl NativePrices {
     /// Lamports per 10^9 atoms of `token`, the unit the autopilot prices
     /// auctions in.
     pub async fn price(&self, token: Pubkey) -> Result<u64, Error> {
-        // `Url::join` resolves relative to the last slash and would drop a
-        // final path segment of a base configured without a trailing slash.
-        let url = format!(
-            "{}/native_price/{token}?timeout_ms={}",
-            self.autopilot.as_str().trim_end_matches('/'),
-            self.timeout.as_millis()
-        );
+        let url = self
+            .autopilot
+            .join(&format!(
+                "native_price/{token}?timeout_ms={}",
+                self.timeout.as_millis()
+            ))
+            .context("native price url")?;
         let mut request = self.client.get(url).timeout(self.timeout);
         if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
             request = request.header("X-REQUEST-ID", id);
@@ -136,7 +138,8 @@ mod tests {
         assert_eq!(price(autopilot).await.unwrap(), 1000);
     }
 
-    /// A base URL with a path keeps it, with or without a trailing slash.
+    /// A base URL with a path keeps it. The config guarantees the trailing
+    /// slash `Url::join` needs.
     #[tokio::test]
     async fn keeps_the_base_path() {
         let base = autopilot(
@@ -145,9 +148,7 @@ mod tests {
             r#"{"price":"1"}"#,
         )
         .await;
-        for path in ["autopilot", "autopilot/"] {
-            let autopilot = base.join(path).unwrap();
-            assert_eq!(price(autopilot).await.unwrap(), 1, "{path}");
-        }
+        let autopilot = base.join("autopilot/").unwrap();
+        assert_eq!(price(autopilot).await.unwrap(), 1);
     }
 }

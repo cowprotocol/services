@@ -4,7 +4,7 @@ use {
     crate::infra::api::ValidationParameters,
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
-    serde_ext::deserialize_solana_pubkey_b58,
+    serde_ext::{deserialize_solana_pubkey_b58, deserialize_url_with_trailing_slash},
     solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
@@ -78,6 +78,7 @@ pub struct Quoting {
     pub drivers: Vec<Url>,
     /// Base URL of the autopilot, whose native price cache gates quotes: a
     /// pair with a token no estimator prices answers `NoLiquidity`.
+    #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
     pub autopilot: Url,
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
@@ -212,10 +213,10 @@ mod tests {
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
     }
 
-    /// Routes resolve relative to the driver URLs, so a base URL with a path
-    /// keeps it instead of having its last segment replaced.
+    /// Routes resolve relative to the driver and autopilot URLs, so a base
+    /// URL with a path keeps it instead of having its last segment replaced.
     #[test]
-    fn driver_urls_get_a_trailing_slash() {
+    fn urls_get_a_trailing_slash() {
         #[derive(Debug, Deserialize)]
         struct Wrapper {
             quoting: Quoting,
@@ -224,7 +225,7 @@ mod tests {
             r#"
             [quoting]
             drivers = ["http://driver/baseline"]
-            autopilot = "http://autopilot"
+            autopilot = "http://autopilot/base"
             "#,
         )
         .unwrap();
@@ -236,5 +237,6 @@ mod tests {
             wrapper.quoting.drivers[0].join("quote").unwrap().as_str(),
             "http://driver/baseline/quote"
         );
+        assert_eq!(wrapper.quoting.autopilot.as_str(), "http://autopilot/base/");
     }
 }
