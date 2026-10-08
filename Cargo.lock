@@ -1531,6 +1531,8 @@ dependencies = [
  "tikv-jemallocator",
  "tokio",
  "toml",
+ "tower",
+ "tower-http",
  "tracing",
  "url",
  "winner-selection",

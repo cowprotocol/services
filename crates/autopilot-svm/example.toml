@@ -2,6 +2,8 @@
 
 # Serves /metrics, /liveness, /ready, and /startup.
 metrics-port = 9586
+# Serves /native_price/{mint} to the orderbook.
+api-address = "0.0.0.0:12088"
 # The pod fails the liveness probe when no auction cycle completed in this
 # time.
 max-auction-age = "5m"

@@ -151,15 +151,15 @@ fn mock_rpc() -> SolanaRPC {
 
 /// Native prices for the seeded order's pair, at the denominator so scores
 /// stay raw surplus.
-fn test_prices() -> [(solana_sdk::pubkey::Pubkey, u64); 2] {
+fn test_prices() -> [(solana_sdk::pubkey::Pubkey, Option<u64>); 2] {
     [
         (
             solana_sdk::pubkey::Pubkey::new_from_array([0xAA; 32]),
-            1_000_000_000,
+            Some(1_000_000_000),
         ),
         (
             solana_sdk::pubkey::Pubkey::new_from_array([0xAB; 32]),
-            1_000_000_000,
+            Some(1_000_000_000),
         ),
     ]
 }

@@ -4,6 +4,7 @@ use {
     crate::{
         domain::arbitrator::SolanaArbitrator,
         infra::{
+            api,
             competition::DriverCompetition,
             config::{self, Config},
             db,
@@ -155,6 +156,12 @@ async fn run(config: Config) {
         config.contracts.wrapped_native_mint,
     );
     let forward_prices = !matches!(prices, NativePrices::Denominated);
+    let api = api::serve(
+        tokio::net::TcpListener::bind(config.api_address)
+            .await
+            .expect("bind the HTTP API"),
+        prices.clone(),
+    );
     let auction_loop = AuctionLoop::new(
         Box::new(trigger),
         Box::new(DbAuctionProvider::new(
@@ -192,11 +199,12 @@ async fn run(config: Config) {
     // BE-200.
     let cycles = auction_loop.run_forever(move || liveness.record_cycle());
 
-    // The metrics server and the listen session never end on their own, so an
-    // end means the task panicked.
+    // The servers and the listen session never end on their own, so an end
+    // means the task panicked.
     tokio::select! {
         _ = cycles => unreachable!("the auction loop never returns"),
         _ = metrics => panic!("metrics server stopped"),
+        result = api => panic!("HTTP API server stopped: {result:?}"),
         _ = listen => panic!("settlement listen session stopped"),
         () = observe::shutdown::shutdown_signal() => tracing::info!("shutting down"),
     }
