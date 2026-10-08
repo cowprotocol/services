@@ -3872,6 +3872,7 @@ dependencies = [
 name = "cow-solana-rpc"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "bincode",
  "futures",
