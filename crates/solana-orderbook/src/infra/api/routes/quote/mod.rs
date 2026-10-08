@@ -16,7 +16,12 @@ use {
         token_program::TokenProgram,
     },
     database::{byte_array::ByteArray, solana::OrderKind},
-    solana_sdk::{account::from_account, pubkey::Pubkey, rent::Rent, sysvar},
+    solana_sdk::{
+        account::{Account, from_account},
+        pubkey::Pubkey,
+        rent::Rent,
+        sysvar,
+    },
     solana_token::{
         ata_rent,
         max_ata_rent,
@@ -25,7 +30,7 @@ use {
     },
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
-    std::time::Duration,
+    std::{collections::HashMap, time::Duration},
 };
 
 /// How long a quoted order stays valid when the request names no validity.
@@ -195,10 +200,11 @@ async fn buy_account_rent(
     let (Some(sponsoring), BuyProgram::Known(program)) = (sponsoring, buy_program) else {
         return Ok(max_ata_rent(&Rent::default()));
     };
+    let mint = &request.buy_token;
     let [recipient, ata] = buy_token_account_candidates(request, program);
     let accounts = match sponsoring
         .rpc
-        .multiple_accounts([recipient, ata, request.buy_token, sysvar::rent::ID])
+        .multiple_accounts([recipient, ata, *mint, sysvar::rent::ID])
         .await
     {
         Ok(accounts) => accounts,
@@ -207,18 +213,30 @@ async fn buy_account_rent(
             return Ok(max_ata_rent(&Rent::default()));
         }
     };
-    let rent = accounts
-        .get(&sysvar::rent::ID)
-        .and_then(from_account::<Rent, _>)
-        .unwrap_or_default();
-    let recipient_account = accounts.get(&recipient);
-    if let Some(owner) = recipient_account
-        .and_then(|account| receivable_token_account_owner(account, &request.buy_token))
+    if let Some(account) = accounts.get(&recipient)
+        && recipient_receives(recipient, account, mint, program)?
     {
+        return Ok(0);
+    }
+    let rent = read_ata_rent(&accounts, mint);
+    match accounts.get(&ata) {
+        Some(account) => ata_rent_owed(ata, account, mint, rent),
+        None => Ok(rent),
+    }
+}
+
+/// Whether the payout lands at `recipient`; a token account it cannot is refused.
+fn recipient_receives(
+    recipient: Pubkey,
+    account: &Account,
+    mint: &Pubkey,
+    program: TokenProgram,
+) -> Result<bool, error::Reply> {
+    if let Some(owner) = receivable_token_account_owner(account, mint) {
         // The placement proves receivability with the ATA program's idempotent
         // creation, which fails on any account but the owner's associated one.
-        return if recipient == associated_token_account(&owner, &request.buy_token, program) {
-            Ok(0)
+        return if recipient == associated_token_account(&owner, mint, program) {
+            Ok(true)
         } else {
             Err(invalid_buy_token_account(
                 recipient,
@@ -228,31 +246,42 @@ async fn buy_account_rent(
     }
     // A token account of another mint, frozen, or refusing plain credits is
     // no wallet whose associated token account could take the payout.
-    if recipient_account.is_some_and(|account| TokenProgram::try_from(&account.owner).is_ok()) {
+    if TokenProgram::try_from(&account.owner).is_ok() {
         return Err(invalid_buy_token_account(
             recipient,
             "cannot receive the payout",
         ));
     }
-    let pre_funded = match accounts.get(&ata) {
-        Some(account) if receivable_token_account(account, &request.buy_token) => return Ok(0),
-        // Only the ATA program allocates at its address: anything there but a
-        // system account's lamports, which the creation tops up to the
-        // minimum, is a token account it leaves as is.
-        Some(account)
-            if account.owner != solana_system_interface::program::ID
-                || !account.data.is_empty() =>
-        {
-            return Err(invalid_buy_token_account(ata, "cannot receive the payout"));
-        }
-        Some(account) => account.lamports,
-        None => 0,
-    };
-    let lamports = accounts
-        .get(&request.buy_token)
+    Ok(false)
+}
+
+fn read_ata_rent(accounts: &HashMap<Pubkey, Account>, mint: &Pubkey) -> u64 {
+    let rent = accounts
+        .get(&sysvar::rent::ID)
+        .and_then(from_account::<Rent, _>)
+        .unwrap_or_default();
+    accounts
+        .get(mint)
         .and_then(|mint| ata_rent(&rent, mint))
-        .unwrap_or_else(|| max_ata_rent(&rent));
-    Ok(lamports.saturating_sub(pre_funded))
+        .unwrap_or_else(|| max_ata_rent(&rent))
+}
+
+fn ata_rent_owed(
+    ata: Pubkey,
+    account: &Account,
+    mint: &Pubkey,
+    rent: u64,
+) -> Result<u64, error::Reply> {
+    if receivable_token_account(account, mint) {
+        return Ok(0);
+    }
+    // Only the ATA program allocates at its address: anything there but a
+    // system account's lamports, which the creation tops up to the minimum,
+    // is a token account it leaves as is.
+    if account.owner != solana_system_interface::program::ID || !account.data.is_empty() {
+        return Err(invalid_buy_token_account(ata, "cannot receive the payout"));
+    }
+    Ok(rent.saturating_sub(account.lamports))
 }
 
 fn invalid_buy_token_account(account: Pubkey, reason: &str) -> error::Reply {
@@ -362,10 +391,7 @@ mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
-        solana_sdk::{
-            account::{Account, create_account_for_test},
-            program_pack::Pack,
-        },
+        solana_sdk::{account::create_account_for_test, program_pack::Pack},
         solana_testlib::{
             account_json,
             classic_mint,
