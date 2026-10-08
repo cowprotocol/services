@@ -1,0 +1,74 @@
+openapi: 3.0.3
+info:
+  title: Solana Autopilot Native Price API
+  description: |
+    Internal API over the native price cache the autopilot scores auctions
+    with. The orderbook reads it to refuse quotes on tokens no estimator
+    prices.
+  version: 0.0.1
+paths:
+  /native_price/{mint}:
+    get:
+      operationId: getNativePrice
+      summary: Get the native price for a mint
+      parameters:
+        - in: path
+          name: mint
+          description: |
+            The mint to price. wSOL and the System Program ID (native SOL)
+            price at 10^9.
+          schema:
+            $ref: "#/components/schemas/Pubkey"
+          required: true
+      responses:
+        "200":
+          description: Native price retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NativeTokenPrice"
+        "400":
+          description: The path is not a base58 public key.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid mint"
+        "404":
+          description: No estimator prices the mint.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "No liquidity"
+        "429":
+          description: Every price source is rate limited.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Rate limited"
+        "500":
+          description: Internal server error.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Internal error"
+components:
+  schemas:
+    Pubkey:
+      description: A base58-encoded Solana public key.
+      type: string
+      example: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+    NativeTokenPrice:
+      type: object
+      properties:
+        price:
+          description: |
+            Lamports per 10^9 atoms of the mint, a 64 bit unsigned integer in
+            decimal notation.
+          type: string
+          example: "1000000000"
+      required:
+        - price
