@@ -161,9 +161,7 @@ async fn check_mints(
 /// anonymous quote without a `receiver` names no account to read. The read
 /// fetches the buy mint again, as the verdict cache keeps no account data and
 /// the mint's extensions size the account, and the rent sysvar, as the SDK's
-/// default rent is above the cluster's. Without sponsoring, the buy mint's
-/// token program, or a successful read, the account costs the most a
-/// settleable mint can need at that default.
+/// default rent is above the cluster's.
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
