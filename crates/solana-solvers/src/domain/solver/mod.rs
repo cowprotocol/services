@@ -149,7 +149,6 @@ mod tests {
                 order(0x03, dex::Side::Buy, pubkey(0x11)),  // buys disabled
             ],
             deadline: deadline(),
-            tokens: Default::default(),
         };
 
         let solutions = solve(&MockQuote, &auction).await;
@@ -172,7 +171,6 @@ mod tests {
             taker: pubkey(1),
             orders: vec![tightened, at_limit],
             deadline: deadline(),
-            tokens: Default::default(),
         };
 
         let solutions = solve(&MockQuote, &auction).await;
@@ -188,7 +186,6 @@ mod tests {
             taker: pubkey(1),
             orders: vec![],
             deadline: deadline(),
-            tokens: Default::default(),
         };
         assert!(solve(&MockQuote, &auction).await.is_empty());
     }

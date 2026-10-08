@@ -236,7 +236,8 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
-        let competition = DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6));
+        let competition =
+            DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6), true);
         let solutions = competition.solve(&auction).await;
         assert_eq!(solutions.len(), 1, "driver solution converted");
         let ranking = SolanaArbitrator::new(1, wrapped_native).arbitrate(solutions, &auction);
@@ -256,6 +257,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
             Duration::from_secs(6),
+            true,
         )),
         Box::new(SolanaArbitrator::new(1, wrapped_native)),
         Box::new(DriverExecutor::new(vec![driver], windows.clone(), None)),
