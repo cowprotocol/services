@@ -155,6 +155,37 @@ pub struct Sponsoring {
     pub mints: solana_token::MintVerdicts,
 }
 
+impl Sponsoring {
+    /// The settlement state PDA under the configured program: the delegate a
+    /// sponsored creation must approve.
+    pub fn state_pda(&self) -> solana_sdk::pubkey::Pubkey {
+        solana_sdk::pubkey::Pubkey::find_program_address(
+            &cow_settlement_interface::pda::state::STATE_PDA_SEEDS,
+            &self.settlement_program,
+        )
+        .0
+    }
+
+    /// Confirm the settlement program is initialized: the state PDA derived
+    /// under the configured id exists and belongs to the program. The PDA is
+    /// absent when the id names no deployment, or one running a program
+    /// version whose seed differs from the interface crate's.
+    pub async fn check_settlement_program(&self) -> anyhow::Result<()> {
+        let state_pda = self.state_pda();
+        let accounts = self.rpc.multiple_accounts([state_pda]).await?;
+        let initialized = accounts
+            .get(&state_pda)
+            .is_some_and(|account| account.owner == self.settlement_program);
+        anyhow::ensure!(
+            initialized,
+            "settlement program {} has no state PDA at {state_pda}: the configured id or the \
+             deployed program version disagrees with the interface crate",
+            self.settlement_program
+        );
+        Ok(())
+    }
+}
+
 impl State {
     fn new(
         pool: PgPool,

@@ -666,6 +666,33 @@ async fn spawn_sponsored_server_with(
     addr
 }
 
+/// Sponsoring boots only against an initialized settlement program: the
+/// state PDA under the configured id must exist and belong to it.
+#[tokio::test]
+async fn sponsoring_checks_the_settlement_program() {
+    let owned = solana_sdk::account::Account {
+        owner: program_id(),
+        ..Default::default()
+    };
+    let foreign = solana_sdk::account::Account {
+        owner: solana_sdk::pubkey::Pubkey::new_unique(),
+        ..Default::default()
+    };
+    for (account, ok) in [(Some(owned), true), (Some(foreign), false), (None, false)] {
+        let sponsoring = solana_orderbook::infra::api::Sponsoring {
+            funder: solana_sdk::pubkey::Pubkey::new_unique(),
+            settlement_program: program_id(),
+            rpc: SolanaRPC::new_mock_with_mocks(Mocks::from([(
+                RpcRequest::GetMultipleAccounts,
+                accounts_response(&[account]),
+            )])),
+            max_priority_fee_lamports: 100_000,
+            mints: Default::default(),
+        };
+        assert_eq!(sponsoring.check_settlement_program().await.is_ok(), ok);
+    }
+}
+
 /// A plain mint in the base layout both token programs share, owned by
 /// `program`.
 fn mint_account(program: solana_sdk::pubkey::Pubkey) -> solana_sdk::account::Account {

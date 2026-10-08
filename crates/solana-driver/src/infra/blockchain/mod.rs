@@ -7,6 +7,15 @@
 mod accounts;
 mod token;
 
+use {
+    crate::domain::settlement::find_state_pda,
+    cow_settlement_interface::token_program::TokenProgram,
+    cow_solana_rpc::{Error, LatestBlockhash, RpcPrioritizationFee, SolanaRPC},
+    itertools::{Either, Itertools},
+    moka::sync::Cache,
+    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
+    std::collections::HashMap,
+};
 pub use {
     accounts::{
         AccountsSnapshot,
@@ -20,14 +29,6 @@ pub use {
         create_associated_token_account_idempotent,
         require_token_balance,
     },
-};
-use {
-    cow_settlement_interface::token_program::TokenProgram,
-    cow_solana_rpc::{Error, LatestBlockhash, RpcPrioritizationFee, SolanaRPC},
-    itertools::{Either, Itertools},
-    moka::sync::Cache,
-    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
-    std::collections::HashMap,
 };
 
 /// How many mints the token program cache holds.
@@ -124,6 +125,25 @@ impl Solana {
         ))
     }
 
+    /// Confirm the settlement program is initialized: the state PDA derived
+    /// under the configured id exists and belongs to the program. The PDA is
+    /// absent when the id names no deployment, or one running a program
+    /// version whose seed differs from the interface crate's.
+    pub async fn check_settlement_program(&self) -> Result<(), SettlementProgramError> {
+        let state_pda = find_state_pda(&self.program_id).0;
+        let accounts = self.rpc.multiple_accounts([state_pda]).await?;
+        let initialized = accounts
+            .get(&state_pda)
+            .is_some_and(|account| account.owner == self.program_id);
+        if !initialized {
+            return Err(SettlementProgramError::Uninitialized {
+                program_id: self.program_id,
+                state_pda,
+            });
+        }
+        Ok(())
+    }
+
     /// The token program of each of `mints`, or why the mint has none,
     /// fetching only the mints missing from the cache. Only resolved programs
     /// are cached: a mint that is missing or invalid is read again next time.
@@ -150,13 +170,59 @@ impl Solana {
     }
 }
 
+/// Why the settlement program check failed.
+#[derive(Debug, thiserror::Error)]
+pub enum SettlementProgramError {
+    #[error(transparent)]
+    Rpc(#[from] Error),
+    #[error(
+        "settlement program {program_id} has no state PDA at {state_pda}: the configured id or \
+         the deployed program version disagrees with the interface crate"
+    )]
+    Uninitialized {
+        program_id: Pubkey,
+        state_pda: Pubkey,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest},
-        solana_testlib::{mint_account_json, multiple_accounts_json},
+        solana_sdk::account::Account,
+        solana_testlib::{account_json, mint_account_json, multiple_accounts_json},
     };
+
+    /// The check passes only with the state PDA owned by the program.
+    #[tokio::test]
+    async fn settlement_program_check_needs_its_state_pda() {
+        let program_id = Pubkey::new_unique();
+        let owned = Account {
+            owner: program_id,
+            ..Default::default()
+        };
+        let foreign = Account {
+            owner: Pubkey::new_unique(),
+            ..Default::default()
+        };
+        for (answer, ok) in [
+            (account_json(&owned), true),
+            (account_json(&foreign), false),
+            (serde_json::Value::Null, false),
+        ] {
+            let mocks = Mocks::from([(
+                RpcRequest::GetMultipleAccounts,
+                multiple_accounts_json([answer]),
+            )]);
+            let solana = Solana::new(
+                SolanaRPC::new_mock_with_mocks(mocks.clone()),
+                SolanaRPC::new_mock_with_mocks(mocks),
+                program_id,
+            );
+            assert_eq!(solana.check_settlement_program().await.is_ok(), ok);
+        }
+    }
 
     /// The mock answers the first fetch only, so the second lookup finds the
     /// mint only if the first one cached it.
