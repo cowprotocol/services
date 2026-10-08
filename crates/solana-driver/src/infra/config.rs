@@ -3,6 +3,7 @@
 use {
     crate::domain::{
         priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
+        settlement::MaxNativeShortfall,
         solver_fee::SolverFee,
     },
     configs::shared::LoggingConfig,
@@ -151,6 +152,12 @@ pub struct Solver {
     /// accordingly. Absent means no fee.
     #[serde(default)]
     pub solver_fee_bps: Option<SolverFee>,
+    /// The largest share of a settlement's native SOL payouts, in basis points
+    /// `0..10_000`, that the solver's own SOL covers when the swap delivers
+    /// less SOL than the payouts. A larger shortfall reverts the settlement.
+    /// Absent means none.
+    #[serde(default)]
+    pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
 }
 
 #[cfg(test)]
@@ -247,6 +254,32 @@ mod tests {
             endpoint = "http://localhost:8001"
             signer = { keypair = "/path/to/keypair.json" }
             solver-fee-bps = 65536
+        "#;
+        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
+    }
+
+    #[test]
+    fn max_native_shortfall_bps_parses() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            max-native-shortfall-bps = 40
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(
+            solver.max_native_shortfall_bps,
+            Some(MaxNativeShortfall::try_from(40).unwrap())
+        );
+    }
+
+    #[test]
+    fn max_native_shortfall_bps_at_max_is_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            max-native-shortfall-bps = 10000
         "#;
         assert!(toml::de::from_str::<Solver>(solver_config).is_err());
     }

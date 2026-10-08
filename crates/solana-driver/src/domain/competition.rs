@@ -225,7 +225,8 @@ impl Competition {
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
-            .await?;
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
         bundle.push(resolved.unsigned()?);
@@ -463,7 +464,8 @@ impl Competition {
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
-            .await?;
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
 
         let (estimate, latest) =
             tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
