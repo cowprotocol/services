@@ -99,24 +99,21 @@ async fn solver_competition(web3: Web3) {
 
     let base_config = Configuration::test_no_drivers();
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                drivers: vec![
-                    Solver::test("test_solver", solver.address()),
-                    Solver::test("solver2", solver.address()),
-                ],
-                order_quoting: OrderQuoting::test_with_drivers(vec![
-                    ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver"),
-                    ExternalSolver::new("solver2", "http://localhost:11088/solver2"),
-                ]),
-                run_loop: RunLoopConfig {
-                    submission_deadline: 3,
-                    ..base_config.run_loop
-                },
-                ..base_config
+        .start_autopilot(Configuration {
+            drivers: vec![
+                Solver::test("test_solver", solver.address()),
+                Solver::test("solver2", solver.address()),
+            ],
+            order_quoting: OrderQuoting::test_with_drivers(vec![
+                ExternalSolver::new("test_quoter", "http://localhost:11088/test_solver"),
+                ExternalSolver::new("solver2", "http://localhost:11088/solver2"),
+            ]),
+            run_loop: RunLoopConfig {
+                submission_deadline: 3,
+                ..base_config.run_loop
             },
-        )
+            ..base_config
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -283,26 +280,23 @@ async fn wrong_solution_submission_address(web3: Web3) {
     let services = Services::new(&onchain).await;
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                drivers: vec![
-                    // Solver 1 has a wrong submission address, meaning that the solutions should
-                    // be discarded from solver1
-                    Solver::new(
-                        "solver1".to_string(),
-                        Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                        Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
-                    ),
-                    Solver::test("solver2", solver.address()),
-                ],
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "solver1",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test_no_drivers()
-            },
-        )
+        .start_autopilot(Configuration {
+            drivers: vec![
+                // Solver 1 has a wrong submission address, meaning that the solutions should
+                // be discarded from solver1
+                Solver::new(
+                    "solver1".to_string(),
+                    Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                    Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")),
+                ),
+                Solver::test("solver2", solver.address()),
+            ],
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "solver1",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test_no_drivers()
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -450,24 +444,21 @@ async fn store_filtered_solutions(web3: Web3) {
     // one returning the solution
     let config = Configuration::test_no_drivers();
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                drivers: vec![
-                    Solver::test("good_solver", good_solver_account.address()),
-                    Solver::test("bad_solver", bad_solver_account.address()),
-                ],
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_solver",
-                    "http://localhost:11088/test_solver",
-                )]),
-                run_loop: RunLoopConfig {
-                    max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
-                    ..config.run_loop
-                },
-                ..config
+        .start_autopilot(Configuration {
+            drivers: vec![
+                Solver::test("good_solver", good_solver_account.address()),
+                Solver::test("bad_solver", bad_solver_account.address()),
+            ],
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            run_loop: RunLoopConfig {
+                max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
+                ..config.run_loop
             },
-        )
+            ..config
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -735,24 +726,21 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
 
     let config = Configuration::test_no_drivers();
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                drivers: vec![
-                    Solver::test("good_solver", good_solver_account.address()),
-                    Solver::test("bad_solver", bad_solver_account.address()),
-                ],
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_solver",
-                    "http://localhost:11088/test_solver",
-                )]),
-                run_loop: RunLoopConfig {
-                    max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
-                    ..config.run_loop
-                },
-                ..config
+        .start_autopilot(Configuration {
+            drivers: vec![
+                Solver::test("good_solver", good_solver_account.address()),
+                Solver::test("bad_solver", bad_solver_account.address()),
+            ],
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            run_loop: RunLoopConfig {
+                max_winners_per_auction: std::num::NonZeroUsize::new(10).unwrap(),
+                ..config.run_loop
             },
-        )
+            ..config
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -860,38 +848,52 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
     // Drive auctions by hand until a competition is stored in which
     // `order_loser` appears in a non-winning solution. We use the internal
     // (unfiltered) endpoint because the public one hides competitions
-    // before their deadline.
+    // before their deadline. We scan the most recent handful of auctions
+    // rather than just the latest: with the default fast cycles, autopilot
+    // can cut a new auction between us finding the "winning" one and the
+    // sanity checks below reading it back, so pin to the auction that
+    // actually matched.
     tracing::info!("waiting for order_loser to be bid on by a non-winning solution");
-    let latest_auction_id = || async {
-        let mut db = services.db().acquire().await.unwrap();
-        sqlx::query_scalar::<_, i64>("SELECT id FROM competition_auctions ORDER BY id DESC LIMIT 1")
-            .fetch_optional(&mut *db)
-            .await
-            .unwrap()
-    };
+    let matched_auction_id = std::sync::Mutex::new(None::<i64>);
     let loser_bid_on_by_non_winner = || async {
         onchain.mint_block().await;
-        let Some(auction_id) = latest_auction_id().await else {
-            return false;
+        let recent: Vec<i64> = {
+            let mut db = services.db().acquire().await.unwrap();
+            sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM competition_auctions ORDER BY id DESC LIMIT 10",
+            )
+            .fetch_all(&mut *db)
+            .await
+            .unwrap()
         };
-        match services.get_solver_competition_unfiltered(auction_id).await {
-            Ok(competition) => competition.solutions.iter().any(|solution| {
+
+        for auction_id in recent {
+            let Ok(competition) = services.get_solver_competition_unfiltered(auction_id).await
+            else {
+                continue;
+            };
+            let found = competition.solutions.iter().any(|solution| {
                 !solution.is_winner
                     && solution
                         .orders
                         .iter()
                         .any(|order| order.id == order_loser_id)
-            }),
-            Err(_) => false,
+            });
+            if found {
+                *matched_auction_id.lock().unwrap() = Some(auction_id);
+                return true;
+            }
         }
+        false
     };
     wait_for_condition(TIMEOUT, loser_bid_on_by_non_winner)
         .await
         .unwrap();
 
     // Sanity checks on the scenario: `order_loser` is bid on, exclusively by
-    // non-winning solutions, and was never executed.
-    let auction_id = latest_auction_id().await.unwrap();
+    // non-winning solutions, and was never executed. Pin to the auction the
+    // wait matched above so the follow-up re-reads land on the same data.
+    let auction_id = matched_auction_id.lock().unwrap().expect("set by wait");
     let competition = services
         .get_solver_competition_unfiltered(auction_id)
         .await

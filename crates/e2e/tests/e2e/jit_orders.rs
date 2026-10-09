@@ -93,16 +93,13 @@ async fn single_limit_order_test(web3: Web3) {
     // We start the quoter as the baseline solver, and the mock solver as the
     // one returning the solution
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_solver",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("mock_solver", solver.address())
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("mock_solver", solver.address())
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {

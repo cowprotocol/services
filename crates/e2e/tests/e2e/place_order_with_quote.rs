@@ -245,7 +245,6 @@ async fn fallback_native_price_estimator(web3: Web3) {
     let (manual_shutdown, control) = ShutdownController::new_manual_shutdown();
     let autopilot_handle = services
         .start_autopilot_with_shutdown_controller(
-            None,
             Configuration {
                 order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
                     "test_quoter",

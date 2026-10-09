@@ -168,7 +168,8 @@ async fn liquidity_source_notification(web3: Web3) {
 
     // CoW services setup
     let liquorice_solver_api_mock = Mock::new().await;
-    let services = Services::new(&onchain).await;
+    let mut services = Services::new(&onchain).await;
+    services.min_solve_deadline = std::time::Duration::from_secs(2);
 
     colocation::start_driver_with_config_override(
         onchain.contracts(),
@@ -206,16 +207,13 @@ http-timeout = "10s"
     );
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("liquorice_solver", solver.address())
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("liquorice_solver", solver.address())
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
