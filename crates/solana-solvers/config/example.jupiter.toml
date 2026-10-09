@@ -1,6 +1,14 @@
 # Example Jupiter solver configuration.
 # Run with: solana-solvers jupiter --config <this file>
 
+# Orders quoted at once. Each quote is two sequential Jupiter requests.
+concurrent-requests = 8
+# Pause after a rate-limited response: min-back-off at first, multiplied by
+# back-off-growth-factor per consecutive one, capped at max-back-off.
+back-off-growth-factor = 2.0
+min-back-off = "1s"
+max-back-off = "8s"
+
 [dex]
 # Jupiter swap API base URL: api.jup.ag, or a Triton-hosted endpoint.
 endpoint = "https://api.jup.ag"
