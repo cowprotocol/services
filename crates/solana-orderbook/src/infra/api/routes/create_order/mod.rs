@@ -29,7 +29,7 @@ use {
             hash_bytes,
         },
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
-        pda::{order::find_order_pda, state::STATE_PDA},
+        pda::{order::find_order_pda, state::STATE_PDA_SEEDS},
     },
     database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
@@ -69,7 +69,6 @@ enum PlacementError {
     InvalidTransaction(&'static str),
     WrongFeePayer,
     WrongRentPayer,
-    InvalidIntentFlags,
     WrongOrderPda,
     WrongDelegate,
     SameBuyAndSellToken,
@@ -96,10 +95,6 @@ impl From<PlacementError> for error::Reply {
             PlacementError::WrongRentPayer => (
                 "WrongRentPayer",
                 "the rent payer must be the configured funder account",
-            ),
-            PlacementError::InvalidIntentFlags => (
-                "InvalidIntentFlags",
-                "a sponsored order must be flagged created_on_chain",
             ),
             PlacementError::WrongOrderPda => {
                 ("WrongOrderPda", "the order PDA does not match the intent")
@@ -333,9 +328,6 @@ fn validate(
         }
     })?;
     let uid = hash_bytes(&input.intent_bytes);
-    if !intent.flags.created_on_chain {
-        return Err(PlacementError::InvalidIntentFlags);
-    }
     // The signature loop below skips the funder's slot, so a funder-owned
     // intent would be authorized by the countersign alone. The owner must
     // also sit among the required signers: the header is client-controlled,
@@ -371,7 +363,8 @@ fn validate(
     // The preparation instructions may only follow the template: each step
     // at most once, in template order. The buy-account creation is mandatory
     // for a token buy, everything else is omittable.
-    let state_pda = STATE_PDA;
+    let state_pda =
+        Pubkey::find_program_address(&STATE_PDA_SEEDS, &sponsoring.settlement_program).0;
     let mut last_step = 0;
     let mut token_programs = Vec::new();
     for preparation in preparations {

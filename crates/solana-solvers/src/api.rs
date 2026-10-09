@@ -3,7 +3,7 @@
 //! Serves the `/solve` contract the driver calls.
 
 use {
-    crate::{dex::Dex, domain::solver, dto::auction::Auction, extract::LoggingJson},
+    crate::{dex::Dex, domain::solver::Solver, dto::auction::Auction, extract::LoggingJson},
     axum::{
         Json,
         Router,
@@ -19,7 +19,7 @@ const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub addr: SocketAddr,
-    pub dex: Arc<Dex>,
+    pub solver: Arc<Solver<Dex>>,
 }
 
 impl Api {
@@ -41,7 +41,7 @@ impl Api {
         let app = Router::new()
             .route("/healthz", get(healthz))
             .route("/solve", post(solve))
-            .with_state(self.dex)
+            .with_state(self.solver)
             .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
             .layer(axum::extract::DefaultBodyLimit::disable());
 
@@ -55,11 +55,11 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Quote every order in the auction and return the single-order solutions.
+/// Quote the auction's orders and return the single-order solutions.
 async fn solve(
-    State(dex): State<Arc<Dex>>,
+    State(solver): State<Arc<Solver<Dex>>>,
     LoggingJson(auction): LoggingJson<Auction>,
 ) -> Json<Value> {
-    let solutions = solver::solve(dex.as_ref(), &auction).await;
+    let solutions = solver.solve(&auction).await;
     Json(json!({ "solutions": solutions }))
 }

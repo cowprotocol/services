@@ -261,7 +261,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
             ),
             sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
                 funder: solana_sdk::pubkey::Pubkey::new_unique(),
-                settlement_program: cow_settlement_interface::id(),
+                settlement_program: program_id(),
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
@@ -359,7 +359,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
         ),
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
             funder,
-            settlement_program: cow_settlement_interface::id(),
+            settlement_program: program_id(),
             rpc: SolanaRPC::new_mock_with_mocks(Mocks::from([(
                 RpcRequest::GetMultipleAccounts,
                 classic_mints(),
@@ -653,7 +653,7 @@ async fn spawn_sponsored_server_with(
         pool,
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
             funder,
-            settlement_program: cow_settlement_interface::id(),
+            settlement_program: program_id(),
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
@@ -725,7 +725,6 @@ fn sponsored_intent(
         buy_amount: std::num::NonZeroU64::new(2_000).unwrap(),
         valid_to: u32::MAX,
         flags: cow_settlement_interface::data::intent::Flags {
-            created_on_chain: true,
             kind: cow_settlement_interface::data::intent::OrderKind::Sell,
             partially_fillable: false,
         },
@@ -758,9 +757,19 @@ fn ata(
     )
 }
 
+/// The settlement program the tests run against: not the id the interface
+/// crate was compiled for, so a crate constant leaking into a check fails.
+fn program_id() -> solana_sdk::pubkey::Pubkey {
+    solana_sdk::pubkey::Pubkey::new_from_array([0x53; 32])
+}
+
 /// The settlement state PDA delegations must target.
 fn state_pda() -> solana_sdk::pubkey::Pubkey {
-    cow_settlement_interface::pda::state::STATE_PDA
+    solana_sdk::pubkey::Pubkey::find_program_address(
+        &cow_settlement_interface::pda::state::STATE_PDA_SEEDS,
+        &program_id(),
+    )
+    .0
 }
 
 /// The full whitelisted preparation prefix for a native-sell intent: create
@@ -838,7 +847,7 @@ fn create_order(
     intent: &cow_settlement_interface::data::intent::OrderIntent,
 ) -> solana_sdk::instruction::Instruction {
     cow_settlement_client::instruction::CreateOrder {
-        program_id: cow_settlement_interface::id(),
+        program_id: program_id(),
         owner,
         created_by: funder,
         intent,
@@ -1223,7 +1232,7 @@ async fn create_order_requires_the_owner_as_signer() {
     let destination = destination_creation(funder, owner.pubkey(), &intent);
     let instruction: solana_sdk::instruction::Instruction =
         cow_settlement_client::instruction::CreateOrder {
-            program_id: cow_settlement_interface::id(),
+            program_id: program_id(),
             owner: owner.pubkey(),
             created_by: funder,
             intent: &intent,

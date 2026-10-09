@@ -234,8 +234,7 @@ paths:
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
-            state PDA (`WrongDelegate`), an intent without the on-chain flag
-            (`InvalidIntentFlags`), equal mints or wSOL sold for native SOL
+            state PDA (`WrongDelegate`), equal mints or wSOL sold for native SOL
             (`SameBuyAndSellToken`), a zero amount (`ZeroAmount`), a native
             SOL buy paying an account the System Program does not own, or
             whose payout can leave the wallet under its rent-exempt minimum,

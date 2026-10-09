@@ -1525,6 +1525,7 @@ dependencies = [
  "clap",
  "configs",
  "const-hex",
+ "cow-settlement-interface",
  "cow-solana-rpc",
  "cow-solana-signer",
  "database",
@@ -3875,8 +3876,9 @@ dependencies = [
 
 [[package]]
 name = "cow-settlement-client"
-version = "0.4.1"
-source = "git+https://github.com/cowprotocol/solana-programs?rev=da9865d2d6501820672397d690352d2818f286b9#da9865d2d6501820672397d690352d2818f286b9"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81b83bbfd21e6a8716eed752352c0c8bb32a97603e0250ad3e8a93ec724acbf9"
 dependencies = [
  "cow-settlement-interface",
  "solana-program-error",
@@ -3884,8 +3886,9 @@ dependencies = [
 
 [[package]]
 name = "cow-settlement-interface"
-version = "0.4.1"
-source = "git+https://github.com/cowprotocol/solana-programs?rev=da9865d2d6501820672397d690352d2818f286b9#da9865d2d6501820672397d690352d2818f286b9"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5999b1de9fd9a3187937ecfc57d65c094737b3c1411bd5c3940a95906f6a34d1"
 dependencies = [
  "arrayref",
  "const-crypto",
@@ -10386,9 +10389,12 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "configs",
  "const-hex",
  "futures",
+ "humantime-serde",
  "observe",
+ "rate-limit",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
