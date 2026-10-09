@@ -171,7 +171,7 @@ async fn quote_validation_rejects_bad_orders() {
             "InsufficientValidTo",
         ),
         (
-            quote_body(serde_json::json!({"validFor": 4 * 60 * 60})),
+            quote_body(serde_json::json!({"validFor": 2 * 365 * 24 * 60 * 60})),
             "ExcessiveValidTo",
         ),
         (same_tokens, "SameBuyAndSellToken"),

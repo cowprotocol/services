@@ -203,8 +203,8 @@ mod tests {
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
         assert_eq!(config.quoting.drivers[0].as_str(), "http://localhost:8000/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
-        assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
-        assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
+        assert_eq!(config.quoting.min_validity, Duration::from_secs(60));
+        assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
     }
 

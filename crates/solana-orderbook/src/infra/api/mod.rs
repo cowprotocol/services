@@ -63,8 +63,8 @@ pub struct ValidationParameters {
 impl Default for ValidationParameters {
     fn default() -> Self {
         Self {
-            min_validity: std::time::Duration::from_secs(2 * 60),
-            max_validity: std::time::Duration::from_secs(2 * 60 * 60),
+            min_validity: std::time::Duration::from_secs(60),
+            max_validity: std::time::Duration::from_secs(365 * 24 * 60 * 60),
         }
     }
 }

@@ -276,8 +276,8 @@ paths:
             rent-exempt minimum, 890880 lamports for an empty wallet
             (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
-            (default two minutes) or further than the configured maximum
-            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
+            (default one minute) or further than the configured maximum
+            (default one year) (`InsufficientValidTo`, `ExcessiveValidTo`),
             or a mint the settlement program cannot move (`UnsupportedToken`).
           content:
             application/json:
