@@ -12,6 +12,9 @@ use {
                 ab_liquidity_quote,
                 ab_order,
                 ab_solution,
+                cd_order,
+                cd_pool,
+                cd_solution,
                 fee::{Policy, Quote},
                 test_solver,
             },
@@ -23,6 +26,75 @@ use {
 struct Amounts {
     sell: eth::U256,
     buy: eth::U256,
+}
+
+/// A price that covers volume fees alone can violate the signed limit after a
+/// surplus fee is charged first. Reject it during encoding, before simulation.
+#[tokio::test]
+#[ignore]
+async fn combined_protocol_fees_reject_invalid_final_prices() {
+    for side in [order::Side::Sell, order::Side::Buy] {
+        for partial in [false, true] {
+            // These executions satisfy the volume-adjusted auction limits, but
+            // not the signed limits after charging surplus and then volume fees.
+            let (sell, buy) = match side {
+                order::Side::Sell => ("50", "40.4"),
+                order::Side::Buy => ("49.5", "40"),
+            };
+            let quote = ab_liquidity_quote()
+                .sell_amount(sell.ether().into_wei())
+                .buy_amount(buy.ether().into_wei());
+            let mut order = ab_order()
+                .sell_amount(50.ether().into_wei())
+                .buy_amount(40.ether().into_wei())
+                .solver_fee(Some("0.5".ether().into_wei()))
+                .side(side)
+                .fee_policy(vec![
+                    Policy::Surplus {
+                        factor: 0.5,
+                        max_volume_factor: 0.01,
+                    },
+                    Policy::Volume { factor: 0.0002 },
+                    Policy::Volume { factor: 0.0085 },
+                ])
+                .no_surplus();
+            if partial {
+                order = order
+                    .sell_amount(100.ether().into_wei())
+                    .buy_amount(80.ether().into_wei())
+                    .partial(eth::U256::ZERO)
+                    .executed(Some(match side {
+                        order::Side::Sell => "49.5".ether().into_wei(),
+                        order::Side::Buy => 40.ether().into_wei(),
+                    }));
+            }
+            let valid = cd_order();
+            let test = tests::setup()
+                .name(format!("combined protocol fees {side:?} partial={partial}"))
+                .pool(ab_adjusted_pool(quote))
+                .pool(cd_pool())
+                .order(valid.clone())
+                .order(order)
+                .solution(ab_solution())
+                .solution(cd_solution())
+                .solvers(vec![test_solver().fee_handler(FeeHandler::Driver)])
+                .done()
+                .await;
+
+            // An invalid solution must not discard valid siblings in the same
+            // response. The sibling still completes simulation and settlement.
+            let id = test.solve().await.ok().orders(&[valid]).id();
+            let notification = test.first_notification().await;
+            assert_eq!(
+                notification["kind"], "invalidClearingPrices",
+                "{notification}"
+            );
+            assert_eq!(notification["auctionId"], "1");
+            assert_eq!(notification["solutionId"], 0);
+            test.reveal(id).await.ok().calldata();
+            test.settle(id).await.ok().await;
+        }
+    }
 }
 
 struct Execution {

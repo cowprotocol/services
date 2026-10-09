@@ -38,6 +38,7 @@ pub const NAME: &str = "test-solver";
 
 pub struct Solver {
     pub addr: SocketAddr,
+    pub notifications: Arc<Mutex<Vec<Value>>>,
 }
 
 #[derive(Debug)]
@@ -511,6 +512,8 @@ impl Solver {
             called: false,
             allow_multiple_solve_requests: config.allow_multiple_solve_requests,
         }));
+        let notifications = Arc::new(Mutex::new(Vec::new()));
+        let received_notifications = notifications.clone();
         let app = axum::Router::new()
         .route(
             "/solve",
@@ -548,11 +551,24 @@ impl Solver {
                 },
             ),
         )
+        .route(
+            "/notify",
+            axum::routing::post(move |axum::extract::Json(notification): axum::extract::Json<Value>| {
+                let notifications = received_notifications.clone();
+                async move {
+                    notifications.lock().unwrap().push(notification);
+                    axum::http::StatusCode::OK
+                }
+            }),
+        )
         .with_state(State(state));
         let listener = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        Self { addr }
+        Self {
+            addr,
+            notifications,
+        }
     }
 }
 

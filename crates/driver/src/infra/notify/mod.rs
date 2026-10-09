@@ -71,6 +71,9 @@ pub fn encoding_failed(
             "Settlement gas limit exceeded: used {}, limit {}",
             used.0, limit.0
         )),
+        solution::Error::Encoding(solution::encoding::Error::InvalidClearingPrices(_)) => {
+            notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
+        }
         solution::Error::Encoding(_) => return,
         solution::Error::FastPathTradeCount(_)
         | solution::Error::FastPathOrderMismatch
