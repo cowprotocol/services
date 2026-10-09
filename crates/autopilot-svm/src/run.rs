@@ -166,6 +166,7 @@ async fn run(config: Config) {
             ),
             config.max_indexer_lag_slots,
             prices,
+            config.contracts.state_pda(),
         )),
         Box::new(DriverCompetition::new(
             drivers.clone(),

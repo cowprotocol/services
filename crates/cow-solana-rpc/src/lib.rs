@@ -8,11 +8,7 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::{
-        client_error::ErrorKind,
-        request::MAX_MULTIPLE_ACCOUNTS,
-        response::Response,
-    },
+    solana_rpc_client_api::{client_error::ErrorKind, request::MAX_MULTIPLE_ACCOUNTS},
     solana_sdk::{
         account::Account,
         hash::Hash,
@@ -28,7 +24,12 @@ pub use {
     solana_rpc_client_api::{
         client_error::Error,
         request::RpcRequest,
-        response::{RpcPrioritizationFee, RpcSimulateTransactionResult, UiTransactionError},
+        response::{
+            Response,
+            RpcPrioritizationFee,
+            RpcSimulateTransactionResult,
+            UiTransactionError,
+        },
     },
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
 };
@@ -238,16 +239,14 @@ impl SolanaRPC {
             .await
     }
 
-    /// Simulate a versioned transaction without sending it. Returns the
-    /// simulation result including logs and any error.
+    /// Simulate a versioned transaction without sending it. The value holds
+    /// the simulation result including logs and any error; the context carries
+    /// the slot it ran against.
     pub async fn simulate_transaction(
         &self,
         transaction: &VersionedTransaction,
-    ) -> Result<RpcSimulateTransactionResult, Error> {
-        self.inner
-            .simulate_transaction(transaction)
-            .await
-            .map(|response| response.value)
+    ) -> Result<Response<RpcSimulateTransactionResult>, Error> {
+        self.inner.simulate_transaction(transaction).await
     }
 
     /// The prioritization fee, in micro-lamports per compute unit, that
@@ -264,13 +263,14 @@ impl SolanaRPC {
     /// Simulate the transactions as one atomic bundle on the confirmed bank
     /// without sending them, signatures unverified and blockhashes replaced by
     /// the node's latest, so partially signed and stale transactions still
-    /// simulate. One result per executed transaction, in order, ending at
-    /// the first failure. A node without the Jito extension answers with an
+    /// simulate. The value holds one result per executed transaction, in
+    /// order, ending at the first failure; the context carries the slot it
+    /// simulated against. A node without the Jito extension answers with an
     /// error.
     pub async fn simulate_bundle(
         &self,
         transactions: &[VersionedTransaction],
-    ) -> Result<Vec<RpcSimulateBundleTransactionResult>, Error> {
+    ) -> Result<Response<Vec<RpcSimulateBundleTransactionResult>>, Error> {
         let encoded = transactions
             .iter()
             .map(|transaction| {
@@ -301,7 +301,10 @@ impl SolanaRPC {
             transaction_results: Vec<RpcSimulateBundleTransactionResult>,
         }
         let response: Response<Value> = self.inner.send(SIMULATE_BUNDLE, params).await?;
-        Ok(response.value.transaction_results)
+        Ok(Response {
+            context: response.context,
+            value: response.value.transaction_results,
+        })
     }
 
     /// Whether the blockhash is still usable for a new transaction at

@@ -22,6 +22,9 @@ request-timeout = "10s"
 
 [contracts]
 wrapped-native-mint = "So11111111111111111111111111111111111111112"
+# The settlement program whose state PDA sell token accounts must approve.
+# Defaults to the official deployment the interface crate exports.
+# settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [competition]
 max-winners = 1
