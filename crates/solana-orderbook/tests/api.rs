@@ -261,7 +261,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
             ),
             sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
                 funder: solana_sdk::pubkey::Pubkey::new_unique(),
-                settlement_program: cow_settlement_interface::id(),
+                settlement_program: program_id(),
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
@@ -359,7 +359,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
         ),
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
             funder,
-            settlement_program: cow_settlement_interface::id(),
+            settlement_program: program_id(),
             rpc: SolanaRPC::new_mock_with_mocks(Mocks::from([(
                 RpcRequest::GetMultipleAccounts,
                 classic_mints(),
@@ -653,7 +653,7 @@ async fn spawn_sponsored_server_with(
         pool,
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
             funder,
-            settlement_program: cow_settlement_interface::id(),
+            settlement_program: program_id(),
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
@@ -757,9 +757,19 @@ fn ata(
     )
 }
 
+/// The settlement program the tests run against: not the id the interface
+/// crate was compiled for, so a crate constant leaking into a check fails.
+fn program_id() -> solana_sdk::pubkey::Pubkey {
+    solana_sdk::pubkey::Pubkey::new_from_array([0x53; 32])
+}
+
 /// The settlement state PDA delegations must target.
 fn state_pda() -> solana_sdk::pubkey::Pubkey {
-    cow_settlement_interface::pda::state::STATE_PDA
+    solana_sdk::pubkey::Pubkey::find_program_address(
+        &cow_settlement_interface::pda::state::STATE_PDA_SEEDS,
+        &program_id(),
+    )
+    .0
 }
 
 /// The full whitelisted preparation prefix for a native-sell intent: create
@@ -837,7 +847,7 @@ fn create_order(
     intent: &cow_settlement_interface::data::intent::OrderIntent,
 ) -> solana_sdk::instruction::Instruction {
     cow_settlement_client::instruction::CreateOrder {
-        program_id: cow_settlement_interface::id(),
+        program_id: program_id(),
         owner,
         created_by: funder,
         intent,
@@ -1099,7 +1109,8 @@ async fn create_order_rejects_invalid_submissions() {
 /// A native SOL buy pays a wallet the System Program owns and leaves it
 /// rent-exempt: an account of another program is rejected, and so is a payout
 /// that can leave the wallet under the minimum. A passing order moves on to
-/// the blockhash check. The lookup answers the sell mint, then the wallet.
+/// the blockhash check. The lookup answers the sell mint, nothing for the
+/// Clock sysvar, then the wallet.
 #[tokio::test]
 async fn create_order_checks_the_native_buy_wallet() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
@@ -1152,7 +1163,7 @@ async fn create_order_checks_the_native_buy_wallet() {
             funder,
             sponsored_mocks(
                 false,
-                accounts_response(&[Some(mint_account(spl_token_interface::ID)), account]),
+                accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, account]),
             ),
         )
         .await;
@@ -1179,7 +1190,7 @@ async fn create_order_requires_the_owner_as_signer() {
     let destination = destination_creation(funder, owner.pubkey(), &intent);
     let instruction: solana_sdk::instruction::Instruction =
         cow_settlement_client::instruction::CreateOrder {
-            program_id: cow_settlement_interface::id(),
+            program_id: program_id(),
             owner: owner.pubkey(),
             created_by: funder,
             intent: &intent,
@@ -1654,7 +1665,9 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
 }
 
 /// A native SOL buy lands without a buy account creation: the payout goes
-/// to the wallet itself, and creates it when the lookup finds none.
+/// to the wallet itself, and creates it when the lookup finds none. The
+/// lookup answers the sell mint, then nothing for the Clock sysvar and the
+/// wallet.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_a_native_buy() {
@@ -1675,7 +1688,7 @@ async fn solana_db_create_order_accepts_a_native_buy() {
         funder,
         sponsored_mocks(
             true,
-            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None]),
+            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, None]),
         ),
     )
     .await;

@@ -29,7 +29,7 @@ use {
             hash_bytes,
         },
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
-        pda::{order::find_order_pda, state::find_state_pda},
+        pda::{order::find_order_pda, state::STATE_PDA_SEEDS},
     },
     database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
@@ -356,7 +356,8 @@ fn validate(
     // The preparation instructions may only follow the template: each step
     // at most once, in template order. The buy-account creation is mandatory
     // for a token buy, everything else is omittable.
-    let state_pda = find_state_pda(&sponsoring.settlement_program).0;
+    let state_pda =
+        Pubkey::find_program_address(&STATE_PDA_SEEDS, &sponsoring.settlement_program).0;
     let mut last_step = 0;
     let mut token_programs = Vec::new();
     for preparation in preparations {

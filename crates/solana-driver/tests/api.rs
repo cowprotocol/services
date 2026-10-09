@@ -90,7 +90,7 @@ async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
     let blockchain = Solana::new(
         SolanaRPC::new_mock_with_mocks(mocks.clone()),
         SolanaRPC::new_mock_with_mocks(mocks),
-        cow_settlement_interface::id(),
+        program_id(),
     );
     blockchain
         .token_programs([pubkey(0x33), pubkey(0x44)])
@@ -202,8 +202,15 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
     .expect("solver construction should succeed")
 }
 
+/// The settlement program the tests run against: not the id the interface
+/// crate was compiled for, so a crate constant leaking into the encoding
+/// fails.
+fn program_id() -> Pubkey {
+    Pubkey::new_from_array([0x53; 32])
+}
+
 fn order_pda() -> Pubkey {
-    find_order_pda(&cow_settlement_interface::id(), &test_order_intent().uid()).0
+    find_order_pda(&program_id(), &test_order_intent().uid()).0
 }
 
 /// The autopilot's own literal `/solve` request JSON.
@@ -285,7 +292,7 @@ fn partial_fill_request(kind: OrderKind, executed: &str) -> (String, serde_json:
         ..test_order_intent()
     };
     let uid = format!("0x{}", const_hex::encode(intent.uid().to_bytes()));
-    let order_pda = find_order_pda(&cow_settlement_interface::id(), &intent.uid()).0;
+    let order_pda = find_order_pda(&program_id(), &intent.uid()).0;
     let mut request = solve_request();
     let order = &mut request["orders"][0];
     order["uid"] = serde_json::json!(uid);
