@@ -9,6 +9,11 @@ use {
     },
     solana_orderbook::infra::{api::Api, db, quoter::Quoter},
     solana_sdk::signer::Signer,
+    spl_token_2022_interface::extension::{
+        BaseStateWithExtensionsMut,
+        ExtensionType,
+        transfer_fee::TransferFeeConfig,
+    },
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
     tokio_util::sync::CancellationToken,
@@ -321,6 +326,10 @@ async fn quote_answers_in_the_evm_shape() {
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
+                // Without sponsoring the buy token account is not read, so it
+                // counts as the costliest a settleable mint can need at the
+                // SDK's default rent.
+                "executionCostLamports": "2220240",
                 "kind": "sell",
                 "partiallyFillable": false,
             },
@@ -384,6 +393,70 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["funder"], serde_json::json!(funder.to_string()));
+}
+
+/// The lookups answer the mints, then the owner, its associated token
+/// account, the buy mint and the rent sysvar.
+#[tokio::test]
+async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let free_fee_mint =
+        solana_testlib::token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
+            mint.init_extension::<TransferFeeConfig>(true).unwrap();
+        });
+    // The mainnet rent since SIMD-0437, under the SDK's default.
+    let rent = solana_sdk::account::create_account_for_test(
+        &solana_sdk::rent::Rent::with_lamports_per_byte(5080),
+    );
+    for (buy_mint, cost) in [
+        (mint_account(spl_token_interface::ID), "1488440"),
+        (mint_account(spl_token_2022_interface::ID), "1513840"),
+        (free_fee_mint, "1574800"),
+    ] {
+        let mints = accounts_response(&[
+            Some(mint_account(spl_token_interface::ID)),
+            Some(buy_mint.clone()),
+        ]);
+        let mocks = MocksMap::from_iter([
+            (RpcRequest::GetMultipleAccounts, mints),
+            (
+                RpcRequest::GetMultipleAccounts,
+                accounts_response(&[None, None, Some(buy_mint), Some(rent.clone())]),
+            ),
+        ]);
+        let api = Api {
+            quoter: Quoter::new(
+                vec![format!("http://{driver}/").parse().unwrap()],
+                Duration::from_secs(1),
+            ),
+            sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+                funder: solana_sdk::pubkey::Pubkey::new_unique(),
+                settlement_program: cow_settlement_interface::id(),
+                rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
+                max_priority_fee_lamports: 100_000,
+                mints: Default::default(),
+            }),
+            ..mock_api()
+        };
+        let (listener, addr) = api.bind().await.unwrap();
+        let shutdown = CancellationToken::new();
+        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/quote"))
+            .json(&quote_body(serde_json::json!({"validFor": 1800})))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(json["quote"]["executionCostLamports"], cost);
+    }
 }
 
 /// With several drivers configured, the best answer wins: the largest buy

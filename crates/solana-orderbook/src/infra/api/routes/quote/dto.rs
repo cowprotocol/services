@@ -20,7 +20,7 @@ pub struct Request {
     pub sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     pub buy_token: Pubkey,
-    /// The buy token account proceeds would land in. Echoed back untouched.
+    /// Account or wallet the proceeds would land in. Echoed back untouched.
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
     pub receiver: Option<Pubkey>,
@@ -139,6 +139,9 @@ pub struct Quote {
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
+    /// Rent of a missing buy token account, in lamports.
+    #[serde_as(as = "DisplayFromStr")]
+    pub execution_cost_lamports: u64,
     pub kind: Kind,
     pub partially_fillable: bool,
 }
