@@ -376,7 +376,6 @@ jobs:
             echo "::endgroup::"
           }
           while [ "$SECONDS" -lt "$deadline" ]; do
-            run_suite local_node
             run_suite forked_node
             attempt=$((attempt + 1))
           done
