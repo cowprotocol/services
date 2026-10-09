@@ -25,13 +25,35 @@ pub struct DriverCompetition {
     drivers: Vec<Arc<Driver>>,
     /// How long a driver gets to answer `/solve`.
     solve_deadline: Duration,
+    /// Whether the auction's native prices are estimates. Without estimators
+    /// every token is priced at the denominator, a scoring stand-in that
+    /// would mislead an engine converting lamport costs into token atoms.
+    forward_prices: bool,
 }
 
 impl DriverCompetition {
-    pub fn new(drivers: Vec<Arc<Driver>>, solve_deadline: Duration) -> Self {
+    pub fn new(drivers: Vec<Arc<Driver>>, solve_deadline: Duration, forward_prices: bool) -> Self {
         Self {
             drivers,
             solve_deadline,
+            forward_prices,
+        }
+    }
+
+    fn solve_request(&self, auction: &Auction) -> dto::SolveRequest {
+        dto::SolveRequest {
+            id: auction.id,
+            deadline: chrono::Utc::now() + self.solve_deadline,
+            orders: auction.orders.iter().map(dto::Order::from).collect(),
+            tokens: if self.forward_prices {
+                auction
+                    .native_prices
+                    .iter()
+                    .map(|(&mint, &price)| (mint, dto::Token { price }))
+                    .collect()
+            } else {
+                HashMap::new()
+            },
         }
     }
 }
@@ -39,11 +61,7 @@ impl DriverCompetition {
 #[async_trait]
 impl SolverCompetition<SolanaCycle> for DriverCompetition {
     async fn solve(&self, auction: &Auction) -> Vec<Solution> {
-        let request = &dto::SolveRequest {
-            id: auction.id,
-            deadline: chrono::Utc::now() + self.solve_deadline,
-            orders: auction.orders.iter().map(dto::Order::from).collect(),
-        };
+        let request = &self.solve_request(auction);
         let by_uid: HashMap<IntentHash, &Order> = auction
             .orders
             .iter()
@@ -162,4 +180,33 @@ fn convert(
         driver_index,
         inner: solution::Solution::new(dto_solution.solution_id, dto_solution.solver, orders),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, chain_types::solana::Pubkey};
+
+    #[test]
+    fn placeholder_prices_stay_with_the_autopilot() {
+        let auction = Auction {
+            id: 1,
+            orders: vec![],
+            native_prices: HashMap::from([(Pubkey([0x11; 32]), 1_000_000_000)]),
+        };
+        let request = |forward_prices| {
+            DriverCompetition::new(vec![], Duration::from_secs(1), forward_prices)
+                .solve_request(&auction)
+        };
+
+        assert_eq!(
+            request(true).tokens,
+            HashMap::from([(
+                Pubkey([0x11; 32]),
+                dto::Token {
+                    price: 1_000_000_000,
+                }
+            )])
+        );
+        assert!(request(false).tokens.is_empty());
+    }
 }

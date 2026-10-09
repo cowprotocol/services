@@ -205,6 +205,7 @@ mod tests {
             // Well in the past: the request must be skipped entirely.
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
             creations: std::collections::HashMap::new(),
+            native_prices: std::collections::HashMap::new(),
         };
 
         let solutions = solver

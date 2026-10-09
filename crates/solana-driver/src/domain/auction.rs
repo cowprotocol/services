@@ -79,6 +79,10 @@ pub struct Auction {
     /// chain yet, by uid. It lacks the funder's signature, so it can only be
     /// simulated ahead of a settlement, never sent.
     pub creations: HashMap<OrderUid, VersionedTransaction>,
+    /// Lamports per 10^9 atoms of each auction token. A native SOL buy's
+    /// price sits under [`ENCODED_NATIVE_SOL_TRANSFER`]. Tokens without a
+    /// price are absent.
+    pub native_prices: HashMap<Pubkey, u64>,
 }
 
 impl Auction {
@@ -361,6 +365,7 @@ mod tests {
             deadline_slot: Slot(0),
             deadline: chrono::Utc::now(),
             creations: HashMap::new(),
+            native_prices: HashMap::new(),
         }
     }
 
