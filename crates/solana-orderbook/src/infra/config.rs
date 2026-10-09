@@ -132,6 +132,11 @@ pub struct Sponsoring {
     /// product this bounds, so it caps what a placement can spend.
     #[serde(default = "default_max_priority_fee_lamports")]
     pub max_priority_fee_lamports: u64,
+    /// Quote and place orders on Token-2022 mints charging a transfer fee,
+    /// for staging tests: their owners are paid the pushed amount minus the
+    /// fee, below their limit price. Set it to false in production.
+    #[serde(default = "default_allow_transfer_fee_mints")]
+    pub allow_transfer_fee_mints: bool,
 }
 
 /// Wallets commonly ask 75,000 to 100,000 lamports for a creation, so a
@@ -139,6 +144,11 @@ pub struct Sponsoring {
 /// placement over burning funder lamports.
 fn default_max_priority_fee_lamports() -> u64 {
     100_000
+}
+
+/// TODO(BE-385): default to false once the staging test of fee mints is done.
+fn default_allow_transfer_fee_mints() -> bool {
+    true
 }
 
 fn default_settlement_program_id() -> Pubkey {
@@ -206,6 +216,20 @@ mod tests {
         assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
         assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
+    }
+
+    /// Mints charging a transfer fee pass unless the sponsoring section
+    /// refuses them.
+    #[test]
+    fn sponsoring_allows_transfer_fee_mints_unless_unset() {
+        let parse = |extra: &str| -> Sponsoring {
+            toml::de::from_str(&format!(
+                "funder = \"So11111111111111111111111111111111111111112\"\n{extra}"
+            ))
+            .unwrap()
+        };
+        assert!(parse("").allow_transfer_fee_mints);
+        assert!(!parse("allow-transfer-fee-mints = false").allow_transfer_fee_mints);
     }
 
     /// Routes resolve relative to the driver URLs, so a base URL with a path

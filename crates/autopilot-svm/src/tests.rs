@@ -239,6 +239,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             150,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
+            false,
         );
         let auction = provider.cut_auction(&tip).await.expect("auction cut");
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
@@ -259,6 +260,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             150,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
+            false,
         )),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
@@ -348,6 +350,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         u64::MAX,
         NativePrices::seeded(test_prices()),
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
+        false,
     );
     assert!(
         held_provider.cut_auction(&(tip + 25)).await.is_none(),

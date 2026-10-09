@@ -77,13 +77,17 @@ impl fmt::Display for UnsettleableMint {
 pub type MintVerdict = Result<TokenProgram, UnsettleableMint>;
 
 /// The verdict on the mint at `account`, which is `None` when the account
-/// does not exist. A mint is refused while its fee schedule live at `epoch`
-/// charges or a charging newer schedule is pending, and without the epoch
-/// while either schedule charges.
+/// does not exist. Unless `allow_transfer_fee`, a mint is refused while its
+/// fee schedule live at `epoch` charges or a charging newer schedule is
+/// pending, and without the epoch while either schedule charges.
 ///
 /// A permanent delegate mint passes, although its issuer can move the buffer's
 /// balance of the token between settlements: PYUSD and every xStock carry one.
-pub fn mint_verdict(account: Option<&Account>, epoch: Option<u64>) -> MintVerdict {
+pub fn mint_verdict(
+    account: Option<&Account>,
+    epoch: Option<u64>,
+    allow_transfer_fee: bool,
+) -> MintVerdict {
     let Some((program, mint)) = account.and_then(|account| {
         let program = TokenProgram::try_from(&account.owner).ok()?;
         let mint = StateWithExtensions::<Mint>::unpack(&account.data).ok()?;
@@ -91,9 +95,10 @@ pub fn mint_verdict(account: Option<&Account>, epoch: Option<u64>) -> MintVerdic
     }) else {
         return Err(UnsettleableMint::NotAMint);
     };
-    if mint
-        .get_extension::<TransferFeeConfig>()
-        .is_ok_and(|config| charges_fee(config, epoch))
+    if !allow_transfer_fee
+        && mint
+            .get_extension::<TransferFeeConfig>()
+            .is_ok_and(|config| charges_fee(config, epoch))
     {
         Err(UnsettleableMint::TransferFee)
     } else if mint
@@ -138,20 +143,31 @@ fn takes_a_cut(fee: &TransferFee) -> bool {
 /// The verdicts on the mints read so far, each kept for [`VERDICT_TTL`].
 /// Clones share one cache.
 #[derive(Clone)]
-pub struct MintVerdicts(Cache<Pubkey, MintVerdict>);
+pub struct MintVerdicts {
+    verdicts: Cache<Pubkey, MintVerdict>,
+    allow_transfer_fee: bool,
+}
 
 impl Default for MintVerdicts {
     fn default() -> Self {
-        Self(
-            Cache::builder()
-                .time_to_live(VERDICT_TTL)
-                .max_capacity(VERDICT_CAPACITY)
-                .build(),
-        )
+        Self::new(false)
     }
 }
 
 impl MintVerdicts {
+    /// An empty cache. With `allow_transfer_fee` it passes mints charging a
+    /// transfer fee although their orders settle below the limit price, see
+    /// [`UnsettleableMint::TransferFee`].
+    pub fn new(allow_transfer_fee: bool) -> Self {
+        Self {
+            verdicts: Cache::builder()
+                .time_to_live(VERDICT_TTL)
+                .max_capacity(VERDICT_CAPACITY)
+                .build(),
+            allow_transfer_fee,
+        }
+    }
+
     /// Start a lookup of `mints`: the cached verdicts are taken, the caller
     /// reads [`MintLookup::unread`] from the chain and hands the accounts to
     /// [`MintLookup::resolve`].
@@ -162,7 +178,7 @@ impl MintVerdicts {
             unread: Vec::new(),
         };
         for mint in mints {
-            match self.0.get(&mint) {
+            match self.verdicts.get(&mint) {
                 Some(verdict) => {
                     lookup.verdicts.insert(mint, verdict);
                 }
@@ -199,8 +215,8 @@ impl MintLookup<'_> {
             .and_then(from_account::<Clock, _>)
             .map(|clock| clock.epoch);
         for mint in self.unread {
-            let verdict = mint_verdict(accounts.get(&mint), epoch);
-            self.cache.0.insert(mint, verdict);
+            let verdict = mint_verdict(accounts.get(&mint), epoch, self.cache.allow_transfer_fee);
+            self.cache.verdicts.insert(mint, verdict);
             self.verdicts.insert(mint, verdict);
         }
         self.verdicts
@@ -288,7 +304,7 @@ mod tests {
     /// accounts fail it.
     #[test]
     fn classifies_mints_by_their_extensions() {
-        let judge = |account: &Account| mint_verdict(Some(account), Some(100));
+        let judge = |account: &Account| mint_verdict(Some(account), Some(100), false);
         let with = |extension, init: fn(&mut StateWithExtensionsMut<Mint>)| {
             judge(&token_2022_mint(&[extension], init))
         };
@@ -388,27 +404,27 @@ mod tests {
         let dropped = fee_mint(one_percent(0), no_fee(10));
         let scheduled = fee_mint(no_fee(0), one_percent(10));
         assert_eq!(
-            mint_verdict(Some(&dropped), Some(10)),
+            mint_verdict(Some(&dropped), Some(10), false),
             Ok(TokenProgram::Token2022)
         );
         assert_eq!(
-            mint_verdict(Some(&dropped), Some(9)),
+            mint_verdict(Some(&dropped), Some(9), false),
             Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
-            mint_verdict(Some(&dropped), None),
+            mint_verdict(Some(&dropped), None, false),
             Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
-            mint_verdict(Some(&scheduled), Some(9)),
+            mint_verdict(Some(&scheduled), Some(9), false),
             Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
-            mint_verdict(Some(&scheduled), Some(10)),
+            mint_verdict(Some(&scheduled), Some(10), false),
             Err(UnsettleableMint::TransferFee)
         );
         assert_eq!(
-            mint_verdict(Some(&scheduled), None),
+            mint_verdict(Some(&scheduled), None, false),
             Err(UnsettleableMint::TransferFee)
         );
     }
@@ -422,18 +438,19 @@ mod tests {
             ..classic_mint(6)
         };
         assert_eq!(
-            mint_verdict(None, Some(100)),
+            mint_verdict(None, Some(100), false),
             Err(UnsettleableMint::NotAMint)
         );
         assert_eq!(
             mint_verdict(
                 Some(&token_2022_account(&Pubkey::new_unique(), &[], |_| {})),
-                Some(100)
+                Some(100),
+                false
             ),
             Err(UnsettleableMint::NotAMint)
         );
         assert_eq!(
-            mint_verdict(Some(&foreign), Some(100)),
+            mint_verdict(Some(&foreign), Some(100), false),
             Err(UnsettleableMint::NotAMint)
         );
     }
@@ -498,6 +515,43 @@ mod tests {
                 fee_mint(one_percent(0), no_fee(10))
             )])),
             HashMap::from([(dropped, Err(UnsettleableMint::TransferFee))])
+        );
+    }
+
+    /// With transfer fees allowed a charging fee mint passes under
+    /// Token-2022, while its other extensions still judge it: a paused fee
+    /// mint stays out. A cache built with the allowance judges that way too.
+    #[test]
+    fn allowing_transfer_fees_passes_charging_mints_but_not_their_other_extensions() {
+        let charging = fee_mint(one_percent(0), one_percent(0));
+        assert_eq!(
+            mint_verdict(Some(&charging), Some(100), true),
+            Ok(TokenProgram::Token2022)
+        );
+        assert_eq!(
+            mint_verdict(Some(&charging), Some(100), false),
+            Err(UnsettleableMint::TransferFee)
+        );
+        let paused = token_2022_mint(
+            &[ExtensionType::TransferFeeConfig, ExtensionType::Pausable],
+            |mint| {
+                let config = mint.init_extension::<TransferFeeConfig>(true).unwrap();
+                config.older_transfer_fee = one_percent(0);
+                config.newer_transfer_fee = one_percent(0);
+                mint.init_extension::<PausableConfig>(true).unwrap().paused = true.into();
+            },
+        );
+        assert_eq!(
+            mint_verdict(Some(&paused), Some(100), true),
+            Err(UnsettleableMint::Paused)
+        );
+
+        let mint = Pubkey::new_unique();
+        let cache = MintVerdicts::new(true);
+        let lookup = cache.lookup([mint]);
+        assert_eq!(
+            lookup.resolve(&HashMap::from([(mint, charging)])),
+            HashMap::from([(mint, Ok(TokenProgram::Token2022))])
         );
     }
 

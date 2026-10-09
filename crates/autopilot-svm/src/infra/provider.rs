@@ -48,6 +48,7 @@ impl DbAuctionProvider {
         max_indexer_lag: u64,
         prices: NativePrices,
         state_pda: Pubkey,
+        allow_transfer_fee_mints: bool,
     ) -> Self {
         Self {
             pool,
@@ -55,7 +56,7 @@ impl DbAuctionProvider {
             max_indexer_lag,
             prices,
             state_pda,
-            mints: MintVerdicts::default(),
+            mints: MintVerdicts::new(allow_transfer_fee_mints),
             last_block_height: Mutex::default(),
         }
     }
@@ -606,6 +607,7 @@ mod tests {
             150,
             NativePrices::seeded([]),
             Pubkey::new_from_array(crate::tests::STATE_PDA),
+            false,
         )
     }
 

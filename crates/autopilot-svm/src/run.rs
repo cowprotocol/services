@@ -165,6 +165,7 @@ async fn run(config: Config) {
                 config.contracts.wrapped_native_mint,
             ),
             config.contracts.state_pda(),
+            config.allow_transfer_fee_mints,
         )),
         Box::new(DriverCompetition::new(
             drivers.clone(),

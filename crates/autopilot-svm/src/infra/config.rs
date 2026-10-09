@@ -64,6 +64,11 @@ pub struct Config {
     /// skipped, so a stalled indexer stops feeding stale orders to solvers.
     #[serde(default = "default_max_indexer_lag_slots")]
     pub max_indexer_lag_slots: u64,
+    /// Let orders on Token-2022 mints charging a transfer fee into auctions,
+    /// for staging tests: their owners are paid the pushed amount minus the
+    /// fee, below their limit price. Set it to false in production.
+    #[serde(default = "default_allow_transfer_fee_mints")]
+    pub allow_transfer_fee_mints: bool,
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
@@ -161,6 +166,11 @@ const fn default_min_auction_interval() -> Duration {
 
 /// One blockhash lifetime: beyond it the freshest pending creations in the
 /// stale data would already be dying.
+/// TODO(BE-385): default to false once the staging test of fee mints is done.
+const fn default_allow_transfer_fee_mints() -> bool {
+    true
+}
+
 const fn default_max_indexer_lag_slots() -> u64 {
     150
 }
@@ -288,6 +298,7 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
+        assert!(config.allow_transfer_fee_mints);
         assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
         assert_eq!(config.native_prices.driver_probe_lamports, 100_000_000);
         assert!(matches!(
