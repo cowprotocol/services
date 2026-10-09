@@ -327,6 +327,11 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 return None;
             }
         };
+        let (orders, unpriced) = priced_orders(orders, &prices);
+        self.track_filtered_orders(OrderFilterReason::MissingNativePrice, unpriced);
+        if orders.is_empty() {
+            return None;
+        }
         let mut auction = crate::domain::auction::Auction {
             id: 0,
             orders,
@@ -388,6 +393,8 @@ enum OrderFilterReason {
     UnreceivableBuyTokenAccount,
     /// The sell token account cannot fund the sell amount.
     UnfundedSellTokenAccount,
+    /// No estimator prices the sell or buy token.
+    MissingNativePrice,
 }
 
 impl OrderFilterReason {
@@ -399,6 +406,7 @@ impl OrderFilterReason {
             Self::UnsettleableMint => "unsettleable_mint",
             Self::UnreceivableBuyTokenAccount => "unreceivable_buy_token_account",
             Self::UnfundedSellTokenAccount => "unfunded_sell_token_account",
+            Self::MissingNativePrice => "missing_native_price",
         }
     }
 }
@@ -524,6 +532,24 @@ fn fillable_orders(orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
     (
         fillable,
         unfillable.into_iter().map(|order| order.uid).collect(),
+    )
+}
+
+/// Drop orders with a sell or buy token no estimator prices: a solution
+/// trading them scores nothing, so they would go out in every cut until they
+/// expire. Returns the kept orders and the uids of the dropped ones.
+fn priced_orders(
+    orders: Vec<Order>,
+    prices: &HashMap<Pubkey, u64>,
+) -> (Vec<Order>, Vec<IntentHash>) {
+    let (priced, unpriced): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+        [order.sell_token, order.buy_token]
+            .iter()
+            .all(|token| prices.contains_key(&Pubkey::new_from_array(token.0)))
+    });
+    (
+        priced,
+        unpriced.into_iter().map(|order| order.uid).collect(),
     )
 }
 
@@ -719,6 +745,30 @@ mod tests {
         let (kept, dropped) = fillable_orders(orders.clone());
         assert_eq!(kept, [orders[0].clone(), orders[1].clone()]);
         assert_eq!(dropped, [orders[2].uid]);
+    }
+
+    /// An order missing the price of either token stays out: its solutions
+    /// would score nothing.
+    #[test]
+    fn drops_orders_without_both_native_prices() {
+        let prices = HashMap::from([
+            (Pubkey::new_from_array([0x33; 32]), 1),
+            (Pubkey::new_from_array([0x44; 32]), 1),
+        ]);
+        let orders = vec![
+            order([0x01; 32], true),
+            Order {
+                buy_token: ChainPubkey([0x88; 32]),
+                ..order([0x02; 32], true)
+            },
+            Order {
+                sell_token: ChainPubkey([0x88; 32]),
+                ..order([0x03; 32], true)
+            },
+        ];
+        let (kept, dropped) = priced_orders(orders.clone(), &prices);
+        assert_eq!(kept, [orders[0].clone()]);
+        assert_eq!(dropped, [orders[1].uid, orders[2].uid]);
     }
 
     /// Native SOL buys that sell wSOL stay out. Other native buys pass whatever

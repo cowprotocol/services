@@ -10,7 +10,7 @@ use {
     serde::Deserialize,
     serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
-    std::{num::NonZero, path::Path, time::Duration},
+    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -53,6 +53,10 @@ pub struct Config {
     /// Port the metrics and probes server binds to, on every interface.
     #[serde(default = "default_metrics_port")]
     pub metrics_port: u16,
+    /// Address the HTTP API binds to. The orderbook reads native prices
+    /// from it.
+    #[serde(default = "default_api_address")]
+    pub api_address: SocketAddr,
     /// If no auction cycle completed in this time the pod fails the liveness
     /// check.
     #[serde(with = "humantime_serde", default = "default_max_auction_age")]
@@ -149,6 +153,11 @@ impl Config {
 
 const fn default_metrics_port() -> u16 {
     observe::metrics::DEFAULT_METRICS_PORT
+}
+
+/// The EVM autopilot's API port.
+fn default_api_address() -> SocketAddr {
+    SocketAddr::from(([0, 0, 0, 0], 12088))
 }
 
 const fn default_max_auction_age() -> Duration {
@@ -285,6 +294,7 @@ mod tests {
         assert_eq!(config.competition.max_winners.get(), 1);
         assert_eq!(config.competition.solve_deadline, Duration::from_secs(6));
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
+        assert_eq!(config.api_address, "0.0.0.0:12088".parse().unwrap());
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);

@@ -1,7 +1,14 @@
 //! Orderbook entry-point logic.
 
 use {
-    crate::infra::{Api, api::Sponsoring, config, observe as infra_observe, quoter::Quoter},
+    crate::infra::{
+        Api,
+        api::Sponsoring,
+        config,
+        observe as infra_observe,
+        prices::NativePrices,
+        quoter::Quoter,
+    },
     clap::Parser,
     configs::database::DatabasePoolConfig,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
@@ -107,6 +114,7 @@ pub async fn run(args: Args) {
         addr: config.http.bind_address,
         pool,
         quoter: Quoter::new(config.quoting.drivers.clone(), config.quoting.timeout),
+        prices: NativePrices::new(config.quoting.autopilot.clone(), config.quoting.timeout),
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
         sponsoring,

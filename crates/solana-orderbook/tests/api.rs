@@ -7,20 +7,21 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    solana_orderbook::infra::{api::Api, db, quoter::Quoter},
+    solana_orderbook::infra::{api::Api, db, prices::NativePrices, quoter::Quoter},
     solana_sdk::signer::Signer,
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
     tokio_util::sync::CancellationToken,
 };
 
-fn mock_api() -> Api {
+async fn mock_api() -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         // A lazy pool at a dead endpoint keeps these tests database-free: a
         // quote insert degrades to an id-less answer, nothing else queries.
         pool: PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
         quoter: dead_quoter(),
+        prices: spawn_mock_autopilot(Some(1_000_000_000)).await,
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
         sponsoring: None,
@@ -44,13 +45,37 @@ async fn spawn_server() -> SocketAddr {
 async fn spawn_server_with(quoter: Quoter) -> SocketAddr {
     let api = Api {
         quoter,
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     // A token that is never cancelled keeps the server alive for the test.
     let shutdown = CancellationToken::new();
     tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
     addr
+}
+
+/// A tiny axum server that answers `/native_price/{mint}` with `price` for
+/// every mint, or 404 without one. It stands in for the autopilot.
+async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
+    let app = axum::Router::new().route(
+        "/native_price/{mint}",
+        axum::routing::get(move || async move {
+            match price {
+                Some(price) => (
+                    axum::http::StatusCode::OK,
+                    serde_json::json!({ "price": price.to_string() }).to_string(),
+                ),
+                None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    NativePrices::new(
+        format!("http://{addr}").parse().unwrap(),
+        Duration::from_secs(1),
+    )
 }
 
 /// A tiny axum server that answers `/quote` with a fixed response. It stands
@@ -82,7 +107,7 @@ async fn healthz_returns_200() {
 
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
-    let api = mock_api();
+    let api = mock_api().await;
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
     let serve = api.serve(listener, shutdown_token.clone());
@@ -266,7 +291,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
             }),
-            ..mock_api()
+            ..mock_api().await
         };
         let (listener, addr) = api.bind().await.unwrap();
         let shutdown = CancellationToken::new();
@@ -367,7 +392,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
         }),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -477,6 +502,34 @@ async fn quote_checks_only_the_mints_it_can_read() {
     }
 }
 
+/// A token the autopilot cannot price answers no liquidity even when a
+/// driver quotes the pair: an order on it would never enter an auction.
+#[tokio::test]
+async fn quote_without_a_native_price_is_no_liquidity() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        prices: spawn_mock_autopilot(None).await,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
+    );
+}
+
 /// Every driver failure reads as no liquidity, mirroring the EVM mapping of
 /// estimator errors.
 #[tokio::test]
@@ -511,7 +564,7 @@ async fn solana_db_quote_is_persisted() {
             vec![format!("http://{driver}/").parse().unwrap()],
             Duration::from_secs(1),
         ),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -658,7 +711,7 @@ async fn spawn_sponsored_server_with(
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
         }),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
