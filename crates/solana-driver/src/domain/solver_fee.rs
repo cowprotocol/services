@@ -198,7 +198,6 @@ mod tests {
                 solver_fee: 0,
             }],
             interactions: vec![],
-            address_lookup_tables: vec![],
             cu_estimate: None,
         }
     }

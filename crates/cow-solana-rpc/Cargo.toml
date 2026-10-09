@@ -12,7 +12,6 @@ path = "src/lib.rs"
 [dependencies]
 async-trait = { workspace = true, optional = true }
 base64 = { workspace = true }
-bincode = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
 serde = { workspace = true }
@@ -24,6 +23,7 @@ solana-sdk = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+wincode = { workspace = true }
 
 [features]
 # Enables mock constructors for tests.

@@ -36,7 +36,7 @@ use {
     serde_with::{base64::Base64, serde_as},
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
-        message::compiled_instruction::CompiledInstruction,
+        message::{VersionedMessage, compiled_instruction::CompiledInstruction},
         pubkey::Pubkey,
         transaction::VersionedTransaction,
     },
@@ -260,6 +260,13 @@ fn validate(
     min_validity: std::time::Duration,
 ) -> Result<(db::SponsoredOrder, Vec<(Pubkey, Pubkey)>), PlacementError> {
     let message = &transaction.message;
+    // A v1 message carries its priority fee in its config, out of reach of
+    // the compute-budget pricing below, and the funder would pay it.
+    if matches!(message, VersionedMessage::V1(_)) {
+        return Err(PlacementError::InvalidTransaction(
+            "a creation transaction must be legacy or v0",
+        ));
+    }
     if message
         .address_table_lookups()
         .is_some_and(|lookups| !lookups.is_empty())

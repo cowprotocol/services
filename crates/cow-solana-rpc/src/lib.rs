@@ -232,7 +232,7 @@ impl SolanaRPC {
                         solana_transaction_status_client_types::UiTransactionEncoding::Base64,
                     ),
                     commitment: Some(CommitmentConfig::confirmed()),
-                    max_supported_transaction_version: Some(0),
+                    max_supported_transaction_version: Some(1),
                 },
             )
             .await
@@ -274,7 +274,7 @@ impl SolanaRPC {
         let encoded = transactions
             .iter()
             .map(|transaction| {
-                bincode::serialize(transaction)
+                wincode::serialize(transaction)
                     .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes))
             })
             .collect::<Result<Vec<_>, _>>()

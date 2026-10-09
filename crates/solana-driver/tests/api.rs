@@ -555,14 +555,21 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
             "interactions": interactions,
         })
     };
-    // 1,233 zero bytes of instruction data alone exceed the 1,232-byte limit.
-    let oversized = serde_json::json!([{
-        "programId": pubkey(0x99).to_string(),
-        "accounts": [],
-        "instructionData": "AAAA".repeat(411),
-    }]);
+    let interaction = |zero_bytes: usize| {
+        serde_json::json!([{
+            "programId": pubkey(0x99).to_string(),
+            "accounts": [],
+            "instructionData": "AAAA".repeat(zero_bytes / 3),
+        }])
+    };
+    // The v1 settlement takes 1,233 bytes of instruction data, past v0's
+    // 1,232-byte limit, but nothing fits 4,097 bytes of it.
     let engine = spawn_mock_solver_engine(serde_json::json!({
-        "solutions": [solution(1, serde_json::json!([])), solution(2, oversized)],
+        "solutions": [
+            solution(1, serde_json::json!([])),
+            solution(2, interaction(4_098)),
+            solution(3, interaction(1_233)),
+        ],
     }))
     .await;
     let (solver, _) = solver_with_keypair(engine).await;
@@ -575,7 +582,7 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert_eq!(response_ids(&response.json().await.unwrap()), [1]);
+    assert_eq!(response_ids(&response.json().await.unwrap()), [1, 3]);
 }
 
 #[tokio::test]

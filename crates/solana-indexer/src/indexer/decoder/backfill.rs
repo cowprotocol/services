@@ -254,7 +254,7 @@ pub(super) fn convert(
                     .collect(),
                 recent_blockhash: message.recent_blockhash().to_bytes().to_vec(),
                 instructions,
-                versioned: matches!(message, VersionedMessage::V0(_)),
+                versioned: !matches!(message, VersionedMessage::Legacy(_)),
                 address_table_lookups: message
                     .address_table_lookups()
                     .unwrap_or_default()
