@@ -723,7 +723,7 @@ fn sponsored_intent(
         ),
         sell_amount: std::num::NonZeroU64::new(1_000).unwrap(),
         buy_amount: std::num::NonZeroU64::new(2_000).unwrap(),
-        valid_to: u32::MAX,
+        valid_to: u32::try_from(chrono::Utc::now().timestamp() + 3600).unwrap(),
         flags: cow_settlement_interface::data::intent::Flags {
             kind: cow_settlement_interface::data::intent::OrderKind::Sell,
             partially_fillable: false,
@@ -1042,7 +1042,7 @@ async fn create_order_rejects_invalid_submissions() {
     }
 
     // Intent-level rejections: the funder as owner, equal mints, and a
-    // validTo below the minimum validity.
+    // validTo outside the validity bounds.
     let mut funder_owned = sponsored_intent(owner.pubkey(), false);
     funder_owned.owner = funder;
     let mut same_token = sponsored_intent(owner.pubkey(), false);
@@ -1054,10 +1054,14 @@ async fn create_order_rejects_invalid_submissions() {
     );
     let mut expiring = sponsored_intent(owner.pubkey(), false);
     expiring.valid_to = u32::try_from(chrono::Utc::now().timestamp() + 30).unwrap();
+    let mut distant = sponsored_intent(owner.pubkey(), false);
+    distant.valid_to =
+        u32::try_from(chrono::Utc::now().timestamp() + 2 * 365 * 24 * 60 * 60).unwrap();
     for (intent, expected) in [
         (funder_owned, "InvalidTransaction"),
         (same_token, "SameBuyAndSellToken"),
         (expiring, "InsufficientValidTo"),
+        (distant, "ExcessiveValidTo"),
     ] {
         let destination = destination_creation(funder, owner.pubkey(), &intent);
         let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);

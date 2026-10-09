@@ -83,7 +83,8 @@ pub struct Quoting {
     /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_min_validity")]
     pub min_validity: Duration,
-    /// Furthest in the future a quoted order's `validTo` may lie.
+    /// Furthest in the future an order's `validTo` may lie, for quotes and
+    /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_max_validity")]
     pub max_validity: Duration,
     /// How long the quoted amounts are honored.

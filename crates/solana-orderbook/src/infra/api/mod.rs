@@ -50,8 +50,8 @@ pub struct Api {
     pub sponsoring: Option<Sponsoring>,
 }
 
-/// Bounds on a quoted order's `validTo`. The defaults are the EVM
-/// orderbook's.
+/// Bounds on an order's `validTo`, for quotes and sponsored placement
+/// alike. The defaults are the EVM orderbook's.
 #[derive(Clone, Copy, Debug)]
 pub struct ValidationParameters {
     /// Least far in the future the `validTo` may lie.

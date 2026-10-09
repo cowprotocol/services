@@ -14,7 +14,7 @@
 use {
     super::mint::{ensure_settleable, is_token_program, token_mints},
     crate::infra::{
-        api::{Sponsoring, State, error},
+        api::{Sponsoring, State, ValidationParameters, error},
         db,
     },
     axum::{Json, http::StatusCode},
@@ -75,6 +75,7 @@ enum PlacementError {
     ZeroAmount,
     InvalidNativeBuy(&'static str),
     InsufficientValidTo,
+    ExcessiveValidTo,
     InvalidSignature,
     BlockhashExpired,
     DuplicatedOrder,
@@ -111,6 +112,10 @@ impl From<PlacementError> for error::Reply {
             PlacementError::InsufficientValidTo => (
                 "InsufficientValidTo",
                 "validTo lies closer than the minimum validity",
+            ),
+            PlacementError::ExcessiveValidTo => (
+                "ExcessiveValidTo",
+                "validTo lies further than the maximum validity",
             ),
             PlacementError::InvalidSignature => (
                 "InvalidSignature",
@@ -193,8 +198,7 @@ async fn place(
         .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
-    let (mut order, token_programs) =
-        validate(sponsoring, &transaction, state.validation().min_validity)?;
+    let (mut order, token_programs) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
     check_accounts(sponsoring, &order, &token_programs).await?;
 
@@ -257,7 +261,7 @@ async fn place(
 fn validate(
     sponsoring: &Sponsoring,
     transaction: &VersionedTransaction,
-    min_validity: std::time::Duration,
+    validation: ValidationParameters,
 ) -> Result<(db::SponsoredOrder, Vec<(Pubkey, Pubkey)>), PlacementError> {
     let message = &transaction.message;
     if message
@@ -347,10 +351,15 @@ fn validate(
     if *input.order_pda != order_pda {
         return Err(PlacementError::WrongOrderPda);
     }
-    let earliest =
-        chrono::Utc::now().timestamp() + i64::try_from(min_validity.as_secs()).unwrap_or(i64::MAX);
-    if i64::from(intent.valid_to) <= earliest {
+    let now = chrono::Utc::now().timestamp();
+    let bound = |validity: std::time::Duration| {
+        now.saturating_add(i64::try_from(validity.as_secs()).unwrap_or(i64::MAX))
+    };
+    if i64::from(intent.valid_to) < bound(validation.min_validity) {
         return Err(PlacementError::InsufficientValidTo);
+    }
+    if i64::from(intent.valid_to) > bound(validation.max_validity) {
+        return Err(PlacementError::ExcessiveValidTo);
     }
 
     // The preparation instructions may only follow the template: each step
