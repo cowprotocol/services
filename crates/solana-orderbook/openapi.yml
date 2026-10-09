@@ -403,6 +403,36 @@ components:
             signature is needed.
           type: integer
           format: int64
+        quote:
+          description: |
+            The quote this order was placed against. Absent for an order
+            placed without one, and for orders created directly on chain.
+          allOf:
+            - $ref: "#/components/schemas/OrderQuote"
+    OrderQuote:
+      description: |
+        The quote an order was placed against, as it stood when the order was
+        placed. The unfixed side carries the user's slippage, so it is not the
+        price the order is guaranteed.
+      type: object
+      required:
+        - quoteId
+        - sellAmount
+        - buyAmount
+        - solver
+      properties:
+        quoteId:
+          description: The id of the quote the order was placed with.
+          type: integer
+          format: int64
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        solver:
+          description: The solver that produced the quote.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
     CompetitionOrderStatus:
       description: |
         Auction progress of an order. `solved`, `executing`, and `traded`
