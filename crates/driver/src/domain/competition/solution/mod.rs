@@ -36,6 +36,7 @@ use {
 pub mod encoding;
 pub mod fee;
 pub mod interaction;
+pub mod risk;
 pub mod scoring;
 pub mod settlement;
 pub mod slippage;
@@ -70,6 +71,13 @@ pub struct Solution {
     flashloans: HashMap<order::Uid, Flashloan>,
     #[debug(ignore)]
     wrappers: Vec<WrapperCall>,
+}
+
+/// Makes the solution bid its risk-adjusted score, see [`risk`].
+#[derive(Clone, Copy, Debug)]
+pub struct RiskAdjustment<'a> {
+    pub success_probability: risk::SuccessProbability,
+    pub native_prices: &'a auction::Prices,
 }
 
 /// Gas fee overrides provided by the solver, used instead of the driver's
@@ -151,6 +159,7 @@ impl Solution {
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
         wrappers: Vec<WrapperCall>,
+        risk_adjustment: Option<RiskAdjustment<'_>>,
     ) -> Result<Self, error::Solution> {
         // Surplus capturing JIT orders behave like Fulfillment orders. They
         // capture surplus, pay network fees and contribute to score of
@@ -182,7 +191,8 @@ impl Solution {
                             buy_token_balance: jit.order().buy_token_balance,
                             protocol_fees: vec![],
                             quote: None,
-                            penalty_cap_native: None,
+                            // JIT orders never incur a penalty.
+                            penalty_cap_native: Some(Default::default()),
                         }),
                         app_data: jit.order().app_data.into(),
                         partial: jit.order().partially_fillable(),
@@ -226,20 +236,45 @@ impl Solution {
             return Ok(solution);
         }
 
+        let clearing_prices = |fulfillment: &Fulfillment| ClearingPrices {
+            sell: solution.prices[&fulfillment.order().sell.token.as_erc20(solution.weth)],
+            buy: solution.prices[&fulfillment.order().buy.token.as_erc20(solution.weth)],
+        };
+
+        // The risk margins have to be computed on the full surplus, i.e.
+        // before any protocol fees are applied.
+        let margins = match risk_adjustment {
+            Some(risk) => {
+                let fulfillments: Vec<_> = solution
+                    .user_trades()
+                    .map(|fulfillment| (fulfillment, clearing_prices(fulfillment)))
+                    .collect();
+                let margins =
+                    risk::margins(&fulfillments, risk.success_probability, risk.native_prices)?;
+                fulfillments
+                    .iter()
+                    .map(|(fulfillment, _)| fulfillment.order().uid)
+                    .zip(margins)
+                    .collect()
+            }
+            None => HashMap::new(),
+        };
+
         let mut trades = Vec::with_capacity(solution.trades.len());
-        for trade in solution.trades {
-            match &trade {
+        for trade in &solution.trades {
+            match trade {
                 Trade::Fulfillment(fulfillment) => {
-                    let prices = ClearingPrices {
-                        sell: solution.prices
-                            [&fulfillment.order().sell.token.as_erc20(solution.weth)],
-                        buy: solution.prices
-                            [&fulfillment.order().buy.token.as_erc20(solution.weth)],
+                    let prices = clearing_prices(fulfillment);
+                    let fulfillment = match margins.get(&fulfillment.order().uid) {
+                        Some(margin) if !margin.0.is_zero() => {
+                            fulfillment.with_risk_margin(prices, *margin)?
+                        }
+                        _ => fulfillment.clone(),
                     };
                     let fulfillment = fulfillment.with_protocol_fees(prices)?;
                     trades.push(Trade::Fulfillment(fulfillment))
                 }
-                Trade::Jit(_) => trades.push(trade),
+                Trade::Jit(_) => trades.push(trade.clone()),
             }
         }
         Ok(Self { trades, ..solution })
@@ -877,6 +912,8 @@ pub mod error {
         InvalidClearingPrices,
         #[error(transparent)]
         ProtocolFee(#[from] fee::Error),
+        #[error(transparent)]
+        RiskAdjustment(#[from] super::risk::Error),
         #[error("invalid JIT trade")]
         InvalidJitTrade(Trade),
     }

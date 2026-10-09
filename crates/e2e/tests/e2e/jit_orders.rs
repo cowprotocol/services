@@ -184,6 +184,7 @@ async fn single_limit_order_test(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        success_probability: None,
         gas_fee_override: None,
     }));
 
