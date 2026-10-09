@@ -1,7 +1,8 @@
 # Example Jupiter solver configuration.
 # Run with: solana-solvers jupiter --config <this file>
 
-# Orders quoted at once. Each quote is two sequential Jupiter requests.
+# Orders quoted at once. Each quote is two sequential Jupiter requests, three
+# when the engine has to price the buy token itself.
 concurrent-requests = 8
 # Pause after a rate-limited response: min-back-off at first, multiplied by
 # back-off-growth-factor per consecutive one, capped at max-back-off.

@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        dex::{self, Dex},
+        dex::{self, Dex, NativePrice},
         dto::{auction, auction::Auction, solution::Solution},
     },
     configs::rate_limit::Strategy,
@@ -13,14 +13,21 @@ use {
     tracing::Instrument,
 };
 
-/// Quotes one order into a swap. A seam over [`Dex`] so the loop is testable
-/// without the network.
+/// Quotes one order into a swap and prices a token in SOL. A seam over
+/// [`Dex`] so the loop is testable without the network.
 pub trait Quote {
     fn quote(
         &self,
         order: &dex::Order,
         taker: &Pubkey,
     ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send;
+
+    /// The native price of `mint` implied by selling `amount` of it.
+    fn native_price(
+        &self,
+        mint: &Pubkey,
+        amount: u64,
+    ) -> impl Future<Output = Result<NativePrice, dex::jupiter::Error>> + Send;
 }
 
 impl Quote for Dex {
@@ -30,6 +37,16 @@ impl Quote for Dex {
         taker: &Pubkey,
     ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
         self.swap(order, taker)
+    }
+
+    fn native_price(
+        &self,
+        mint: &Pubkey,
+        amount: u64,
+    ) -> impl Future<Output = Result<NativePrice, dex::jupiter::Error>> + Send {
+        match self {
+            Dex::Jupiter(jupiter) => jupiter.native_price(mint, amount),
+        }
     }
 }
 
@@ -53,8 +70,9 @@ impl<Q: Quote + Sync> Solver<Q> {
 
     /// One single-order solution per routable order quoted before the
     /// deadline. Buys (when disabled), orders the aggregator cannot route,
-    /// and swaps that undercut the order's limit yield no candidate. The rest
-    /// of the auction still proceeds.
+    /// swaps that undercut the order's limit and competition orders whose
+    /// buy token has no native price yield no candidate. The rest of the
+    /// auction still proceeds.
     ///
     /// TODO(BE-308): retry partially fillable orders at smaller amounts when
     /// the swap undercuts the limit, like the EVM engine's `Fills`. The
@@ -99,20 +117,9 @@ impl<Q: Quote + Sync> Solver<Q> {
     ) -> Option<Solution> {
         let dex_order = order.to_dex_order();
         let swap = self
-            .rate_limiter
-            .execute_with_back_off(self.quoter.quote(&dex_order, &auction.taker), |result| {
-                matches!(result, Err(dex::jupiter::Error::RateLimited))
-            })
+            .throttled(self.quoter.quote(&dex_order, &auction.taker))
             .await
-            // A quote dropped during a back-off counts as rate limited.
-            .unwrap_or(Err(dex::jupiter::Error::RateLimited))
-            .inspect_err(|err| match err {
-                dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
-                    tracing::debug!("no solution for swap")
-                }
-                dex::jupiter::Error::RateLimited => tracing::debug!("rate limited"),
-                _ => tracing::warn!(%err, "quote failed"),
-            })
+            .inspect_err(|err| log_failure(err, "swap"))
             .ok()?;
         if !swap.satisfies(&dex_order) {
             tracing::debug!(
@@ -125,9 +132,62 @@ impl<Q: Quote + Sync> Solver<Q> {
             );
             return None;
         }
+        // The orderbook nets quote costs itself, so a quote needs no price.
+        // TODO(BE-367): charge the solver's settlement costs in buy-token
+        // atoms with this price.
+        let native_price = match auction.id {
+            Some(_) => Some(self.buy_token_price(&dex_order, &swap, auction).await?),
+            None => None,
+        };
         let solution = Solution::new(index as u64, order.uid, &dex_order, swap).ok()?;
-        tracing::debug!("solved");
+        tracing::debug!(?native_price, "solved");
         Some(solution)
+    }
+
+    /// The buy token's native price: the auction's, or one Jupiter estimate
+    /// from selling the swap's output into wSOL when the auction carries
+    /// none.
+    async fn buy_token_price(
+        &self,
+        order: &dex::Order,
+        swap: &dex::Swap,
+        auction: &Auction,
+    ) -> Option<NativePrice> {
+        if let Some(price) = auction.reference_price(&order.buy_mint) {
+            return Some(price);
+        }
+        let price = self
+            .throttled(self.quoter.native_price(&order.buy_mint, swap.out_amount))
+            .await
+            .inspect_err(|err| log_failure(err, "native price"))
+            .ok()?;
+        tracing::info!(?price, "estimated the buy token's native price");
+        Some(price)
+    }
+
+    /// A call dropped during a back-off counts as rate limited.
+    async fn throttled<T>(
+        &self,
+        call: impl Future<Output = Result<T, dex::jupiter::Error>>,
+    ) -> Result<T, dex::jupiter::Error> {
+        self.rate_limiter
+            .execute_with_back_off(call, |result| {
+                matches!(result, Err(dex::jupiter::Error::RateLimited))
+            })
+            .await
+            .unwrap_or(Err(dex::jupiter::Error::RateLimited))
+    }
+}
+
+/// Expected outcomes (no route, an unsupported order, a 429) at debug, API
+/// failures at warn.
+fn log_failure(err: &dex::jupiter::Error, call: &str) {
+    match err {
+        dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
+            tracing::debug!(%err, "no {call}")
+        }
+        dex::jupiter::Error::RateLimited => tracing::debug!("rate limited"),
+        _ => tracing::warn!(%err, "{call} failed"),
     }
 }
 
@@ -137,6 +197,7 @@ mod tests {
         super::*,
         crate::dto::order::OrderUid,
         std::{
+            collections::HashMap,
             sync::{
                 Mutex,
                 atomic::{AtomicUsize, Ordering},
@@ -149,6 +210,8 @@ mod tests {
     const NO_ROUTE: u8 = 0xff;
     const RATE_LIMITED: u8 = 0xfe;
     const SLOW: u8 = 0xfd;
+    /// Buy mint byte the mock cannot price.
+    const UNPRICED: u8 = 0xfc;
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -160,6 +223,7 @@ mod tests {
             taker: pubkey(1),
             orders,
             deadline: chrono::Utc::now() + deadline_in,
+            tokens: HashMap::new(),
         }
     }
 
@@ -198,12 +262,14 @@ mod tests {
     /// Routes any sell after a millisecond, except the `NO_ROUTE` mint (no
     /// route), the `RATE_LIMITED` mint (429) and the `SLOW` mint (ten
     /// seconds). Rejects buys. Records when each quote started and the most
-    /// that ran at once.
+    /// that ran at once. Prices any mint at one SOL except `UNPRICED`, and
+    /// counts the price calls.
     #[derive(Default)]
     struct MockQuote {
         started: Mutex<Vec<Instant>>,
         in_flight: AtomicUsize,
         max_in_flight: AtomicUsize,
+        price_calls: AtomicUsize,
     }
 
     impl Quote for MockQuote {
@@ -246,6 +312,22 @@ mod tests {
                 result
             }
         }
+
+        fn native_price(
+            &self,
+            mint: &Pubkey,
+            _amount: u64,
+        ) -> impl Future<Output = Result<dex::NativePrice, dex::jupiter::Error>> + Send {
+            let mint = *mint;
+            async move {
+                self.price_calls.fetch_add(1, Ordering::SeqCst);
+                if mint == pubkey(UNPRICED) {
+                    Err(dex::jupiter::Error::NotFound)
+                } else {
+                    Ok(dex::NativePrice::SOL)
+                }
+            }
+        }
     }
 
     #[tokio::test]
@@ -280,6 +362,57 @@ mod tests {
 
         assert_eq!(solutions.len(), 1);
         assert_eq!(solutions[0].trades[0].order_uid, OrderUid([0x02; 32]));
+    }
+
+    #[tokio::test]
+    async fn estimates_the_buy_token_price_when_the_auction_carries_none() {
+        let auction = auction(vec![sell(0x01)], Duration::from_secs(60));
+        let solver = solver(8, Duration::ZERO);
+
+        let solutions = solver.solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solver.quoter.price_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn uses_the_auction_price_without_an_extra_call() {
+        let mut auction = auction(vec![sell(0x01)], Duration::from_secs(60));
+        auction.tokens.insert(
+            pubkey(2),
+            auction::Token {
+                reference_price: Some(1_500_000_000),
+            },
+        );
+        let solver = solver(8, Duration::ZERO);
+
+        let solutions = solver.solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solver.quoter.price_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn drops_an_order_whose_buy_token_has_no_price() {
+        let mut unpriced = sell(0x01);
+        unpriced.buy_mint = pubkey(UNPRICED);
+        let auction = auction(vec![unpriced], Duration::from_secs(60));
+
+        let solutions = solver(8, Duration::ZERO).solve(&auction).await;
+
+        assert!(solutions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn quotes_make_no_price_call() {
+        let mut auction = auction(vec![sell(0x01)], Duration::from_secs(60));
+        auction.id = None;
+        let solver = solver(8, Duration::ZERO);
+
+        let solutions = solver.solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solver.quoter.price_calls.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
