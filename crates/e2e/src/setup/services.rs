@@ -37,7 +37,7 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
-    sqlx::Connection,
+    sqlx::{Connection, Executor, Row},
     std::{ops::DerefMut, str::FromStr, time::Duration},
     tokio::task::JoinHandle,
 };
@@ -898,40 +898,11 @@ impl<'a> Services<'a> {
     }
 }
 
-pub async fn clear_database() {
-    tracing::info!("Clearing database.");
-
-    async fn truncate_tables() -> Result<(), sqlx::Error> {
-        let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await?;
-        let mut db = db.begin().await?;
-        database::clear_DANGER_(&mut db).await?;
-        db.commit().await
-    }
-
-    // This operation can fail when postgres detects a deadlock.
-    // It will terminate one of the deadlocking requests and if it decideds
-    // to terminate this request we need to retry it.
-    let mut attempt = 0;
-    loop {
-        match truncate_tables().await {
-            Ok(_) => return,
-            Err(err) => {
-                tracing::error!(?err, "failed to truncate tables");
-            }
-        }
-        attempt += 1;
-        if attempt >= 10 {
-            panic!("repeatedly failed to clear DB");
-        }
-    }
-}
-
-pub async fn ensure_e2e_readonly_user() {
-    use sqlx::{Executor, Row};
-
-    const PSQL_DUPLICATE_OBJECT_ERROR_CODE: &str = "42710";
-
-    tracing::info!("Ensuring read-only user exists");
+/// Opens a single transaction that first ensures the e2e read-only role
+/// exists and then clears the database. Runs the tx under an exclusive
+/// lock to avoid concurrent calls to this function causing deadlocks.
+pub async fn prepare_database_for_test() {
+    tracing::info!("Preparing database for test.");
     let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL)
         .await
         .expect("Database connection error");
@@ -939,16 +910,43 @@ pub async fn ensure_e2e_readonly_user() {
         .begin()
         .await
         .expect("Database transaction creation error");
+
+    // Serialize concurrent setup attempts across processes to avoid deadlocks.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('e2e_test_setup')::bigint)")
+        .execute(db.deref_mut())
+        .await
+        .expect("failed to acquire advisory lock for readonly user setup");
+
+    ensure_readonly_role(&mut db).await;
+
+    database::clear_DANGER_(&mut db)
+        .await
+        .expect("failed to clear database");
+
+    db.commit().await.expect("Transaction commit error");
+}
+
+/// Ensures the `readonly` role exists in the database, creating it with the
+/// expected privileges if missing.
+async fn ensure_readonly_role(db: &mut sqlx::Transaction<'_, sqlx::Postgres>) {
+    let readonly_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly')")
+            .fetch_one(&mut **db)
+            .await
+            .expect("failed to check for readonly role");
+    if readonly_exists {
+        tracing::info!("Read-only user exists");
+        return;
+    }
+
     let current_db: String = db
         .fetch_one("SELECT current_database();")
         .await
         .expect("Current database name fetching error")
         .get(0);
-
-    let res = db
-        .execute(
-            format!(
-                r#"
+    db.execute(
+        format!(
+            r#"
     CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
     GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
     GRANT USAGE ON SCHEMA public TO readonly;
@@ -957,29 +955,12 @@ pub async fn ensure_e2e_readonly_user() {
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
     "#
-            )
-            .as_str(),
         )
-        .await;
-
-    match res {
-        Err(sqlx::Error::Database(e))
-            if e.code()
-                .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
-        {
-            // this is considered expected, if multiple tests are run against
-            // the same database
-            tracing::info!("Read-only user already exists! {:?}", e);
-        }
-        Err(e) => {
-            tracing::error!("Read-only user creation failed {:?}", e);
-            panic!("Read-only user creation failed {:?}", e);
-        }
-        Ok(_) => {
-            tracing::info!("Read only user created");
-            db.commit().await.expect("Transaction commit error");
-        }
-    }
+        .as_str(),
+    )
+    .await
+    .expect("Read-only user creation failed");
+    tracing::info!("Read-only user created");
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;

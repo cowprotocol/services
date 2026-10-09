@@ -193,7 +193,6 @@ async fn run<F, Fut, T>(
     observe::tracing::init::initialize_reentrant(&obs_config);
     observe::panic_hook::install();
 
-    services::ensure_e2e_readonly_user().await;
     // The mutex guarantees that no more than a test at a time is running on
     // the testing node.
     // Note that the mutex is expected to become poisoned if a test panics. This
@@ -201,10 +200,13 @@ async fn run<F, Fut, T>(
     // it but rather in the locked state.
     let _lock = NODE_MUTEX.lock();
 
-    let node = match fork {
-        Some((fork, block_number)) => Node::forked(fork, block_number).await,
-        None => Node::new().await,
+    let node_fut = async {
+        match fork {
+            Some((fork, block_number)) => Node::forked(fork, block_number).await,
+            None => Node::new().await,
+        }
     };
+    let (node, ()) = tokio::join!(node_fut, services::prepare_database_for_test());
 
     let node = Arc::new(Mutex::new(Some(node)));
     let node_panic_handle = node.clone();
@@ -229,7 +231,6 @@ async fn run<F, Fut, T>(
         web3.wallet.register_signer(signer);
     }
 
-    services::clear_database().await;
     // Hack: the closure may actually be unwind unsafe; moreover, `catch_unwind`
     // does not catch some types of panics. In this cases, the state of the node
     // is not restored. This is not considered an issue since this function
@@ -240,7 +241,6 @@ async fn run<F, Fut, T>(
     if let Some(mut node) = node {
         node.kill().await;
     }
-    services::clear_database().await;
 
     if let Err(err) = result {
         panic::resume_unwind(err);
