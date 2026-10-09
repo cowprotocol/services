@@ -202,8 +202,8 @@ components:
             that is absent and cannot be created leaves the order out of the
             auction sent to the engine. For native SOL it is the wallet
             receiving the lamports, and a payout to a missing wallet creates
-            it. `FinalizeSettle` pays native SOL out of the state PDA's
-            lamports, so the settlement has to move them there first.
+            it. `FinalizeSettle` pays native SOL out of the native SOL buffer
+            PDA's lamports, so the settlement has to move them there first.
           allOf:
             - $ref: "#/components/schemas/Address"
         sellAmount:

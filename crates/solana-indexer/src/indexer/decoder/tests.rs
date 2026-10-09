@@ -370,7 +370,6 @@ fn sample_intent() -> OrderIntent {
         buy_amount: NonZeroU64::new(2_000).unwrap(),
         valid_to: 42,
         flags: Flags {
-            created_on_chain: true,
             kind: IntentOrderKind::Sell,
             partially_fillable: false,
         },
@@ -803,7 +802,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         buy_amount: NonZeroU64::new(1_234).unwrap(),
         valid_to: 42,
         flags: Flags {
-            created_on_chain: true,
             kind: IntentOrderKind::Sell,
             partially_fillable: false,
         },
@@ -813,7 +811,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
 
     let begin = cow_settlement_client::instruction::BeginSettle {
         only_token_program: None,
-        extra_transfer_accounts: &[],
         program_id: settlement,
         solver,
         finalize_ix_index: 1,
@@ -836,7 +833,6 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     .into();
     let finalize = cow_settlement_client::instruction::FinalizeSettle {
         only_token_program: None,
-        extra_transfer_accounts: &[],
         program_id: settlement,
         begin_ix_index: 0,
         orders: &[cow_settlement_client::instruction::FinalizedIntent {

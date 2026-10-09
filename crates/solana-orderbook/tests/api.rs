@@ -725,7 +725,6 @@ fn sponsored_intent(
         buy_amount: std::num::NonZeroU64::new(2_000).unwrap(),
         valid_to: u32::MAX,
         flags: cow_settlement_interface::data::intent::Flags {
-            created_on_chain: true,
             kind: cow_settlement_interface::data::intent::OrderKind::Sell,
             partially_fillable: false,
         },

@@ -24,7 +24,11 @@ use {
     cow_settlement_interface::{
         data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
         instruction::settle::{BeginSettle, FinalizeSettle, Pull},
-        pda::{buffer::find_buffer_pda, order::find_order_pda, state::STATE_PDA_SEEDS},
+        pda::{
+            buffer::{find_buffer_pda, find_native_sol_buffer_pda},
+            order::find_order_pda,
+            state::STATE_PDA_SEEDS,
+        },
         token_program::TokenProgram,
     },
     cow_solana_signer::Signer,
@@ -72,9 +76,9 @@ pub struct Settlement {
 /// (buy-mint buffer PDAs, the payer's sell-mint ATAs and its wSOL ATA for
 /// native SOL buys, the orders' buy-mint ATAs), then runs `BeginSettle` (pulls
 /// sell tokens into the payer's sell ATAs), the solver interactions, the
-/// funding of the state PDA for native SOL buys, and `FinalizeSettle` (pushes
-/// buy tokens out of the buy-mint buffer PDAs and native SOL out of the state
-/// PDA).
+/// funding of the native SOL buffer for native SOL buys, and `FinalizeSettle`
+/// (pushes buy tokens out of the buy-mint buffer PDAs and native SOL out of
+/// the native SOL buffer).
 pub(crate) struct ResolvedSettlement {
     settlement: Settlement,
     /// The fee payer, who also signs `BeginSettle` as the solver.
@@ -286,10 +290,10 @@ impl ResolvedSettlement {
         // so both instructions walk the orders in that order.
         settlement_orders.sort_unstable_by_key(|order| order.order_pda);
 
-        let (state_pda, state_bump) = find_state_pda(&self.settlement.program_id);
+        let state_pda = find_state_pda(&self.settlement.program_id).0;
         let funding = native_payout_funding(
+            &self.settlement.program_id,
             &payer,
-            &state_pda,
             &settlement_orders,
             self.max_native_shortfall,
         )?;
@@ -354,7 +358,7 @@ impl ResolvedSettlement {
         instructions.extend(funding);
         instructions.push(finalize_settle(
             &self.settlement.program_id,
-            (state_pda, state_bump),
+            state_pda,
             begin_ix_index,
             &settlement_orders,
         ));
@@ -599,12 +603,7 @@ impl TryFrom<&Order> for OrderIntent {
             sell_amount: amount(order.sell_amount)?,
             buy_amount: amount(order.buy_amount)?,
             valid_to: order.valid_to,
-            // Every auction order exists as a PDA the owner created with
-            // `CreateOrder`, and the program only accepts that instruction
-            // for intents carrying this flag. An off-chain Ed25519 intent
-            // flow would carry the flag on the wire instead.
             flags: Flags {
-                created_on_chain: true,
                 kind: match order.side {
                     Side::Sell => OrderKind::Sell,
                     Side::Buy => OrderKind::Buy,
@@ -812,8 +811,7 @@ fn transfer_checked(program: TokenProgram) -> bool {
 }
 
 /// The settlement state PDA of `program_id` and its bump: the delegate of every
-/// user token account, the buffers' SPL authority and the account native SOL
-/// payouts are paid from.
+/// user token account and the buffers' SPL authority.
 fn find_state_pda(program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&STATE_PDA_SEEDS, program_id)
 }
@@ -850,20 +848,17 @@ fn begin_settle(
         sell_token_accounts: &sell_token_accounts,
         sell_mints: &sell_mints,
         pulls: &pulls,
-        // The mint rule refuses hook programs, so no transfer needs extra
-        // accounts.
-        extra_transfer_accounts: &[],
     }
     .into()
 }
 
 /// The `FinalizeSettle` instruction pushing each order's proceeds: out of the
-/// buy mint's buffer, or out of the state PDA's lamports for a native SOL buy.
+/// buy mint's buffer, or out of the native SOL buffer for a native SOL buy.
 /// One push per order in the orders' layout, as the program pays order `i` of
 /// `BeginSettle` with push `i`.
 fn finalize_settle(
     program_id: &Pubkey,
-    (state_pda, state_bump): (Pubkey, u8),
+    state_pda: Pubkey,
     begin_ix_index: u16,
     orders: &[SettlementOrder],
 ) -> Instruction {
@@ -874,7 +869,10 @@ fn finalize_settle(
     let mut amounts = Vec::with_capacity(orders.len());
     for order in orders {
         let (source, bump, destination, mint) = match &order.intent.buy {
-            Asset::Native(account) => (state_pda, state_bump, *account, None),
+            Asset::Native(account) => {
+                let (buffer, bump) = find_native_sol_buffer_pda(program_id);
+                (buffer, bump, *account, None)
+            }
             Asset::TokenProgram(token) => {
                 let (buffer, bump) = find_buffer_pda(program_id, &token.mint);
                 let mint = order.checked_push.then_some(token.mint);
@@ -897,21 +895,20 @@ fn finalize_settle(
         mints: &mints,
         bumps: &bumps,
         amounts: &amounts,
-        extra_accounts: &[],
     }
     .into()
 }
 
-/// The instructions that fund the state PDA's native SOL payouts: check that
-/// the payer's wSOL ATA holds the payouts less the `max_shortfall` share, close
-/// it to unwrap the swap output, then transfer exactly the payouts to the
-/// state PDA. The payer's own SOL covers a gap within `max_shortfall`, and the
-/// check reverts the settlement on a larger one. Only pushes move lamports out
-/// of the state PDA, so any excess would stay there. Empty without a native
+/// The instructions that fund the native SOL buffer's payouts: check that the
+/// payer's wSOL ATA holds the payouts less the `max_shortfall` share, close it
+/// to unwrap the swap output, then transfer exactly the payouts to the native
+/// SOL buffer. The payer's own SOL covers a gap within `max_shortfall`, and
+/// the check reverts the settlement on a larger one. Only pushes move lamports
+/// out of the buffer, so any excess would stay there. Empty without a native
 /// SOL buy.
 fn native_payout_funding(
+    program_id: &Pubkey,
     payer: &Pubkey,
-    state_pda: &Pubkey,
     orders: &[SettlementOrder],
     max_shortfall: Option<MaxNativeShortfall>,
 ) -> Result<Vec<Instruction>, Error> {
@@ -931,7 +928,7 @@ fn native_payout_funding(
     Ok(vec![
         require_token_balance(&wsol_ata, payer, required),
         close_token_account(&wsol_ata, payer, payer),
-        transfer(payer, state_pda, total),
+        transfer(payer, &find_native_sol_buffer_pda(program_id).0, total),
     ])
 }
 
@@ -990,7 +987,7 @@ mod tests {
             data::intent::ENCODED_NATIVE_SOL_TRANSFER,
             instruction::{
                 InstructionInputParsing,
-                settle::{BeginSettleInput, FinalizeSettleInput, MINT_PLACEHOLDER},
+                settle::{BeginSettleInput, FinalizeSettleInput},
             },
         },
         cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
@@ -1931,8 +1928,8 @@ mod tests {
 
     /// Between the interactions and `FinalizeSettle`, the payer checks that its
     /// wSOL ATA holds the native SOL payouts, unwraps it and moves exactly the
-    /// payouts into the state PDA, which `FinalizeSettle` pays those orders
-    /// from. Token payouts are not part of the transfer.
+    /// payouts into the native SOL buffer, which `FinalizeSettle` pays those
+    /// orders from. Token payouts are not part of the transfer.
     #[test]
     fn native_sol_payouts_are_funded_from_the_unwrapped_wsol() {
         let program_id = pubkey(0xaa);
@@ -1961,7 +1958,7 @@ mod tests {
         // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
         // Transfer, FinalizeSettle].
         assert_eq!(instructions.len(), 6);
-        let state_pda = find_state_pda(&program_id).0;
+        let native_sol_buffer = find_native_sol_buffer_pda(&program_id).0;
         let wsol_ata = associated_token_address(&payer, &native_mint::ID, TokenProgram::SplToken);
         assert_eq!(
             instructions[2],
@@ -1979,7 +1976,7 @@ mod tests {
             instructions[3],
             close_token_account(&wsol_ata, &payer, &payer)
         );
-        assert_eq!(instructions[4], transfer(&payer, &state_pda, 3_000));
+        assert_eq!(instructions[4], transfer(&payer, &native_sol_buffer, 3_000));
 
         let begin = &instructions[1];
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
@@ -1994,7 +1991,7 @@ mod tests {
         let mut native_pushes: Vec<(Pubkey, u64)> = finalize_input
             .pushes
             .iter()
-            .filter(|push| *push.source_buffer == state_pda)
+            .filter(|push| *push.source_buffer == native_sol_buffer)
             .map(|push| (*push.destination, push.amount))
             .collect();
         native_pushes.sort_unstable();
@@ -2033,7 +2030,7 @@ mod tests {
         );
         assert_eq!(
             instructions[4],
-            transfer(&payer, &find_state_pda(&program_id).0, 2_000)
+            transfer(&payer, &find_native_sol_buffer_pda(&program_id).0, 2_000)
         );
     }
 
@@ -2173,20 +2170,20 @@ mod tests {
         let begin = &instructions[5];
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
-        let mut pulls: Vec<(Pubkey, Pubkey)> = begin_input
+        let mut pulls: Vec<(Pubkey, Option<Pubkey>)> = begin_input
             .orders
             .iter()
-            .map(|order| (order.destinations[0], *order.sell_mint))
+            .map(|order| (order.destinations[0], order.sell_mint.get().copied()))
             .collect();
         pulls.sort_unstable();
         let mut expected = vec![
             (
                 associated_token_address(&payer, &spl.sell_token, TokenProgram::SplToken),
-                MINT_PLACEHOLDER,
+                None,
             ),
             (
                 associated_token_address(&payer, &token_2022.sell_token, TokenProgram::Token2022),
-                token_2022.sell_token,
+                Some(token_2022.sell_token),
             ),
         ];
         expected.sort_unstable();
@@ -2197,23 +2194,23 @@ mod tests {
         let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
         let finalize_input =
             FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
-        let mut pushes: Vec<(Pubkey, Pubkey)> = finalize_input
+        let mut pushes: Vec<(Pubkey, Option<Pubkey>)> = finalize_input
             .pushes
             .iter()
-            .map(|push| (*push.destination, *push.mint))
+            .map(|push| (*push.destination, push.mint.get().copied()))
             .collect();
         pushes.sort_unstable();
         let mut expected = vec![
-            (spl.buy_token_account, MINT_PLACEHOLDER),
-            (token_2022.buy_token_account, token_2022.buy_token),
+            (spl.buy_token_account, None),
+            (token_2022.buy_token_account, Some(token_2022.buy_token)),
         ];
         expected.sort_unstable();
         assert_eq!(pushes, expected);
     }
 
     /// A Token-2022 sell paid out in native SOL: the pull carries the sell
-    /// mint for `TransferChecked`, the lamport payout carries the placeholder
-    /// since no token program moves it.
+    /// mint for `TransferChecked`, the lamport payout carries no mint since
+    /// no token program moves it.
     #[test]
     fn native_sol_payouts_are_never_transfer_checked() {
         let program_id = pubkey(0xaa);
@@ -2242,15 +2239,15 @@ mod tests {
         let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
         let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
         assert_eq!(
-            *begin_input.orders.iter().next().unwrap().sell_mint,
-            order.sell_token
+            begin_input.orders.iter().next().unwrap().sell_mint.get(),
+            Some(&order.sell_token)
         );
         let finalize = &instructions[5];
         let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
         let finalize_input =
             FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
         let push = finalize_input.pushes.iter().next().unwrap();
-        assert_eq!((*push.destination, *push.mint), (wallet, MINT_PLACEHOLDER));
+        assert_eq!((*push.destination, push.mint.get()), (wallet, None));
     }
 
     /// An order trading two Token-2022 mints, paying out to the owner's
