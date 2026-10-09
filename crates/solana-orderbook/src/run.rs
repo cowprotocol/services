@@ -103,6 +103,12 @@ pub async fn run(args: Args) {
             mints: solana_token::MintVerdicts::default(),
         }
     });
+    if let Some(sponsoring) = &sponsoring {
+        sponsoring
+            .check_settlement_program()
+            .await
+            .unwrap_or_else(|err| panic!("settlement program check failed: {err:#}"));
+    }
     let api = Api {
         addr: config.http.bind_address,
         pool,

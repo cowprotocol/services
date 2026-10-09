@@ -54,6 +54,10 @@ pub async fn run(args: Args) {
         bundle_rpc,
         config.chain.settlement_program_id,
     ));
+    blockchain
+        .check_settlement_program()
+        .await
+        .unwrap_or_else(|err| panic!("settlement program check failed: {err}"));
     let api = Api {
         addr: config.http.bind_address,
         blockchain,
