@@ -11,9 +11,13 @@ use {
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
         settlement::ResolveError,
+        slot::Slot,
         solution::Solution,
     },
-    crate::infra::{blockchain::Solana, solver::Solver},
+    crate::infra::{
+        blockchain::{BundleSimulation, Solana},
+        solver::Solver,
+    },
     base64::{Engine, prelude::BASE64_STANDARD},
     itertools::Itertools,
     moka::sync::Cache,
@@ -166,9 +170,13 @@ impl Competition {
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
             match &verdict {
-                Ok(()) => tracing::info!(
+                // Compared with the slot of a later failing `/settle`
+                // simulation, this separates a lagging bundle endpoint from
+                // state that changed in between.
+                Ok(slot) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    slot = %slot,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -213,13 +221,14 @@ impl Competition {
     /// creations of its orders not created on chain yet. Any failure would
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
-    /// driver could not find out.
+    /// driver could not find out. A pass returns the slot the bundle
+    /// simulated against.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<(), Error> {
+    ) -> Result<Slot, Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
@@ -255,7 +264,7 @@ impl Competition {
             "simulating settlement bundle"
         );
 
-        let results = self
+        let BundleSimulation { slot, results } = self
             .blockchain
             .simulate_bundle(&bundle)
             .await
@@ -271,6 +280,7 @@ impl Competition {
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
                     program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
                     logs = ?result.logs,
+                    slot = %slot,
                     "bundle simulation failed"
                 );
                 return Err(Error::SimulationFailed {
@@ -288,7 +298,7 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(())
+        Ok(slot)
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -650,11 +660,12 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            // Only the program logs and the message surface here, the error
-            // itself carries the failure and its program error to the settle
-            // task's log. The message leaves out the signature, so the log
-            // cannot be broadcast.
+            // Only the slot, the program logs and the message surface here,
+            // the error itself carries the failure and its program error to
+            // the settle task's log. The message leaves out the signature, so
+            // the log cannot be broadcast.
             tracing::warn!(
+                slot = %simulation.slot,
                 logs = ?simulation.logs,
                 message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
