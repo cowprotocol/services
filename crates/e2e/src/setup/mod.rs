@@ -36,7 +36,7 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
 /// example, it can take a couple of seconds for a newly placed order to show up
 /// in the auction. When running on Github CI, anything can take an unexpectedly
 /// long time.
-pub const TIMEOUT: Duration = Duration::from_secs(30);
+pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Repeatedly evaluates condition until it returns a truthy value
 /// (true, Some(true), Result(true)) or the timeout is reached.
