@@ -150,6 +150,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
                 solver_fee_bps: solver_config.solver_fee_bps,
+                success_probability: solver_config.success_probability,
                 submission_accounts: join_all(
                     solver_config
                         .submission_accounts

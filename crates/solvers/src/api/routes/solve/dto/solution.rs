@@ -129,6 +129,8 @@ pub fn from_domain(solutions: &[solution::Solution]) -> super::SolverResponse {
                         data: w.data.clone(),
                     })
                     .collect(),
+                // rely on the driver's configured default
+                success_probability: None,
             })
             .collect(),
     }

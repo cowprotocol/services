@@ -1080,6 +1080,17 @@ components:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/Flashloan"
+        successProbability:
+          description: |
+            Optional estimate of the probability that this solution settles
+            before the deadline if it wins, in (0, 1]. Overrides the driver's
+            configured `success-probability`. The driver then bids the
+            risk-adjusted score `max(p * S, S - (1 - p) / p * c)`, where `S` is
+            the full score and `c` the sum of the penalty caps of the
+            solution's orders, and the solver keeps the difference.
+          type: number
+          format: double
+          example: 0.95
     Call:
       type: object
       properties:
