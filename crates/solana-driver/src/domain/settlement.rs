@@ -31,7 +31,7 @@ use {
     cow_settlement_interface::{
         data::intent::{Asset, Flags, OrderIntent, OrderKind, TokenAsset},
         pda::{
-            buffer::{NATIVE_SOL_BUFFER_PDA, find_buffer_pda},
+            buffer::{find_buffer_pda, find_native_sol_buffer_pda},
             order::find_order_pda,
         },
         token_program::TokenProgram,
@@ -309,7 +309,12 @@ impl ResolvedSettlement {
                 )
             })
             .unzip();
-        let funding = native_payout_funding(&payer, &settlement_orders, self.max_native_shortfall)?;
+        let funding = native_payout_funding(
+            &self.settlement.program_id,
+            &payer,
+            &settlement_orders,
+            self.max_native_shortfall,
+        )?;
 
         // Start populating the instruction list.
         let mut instructions = Vec::new();
@@ -836,6 +841,7 @@ fn transfer_checked(program: TokenProgram) -> bool {
 /// out of the buffer, so any excess would stay there. Empty without a native
 /// SOL buy.
 fn native_payout_funding(
+    program_id: &Pubkey,
     payer: &Pubkey,
     orders: &[SettlementOrder],
     max_shortfall: Option<MaxNativeShortfall>,
@@ -856,7 +862,7 @@ fn native_payout_funding(
     Ok(vec![
         require_token_balance(&wsol_ata, payer, required),
         close_token_account(&wsol_ata, payer, payer),
-        transfer(payer, &NATIVE_SOL_BUFFER_PDA, total),
+        transfer(payer, &find_native_sol_buffer_pda(program_id).0, total),
     ])
 }
 
@@ -1797,7 +1803,7 @@ mod tests {
         // [SetComputeUnitLimit, BeginSettle, Transfer (self), CloseAccount,
         // Transfer, FinalizeSettle].
         assert_eq!(instructions.len(), 6);
-        let native_sol_buffer = NATIVE_SOL_BUFFER_PDA;
+        let native_sol_buffer = find_native_sol_buffer_pda(&program_id).0;
         let wsol_ata = associated_token_address(&payer, &native_mint::ID, TokenProgram::SplToken);
         assert_eq!(
             instructions[2],
@@ -1869,7 +1875,7 @@ mod tests {
         );
         assert_eq!(
             instructions[4],
-            transfer(&payer, &NATIVE_SOL_BUFFER_PDA, 2_000)
+            transfer(&payer, &find_native_sol_buffer_pda(&program_id).0, 2_000)
         );
     }
 
