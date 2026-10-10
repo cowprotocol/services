@@ -240,7 +240,8 @@ paths:
             whose payout can leave the wallet under its rent-exempt minimum,
             890880 lamports for an empty wallet (`InvalidNativeBuy`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
-            validity (`InsufficientValidTo`), a mint the settlement program
+            or above the maximum validity (`InsufficientValidTo`,
+            `ExcessiveValidTo`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:
@@ -276,8 +277,8 @@ paths:
             rent-exempt minimum, 890880 lamports for an empty wallet
             (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
-            (default two minutes) or further than the configured maximum
-            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
+            (default one minute) or further than the configured maximum
+            (default one year) (`InsufficientValidTo`, `ExcessiveValidTo`),
             or a mint the settlement program cannot move (`UnsupportedToken`).
           content:
             application/json:

@@ -14,9 +14,10 @@ bind-address = "0.0.0.0:8080"
 drivers = ["http://localhost:8000"]
 # How long the driver has to answer. Defaults to 5s.
 # timeout = "5s"
-# Bounds on a quoted order's validTo and how long the amounts are honored.
-# min-validity = "2m"
-# max-validity = "2h"
+# Bounds on an order's validTo, for quotes and sponsored placement, and
+# how long the quoted amounts are honored.
+# min-validity = "1m"
+# max-validity = "1y"
 # quote-expiry = "1m"
 
 [logging]
