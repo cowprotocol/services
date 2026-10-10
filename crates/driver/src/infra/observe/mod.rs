@@ -22,6 +22,7 @@ use {
         infra::solver,
         util::http,
     },
+    alloy::rpc::types::mev::EthBundleHash,
     eth_domain_types as eth,
     ethrpc::block_stream::BlockInfo,
     observe::tracing::lazy::Lazy,
@@ -417,6 +418,37 @@ pub fn mempool_submission_result(mempool: &Mempool, label: &str, blocks_passed: 
             .with_label_values(&[name.as_str(), label])
             .inc_by(blocks);
     }
+}
+
+/// Observe how long a block builder took to answer a settlement bundle.
+pub fn builder_response_time(mempool: &str, builder: &str, elapsed: Duration) {
+    metrics::get()
+        .builder_submission_time
+        .with_label_values(&[mempool, builder])
+        .observe(elapsed.as_secs_f64());
+}
+
+/// Observe whether a block builder accepted the settlement bundle for `block`.
+pub fn builder_submission(
+    mempool: &str,
+    builder: &str,
+    block: u64,
+    result: &anyhow::Result<Option<EthBundleHash>>,
+) {
+    let label = match result {
+        Ok(response) => {
+            tracing::debug!(builder, block, ?response, "builder accepted the bundle");
+            "Success"
+        }
+        Err(err) => {
+            tracing::warn!(builder, block, ?err, "builder rejected the bundle");
+            "Rejected"
+        }
+    };
+    metrics::get()
+        .builder_submission
+        .with_label_values(&[mempool, builder, label])
+        .inc();
 }
 
 /// Observe that an invalid DTO was received.
