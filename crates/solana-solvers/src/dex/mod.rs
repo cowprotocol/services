@@ -69,6 +69,30 @@ impl Swap {
     }
 }
 
+/// A token's native price: lamports per 10^9 atoms, never zero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NativePrice(u64);
+
+const PRICE_UNIT_ATOMS: u64 = 1_000_000_000;
+
+impl NativePrice {
+    /// wSOL: an atom is a lamport.
+    pub const SOL: Self = Self(PRICE_UNIT_ATOMS);
+
+    pub fn new(lamports_per_unit: u64) -> Option<Self> {
+        (lamports_per_unit > 0).then_some(Self(lamports_per_unit))
+    }
+
+    /// The price implied by selling `atoms` for `lamports`, rounded down so
+    /// a lamport cost converts into more atoms, against the trader. `None`
+    /// when nothing was sold or the price rounds to zero or past `u64`.
+    pub fn from_sale(atoms: u64, lamports: u64) -> Option<Self> {
+        let price =
+            (u128::from(lamports) * u128::from(PRICE_UNIT_ATOMS)).checked_div(u128::from(atoms))?;
+        Self::new(u64::try_from(price).ok()?)
+    }
+}
+
 /// The configured DEX backend.
 pub enum Dex {
     Jupiter(jupiter::Jupiter),
@@ -171,5 +195,29 @@ mod tests {
         let order = order(Side::Sell, u64::MAX, u64::MAX);
         assert!(swap(u64::MAX, u64::MAX).satisfies(&order));
         assert!(!swap(u64::MAX, u64::MAX - 1).satisfies(&order));
+    }
+
+    #[test]
+    fn a_sale_prices_in_lamports_per_billion_atoms_rounded_down() {
+        // 3 atoms for 2 lamports: 666_666_666.67 rounds down.
+        assert_eq!(NativePrice::from_sale(3, 2), NativePrice::new(666_666_666));
+        assert_eq!(
+            NativePrice::from_sale(1_000_000, 150_000_000),
+            NativePrice::new(150_000_000_000)
+        );
+    }
+
+    #[test]
+    fn a_sale_that_prices_nothing_has_no_price() {
+        assert_eq!(NativePrice::from_sale(0, 1), None);
+        assert_eq!(NativePrice::from_sale(1, 0), None);
+        // Under a lamport per 10^9 atoms rounds to zero.
+        assert_eq!(NativePrice::from_sale(2_000_000_000, 1), None);
+        assert_eq!(NativePrice::new(0), None);
+    }
+
+    #[test]
+    fn a_price_past_u64_has_no_price() {
+        assert_eq!(NativePrice::from_sale(1, u64::MAX), None);
     }
 }

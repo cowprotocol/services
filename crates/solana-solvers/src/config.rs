@@ -11,7 +11,8 @@ use {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
-    /// Orders quoted at once. Each quote is two sequential Jupiter requests.
+    /// Orders quoted at once. Each quote is two sequential Jupiter requests,
+    /// three when the engine has to price the buy token itself.
     #[serde(default = "default_concurrent_requests")]
     pub concurrent_requests: NonZeroUsize,
 

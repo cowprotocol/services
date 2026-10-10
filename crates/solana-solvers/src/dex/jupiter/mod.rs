@@ -6,9 +6,10 @@
 mod dto;
 
 use {
-    super::{Order, Side, Swap},
+    super::{NativePrice, Order, Side, Swap},
     crate::config::JupiterConfig,
     solana_sdk::pubkey::Pubkey,
+    spl_token_interface::native_mint,
 };
 
 const QUOTE_PATH: &str = "swap/v1/quote";
@@ -58,7 +59,9 @@ impl Jupiter {
             Side::Buy if self.enable_buy_orders => SwapMode::ExactOut,
             Side::Buy => return Err(Error::OrderNotSupported),
         };
-        let quote = self.quote(order, swap_mode).await?;
+        let quote = self
+            .quote(&order.sell_mint, &order.buy_mint, order.amount(), swap_mode)
+            .await?;
         let in_amount = amount_field(&quote, "inAmount")?;
         let out_amount = amount_field(&quote, "outAmount")?;
         self.swap_instructions(&quote, taker, &order.buy_destination)
@@ -66,17 +69,38 @@ impl Jupiter {
             .into_swap(in_amount, out_amount)
     }
 
+    /// The native price of `mint` implied by selling `amount` of it into
+    /// wSOL. wSOL itself is priced without a call. `NotFound` when Jupiter
+    /// has no route or the sale prices at nothing.
+    pub async fn native_price(&self, mint: &Pubkey, amount: u64) -> Result<NativePrice, Error> {
+        if *mint == native_mint::ID {
+            return Ok(NativePrice::SOL);
+        }
+        let quote = self
+            .quote(mint, &native_mint::ID, amount, SwapMode::ExactIn)
+            .await?;
+        let atoms = amount_field(&quote, "inAmount")?;
+        let lamports = amount_field(&quote, "outAmount")?;
+        NativePrice::from_sale(atoms, lamports).ok_or(Error::NotFound)
+    }
+
     /// `GET /swap/v1/quote`. Kept opaque and passed back verbatim to
     /// `/swap-instructions`, we only read the amounts.
-    async fn quote(&self, order: &Order, swap_mode: SwapMode) -> Result<serde_json::Value, Error> {
+    async fn quote(
+        &self,
+        input_mint: &Pubkey,
+        output_mint: &Pubkey,
+        amount: u64,
+        swap_mode: SwapMode,
+    ) -> Result<serde_json::Value, Error> {
         let mut url = self
             .endpoint
             .join(QUOTE_PATH)
             .map_err(|_| Error::RequestBuildFailed)?;
         url.query_pairs_mut()
-            .append_pair("inputMint", &order.sell_mint.to_string())
-            .append_pair("outputMint", &order.buy_mint.to_string())
-            .append_pair("amount", &order.amount().to_string())
+            .append_pair("inputMint", &input_mint.to_string())
+            .append_pair("outputMint", &output_mint.to_string())
+            .append_pair("amount", &amount.to_string())
             .append_pair("swapMode", swap_mode.as_str())
             // Jupiter bakes the resulting bounds into the returned instruction
             // data; nothing downstream re-applies slippage.
@@ -201,6 +225,36 @@ mod tests {
         let jupiter = Jupiter::new(&config(false)).unwrap();
         let result = jupiter.swap(&order(Side::Buy), &Pubkey::new_unique()).await;
         assert!(matches!(result, Err(Error::OrderNotSupported)));
+    }
+
+    #[tokio::test]
+    async fn wsol_is_priced_without_a_call() {
+        let mut config = config(false);
+        // Nothing listens there: a request would fail the test.
+        config.endpoint = "http://127.0.0.1:1".parse().unwrap();
+        let jupiter = Jupiter::new(&config).unwrap();
+
+        let price = jupiter
+            .native_price(&Pubkey::from_str(WSOL).unwrap(), 1)
+            .await
+            .unwrap();
+
+        assert_eq!(price, NativePrice::SOL);
+    }
+
+    /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
+    /// for headroom.
+    #[tokio::test]
+    #[ignore]
+    async fn jupiter_live_native_price() {
+        let jupiter = Jupiter::new(&config(false)).unwrap();
+        // 1 USDC sells for a fraction of a SOL, so its 10^9 atoms are worth
+        // well over 10^9 lamports.
+        let price = jupiter
+            .native_price(&Pubkey::from_str(USDC).unwrap(), 1_000_000)
+            .await
+            .unwrap();
+        assert!(price > NativePrice::SOL);
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`

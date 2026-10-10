@@ -5,10 +5,11 @@
 
 use {
     super::order::OrderUid,
-    crate::dex,
+    crate::dex::{self, NativePrice},
     serde::Deserialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
+    std::collections::HashMap,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -24,6 +25,30 @@ pub struct Auction {
     pub orders: Vec<Order>,
     /// Absolute deadline by which solutions must be returned.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// Native prices by mint. Absent from a driver that predates them, and
+    /// a mint the autopilot could not price is left out or arrives without
+    /// a price.
+    #[serde(default)]
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, _>")]
+    pub tokens: HashMap<Pubkey, Token>,
+}
+
+impl Auction {
+    /// The native price the auction carries for `mint`, none when the
+    /// autopilot could not price it.
+    pub fn reference_price(&self, mint: &Pubkey) -> Option<NativePrice> {
+        NativePrice::new(self.tokens.get(mint)?.reference_price?)
+    }
+}
+
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// Lamports per 10^9 atoms. Decimal string on the wire.
+    #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
+    pub reference_price: Option<u64>,
 }
 
 /// One order to quote.
@@ -131,11 +156,18 @@ mod tests {
                 "partiallyFillable": false,
             }],
             "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(2).to_string()): {"referencePrice": "1500000000"},
+            },
         });
 
         let auction: Auction = serde_json::from_value(json).unwrap();
 
         assert_eq!(auction.id, Some(1));
+        assert_eq!(
+            auction.reference_price(&pubkey(2)),
+            NativePrice::new(1_500_000_000)
+        );
         assert_eq!(auction.taker, pubkey(3));
         let order = &auction.orders[0];
         assert_eq!(order.uid, OrderUid([8; 32]));
@@ -149,5 +181,41 @@ mod tests {
         );
         assert_eq!(order.side, dex::Side::Sell);
         assert!(!order.partially_fillable);
+    }
+
+    /// A driver that predates native prices sends no `tokens`.
+    #[test]
+    fn tokens_are_optional() {
+        let json = serde_json::json!({
+            "id": 1,
+            "taker": pubkey(3).to_string(),
+            "orders": [],
+            "deadline": "2026-01-01T00:00:00Z",
+        });
+
+        let auction: Auction = serde_json::from_value(json).unwrap();
+
+        assert_eq!(auction.reference_price(&pubkey(2)), None);
+    }
+
+    #[test]
+    fn an_unpriced_mint_has_no_reference_price() {
+        let json = serde_json::json!({
+            "id": 1,
+            "taker": pubkey(3).to_string(),
+            "orders": [],
+            "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(1).to_string()): {},
+                (pubkey(2).to_string()): {"referencePrice": null},
+                (pubkey(4).to_string()): {"referencePrice": "0"},
+            },
+        });
+
+        let auction: Auction = serde_json::from_value(json).unwrap();
+
+        for mint in [pubkey(1), pubkey(2), pubkey(4), pubkey(5)] {
+            assert_eq!(auction.reference_price(&mint), None);
+        }
     }
 }
