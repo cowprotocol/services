@@ -41,6 +41,7 @@ use {
 };
 
 pub mod auction;
+pub mod native_price_cache;
 pub mod order;
 mod pre_processing;
 pub mod quote_cache;
@@ -55,6 +56,7 @@ use {
 };
 pub use {
     auction::Auction,
+    native_price_cache::NativePriceCache,
     order::Order,
     pre_processing::DataAggregator,
     quote_cache::{CachedQuoteSolution, FastPathQuoteCache},
@@ -278,6 +280,9 @@ pub struct Competition {
     /// Fast-path quote solutions cached at quote time, keyed per solver
     /// account.
     quote_cache: FastPathQuoteCache,
+    /// Native prices observed in regular auctions, reused to bound absolute
+    /// slippage when re-encoding fast-path solutions.
+    native_price_cache: NativePriceCache,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
@@ -298,6 +303,7 @@ impl Competition {
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
         quote_cache: FastPathQuoteCache,
+        native_price_cache: NativePriceCache,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
         if !submission_accounts.is_empty() {
@@ -319,6 +325,7 @@ impl Competition {
             mempools,
             settlements: Default::default(),
             quote_cache,
+            native_price_cache,
             risk_detector,
             fetcher,
             order_sorting_strategies,
@@ -549,11 +556,6 @@ impl Competition {
     /// against the real signed `order`, and promote it into the regular settle
     /// queue. Returns the id of the queued solution, which
     /// [`Competition::settle`] settles by.
-    ///
-    /// TODO: The slippage of AMM interactions will only be capped at a
-    /// fraction of the traded tokens but not at a total ETH value which means
-    /// very large trades can still incur big amounts of slippage. This should
-    /// be fixed.
     #[instrument(skip_all)]
     pub async fn reencode_quote_solution(
         &self,
@@ -578,9 +580,17 @@ impl Competition {
             })?;
         // The quote was solved outside of any auction; its settlement runs
         // under the auction the autopilot allocated for it.
+        let tokens: Vec<eth::TokenAddress> = cached
+            .auction
+            .tokens
+            .iter()
+            .map(|token| token.address)
+            .collect();
+        let prices = self.native_price_cache.get_many(tokens).await;
         let auction = Auction {
             id: auction::Kind::Competition(auction_id),
             orders: vec![order],
+            tokens: Arc::new(cached.auction.tokens.with_native_prices(&prices)),
             ..cached.auction
         };
         let settlement = solution
