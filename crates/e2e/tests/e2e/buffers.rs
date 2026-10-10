@@ -65,24 +65,21 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     );
     let services = Services::new(&onchain).await;
     services
-        .start_autopilot(
-            None,
-            configs::autopilot::Configuration {
-                trusted_tokens: TrustedTokensConfig {
-                    tokens: vec![
-                        *onchain.contracts().weth.address(),
-                        *token_a.address(),
-                        *token_b.address(),
-                    ],
-                    ..Default::default()
-                },
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..configs::autopilot::Configuration::test("test_solver", solver.address())
+        .start_autopilot(configs::autopilot::Configuration {
+            trusted_tokens: TrustedTokensConfig {
+                tokens: vec![
+                    *onchain.contracts().weth.address(),
+                    *token_a.address(),
+                    *token_b.address(),
+                ],
+                ..Default::default()
             },
-        )
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..configs::autopilot::Configuration::test("test_solver", solver.address())
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {

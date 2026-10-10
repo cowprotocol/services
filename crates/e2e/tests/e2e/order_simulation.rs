@@ -185,11 +185,19 @@ async fn order_simulation(web3: Web3) {
         )
         .await;
 
+    // The order is intentionally unfillable by any real solver (buy_amount
+    // is well beyond what 2 WETH could ever buy out of the 1000:1000 pool)
+    // so the autopilot never settles it on-chain while this test runs. The
+    // debug/simulation endpoint uses a Fake solver that provides the buy
+    // tokens itself, so pool liquidity doesn't matter for the assertions
+    // below — but a real settlement would, because it would mark the order
+    // as filled and every subsequent simulation would revert with
+    // "GPv2: order filled".
     let order = OrderCreation {
         sell_token: *onchain.contracts().weth.address(),
         sell_amount: 2u64.eth(),
         buy_token: *token.address(),
-        buy_amount: 1u64.eth(),
+        buy_amount: 1_000u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()

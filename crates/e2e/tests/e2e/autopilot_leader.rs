@@ -111,7 +111,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     };
 
     let autopilot_leader = services
-        .start_autopilot_with_shutdown_controller(None, leader_config, control)
+        .start_autopilot_with_shutdown_controller(leader_config, control)
         .await;
 
     let follower_config = Configuration::test("test_solver2", solver2.address());
@@ -133,7 +133,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         ..follower_config
     };
 
-    let _autopilot_follower = services.start_autopilot(None, follower_config).await;
+    let _autopilot_follower = services.start_autopilot(follower_config).await;
 
     services
         .start_api(configs::orderbook::Configuration {
@@ -155,13 +155,17 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         })
         .await;
 
-    let order = || {
+    // `valid_to` has 1-second resolution, so iterations that complete within a
+    // single second would otherwise sign the exact same order and get rejected
+    // as duplicates. Shift `valid_to` per iteration to keep each order's UID
+    // unique.
+    let order = |i: u32| {
         OrderCreation {
             sell_token: *token_a.address(),
             sell_amount: 10u64.eth(),
             buy_token: *onchain.contracts().weth.address(),
             buy_amount: 5u64.eth(),
-            valid_to: model::time::now_in_epoch_seconds() + 300,
+            valid_to: model::time::now_in_epoch_seconds() + 300 + i,
             kind: OrderKind::Sell,
             ..Default::default()
         }
@@ -176,7 +180,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     // - only test_solver should participate and settle
     for i in 1..=10 {
         tracing::info!("Tx with autopilot-leader {i}");
-        let uid = services.create_order(&order()).await.unwrap();
+        let uid = services.create_order(&order(i)).await.unwrap();
 
         tracing::info!("waiting for trade");
         let indexed_trades = || async {
@@ -228,12 +232,12 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
     // Run 10 txs, autopilot-backup is in charge
     // - only test_solver2 should participate and settle
-    for i in 1..=10 {
+    for i in 11..=20 {
         tracing::info!("Tx with autopilot-backup {i}");
         let uid_cell = std::cell::Cell::new(None);
         let try_create_order = || async {
             onchain.mint_block().await;
-            if let Ok(uid) = services.create_order(&order()).await {
+            if let Ok(uid) = services.create_order(&order(i)).await {
                 uid_cell.set(Some(uid));
                 return true;
             }
