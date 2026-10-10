@@ -641,17 +641,19 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         maintenance.add_ethflow_indexing(onchain_order_indexer, refund_event_handler);
     }
 
+    let compress_solve_request = config.run_loop.compress_solve_request;
     let run_loop_config = run_loop::Config::from(config.run_loop);
 
     let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let capabilities = infra::Capabilities::new(&driver, compress_solve_request);
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.submission_account,
-                driver.supports_auction_deltas,
+                capabilities,
             )
             .await
             .map(Arc::new)
@@ -722,10 +724,16 @@ async fn shadow_mode(config: Configuration) -> ! {
         config.shadow.expect("missing shadow mode configuration"),
     );
 
+    let compress_solve_request = config.run_loop.compress_solve_request;
     let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let capabilities = infra::Capabilities {
+                // the shadow autopilot always sends full auctions
+                auction_deltas: false,
+                ..infra::Capabilities::new(&driver, compress_solve_request)
+            };
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
@@ -738,8 +746,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
-                // the shadow autopilot always sends full auctions
-                false,
+                capabilities,
             )
             .await
             .map(Arc::new)
@@ -800,7 +807,6 @@ async fn shadow_mode(config: Configuration) -> ! {
         drivers,
         trusted_tokens,
         config.run_loop.min_solve_time,
-        config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
         config.run_loop.max_winners_per_auction,
