@@ -1,3 +1,4 @@
+mod cancel;
 mod gasprice;
 mod healthz;
 mod info;
@@ -9,6 +10,7 @@ mod settle_fast_path;
 pub mod solve;
 
 pub(super) use {
+    cancel::cancel,
     gasprice::gasprice,
     healthz::healthz,
     info::info,

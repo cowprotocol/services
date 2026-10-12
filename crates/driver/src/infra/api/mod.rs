@@ -101,6 +101,7 @@ impl Api {
             let router = routes::reveal(router);
             let router = routes::settle(router);
             let router = routes::settle_fast_path(router);
+            let router = routes::cancel(router);
 
             let bad_order_config = solver.bad_order_detection();
             let mut bad_tokens =

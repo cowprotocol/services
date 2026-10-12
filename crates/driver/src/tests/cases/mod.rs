@@ -9,6 +9,7 @@ use {
 };
 
 pub mod buy_eth;
+mod cancellation;
 pub mod deadline_check;
 pub mod example_config;
 pub mod fees;

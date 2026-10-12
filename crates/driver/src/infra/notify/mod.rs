@@ -120,6 +120,7 @@ pub fn executed(
         Err(Error::Revert { tx_id: hash, .. }) => notification::Settlement::Revert(*hash),
         Err(Error::SimulationRevert { .. }) => notification::Settlement::SimulationRevert,
         Err(Error::Expired { .. }) => notification::Settlement::Expired,
+        Err(Error::CancelledBySolver { .. }) => notification::Settlement::CancelledBySolver,
         Err(Error::Other(_) | Error::Disabled) => notification::Settlement::Fail,
     };
 
