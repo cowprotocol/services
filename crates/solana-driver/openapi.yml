@@ -282,6 +282,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Order"
+        tokens:
+          description: |-
+            Reference data per auction token, keyed by mint. A native SOL
+            buy's price is keyed by the System Program ID. Tokens without a
+            price are absent.
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              price:
+                description: |-
+                  Lamports per 10^9 atoms of the token, a 64 bit unsigned
+                  integer in decimal notation.
+                type: string
+                example: "1000000000"
       required:
         - id
         - deadline

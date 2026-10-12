@@ -431,6 +431,24 @@ async fn solve_flags_a_missing_buy_token_account_to_the_engine() {
     );
 }
 
+#[tokio::test]
+async fn solve_forwards_native_prices_to_the_engine() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    request["tokens"] =
+        serde_json::json!({ (pubkey(0x33).to_string()): { "price": "1500000000" } });
+
+    call_solve_with(addr, request).await;
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(
+        request["tokens"],
+        serde_json::json!({ (pubkey(0x33).to_string()): { "referencePrice": "1500000000" } })
+    );
+}
+
 /// 400 of the order's 1000 already sold: the engine is asked for the 600
 /// left, with the buy limit scaled to 1200 and the signed amounts alongside,
 /// and a fill of the remainder comes back. A fill over the remainder is an
