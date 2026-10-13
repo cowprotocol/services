@@ -93,18 +93,18 @@ pub trait AuctionProvider<C: Cycle>: Send + Sync {
     async fn sync_to_tip(&self, tip: &C::Tip) -> anyhow::Result<()>;
 
     /// Cuts the auction for the tip.
-    async fn cut_auction(&self, tip: &C::Tip) -> Cut<C::Auction>;
+    async fn cut_auction(&self, tip: &C::Tip) -> NextAuction<C::Auction>;
 }
 
 /// The result of an auction cut.
-pub enum Cut<A> {
+pub enum NextAuction<A> {
     /// The auction to solve.
     Auction(A),
     /// The cut read the orders, and no order can go into the auction.
     Empty,
     /// The cut stopped before it could make an auction, for example because
     /// a dependency failed or the order data is stale.
-    Skipped,
+    Failed,
 }
 
 /// Fans the auction out to all drivers and returns attributable solutions.
@@ -230,20 +230,20 @@ impl<C: Cycle> AuctionLoop<C> {
     }
 
     /// Cuts the next auction and dedupes against the previous cycle. A new
-    /// auction and an empty cut refresh the liveness probe. A skipped cut and
+    /// auction and an empty cut refresh the liveness probe. A failed cut and
     /// a duplicate auction do not.
     async fn next_auction(&mut self, tip: &C::Tip) -> Option<C::Auction> {
         let auction = match self.provider.cut_auction(tip).await {
             // The liveness probe refreshes below, after the duplicate check,
             // because a repeated auction does not prove progress.
-            Cut::Auction(auction) => auction,
+            NextAuction::Auction(auction) => auction,
             // No order can go into the auction. The cut read the orders, so
             // the loop works correctly.
-            Cut::Empty => {
+            NextAuction::Empty => {
                 self.probes.liveness.auction();
                 return None;
             }
-            Cut::Skipped => return None,
+            NextAuction::Failed => return None,
         };
 
         // Only rerun the competition if the auction or tip changed.
@@ -351,7 +351,7 @@ mod tests {
 
     /// Gives the result of the sync and of the cut from a script, one entry
     /// for each cycle.
-    struct ScriptedProvider(Mutex<VecDeque<(bool, Cut<TestAuction>)>>);
+    struct ScriptedProvider(Mutex<VecDeque<(bool, NextAuction<TestAuction>)>>);
 
     #[async_trait]
     impl AuctionProvider<TestCycle> for ScriptedProvider {
@@ -361,7 +361,7 @@ mod tests {
             Ok(())
         }
 
-        async fn cut_auction(&self, _tip: &u64) -> Cut<TestAuction> {
+        async fn cut_auction(&self, _tip: &u64) -> NextAuction<TestAuction> {
             self.0
                 .lock()
                 .unwrap()
@@ -433,7 +433,7 @@ mod tests {
     /// the loop records an auction, and its startup probe fails until the
     /// first successful sync.
     fn scripted_loop(
-        cycles: impl IntoIterator<Item = (bool, Cut<TestAuction>)>,
+        cycles: impl IntoIterator<Item = (bool, NextAuction<TestAuction>)>,
     ) -> (
         AuctionLoop<TestCycle>,
         Arc<Liveness>,
@@ -461,21 +461,21 @@ mod tests {
     #[tokio::test]
     async fn a_new_auction_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) =
-            scripted_loop([(true, Cut::Auction(TestAuction(vec![1])))]);
+            scripted_loop([(true, NextAuction::Auction(TestAuction(vec![1])))]);
         auction_loop.run_cycle().await;
         assert!(liveness.is_alive().await);
     }
 
     #[tokio::test]
     async fn an_empty_cut_refreshes_the_liveness_probe() {
-        let (mut auction_loop, liveness, _) = scripted_loop([(true, Cut::Empty)]);
+        let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Empty)]);
         auction_loop.run_cycle().await;
         assert!(liveness.is_alive().await);
     }
 
     #[tokio::test]
-    async fn a_skipped_cut_does_not_refresh_the_liveness_probe() {
-        let (mut auction_loop, liveness, _) = scripted_loop([(true, Cut::Skipped)]);
+    async fn a_failed_cut_does_not_refresh_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Failed)]);
         auction_loop.run_cycle().await;
         assert!(!liveness.is_alive().await);
     }
@@ -483,8 +483,8 @@ mod tests {
     #[tokio::test]
     async fn a_duplicate_auction_does_not_refresh_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([
-            (true, Cut::Auction(TestAuction(vec![1]))),
-            (true, Cut::Auction(TestAuction(vec![1]))),
+            (true, NextAuction::Auction(TestAuction(vec![1]))),
+            (true, NextAuction::Auction(TestAuction(vec![1]))),
         ]);
         auction_loop.run_cycle().await;
         liveness.expire();
@@ -495,7 +495,7 @@ mod tests {
     #[tokio::test]
     async fn the_startup_probe_passes_after_the_first_successful_sync() {
         let (mut auction_loop, _, startup) =
-            scripted_loop([(false, Cut::Skipped), (true, Cut::Skipped)]);
+            scripted_loop([(false, NextAuction::Failed), (true, NextAuction::Failed)]);
         let started = || startup.as_ref().as_ref().unwrap().load(Ordering::Acquire);
         auction_loop.run_cycle().await;
         assert!(!started());

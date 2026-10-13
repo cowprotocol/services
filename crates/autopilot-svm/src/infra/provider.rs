@@ -4,7 +4,7 @@ use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
         infra::{db, order_events, prices::NativePrices},
-        run_loop::{AuctionProvider, Cut},
+        run_loop::{AuctionProvider, NextAuction},
     },
     async_trait::async_trait,
     chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
@@ -253,7 +253,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         Ok(())
     }
 
-    async fn cut_auction(&self, tip: &u64) -> Cut<crate::domain::auction::Auction> {
+    async fn cut_auction(&self, tip: &u64) -> NextAuction<crate::domain::auction::Auction> {
         // An auction cut from a lagging indexer replays stale orders, so a
         // lag beyond the watermark skips the cycle. A failed read cuts
         // anyway: the same pool fails the cut itself one query later.
@@ -265,7 +265,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                     "the indexer lags beyond the watermark, skipping the cut"
                 );
                 metrics().lag_skipped_cuts.inc();
-                return Cut::Skipped;
+                return NextAuction::Failed;
             }
             Ok(_) => {}
             Err(err) => tracing::warn!(?err, "indexer slot read failed"),
@@ -281,7 +281,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
             Err(err) => {
                 tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
-                return Cut::Skipped;
+                return NextAuction::Failed;
             }
         };
         let now = now_unix();
@@ -292,7 +292,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(orders) => orders,
             Err(err) => {
                 tracing::warn!(?err, "failed to cut the auction");
-                return Cut::Skipped;
+                return NextAuction::Failed;
             }
         };
         if let Some(height) = block_height {
@@ -314,7 +314,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         self.track_filtered_orders(OrderFilterReason::UnreceivableBuyTokenAccount, unreceivable);
         self.track_filtered_orders(OrderFilterReason::UnfundedSellTokenAccount, unfunded);
         if orders.is_empty() {
-            return Cut::Empty;
+            return NextAuction::Empty;
         }
         // A cut without prices would rank solutions on incomparable scores,
         // so a failed lookup skips the cycle instead.
@@ -327,7 +327,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(prices) => prices,
             Err(err) => {
                 tracing::warn!(?err, "native price lookup failed, skipping the cut");
-                return Cut::Skipped;
+                return NextAuction::Failed;
             }
         };
         let mut auction = crate::domain::auction::Auction {
@@ -346,10 +346,10 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(id) => id,
             Err(err) => {
                 tracing::warn!(?err, "failed to store the auction, skipping the cut");
-                return Cut::Skipped;
+                return NextAuction::Failed;
             }
         };
-        Cut::Auction(auction)
+        NextAuction::Auction(auction)
     }
 }
 
@@ -413,9 +413,7 @@ struct Metrics {
     #[metric(labels("reason"))]
     filtered_orders: prometheus::IntGaugeVec,
     /// Auction cuts skipped because the indexer lags beyond the watermark.
-    /// A skipped cut does not refresh the liveness probe, so a lag that
-    /// continues for longer than `max-auction-age` restarts the pod. A
-    /// restart does not repair the indexer, so this counter is the alerting
+    /// A skip counts against `max-auction-age`. This counter is the alerting
     /// signal for a stalled indexer.
     lag_skipped_cuts: prometheus::IntCounter,
 }

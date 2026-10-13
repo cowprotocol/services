@@ -17,8 +17,8 @@ use {
         run_loop::{
             AuctionLoop,
             AuctionProvider,
-            Cut,
             CycleTrigger,
+            NextAuction,
             Probes,
             RankingInfo,
             SolverCompetition,
@@ -243,7 +243,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
         );
-        let Cut::Auction(auction) = provider.cut_auction(&tip).await else {
+        let NextAuction::Auction(auction) = provider.cut_auction(&tip).await else {
             panic!("auction cut");
         };
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
@@ -361,7 +361,10 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
     );
     assert!(
-        matches!(held_provider.cut_auction(&(tip + 25)).await, Cut::Empty),
+        matches!(
+            held_provider.cut_auction(&(tip + 25)).await,
+            NextAuction::Empty
+        ),
         "in-flight order excluded from the cut"
     );
     // The dispatch task times the window out once the tip reaches the
@@ -390,11 +393,17 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .expect("window timed out before the timeout");
     assert_eq!(outcome, "timeout");
     assert!(
-        matches!(held_provider.cut_auction(&(expired - 1)).await, Cut::Empty),
+        matches!(
+            held_provider.cut_auction(&(expired - 1)).await,
+            NextAuction::Empty
+        ),
         "order stays held while its transaction can still land"
     );
     assert!(
-        matches!(held_provider.cut_auction(&expired).await, Cut::Auction(_)),
+        matches!(
+            held_provider.cut_auction(&expired).await,
+            NextAuction::Auction(_)
+        ),
         "order returns once the transaction cannot land"
     );
     // The cycle reported the order's auction progress and the later cuts its
