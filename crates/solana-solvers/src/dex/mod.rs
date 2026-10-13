@@ -3,6 +3,7 @@
 //! `Dex` dispatches to the configured engine.
 
 pub mod bitget;
+mod dto;
 pub mod jupiter;
 
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};

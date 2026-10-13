@@ -11,7 +11,7 @@ use {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config<D> {
-    /// Orders quoted at once. Each quote is two sequential DEX requests.
+    /// Orders quoted at once.
     #[serde(default = "default_concurrent_requests")]
     pub concurrent_requests: NonZeroUsize,
 
@@ -98,8 +98,18 @@ pub struct BitgetConfig {
     /// Signs every request.
     pub api_secret: String,
 
-    /// Slippage tolerance in basis points. 50 = 0.5%.
+    /// Slippage tolerance in basis points. We bid Bitget's minimum output, so
+    /// this is how far below its expected output the bids land.
     pub slippage_bps: u16,
+
+    /// Caps the accounts Bitget's route may use, leaving room for the
+    /// settlement around it in the 64 a transaction can lock.
+    #[serde(default = "default_max_accounts")]
+    pub max_accounts: u16,
+}
+
+fn default_max_accounts() -> u16 {
+    48
 }
 
 /// Load and parse the TOML config file.
@@ -167,7 +177,8 @@ bogus = true
             config.dex.endpoint.as_str(),
             "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
         );
-        assert_eq!(config.dex.slippage_bps, 50);
+        assert_eq!(config.dex.slippage_bps, 20);
+        assert_eq!(config.dex.max_accounts, 48);
     }
 
     #[test]
