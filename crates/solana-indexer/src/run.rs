@@ -14,11 +14,14 @@ use {
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
-    sqlx::{PgPool, postgres::PgPoolOptions},
+    sqlx::postgres::PgPoolOptions,
     std::{
         net::SocketAddr,
         path::PathBuf,
-        sync::{Arc, atomic::AtomicU64},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicU64, Ordering},
+        },
         time::Duration,
     },
     tokio::{sync::mpsc, task::JoinHandle},
@@ -67,7 +70,9 @@ async fn run(config: Config, start_slot: Option<u64>) {
         .connect(config.database.write_url.as_str())
         .await
         .expect("database connection");
-    let mut metrics = serve_probes(pool.clone());
+    // `/startup` reports ready only after the first catch-up.
+    let startup = Arc::new(Some(AtomicBool::new(false)));
+    let mut metrics = serve_probes(startup.clone());
     let persistence = Postgres::new(pool);
     // Confirmed commitment, matching the stream subscription.
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
@@ -116,6 +121,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
             if resume == Resume::Watermark {
                 backfiller.backfill().await;
             }
+            mark_started(&startup);
             match Ingester::serve(
                 client,
                 tx.clone(),
@@ -155,24 +161,37 @@ async fn run(config: Config, start_slot: Option<u64>) {
 }
 
 /// Serve the metrics and probe routes on the metrics port.
-fn serve_probes(pool: PgPool) -> JoinHandle<()> {
+fn serve_probes(startup: Arc<Option<AtomicBool>>) -> JoinHandle<()> {
     serve_metrics(
-        Arc::new(Liveness { pool }),
+        Arc::new(AlwaysAlive),
         SocketAddr::from(([0, 0, 0, 0], DEFAULT_METRICS_PORT)),
         Default::default(),
-        Default::default(),
+        startup,
     )
 }
 
-/// Fails the liveness probe when the database is unreachable.
-struct Liveness {
-    pool: PgPool,
-}
+/// The indexer stops the process on the faults that it cannot repair: a
+/// decoder error, a backfill that fails all its attempts, and a stopped
+/// metrics server. Thus a process that runs is alive.
+struct AlwaysAlive;
 
 #[async_trait::async_trait]
-impl LivenessChecking for Liveness {
+impl LivenessChecking for AlwaysAlive {
     async fn is_alive(&self) -> bool {
-        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+        true
+    }
+}
+
+/// Report `/startup` ready. The indexer has caught up when the first
+/// backfill is complete, or at once when a `--start-slot` override skips
+/// that backfill. The stream loop calls this before each subscription, so
+/// only the first call has an effect.
+fn mark_started(startup: &Option<AtomicBool>) {
+    let Some(flag) = startup else {
+        return;
+    };
+    if !flag.swap(true, Ordering::AcqRel) {
+        tracing::info!("caught up, marking startup ready");
     }
 }
 
