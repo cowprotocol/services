@@ -79,19 +79,19 @@ impl AccountsSnapshot {
         })
     }
 
-    /// The token program of the mint at `mint`: the account's owner, when it is
-    /// one of the two token programs and the data reads as an initialized
-    /// mint.
-    pub fn mint_token_program(&self, mint: &Pubkey) -> Result<TokenProgram, InvalidMintReason> {
+    /// The token program and decimals of the mint at `mint`: the account's
+    /// owner, when it is one of the two token programs and the data reads
+    /// as an initialized mint.
+    pub fn mint_info(&self, mint: &Pubkey) -> Result<(TokenProgram, u8), InvalidMintReason> {
         let account = self
             .accounts
             .get(mint)
             .ok_or(InvalidMintReason::AccountNotFound)?;
         let program =
             TokenProgram::try_from(&account.owner).map_err(|_| InvalidMintReason::NotAMint)?;
-        StateWithExtensions::<Mint>::unpack(&account.data)
+        let state = StateWithExtensions::<Mint>::unpack(&account.data)
             .map_err(|_| InvalidMintReason::NotAMint)?;
-        Ok(program)
+        Ok((program, state.base.decimals))
     }
 
     /// Classify the state of the token account at `address` for a caller that
@@ -491,13 +491,10 @@ mod tests {
             (spl, mint_account()),
             (token_2022, token_2022_mint_account()),
         ]);
+        assert_eq!(snapshot.mint_info(&spl), Ok((TokenProgram::SplToken, 6)));
         assert_eq!(
-            snapshot.mint_token_program(&spl),
-            Ok(TokenProgram::SplToken)
-        );
-        assert_eq!(
-            snapshot.mint_token_program(&token_2022),
-            Ok(TokenProgram::Token2022)
+            snapshot.mint_info(&token_2022),
+            Ok((TokenProgram::Token2022, 6))
         );
     }
 
@@ -517,15 +514,15 @@ mod tests {
             ),
         ]);
         assert_eq!(
-            snapshot.mint_token_program(&pubkey(0x13)),
+            snapshot.mint_info(&pubkey(0x13)),
             Err(InvalidMintReason::AccountNotFound)
         );
         assert_eq!(
-            snapshot.mint_token_program(&token_account),
+            snapshot.mint_info(&token_account),
             Err(InvalidMintReason::NotAMint)
         );
         assert_eq!(
-            snapshot.mint_token_program(&foreign),
+            snapshot.mint_info(&foreign),
             Err(InvalidMintReason::NotAMint)
         );
     }

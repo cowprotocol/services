@@ -12,11 +12,17 @@ use {
             settlement::MaxNativeShortfall,
             solver_fee::SolverFee,
         },
-        infra::{config, solver::dto::auction::Auction},
+        infra::{blockchain::associated_token_address, config, solver::dto::auction::Auction},
     },
+    cow_settlement_interface::token_program::TokenProgram,
     cow_solana_signer::Signer,
     solana_sdk::pubkey::Pubkey,
-    std::{collections::HashSet, num::NonZero, sync::Arc},
+    spl_token_interface::native_mint,
+    std::{
+        collections::{HashMap, HashSet},
+        num::NonZero,
+        sync::Arc,
+    },
     thiserror::Error,
 };
 
@@ -101,14 +107,27 @@ impl Solver {
         auction: &domain::Auction,
         program_id: Pubkey,
         missing_buy_token_accounts: &HashSet<OrderUid>,
+        buy_programs: &HashMap<Pubkey, TokenProgram>,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(
+        let mut auction_dto = Auction::new(
             auction,
             self.pubkey(),
             program_id,
             self.solver_fee,
             missing_buy_token_accounts,
         );
+        auction_dto.orders.retain_mut(|order| {
+            let Some(program) = buy_programs
+                .get(&order.buy_mint)
+                .copied()
+                .or_else(|| (order.buy_mint == native_mint::ID).then_some(TokenProgram::SplToken))
+            else {
+                return false;
+            };
+            order.buy_destination =
+                associated_token_address(&self.pubkey(), &order.buy_mint, program);
+            true
+        });
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -209,7 +228,12 @@ mod tests {
         };
 
         let solutions = solver
-            .solve(&auction, Pubkey::default(), &Default::default())
+            .solve(
+                &auction,
+                Pubkey::default(),
+                &Default::default(),
+                &Default::default(),
+            )
             .await
             .expect("solve should succeed with no solutions");
         assert!(
