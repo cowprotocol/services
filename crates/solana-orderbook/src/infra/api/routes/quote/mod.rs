@@ -35,6 +35,12 @@ const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 /// once fee policies consume the link and the id becomes load-bearing.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// The network fee of one settlement, in lamports: the base fee of its one
+/// signature plus the runtime's compute unit ceiling at a fixed price of
+/// 1,000 micro-lamports per unit, as the solution does not exist at quote
+/// time. TODO(BE-366): take the price from the quoting config.
+const NETWORK_FEES: u64 = 5_000 + (1_400_000 * 1_000_u64).div_ceil(1_000_000);
+
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
     state: axum::extract::State<State>,
@@ -112,6 +118,7 @@ pub async fn quote(
             valid_to,
             app_data: request.app_data,
             fee_amount: 0,
+            network_fees: NETWORK_FEES,
             buy_token_ata_costs,
             kind,
             partially_fillable: false,

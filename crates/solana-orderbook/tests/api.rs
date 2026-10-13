@@ -326,6 +326,7 @@ async fn quote_answers_in_the_evm_shape() {
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
+                "networkFees": "6400",
                 // Without sponsoring the buy token account is not read, so it
                 // counts as the costliest a settleable mint can need at the
                 // SDK's default rent.

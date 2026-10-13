@@ -600,6 +600,7 @@ components:
         - buyAmount
         - validTo
         - feeAmount
+        - networkFees
         - buyTokenAtaCosts
         - kind
         - partiallyFillable
@@ -627,6 +628,14 @@ components:
           description: Always zero. No component charges a fee.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        networkFees:
+          description: >-
+            The settlement's network fee, in lamports: the base fee of one
+            signature plus the runtime's compute unit ceiling at a fixed
+            compute unit price. An estimate, as the solution does not exist
+            at quote time.
+          type: string
+          example: "6400"
         buyTokenAtaCosts:
           description: >-
             Rent, in lamports at the cluster's rent, of the buy token account
@@ -634,8 +643,7 @@ components:
             an existing one and for native SOL buys. An anonymous quote,
             `from` zero without a `receiver`, names no account to read and is
             priced as if it were missing. An upper bound when the account
-            cannot be read, without sponsoring included. The network fee is
-            not included.
+            cannot be read, without sponsoring included.
           type: string
           example: "1488440"
         kind:
