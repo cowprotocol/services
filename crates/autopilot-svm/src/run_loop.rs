@@ -16,8 +16,17 @@
 //! the caller, the loop always runs as if it were the leader.
 
 use {
+    crate::run::Liveness,
     async_trait::async_trait,
-    std::{collections::HashSet, fmt::Debug, hash::Hash},
+    std::{
+        collections::HashSet,
+        fmt::Debug,
+        hash::Hash,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    },
     tracing::Instrument,
 };
 
@@ -83,8 +92,19 @@ pub trait AuctionProvider<C: Cycle>: Send + Sync {
     /// stop the cycle, the auction is then cut from slightly stale caches.
     async fn sync_to_tip(&self, tip: &C::Tip) -> anyhow::Result<()>;
 
-    /// Cuts the auction for the tip. None when there is nothing to solve.
-    async fn cut_auction(&self, tip: &C::Tip) -> Option<C::Auction>;
+    /// Cuts the auction for the tip.
+    async fn cut_auction(&self, tip: &C::Tip) -> Cut<C::Auction>;
+}
+
+/// The result of an auction cut.
+pub enum Cut<A> {
+    /// The auction to solve.
+    Auction(A),
+    /// The cut read the orders, and no order can go into the auction.
+    Empty,
+    /// The cut stopped before it could make an auction, for example because
+    /// a dependency failed or the order data is stale.
+    Skipped,
 }
 
 /// Fans the auction out to all drivers and returns attributable solutions.
@@ -131,6 +151,12 @@ pub trait SettlementObserver<C: Cycle>: Send + Sync {
     fn on_competition_ended(&self, auction: &C::Auction, ranking: &C::Ranking);
 }
 
+/// The state that the metrics server gives to the Kubernetes probes.
+pub struct Probes {
+    pub liveness: Arc<Liveness>,
+    pub startup: Arc<Option<AtomicBool>>,
+}
+
 /// Chain generic auction loop. Owns the seams and the dedupe state, drives
 /// the phases in a fixed order.
 pub struct AuctionLoop<C: Cycle> {
@@ -144,9 +170,11 @@ pub struct AuctionLoop<C: Cycle> {
     submission_deadline_allowance: u64,
     prev_auction: Option<C::Auction>,
     prev_tip: Option<C::Tip>,
+    probes: Probes,
 }
 
 impl<C: Cycle> AuctionLoop<C> {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         trigger: Box<dyn CycleTrigger<C>>,
         provider: Box<dyn AuctionProvider<C>>,
@@ -155,6 +183,7 @@ impl<C: Cycle> AuctionLoop<C> {
         executor: Box<dyn SettlementExecutor<C>>,
         observer: Box<dyn SettlementObserver<C>>,
         submission_deadline_allowance: u64,
+        probes: Probes,
     ) -> Self {
         Self {
             trigger,
@@ -166,14 +195,14 @@ impl<C: Cycle> AuctionLoop<C> {
             submission_deadline_allowance,
             prev_auction: None,
             prev_tip: None,
+            probes,
         }
     }
 
-    /// Run cycles until the process ends, reporting each completed cycle.
-    pub async fn run_forever(mut self, mut cycle_completed: impl FnMut() + Send) -> ! {
+    /// Run cycles until the process ends.
+    pub async fn run_forever(mut self) -> ! {
         loop {
             self.run_cycle().await;
-            cycle_completed();
         }
     }
 
@@ -181,8 +210,14 @@ impl<C: Cycle> AuctionLoop<C> {
     pub async fn run_cycle(&mut self) {
         let tip = self.trigger.next_cycle().await;
 
-        if let Err(err) = self.provider.sync_to_tip(&tip).await {
-            tracing::warn!(?err, "failed to update auction");
+        match self.provider.sync_to_tip(&tip).await {
+            // The order caches are up to date, so the start is complete.
+            Ok(()) => {
+                if let Some(startup) = self.probes.startup.as_ref() {
+                    startup.store(true, Ordering::Release);
+                }
+            }
+            Err(err) => tracing::warn!(?err, "failed to update auction"),
         }
 
         let Some(auction) = self.next_auction(&tip).await else {
@@ -194,9 +229,22 @@ impl<C: Cycle> AuctionLoop<C> {
             .await;
     }
 
-    /// Cuts the next auction and dedupes against the previous cycle.
+    /// Cuts the next auction and dedupes against the previous cycle. A new
+    /// auction and an empty cut refresh the liveness probe. A skipped cut and
+    /// a duplicate auction do not.
     async fn next_auction(&mut self, tip: &C::Tip) -> Option<C::Auction> {
-        let auction = self.provider.cut_auction(tip).await?;
+        let auction = match self.provider.cut_auction(tip).await {
+            // The liveness probe refreshes below, after the duplicate check,
+            // because a repeated auction does not prove progress.
+            Cut::Auction(auction) => auction,
+            // No order can go into the auction. The cut read the orders, so
+            // the loop works correctly.
+            Cut::Empty => {
+                self.probes.liveness.auction();
+                return None;
+            }
+            Cut::Skipped => return None,
+        };
 
         // Only rerun the competition if the auction or tip changed.
         let previous_auction = self.prev_auction.replace(auction.clone());
@@ -205,6 +253,7 @@ impl<C: Cycle> AuctionLoop<C> {
             return None;
         }
 
+        self.probes.liveness.auction();
         Some(auction)
     }
 
