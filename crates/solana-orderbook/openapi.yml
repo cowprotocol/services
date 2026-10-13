@@ -177,11 +177,12 @@ paths:
         unsigned fee payer), and every order field derives from its trailing
         `CreateOrder` instruction. In front of it the transaction carries the
         preparation steps, in this order: create the wSOL account, fund it,
-        sync it, and approve the settlement delegate, each omittable (the
-        wrap steps only for native SOL sells), followed by the mandatory buy
-        token account creation (idempotent, a no-op when the account already
-        exists). An order buying native SOL skips the creation, its payout
-        goes to the wallet. The order competes in auctions until the
+        sync it, and approve the settlement delegate, each omittable (the wrap
+        steps only for native SOL sells). The transaction must not create the
+        buy token account: it must already receive the buy mint or be the
+        owner's associated token account, which the settlement creates when
+        missing. An order buying native SOL pays out to its wallet instead.
+        The order competes in auctions until the
         transaction's blockhash expires (about a minute) or it settles.
       requestBody:
         required: true
