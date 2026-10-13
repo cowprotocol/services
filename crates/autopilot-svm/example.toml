@@ -40,7 +40,7 @@ url = "http://localhost:11088"
 [native-prices]
 ttl = "30s"
 # Lamports a driver source sells per probe quote.
-driver-probe-lamports = 50000000
+driver-probe-lamports = 10000000
 
 # The CoinGecko key is optional: without one the public API and its rate
 # limits apply. A value like "%COIN_GECKO_API_KEY" reads the key from that

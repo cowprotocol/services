@@ -937,7 +937,7 @@ mod tests {
     }
 
     /// A token CoinGecko does not list falls through to the driver, which
-    /// prices it by quoting one whole token into wSOL.
+    /// prices it by quoting some wSOL amount into the token.
     #[tokio::test]
     async fn falls_back_to_the_driver_source() {
         let token = Pubkey::new_unique();
