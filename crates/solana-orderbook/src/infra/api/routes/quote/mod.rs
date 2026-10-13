@@ -22,12 +22,7 @@ use {
         rent::Rent,
         sysvar,
     },
-    solana_token::{
-        ata_rent,
-        max_ata_rent,
-        receivable_token_account,
-        receivable_token_account_owner,
-    },
+    solana_token::{ata_rent, max_ata_rent, receivable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
     std::{collections::HashMap, time::Duration},
@@ -214,7 +209,7 @@ async fn buy_account_rent(
         }
     };
     if let Some(account) = accounts.get(&recipient)
-        && recipient_receives(recipient, account, mint, program)?
+        && recipient_receives(recipient, account, mint)?
     {
         return Ok(0);
     }
@@ -225,25 +220,16 @@ async fn buy_account_rent(
     }
 }
 
-/// Whether the payout lands at `recipient`; a token account it cannot is
+/// Whether the payout lands at `recipient`: any token account the settlement's
+/// plain transfer of `mint` can credit, whoever owns it. One it cannot is
 /// refused.
 fn recipient_receives(
     recipient: Pubkey,
     account: &Account,
     mint: &Pubkey,
-    program: TokenProgram,
 ) -> Result<bool, error::Reply> {
-    if let Some(owner) = receivable_token_account_owner(account, mint) {
-        // The placement proves receivability with the ATA program's idempotent
-        // creation, which fails on any account but the owner's associated one.
-        return if recipient == associated_token_account(&owner, mint, program) {
-            Ok(true)
-        } else {
-            Err(invalid_buy_token_account(
-                recipient,
-                "is not an associated token account",
-            ))
-        };
+    if receivable_token_account(account, mint) {
+        return Ok(true);
     }
     // A token account of another mint, frozen, or refusing plain credits is
     // no wallet whose associated token account could take the payout.
@@ -466,16 +452,12 @@ mod tests {
     }
 
     #[test]
-    fn a_recipient_receives_at_its_owners_associated_token_account() {
-        let (mint, owner, program) = (
-            Pubkey::new_unique(),
-            Pubkey::new_unique(),
-            TokenProgram::SplToken,
-        );
-        let ata = associated_token_account(&owner, &mint, program);
+    fn a_recipient_receives_at_any_token_account_of_the_mint() {
+        let (mint, owner) = (Pubkey::new_unique(), Pubkey::new_unique());
+        let ata = associated_token_account(&owner, &mint, TokenProgram::SplToken);
         let auxiliary = Pubkey::new_unique();
         let receives = |recipient, account: &Account| {
-            recipient_receives(recipient, account, &mint, program)
+            recipient_receives(recipient, account, &mint)
                 .map_err(|(_, body)| body.description.clone())
         };
         assert_eq!(
@@ -489,12 +471,7 @@ mod tests {
         assert_eq!(receives(owner, &pda), Ok(false));
         let initialized = token_account(&mint, &owner, AccountState::Initialized);
         assert_eq!(receives(ata, &initialized), Ok(true));
-        assert_eq!(
-            receives(auxiliary, &initialized),
-            Err(format!(
-                "the buy token account {auxiliary} is not an associated token account"
-            ))
-        );
+        assert_eq!(receives(auxiliary, &initialized), Ok(true));
         let cannot_receive = Err(format!(
             "the buy token account {ata} cannot receive the payout"
         ));
@@ -589,8 +566,6 @@ mod tests {
             ..Default::default()
         });
         let token_account = token_account_json(&mint, &owner);
-        let receiver_owner = Pubkey::new_unique();
-        let receiver_ata = associated_token_account(&receiver_owner, &mint, TokenProgram::SplToken);
         let classic = account_json(&classic_mint(6));
         let token_2022 = account_json(&token_2022_mint(&[], |_| {}));
         let rent = account_json(&create_account_for_test(&mainnet_rent()));
@@ -633,9 +608,9 @@ mod tests {
                 max_ata_rent(&mainnet_rent()),
             ),
             (
-                Some(receiver_ata),
+                Some(receiver),
                 [
-                    token_account_json(&mint, &receiver_owner),
+                    token_account_json(&mint, &Pubkey::new_unique()),
                     null.clone(),
                     classic.clone(),
                 ],
@@ -689,8 +664,6 @@ mod tests {
         );
     }
 
-    /// A receiving token account away from its owner's associated address is
-    /// refused too: the placement cannot create it idempotently.
     #[tokio::test]
     async fn an_unreceivable_buy_token_account_is_refused() {
         let (owner, mint, receiver) = (
@@ -704,7 +677,6 @@ mod tests {
             ..Default::default()
         });
         let frozen = frozen_token_account_json(&mint, &owner);
-        let auxiliary = token_account_json(&mint, &owner);
         let other_mint_account = token_account_json(&Pubkey::new_unique(), &owner);
         let system_account_with_data = account_json(&Account {
             lamports: 1_000_000_000,
@@ -725,11 +697,7 @@ mod tests {
                 [wallet.clone(), system_account_with_data, classic.clone()],
             ),
             (Some(receiver), [frozen, null.clone(), classic.clone()]),
-            (
-                Some(receiver),
-                [other_mint_account, null.clone(), classic.clone()],
-            ),
-            (Some(receiver), [auxiliary, null, classic]),
+            (Some(receiver), [other_mint_account, null, classic]),
         ] {
             let sponsoring = sponsoring(multiple_accounts_json(accounts.clone()));
             let (status, body) = buy_account_rent(
