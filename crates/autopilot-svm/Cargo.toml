@@ -23,6 +23,7 @@ chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }
+cow-settlement-interface = { workspace = true }
 cow-solana-rpc = { workspace = true }
 cow-solana-signer = { workspace = true }
 database = { workspace = true }

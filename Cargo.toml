@@ -29,7 +29,7 @@ alloy-transport-ws = { version = "2.4.1", default-features = false }
 anyhow = "1.0.100"
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
-async-nats = "0.48.0"
+async-nats = { version = "0.48.0", default-features = false, features = ["aws-lc-rs", "jetstream"] }
 async-stream = "0.3.5"
 async-trait = "0.1.80"
 autopilot = { path = "crates/autopilot" }
@@ -56,14 +56,8 @@ console-subscriber = "0.5.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
 contracts = { path = "contracts/generated/contracts-facade" }
-cow-settlement-client = {
-  git = "https://github.com/cowprotocol/solana-programs",
-  rev = "da9865d2d6501820672397d690352d2818f286b9"
-}
-cow-settlement-interface = {
-  git = "https://github.com/cowprotocol/solana-programs",
-  rev = "da9865d2d6501820672397d690352d2818f286b9"
-}
+cow-settlement-client = "0.5.1"
+cow-settlement-interface = "0.5.1"
 cow-solana-rpc = { path = "crates/cow-solana-rpc" }
 cow-solana-signer = { path = "crates/cow-solana-signer" }
 dashmap = "6.1.0"

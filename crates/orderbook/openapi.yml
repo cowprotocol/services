@@ -2203,6 +2203,9 @@ components:
         auctionDeadlineBlock:
           type: integer
           description: Block deadline by which the auction must be settled.
+        fastPath:
+          type: boolean
+          description: Whether this is a fast-path auction.
         transactionHashes:
           type: array
           description: |

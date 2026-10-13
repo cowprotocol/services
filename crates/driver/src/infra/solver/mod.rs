@@ -398,7 +398,7 @@ impl Solver {
         let weth = self.eth.contracts().weth_address();
 
         let timeout_config = match auction.id {
-            auction::Kind::Quote(_) => Self::quote_timeouts(),
+            auction::Kind::Quote { .. } => Self::quote_timeouts(),
             auction::Kind::Competition(_) => self.solve_timeouts(),
         };
         let deadlines = auction.deadline(timeout_config);

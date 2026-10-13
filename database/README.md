@@ -51,6 +51,7 @@ Contains all auctions for which a valid solver competition exists.
  price\_values | numeric[] | not null | native price values, mapped one-to-one with `price\_tokens`
  surplus\_capturing\_jit\_order\_owners | bytea[] | not null | surplus capturing jit order owners that are part of the auction
  penalty\_caps\_native | numeric[] | nullable | caps on the penalty a solver can incur for winning an order but failing to execute it, in native token wei, mapped one-to-one with `order\_uids`; null for auctions created before this column existed or while penalties were disabled
+ fast\_path\_quote\_id | bigint | nullable | the `quotes.id` this auction settled, for fast-path auctions; null for regular auctions
 
 Indexes:
 - PRIMARY KEY: btree(`id`)

@@ -183,6 +183,7 @@ fn try_into_dto(value: DbResponse) -> Result<ApiResponse, LoadSolverCompetitionE
         auction_id: value.auction.id,
         auction_start_block: value.auction.block,
         auction_deadline_block: value.auction.deadline,
+        fast_path: value.auction.fast_path_quote_id.is_some(),
         transaction_hashes: settlements.values().cloned().collect(),
         reference_scores,
         auction: Auction {
