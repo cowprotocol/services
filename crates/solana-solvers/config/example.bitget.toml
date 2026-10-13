@@ -1,0 +1,19 @@
+# Example Bitget solver configuration.
+# Run with: solana-solvers bitget --config <this file>
+
+# Orders quoted at once. Each quote is two sequential Bitget requests.
+concurrent-requests = 8
+# Pause after a rate-limited response: min-back-off at first, multiplied by
+# back-off-growth-factor per consecutive one, capped at max-back-off.
+back-off-growth-factor = 2.0
+min-back-off = "1s"
+max-back-off = "8s"
+
+[dex]
+# Bitget swap API base URL, or a proxy route to it. Keep the trailing slash.
+endpoint = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
+# Credentials from the Bitget developer portal. Requests are signed with the secret.
+api-key = "your-bitget-api-key"
+api-secret = "your-bitget-api-secret"
+# Slippage tolerance in basis points. 50 = 0.5%.
+slippage-bps = 50
