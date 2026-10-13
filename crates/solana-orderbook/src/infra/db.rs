@@ -8,7 +8,7 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    sqlx::{PgExecutor, PgPool},
+    sqlx::{Connection, PgExecutor, PgPool},
 };
 
 /// One order joined with its fill state.
@@ -357,6 +357,13 @@ WHERE id = $1
         .fetch_optional(ex)
         .await
         .context("read solana.quotes")
+}
+
+/// Check that the pool gives a connection and that the database answers on
+/// it.
+pub async fn ping(pool: &PgPool) -> Result<()> {
+    let mut conn = pool.acquire().await.context("acquire a connection")?;
+    conn.ping().await.context("ping the database")
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! Orderbook entry-point logic.
 
 use {
-    crate::infra::{Api, api::Sponsoring, config, observe as infra_observe, quoter::Quoter},
+    crate::infra::{Api, api::Sponsoring, config, db, observe as infra_observe, quoter::Quoter},
     clap::Parser,
     configs::database::DatabasePoolConfig,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
@@ -51,7 +51,7 @@ struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+        db::ping(&self.pool).await.is_ok()
     }
 }
 

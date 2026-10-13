@@ -117,6 +117,7 @@ impl Api {
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
+            .route("/api/v1/ready", get(routes::ready))
             .route(
                 "/api/v1/account/{owner}/orders",
                 get(routes::account_orders),

@@ -4,6 +4,7 @@ mod healthz;
 mod mint;
 mod order;
 mod quote;
+mod ready;
 mod status;
 mod trades;
 
@@ -14,6 +15,7 @@ pub use {
     healthz::healthz,
     order::order,
     quote::quote,
+    ready::ready,
     status::order_status,
     trades::trades,
 };
