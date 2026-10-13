@@ -117,7 +117,7 @@ enum Source {
         client: reqwest::Client,
         name: String,
         endpoint: Url,
-        /// Lamports bought per probe quote.
+        /// Lamports sold per probe quote.
         probe_amount: u64,
     },
 }
@@ -128,7 +128,7 @@ struct Entry {
     sol: Option<f64>,
 }
 
-/// The driver `/quote` request: buy the probe amount of wSOL with the token.
+/// The driver `/quote` request: sell the probe amount of wSOL for the token.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -548,7 +548,7 @@ fn current_multiplier(config: &ScaledUiAmountConfig, unix_timestamp: i64) -> f64
     }
 }
 
-/// Buy a fixed amount of wSOL with each token on the driver. The probe is
+/// Sell a fixed amount of wSOL for each token on the driver. The probe is
 /// denominated in the native token so its economic size is the same for every
 /// token, whatever one whole unit of it is worth. A driver rejection prices
 /// nothing for that token (no route is a routine answer), a transport failure
@@ -565,10 +565,10 @@ async fn driver(
         let url = url.clone();
         async move {
             let request = QuoteRequest {
-                sell_token: token,
-                buy_token: wrapped_native,
+                sell_token: wrapped_native,
+                buy_token: token,
                 amount: probe_amount,
-                kind: "buy",
+                kind: "sell",
                 deadline: chrono::Utc::now() + DRIVER_TIMEOUT,
             };
             let response = client
@@ -597,10 +597,10 @@ async fn driver(
         .into_iter()
         .flatten()
         .filter_map(|(token, quote)| {
-            // `buy_amount` is in lamports, `sell_amount` in token atoms, and
+            // `sell_amount` is in lamports, `buy_amount` in token atoms, and
             // the stored price is lamports per atom scaled by 10^9.
-            let price = (u128::from(quote.buy_amount) * 1_000_000_000)
-                .checked_div(u128::from(quote.sell_amount))?;
+            let price = (u128::from(quote.sell_amount) * 1_000_000_000)
+                .checked_div(u128::from(quote.buy_amount))?;
             // A price outside the scaled range counts as unpriced: clamping
             // would let it outrank every real one.
             let price = u64::try_from(price).ok()?;
@@ -694,17 +694,17 @@ mod tests {
         )
     }
 
-    /// Serve one fixed driver quote: `sell_amount` token atoms buy the
-    /// probe the request asks for.
-    async fn driver_server(sell_amount: u64) -> Url {
+    /// Serve one fixed driver quote: the probe the request asks for sells
+    /// into `buy_amount` token atoms.
+    async fn driver_server(buy_amount: u64) -> Url {
         let app = axum::Router::new().route(
             "/quote",
             axum::routing::post(
                 move |axum::Json(request): axum::Json<serde_json::Value>| async move {
-                    assert_eq!(request["kind"], "buy", "the probe buys the native token");
+                    assert_eq!(request["kind"], "sell", "the probe sells the native token");
                     axum::Json(serde_json::json!({
-                        "sellAmount": sell_amount.to_string(),
-                        "buyAmount": request["amount"],
+                        "sellAmount": request["amount"],
+                        "buyAmount": buy_amount.to_string(),
                         "solver": Pubkey::new_unique().to_string(),
                     }))
                 },
@@ -937,13 +937,13 @@ mod tests {
     }
 
     /// A token CoinGecko does not list falls through to the driver, which
-    /// prices it by quoting one whole token into wSOL.
+    /// prices it by quoting some wSOL amount into the token.
     #[tokio::test]
     async fn falls_back_to_the_driver_source() {
         let token = Pubkey::new_unique();
         let (coingecko, _) = coingecko_server(serde_json::json!({})).await;
-        // The 0.1 SOL probe costs 20 whole 6-decimals tokens, so one token is
-        // worth 0.005 SOL.
+        // The 0.1 SOL probe sells into 20 whole 6-decimals tokens, so one
+        // token is worth 0.005 SOL.
         let driver = driver_server(20_000_000).await;
         let config = config::NativePrices {
             estimators: vec![

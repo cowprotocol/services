@@ -39,8 +39,8 @@ url = "http://localhost:11088"
 # token the first one does not price is asked from the next.
 [native-prices]
 ttl = "30s"
-# Lamports a driver source buys per probe quote, a tenth of a SOL.
-driver-probe-lamports = 100000000
+# Lamports a driver source sells per probe quote.
+driver-probe-lamports = 10000000
 
 # The CoinGecko key is optional: without one the public API and its rate
 # limits apply. A value like "%COIN_GECKO_API_KEY" reads the key from that
@@ -52,7 +52,7 @@ endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
 
 # A solver driver quoted through its regular /quote route. The url includes
 # the solver path, like the [[drivers]] entries. The driver's solver must
-# answer buy orders, the probe buys a fixed amount of wSOL.
+# answer sell orders, the probe sells a fixed amount of wSOL.
 [[native-prices.estimators]]
 type = "driver"
 name = "baseline"

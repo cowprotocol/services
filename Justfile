@@ -52,7 +52,7 @@ test-e2e filters="" *extra="":
     cargo nextest run -p e2e '{{filters}}' --test-threads 1 --failure-output final --run-ignored ignored-only {{extra}}
 
 test-driver:
-    RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only
+    RUST_MIN_STACK=3145728 cargo nextest run -p driver --run-ignored ignored-only
 
 # Run clippy
 clippy:
