@@ -139,9 +139,10 @@ pub struct Quote {
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
-    /// Rent of a missing buy token account, in lamports.
+    /// Rent, in lamports, of the buy token account when the placement must
+    /// create it.
     #[serde_as(as = "DisplayFromStr")]
-    pub execution_cost_lamports: u64,
+    pub buy_token_ata_costs: u64,
     pub kind: Kind,
     pub partially_fillable: bool,
 }

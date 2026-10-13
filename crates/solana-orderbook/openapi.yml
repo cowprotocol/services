@@ -600,7 +600,7 @@ components:
         - buyAmount
         - validTo
         - feeAmount
-        - executionCostLamports
+        - buyTokenAtaCosts
         - kind
         - partiallyFillable
       properties:
@@ -627,7 +627,7 @@ components:
           description: Always zero. No component charges a fee.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-        executionCostLamports:
+        buyTokenAtaCosts:
           description: >-
             Rent, in lamports at the cluster's rent, of the buy token account
             when the placement must create it; zero when the payout lands in

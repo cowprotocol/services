@@ -61,11 +61,11 @@ pub async fn quote(
             dto::Kind::Buy => quoter::Kind::Buy,
         },
     };
-    let (quoted, execution_cost_lamports) = tokio::join!(
+    let (quoted, buy_token_ata_costs) = tokio::join!(
         state.quoter().quote(&order),
         buy_account_rent(state.sponsoring(), &request, buy_program),
     );
-    let execution_cost_lamports = execution_cost_lamports?;
+    let buy_token_ata_costs = buy_token_ata_costs?;
     // Every driver failure answers as no liquidity, the EVM mapping for
     // estimator errors.
     let quoted = quoted.map_err(|quoter::Error::NoQuotes| {
@@ -112,7 +112,7 @@ pub async fn quote(
             valid_to,
             app_data: request.app_data,
             fee_amount: 0,
-            execution_cost_lamports,
+            buy_token_ata_costs,
             kind,
             partially_fillable: false,
         },

@@ -329,7 +329,7 @@ async fn quote_answers_in_the_evm_shape() {
                 // Without sponsoring the buy token account is not read, so it
                 // counts as the costliest a settleable mint can need at the
                 // SDK's default rent.
-                "executionCostLamports": "2220240",
+                "buyTokenAtaCosts": "2220240",
                 "kind": "sell",
                 "partiallyFillable": false,
             },
@@ -455,7 +455,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
             .unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         let json: serde_json::Value = response.json().await.unwrap();
-        assert_eq!(json["quote"]["executionCostLamports"], cost);
+        assert_eq!(json["quote"]["buyTokenAtaCosts"], cost);
     }
 }
 
