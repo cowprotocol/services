@@ -207,3 +207,20 @@ async fn connect_yellowstone(config: &config::Yellowstone) -> GeyserGrpcClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mark_started_sets_the_startup_flag_once() {
+        let startup = Some(AtomicBool::new(false));
+        let ready = || startup.as_ref().unwrap().load(Ordering::Acquire);
+
+        mark_started(&startup);
+        assert!(ready());
+        // Each reconnect calls it again, and the flag stays set.
+        mark_started(&startup);
+        assert!(ready());
+    }
+}
