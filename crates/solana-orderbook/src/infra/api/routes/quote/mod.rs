@@ -177,19 +177,18 @@ impl BuyProgram {
 /// The rent of the quoted order's buy token account, zero when the payout
 /// lands in an existing one. An existing account that cannot take the payout
 /// is refused: the placement's idempotent creation leaves it as is, so the
-/// order would never fill. A native SOL buy pays out to a wallet, and an
-/// anonymous quote without a `receiver` names no account to read. The read
-/// fetches the buy mint again, as the verdict cache keeps no account data and
-/// the mint's extensions size the account, and the rent sysvar, as the SDK's
-/// default rent is above the cluster's.
+/// order would never fill. A native SOL buy pays out to a wallet. An
+/// anonymous quote without a `receiver` names no account to read and is
+/// priced as if it were missing, as an unverified EVM quote keeps the full
+/// fee. The read fetches the buy mint again, as the verdict cache keeps no
+/// account data and the mint's extensions size the account, and the rent
+/// sysvar, as the SDK's default rent is above the cluster's.
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
     buy_program: BuyProgram,
 ) -> Result<u64, error::Reply> {
-    if matches!(buy_program, BuyProgram::Native)
-        || request.receiver.unwrap_or(request.from) == Pubkey::default()
-    {
+    if matches!(buy_program, BuyProgram::Native) {
         return Ok(0);
     }
     let (Some(sponsoring), BuyProgram::Known(program)) = (sponsoring, buy_program) else {
@@ -197,11 +196,12 @@ async fn buy_account_rent(
     };
     let mint = &request.buy_token;
     let [recipient, ata] = buy_token_account_candidates(request, program);
-    let accounts = match sponsoring
-        .rpc
-        .multiple_accounts([recipient, ata, *mint, sysvar::rent::ID])
-        .await
-    {
+    let addresses = if recipient == Pubkey::default() {
+        vec![*mint, sysvar::rent::ID]
+    } else {
+        vec![recipient, ata, *mint, sysvar::rent::ID]
+    };
+    let accounts = match sponsoring.rpc.multiple_accounts(addresses).await {
         Ok(accounts) => accounts,
         Err(err) => {
             tracing::warn!(?err, "buy token account lookup failed, charging its rent");
@@ -746,11 +746,31 @@ mod tests {
         );
     }
 
+    /// The account read answers the buy mint, then the rent sysvar: an
+    /// anonymous quote has no recipient to read.
     #[tokio::test]
-    async fn anonymous_quotes_and_native_buys_owe_no_rent() {
+    async fn an_anonymous_quote_owes_the_rent_of_a_missing_account() {
+        let request = request(Pubkey::default(), Pubkey::new_unique(), None);
+        let sponsoring = sponsoring(multiple_accounts_json([
+            account_json(&classic_mint(6)),
+            account_json(&create_account_for_test(&mainnet_rent())),
+        ]));
+        assert_eq!(
+            buy_account_rent(
+                Some(&sponsoring),
+                &request,
+                BuyProgram::Known(TokenProgram::SplToken)
+            )
+            .await
+            .unwrap(),
+            1_488_440
+        );
+    }
+
+    #[tokio::test]
+    async fn native_buys_owe_no_rent() {
         let owner = Pubkey::new_unique();
         for request in [
-            request(Pubkey::default(), Pubkey::new_unique(), None),
             request(owner, ENCODED_NATIVE_SOL_TRANSFER, None),
             request(
                 owner,
@@ -768,16 +788,12 @@ mod tests {
         }
     }
 
-    /// Even an SPL Token mint is priced at the Token-2022 ceiling unread, and
-    /// an anonymous quote naming a `receiver` has an account to price.
+    /// Even an SPL Token mint is priced at the Token-2022 ceiling unread,
+    /// with or without a recipient.
     #[tokio::test]
     async fn an_unread_buy_token_account_owes_the_largest_rent() {
         let largest = max_ata_rent(&Rent::default());
-        let anonymous = request(
-            Pubkey::default(),
-            Pubkey::new_unique(),
-            Some(Pubkey::new_unique()),
-        );
+        let anonymous = request(Pubkey::default(), Pubkey::new_unique(), None);
         assert_eq!(
             buy_account_rent(None, &anonymous, BuyProgram::Unread)
                 .await
