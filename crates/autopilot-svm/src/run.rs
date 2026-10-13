@@ -206,3 +206,12 @@ async fn run(config: Config) {
         () = observe::shutdown::shutdown_signal() => tracing::info!("shutting down"),
     }
 }
+
+#[cfg(test)]
+impl Liveness {
+    /// Makes the probe fail until the next auction.
+    pub(crate) fn expire(&self) {
+        *self.last_auction.write().unwrap() =
+            Instant::now() - self.max_auction_age - Duration::from_secs(1);
+    }
+}

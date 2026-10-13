@@ -300,3 +300,206 @@ impl<C: Cycle> AuctionLoop<C> {
         self.observer.on_competition_ended(auction, &ranking);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        observe::metrics::LivenessChecking,
+        std::{collections::VecDeque, sync::Mutex, time::Duration},
+    };
+
+    struct TestCycle;
+
+    impl Cycle for TestCycle {
+        type Auction = TestAuction;
+        type OrderUid = u64;
+        type Ranking = NoRanking;
+        type Solution = ();
+        type Tip = u64;
+
+        fn submission_deadline(tip: &u64, allowance: u64) -> u64 {
+            tip + allowance
+        }
+    }
+
+    /// An auction with the uids of its orders.
+    #[derive(Clone, PartialEq)]
+    struct TestAuction(Vec<u64>);
+
+    impl AuctionInfo for TestAuction {
+        fn id(&self) -> i64 {
+            0
+        }
+    }
+
+    struct NoRanking;
+
+    impl RankingInfo<TestCycle> for NoRanking {
+        fn winner_count(&self) -> usize {
+            0
+        }
+
+        fn winning_order_uids(&self) -> HashSet<u64> {
+            HashSet::new()
+        }
+
+        fn considered_order_uids(&self) -> HashSet<u64> {
+            HashSet::new()
+        }
+    }
+
+    /// Gives the result of the sync and of the cut from a script, one entry
+    /// for each cycle.
+    struct ScriptedProvider(Mutex<VecDeque<(bool, Cut<TestAuction>)>>);
+
+    #[async_trait]
+    impl AuctionProvider<TestCycle> for ScriptedProvider {
+        async fn sync_to_tip(&self, _tip: &u64) -> anyhow::Result<()> {
+            let synced = self.0.lock().unwrap().front().expect("a scripted cycle").0;
+            anyhow::ensure!(synced, "scripted sync failure");
+            Ok(())
+        }
+
+        async fn cut_auction(&self, _tip: &u64) -> Cut<TestAuction> {
+            self.0
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("a scripted cycle")
+                .1
+        }
+    }
+
+    /// Fires every cycle at the same tip, and gets no solution, so a cycle
+    /// ends after the auction goes to the solvers.
+    struct Stub;
+
+    #[async_trait]
+    impl CycleTrigger<TestCycle> for Stub {
+        async fn next_cycle(&mut self) -> u64 {
+            1
+        }
+
+        fn current_tip(&self) -> u64 {
+            1
+        }
+    }
+
+    #[async_trait]
+    impl SolverCompetition<TestCycle> for Stub {
+        async fn solve(&self, _auction: &TestAuction) -> Vec<()> {
+            Vec::new()
+        }
+    }
+
+    impl WinnerSelection<TestCycle> for Stub {
+        fn arbitrate(&self, _solutions: Vec<()>, _auction: &TestAuction) -> NoRanking {
+            unreachable!("no solution to rank")
+        }
+    }
+
+    #[async_trait]
+    impl SettlementExecutor<TestCycle> for Stub {
+        async fn execute(&self, _: i64, _: &NoRanking, _: &u64, _: u64) {
+            unreachable!("no winner to settle")
+        }
+    }
+
+    #[async_trait]
+    impl SettlementObserver<TestCycle> for Stub {
+        fn on_orders_ready(&self, _auction: &TestAuction) {}
+
+        async fn persist_competition_ranking(
+            &self,
+            _: &TestAuction,
+            _: &u64,
+            _: &NoRanking,
+            _: u64,
+        ) -> anyhow::Result<()> {
+            unreachable!("no ranking to store")
+        }
+
+        fn on_orders_matched(&self, _: HashSet<u64>, _: HashSet<u64>) {
+            unreachable!("no ranking to report")
+        }
+
+        fn on_competition_ended(&self, _: &TestAuction, _: &NoRanking) {
+            unreachable!("no competition to report")
+        }
+    }
+
+    /// A loop that runs the scripted cycles. Its liveness probe fails until
+    /// the loop records an auction, and its startup probe fails until the
+    /// first successful sync.
+    fn scripted_loop(
+        cycles: impl IntoIterator<Item = (bool, Cut<TestAuction>)>,
+    ) -> (
+        AuctionLoop<TestCycle>,
+        Arc<Liveness>,
+        Arc<Option<AtomicBool>>,
+    ) {
+        let liveness = Arc::new(Liveness::new(Duration::from_secs(60)));
+        liveness.expire();
+        let startup = Arc::new(Some(AtomicBool::new(false)));
+        let auction_loop = AuctionLoop::new(
+            Box::new(Stub),
+            Box::new(ScriptedProvider(Mutex::new(cycles.into_iter().collect()))),
+            Box::new(Stub),
+            Box::new(Stub),
+            Box::new(Stub),
+            Box::new(Stub),
+            0,
+            Probes {
+                liveness: liveness.clone(),
+                startup: startup.clone(),
+            },
+        );
+        (auction_loop, liveness, startup)
+    }
+
+    #[tokio::test]
+    async fn a_new_auction_refreshes_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) =
+            scripted_loop([(true, Cut::Auction(TestAuction(vec![1])))]);
+        auction_loop.run_cycle().await;
+        assert!(liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn an_empty_cut_refreshes_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([(true, Cut::Empty)]);
+        auction_loop.run_cycle().await;
+        assert!(liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn a_skipped_cut_does_not_refresh_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([(true, Cut::Skipped)]);
+        auction_loop.run_cycle().await;
+        assert!(!liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_auction_does_not_refresh_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([
+            (true, Cut::Auction(TestAuction(vec![1]))),
+            (true, Cut::Auction(TestAuction(vec![1]))),
+        ]);
+        auction_loop.run_cycle().await;
+        liveness.expire();
+        auction_loop.run_cycle().await;
+        assert!(!liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn the_startup_probe_passes_after_the_first_successful_sync() {
+        let (mut auction_loop, _, startup) =
+            scripted_loop([(false, Cut::Skipped), (true, Cut::Skipped)]);
+        let started = || startup.as_ref().as_ref().unwrap().load(Ordering::Acquire);
+        auction_loop.run_cycle().await;
+        assert!(!started());
+        auction_loop.run_cycle().await;
+        assert!(started());
+    }
+}
