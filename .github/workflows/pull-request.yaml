@@ -63,6 +63,8 @@ jobs:
           token: "${{ secrets.GITHUB_TOKEN }}"
 
   doc-tests:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.doc != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
@@ -79,6 +81,8 @@ jobs:
       - run: just test-doc
 
   unit-tests:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.unit != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -101,9 +105,15 @@ jobs:
         with:
           just-version: 1.39.0
       - run: cargo build --locked --tests
-      - run: just test-unit
+      # Run only the tests of the packages that the changes can affect. Some of
+      # these packages can have no tests.
+      - run: just test-unit ${FILTER:+-E "$FILTER" --no-tests=warn}
+        env:
+          FILTER: ${{ needs.changes.outputs.nextest-filter }}
 
   test-db:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.db != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -130,11 +140,16 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - run: just test-db
+      # Run only the tests of the packages that the changes can affect.
+      - run: just test-db ${FILTER:+-E "$FILTER"}
+        env:
+          FILTER: ${{ needs.changes.outputs.nextest-filter }}
 
   # Runs against a database holding only the solana.* series, so a schema
   # accidentally depending on the base series fails here.
   test-db-solana:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.db-solana != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -161,16 +176,23 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - run: just test-db-solana
+      # Run only the tests of the packages that the changes can affect.
+      - run: just test-db-solana ${FILTER:+-E "$FILTER"}
+        env:
+          FILTER: ${{ needs.changes.outputs.nextest-filter }}
 
-  # Finds the slow test jobs that the changes of a PR can affect. A test job
-  # skips only when its output is `false`. On push to main, in the merge queue
-  # and when this job fails, the outputs are empty and all the test jobs run.
+  # Finds the jobs and the tests that the changes of a PR can affect. A job
+  # skips only when its output is `false`.
   changes:
     runs-on: ubuntu-latest
     outputs:
+      unit: ${{ fromJSON(steps.select.outputs.groups || '{}').unit }}
       e2e: ${{ fromJSON(steps.select.outputs.groups || '{}').e2e }}
       driver: ${{ fromJSON(steps.select.outputs.groups || '{}').driver }}
+      db: ${{ fromJSON(steps.select.outputs.groups || '{}').db }}
+      db-solana: ${{ fromJSON(steps.select.outputs.groups || '{}').db-solana }}
+      doc: ${{ fromJSON(steps.select.outputs.groups || '{}').doc }}
+      nextest-filter: ${{ steps.select.outputs.nextest-filter }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -183,9 +205,16 @@ jobs:
         uses: ./.github/actions/select-tests
         with:
           base: HEAD^1
+          # `db` and `db-solana` are the packages that have tests with
+          # `postgres` and `solana_db` in their names. `doc` has the packages
+          # that have doc tests.
           groups: |
+            unit=*
             e2e=e2e
             driver=driver
+            db=autopilot database orderbook
+            db-solana=autopilot-svm solana-indexer solana-orderbook
+            doc=autopilot driver number testlib
           # Only the `migrations-solana` service of docker-compose.yaml uses
           # database/sql-solana/.
           ignore: |
@@ -238,8 +267,6 @@ jobs:
 
   test-local-node:
     needs: [changes, test-local-node-shard]
-    # Run also when a shard fails. Else GitHub skips this job, and a skipped
-    # job counts as a passed required check.
     if: always()
     runs-on: ubuntu-latest
     steps:
