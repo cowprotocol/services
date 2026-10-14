@@ -29,7 +29,7 @@ pub async fn run(args: Args) {
     infra_observe::init(config.observe_config());
 
     let version = observe::version::git_version();
-    tracing::info!(%version, "starting the solana driver");
+    tracing::info!(%version, "running solana driver");
     if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
         tracing::info!(?config, "loaded config");
     }
