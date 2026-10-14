@@ -1051,7 +1051,7 @@ fn default_liquidity_max_recent_block_age() -> u64 {
 }
 
 fn default_liquidity_max_auto_updated_pairs() -> usize {
-    1000
+    2000
 }
 
 /// Which block should be used to fetch the liquidity.
