@@ -2,7 +2,11 @@ name: Select tests
 description: >-
   Selects the test groups that the changes between a base revision and HEAD
   can affect, from the dependencies between the packages of a Cargo workspace.
-  It needs cargo, jq and a checkout that contains the base revision.
+  A group is selected when a changed file is in its package or in a workspace
+  package that its package depends on. All the dependency kinds count, also
+  dev-dependencies and optional dependencies. A changed file in no workspace
+  package (for example `Cargo.lock`) selects all the groups. The action needs
+  cargo, jq and a checkout that contains the base revision.
 inputs:
   base:
     description: The revision to compare with HEAD.
@@ -28,13 +32,83 @@ outputs:
 runs:
   using: composite
   steps:
-    - id: select
+    - name: List the changed files
+      id: changed
       shell: bash
       env:
         BASE: ${{ inputs.base }}
+      run: |
+        files=$(git diff --no-renames --name-only "$BASE" HEAD)
+        echo "$files"
+        echo "files=$(jq -Rnc '[inputs | select(length > 0)]' <<< "$files")" >> "$GITHUB_OUTPUT"
+
+    - name: Find the workspace packages
+      id: workspace
+      shell: bash
+      env:
         GROUPS_INPUT: ${{ inputs.groups }}
+      run: |
+        metadata=$(cargo metadata --no-deps --offline --format-version 1)
+
+        # The directory of each workspace package, relative to the workspace
+        # root and with a `/` at the end, and its name. The longest directory
+        # is first, so that a package in the directory of another package
+        # matches first.
+        packages=$(jq -c '
+          .workspace_root as $root
+          | .packages
+          | map({dir: (.manifest_path | ltrimstr("\($root)/") | rtrimstr("Cargo.toml")), name})
+          | sort_by(-(.dir | length))' <<< "$metadata")
+
+        # The package of each group and all the workspace packages that it
+        # depends on.
+        groups=$(jq -Rnc '
+          [inputs | select(length > 0) | split("=")
+            | if length == 2 then {key: .[0], value: .[1]}
+              else error("Each group line must be <group>=<package>") end]
+          | from_entries' <<< "$GROUPS_INPUT")
+        closures=$(jq -c --argjson groups "$groups" '
+          # Adds the dependencies of each package in the set until the set
+          # does not change.
+          def closure($deps):
+            def grow: [.[], (.[] | ($deps[.] // [])[])] | unique;
+            [.] | until(. == grow; grow);
+          (.packages | map({key: .name, value: [.dependencies[] | select(.path) | .name]}) | from_entries) as $deps
+          | $groups
+          | map_values(
+              if $deps[.] then closure($deps)
+              else error("Package \(.) is not in the workspace") end)' <<< "$metadata")
+        jq -r 'to_entries[] | "\(.key): \(.value | length) packages"' <<< "$closures"
+
+        echo "packages=$packages" >> "$GITHUB_OUTPUT"
+        echo "closures=$closures" >> "$GITHUB_OUTPUT"
+
+    - name: Select the test groups
+      id: select
+      shell: bash
+      env:
+        FILES: ${{ steps.changed.outputs.files }}
+        PACKAGES: ${{ steps.workspace.outputs.packages }}
+        CLOSURES: ${{ steps.workspace.outputs.closures }}
         IGNORE: ${{ inputs.ignore }}
       run: |
-        groups=$(bash "$GITHUB_ACTION_PATH/select-tests.sh" "$BASE" "$GROUPS_INPUT" "$IGNORE")
+        # The workspace package of each changed file that is not ignored. The
+        # package is null when the file is in no workspace package.
+        changed=$(jq -c --argjson packages "$PACKAGES" --arg ignore "$IGNORE" '
+          ($ignore | split("\n") | map(select(length > 0))) as $ignore
+          | map(select(. as $file | $ignore | any(. as $prefix | $file | startswith($prefix)) | not))
+          | map(. as $file | {
+              file: .,
+              package: (first($packages[] | select(. as $p | $file | startswith($p.dir)) | .name) // null)
+            })' <<< "$FILES")
+        jq -r '.[] | "\(.file): \(.package // "in no workspace package")"' <<< "$changed"
+
+        # With no changed files, or with a changed file in no workspace
+        # package, select all the groups.
+        groups=$(jq -c --argjson changed "$changed" --argjson files "$FILES" '
+          if ($files | length) == 0 or any($changed[]; .package == null) then map_values(true)
+          else map_values(any(.[]; IN($changed[].package)))
+          end
+          | map_values(tostring)' <<< "$CLOSURES")
         echo "$groups"
         echo "groups=$groups" >> "$GITHUB_OUTPUT"
