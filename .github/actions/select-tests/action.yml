@@ -4,10 +4,11 @@ description: >-
   affect, from the dependencies between the packages of a Cargo workspace.
   The affected packages are the packages with a changed file, and all the
   workspace packages that depend on them. All the dependency kinds count,
-  also dev-dependencies and optional dependencies. A changed file in no
-  workspace package (for example `Cargo.lock`) affects all the packages,
-  unless a path rule or an ignored prefix matches it. The action needs cargo,
-  jq and a checkout that contains the base revision.
+  also dev-dependencies and optional dependencies. A changed `Cargo.lock`
+  entry affects the workspace packages that depend on its crate. Another
+  changed file in no workspace package affects all the packages, unless a
+  path rule or an ignored prefix matches it. The action needs cargo, jq,
+  python3 and a checkout that contains the base revision.
 inputs:
   base:
     description: The revision to compare with HEAD.
@@ -114,6 +115,37 @@ runs:
         echo "groups=$groups" >> "$GITHUB_OUTPUT"
         echo "paths=$paths" >> "$GITHUB_OUTPUT"
 
+    - name: Find the packages that the Cargo.lock changes affect
+      id: lock
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+      run: |
+        # The [[package]] entries of a Cargo.lock as a JSON array.
+        entries() {
+          python3 -c 'import json, sys, tomllib; json.dump(tomllib.load(sys.stdin.buffer)["package"], sys.stdout)'
+        }
+        # The workspace packages whose entry changed or that depend, directly
+        # or not, on a crate whose entry changed. The dependencies of both
+        # lockfiles count, so that a removed dependency counts too.
+        affected=$({ git show "$BASE:Cargo.lock" | entries; entries < Cargo.lock; } | jq -nc '
+          def closure($graph):
+            def grow: [.[], (.[] | ($graph[.] // [])[])] | unique;
+            unique | until(. == grow; grow);
+          input as $old
+          | input as $new
+          | ($old + $new
+            | map(.name as $name | (.dependencies // [])[] | {key: split(" ")[0], value: $name})
+            | group_by(.key) | map({key: .[0].key, value: map(.value)}) | from_entries) as $rdeps
+          | [$new[] | select(.source == null) | .name] as $workspace
+          | ($old | map(tojson)) as $o
+          | ($new | map(tojson)) as $n
+          | ($o - $n) + ($n - $o)
+          | map(fromjson | .name)
+          | closure($rdeps)
+          | map(select(IN($workspace[])))')
+        echo "packages=$affected" >> "$GITHUB_OUTPUT"
+
     - name: Find the changed packages
       id: changed-packages
       shell: bash
@@ -121,29 +153,34 @@ runs:
         FILES: ${{ steps.changed-files.outputs.files }}
         PACKAGES: ${{ steps.workspace.outputs.packages }}
         PATH_RULES: ${{ steps.rules.outputs.paths }}
+        LOCK_PACKAGES: ${{ steps.lock.outputs.packages }}
       run: |
         # For each changed file, the packages of the longest matching path
         # rule, or else the package of the longest package directory that
         # contains the file. Both are null when the file is in no workspace
-        # package and no rule matches it.
-        mapping=$(jq -c --argjson packages "$PACKAGES" --argjson rules "$PATH_RULES" '
+        # package and no rule matches it. `Cargo.lock` gives the packages that
+        # its changes affect.
+        mapping=$(jq -c --argjson packages "$PACKAGES" --argjson rules "$PATH_RULES" \
+            --argjson lock "$LOCK_PACKAGES" '
           map(. as $file
             | ([$rules | to_entries[] | select(.key as $prefix | $file | startswith($prefix))]
               | max_by(.key | length)) as $rule
             | ([$packages[] | select(.dir as $dir | $file | startswith($dir))]
               | max_by(.dir | length)) as $package
-            | {file: ., rule: $rule.value, package: (if $rule then null else $package.name end)})' <<< "$FILES")
+            | {file: ., rule: $rule.value, package: (if $rule then null else $package.name end)}
+            | if .file == "Cargo.lock" and .rule == null then .lock = $lock end)' <<< "$FILES")
         jq -r '.[] | "\(.file): \(
           if .rule == [] then "ignored"
           elif .rule then "tests of \(.rule | join(" "))"
+          elif .lock then "dependencies of \(.lock | join(" "))"
           else .package // "in no workspace package" end)"' <<< "$mapping"
 
         # The changed packages, or null for all the packages. A file that
         # nothing maps can affect all the packages. An empty diff also gives
         # all the packages, so that a wrong base cannot skip the tests.
         changed=$(jq -c '
-          if . == [] or any(.[]; .rule == null and .package == null) then null
-          else [.[].package // empty] | unique end' <<< "$mapping")
+          if . == [] or any(.[]; .rule == null and .package == null and .lock == null) then null
+          else [(.[].package // empty), (.[].lock // empty | .[])] | unique end' <<< "$mapping")
         # The packages that path rules give.
         tested=$(jq -c '[.[].rule // empty | .[]] | unique' <<< "$mapping")
         echo "packages=$changed" >> "$GITHUB_OUTPUT"
