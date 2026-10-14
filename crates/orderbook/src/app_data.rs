@@ -8,10 +8,6 @@ use {
     moka::sync::Cache,
 };
 
-/// Byte budget of the document cache. A document can be as large as the
-/// configured app data size limit, so the cache is weighed in bytes.
-const CACHE_SIZE_BYTES: u64 = 32 * 1024 * 1024;
-
 /// CoW Protocol API app-data registry.
 pub struct Registry {
     validator: app_data::Validator,
@@ -28,13 +24,14 @@ impl Registry {
         validator: app_data::Validator,
         database: Postgres,
         ipfs: Option<IpfsAppData>,
+        cache_size: u64,
     ) -> Self {
         Self {
             validator,
             database,
             ipfs,
             cache: Cache::builder()
-                .max_capacity(CACHE_SIZE_BYTES)
+                .max_capacity(cache_size)
                 .weigher(|_, document: &String| u32::try_from(document.len()).unwrap_or(u32::MAX))
                 .build(),
         }
@@ -165,7 +162,7 @@ mod tests {
     async fn postgres_caches_found_app_data_only() {
         let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
-        let registry = Registry::new(app_data::Validator::new(8192), db.clone(), None);
+        let registry = Registry::new(app_data::Validator::new(8192), db.clone(), None, 1024);
         let document = r#"{"appCode":"cache"}"#;
         let hash = registry
             .validator

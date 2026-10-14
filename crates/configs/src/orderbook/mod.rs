@@ -36,6 +36,10 @@ const fn default_app_data_size_limit() -> usize {
     8192
 }
 
+const fn default_app_data_cache_size() -> u64 {
+    32 * 1024 * 1024
+}
+
 const fn default_active_order_competition_threshold() -> u32 {
     5
 }
@@ -86,6 +90,11 @@ pub struct Configuration {
     /// Maximum allowed size (in bytes) for order app-data.
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
+
+    /// Maximum total size (in bytes) of the app-data documents cached in
+    /// memory.
+    #[serde(default = "default_app_data_cache_size")]
+    pub app_data_cache_size: u64,
 
     /// Missed auctions threshold after which an order is no longer "active".
     #[serde(default = "default_active_order_competition_threshold")]
@@ -157,6 +166,7 @@ pub mod test_util {
             orderbook::{
                 Configuration,
                 default_active_order_competition_threshold,
+                default_app_data_cache_size,
                 default_app_data_size_limit,
                 default_bind_address,
                 native_price::NativePriceConfig,
@@ -204,6 +214,7 @@ pub mod test_util {
                 ipfs: Default::default(),
                 volume_fee: Default::default(),
                 app_data_size_limit: default_app_data_size_limit(),
+                app_data_cache_size: default_app_data_cache_size(),
                 active_order_competition_threshold: default_active_order_competition_threshold(),
                 unsupported_tokens: Default::default(),
                 eip1271_skip_creation_validation: Default::default(),
@@ -237,6 +248,7 @@ mod tests {
     fn deserialize_full_configuration() {
         let toml = r#"
         app-data-size-limit = 4096
+        app-data-cache-size = 1048576
         active-order-competition-threshold = 10
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
@@ -271,6 +283,7 @@ mod tests {
         let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 4096);
+        assert_eq!(config.app_data_cache_size, 1_048_576);
         assert_eq!(config.active_order_competition_threshold, 10);
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
@@ -314,6 +327,7 @@ mod tests {
         let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 8192);
+        assert_eq!(config.app_data_cache_size, 32 * 1024 * 1024);
         assert_eq!(config.active_order_competition_threshold, 5);
 
         assert_eq!(
@@ -350,6 +364,7 @@ mod tests {
                 auth_token: Some("secret".to_string()),
             }),
             app_data_size_limit: 4096,
+            app_data_cache_size: 1_048_576,
             active_order_competition_threshold: 10,
             volume_fee: Some(VolumeFeeConfig {
                 factor: Some(0.0002.try_into().unwrap()),
