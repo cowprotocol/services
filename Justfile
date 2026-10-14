@@ -86,5 +86,3 @@ format-abi-files:
         fi
         jq . "$f" > "$f.tmp" && mv "$f.tmp" "$f"
     done
-
-# Checks that a change outside the workspace packages runs all the test jobs.
