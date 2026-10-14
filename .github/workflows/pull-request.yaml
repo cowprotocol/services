@@ -132,9 +132,32 @@ jobs:
           just-version: 1.39.0
       - run: just test-db
 
+  # Decides which slow test jobs a PR can affect. Those jobs skip only on an
+  # explicit `false`, so they all run whenever this job fails or doesn't run.
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      driver: ${{ steps.affected.outputs.driver }}
+      e2e: ${{ steps.affected.outputs.e2e }}
+      solana: ${{ steps.affected.outputs.solana }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - id: affected
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE"
+          python3 .github/scripts/affected-jobs.py "$BASE" HEAD >> "$GITHUB_OUTPUT"
+
   # Runs against a database holding only the solana.* series, so a schema
   # accidentally depending on the base series fails here.
   test-db-solana:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.solana != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -167,6 +190,8 @@ jobs:
   # carry the names the branch ruleset requires.
   test-local-node-shard:
     name: test-local-node (${{ matrix.shard }}/4)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     strategy:
@@ -206,19 +231,22 @@ jobs:
       - run: just test-e2e-local --partition count:${{ matrix.shard }}/4
 
   test-local-node:
-    needs: test-local-node-shard
+    needs: [changes, test-local-node-shard]
     # Runs even when a shard fails: a skipped required check counts as passing.
-    if: always()
+    if: ${{ always() && needs.changes.outputs.e2e != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.test-local-node-shard.result }}" = success
 
   test-forked-node:
     name: test-forked-node (${{ matrix.shard }}/2)
+    needs: changes
     # Do not run this job on forks since some secrets are required for it.
     if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      needs.changes.outputs.e2e != 'false' && !cancelled() && (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      )
     timeout-minutes: 60
     runs-on: ubuntu-latest
     strategy:
@@ -260,6 +288,8 @@ jobs:
       - run: just test-e2e-forked --partition count:${{ matrix.shard }}/2
 
   test-driver:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.driver != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
