@@ -249,8 +249,6 @@ pub struct QuoteCompetition {
     pub metadata: QuoteCompetitionMetadata,
 }
 
-/// Only logs a summary of the winning quote instead of all quotes since those
-/// can be huge (e.g. interactions in the metadata).
 impl std::fmt::Debug for QuoteCompetition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let winner = self.quotes.first().expect("non-empty by construction");
