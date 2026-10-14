@@ -63,6 +63,9 @@ pub enum Kind {
         reason: String,
     },
     Cancelled,
+    /// The solver asked the driver to withdraw this settlement while it was
+    /// in flight, and the driver did so before it was mined.
+    CancelledBySolver,
     Expired,
     Fail,
     PostprocessingTimedOut,

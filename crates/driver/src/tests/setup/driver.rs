@@ -175,6 +175,14 @@ pub fn settle_req(
     })
 }
 
+/// Create a request for the driver /cancel endpoint.
+pub fn cancel_req(solution_id: u64, auction_id: &str) -> serde_json::Value {
+    json!({
+        "solutionId": solution_id,
+        "auctionId": auction_id,
+    })
+}
+
 /// Create a request for the driver /settle_fast_path endpoint.
 pub fn settle_fast_path_req(
     submission_deadline_latest_block: u64,

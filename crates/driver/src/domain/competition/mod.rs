@@ -1,11 +1,12 @@
 use {
     super::{
         Mempools,
-        mempools::SubmissionMode,
+        mempools::{self, SubmissionMode},
         time::{self, Remaining},
     },
     crate::{
         domain::{
+            cancellation::{self, Withdrawal},
             competition::{
                 order::Uid,
                 pre_processing::DataFetchingTasks,
@@ -283,6 +284,8 @@ pub struct Competition {
     fetcher: Arc<pre_processing::DataAggregator>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
+    /// Lets the solver withdraw a settlement that is being submitted.
+    cancellation: Arc<cancellation::Registry>,
 }
 
 impl Competition {
@@ -323,6 +326,7 @@ impl Competition {
             fetcher,
             order_sorting_strategies,
             submitter_pool,
+            cancellation: Default::default(),
         })
     }
 
@@ -912,6 +916,17 @@ impl Competition {
         SettleTaskHandle(handle).await
     }
 
+    /// Withdraw a settlement at the solver's request. Every checkpoint in
+    /// the submission path that is still ahead observes this, including
+    /// while the transaction already sits in the mempool: there the driver
+    /// replaces it with a cancellation transaction, which makes the
+    /// settlement fail rather than be mined.
+    pub fn withdraw(&self, auction_id: auction::Id, solution_id: u64) -> Withdrawal {
+        let withdrawal = self.cancellation.withdraw((auction_id, solution_id));
+        tracing::info!(?withdrawal, %auction_id, solution_id, "solver withdrew a settlement");
+        withdrawal
+    }
+
     pub fn ensure_settle_queue_capacity(&self) -> Result<(), Error> {
         if self.submitter_pool.admission.available_permits() == 0 {
             tracing::warn!("no idle submission slots; auction is rejected");
@@ -927,6 +942,11 @@ impl Competition {
         solution_id: u64,
         submission_deadline: BlockNo,
     ) -> Result<Settled, Error> {
+        // Registered before any other work so a withdrawal that arrives while
+        // the settlement is still being encoded is not missed. Dropping the
+        // registration deregisters it again, whatever the outcome.
+        let (cancel, _registration) = self.cancellation.register((auction_id, solution_id));
+
         let settlement = {
             let mut lock = self.settlements.lock().unwrap();
             let index = lock
@@ -965,6 +985,27 @@ impl Competition {
 
         notify::settlement_started(&self.solver, settlement.auction_id, settlement.solution());
 
+        // The solver has just learned that it won, and this is the first point
+        // at which it can act on that. Withdrawing here costs nothing: no
+        // submission slot has been taken and nothing has been broadcast. It is
+        // reported through the same notification as a withdrawal from deeper
+        // in the submission path, so the solver sees one outcome regardless of
+        // which checkpoint caught it.
+        if cancel.is_raised() {
+            tracing::info!("solver withdrew the settlement before submission started");
+            let executed = Err(mempools::Error::CancelledBySolver {
+                submitted_at_block: None,
+                cancelled_at_block: self.eth.current_block().borrow().number.into(),
+            });
+            notify::executed(
+                &self.solver,
+                settlement.auction_id,
+                settlement.solution(),
+                &executed,
+            );
+            return Err(Error::SubmissionError);
+        }
+
         // Acquire a submission slot. The pool prefers the direct solver EOA
         // (no forwarding overhead); falls back to a delegated EIP-7702
         // submission account when the solver EOA is busy.
@@ -977,7 +1018,7 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(&encoded, submission_deadline, &mode)
+            .execute(&encoded, submission_deadline, &mode, &cancel)
             .await;
 
         notify::executed(

@@ -1,7 +1,11 @@
 use {
     super::competition::solution::GasFeeOverride,
     crate::{
-        domain::{blockchain::TxStatus, competition::solution::settlement::EncodedSettlement},
+        domain::{
+            CancelSignal,
+            blockchain::TxStatus,
+            competition::solution::settlement::EncodedSettlement,
+        },
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
@@ -68,6 +72,7 @@ impl Mempools {
         settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
+        cancel: &CancelSignal,
     ) -> Result<eth::TxId, Error> {
         let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
@@ -78,7 +83,7 @@ impl Mempools {
                 .map(|(mempool, stat)| {
                     async move {
                         let result = self
-                            .submit(mempool, settlement, submission_deadline, mode)
+                            .submit(mempool, settlement, submission_deadline, mode, cancel)
                             .instrument(tracing::info_span!("mempool", kind = %mempool))
                             .await;
                         // Log inline so errors from mempools that later get
@@ -132,6 +137,7 @@ impl Mempools {
         settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
+        cancel: &CancelSignal,
     ) -> Result<SubmissionSuccess, Error> {
         if self.is_disabled(mempool, settlement) {
             return Err(Error::Disabled);
@@ -208,6 +214,19 @@ impl Mempools {
             replacement_gas_price.as_ref(),
         );
 
+        // The last point at which the solver can withdraw for free: nothing
+        // has been broadcast yet, so there is no tx to replace.
+        if cancel.is_raised() {
+            tracing::info!(
+                ?signer,
+                "solver withdrew the settlement before it was broadcast"
+            );
+            return Err(Error::CancelledBySolver {
+                submitted_at_block: None,
+                cancelled_at_block: self.ethereum.current_block().borrow().number.into(),
+            });
+        }
+
         tracing::debug!(
             ?submission_block,
             ?blocks_until_deadline,
@@ -228,7 +247,7 @@ impl Mempools {
             .await?;
 
         // Wait for the transaction to be mined, expired or failing.
-        let result = async {
+        let wait_for_outcome = async {
             while let Some(block) = block_stream.next().await {
                 tracing::debug!(?hash, current_block = ?block.number, "checking if tx is confirmed");
                 let receipt = self
@@ -334,8 +353,32 @@ impl Mempools {
             Err(Error::Other(anyhow!(
                 "Block stream finished unexpectedly"
             )))
-        }
-        .await;
+        };
+
+        // The settlement is in flight. Race the solver's withdrawal against it
+        // getting mined, expiring or starting to fail. `biased` lets the
+        // withdrawal win a tie: once the solver has asked for the settlement to
+        // be dropped we would rather replace it and report a revert than let a
+        // late inclusion through. If the tx turns out to have been mined anyway
+        // the check below still reports success, because at that point the
+        // cancellation genuinely lost the race.
+        let result = tokio::select! {
+            biased;
+            () = cancel.raised() => {
+                let cancelled_at_block = self.ethereum.current_block().borrow().number;
+                tracing::info!(
+                    settle_tx_hash = ?hash,
+                    cancelled_at_block,
+                    "solver withdrew the settlement while it was in flight, cancelling"
+                );
+                let _ = self.cancel(mempool, final_gas_price, signer, nonce).await;
+                Err(Error::CancelledBySolver {
+                    submitted_at_block: Some(submission_block),
+                    cancelled_at_block: cancelled_at_block.into(),
+                })
+            }
+            result = wait_for_outcome => result,
+        };
 
         if result.is_err() {
             // One last check in case the tx landed after the loop exited, e.g.
@@ -513,6 +556,10 @@ impl From<&Result<SubmissionSuccess, Error>> for Outcome {
                 reason: "Expired",
                 blocks_passed: err.blocks_passed(),
             },
+            Err(err @ Error::CancelledBySolver { .. }) => Outcome::Failed {
+                reason: "CancelledBySolver",
+                blocks_passed: err.blocks_passed(),
+            },
             Err(Error::Other(_)) => Outcome::Failed {
                 reason: "Other",
                 blocks_passed: None,
@@ -640,6 +687,16 @@ pub enum Error {
         submitted_at_block: BlockNo,
         submission_deadline: BlockNo,
     },
+    #[error(
+        "Settlement withdrawn by the solver at block {cancelled_at_block}, submitted at block: \
+         {submitted_at_block:?}"
+    )]
+    CancelledBySolver {
+        /// `None` if the solver withdrew before the tx was broadcast, in
+        /// which case no cancellation tx was needed either.
+        submitted_at_block: Option<BlockNo>,
+        cancelled_at_block: BlockNo,
+    },
     #[error("Strategy disabled for this tx")]
     Disabled,
     #[error("Failed to submit: {0:?}")]
@@ -665,6 +722,15 @@ impl Error {
                 submission_deadline,
                 ..
             } => (*submitted_at_block, *submission_deadline),
+            Self::CancelledBySolver {
+                submitted_at_block: Some(submitted_at_block),
+                cancelled_at_block,
+            } => (*submitted_at_block, *cancelled_at_block),
+            // Withdrawn before the tx was broadcast, so no blocks elapsed.
+            Self::CancelledBySolver {
+                submitted_at_block: None,
+                ..
+            } => return None,
             Self::Disabled | Self::Other(_) => return None,
         };
         Some(end.saturating_sub(start).0)

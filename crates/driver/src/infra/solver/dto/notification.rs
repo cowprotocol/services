@@ -55,6 +55,9 @@ pub fn new(
                 notify::Settlement::SimulationRevert => solvers_dto::notification::Kind::Cancelled,
                 notify::Settlement::Fail => solvers_dto::notification::Kind::Fail,
                 notify::Settlement::Expired => solvers_dto::notification::Kind::Expired,
+                notify::Settlement::CancelledBySolver => {
+                    solvers_dto::notification::Kind::CancelledBySolver
+                }
             },
             notify::Kind::PostprocessingTimedOut => {
                 solvers_dto::notification::Kind::PostprocessingTimedOut

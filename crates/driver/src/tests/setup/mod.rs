@@ -1211,6 +1211,31 @@ impl Test {
         self.settle_request(solver_name, "settle", request).await
     }
 
+    /// Call the /cancel endpoint to withdraw a settlement, and return the
+    /// `status` the driver reported.
+    pub async fn cancel(&self, solution_id: u64) -> String {
+        let res = self
+            .client
+            .post(format!(
+                "http://{}/{}/cancel",
+                self.driver.addr,
+                solver::NAME
+            ))
+            .json(&driver::cancel_req(
+                solution_id,
+                &self.auction_id.to_string(),
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body: serde_json::Value = res.json().await.unwrap();
+        body["status"]
+            .as_str()
+            .expect("the driver reports a withdrawal status")
+            .to_owned()
+    }
+
     /// The quote id the fast-path quote of this test was cached under.
     pub fn quote_id(&self) -> i64 {
         self.quote_id

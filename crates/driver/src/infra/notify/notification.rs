@@ -70,6 +70,9 @@ pub enum Settlement {
     SimulationRevert,
     /// Transaction was not confirmed in time
     Expired,
+    /// The solver withdrew the settlement while it was in flight, and the
+    /// driver cancelled it before it was mined.
+    CancelledBySolver,
     /// Winning solver failed to settle the transaction onchain for other
     /// reasons.
     Fail,
