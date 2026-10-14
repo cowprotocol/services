@@ -34,9 +34,6 @@ pub enum AtBlock {
     },
     /// Fetches liquidity for the latest state of the blockchain.
     Latest,
-    /// Useful for chains that can't fetch liquidity on non-finalized
-    /// blocks(e.g. Avalanche).
-    Finalized,
 }
 
 impl Fetcher {

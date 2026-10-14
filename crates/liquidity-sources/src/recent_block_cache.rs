@@ -76,7 +76,6 @@ pub enum Block {
         schedule_update: bool,
     },
     Number(u64),
-    Finalized,
 }
 
 impl Block {
@@ -98,7 +97,6 @@ impl From<Block> for BlockId {
         match value {
             Block::Recent { .. } => BlockId::latest(),
             Block::Number(n) => BlockId::number(n),
-            Block::Finalized => BlockId::finalized(),
         }
     }
 }
@@ -318,7 +316,7 @@ where
 
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
         let block_number = match block {
-            Block::Recent { .. } | Block::Finalized => None,
+            Block::Recent { .. } => None,
             Block::Number(number) => Some(number),
         };
 
@@ -425,7 +423,7 @@ where
     fn get(&mut self, key: K, block: Block) -> Option<&[V]> {
         let cached_at = match block {
             Block::Number(number) => number,
-            Block::Recent { .. } | Block::Finalized => self
+            Block::Recent { .. } => self
                 .cached_most_recently_at_block
                 .get(&key)
                 .copied()

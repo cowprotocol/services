@@ -485,7 +485,7 @@ struct ContractsConfig {
     deadline_check: Option<eth::Address>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
@@ -541,7 +541,24 @@ struct LiquidityConfig {
     /// (`get_liquidity{pair_count=..}` in the driver logs); pairs beyond that
     /// get refetched on every /solve request.
     #[serde(default = "default_liquidity_max_auto_updated_pairs")]
-    max_auto_updated_pairs: usize,
+    max_auto_updated_pairs: NonZeroUsize,
+}
+
+impl Default for LiquidityConfig {
+    fn default() -> Self {
+        Self {
+            base_tokens: Default::default(),
+            uniswap_v2: Default::default(),
+            swapr: Default::default(),
+            uniswap_v3: Default::default(),
+            balancer_v2: Default::default(),
+            zeroex: Default::default(),
+            fetch_at_block: Default::default(),
+            refresh_cooldown: default_liquidity_refresh_cooldown(),
+            max_recent_block_age: default_liquidity_max_recent_block_age(),
+            max_auto_updated_pairs: default_liquidity_max_auto_updated_pairs(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1050,8 +1067,8 @@ fn default_liquidity_max_recent_block_age() -> u64 {
     4
 }
 
-fn default_liquidity_max_auto_updated_pairs() -> usize {
-    2000
+fn default_liquidity_max_auto_updated_pairs() -> NonZeroUsize {
+    NonZeroUsize::new(2000).unwrap()
 }
 
 /// Which block should be used to fetch the liquidity.
@@ -1061,8 +1078,6 @@ enum AtBlock {
     /// Use the latest block received by the `CurrentBlockWatcher`.
     #[default]
     Latest,
-    /// Use the latest finalized block.
-    Finalized,
     /// Use the state of the last background refresh of the liquidity caches,
     /// which is at most `refresh-cooldown`. Avoids refetching all pools on
     /// every /solve request on chains that produce several blocks between
@@ -1076,11 +1091,15 @@ mod tests {
 
     #[test]
     fn liquidity_cache_defaults() {
-        let config: LiquidityConfig = toml::from_str("").unwrap();
-        assert!(matches!(config.fetch_at_block, AtBlock::Latest));
-        assert_eq!(config.refresh_cooldown, Duration::from_secs(2));
-        assert_eq!(config.max_recent_block_age, 4);
-        assert_eq!(config.max_auto_updated_pairs, 1000);
+        for config in [
+            LiquidityConfig::default(),
+            toml::from_str::<LiquidityConfig>("").unwrap(),
+        ] {
+            assert!(matches!(config.fetch_at_block, AtBlock::Latest));
+            assert_eq!(config.refresh_cooldown, Duration::from_secs(2));
+            assert_eq!(config.max_recent_block_age, 4);
+            assert_eq!(config.max_auto_updated_pairs.get(), 2000);
+        }
 
         let config: LiquidityConfig = toml::from_str(
             r#"
@@ -1094,7 +1113,12 @@ mod tests {
         assert!(matches!(config.fetch_at_block, AtBlock::Recent));
         assert_eq!(config.refresh_cooldown, Duration::from_millis(500));
         assert_eq!(config.max_recent_block_age, 10);
-        assert_eq!(config.max_auto_updated_pairs, 2000);
+        assert_eq!(config.max_auto_updated_pairs.get(), 2000);
+    }
+
+    #[test]
+    fn rejects_zero_max_auto_updated_pairs() {
+        assert!(toml::from_str::<LiquidityConfig>("max-auto-updated-pairs = 0").is_err());
     }
 
     #[test]

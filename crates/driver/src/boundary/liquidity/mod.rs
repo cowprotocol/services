@@ -151,7 +151,6 @@ impl Fetcher {
             infra::liquidity::AtBlock::Recent { schedule_update } => {
                 recent_block_cache::Block::Recent { schedule_update }
             }
-            infra::liquidity::AtBlock::Finalized => recent_block_cache::Block::Finalized,
             infra::liquidity::AtBlock::Latest => {
                 let block_number = self.blocks.borrow().number;
                 recent_block_cache::Block::Number(block_number)
