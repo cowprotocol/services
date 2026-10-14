@@ -101,6 +101,8 @@ jobs:
         with:
           just-version: 1.39.0
       - run: cargo build --locked --tests
+      - name: Print hashes of the binaries in target/
+        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
       - run: just test-unit
 
   test-db:
@@ -130,6 +132,10 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
+      # Wait for the background build to finish.
+      - run: cargo build --locked -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests
+      - name: Print hashes of the binaries in target/
+        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
       - run: just test-db
 
   # Runs against a database holding only the solana.* series, so a schema
@@ -161,6 +167,10 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
+      # Wait for the background build to finish.
+      - run: cargo build --locked -p solana-indexer -p autopilot-svm --tests
+      - name: Print hashes of the binaries in target/
+        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
       - run: just test-db-solana
 
   # Sharded with nextest partitions, one runner per shard. The gate jobs
@@ -203,6 +213,10 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
+      # Wait for the background build to finish.
+      - run: cargo build --locked -p e2e --tests
+      - name: Print hashes of the binaries in target/
+        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
       - run: just test-e2e-local --partition count:${{ matrix.shard }}/4
 
   test-local-node:
@@ -255,6 +269,10 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
+      # Wait for the background build to finish.
+      - run: cargo build --locked -p e2e --tests
+      - name: Print hashes of the binaries in target/
+        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
       - run: just test-e2e-forked --partition count:${{ matrix.shard }}/2
 
   test-driver:
@@ -286,6 +304,8 @@ jobs:
           just-version: 1.39.0
       # Build the driver's tests.
       - run: cargo build --locked -p driver --tests
+      - name: Print hashes of the binaries in target/
+        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: just test-driver
 
@@ -363,6 +383,10 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
+      # Wait for the background build to finish.
+      - run: cargo build --locked -p e2e --tests
+      - name: Print hashes of the binaries in target/
+        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
       - name: Run test in a loop
         run: |
           attempt=1
