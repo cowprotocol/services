@@ -79,7 +79,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::panic_hook::install();
     observe::tracing::init::initialize_reentrant(&config.observe_config());
     let version = observe::version::git_version();
-    tracing::info!(%version, "starting the solana autopilot");
+    tracing::info!(%version, "running solana autopilot");
     run(config).await
 }
 
