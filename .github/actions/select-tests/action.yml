@@ -5,8 +5,9 @@ description: >-
   The affected packages are the packages with a changed file, and all the
   workspace packages that depend on them. All the dependency kinds count,
   also dev-dependencies and optional dependencies. A changed file in no
-  workspace package (for example `Cargo.lock`) affects all the packages. The
-  action needs cargo, jq and a checkout that contains the base revision.
+  workspace package (for example `Cargo.lock`) affects all the packages,
+  unless a path rule or an ignored prefix matches it. The action needs cargo,
+  jq and a checkout that contains the base revision.
 inputs:
   base:
     description: The revision to compare with HEAD.
@@ -19,10 +20,21 @@ inputs:
       selected when one of its packages is affected.
     required: false
     default: ""
+  paths:
+    description: >-
+      One `<prefix>=<packages>` line for each path rule. A changed file that
+      starts with `<prefix>` affects the tests of the listed workspace
+      packages, but not the packages that depend on them. Use a rule for files
+      that tests read when they run, for example database migrations, not for
+      files that a package compiles. `<packages>` has the same form as in
+      `groups`. When more than one rule matches a file, the longest prefix
+      wins. A rule also wins over the package directory of the file.
+    required: false
+    default: ""
   ignore:
     description: >-
-      One path prefix on each line. No test uses the files with these
-      prefixes.
+      One path prefix on each line. A changed file with one of these prefixes
+      affects no packages. It is the same as a path rule with no packages.
     required: false
     default: ""
 outputs:
@@ -46,35 +58,61 @@ runs:
       env:
         BASE: ${{ inputs.base }}
       run: |
-        files=$(git diff --no-renames --name-only "$BASE" HEAD)
-        echo "$files"
-        echo "files=$(jq -Rnc '[inputs | select(length > 0)]' <<< "$files")" >> "$GITHUB_OUTPUT"
+        # A moved file gives its old path and its new path.
+        files=$(git diff --no-renames --name-only "$BASE" HEAD | jq -Rnc '[inputs]')
+        jq -r '.[]' <<< "$files"
+        echo "files=$files" >> "$GITHUB_OUTPUT"
 
     - name: Find the workspace packages
       id: workspace
       shell: bash
       run: |
-        metadata=$(cargo metadata --no-deps --offline --format-version 1)
-
-        # The directory of each workspace package, relative to the workspace
-        # root and with a `/` at the end, and its name. The longest directory
-        # is first, so that a package in the directory of another package
-        # matches first.
-        packages=$(jq -c '
+        # The name of each workspace package, its directory relative to the
+        # workspace root with a `/` at the end, and the workspace packages that
+        # it depends on. A dependency with a `path` is a workspace package.
+        packages=$(cargo metadata --no-deps --offline --format-version 1 | jq -c '
           .workspace_root as $root
           | .packages
-          | map({dir: (.manifest_path | ltrimstr("\($root)/") | rtrimstr("Cargo.toml")), name})
-          | sort_by(-(.dir | length))' <<< "$metadata")
-
-        # The workspace packages that each workspace package depends on.
-        deps=$(jq -c '
-          .packages
-          | map({key: .name, value: [.dependencies[] | select(.path) | .name] | unique})
-          | from_entries' <<< "$metadata")
-        jq -r 'length | "\(.) workspace packages"' <<< "$deps"
-
+          | map({
+              name,
+              dir: (.manifest_path | ltrimstr("\($root)/") | rtrimstr("Cargo.toml")),
+              deps: [.dependencies[] | select(.path) | .name]
+            })')
+        jq -r '"\(length) workspace packages"' <<< "$packages"
         echo "packages=$packages" >> "$GITHUB_OUTPUT"
-        echo "deps=$deps" >> "$GITHUB_OUTPUT"
+
+    - name: Read the groups and the path rules
+      id: rules
+      shell: bash
+      env:
+        PACKAGES: ${{ steps.workspace.outputs.packages }}
+        GROUP_LINES: ${{ inputs.groups }}
+        PATH_LINES: ${{ inputs.paths }}
+        IGNORE: ${{ inputs.ignore }}
+      run: |
+        rules=$(jq -nc --argjson packages "$PACKAGES" --arg group_lines "$GROUP_LINES" \
+            --arg path_lines "$PATH_LINES" --arg ignore "$IGNORE" '
+          # Reads `<key>=<packages>` lines into a map from each key to its
+          # packages. `$names` is the names of all the workspace packages.
+          def package_lines($names):
+            split("\n") | map(select(. != "")
+              | capture("^(?<key>[^=]+)=(?<value>[^=]*)$") // error("Not a <name>=<packages> line: \(.)")
+              | .value |= [scan("\\S+") | if . == "*" then $names[] else . end]
+              | if .value == [] then error("No packages for \(.key)") end
+              | if (.value - $names) != [] then error("Not workspace packages: \(.value - $names | join(" "))") end)
+            | from_entries;
+          [$packages[].name] as $names
+          | {
+              groups: ($group_lines | package_lines($names)),
+              paths: (($path_lines | package_lines($names))
+                + ($ignore | split("\n") | map(select(. != "") | {key: ., value: []}) | from_entries))
+            }')
+        jq -r '.paths | to_entries[] | "\(.key): \(if .value == [] then "ignored" else .value | join(" ") end)"' <<< "$rules"
+
+        groups=$(jq -c .groups <<< "$rules")
+        paths=$(jq -c .paths <<< "$rules")
+        echo "groups=$groups" >> "$GITHUB_OUTPUT"
+        echo "paths=$paths" >> "$GITHUB_OUTPUT"
 
     - name: Find the changed packages
       id: changed-packages
@@ -82,63 +120,70 @@ runs:
       env:
         FILES: ${{ steps.changed-files.outputs.files }}
         PACKAGES: ${{ steps.workspace.outputs.packages }}
-        IGNORE: ${{ inputs.ignore }}
+        PATH_RULES: ${{ steps.rules.outputs.paths }}
       run: |
-        # The workspace package of each changed file that is not ignored. The
-        # package is null when the file is in no workspace package.
-        changed=$(jq -c --argjson packages "$PACKAGES" --arg ignore "$IGNORE" '
-          ($ignore | split("\n") | map(select(length > 0))) as $ignore
-          | map(select(. as $file | $ignore | any(. as $prefix | $file | startswith($prefix)) | not))
-          | map(. as $file | {
-              file: .,
-              package: (first($packages[] | select(. as $p | $file | startswith($p.dir)) | .name) // null)
-            })' <<< "$FILES")
-        jq -r '.[] | "\(.file): \(.package // "in no workspace package")"' <<< "$changed"
-        echo "changed=$changed" >> "$GITHUB_OUTPUT"
+        # For each changed file, the packages of the longest matching path
+        # rule, or else the package of the longest package directory that
+        # contains the file. Both are null when the file is in no workspace
+        # package and no rule matches it.
+        mapping=$(jq -c --argjson packages "$PACKAGES" --argjson rules "$PATH_RULES" '
+          map(. as $file
+            | ([$rules | to_entries[] | select(.key as $prefix | $file | startswith($prefix))]
+              | max_by(.key | length)) as $rule
+            | ([$packages[] | select(.dir as $dir | $file | startswith($dir))]
+              | max_by(.dir | length)) as $package
+            | {file: ., rule: $rule.value, package: (if $rule then null else $package.name end)})' <<< "$FILES")
+        jq -r '.[] | "\(.file): \(
+          if .rule == [] then "ignored"
+          elif .rule then "tests of \(.rule | join(" "))"
+          else .package // "in no workspace package" end)"' <<< "$mapping"
+
+        # The changed packages, or null for all the packages. A file that
+        # nothing maps can affect all the packages. An empty diff also gives
+        # all the packages, so that a wrong base cannot skip the tests.
+        changed=$(jq -c '
+          if . == [] or any(.[]; .rule == null and .package == null) then null
+          else [.[].package // empty] | unique end' <<< "$mapping")
+        # The packages that path rules give.
+        tested=$(jq -c '[.[].rule // empty | .[]] | unique' <<< "$mapping")
+        echo "packages=$changed" >> "$GITHUB_OUTPUT"
+        echo "tested=$tested" >> "$GITHUB_OUTPUT"
+
+    - name: Find the affected packages
+      id: affected
+      shell: bash
+      env:
+        PACKAGES: ${{ steps.workspace.outputs.packages }}
+        CHANGED: ${{ steps.changed-packages.outputs.packages }}
+        TESTED: ${{ steps.changed-packages.outputs.tested }}
+      run: |
+        # The changed packages, all the workspace packages that depend on
+        # them, and the packages that path rules give. Null is all the
+        # packages. Packages can depend on each other in a loop. Thus the step
+        # adds the dependents again until it adds no package.
+        affected=$(jq -c --argjson packages "$PACKAGES" --argjson tested "$TESTED" '
+          def add_dependents:
+            . as $set
+            | [.[], ($packages[] | select(any(.deps[]; IN($set[]))) | .name)] | unique;
+          if . == null then null
+          else until(. == add_dependents; add_dependents) + $tested | unique end' <<< "$CHANGED")
+        jq -r 'if . == null then "All the packages" elif . == [] then "No packages" else .[] end' <<< "$affected"
+        echo "packages=$affected" >> "$GITHUB_OUTPUT"
 
     - name: Select the tests
       id: select
       shell: bash
       env:
-        FILES: ${{ steps.changed-files.outputs.files }}
-        DEPS: ${{ steps.workspace.outputs.deps }}
-        CHANGED: ${{ steps.changed-packages.outputs.changed }}
-        GROUPS_INPUT: ${{ inputs.groups }}
+        GROUP_PACKAGES: ${{ steps.rules.outputs.groups }}
+        AFFECTED: ${{ steps.affected.outputs.packages }}
       run: |
-        groups=$(jq -Rnc --argjson deps "$DEPS" '
-          [inputs | select(length > 0) | split("=")
-            | if length == 2 then {key: .[0], value: (.[1] | split(" ") | map(select(length > 0)))}
-              else error("Each group line must be <group>=<packages>") end
-            | .value |= map(if . == "*" then ($deps | keys)[] else . end)
-            | if .value == [] then error("Group \(.key) has no packages") else . end
-            | if any(.value[]; $deps[.] == null)
-              then error("Not in the workspace: \(.value | map(select($deps[.] == null)) | join(" "))")
-              else . end]
-          | from_entries' <<< "$GROUPS_INPUT")
-
-        # The affected packages, or null for all the packages. With no changed
-        # files, or with a changed file in no workspace package, all the
-        # packages are affected.
-        affected=$(jq -c --argjson files "$FILES" --argjson changed "$CHANGED" '
-          # Adds the packages that the graph gives for each package in the
-          # set, until the set does not change.
-          def closure($graph):
-            def grow: [.[], (.[] | ($graph[.] // [])[])] | unique;
-            unique | until(. == grow; grow);
-          # The workspace packages that depend directly on each package.
-          (to_entries | map(.key as $package | .value[] | {key: ., value: $package})
-            | group_by(.key) | map({key: .[0].key, value: map(.value)}) | from_entries) as $rdeps
-          | if ($files | length) == 0 or any($changed[]; .package == null) then null
-            else [$changed[].package] | closure($rdeps) end' <<< "$DEPS")
-        jq -r 'if . == null then "Affected: all packages" else "Affected: \(length) packages: \(join(" "))" end' <<< "$affected"
-
-        selected=$(jq -c --argjson affected "$affected" '
-          map_values(if $affected == null then true else any(.[]; IN($affected[])) end | tostring)' <<< "$groups")
+        selected=$(jq -c --argjson affected "$AFFECTED" '
+          map_values(if $affected == null then true else any(.[]; IN($affected[])) end | tostring)' <<< "$GROUP_PACKAGES")
         filter=$(jq -r '
           if . == null then "all()"
           elif . == [] then "none()"
-          else map("package(=\(.))") | join(" | ") end' <<< "$affected")
-        echo "Groups: $selected"
+          else map("package(=\(.))") | join(" | ") end' <<< "$AFFECTED")
+        jq -r 'to_entries[] | "\(.key): \(.value)"' <<< "$selected"
         echo "Nextest filter: $filter"
 
         echo "groups=$selected" >> "$GITHUB_OUTPUT"
