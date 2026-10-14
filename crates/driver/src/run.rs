@@ -65,7 +65,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
 
     let version = observe::version::git_version();
 
-    tracing::info!(%version, "running driver with {config:#?}");
+    tracing::info!(%version, "starting the driver with {config:#?}");
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let eth = Ethereum::new(
