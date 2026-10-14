@@ -257,14 +257,9 @@ jobs:
           just-version: 1.39.0
       - run: just test-e2e-forked --partition count:${{ matrix.shard }}/2
 
-  test-driver-shard:
-    name: test-driver (${{ matrix.shard }}/3)
+  test-driver:
     timeout-minutes: 60
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -292,13 +287,7 @@ jobs:
       # Build the driver's tests.
       - run: cargo build --locked -p driver --tests
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
-      - run: just test-driver --partition count:${{ matrix.shard }}/3
-
-  test-driver:
-    needs: test-driver-shard
-    runs-on: ubuntu-latest
-    steps:
-      - run: test "${{ needs.test-driver-shard.result }}" = success
+      - run: just test-driver
 
   solidity-artifacts:
     timeout-minutes: 30
