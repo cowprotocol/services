@@ -6819,6 +6819,7 @@ dependencies = [
  "humantime-serde",
  "mockall",
  "model",
+ "moka",
  "multibase",
  "num",
  "number",
