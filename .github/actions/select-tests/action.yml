@@ -2,13 +2,18 @@ name: Select tests
 description: >-
   Selects the tests that the changes between a base revision and HEAD can
   affect, from the dependencies between the packages of a Cargo workspace.
-  The affected packages are the packages with a changed file, and all the
-  workspace packages that depend on them. All the dependency kinds count,
-  also dev-dependencies and optional dependencies. A changed `Cargo.lock`
-  entry affects the workspace packages that depend on its crate. Another
-  changed file in no workspace package affects all the packages, unless a
-  path rule or an ignored prefix matches it. The action needs cargo, jq,
-  python3 and a checkout that contains the base revision.
+  For each changed file, the first of these cases that applies gives the
+  affected packages. (1) A path rule or an ignored prefix matches the file:
+  the packages of the rule with the longest prefix, without the packages that
+  depend on them. (2) The file is the root `Cargo.lock`: the workspace
+  packages whose entry changed or that depend, directly or not, on a crate
+  whose entry changed, and all the workspace packages that depend on them.
+  (3) A workspace package contains the file: that package and all the
+  workspace packages that depend on it, through all the dependency kinds
+  (also dev-dependencies and optional dependencies). (4) In all other cases,
+  for example the root `Cargo.toml`: all the packages. An empty diff also
+  affects all the packages. The action needs cargo, jq, python3 and a
+  checkout that contains the base revision.
 inputs:
   base:
     description: The revision to compare with HEAD.
@@ -16,26 +21,29 @@ inputs:
   groups:
     description: >-
       One `<group>=<packages>` line for each test group. `<packages>` is a
-      list of the workspace packages that the group tests, with a space
-      between the names. `*` is all the workspace packages. A group is
-      selected when one of its packages is affected.
+      list of workspace packages, with a space between the names. `*` is all
+      the workspace packages. Give the packages whose tests the job runs. A
+      group is selected when one of its packages is affected.
     required: false
     default: ""
   paths:
     description: >-
-      One `<prefix>=<packages>` line for each path rule. A changed file that
-      starts with `<prefix>` affects the tests of the listed workspace
-      packages, but not the packages that depend on them. Use a rule for files
-      that tests read when they run, for example database migrations, not for
-      files that a package compiles. `<packages>` has the same form as in
-      `groups`. When more than one rule matches a file, the longest prefix
-      wins. A rule also wins over the package directory of the file.
+      One `<prefix>=<packages>` line for each path rule. `<packages>` has the
+      same form as in `groups`. A changed file that starts with `<prefix>`
+      affects only the tests of the listed packages: not the packages that
+      depend on them, and not the package that contains the file, unless the
+      rule lists it. A prefix is plain text, thus end the prefix of a
+      directory with `/`. Without a rule, a file in no workspace package
+      affects all the packages. Use a rule for files that tests read when they
+      run, for example database migrations, and not for files that a package
+      compiles.
     required: false
     default: ""
   ignore:
     description: >-
       One path prefix on each line. A changed file with one of these prefixes
-      affects no packages. It is the same as a path rule with no packages.
+      affects no packages. Use it for files that no test reads. When prefixes
+      of `paths` and `ignore` match the same file, the longest prefix wins.
     required: false
     default: ""
 outputs:
@@ -61,7 +69,7 @@ runs:
       run: |
         # A moved file gives its old path and its new path.
         files=$(git diff --no-renames --name-only "$BASE" HEAD | jq -Rnc '[inputs]')
-        jq -r '.[]' <<< "$files"
+        jq -r '"\(length) changed files"' <<< "$files"
         echo "files=$files" >> "$GITHUB_OUTPUT"
 
     - name: Find the workspace packages
@@ -69,8 +77,10 @@ runs:
       shell: bash
       run: |
         # The name of each workspace package, its directory relative to the
-        # workspace root with a `/` at the end, and the workspace packages that
-        # it depends on. A dependency with a `path` is a workspace package.
+        # workspace root, and the workspace packages that it depends on. A
+        # dependency with a `path` is a workspace package. The `/` at the end
+        # of the directory makes sure that `crates/driver/` does not match a
+        # file in `crates/driver-old/`.
         packages=$(cargo metadata --no-deps --offline --format-version 1 | jq -c '
           .workspace_root as $root
           | .packages
@@ -89,31 +99,46 @@ runs:
         PACKAGES: ${{ steps.workspace.outputs.packages }}
         GROUP_LINES: ${{ inputs.groups }}
         PATH_LINES: ${{ inputs.paths }}
-        IGNORE: ${{ inputs.ignore }}
+        IGNORE_LINES: ${{ inputs.ignore }}
       run: |
         rules=$(jq -nc --argjson packages "$PACKAGES" --arg group_lines "$GROUP_LINES" \
-            --arg path_lines "$PATH_LINES" --arg ignore "$IGNORE" '
-          # Reads `<key>=<packages>` lines into a map from each key to its
-          # packages. `$names` is the names of all the workspace packages.
+            --arg path_lines "$PATH_LINES" --arg ignore_lines "$IGNORE_LINES" '
+          # The lines of a text that are not empty.
+          def lines: split("\n") | map(select(. != ""));
+
+          # Reads `<key>=<packages>` lines into a list of {key, packages}.
+          # `$names` is the names of all the workspace packages.
           def package_lines($names):
-            split("\n") | map(select(. != "")
-              | capture("^(?<key>[^=]+)=(?<value>[^=]*)$") // error("Not a <name>=<packages> line: \(.)")
-              | .value |= [scan("\\S+") | if . == "*" then $names[] else . end]
-              | if .value == [] then error("No packages for \(.key)") end
-              | if (.value - $names) != [] then error("Not workspace packages: \(.value - $names | join(" "))") end)
-            | from_entries;
+            lines | map(
+              capture("^(?<key>[^=\\s]+)=(?<packages>[^=]*)$") // error("Not a <key>=<packages> line: \(.)")
+              | .packages |= [scan("\\S+") | if . == "*" then $names[] else . end]
+              | if .packages == [] then error("\(.key): no packages") end
+              | (.packages - $names) as $unknown
+              | if $unknown != [] then error("\(.key): not workspace packages: \($unknown | join(" "))") end);
+
+          # Stops when a key is on more than one line.
+          def unique_keys:
+            (map(.key) | group_by(.) | map(select(length > 1) | .[0])) as $repeated
+            | if $repeated != [] then error("On more than one line: \($repeated | join(" "))") end;
+
           [$packages[].name] as $names
           | {
-              groups: ($group_lines | package_lines($names)),
-              paths: (($path_lines | package_lines($names))
-                + ($ignore | split("\n") | map(select(. != "") | {key: ., value: []}) | from_entries))
+              group_packages: ($group_lines | package_lines($names) | unique_keys
+                | map({key, value: .packages}) | from_entries),
+              path_rules: (
+                ($path_lines | package_lines($names))
+                # An ignored prefix is a path rule with no packages.
+                + ($ignore_lines | lines | map(
+                    capture("^(?<key>\\S+)$") // error("Not a prefix line: \(.)") | {key, packages: []}))
+                | unique_keys
+                | map({prefix: .key, packages}))
             }')
-        jq -r '.paths | to_entries[] | "\(.key): \(if .value == [] then "ignored" else .value | join(" ") end)"' <<< "$rules"
+        jq -r '"\(.group_packages | length) groups, \(.path_rules | length) path rules"' <<< "$rules"
 
-        groups=$(jq -c .groups <<< "$rules")
-        paths=$(jq -c .paths <<< "$rules")
-        echo "groups=$groups" >> "$GITHUB_OUTPUT"
-        echo "paths=$paths" >> "$GITHUB_OUTPUT"
+        group_packages=$(jq -c .group_packages <<< "$rules")
+        path_rules=$(jq -c .path_rules <<< "$rules")
+        echo "group-packages=$group_packages" >> "$GITHUB_OUTPUT"
+        echo "path-rules=$path_rules" >> "$GITHUB_OUTPUT"
 
     - name: Find the packages that the Cargo.lock changes affect
       id: lock
@@ -128,7 +153,7 @@ runs:
         # The workspace packages whose entry changed or that depend, directly
         # or not, on a crate whose entry changed. The dependencies of both
         # lockfiles count, so that a removed dependency counts too.
-        affected=$({ git show "$BASE:Cargo.lock" | entries; entries < Cargo.lock; } | jq -nc '
+        lock_packages=$({ git show "$BASE:Cargo.lock" | entries; entries < Cargo.lock; } | jq -nc '
           def closure($graph):
             def grow: [.[], (.[] | ($graph[.] // [])[])] | unique;
             unique | until(. == grow; grow);
@@ -144,7 +169,7 @@ runs:
           | map(fromjson | .name)
           | closure($rdeps)
           | map(select(IN($workspace[])))')
-        echo "packages=$affected" >> "$GITHUB_OUTPUT"
+        echo "lock-packages=$lock_packages" >> "$GITHUB_OUTPUT"
 
     - name: Find the changed packages
       id: changed-packages
@@ -152,75 +177,93 @@ runs:
       env:
         FILES: ${{ steps.changed-files.outputs.files }}
         PACKAGES: ${{ steps.workspace.outputs.packages }}
-        PATH_RULES: ${{ steps.rules.outputs.paths }}
-        LOCK_PACKAGES: ${{ steps.lock.outputs.packages }}
+        PATH_RULES: ${{ steps.rules.outputs.path-rules }}
+        LOCK_PACKAGES: ${{ steps.lock.outputs.lock-packages }}
       run: |
-        # For each changed file, the packages of the longest matching path
-        # rule, or else the package of the longest package directory that
-        # contains the file. Both are null when the file is in no workspace
-        # package and no rule matches it. `Cargo.lock` gives the packages that
-        # its changes affect.
-        mapping=$(jq -c --argjson packages "$PACKAGES" --argjson rules "$PATH_RULES" \
-            --argjson lock "$LOCK_PACKAGES" '
-          map(. as $file
-            | ([$rules | to_entries[] | select(.key as $prefix | $file | startswith($prefix))]
-              | max_by(.key | length)) as $rule
-            | ([$packages[] | select(.dir as $dir | $file | startswith($dir))]
-              | max_by(.dir | length)) as $package
-            | {file: ., rule: $rule.value, package: (if $rule then null else $package.name end)}
-            | if .file == "Cargo.lock" and .rule == null then .lock = $lock end)' <<< "$FILES")
-        jq -r '.[] | "\(.file): \(
-          if .rule == [] then "ignored"
-          elif .rule then "tests of \(.rule | join(" "))"
-          elif .lock then "dependencies of \(.lock | join(" "))"
-          else .package // "in no workspace package" end)"' <<< "$mapping"
+        # For each changed file: the packages that it changes (their
+        # dependents are also affected), the packages of its path rule (their
+        # dependents are not affected), and a text for the log.
+        changes=$(jq -c --argjson packages "$PACKAGES" --argjson rules "$PATH_RULES" \
+            --argjson lock_packages "$LOCK_PACKAGES" '
+          # The item whose prefix is the longest prefix of the file, or null.
+          def longest_match($file; prefix):
+            map(select(prefix as $prefix | $file | startswith($prefix))) | max_by(prefix | length);
 
-        # The changed packages, or null for all the packages. A file that
-        # nothing maps can affect all the packages. An empty diff also gives
-        # all the packages, so that a wrong base cannot skip the tests.
-        changed=$(jq -c '
-          if . == [] or any(.[]; .rule == null and .package == null and .lock == null) then null
-          else [(.[].package // empty), (.[].lock // empty | .[])] | unique end' <<< "$mapping")
-        # The packages that path rules give.
-        tested=$(jq -c '[.[].rule // empty | .[]] | unique' <<< "$mapping")
-        echo "packages=$changed" >> "$GITHUB_OUTPUT"
-        echo "tested=$tested" >> "$GITHUB_OUTPUT"
+          map(. as $file
+            | ($rules | longest_match($file; .prefix)) as $rule
+            | ($packages | longest_match($file; .dir)) as $package
+            | {file: .} + if $rule and $rule.packages == [] then
+                {changed: [], rule_packages: [], effect: "ignored (\($rule.prefix))"}
+              elif $rule then
+                {changed: [], rule_packages: $rule.packages,
+                  effect: "the tests of \($rule.packages | join(" ")) (path rule \($rule.prefix))"}
+              elif $file == "Cargo.lock" then
+                {changed: $lock_packages, rule_packages: [],
+                  effect: "the packages that use the changed entries and their dependents: \(
+                    if $lock_packages == [] then "none" else $lock_packages | join(" ") end)"}
+              elif $package then
+                {changed: [$package.name], rule_packages: [], effect: "\($package.name) and its dependents"}
+              else
+                {changed: [$packages[].name], rule_packages: [],
+                  effect: "all the packages (no path rule and no workspace package)"}
+              end)' <<< "$FILES")
+        jq -r '.[] | "\(.file): \(.effect)"' <<< "$changes"
+
+        # An empty diff changes all the packages, so that a wrong base cannot
+        # skip the tests.
+        changed=$(jq -c --argjson packages "$PACKAGES" '
+          if . == [] then [$packages[].name] else [.[].changed[]] | unique end' <<< "$changes")
+        rule_packages=$(jq -c '[.[].rule_packages[]] | unique' <<< "$changes")
+        if [ "$changes" = "[]" ]; then echo "No changed files: all the packages"; fi
+        echo "changed=$changed" >> "$GITHUB_OUTPUT"
+        echo "rule-packages=$rule_packages" >> "$GITHUB_OUTPUT"
 
     - name: Find the affected packages
       id: affected
       shell: bash
       env:
         PACKAGES: ${{ steps.workspace.outputs.packages }}
-        CHANGED: ${{ steps.changed-packages.outputs.packages }}
-        TESTED: ${{ steps.changed-packages.outputs.tested }}
+        CHANGED: ${{ steps.changed-packages.outputs.changed }}
+        RULE_PACKAGES: ${{ steps.changed-packages.outputs.rule-packages }}
       run: |
-        # The changed packages, all the workspace packages that depend on
-        # them, and the packages that path rules give. Null is all the
-        # packages. Packages can depend on each other in a loop. Thus the step
-        # adds the dependents again until it adds no package.
-        affected=$(jq -c --argjson packages "$PACKAGES" --argjson tested "$TESTED" '
+        # The changed packages, the packages that depend on them, the
+        # packages that depend on those, and so on. Also the packages of the
+        # path rules, but not their dependents.
+        affected=$(jq -c --argjson packages "$PACKAGES" --argjson rule_packages "$RULE_PACKAGES" '
+          # Adds the packages that depend directly on a package in the set.
           def add_dependents:
             . as $set
             | [.[], ($packages[] | select(any(.deps[]; IN($set[]))) | .name)] | unique;
-          if . == null then null
-          else until(. == add_dependents; add_dependents) + $tested | unique end' <<< "$CHANGED")
-        jq -r 'if . == null then "All the packages" elif . == [] then "No packages" else .[] end' <<< "$affected"
-        echo "packages=$affected" >> "$GITHUB_OUTPUT"
+          # Adds dependents until no new package comes. This also stops when
+          # packages depend on each other in a loop.
+          def with_dependents: until(. == add_dependents; add_dependents);
+
+          (with_dependents + $rule_packages) | unique' <<< "$CHANGED")
+        jq -r --argjson packages "$PACKAGES" '
+          if length == ($packages | length) then "All the packages"
+          elif . == [] then "No packages"
+          else .[] end' <<< "$affected"
+        echo "affected=$affected" >> "$GITHUB_OUTPUT"
 
     - name: Select the tests
       id: select
       shell: bash
       env:
-        GROUP_PACKAGES: ${{ steps.rules.outputs.groups }}
-        AFFECTED: ${{ steps.affected.outputs.packages }}
+        PACKAGES: ${{ steps.workspace.outputs.packages }}
+        GROUP_PACKAGES: ${{ steps.rules.outputs.group-packages }}
+        AFFECTED: ${{ steps.affected.outputs.affected }}
       run: |
         selected=$(jq -c --argjson affected "$AFFECTED" '
-          map_values(if $affected == null then true else any(.[]; IN($affected[])) end | tostring)' <<< "$GROUP_PACKAGES")
-        filter=$(jq -r '
-          if . == null then "all()"
+          map_values(any(.[]; IN($affected[])) | tostring)' <<< "$GROUP_PACKAGES")
+        filter=$(jq -r --argjson packages "$PACKAGES" '
+          if length == ($packages | length) then "all()"
           elif . == [] then "none()"
           else map("package(=\(.))") | join(" | ") end' <<< "$AFFECTED")
-        jq -r 'to_entries[] | "\(.key): \(.value)"' <<< "$selected"
+        # For a group that is not selected, the log also gives its packages.
+        jq -r --argjson affected "$AFFECTED" '
+          to_entries[]
+          | if any(.value[]; IN($affected[])) then "\(.key): true"
+            else "\(.key): false (not affected: \(.value | join(" ")))" end' <<< "$GROUP_PACKAGES"
         echo "Nextest filter: $filter"
 
         echo "groups=$selected" >> "$GITHUB_OUTPUT"

@@ -8,7 +8,9 @@ on:
     branches: [main]
 jobs:
   # Finds the jobs and the tests that the changes of a PR can affect. A job
-  # skips only when its output is `false`.
+  # skips only when its output is `false`. Start the `if` of each job that
+  # reads these outputs with `!cancelled()`, so that the job also runs when
+  # this job skips or fails.
   changes:
     if: github.event_name == 'pull_request'
     timeout-minutes: 10
@@ -32,9 +34,11 @@ jobs:
         uses: ./.github/actions/select-tests
         with:
           base: HEAD^1
-          # `db` and `db-solana` are the packages that have tests with
+          # `db` and `db-solana` have the packages with tests that have
           # `postgres` and `solana_db` in their names. `doc` has the packages
-          # that have doc tests.
+          # with doc tests. Update these lists when a package gets such tests:
+          # a PR that changes only a package that is not in a list skips the
+          # tests of that list.
           groups: |
             unit=*
             e2e=e2e
@@ -42,11 +46,13 @@ jobs:
             db=autopilot database orderbook
             db-solana=autopilot-svm solana-indexer solana-orderbook
             doc=autopilot driver number testlib
-          # The packages whose tests apply the database migrations.
+          # The tests of these packages use a database that has the
+          # migrations of the folder.
           paths: |
             database/sql/=autopilot database orderbook e2e
             database/sql-pool-indexer/=e2e
             database/sql-solana/=autopilot-svm solana-indexer solana-orderbook
+          # No test reads these files.
           ignore: |
             docs/
             database/README.md
