@@ -1,0 +1,40 @@
+name: Select tests
+description: >-
+  Selects the test groups that the changes between a base revision and HEAD
+  can affect, from the dependencies between the packages of a Cargo workspace.
+  It needs cargo, jq and a checkout that contains the base revision.
+inputs:
+  base:
+    description: The revision to compare with HEAD.
+    required: true
+  groups:
+    description: >-
+      One `<group>=<package>` line for each test group. The group tests the
+      workspace package `<package>`.
+    required: true
+  ignore:
+    description: >-
+      One path prefix on each line. No test group uses the files with these
+      prefixes.
+    required: false
+    default: ""
+outputs:
+  groups:
+    description: >-
+      A JSON object with "true" or "false" for each group, for example
+      {"driver":"false","e2e":"true"}. A group is "false" only when no changed
+      file can affect it.
+    value: ${{ steps.select.outputs.groups }}
+runs:
+  using: composite
+  steps:
+    - id: select
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        GROUPS_INPUT: ${{ inputs.groups }}
+        IGNORE: ${{ inputs.ignore }}
+      run: |
+        groups=$(bash "$GITHUB_ACTION_PATH/select-tests.sh" "$BASE" "$GROUPS_INPUT" "$IGNORE")
+        echo "$groups"
+        echo "groups=$groups" >> "$GITHUB_OUTPUT"

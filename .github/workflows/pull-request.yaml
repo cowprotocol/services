@@ -101,8 +101,11 @@ jobs:
         with:
           just-version: 1.39.0
       - run: cargo build --locked --tests
-      - name: Print hashes of the binaries in target/
-        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
+      - name: Print hashes of the built binaries
+        shell: bash
+        run: |
+          cargo build --locked --tests --message-format=json-render-diagnostics |
+            jq -r 'select(.executable != null) | .executable' | sort | xargs -r sha256sum
       - run: just test-unit
 
   test-db:
@@ -132,10 +135,12 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      # Wait for the background build to finish.
-      - run: cargo build --locked -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests
-      - name: Print hashes of the binaries in target/
-        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
+      # Wait for the background build, then print the hashes of the binaries that it made.
+      - name: Print hashes of the built binaries
+        shell: bash
+        run: |
+          cargo build --locked -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests --message-format=json-render-diagnostics |
+            jq -r 'select(.executable != null) | .executable' | sort | xargs -r sha256sum
       - run: just test-db
 
   # Runs against a database holding only the solana.* series, so a schema
@@ -167,16 +172,49 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      # Wait for the background build to finish.
-      - run: cargo build --locked -p solana-indexer -p autopilot-svm --tests
-      - name: Print hashes of the binaries in target/
-        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
+      # Wait for the background build, then print the hashes of the binaries that it made.
+      - name: Print hashes of the built binaries
+        shell: bash
+        run: |
+          cargo build --locked -p solana-indexer -p autopilot-svm --tests --message-format=json-render-diagnostics |
+            jq -r 'select(.executable != null) | .executable' | sort | xargs -r sha256sum
       - run: just test-db-solana
+
+  # Finds the slow test jobs that the changes of a PR can affect. A test job
+  # skips only when its output is `false`. On push to main, in the merge queue
+  # and when this job fails, the outputs are empty and all the test jobs run.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      e2e: ${{ fromJSON(steps.select.outputs.groups || '{}').e2e }}
+      driver: ${{ fromJSON(steps.select.outputs.groups || '{}').driver }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The PR merge commit and its parents. The first parent is the base branch.
+          fetch-depth: 2
+      - run: rustup toolchain install stable --profile minimal
+      - id: select
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/select-tests
+        with:
+          base: HEAD^1
+          groups: |
+            e2e=e2e
+            driver=driver
+          # Only the `migrations-solana` service of docker-compose.yaml uses
+          # database/sql-solana/.
+          ignore: |
+            docs/
+            database/sql-solana/
 
   # Sharded with nextest partitions, one runner per shard. The gate jobs
   # carry the names the branch ruleset requires.
   test-local-node-shard:
     name: test-local-node (${{ matrix.shard }}/4)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     strategy:
@@ -213,24 +251,41 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      # Wait for the background build to finish.
-      - run: cargo build --locked -p e2e --tests
-      - name: Print hashes of the binaries in target/
-        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
+      # Wait for the background build, then print the hashes of the binaries that it made.
+      - name: Print hashes of the built binaries
+        shell: bash
+        run: |
+          cargo build --locked -p e2e --tests --message-format=json-render-diagnostics |
+            jq -r 'select(.executable != null) | .executable' | sort | xargs -r sha256sum
       - run: just test-e2e-local --partition count:${{ matrix.shard }}/4
 
   test-local-node:
-    needs: test-local-node-shard
+    needs: [changes, test-local-node-shard]
+    # Run also when a shard fails. Else GitHub skips this job, and a skipped
+    # job counts as a passed required check.
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: test "${{ needs.test-local-node-shard.result }}" = success
+      - run: |
+          result="${{ needs.test-local-node-shard.result }}"
+          # The shards skip only when no change affects the e2e tests.
+          if [ "$result" = skipped ] && [ "${{ needs.changes.result }}" = success ] &&
+            [ "${{ needs.changes.outputs.e2e }}" = false ]; then
+            exit 0
+          fi
+          test "$result" = success
 
   test-forked-node:
     name: test-forked-node (${{ matrix.shard }}/2)
+    needs: changes
     # Do not run this job on forks since some secrets are required for it.
+    # Also skip it when no change affects the e2e tests.
     if: |
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      !cancelled() && needs.changes.outputs.e2e != 'false' && (
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
+        github.event_name == 'merge_group' ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      )
     timeout-minutes: 60
     runs-on: ubuntu-latest
     strategy:
@@ -269,13 +324,17 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      # Wait for the background build to finish.
-      - run: cargo build --locked -p e2e --tests
-      - name: Print hashes of the binaries in target/
-        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
+      # Wait for the background build, then print the hashes of the binaries that it made.
+      - name: Print hashes of the built binaries
+        shell: bash
+        run: |
+          cargo build --locked -p e2e --tests --message-format=json-render-diagnostics |
+            jq -r 'select(.executable != null) | .executable' | sort | xargs -r sha256sum
       - run: just test-e2e-forked --partition count:${{ matrix.shard }}/2
 
   test-driver:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.driver != 'false' }}
     timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
@@ -304,8 +363,11 @@ jobs:
           just-version: 1.39.0
       # Build the driver's tests.
       - run: cargo build --locked -p driver --tests
-      - name: Print hashes of the binaries in target/
-        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
+      - name: Print hashes of the built binaries
+        shell: bash
+        run: |
+          cargo build --locked -p driver --tests --message-format=json-render-diagnostics |
+            jq -r 'select(.executable != null) | .executable' | sort | xargs -r sha256sum
       # Don't spawn any docker containers. The driver's tests will spawn anvil itself.
       - run: just test-driver
 
@@ -383,10 +445,12 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      # Wait for the background build to finish.
-      - run: cargo build --locked -p e2e --tests
-      - name: Print hashes of the binaries in target/
-        run: find target -type f -executable -print0 | sort -z | xargs -0r sha256sum
+      # Wait for the background build, then print the hashes of the binaries that it made.
+      - name: Print hashes of the built binaries
+        shell: bash
+        run: |
+          cargo build --locked -p e2e --tests --message-format=json-render-diagnostics |
+            jq -r 'select(.executable != null) | .executable' | sort | xargs -r sha256sum
       - name: Run test in a loop
         run: |
           attempt=1
