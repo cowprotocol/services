@@ -1064,9 +1064,9 @@ enum AtBlock {
     /// Use the latest finalized block.
     Finalized,
     /// Use the state of the last background refresh of the liquidity caches,
-    /// which is at most `refresh-cooldown` plus the refresh duration old.
-    /// Avoids refetching all pools on every /solve request on chains that
-    /// produce several blocks between two refreshes.
+    /// which is at most `refresh-cooldown`. Avoids refetching all pools on
+    /// every /solve request on chains that produce several blocks between
+    /// two refreshes.
     Recent,
 }
 
