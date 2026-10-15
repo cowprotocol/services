@@ -58,8 +58,6 @@ pub async fn quote(
                 },
             })
             .await
-            // Every driver failure answers as no liquidity, the EVM mapping for
-            // estimator errors.
             .map_err(|quoter::Error::NoQuotes| {
                 error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
             })
@@ -127,8 +125,8 @@ pub async fn quote(
     }))
 }
 
-/// The EVM mapping of a failed native price: an unpriced or rate-limited
-/// token is no liquidity, anything else is the autopilot misbehaving.
+/// An unpriced or rate-limited token is no liquidity, anything else is the
+/// autopilot misbehaving.
 fn price_error(token: Pubkey, err: prices::Error) -> error::Reply {
     match err {
         prices::Error::NoLiquidity | prices::Error::RateLimited => error::reply(

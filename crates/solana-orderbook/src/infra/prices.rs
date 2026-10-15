@@ -102,8 +102,8 @@ mod tests {
             .await
     }
 
-    /// The EVM forwarder's mapping: 404 is no liquidity, 429 rate limited,
-    /// and anything else, a dead autopilot included, is internal.
+    /// 404 is no liquidity, 429 rate limited, and anything else, a dead
+    /// autopilot included, is internal.
     #[tokio::test]
     async fn maps_the_autopilot_answers() {
         let route = "/native_price/{mint}";

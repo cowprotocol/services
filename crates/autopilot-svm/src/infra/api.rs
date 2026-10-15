@@ -18,7 +18,7 @@ use {
     tokio::net::TcpListener,
 };
 
-/// The EVM autopilot's floor: shorter budgets leave the sources no time.
+/// Shorter budgets leave the sources no time to answer.
 const MIN_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// The `GET /native_price/{mint}` body: lamports per 10^9 atoms of the mint,
@@ -63,8 +63,8 @@ async fn native_price(
     let budget = query.timeout_ms.map_or(Duration::MAX, |ms| {
         Duration::from_millis(ms).max(MIN_TIMEOUT)
     });
-    // EVM answers an estimator that failed or ran out of time as no liquidity
-    // too.
+    // A lookup that failed or ran out of time answers like a token nobody
+    // prices: the quote is refused either way.
     match tokio::time::timeout(budget, prices.price(mint))
         .await
         .unwrap_or(Ok(None))
@@ -183,8 +183,7 @@ mod tests {
         );
     }
 
-    /// A failed source answers 404 like a mint nobody prices, as EVM answers
-    /// a failed estimator.
+    /// A failed source answers 404 like a mint nobody prices.
     #[tokio::test]
     async fn failed_sources_answer_404() {
         let prices = coingecko(get(|| async { StatusCode::INTERNAL_SERVER_ERROR })).await;

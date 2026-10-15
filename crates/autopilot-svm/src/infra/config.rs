@@ -104,7 +104,7 @@ pub struct NativePrices {
     pub driver_probe_lamports: u64,
 }
 
-/// A tenth of a SOL, the fraction the EVM chains probe with.
+/// A tenth of a SOL.
 const fn default_driver_probe_lamports() -> u64 {
     100_000_000
 }
@@ -155,7 +155,6 @@ const fn default_metrics_port() -> u16 {
     observe::metrics::DEFAULT_METRICS_PORT
 }
 
-/// The EVM autopilot's API port.
 fn default_api_address() -> SocketAddr {
     SocketAddr::from(([0, 0, 0, 0], 12088))
 }
