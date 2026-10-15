@@ -634,8 +634,8 @@ components:
             the orderbook reports the driver's estimate for the quoted route:
             the base fee of one signature plus the runtime's compute unit
             ceiling at a fixed compute unit price.
-          type: string
-          example: "6400"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         buyTokenAtaCosts:
           description: >-
             Rent, in lamports at the cluster's rent, of the buy token account
@@ -644,8 +644,8 @@ components:
             `from` zero without a `receiver`, names no account to read and is
             priced as if it were missing. An upper bound when the account
             cannot be read, without sponsoring included.
-          type: string
-          example: "1488440"
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         kind:
           $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
