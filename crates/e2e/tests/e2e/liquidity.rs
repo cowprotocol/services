@@ -196,16 +196,13 @@ async fn zero_ex_liquidity(web3: Web3) {
     );
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("test_solver", solver.address())
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("test_solver", solver.address())
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {

@@ -175,7 +175,7 @@ account = "{account}"
 merge-solutions = {merge_solutions}
 fast-path-enabled = true
 enable-metrics-bad-order-detection = true
-http-time-buffer = "100ms"
+http-time-buffer = "25ms"
 solving-share-of-deadline = 1.0
 solver-fee-bps = {solver_fee_bps}
 {submission_accounts_line}"#
