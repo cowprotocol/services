@@ -9,6 +9,7 @@ use {
             solution::Solution,
         },
     },
+    alloy_primitives::U256,
     configs::rate_limit::Strategy,
     futures::{Stream, StreamExt, future, stream},
     rate_limit::RateLimiter,
@@ -263,7 +264,9 @@ fn by_permissiveness(a: &auction::Order, b: &auction::Order) -> std::cmp::Orderi
 
 /// The surplus `orders`, one group, would earn filled at the auction's
 /// native prices, the prices the autopilot scores with, in lamports scaled
-/// by 10^9. `None` when a mint has no price. Price impact is not modelled.
+/// by 10^9. Buy-order surplus is converted from sell to buy units at the
+/// order's limit price, like the autopilot's arbitrator. `None` when a mint
+/// has no price. Price impact is not modelled.
 fn estimated_surplus(orders: &[&auction::Order], tokens: &HashMap<Pubkey, Token>) -> Option<u128> {
     let first = orders.first()?;
     let price_sell = u128::from(tokens.get(&first.sell_mint)?.reference_price);
@@ -273,11 +276,18 @@ fn estimated_surplus(orders: &[&auction::Order], tokens: &HashMap<Pubkey, Token>
         .map(|order| {
             let given = u128::from(order.sell_amount) * price_sell;
             let accepted = u128::from(order.buy_amount) * price_buy;
-            let exact = match order.side {
-                dex::Side::Sell => given,
-                dex::Side::Buy => accepted,
-            };
-            given.saturating_sub(accepted).min(exact)
+            let surplus = given.saturating_sub(accepted);
+            match order.side {
+                dex::Side::Sell => surplus,
+                dex::Side::Buy if surplus == 0 => 0,
+                // Buy surplus starts in sell-token units. The arbitrator
+                // converts it to buy tokens at the order's limit ratio before
+                // applying the buy token's native price. In native-value terms
+                // that is `surplus * accepted / given`.
+                dex::Side::Buy => {
+                    (U256::from(surplus) * U256::from(accepted) / U256::from(given)).to::<u128>()
+                }
+            }
         })
         .fold(0u128, u128::saturating_add);
     Some(surplus)
@@ -968,16 +978,62 @@ mod tests {
         );
     }
 
-    /// An open buy limit, `u64::MAX` to sell, counts at most what the order
-    /// buys: 1000 at a price of 1.
+    /// An open buy limit, `u64::MAX` to sell, is normalized at its limit ratio
+    /// like it is in the arbitrator. Integer rounding leaves just under the
+    /// native value of the 1000 units it buys.
     #[test]
-    fn estimated_surplus_caps_an_order_at_its_exact_leg() {
+    fn estimated_buy_surplus_uses_the_order_limit_ratio() {
         let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
         buy.sell_amount = u64::MAX;
         buy.buy_amount = 1_000;
         let tokens = tokens(&[(pubkey(0x20), 2), (pubkey(2), 1)]);
 
-        assert_eq!(estimated_surplus(&[&buy], &tokens), Some(1_000));
+        assert_eq!(estimated_surplus(&[&buy], &tokens), Some(999));
+    }
+
+    /// The widening intermediate also covers real wire maxima: both factors
+    /// in `surplus * accepted` can exceed `u64` and their product can exceed
+    /// `u128`, while the normalized result still fits.
+    #[test]
+    fn estimated_buy_surplus_does_not_overflow() {
+        let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
+        buy.sell_amount = u64::MAX;
+        buy.buy_amount = u64::MAX / 2;
+        let tokens = tokens(&[(pubkey(0x20), u64::MAX), (pubkey(2), u64::MAX)]);
+
+        assert_eq!(
+            estimated_surplus(&[&buy], &tokens),
+            Some(u128::from(u64::MAX / 2) * u128::from(u64::MAX.div_ceil(2)))
+        );
+    }
+
+    /// The raw native-value gap would rank the buy first (1000 versus 750),
+    /// but the arbitrator normalizes its sell-token surplus at the order's
+    /// limit ratio, giving it 500 and putting the sell first.
+    #[test]
+    fn group_priority_matches_the_arbitrator_for_buy_surplus() {
+        let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
+        buy.sell_amount = 1_000;
+        buy.buy_amount = 1_000;
+        buy.amount = 1_000;
+        let sell = sell_of(0x02, pubkey(0x21), 1_000, 250);
+        let auction = priced(
+            auction(vec![buy, sell], Duration::from_secs(60)),
+            &[(pubkey(0x20), 2_000_000_000), (pubkey(0x21), 1_000_000_000)],
+        );
+
+        let groups = batching(1, 4).groups(&auction);
+
+        assert_eq!(
+            groups
+                .iter()
+                .map(|(orders, surplus)| (orders[0].uid, *surplus))
+                .collect::<Vec<_>>(),
+            vec![
+                (OrderUid([0x02; 32]), Some(750_000_000_000)),
+                (OrderUid([0x01; 32]), Some(500_000_000_000)),
+            ]
+        );
     }
 
     #[test]
