@@ -71,7 +71,8 @@ pub async fn quote(
             .await
             .map_err(|err| price_error(token, err))
     };
-    let (quoted, _, _) =
+    // TODO(BE-366): net the execution cost out of the quote with these prices.
+    let (quoted, _sell_price, _buy_price) =
         futures::try_join!(quote, price(request.sell_token), price(request.buy_token))?;
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
