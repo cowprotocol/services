@@ -31,7 +31,7 @@ impl Order {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
     Buy,
@@ -52,21 +52,53 @@ pub struct Swap {
 
 impl Swap {
     /// Whether the swap fills `order` at or better than its limit price.
-    ///
-    /// The same inclusive cross-multiplication as the settlement program and
-    /// the driver, so nothing kept here is dropped downstream.
     pub fn satisfies(&self, order: &Order) -> bool {
-        u128::from(self.out_amount) * u128::from(order.sell_amount)
-            >= u128::from(self.in_amount) * u128::from(order.buy_amount)
+        satisfies(order, self.in_amount, self.out_amount)
     }
 
-    /// Output-unit gap to `order`'s limit, zero when [`Swap::satisfies`] —
-    /// same cross-multiplication, so the two can't disagree.
+    /// Output-unit gap to `order`'s limit, zero when [`Swap::satisfies`].
     pub fn shortfall(&self, order: &Order) -> u128 {
-        let demanded = u128::from(self.in_amount) * u128::from(order.buy_amount);
-        let offered = u128::from(self.out_amount) * u128::from(order.sell_amount);
-        demanded.saturating_sub(offered) / u128::from(order.sell_amount).max(1)
+        shortfall(order, self.in_amount, self.out_amount)
     }
+
+    /// The `(in, out)` rate at which `orders` orders on `side`, filled
+    /// together by this swap, clear: the rate their clearing prices encode.
+    ///
+    /// The driver derives each trade's counterpart leg from those prices,
+    /// rounded down. For sells that is the payout, so the payouts add up to
+    /// at most the swap's output. For buys it is the amount pulled from the
+    /// user, which could add up to `orders - 1` short of the swap's input:
+    /// raising the input by that much makes the pulls cover it, at a cost
+    /// of under one base unit per order. One order clears at the swap's own
+    /// rate either way. `None` when the raised input overflows.
+    pub fn clearing_rate(&self, side: Side, orders: usize) -> Option<(u64, u64)> {
+        let in_amount = match side {
+            Side::Sell => self.in_amount,
+            Side::Buy => self
+                .in_amount
+                .checked_add(u64::try_from(orders.saturating_sub(1)).ok()?)?,
+        };
+        Some((in_amount, self.out_amount))
+    }
+}
+
+/// Whether trading `in_amount` for `out_amount` fills `order` at or better
+/// than its limit price.
+///
+/// The same inclusive cross-multiplication as the settlement program and the
+/// driver, so nothing kept here is dropped downstream.
+pub fn satisfies(order: &Order, in_amount: u64, out_amount: u64) -> bool {
+    u128::from(out_amount) * u128::from(order.sell_amount)
+        >= u128::from(in_amount) * u128::from(order.buy_amount)
+}
+
+/// Output-unit gap to `order`'s limit at the rate `in_amount` for
+/// `out_amount`, zero when [`satisfies`]: same cross-multiplication, so the
+/// two can't disagree.
+pub fn shortfall(order: &Order, in_amount: u64, out_amount: u64) -> u128 {
+    let demanded = u128::from(in_amount) * u128::from(order.buy_amount);
+    let offered = u128::from(out_amount) * u128::from(order.sell_amount);
+    demanded.saturating_sub(offered) / u128::from(order.sell_amount).max(1)
 }
 
 /// The configured DEX backend.
@@ -101,6 +133,10 @@ mod tests {
             buy_amount,
             side,
         }
+    }
+
+    fn swap_of(in_amount: u64) -> Swap {
+        swap(in_amount, 1)
     }
 
     fn swap(in_amount: u64, out_amount: u64) -> Swap {
@@ -164,6 +200,15 @@ mod tests {
     #[test]
     fn shortfall_survives_a_zero_sell_leg() {
         swap(1_000, 2_000).shortfall(&order(Side::Sell, 0, 2_000));
+    }
+
+    #[test]
+    fn buys_clear_at_an_input_raised_by_one_unit_per_extra_order() {
+        let swap = swap(5, 3);
+        assert_eq!(swap.clearing_rate(Side::Sell, 3), Some((5, 3)));
+        assert_eq!(swap.clearing_rate(Side::Buy, 1), Some((5, 3)));
+        assert_eq!(swap.clearing_rate(Side::Buy, 3), Some((7, 3)));
+        assert_eq!(swap_of(u64::MAX).clearing_rate(Side::Buy, 2), None);
     }
 
     #[test]

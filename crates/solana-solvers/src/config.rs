@@ -27,6 +27,11 @@ pub struct Config {
     #[serde(with = "humantime_serde", default = "default_max_back_off")]
     pub max_back_off: Duration,
 
+    /// The most orders one batched solution fills. 1 disables batching: each
+    /// pair then quotes only its most permissive sell order.
+    #[serde(default = "default_max_batch_size")]
+    pub max_batch_size: NonZeroUsize,
+
     pub dex: JupiterConfig,
 }
 
@@ -61,6 +66,10 @@ fn default_min_back_off() -> Duration {
 
 fn default_max_back_off() -> Duration {
     Duration::from_secs(8)
+}
+
+fn default_max_batch_size() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
 }
 
 /// The `[dex]` table for the Jupiter backend.
@@ -110,6 +119,7 @@ mod tests {
         assert!(config.dex.api_key.is_some());
         assert!(!config.dex.enable_buy_orders);
         assert_eq!(config.concurrent_requests.get(), 8);
+        assert_eq!(config.max_batch_size.get(), 4);
         let strategy = config.rate_limiting();
         assert_eq!(strategy.back_off_growth_factor, 2.0);
         assert_eq!(strategy.min_back_off, Duration::from_secs(1));
@@ -125,6 +135,7 @@ slippage-bps = 50
 "#;
         let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(config.concurrent_requests.get(), 8);
+        assert_eq!(config.max_batch_size.get(), 1);
         let strategy = config.rate_limiting();
         assert_eq!(strategy.back_off_growth_factor, 2.0);
         assert_eq!(strategy.min_back_off, Duration::from_secs(1));
