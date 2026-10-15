@@ -48,6 +48,8 @@ pub struct Quote {
     pub buy_amount: u64,
     /// The solver that produced the quote.
     pub solver: Pubkey,
+    /// The network fee of settling the quoted route, in lamports.
+    pub network_fee: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -80,6 +82,8 @@ struct ResponseBody {
     buy_amount: u64,
     #[serde_as(as = "DisplayFromStr")]
     solver: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    network_fee: u64,
 }
 
 impl Quoter {
@@ -148,6 +152,7 @@ impl Quoter {
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             solver: quoted.solver,
+            network_fee: quoted.network_fee,
         })
     }
 }

@@ -644,10 +644,9 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         networkFees:
           description: >-
-            The settlement's network fee, in lamports. A placeholder until
-            the orderbook reports the driver's estimate for the quoted route:
-            the base fee of one signature plus the runtime's compute unit
-            ceiling at a fixed compute unit price.
+            The network fee of settling the quoted route, in lamports, as the
+            quoting driver estimated it: the signature fee plus the priority
+            fee at the route's compute budget.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         buyTokenAtaCosts:

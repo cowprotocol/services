@@ -139,8 +139,8 @@ pub struct Quote {
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
-    /// The settlement's network fee, in lamports, estimated at the runtime's
-    /// compute unit ceiling and a fixed compute unit price.
+    /// The network fee of settling the quoted route, in lamports, as the
+    /// quoting driver estimated it.
     #[serde_as(as = "DisplayFromStr")]
     pub network_fees: u64,
     /// Rent, in lamports, of the buy token account when the placement must

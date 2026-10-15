@@ -249,6 +249,7 @@ async fn quote_rejects_a_native_buy_under_the_payout_floor() {
             "sellAmount": "10000000",
             "buyAmount": buy_amount,
             "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+            "networkFee": "6400",
         }))
         .await;
         let addr = spawn_server_with(Quoter::new(
@@ -284,6 +285,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
             "sellAmount": "10000000",
             "buyAmount": buy_amount.to_string(),
             "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+            "networkFee": "6400",
         }))
         .await;
         let wallet = solana_sdk::account::Account {
@@ -334,6 +336,7 @@ async fn quote_answers_in_the_evm_shape() {
         "sellAmount": "10000000",
         "buyAmount": "1234567",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let addr = spawn_server_with(Quoter::new(
@@ -401,6 +404,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
         "sellAmount": "10000000",
         "buyAmount": "1234567",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let funder = solana_sdk::pubkey::Pubkey::new_from_array([0x77; 32]);
@@ -446,6 +450,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
         "sellAmount": "10000000",
         "buyAmount": "1234567",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let free_fee_mint =
@@ -510,12 +515,14 @@ async fn quote_picks_the_best_driver_answer() {
         "sellAmount": "10000000",
         "buyAmount": "1500000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let better = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
         "buyAmount": "2000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let addr = spawn_server_with(Quoter::new(
@@ -601,6 +608,7 @@ async fn quote_without_a_native_price_is_no_liquidity() {
         "sellAmount": "10000000",
         "buyAmount": "1234567",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let api = Api {
@@ -647,6 +655,7 @@ async fn solana_db_quote_is_persisted() {
         "sellAmount": "10000000",
         "buyAmount": "1234567",
         "solver": solver.to_string(),
+        "networkFee": "6400",
     }))
     .await;
     let api = Api {
