@@ -84,6 +84,9 @@ impl Block {
     fn schedules_update(self) -> bool {
         matches!(
             self,
+            // If a block number was specified the caller actually cared about the most accurate
+            // data for these keys. In that case we want to be nice and remember the key for future
+            // background updates of the cached liquidity.
             Block::Number(_)
                 | Block::Recent {
                     schedule_update: true
@@ -136,9 +139,8 @@ pub struct CacheConfig {
     /// may be to still be returned for recent requests. Older entries get
     /// evicted by the background update.
     pub maximum_recent_block_age: u64,
-    /// Minimum time between the start of two background updates of the
-    /// recently used entries. Blocks arriving within that time share a single
-    /// update.
+    /// Time between two background updates of the recently used entries.
+    /// Blocks arriving within that time share a single update.
     pub refresh_cooldown: Duration,
     pub max_retries: u32,
     /// Time to wait before retrying a failed fetch.
@@ -225,12 +227,18 @@ where
     ) {
         tokio::task::spawn(async move {
             let mut stream = ethrpc::block_stream::into_stream(block_stream);
+            // `interval` panics on a zero period.
+            let mut cooldown =
+                tokio::time::interval(refresh_cooldown.max(Duration::from_millis(1)));
+            cooldown.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // The first tick completes immediately; consume it so the first
+            // update is followed by a cooldown too.
+            cooldown.tick().await;
             while let Some(block) = stream.next().await {
                 let Some(inner) = inner.upgrade() else {
                     tracing::debug!("cache no longer in use; terminate GC task");
                     break;
                 };
-                let update_started = tokio::time::Instant::now();
                 if let Err(err) = inner
                     .update_cache_at_block(block.number)
                     .instrument(tracing::info_span!("cache_maintenance", cache = %label))
@@ -240,8 +248,11 @@ where
                 }
                 // The stream only yields the newest block once we continue, so
                 // blocks arriving during the cooldown collapse into a single
-                // update instead of refreshing every entry once per block.
-                tokio::time::sleep(refresh_cooldown.saturating_sub(update_started.elapsed())).await;
+                // update instead of refreshing every entry once per block. The
+                // cooldown runs from tick to tick, so the update itself counts
+                // towards it and on average there is at most one update per
+                // cooldown.
+                cooldown.tick().await;
             }
         });
     }

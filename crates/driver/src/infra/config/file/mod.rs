@@ -537,9 +537,8 @@ struct LiquidityConfig {
     max_recent_block_age: u64,
 
     /// How many of the most recently used token pairs get kept up to date in
-    /// the background. Should cover the number of pairs an auction requests
-    /// (`get_liquidity{pair_count=..}` in the driver logs); pairs beyond that
-    /// get refetched on every /solve request.
+    /// the background. Should cover the number of pairs an auction requests;
+    /// pairs beyond that get refetched on every /solve request.
     #[serde(default = "default_liquidity_max_auto_updated_pairs")]
     max_auto_updated_pairs: NonZeroUsize,
 }
