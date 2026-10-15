@@ -8,15 +8,8 @@ use {
         routing::{get, post},
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
-    solana_sdk::{
-        account::{Account, from_account},
-        pubkey::Pubkey,
-        rent::Rent,
-        sysvar,
-    },
     sqlx::PgPool,
     std::{
-        collections::HashMap,
         io,
         net::SocketAddr,
         sync::Arc,
@@ -160,29 +153,6 @@ pub struct Sponsoring {
     pub max_priority_fee_lamports: u64,
     /// The verdicts on the mints placement and quoting read so far.
     pub mints: solana_token::MintVerdicts,
-    /// The cluster's rent as last read, see [`Sponsoring::rent`].
-    pub rent: std::sync::Mutex<Rent>,
-}
-
-impl Sponsoring {
-    /// The cluster's rent as last read by [`Sponsoring::read_rent`], the
-    /// SDK's default until a read lands.
-    pub fn rent(&self) -> Rent {
-        self.rent.lock().unwrap().clone()
-    }
-
-    /// The cluster's rent, read from the rent sysvar in `accounts` when it is
-    /// there and kept for the reads that miss it, as last read otherwise.
-    pub fn read_rent(&self, accounts: &HashMap<Pubkey, Account>) -> Rent {
-        let mut rent = self.rent.lock().unwrap();
-        if let Some(read) = accounts
-            .get(&sysvar::rent::ID)
-            .and_then(from_account::<Rent, _>)
-        {
-            *rent = read;
-        }
-        rent.clone()
-    }
 }
 
 impl State {

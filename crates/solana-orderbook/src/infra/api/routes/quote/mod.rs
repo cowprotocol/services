@@ -16,7 +16,12 @@ use {
         token_program::TokenProgram,
     },
     database::{byte_array::ByteArray, solana::OrderKind},
-    solana_sdk::{account::Account, pubkey::Pubkey, rent::Rent, sysvar},
+    solana_sdk::{
+        account::{Account, from_account},
+        pubkey::Pubkey,
+        rent::Rent,
+        sysvar,
+    },
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
@@ -184,8 +189,7 @@ impl BuyProgram {
 /// priced as if it were missing, as an unverified EVM quote keeps the full
 /// fee. The read fetches the buy mint again, as the verdict cache keeps no
 /// account data and the mint's extensions size the account, and the rent
-/// sysvar, as the SDK's default rent is above the cluster's. A failed or
-/// skipped read charges the largest account at the rent as last read.
+/// sysvar, as the SDK's default rent is above the cluster's.
 async fn buy_account_rent(
     sponsoring: Option<&Sponsoring>,
     request: &dto::Request,
@@ -195,8 +199,7 @@ async fn buy_account_rent(
         return Ok(0);
     }
     let (Some(sponsoring), BuyProgram::Known(program)) = (sponsoring, buy_program) else {
-        let rent = sponsoring.map_or_else(Rent::default, Sponsoring::rent);
-        return Ok(max_ata_rent(&rent));
+        return Ok(max_ata_rent(&Rent::default()));
     };
     let mint = &request.buy_token;
     let [recipient, ata] = buy_token_account_candidates(request, program);
@@ -209,16 +212,15 @@ async fn buy_account_rent(
         Ok(accounts) => accounts,
         Err(err) => {
             tracing::warn!(?err, "buy token account lookup failed, charging its rent");
-            return Ok(max_ata_rent(&sponsoring.rent()));
+            return Ok(max_ata_rent(&Rent::default()));
         }
     };
-    let cluster_rent = sponsoring.read_rent(&accounts);
     if let Some(account) = accounts.get(&recipient)
         && recipient_receives(recipient, account, mint)?
     {
         return Ok(0);
     }
-    let rent = read_ata_rent(&accounts, mint, &cluster_rent);
+    let rent = read_ata_rent(&accounts, mint);
     match accounts.get(&ata) {
         Some(account) => ata_rent_owed(ata, account, mint, rent),
         None => Ok(rent),
@@ -247,11 +249,15 @@ fn recipient_receives(
     Ok(false)
 }
 
-fn read_ata_rent(accounts: &HashMap<Pubkey, Account>, mint: &Pubkey, rent: &Rent) -> u64 {
+fn read_ata_rent(accounts: &HashMap<Pubkey, Account>, mint: &Pubkey) -> u64 {
+    let rent = accounts
+        .get(&sysvar::rent::ID)
+        .and_then(from_account::<Rent, _>)
+        .unwrap_or_default();
     accounts
         .get(mint)
-        .and_then(|mint| ata_rent(rent, mint))
-        .unwrap_or_else(|| max_ata_rent(rent))
+        .and_then(|mint| ata_rent(&rent, mint))
+        .unwrap_or_else(|| max_ata_rent(&rent))
 }
 
 fn ata_rent_owed(
@@ -378,7 +384,7 @@ fn same_token(sell: &Pubkey, buy: &Pubkey) -> bool {
 mod tests {
     use {
         super::*,
-        cow_solana_rpc::{RpcRequest, SolanaRPC},
+        cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
         solana_sdk::{account::create_account_for_test, program_pack::Pack},
         solana_testlib::{
             account_json,
@@ -410,23 +416,15 @@ mod tests {
     }
 
     fn sponsoring(accounts: serde_json::Value) -> Sponsoring {
-        sponsoring_answering([accounts])
-    }
-
-    /// Sponsoring whose RPC answers each account read with the next of
-    /// `answers`.
-    fn sponsoring_answering(answers: impl IntoIterator<Item = serde_json::Value>) -> Sponsoring {
-        let mocks = answers
-            .into_iter()
-            .map(|answer| (RpcRequest::GetMultipleAccounts, answer))
-            .collect();
         Sponsoring {
             funder: Pubkey::new_unique(),
             settlement_program: cow_settlement_interface::id(),
-            rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
+            rpc: SolanaRPC::new_mock_with_mocks(Mocks::from([(
+                RpcRequest::GetMultipleAccounts,
+                accounts,
+            )])),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
-            rent: Default::default(),
         }
     }
 
@@ -498,14 +496,30 @@ mod tests {
     }
 
     #[test]
-    fn the_read_prices_the_account_by_its_mint() {
+    fn the_read_prices_the_account_by_its_mint_at_the_rent_sysvar() {
         let mint = Pubkey::new_unique();
-        let read = |entries: Vec<(Pubkey, Account)>| {
-            read_ata_rent(&entries.into_iter().collect(), &mint, &mainnet_rent())
-        };
-        assert_eq!(read(vec![(mint, classic_mint(6))]), 1_488_440);
-        assert_eq!(read(vec![(mint, token_2022_mint(&[], |_| {}))]), 1_513_840);
-        assert_eq!(read(vec![]), max_ata_rent(&mainnet_rent()));
+        let rent = create_account_for_test(&mainnet_rent());
+        let read =
+            |entries: Vec<(Pubkey, Account)>| read_ata_rent(&entries.into_iter().collect(), &mint);
+        assert_eq!(
+            read(vec![
+                (mint, classic_mint(6)),
+                (sysvar::rent::ID, rent.clone())
+            ]),
+            1_488_440
+        );
+        assert_eq!(
+            read(vec![
+                (mint, token_2022_mint(&[], |_| {})),
+                (sysvar::rent::ID, rent.clone()),
+            ]),
+            1_513_840
+        );
+        assert_eq!(read(vec![(mint, classic_mint(6))]), 2_039_280);
+        assert_eq!(
+            read(vec![(sysvar::rent::ID, rent)]),
+            max_ata_rent(&mainnet_rent())
+        );
     }
 
     #[test]
@@ -813,43 +827,6 @@ mod tests {
                 largest
             );
         }
-    }
-
-    /// The rent sysvar read prices the reads that miss it and the fallbacks
-    /// after it; the SDK's default, above mainnet's, prices them only until
-    /// one lands.
-    #[tokio::test]
-    async fn the_rent_as_last_read_prices_the_reads_without_one() {
-        let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
-        let mint = account_json(&classic_mint(6));
-        let sponsoring = sponsoring_answering([
-            multiple_accounts_json([
-                serde_json::Value::Null,
-                serde_json::Value::Null,
-                mint.clone(),
-                account_json(&create_account_for_test(&mainnet_rent())),
-            ]),
-            multiple_accounts_json([
-                serde_json::Value::Null,
-                serde_json::Value::Null,
-                mint,
-                serde_json::Value::Null,
-            ]),
-            serde_json::json!("not an account list"),
-        ]);
-        let read = |program| buy_account_rent(Some(&sponsoring), &request, program);
-        let known = BuyProgram::Known(TokenProgram::SplToken);
-        assert_eq!(
-            read(BuyProgram::Unread).await.unwrap(),
-            max_ata_rent(&Rent::default())
-        );
-        assert_eq!(read(known).await.unwrap(), 1_488_440);
-        assert_eq!(read(known).await.unwrap(), 1_488_440);
-        assert_eq!(read(known).await.unwrap(), max_ata_rent(&mainnet_rent()));
-        assert_eq!(
-            read(BuyProgram::Unread).await.unwrap(),
-            max_ata_rent(&mainnet_rent())
-        );
     }
 
     #[test]
