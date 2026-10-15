@@ -33,6 +33,7 @@ pub struct Auction {
     pub block: i64,
     pub id: i64,
     pub deadline: i64,
+    pub fast_path_quote_id: Option<i64>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -121,7 +122,7 @@ pub async fn load_by_id(
     after_block: Option<i64>,
 ) -> Result<Option<SolverCompetition>, sqlx::Error> {
     const FETCH_AUCTION: &str = r#"
-        SELECT id, order_uids, price_tokens, price_values, block, deadline
+        SELECT id, order_uids, price_tokens, price_values, block, deadline, fast_path_quote_id
         FROM competition_auctions
         WHERE id = $1 AND ($2::bigint IS NULL OR deadline <= $2);
     "#;
@@ -329,8 +330,8 @@ async fn save_jit_orders(
 ) -> Result<(), sqlx::Error> {
     for solution in solutions {
         for order in &solution.orders {
-            // Order data is saved to `proposed_jit_orders` table only if the order is not
-            // already in the `orders` table.
+            // Order data is saved to `proposed_jit_orders` table only if the
+            // order is not already in the `orders` table.
             const QUERY_JIT: &str = r#"
                 INSERT INTO proposed_jit_orders
                 (auction_id, solution_uid, order_uid, sell_token, buy_token, limit_sell, limit_buy, side)
@@ -454,7 +455,8 @@ fn map_rows_to_solutions(rows: Vec<SolutionRow>) -> Result<Vec<Solution>, sqlx::
             .push(order);
     }
 
-    // Order by uid to return the solutions in the same order as they were inserted.
+    // Order by uid to return the solutions in the same order as they were
+    // inserted.
     let mut solutions = solutions_map.into_values().collect::<Vec<_>>();
     solutions.sort_by_key(|solution| solution.uid);
     Ok(solutions)
@@ -495,6 +497,31 @@ pub async fn fetch_in_flight_orders(
     sqlx::query_as(QUERY)
         .bind(current_block)
         .fetch_all(ex)
+        .await
+}
+
+/// Returns whether the given order uid appears in any solution of the
+/// `latest_competitions_count` most recent competitions.
+pub async fn order_is_in_recent_solutions(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+    latest_competitions_count: i64,
+) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = r#"
+    SELECT EXISTS (
+        SELECT 1
+        FROM proposed_trade_executions pte
+        WHERE pte.order_uid = $1
+        AND pte.auction_id IN (
+            SELECT id FROM competition_auctions ORDER BY id DESC LIMIT $2
+        )
+    );
+    "#;
+
+    sqlx::query_scalar(QUERY)
+        .bind(order_uid)
+        .bind(latest_competitions_count)
+        .fetch_one(ex)
         .await
 }
 
@@ -551,8 +578,8 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        // insert an order to "orders" table to prevent one of the orders from being
-        // inserted into the proposed_jit_orders table
+        // insert an order to "orders" table to prevent one of the orders from
+        // being inserted into the proposed_jit_orders table
         let user_order_uid = ByteArray([5u8; 56]);
         let order = crate::orders::Order {
             uid: user_order_uid,
@@ -622,8 +649,8 @@ mod tests {
                 .into_iter()
                 .map(|row| row.get::<OrderUid, _>(0))
                 .collect::<Vec<_>>();
-        // proposed_jit_orders should contain only the orders that were not already in
-        // the "orders"
+        // proposed_jit_orders should contain only the orders that were not
+        // already in the "orders"
         assert_eq!(
             proposed_jit_orders,
             vec![
@@ -634,8 +661,9 @@ mod tests {
             ]
         );
 
-        // but when solution 3 is fetched, it should have the same orders that were
-        // inserted (2 fetched from "proposed_jit_orders" and 1 from "orders" table)
+        // but when solution 3 is fetched, it should have the same orders that
+        // were inserted (2 fetched from "proposed_jit_orders" and 1
+        // from "orders" table)
         assert!(fetched_solutions[2].orders.len() == 3);
     }
 
@@ -669,9 +697,17 @@ mod tests {
         settlements::update_settlement_auction(&mut db, 1, 0, 1)
             .await
             .unwrap();
-        settlements::update_settlement_solver(&mut db, 1, 0, ByteArray([1u8; 20]), 0)
-            .await
-            .unwrap();
+        settlements::update_settlement_solver_and_gas(
+            &mut db,
+            1,
+            0,
+            ByteArray([1u8; 20]),
+            0,
+            BigDecimal::from(100_000),
+            BigDecimal::from(1_000_000_000),
+        )
+        .await
+        .unwrap();
 
         // competition_auctions
         let auction = auction::Auction {
@@ -682,6 +718,8 @@ mod tests {
             price_tokens: vec![ByteArray([1u8; 20])],
             price_values: vec![BigDecimal::from(100)],
             surplus_capturing_jit_order_owners: vec![],
+            penalty_caps_native: None,
+            fast_path_quote_id: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -728,6 +766,8 @@ mod tests {
             price_tokens: vec![order_sell_token],
             price_values: vec![order_limit_sell.clone()],
             surplus_capturing_jit_order_owners: vec![],
+            penalty_caps_native: None,
+            fast_path_quote_id: None,
         };
         auction::save(&mut db, auction).await.unwrap();
 
@@ -766,12 +806,14 @@ mod tests {
         settlements::update_settlement_auction(&mut db, block_number, log_index, auction_id)
             .await
             .unwrap();
-        settlements::update_settlement_solver(
+        settlements::update_settlement_solver_and_gas(
             &mut db,
             block_number,
             log_index,
             ByteArray([1u8; 20]),
             0,
+            BigDecimal::from(100_000),
+            BigDecimal::from(1_000_000_000),
         )
         .await
         .unwrap();
@@ -902,6 +944,8 @@ mod tests {
                 price_tokens: Default::default(),
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
+                penalty_caps_native: None,
+                fast_path_quote_id: None,
             },
         )
         .await
@@ -934,6 +978,8 @@ mod tests {
                 price_tokens: Default::default(),
                 price_values: Default::default(),
                 surplus_capturing_jit_order_owners: Default::default(),
+                penalty_caps_native: None,
+                fast_path_quote_id: None,
             },
         )
         .await
@@ -974,18 +1020,27 @@ mod tests {
             .await
             .unwrap();
         // associate with solution 3
-        settlements::update_settlement_solver(&mut db, 5, 0, Default::default(), 3)
-            .await
-            .unwrap();
+        settlements::update_settlement_solver_and_gas(
+            &mut db,
+            5,
+            0,
+            Default::default(),
+            3,
+            BigDecimal::from(100_000),
+            BigDecimal::from(1_000_000_000),
+        )
+        .await
+        .unwrap();
 
-        // when an order gets marked as settled we dont consider it inflight anymore
+        // when an order gets marked as settled we dont consider it inflight
+        // anymore
         let later_block_with_settlement = fetch_in_flight_orders(&mut db, 5).await.unwrap();
         assert_eq!(later_block_with_settlement, vec![order_uid(2)]);
 
-        // A solver can abort its submission before the deadline block is reached.
-        // Record a started-then-failed attempt for order 2's winning solution and
-        // assert the order is no longer in-flight, even though its deadline is still
-        // ahead of the queried block.
+        // A solver can abort its submission before the deadline block is
+        // reached. Record a started-then-failed attempt for order 2's
+        // winning solution and assert the order is no longer in-flight,
+        // even though its deadline is still ahead of the queried block.
         let auction_id = 1; // the auction order 2 won (see solutions above)
         let solution_uid = 2; // winning solution holding order 2
         let deadline_block = 10; // still ahead of the queried block (5) below

@@ -8,8 +8,9 @@ use {
     configs::{autopilot::Configuration, test_util::TestDefault},
     contracts::ERC20,
     e2e::setup::*,
+    eth_domain_types::Receiver,
     ethrpc::{Web3, alloy::CallBuilderExt},
-    model::quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+    model::quote::{OrderQuoteRequest, OrderQuoteSide, PriceQuality, SellAmount},
     number::units::EthUnit,
     serde_json::json,
 };
@@ -115,6 +116,25 @@ async fn standard_verified_quote(web3: Web3) {
         .await
         .unwrap();
     assert!(response.verified);
+
+    // The same quote requested with `optimal` price quality skips
+    // verification entirely and reports the solver's unverified promise.
+    let response = services
+        .submit_quote(&OrderQuoteRequest {
+            from: trader.address(),
+            sell_token: *token.address(),
+            buy_token: *onchain.contracts().weth.address(),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: (1u64.eth()).try_into().unwrap(),
+                },
+            },
+            price_quality: PriceQuality::Optimal,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert!(!response.verified);
 }
 
 /// Verified quotes work as for WETH trades without wrapping or approvals.
@@ -203,7 +223,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: None,
+            receiver: Receiver::OWNER,
             ..request.clone()
         })
         .await
@@ -214,7 +234,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: Some(*onchain.contracts().gp_settlement.address()),
+            receiver: (*onchain.contracts().gp_settlement.address()).into(),
             ..request.clone()
         })
         .await
@@ -225,7 +245,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: *onchain.contracts().gp_settlement.address(),
-            receiver: Some(trader.address()),
+            receiver: trader.address().into(),
             ..request.clone()
         })
         .await
@@ -236,7 +256,7 @@ async fn verified_quote_for_settlement_contract(web3: Web3) {
     let response = services
         .submit_quote(&OrderQuoteRequest {
             from: trader.address(),
-            receiver: Some(*onchain.contracts().gp_settlement.address()),
+            receiver: (*onchain.contracts().gp_settlement.address()).into(),
             ..request.clone()
         })
         .await

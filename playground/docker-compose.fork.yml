@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.chain
-    restart: always
+    restart: unless-stopped
     entrypoint: /usr/local/bin/anvil
     command: --fork-url ${ETH_RPC_URL} --block-time 12
     environment:
@@ -35,7 +35,7 @@ services:
 
   db:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       - POSTGRES_USER
       - POSTGRES_PASSWORD
@@ -53,7 +53,7 @@ services:
 
   adminer:
     image: adminer
-    restart: always
+    restart: unless-stopped
     ports:
       - 8082:8080
     depends_on:
@@ -81,7 +81,7 @@ services:
     # each other's images (default tags collide on project + service name)
     image: playground-orderbook:localdev
     pull_policy: build
-    restart: always
+    restart: unless-stopped
     command:
       [
         "cargo",
@@ -121,7 +121,7 @@ services:
       dockerfile: ./playground/Dockerfile
     image: playground-autopilot:localdev
     pull_policy: build
-    restart: always
+    restart: unless-stopped
     command:
       [
         "cargo",
@@ -162,7 +162,7 @@ services:
       dockerfile: ./playground/Dockerfile
     image: playground-driver:localdev
     pull_policy: build
-    restart: always
+    restart: unless-stopped
     command:
       [
         "cargo",
@@ -202,7 +202,7 @@ services:
       dockerfile: ./playground/Dockerfile
     image: playground-baseline:localdev
     pull_policy: build
-    restart: always
+    restart: unless-stopped
     command:
       [
         "cargo",
@@ -244,7 +244,7 @@ services:
   # Sourcify - Contract verification service
   sourcify-db:
     image: postgres:16
-    restart: always
+    restart: unless-stopped
     environment:
       - POSTGRES_USER=sourcify
       - POSTGRES_PASSWORD=sourcify
@@ -261,7 +261,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.sourcify
-    restart: always
+    restart: unless-stopped
     depends_on:
       sourcify-db:
         condition: service_healthy
@@ -288,7 +288,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.otterscan
-    restart: always
+    restart: unless-stopped
     environment:
       - ERIGON_URL=http://127.0.0.1:8545
       - SOURCIFY_MODE=${SOURCIFY_MODE:-cloud}
@@ -333,7 +333,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
-    restart: always
+    restart: unless-stopped
     ports:
       - "9090:9090"
     volumes:

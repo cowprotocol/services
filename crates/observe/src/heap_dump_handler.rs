@@ -66,15 +66,17 @@ pub fn spawn_heap_dump_handler() {
         };
 
         loop {
-            // Accept connection in main loop, then spawn task for each connection
-            // Sequential processing prevents multiple simultaneous expensive heap dumps
+            // Accept connection in main loop, then spawn task for each
+            // connection Sequential processing prevents multiple
+            // simultaneous expensive heap dumps
             match handle.listener.accept().await {
                 Ok((socket, _addr)) => {
                     let mut handle = tokio::spawn(async move {
                         handle_connection_with_socket(socket).await;
                     });
 
-                    // 1-minute timeout to prevent stuck dumps from blocking future requests
+                    // 1-minute timeout to prevent stuck dumps from blocking
+                    // future requests
                     match tokio::time::timeout(Duration::from_secs(60), &mut handle).await {
                         Ok(Ok(())) => {
                             // Task completed successfully
@@ -142,7 +144,8 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
     tracing::info!("generating heap dump");
 
     // PROF_CTL was already verified to be available in spawn_heap_dump_handler
-    // so we can safely unwrap here. If this panics, it means there's a serious bug.
+    // so we can safely unwrap here. If this panics, it means there's a serious
+    // bug.
     let prof_ctl = jemalloc_pprof::PROF_CTL
         .as_ref()
         .expect("PROF_CTL should be available - checked at handler spawn");
@@ -151,8 +154,8 @@ async fn generate_and_stream_dump(socket: &mut UnixStream) {
         let mut lock = prof_ctl.lock().await;
         let pprof_data = lock.dump_pprof();
         // While assembling the heap dump a global symbol cache gets filled with
-        // the resolved identifiers. As that is quite large and does not get freed
-        // automatically we do it explicitly here.
+        // the resolved identifiers. As that is quite large and does not get
+        // freed automatically we do it explicitly here.
         backtrace::clear_symbol_cache();
         pprof_data
     };

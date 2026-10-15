@@ -59,19 +59,25 @@ use {
 pub struct Eip4626 {
     inner: Box<dyn NativePriceEstimating>,
     provider: AlloyProvider,
-    /// Addresses that are known *not* to be (usable) EIP-4626 vaults. Checked
-    /// before making any RPC calls.
+    /// Addresses that are known *not* to be (usable) EIP-4626 vaults, plus the
+    /// configured exemptions. Checked before making any RPC calls.
     non_vault_tokens: DashSet<Address>,
 }
 
 impl Eip4626 {
-    pub fn new(inner: Box<dyn NativePriceEstimating>, provider: AlloyProvider) -> Self {
+    /// `exemptions` are tokens that must never be unwrapped, even if they are
+    /// valid vaults; they are seeded into the negative cache.
+    pub fn new(
+        inner: Box<dyn NativePriceEstimating>,
+        provider: AlloyProvider,
+        exemptions: impl IntoIterator<Item = Address>,
+    ) -> Self {
         Self {
             inner,
             provider,
             // BUY_ETH_ADDRESS is not ERC-20, but it is a valid estimation address
             // so we need to make sure it bypasses the EIP-4626 estimator
-            non_vault_tokens: DashSet::from_iter([BUY_ETH_ADDRESS]),
+            non_vault_tokens: exemptions.into_iter().chain([BUY_ETH_ADDRESS]).collect(),
         }
     }
 
@@ -173,7 +179,8 @@ impl Eip4626 {
 
         match asset_result {
             Ok(asset) => {
-                // EIP-4626 vaults implement ERC-20 so decimals() must succeed too.
+                // EIP-4626 vaults implement ERC-20 so decimals() must succeed
+                // too.
                 let vault_decimals = decimals_result.map_err(|err| {
                     PriceEstimationError::EstimatorInternal(anyhow::anyhow!(
                         "failed to call decimals() on {token}: {err}"
@@ -313,7 +320,8 @@ mod tests {
         // - vault.decimals() = 18, asset.decimals() = 6
         // - convertToAssets(10^18) = 1_500_000 (= 1.5 whole USDC, in atoms)
         // - per-atom factor = 1_500_000 / 10^18 = 1.5e-12
-        // - = whole-share rate (1.5) scaled by 10^(asset_dec - vault_dec) = 10^-12.
+        // - = whole-share rate (1.5) scaled by 10^(asset_dec - vault_dec) =
+        //   10^-12.
         let assets = U256::from(1_500_000u64);
         let computed_rate = conversion_rate(assets, 18).unwrap();
 
@@ -327,7 +335,8 @@ mod tests {
         // - vault.decimals() = 6, asset.decimals() = 18
         // - convertToAssets(10^6) = 2 * 10^18 (= 2 whole tokens, in atoms)
         // - per-atom factor = 2 * 10^18 / 10^6 = 2e12
-        // - = whole-share rate (2) scaled by 10^(asset_dec - vault_dec) = 10^12.
+        // - = whole-share rate (2) scaled by 10^(asset_dec - vault_dec) =
+        //   10^12.
         let assets = U256::from(2u64) * U256::from(10u64).pow(U256::from(18u64));
         let computed_rate = conversion_rate(assets, 6).unwrap();
 
@@ -353,7 +362,7 @@ mod tests {
         asserter.push_failure_msg(Cow::from("calls are not being bypassed"));
         let web3 = ethrpc::Web3::with_asserter(asserter);
 
-        let estimator = Eip4626::new(Box::new(inner), web3.provider);
+        let estimator = Eip4626::new(Box::new(inner), web3.provider, std::iter::empty());
 
         let result = estimator
             .estimate(token, HEALTHY_PRICE_ESTIMATION_TIME)
@@ -367,6 +376,30 @@ mod tests {
             matches!(result, Err(PriceEstimationError::EstimatorInternal(_))),
             "{result:?}"
         );
+    }
+
+    /// Exempted tokens are priced by the inner estimator directly, without
+    /// probing the chain for vault info.
+    #[tokio::test]
+    async fn exemptions_bypass_eth_calls() {
+        let token = Address::repeat_byte(0x42);
+        let expected_price = 1.5;
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .withf(move |t, _| *t == token)
+            .returning(move |_, _| Box::pin(async move { Ok(expected_price) }));
+
+        let asserter = Asserter::new();
+        asserter.push_failure_msg(Cow::from("calls are not being bypassed"));
+        let web3 = ethrpc::Web3::with_asserter(asserter);
+
+        let estimator = Eip4626::new(Box::new(inner), web3.provider, [token]);
+
+        let result = estimator
+            .estimate(token, HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(result.unwrap(), expected_price);
     }
 
     #[tokio::test]
@@ -415,7 +448,7 @@ mod tests {
         asserter.push_failure_msg("execution reverted");
         let web3 = ethrpc::Web3::with_asserter(asserter);
 
-        let estimator = Eip4626::new(Box::new(inner), web3.provider);
+        let estimator = Eip4626::new(Box::new(inner), web3.provider, std::iter::empty());
 
         let result = estimator
             .estimate(token, HEALTHY_PRICE_ESTIMATION_TIME)

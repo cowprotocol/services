@@ -11,13 +11,8 @@ where
     S: Serializer,
     T: AsRef<[u8]>,
 {
-    let mut v = vec![0u8; 2 + bytes.as_ref().len() * 2];
-    v[0] = b'0';
-    v[1] = b'x';
-    // Unwrap because only possible error is vector wrong size which cannot happen.
-    const_hex::encode_to_slice(bytes, &mut v[2..]).unwrap();
-    // Unwrap because encoded data is always valid utf8.
-    serializer.serialize_str(&String::from_utf8(v).unwrap())
+    let bytes = const_hex::encode_prefixed(bytes);
+    serializer.serialize_str(&bytes)
 }
 
 pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>

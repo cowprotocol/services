@@ -390,6 +390,7 @@ impl Okx {
         Err(match code {
             0 => return Ok(()),
             51005 // Honeypot or leveraged token (undocumented)
+            | 51006 // Input value is too low
             | 82000 // Insufficient liquidity
             | 82104 // Token not supported
             | 82112 // Internal OKX risk validation failed

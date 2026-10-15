@@ -65,8 +65,8 @@ impl DriverGasEstimator {
 impl GasPriceEstimating for DriverGasEstimator {
     #[instrument(skip(self))]
     async fn estimate(&self) -> Result<Eip1559Estimation> {
-        // Lock cache for entire duration of this method to prevent concurrent network
-        // requests
+        // Lock cache for entire duration of this method to prevent concurrent
+        // network requests
         let mut cache = self.cache.lock().await;
         if let Some(cached) = cache.as_ref()
             && cached.timestamp.elapsed() < CACHE_DURATION

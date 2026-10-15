@@ -139,7 +139,8 @@ fn old_app_data_cid(contract_app_data: &AppDataHash) -> String {
 mod tests {
     use super::*;
 
-    // Can be compared with CID explorer to make sure CIDs encode the right data.
+    // Can be compared with CID explorer to make sure CIDs encode the right
+    // data.
     #[test]
     fn cid() {
         let hash = AppDataHash(hex_literal::hex!(

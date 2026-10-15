@@ -9,6 +9,7 @@ use {
     app_data::AppDataHash,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
+    eth_domain_types::Receiver,
     number::{nonzero::NonZeroU256, serialization::HexOrDecimalU256},
     serde::{
         Deserialize,
@@ -27,10 +28,12 @@ use {
 pub enum PriceQuality {
     /// We pick the best quote of the fastest `n` price estimators.
     Fast,
-    #[default]
-    /// We pick the best quote of all price estimators.
+    /// We pick the best quote of all price estimators, ranked purely by the
+    /// promised price without verifying quotes by simulation.
     Optimal,
-    /// Quotes may by discarde when they failed to be verified by simulation.
+    #[default]
+    /// Quotes get verified by simulation whenever possible and verified
+    /// quotes are preferred over unverified ones, even at a worse price.
     Verified,
 }
 
@@ -124,8 +127,8 @@ pub struct OrderQuoteRequest {
     pub from: Address,
     pub sell_token: Address,
     pub buy_token: Address,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub receiver: Option<Address>,
+    #[serde(default)]
+    pub receiver: Receiver,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
     #[serde(flatten)]
@@ -322,7 +325,7 @@ pub enum SellAmount {
 pub struct OrderQuote {
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Option<Address>,
+    pub receiver: Receiver,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -381,6 +384,7 @@ mod tests {
                 "from": "0x0000000000000000000000000000000000000000",
                 "sellToken": "0x0000000000000000000000000000000000000000",
                 "buyToken": "0x0000000000000000000000000000000000000000",
+                "receiver": "0x0000000000000000000000000000000000000000",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
                 "validFor": 1800,
@@ -389,9 +393,34 @@ mod tests {
                 "buyTokenBalance": "erc20",
                 "signingScheme": "eip712",
                 "timeout": null,
-                "priceQuality": "optimal",
+                "priceQuality": "verified",
             })
         );
+    }
+
+    #[test]
+    fn quote_request_tolerates_null_receiver() {
+        let base = json!({
+            "from": "0x0000000000000000000000000000000000000000",
+            "sellToken": "0x0000000000000000000000000000000000000001",
+            "buyToken": "0x0000000000000000000000000000000000000002",
+            "kind": "buy",
+            "buyAmountAfterFee": "1",
+        });
+
+        for receiver in [
+            serde_json::Value::Null,
+            json!("0x0000000000000000000000000000000000000000"),
+        ] {
+            let mut body = base.clone();
+            body["receiver"] = receiver;
+            let parsed: OrderQuoteRequest = serde_json::from_value(body).unwrap();
+            assert_eq!(parsed.receiver, Receiver::OWNER);
+        }
+
+        // Missing field → still zero.
+        let parsed: OrderQuoteRequest = serde_json::from_value(base).unwrap();
+        assert_eq!(parsed.receiver, Receiver::OWNER);
     }
 
     #[test]

@@ -1,28 +1,26 @@
 //! The ingester drains the yellowstone gRPC stream as fast as it delivers,
 //! pushes tagged updates into the channel, and advances the latest-chain-slot
-//! counter on every slot-filter message. It performs no decoding.
+//! counter on every confirmed slot message. It performs no decoding.
 //!
-//! The stream it drains is an `AutoReconnect`-backed
+//! The stream it drains is a
 //! [`GeyserStream`](yellowstone_grpc_client::GeyserStream) from
-//! `yellowstone-grpc-client`: reconnects, backoff, and resume-from-checkpoint
-//! are handled inside that stream and never surface
-//! here. The ingester's [`Ingester::run`] loop therefore has no backoff of its
-//! own; it returns when the stream ends (the wrapper gave up on an
-//! unrecoverable error) or when the decoder hangs up.
+//! `yellowstone-grpc-client` without the library's reconnect layer: the first
+//! stream error ends the drain loop, and the run loop resubscribes from the
+//! persisted watermark after an RPC backfill. The ingester's
+//! [`Ingester::run`] loop therefore has no backoff of its own; it returns when
+//! the stream ends or errors, or when the decoder hangs up.
 //!
-//! [`Ingester::serve`] is the production entrypoint — the "actual caller" —
-//! that builds the subscription request, resumes from the persisted watermark,
-//! opens the `GeyserStream`, and runs the drain loop. It expects the
-//! [`GeyserGrpcClient`] it receives to have been built with a reconnect config
-//! (via `set_reconnect_config`), otherwise the `AutoReconnect` wrapper won't
-//! actually reconnect, and with HTTP/2 keepalive (`http2_keep_alive_interval`
-//! / `keep_alive_while_idle`). The ingester does not answer server `Ping`
-//! frames itself, so the transport keepalive is what holds an otherwise idle
-//! connection open.
+//! [`Ingester::serve`] is the production entrypoint that builds the
+//! subscription request, resumes past the last indexed slot, opens the
+//! `GeyserStream`, and runs the drain loop. It expects the
+//! [`GeyserGrpcClient`] it receives to have been built with HTTP/2 keepalive
+//! (`http2_keep_alive_interval` / `keep_alive_while_idle`). The ingester does
+//! not answer server `Ping` frames itself, so the transport keepalive is what
+//! holds an otherwise idle connection open.
 
 use {
     crate::{
-        persistence::Persistence,
+        persistence::Postgres,
         types::{
             Signature,
             channel::StreamUpdate,
@@ -30,6 +28,7 @@ use {
             slot::Slot,
             wire::{
                 CommitmentLevel,
+                SlotStatus,
                 SubscribeRequest,
                 SubscribeRequestFilterSlots,
                 SubscribeRequestFilterTransactions,
@@ -43,6 +42,7 @@ use {
     futures::stream::{Stream, StreamExt},
     solana_sdk::pubkey::Pubkey,
     std::{
+        collections::HashMap,
         ops::ControlFlow,
         sync::{
             Arc,
@@ -60,8 +60,7 @@ pub const INGEST_TO_DECODER_CAPACITY: usize = 1024;
 /// Ingester component.
 ///
 /// Generic over the update `Stream` so unit tests can drive it with a mock.
-/// Production wires this to an `AutoReconnect`-backed `GeyserStream` via
-/// [`Ingester::serve`].
+/// Production wires this to a `GeyserStream` via [`Ingester::serve`].
 ///
 /// `Ping`/`Pong` frames are ignored: the library passes them through, but they
 /// carry no data the ingester needs, and answering server pings is not part of
@@ -70,9 +69,8 @@ pub(crate) struct Ingester<S>
 where
     S: Stream<Item = Result<SubscribeUpdate, Status>> + Unpin + Send,
 {
-    /// The yellowstone update stream. Expected to be `AutoReconnect`-backed in
-    /// production, so reconnects happen inside the stream and never surface to
-    /// the drain loop.
+    /// The yellowstone update stream. Its first error ends the drain loop.
+    /// Resubscribing is the caller's job.
     pub stream: S,
 
     /// Sends `StreamUpdate` to the decoder. Should be bounded to
@@ -80,7 +78,7 @@ where
     pub tx: Sender<StreamUpdate>,
 
     /// Latest chain slot seen on the slot filter. The ingester is the sole
-    /// writer. The `Arc` is taken from the caller so the finalization worker
+    /// writer. The `Arc` is taken from the caller so other components
     /// can share it as a read handle once it is wired up; it doesn't read it
     /// yet. Cold start is zero (`AtomicU64::default`).
     pub latest_chain_slot: Arc<AtomicU64>,
@@ -92,10 +90,10 @@ where
 {
     /// Construct a new ingester over an already-open update stream. The caller
     /// supplies `latest_chain_slot` so it can share the same `Arc<AtomicU64>`
-    /// with the finalization worker, and reuse it across restarts. The caller
-    /// also owns building the stream, the
-    /// subscription request, the resume slot, and the reconnect policy that
-    /// come with it. Production wiring lives in [`Ingester::serve`].
+    /// with other components, and reuse it across restarts. The caller
+    /// also owns building the stream, the subscription request, and the
+    /// resume slot that come with it. Production wiring lives in
+    /// [`Ingester::serve`].
     pub fn new(stream: S, tx: Sender<StreamUpdate>, latest_chain_slot: Arc<AtomicU64>) -> Self {
         Self {
             stream,
@@ -106,11 +104,9 @@ where
 
     /// Drain the update stream until it ends or the decoder hangs up.
     ///
-    /// Recoverable stream errors never reach this loop: the `AutoReconnect`
-    /// wrapper handles them internally. Returns `Ok(())` when the decoder
-    /// dropped its receiver (clean shutdown), or [`Err(Error)`] when the stream
-    /// ended terminally (the wrapper gave up on an unrecoverable error, or the
-    /// stream closed).
+    /// Returns `Ok(())` when the decoder dropped its receiver (clean
+    /// shutdown), or [`Err(Error)`] on the first stream error or when the
+    /// stream closes.
     pub async fn run(&mut self) -> Result<(), Error> {
         while let Some(update) = self.stream.next().await {
             match update {
@@ -136,9 +132,10 @@ where
     /// Dispatch one wire message. Breaks when the decoder is gone.
     //
     // Associated function taking the channel and chain-tip counter by reference
-    // rather than `&self`, so the future borrows only those (both `Sync`) fields
-    // across awaits. That keeps `run`'s future `Send` without requiring
-    // `Ingester: Sync`. The `GeyserStream` field is `Send` but not `Sync`.
+    // rather than `&self`, so the future borrows only those (both `Sync`)
+    // fields across awaits. That keeps `run`'s future `Send` without
+    // requiring `Ingester: Sync`. The `GeyserStream` field is `Send` but
+    // not `Sync`.
     async fn handle_update(
         tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
@@ -153,7 +150,7 @@ where
         };
         match update {
             UpdateOneof::Transaction(tx_msg) => Self::handle_transaction(tx, tx_msg).await,
-            UpdateOneof::Slot(slot) => Self::handle_slot(latest_chain_slot, slot).await,
+            UpdateOneof::Slot(slot) => Self::handle_slot(tx, latest_chain_slot, slot).await,
 
             // Ping/Pong frames carry no data the ingester needs; the library passes them through,
             // and we drop them here.
@@ -195,14 +192,37 @@ where
         .await
     }
 
-    /// Consume a slot message: advance the in-memory chain-tip counter. Slot
-    /// messages never enter the channel, so this always continues.
+    /// Route a slot message by status: confirmed advances the tip counter
+    /// and flushes the decoder, finalized advances the finalized watermark,
+    /// and processed is dropped since those slots can still be skipped or
+    /// orphaned.
     async fn handle_slot(
+        tx: &Sender<StreamUpdate>,
         latest_chain_slot: &AtomicU64,
         slot: SubscribeUpdateSlot,
     ) -> ControlFlow<()> {
-        latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
-        ControlFlow::Continue(())
+        match slot.status() {
+            SlotStatus::SlotConfirmed => {
+                latest_chain_slot.fetch_max(slot.slot, Ordering::Relaxed);
+                Self::forward(
+                    tx,
+                    StreamUpdate::Confirmed {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            SlotStatus::SlotFinalized => {
+                Self::forward(
+                    tx,
+                    StreamUpdate::Finalized {
+                        slot: Slot(slot.slot),
+                    },
+                )
+                .await
+            }
+            _ => ControlFlow::Continue(()),
+        }
     }
 
     /// Push one update into the decoder channel. A full channel is the intended
@@ -227,55 +247,59 @@ where
 /// Why the ingester stopped.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
-    /// The persisted watermark could not be read.
-    #[error("failed to read the resume watermark: {0}")]
-    CantReadWatermark(#[from] PersistenceError),
+    /// The persisted last indexed slot could not be read.
+    #[error("failed to read the last indexed slot: {0}")]
+    CantReadLastIndexedSlot(#[from] PersistenceError),
     /// The yellowstone subscription could not be opened.
     #[error("failed to open the yellowstone subscription: {0}")]
     Subscribe(#[from] GeyserGrpcClientError),
-    /// The stream returned a terminal gRPC error — the `AutoReconnect` wrapper
-    /// gave up on an unrecoverable failure.
+    /// The stream returned a gRPC error.
     #[error("yellowstone stream error: {0}")]
     Stream(#[from] Status),
-    /// The stream ended without an error — the `AutoReconnect` wrapper stopped.
+    /// The stream ended without an error.
     #[error("yellowstone stream ended")]
     StreamEnded,
 }
 
 impl Ingester<GeyserStream> {
-    /// Production entrypoint: build the subscription request, resume from the
-    /// persisted watermark, open an `AutoReconnect`-backed `GeyserStream`, and
-    /// run the drain loop.
+    /// Production entrypoint: build the subscription request, resume past
+    /// the persisted last indexed slot, open a `GeyserStream`, and run the
+    /// drain loop.
     ///
-    /// The initial `from_slot` is `watermark + 1`, or `None` on a cold start
-    /// (the provider subscribes from the live tip). Reconnect `from_slot` is
-    /// driven by the `AutoReconnect` wrapper's `BlockMeta` checkpoint, not this
-    /// method.
+    /// The initial `from_slot` is `last_indexed_slot + 1`, or `None` on a cold
+    /// start (the provider subscribes from the live tip).
     ///
     /// Returns `Ok(())` on a clean shutdown (the decoder dropped its receiver),
     /// or `Err(Error)` if setup failed or the stream ended terminally. The
     /// client is consumed and dropped with the ingester.
     ///
     /// `latest_chain_slot` is taken from the caller so the same `Arc` can be
-    /// shared with the finalization worker and reused across restarts.
+    /// shared with other components and reused across restarts.
     pub async fn serve(
         mut client: GeyserGrpcClient,
         tx: Sender<StreamUpdate>,
-        persistence: Persistence,
+        persistence: Postgres,
         latest_chain_slot: Arc<AtomicU64>,
         settlement_program: Pubkey,
-        solflow_program: Pubkey,
+        solflow_program: Option<Pubkey>,
+        resume: Resume,
     ) -> Result<(), Error> {
-        let from_slot = persistence
-            .read_watermark()
-            .await?
-            .map(|watermark| watermark + 1);
+        // The proto field is a bare slot number, and `from_slot` is inclusive,
+        // so resume one past the last fully persisted slot.
+        let from_slot = match resume {
+            Resume::Watermark => persistence
+                .last_indexed_slot()
+                .await?
+                .map(|last_indexed| u64::from(last_indexed) + 1),
+            Resume::From(slot) => Some(slot),
+        };
         let request = subscribe_request(settlement_program, solflow_program, from_slot);
 
         // The sink is the bidi request half: if kept, it can reconfigure the
-        // subscription at runtime (add/remove a tracked program, change commitment,
-        // narrow filters). Not used for this puprose at this time, but worth
-        // considering in case our indexing requirements get more dynamic.
+        // subscription at runtime (add/remove a tracked program, change
+        // commitment, narrow filters). Not used for this puprose at
+        // this time, but worth considering in case our indexing
+        // requirements get more dynamic.
         let (_sink, stream) = client.subscribe_with_request(Some(request)).await?;
 
         let mut ingester = Ingester::new(stream, tx, latest_chain_slot);
@@ -283,45 +307,28 @@ impl Ingester<GeyserStream> {
     }
 }
 
-/// Temporary compile-time proof that [`Ingester::serve`]'s future is `Send`.
-///
-/// Keep this only until a real `tokio::spawn(Ingester::serve(...))` call site
-/// lands; the actual spawn is the better check. Delete this helper then.
-#[allow(dead_code)]
-fn assert_serve_future_is_send(
-    client: GeyserGrpcClient,
-    tx: Sender<StreamUpdate>,
-    persistence: Persistence,
-    latest_chain_slot: Arc<AtomicU64>,
-    settlement_program: Pubkey,
-    solflow_program: Pubkey,
-) {
-    fn is_send<F: Send>(_: F) {}
-    is_send(Ingester::serve(
-        client,
-        tx,
-        persistence,
-        latest_chain_slot,
-        settlement_program,
-        solflow_program,
-    ));
+/// Filter labels in the subscription request. The server echoes them on
+/// matching updates, nothing routes on them today.
+const SETTLEMENT_FILTER: &str = "settlement_txs";
+const SOLFLOW_FILTER: &str = "sol_flow_txs";
+const SLOT_FILTER: &str = "slot_statuses";
+
+/// Where a fresh subscription starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Resume {
+    /// One past the persisted last indexed slot.
+    Watermark,
+    /// A caller-chosen slot, still bounded by the provider's replay window.
+    From(u64),
 }
 
 /// The wire-level filter shape: the two named transaction filters and the
-/// `chain_tip` slot filter, multiplexed into a single subscription at
+/// slot-status filter, multiplexed into a single subscription at
 /// `confirmed` commitment. `from_slot` is the resume slot passed in by
-/// [`Ingester::serve`] (watermark + 1, or `None` for the live tip).
-///
-/// The library auto-adds a `BlockMeta` + `slot` filter (under its
-/// `__autoreconnect` key) so the `AutoReconnect` wrapper can checkpoint and
-/// resume on reconnect; those messages are consumed inside the wrapper and
-/// never reach the ingester.
-///
-/// TODO: source the exact subscriptions from a config file once this crate's
-/// configuration module lands.
+/// [`Ingester::serve`] (`last_indexed_slot + 1`, or `None` for the live tip).
 fn subscribe_request(
     settlement_program: Pubkey,
-    solflow_program: Pubkey,
+    solflow_program: Option<Pubkey>,
     from_slot: Option<u64>,
 ) -> SubscribeRequest {
     // `failed: None` includes failed transactions: the failure itself is the
@@ -332,20 +339,22 @@ fn subscribe_request(
         account_include: vec![program.to_string()],
         ..Default::default()
     };
+    let mut filters = HashMap::from([(
+        SETTLEMENT_FILTER.to_owned(),
+        transactions(settlement_program),
+    )]);
+    if let Some(solflow) = solflow_program {
+        filters.insert(SOLFLOW_FILTER.to_owned(), transactions(solflow));
+    }
     SubscribeRequest {
-        transactions: [
-            (
-                "settlement_txs".to_owned(),
-                transactions(settlement_program),
-            ),
-            ("sol_flow_txs".to_owned(), transactions(solflow_program)),
-        ]
-        .into(),
+        transactions: filters,
         slots: [(
-            "chain_tip".to_owned(),
+            SLOT_FILTER.to_owned(),
             SubscribeRequestFilterSlots {
-                // one message per slot at the subscription's commitment level
-                filter_by_commitment: Some(true),
+                // Every status transition, so finalized slots arrive next to
+                // confirmed ones. The ingester routes the two it needs and
+                // drops the rest.
+                filter_by_commitment: Some(false),
                 ..Default::default()
             },
         )]

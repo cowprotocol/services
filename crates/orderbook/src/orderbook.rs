@@ -5,7 +5,7 @@ use {
             trades::{TradeFilter, TradeRetrieving},
         },
         dto::{self, OrderSimulationRequest, OrderSimulationResult},
-        solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring},
+        solver_competition::LoadSolverCompetitionError,
     },
     alloy::primitives::{Address, B256, keccak256},
     anyhow::{Context, Result, anyhow},
@@ -26,7 +26,6 @@ use {
             SignedOrderCancellations,
         },
         quote::QuoteId,
-        solver_competition::{self, SolverCompetitionAPI},
     },
     observe::metrics::LivenessChecking,
     shared::{
@@ -41,7 +40,6 @@ use {
     },
     simulator::simulation_builder::{self, SettlementSimulator},
     std::{borrow::Cow, sync::Arc},
-    strum::Display,
     thiserror::Error,
     tracing::instrument,
 };
@@ -54,18 +52,34 @@ struct Metrics {
     orders: prometheus::IntCounterVec,
 }
 
-#[derive(Display)]
-#[strum(serialize_all = "snake_case")]
 enum OrderOperation {
     Created,
     Cancelled,
 }
 
-#[derive(Display)]
-#[strum(serialize_all = "snake_case")]
-enum OrderClass {
-    Market,
-    Limit,
+impl OrderOperation {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Created => "created",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// Whether an order's limit price was within the quote when it was submitted.
+enum MarketPosition {
+    InMarket,
+    OutOfMarket,
+}
+
+impl MarketPosition {
+    /// The metric label values keep the historic `market`/`limit` naming.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::InMarket => "market",
+            Self::OutOfMarket => "limit",
+        }
+    }
 }
 
 impl Metrics {
@@ -75,7 +89,7 @@ impl Metrics {
     }
 
     fn on_order_operation(order: &Order, operation: OrderOperation) {
-        let class = if order.metadata.quote.as_ref().is_some_and(|quote| {
+        let position = if order.metadata.quote.as_ref().is_some_and(|quote| {
             // Check if the order at the submission time was "in market"
             !is_order_outside_market_price(
                 &Amounts {
@@ -97,24 +111,25 @@ impl Metrics {
                 order.data.kind,
             )
         }) {
-            OrderClass::Market
+            MarketPosition::InMarket
         } else {
-            OrderClass::Limit
+            MarketPosition::OutOfMarket
         };
         Self::get()
             .orders
-            .with_label_values(&[&class.to_string(), &operation.to_string()])
+            .with_label_values(&[position.as_str(), operation.as_str()])
             .inc();
     }
 
-    // Resets all the counters to 0 so we can always use them in Grafana queries.
+    // Resets all the counters to 0 so we can always use them in Grafana
+    // queries.
     fn initialize() {
         let metrics = Self::get();
         for op in &[OrderOperation::Created, OrderOperation::Cancelled] {
-            for class in &[OrderClass::Market, OrderClass::Limit] {
+            for position in &[MarketPosition::InMarket, MarketPosition::OutOfMarket] {
                 metrics
                     .orders
-                    .with_label_values(&[&class.to_string(), &op.to_string()])
+                    .with_label_values(&[position.as_str(), op.as_str()])
                     .reset();
             }
         }
@@ -297,13 +312,14 @@ impl Orderbook {
             .await?;
 
         let order_uid = order.metadata.uid;
+        let quote_id = quote.as_ref().and_then(|q| q.id);
 
         // Check if it has to replace an existing order
         if let Some(old_order) = replaced_order {
-            self.replace_order(order, old_order).await?
+            self.replace_order(order, old_order, quote_id).await?
         } else {
             self.database
-                .insert_order(&order)
+                .insert_order(&order, quote_id)
                 .await
                 .map_err(|err| AddOrderError::from_insertion(err, &order))?;
             Metrics::on_order_operation(&order, OrderOperation::Created);
@@ -443,6 +459,7 @@ impl Orderbook {
         &self,
         validated_new_order: Order,
         old_order: Order,
+        quote_id: Option<QuoteId>,
     ) -> Result<(), AddOrderError> {
         validated_new_order
             .signature
@@ -459,7 +476,11 @@ impl Orderbook {
         }
 
         if self
-            .order_is_actively_bid_on(old_order.metadata.uid)
+            .database
+            .order_is_actively_bid_on(
+                &old_order.metadata.uid,
+                self.active_order_competition_threshold,
+            )
             .await?
         {
             return Err(AddOrderError::InvalidReplacement(
@@ -468,32 +489,13 @@ impl Orderbook {
         }
 
         self.database
-            .replace_order(&old_order.metadata.uid, &validated_new_order)
+            .replace_order(&old_order.metadata.uid, &validated_new_order, quote_id)
             .await
             .map_err(|err| AddOrderError::from_insertion(err, &validated_new_order))?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(&validated_new_order, OrderOperation::Created);
 
         Ok(())
-    }
-
-    async fn order_is_actively_bid_on(&self, order_uid: OrderUid) -> Result<bool> {
-        let latest_competitions = self
-            .database
-            .load_latest_competitions(self.active_order_competition_threshold)
-            .await?;
-
-        let order_is_bid_on = latest_competitions
-            .into_iter()
-            .flat_map(|competition| competition.common.solutions)
-            .flat_map(|solution| solution.orders)
-            .map(|order| match order {
-                solver_competition::Order::Colocated { id, .. } => id,
-                solver_competition::Order::Legacy { id, .. } => id,
-            })
-            .any(|uid| uid == order_uid);
-
-        Ok(order_is_bid_on)
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
@@ -535,25 +537,19 @@ impl Orderbook {
         &self,
         uid: &OrderUid,
     ) -> Result<dto::order::Status, OrderStatusError> {
-        let solutions = |competition: SolverCompetitionAPI| {
-            competition
-                .common
+        let solutions = |response: model::solver_competition_v2::Response| {
+            response
                 .solutions
                 .into_iter()
                 .map(|solution| {
-                    let executed_amounts = solution.orders.iter().find_map(|o| match o {
-                        solver_competition::Order::Legacy { .. } => None,
-                        solver_competition::Order::Colocated {
-                            id,
-                            sell_amount,
-                            buy_amount,
-                        } => (id == uid).then_some(dto::order::ExecutedAmounts {
-                            sell: *sell_amount,
-                            buy: *buy_amount,
-                        }),
+                    let executed_amounts = solution.orders.iter().find_map(|order| {
+                        (order.id == *uid).then_some(dto::order::ExecutedAmounts {
+                            sell: order.sell_amount,
+                            buy: order.buy_amount,
+                        })
                     });
                     dto::order::SolutionInclusion {
-                        solver: solution.solver,
+                        solver: solution.solver_address,
                         executed_amounts,
                     }
                 })
@@ -561,31 +557,27 @@ impl Orderbook {
         };
 
         let latest_competition = async {
-            let competition =
-                SolverCompetitionStoring::load_latest_competition(&self.database, None)
-                    .await
-                    .map_err(Into::<OrderStatusError>::into)?;
+            let competition = self
+                .database
+                .load_latest_competition(None)
+                .await
+                .map_err(Into::<OrderStatusError>::into)?;
             Ok::<_, OrderStatusError>(solutions(competition))
         };
 
         // Once an order was executed we always want to return `Traded` with the
-        // competition data of the **first** time it was traded for a stable result.
-        // Under some circumstances it can happen that the latest state of an already
-        // executed order is not `Traded`. To detect that we first check the trades
-        // table and return the appropriate competition data.
-        let trades = self
-            .database
-            .trades(&TradeFilter {
-                owner: None,
-                order_uid: Some(*uid),
-            })
-            .await?;
+        // competition data of the **first** time it was traded for a stable
+        // result. Under some circumstances it can happen that the
+        // latest state of an already executed order is not `Traded`. To
+        // detect that we first check the trades table and return the
+        // appropriate competition data.
+        let trades = self.database.trades(&TradeFilter::OrderUid(*uid)).await?;
 
         match trades.first().map(|trade| trade.tx_hash) {
             Some(Some(tx_hash)) => {
                 let competition = self
                     .database
-                    .load_competition(Identifier::Transaction(tx_hash), None)
+                    .load_competition_by_tx_hash(tx_hash, None)
                     .await?;
                 return Ok(dto::order::Status::Traded(solutions(competition)));
             }
@@ -813,7 +805,7 @@ mod tests {
                 let old_order = old_order.clone();
                 move |_| Ok(Some(old_order.clone()))
             });
-        database.expect_replace_order().returning(|_, _| Ok(()));
+        database.expect_replace_order().returning(|_, _, _| Ok(()));
 
         let mut order_validator = MockOrderValidating::new();
         order_validator
@@ -837,7 +829,7 @@ mod tests {
         let database =
             crate::database::Postgres::try_new("postgresql://", Default::default()).unwrap();
         database::clear_DANGER(&database.pool).await.unwrap();
-        database.insert_order(&old_order).await.unwrap();
+        database.insert_order(&old_order, None).await.unwrap();
 
         let database_replica = database.clone();
         let app_data = Arc::new(crate::app_data::Registry::new(

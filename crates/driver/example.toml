@@ -12,11 +12,22 @@ response-size-limit-max-bytes = 30000000
 [solver.request-headers]
 fake-header-one = "FAKE-HEADER-VALUE"  # For instance an authorization token which must be provided on each request
 
+[solver.token-supported]  # Keys are token addresses or [token-groups] names
+ondo = false
+xstocks = false
+"0x0000000000000000000000000000000000000002" = true  # An address overrides the groups containing it
+
 # [[solver]] # And so on, specify as many solvers as needed
 # name = "othersolver"
 # endpoint = "http://localhost:1235"
 # relative-slippage = "0.1"
 # account = "0x0000000000000000000000000000000000000000000000000000000000000002"
+
+# Groups of tokens that solvers refer to by name in `token-supported`. Listing
+# them once per driver keeps the solver sections small.
+[token-groups]
+ondo = ["0x0000000000000000000000000000000000000001"]
+xstocks = ["0x0000000000000000000000000000000000000002"]
 
 [submission]
 gas-price-cap = "1000000000000"
@@ -35,12 +46,7 @@ weth = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 balances = "0x3e8C6De9510e7ECad902D005DE3Ab52f35cF4f1b"
 signatures = "0x8262d639c38470F38d2eff15926F7071c28057Af"
 flashloan-router = "0x0000000000000000000000000000000000000000"
-
-[[contracts.cow-amms]]
-# address of factory creating new CoW AMMs
-factory = "0x86f3df416979136cb4fdea2c0886301b911c163b"
-# address of contract to help interfacing with the created CoW AMMs
-helper = "0x86f3df416979136cb4fdea2c0886301b911c163b"
+deadline-check = "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C"
 
 [liquidity]
 base-tokens = [
@@ -91,19 +97,14 @@ max-order-age = "1m"
 # liquidity-bootstrapping = [] # liquidity bootstrapping pool factory addresses
 # pool-deny-list = [] # which pools to ignore
 
-# [[liquidity.uniswap-v3]] # Uniswap V3 configuration (subgraph as data source)
-# preset = "uniswap-v3"
-# indexer-config = { subgraph = { url = "http://localhost:1234" } }
-# max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
-
 # [[liquidity.uniswap-v3]] # Uniswap V3 configuration (pool-indexer as data source)
 # preset = "uniswap-v3"
-# indexer-config = { pool-indexer = { url = "http://pool-indexer/" } }
-# max_pools_to_initialize = 100
+# indexer-url = "http://pool-indexer/"
+# max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
 
 # [[liquidity.uniswap-v3]] # Custom Uniswap V3 configuration
 # router = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-# indexer-config = { subgraph = { url = "http://localhost:1234" } }
+# indexer-url = "http://pool-indexer/"
 # max_pools_to_initialize = 100 # how many of the deepest pools to initialise on startup
 
 # [liquidity-sources-notifier] # Sends settlement notifications to third party liquidity sources used by solvers

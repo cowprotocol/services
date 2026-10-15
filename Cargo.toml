@@ -8,53 +8,58 @@ members = [
 
 [workspace.dependencies]
 account-balances = { path = "crates/account-balances" }
-alloy = { version = "1.8.3", default-features = false }
-alloy-consensus = { version = "1.8.3", default-features = false }
-alloy-contract = { version = "1.8.3", default-features = false }
-alloy-dyn-abi = { version = "1.5.7", default-features = false }
-alloy-eips = { version = "1.8.3", default-features = false }
-alloy-json-abi = { version = "1.5.7", default-features = false }
-alloy-json-rpc = { version = "1.8.3", default-features = false }
-alloy-network = { version = "1.8.3", default-features = false }
-alloy-primitives = { version = "1.5.7", default-features = false }
-alloy-provider = { version = "1.8.3", default-features = false }
-alloy-rpc-client = { version = "1.8.3", default-features = false }
-alloy-rpc-types = { version = "1.8.3", default-features = false }
-alloy-rpc-types-eth = { version = "1.8.3", default-features = false }
-alloy-rpc-types-trace = { version = "1.8.3", default-features = false }
-alloy-signer = { version = "1.8.3", default-features = false }
-alloy-signer-local = { version = "1.8.3", default-features = false }
-alloy-sol-types = { version = "1.5.7" }
-alloy-transport = { version = "1.8.3", default-features = false }
-alloy-transport-ws = { version = "1.8.3", default-features = false }
+alloy = { version = "2.4.1", default-features = false }
+alloy-consensus = { version = "2.4.1", default-features = false }
+alloy-contract = { version = "2.4.1", default-features = false }
+alloy-dyn-abi = { version = "1.6.1", default-features = false }
+alloy-eips = { version = "2.4.1", default-features = false }
+alloy-json-abi = { version = "1.6.1", default-features = false }
+alloy-json-rpc = { version = "2.4.1", default-features = false }
+alloy-network = { version = "2.4.1", default-features = false }
+alloy-primitives = { version = "1.6.1", default-features = false }
+alloy-provider = { version = "2.4.1", default-features = false }
+alloy-rpc-client = { version = "2.4.1", default-features = false }
+alloy-rpc-types = { version = "2.4.1", default-features = false }
+alloy-rpc-types-eth = { version = "2.4.1", default-features = false }
+alloy-signer = { version = "2.4.1", default-features = false }
+alloy-signer-local = { version = "2.4.1", default-features = false }
+alloy-sol-types = { version = "1.6.1" }
+alloy-transport = { version = "2.4.1", default-features = false }
+alloy-transport-ws = { version = "2.4.1", default-features = false }
 anyhow = "1.0.100"
 app-data = { path = "crates/app-data" }
 arc-swap = "1.7.1"
-async-nats = "0.48.0"
+async-nats = { version = "0.48.0", default-features = false, features = ["aws-lc-rs", "jetstream"] }
 async-stream = "0.3.5"
 async-trait = "0.1.80"
 autopilot = { path = "crates/autopilot" }
 aws-config = "1.5.1"
+aws-sdk-kms = { version = "1.49.0", default-features = false }
 aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
 backtrace = { version = "0.3.76", default-features = false }
-bad-tokens = { path = "crates/bad-tokens" }
 balance-overrides = { path = "crates/balance-overrides" }
 base64 = "0.22.1"
 bigdecimal = "0.4"
+bincode = "1.3.3"
 brotli = "8"
+bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
-cached = { version = "0.49.3", default-features = false }
+cached = { version = "0.55.1", default-features = false }
 chain = { path = "crates/chain" }
-chrono = { version = "0.4.38", default-features = false }
+chain-types = { path = "crates/chain-types" }
+chrono = { version = "0.4.38", default-features = false, features = ["serde"] }
 clap = { version = "4.5.6", features = ["derive", "env"] }
 configs = { path = "crates/configs/" }
-console-subscriber = "0.3.0"
+console-subscriber = "0.5.0"
 const_format = "0.2.32"
 const-hex = "1.17.0"
 contracts = { path = "contracts/generated/contracts-facade" }
-cow-amm = { path = "crates/cow-amm" }
+cow-settlement-client = "0.5.1"
+cow-settlement-interface = "0.5.1"
+cow-solana-rpc = { path = "crates/cow-solana-rpc" }
+cow-solana-signer = { path = "crates/cow-solana-signer" }
 dashmap = "6.1.0"
 database = { path = "crates/database" }
 derive_more = { version = "1.0.0", features = ["full"] }
@@ -66,8 +71,7 @@ event-indexing = { path = "crates/event-indexing" }
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-price-estimation = { path = "crates/gas-price-estimation" }
-hex = "0.4.3"
-hex-literal = "0.4.1"
+hex-literal = "1.1.0"
 hmac = "0.12.1"
 http-body = "1"
 http-body-util = "0.1"
@@ -80,7 +84,6 @@ jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
 jsonrpc-core = "18.0.0"
 liquidity-sources = { path = "crates/liquidity-sources" }
 maplit = "1.0.2"
-mimalloc = "0.1.43"
 mockall = "0.12.1"
 model = { path = "crates/model" }
 moka = "0.12.10"
@@ -94,7 +97,6 @@ opentelemetry-otlp = "0.32"
 opentelemetry_sdk = "0.32"
 order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
-paste = "1.0"
 pin-project-lite = "0.2.14"
 pool-indexer = { path = "crates/pool-indexer" }
 prettyplease = "0.2.37"
@@ -112,6 +114,7 @@ reqwest = { version = "0.13.4", features = ["hickory-dns"] }
 rstest = "0.26"
 ruint = { version = "1.17.2", default-features = false }
 rust_decimal = { version = "1.35.0", default-features = false }
+rustls = { version = "0.23.45", default-features = false }
 s3 = { path = "crates/s3" }
 schemars = { version = "1.2", features = ["chrono04"] }
 scopeguard = "1.2.0"
@@ -119,17 +122,30 @@ serde = { version = "1.0.203", features = ["derive"] }
 serde-ext = { path = "crates/serde-ext" }
 serde_json = { version = "1.0.117", features = ["raw_value", "unbounded_depth"] }
 serde_stacker = "0.1.14"
-serde_with = "3.8.1"
+serde_with = { version = "3.8.1", features = ["base64"] }
 sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
+solana-address-lookup-table-interface = "3"
 solana-client = "4"
+solana-commitment-config = "3"
+solana-compute-budget-interface = "3"
+solana-driver = { path = "crates/solana-driver" }
 solana-indexer = { path = "crates/solana-indexer" }
+solana-rpc-client = "4"
+solana-rpc-client-api = "4"
 solana-sdk = "4"
+solana-system-interface = "3"
+solana-testlib = { path = "crates/solana-testlib" }
+solana-token = { path = "crates/solana-token" }
+solana-transaction-status-client-types = "4"
 solver = { path = "crates/solver" }
 solvers = { path = "crates/solvers" }
 solvers-dto = { path = "crates/solvers-dto" }
+spl-associated-token-account-interface = "2"
+spl-token-2022-interface = "2"
+spl-token-interface = "2"
 sqlx = {
   version = "0.8",
   default-features = false,
@@ -147,6 +163,7 @@ token-info = { path = "crates/token-info" }
 tokio = { version = "1.38.0", features = ["tracing"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tokio-tungstenite = { version = "0.28", default-features = false }
+tokio-util = "0.7"
 toml = "0.8.14"
 tower = "0.5"
 tower-http = "0.6"
@@ -156,7 +173,7 @@ tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
 winner-selection = { path = "crates/winner-selection" }
-yellowstone-grpc-client = "13.1.0"
+yellowstone-grpc-client = "13.4.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
 
 [workspace.lints]

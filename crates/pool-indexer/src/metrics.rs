@@ -6,27 +6,27 @@ pub struct Metrics {
     /// Chunk commit duration. The `_count` series doubles as a chunks-
     /// committed rate.
     #[metric(
-        labels("network"),
+        labels("network", "factory"),
         buckets(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
     )]
     pub chunk_commit_seconds: HistogramVec,
 
     /// Events applied to the DB, labelled by event type.
-    #[metric(labels("network", "kind"))]
+    #[metric(labels("network", "factory", "kind"))]
     pub events_applied: prometheus::IntCounterVec,
 
     /// Highest block committed by the live indexer.
-    #[metric(labels("network"))]
+    #[metric(labels("network", "factory"))]
     pub indexed_block: prometheus::IntGaugeVec,
 
     /// Blocks between the chain head and the indexer's checkpoint.
     /// Refreshed at the start of every `run_once` and after each chunk
     /// commit so dashboards can watch the lag drain in real time.
-    #[metric(labels("network"))]
+    #[metric(labels("network", "factory"))]
     pub indexer_lag_blocks: prometheus::IntGaugeVec,
 
     /// `run_once` failures that forced a retry.
-    #[metric(labels("network"))]
+    #[metric(labels("network", "factory"))]
     pub indexer_errors: prometheus::IntCounterVec,
 
     /// Tokens still missing `symbol` / `decimals`. Sampled each backfill pass.

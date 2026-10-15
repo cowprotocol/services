@@ -20,7 +20,7 @@ use {
         GPv2AllowListAuthentication::GPv2AllowListAuthentication,
         GPv2Settlement,
         WETH9,
-        support::{Balances, Signatures},
+        support::{Balances, DeadlineCheck, Signatures},
     },
     eth_domain_types as eth,
     ethrpc::{
@@ -54,6 +54,7 @@ pub struct Blockchain {
     pub balances: Balances::Instance,
     pub signatures: Signatures::Instance,
     pub flashloan_router: FlashLoanRouter::Instance,
+    pub deadline_check: DeadlineCheck::Instance,
     pub domain_separator: boundary::DomainSeparator,
     #[allow(
         dead_code,
@@ -127,7 +128,8 @@ impl Trade {
     }
 
     pub fn from_jit(mut fulfillment: Fulfillment) -> Self {
-        // The JIT orders do not have interactions in the tests for the time being
+        // The JIT orders do not have interactions in the tests for the time
+        // being
         fulfillment.interactions = vec![];
         Trade::Jit(fulfillment)
     }
@@ -232,20 +234,20 @@ impl Blockchain {
     /// settlement contract, token contracts, and all supporting contracts
     /// for the settlement.
     pub async fn new(config: Config) -> Self {
-        // TODO All these various deployments that are happening from the trader account
-        // should be happening from the primary_account of the node, will do this
-        // later
+        // TODO All these various deployments that are happening from the trader
+        // account should be happening from the primary_account of the
+        // node, will do this later
         let node = Node::new(&config.rpc_args).await;
         let web3 = Web3::new_from_url(&node.url());
 
         let main_trader_address = config.main_trader_secret_key.address();
         web3.wallet
             .register_signer(config.main_trader_secret_key.clone());
-        // This account is equivalent to the first test account, but due to the wallet
-        // initialization process and the fact that we launch anvil manually, we need to
-        // add it ourselves.
-        // It also must be added after the main_trader because otherwise this will be
-        // used as the default signing account
+        // This account is equivalent to the first test account, but due to the
+        // wallet initialization process and the fact that we launch
+        // anvil manually, we need to add it ourselves.
+        // It also must be added after the main_trader because otherwise this
+        // will be used as the default signing account
         let primary_account = MnemonicBuilder::english()
             .phrase("test test test test test test test test test test test junk")
             .index(0)
@@ -255,7 +257,12 @@ impl Blockchain {
         let primary_address = primary_account.address();
         web3.wallet.register_signer(primary_account);
 
-        // Use the primary account to fund the trader, cow amm and the solver with ETH.
+        // Liquidity sources read pool state through `Multicall3`, which a
+        // freshly started node does not have.
+        web3.provider.deploy_multicall3().await.unwrap();
+
+        // Use the primary account to fund the trader, cow amm and the solver
+        // with ETH.
         let balance = web3.provider.get_balance(primary_address).await.unwrap();
         wait_for(
             &web3,
@@ -342,7 +349,8 @@ impl Blockchain {
                 .await
                 .unwrap();
 
-            // Note: (settlement.address() == authenticator_address) != settlement_address
+            // Note: (settlement.address() == authenticator_address) !=
+            // settlement_address
             let settlement_code = web3
                 .provider
                 .get_code_at(*settlement.address())
@@ -393,6 +401,14 @@ impl Blockchain {
                 .unwrap();
         let flashloan_router =
             FlashLoanRouter::Instance::new(flashloan_router_address, web3.provider.clone());
+
+        let deadline_check_address = DeadlineCheck::Instance::deploy_builder(web3.provider.clone())
+            .from(main_trader_address)
+            .deploy()
+            .await
+            .unwrap();
+        let deadline_check =
+            DeadlineCheck::Instance::new(deadline_check_address, web3.provider.clone());
 
         let mut trader_addresses: Vec<Address> = Vec::new();
         for config in config.solvers {
@@ -450,8 +466,9 @@ impl Blockchain {
         .unwrap();
         let uniswap_factory =
             contracts::UniswapV2Factory::Instance::new(contract_address, web3.provider.clone());
-        // Create and fund a uniswap pair for each pool. Fund the settlement contract
-        // with the same liquidity as the pool, to allow for internalized interactions.
+        // Create and fund a uniswap pair for each pool. Fund the settlement
+        // contract with the same liquidity as the pool, to allow for
+        // internalized interactions.
         let mut pairs = Vec::new();
         for pool in config.pools {
             // Get token addresses.
@@ -617,16 +634,17 @@ impl Blockchain {
             .unwrap();
         }
 
-        // UniswapV2Pair._update, which is called by both mint() and swap(), will check
-        // the block.timestamp and decide what to do based on it. If the block.timestamp
-        // has changed since the last _update call, a conditional block will be
-        // executed, which affects the gas used. The mint call above will result in the
-        // first call to _update, and the onchain settlement will be the second.
+        // UniswapV2Pair._update, which is called by both mint() and swap(),
+        // will check the block.timestamp and decide what to do based on
+        // it. If the block.timestamp has changed since the last _update
+        // call, a conditional block will be executed, which affects the
+        // gas used. The mint call above will result in the first call
+        // to _update, and the onchain settlement will be the second.
         //
-        // This timeout ensures that when the settlement is executed at least one UNIX
-        // second has passed, so that conditional block always gets executed and the
-        // gas usage is deterministic.
-        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        // Advancing anvil's clock ensures that when the settlement is executed
+        // at least one UNIX second has passed, so that conditional block always
+        // gets executed and the gas usage is deterministic.
+        web3.provider.anvil_increase_time(1).await.unwrap();
 
         Self {
             trader_secret_key: config.main_trader_secret_key,
@@ -642,6 +660,7 @@ impl Blockchain {
             node,
             pairs,
             flashloan_router,
+            deadline_check,
         }
     }
 
@@ -689,8 +708,9 @@ impl Blockchain {
         let pair = self.find_pair(order);
         match order.side {
             order::Side::Buy => {
-                // For buy order with explicitly specified amounts, use the buy amount,
-                // otherwise assume the full sell amount to compute the execution
+                // For buy order with explicitly specified amounts, use the buy
+                // amount, otherwise assume the full sell amount
+                // to compute the execution
                 let executed = order.executed.or(order.buy_amount);
                 match executed {
                     Some(executed) => Execution {
@@ -734,7 +754,8 @@ impl Blockchain {
     ) -> Vec<Fulfillment> {
         let mut fulfillments = Vec::new();
         for order in orders {
-            // Find the pair to use for this order and calculate the buy and sell amounts.
+            // Find the pair to use for this order and calculate the buy and
+            // sell amounts.
             let sell_token = ERC20::Instance::new(
                 self.get_token_wrapped(order.sell_token),
                 self.web3.provider.clone(),
@@ -806,43 +827,50 @@ impl Blockchain {
                 )
                 .calldata()
                 .to_vec();
+            let calldatas: Option<(Vec<u8>, Vec<u8>)> = match solution.calldata {
+                super::Calldata::Missing => None,
+                super::Calldata::Valid { additional_bytes } => Some((
+                    transfer_interaction
+                        .into_iter()
+                        .chain(std::iter::repeat_n(0xab, additional_bytes))
+                        .collect(),
+                    swap_interaction,
+                )),
+                super::Calldata::Invalid => {
+                    Some((vec![1, 2, 3, 4, 5], vec![10, 11, 12, 13, 14, 15, 63, 78]))
+                }
+            };
+            let interactions = calldatas
+                .map(|(transfer_calldata, swap_calldata)| {
+                    vec![
+                        Interaction {
+                            address: *sell_token.address(),
+                            calldata: transfer_calldata,
+                            inputs: Default::default(),
+                            outputs: Default::default(),
+                            internalize: false,
+                        },
+                        Interaction {
+                            address: *pair.contract.address(),
+                            calldata: swap_calldata,
+                            inputs: vec![eth::Asset {
+                                token: (*sell_token.address()).into(),
+                                // Surplus fees stay in the contract.
+                                amount: (execution.sell - order.surplus_fee()).into(),
+                            }],
+                            outputs: vec![eth::Asset {
+                                token: (*buy_token.address()).into(),
+                                amount: execution.buy.into(),
+                            }],
+                            internalize: order.internalize,
+                        },
+                    ]
+                })
+                .unwrap_or_default();
             fulfillments.push(Fulfillment {
                 quoted_order: self.quote(order),
                 execution: execution.clone(),
-                interactions: vec![
-                    Interaction {
-                        address: *sell_token.address(),
-                        calldata: match solution.calldata {
-                            super::Calldata::Valid { additional_bytes } => transfer_interaction
-                                .into_iter()
-                                .chain(std::iter::repeat_n(0xab, additional_bytes))
-                                .collect(),
-                            super::Calldata::Invalid => vec![1, 2, 3, 4, 5],
-                        },
-                        inputs: Default::default(),
-                        outputs: Default::default(),
-                        internalize: false,
-                    },
-                    Interaction {
-                        address: *pair.contract.address(),
-                        calldata: match solution.calldata {
-                            super::Calldata::Valid { .. } => swap_interaction,
-                            super::Calldata::Invalid => {
-                                vec![10, 11, 12, 13, 14, 15, 63, 78]
-                            }
-                        },
-                        inputs: vec![eth::Asset {
-                            token: (*sell_token.address()).into(),
-                            // Surplus fees stay in the contract.
-                            amount: (execution.sell - order.surplus_fee()).into(),
-                        }],
-                        outputs: vec![eth::Asset {
-                            token: (*buy_token.address()).into(),
-                            amount: execution.buy.into(),
-                        }],
-                        internalize: order.internalize,
-                    },
-                ],
+                interactions,
             });
         }
         fulfillments
@@ -890,8 +918,9 @@ impl Node {
     async fn new(extra_args: &[String]) -> Self {
         use tokio::io::AsyncBufReadExt as _;
 
-        // Allow using some custom logic to spawn `anvil` by setting `ANVIL_COMMAND`.
-        // For example if you set up a command that spins up a docker container.
+        // Allow using some custom logic to spawn `anvil` by setting
+        // `ANVIL_COMMAND`. For example if you set up a command that
+        // spins up a docker container.
         let command = std::env::var("ANVIL_COMMAND").unwrap_or("anvil".to_string());
 
         let mut process = tokio::process::Command::new(command)
@@ -947,9 +976,9 @@ impl Node {
 
 impl Drop for Node {
     fn drop(&mut self) {
-        // This only sends SIGKILL to the process but does not wait for the process to
-        // actually terminate. But since `anvil` is fairly well behaved that
-        // should be good enough.
+        // This only sends SIGKILL to the process but does not wait for the
+        // process to actually terminate. But since `anvil` is fairly
+        // well behaved that should be good enough.
         if let Err(err) = self.process.start_kill() {
             tracing::error!("failed to kill anvil: {err:?}");
         }

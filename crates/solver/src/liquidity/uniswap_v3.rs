@@ -1,10 +1,9 @@
 use {
-    super::{AmmOrderExecution, ConcentratedLiquidity, SettlementHandling},
+    super::{ConcentratedLiquidity, SettlementHandling},
     crate::{
         interactions::UniswapV3Interaction,
         liquidity::Liquidity,
         liquidity_collector::LiquidityCollecting,
-        settlement::SettlementEncoder,
     },
     alloy::primitives::Address,
     anyhow::{Context, Result, ensure},
@@ -134,14 +133,6 @@ impl UniswapV3SettlementHandler {
 impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     fn as_any(&self) -> &dyn std::any::Any {
         self
-    }
-
-    // Creates the required interaction to convert the given input into output.
-    // Assumes slippage is already applied to the `input_max` field.
-    fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        let swap = Arc::new(self.settle(execution.input_max, execution.output));
-        encoder.append_to_execution_plan_internalizable(swap, execution.internalizable);
-        Ok(())
     }
 }
 

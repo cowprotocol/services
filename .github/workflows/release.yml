@@ -6,26 +6,45 @@ on:
     # At 00:00 on Monday
     - cron: "0 0 * * 1"
 
+# Tag pushes and the release itself go through a GitHub App installation token.
+permissions:
+  contents: read
+
 jobs:
   bump-version-and-release:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_KEY }}
+          permission-contents: write
+
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # Fetch all history for all branches and tags
-          # Requires "Read and Write access to code" permission
-          token: ${{ secrets.RELEASE_ACTION_ACCESS_TOKEN }}
+          persist-credentials: false
 
       - name: Fetch latest release version tag
         id: fetch_tag
         run: |
-          LATEST_VERSION=$(curl -s https://api.github.com/repos/cowprotocol/services/releases/latest | jq -r '.tag_name')
-          if ! [[ "$LATEST_VERSION" =~ ^v[0-9]+\.[0-9]+\..* ]]; then
-            echo "Invalid tag format, cannot bump version of: $LATEST_VERSION"
+          # Get the latest 10 releases, they come ordered by date by default,
+          # extract the tags, sort them and get the latest one (by version)
+          LATEST_VERSION=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=10"  \
+            --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1)
+          if [[ -z "$LATEST_VERSION" ]]; then
+            echo "Could not determine the latest release version tag"
             exit 1
           fi
+          echo "Latest release version: $LATEST_VERSION"
           echo "latest=$LATEST_VERSION" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for changes since last tag
         run: |
@@ -47,15 +66,16 @@ jobs:
           NEW_TAG="${MAJOR}.${NEW_MINOR}.0"
           echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
           git tag $NEW_TAG
-          git push origin --tags
+          git push "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY" "$NEW_TAG"
         env:
           LATEST: ${{ steps.fetch_tag.outputs.latest }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: "Create release"
         if: env.CHANGES_DETECTED == 'true'
         uses: "actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3" # v9.0.0
         with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          github-token: "${{ steps.app-token.outputs.token }}"
           script: |
             try {
               const response = await github.rest.repos.createRelease({
@@ -76,3 +96,15 @@ jobs:
         env:
           TAG: ${{ steps.tag_version.outputs.tag }}
 
+  notify-failure:
+    needs: [bump-version-and-release]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify weekly release failure
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c # v3.0.3
+        with:
+          webhook: ${{ secrets.ALERTS_PROD_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "❌ *Weekly release creation failed!* (cowprotocol/services)\nThe release tag / GitHub release was not created — investigate before the next prod deploy.\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

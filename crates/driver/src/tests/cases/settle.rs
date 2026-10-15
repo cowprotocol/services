@@ -13,33 +13,28 @@ use {
     std::{sync::Arc, time::Duration},
 };
 
-/// Run a matrix of tests for all meaningful combinations of order kind and
-/// side, verifying that they get scored and settled successfully.
+/// Run a matrix of tests for all order sides, verifying that they get scored
+/// and settled successfully.
 #[tokio::test]
 #[ignore]
 async fn matrix() {
     for side in [order::Side::Buy, order::Side::Sell] {
-        for kind in [order::Kind::Market, order::Kind::Limit] {
-            let solver_fee = match kind {
-                order::Kind::Market => None,
-                order::Kind::Limit => Some(DEFAULT_SOLVER_FEE.ether().into_wei()),
-            };
-            let test = tests::setup()
-                .name(format!("{side:?} {kind:?}"))
-                .pool(ab_pool())
-                .order(ab_order().side(side).kind(kind).solver_fee(solver_fee))
-                .solution(ab_solution())
-                .done()
-                .await;
+        let solver_fee = Some(DEFAULT_SOLVER_FEE.ether().into_wei());
+        let test = tests::setup()
+            .name(format!("{side:?}"))
+            .pool(ab_pool())
+            .order(ab_order().side(side).solver_fee(solver_fee))
+            .solution(ab_solution())
+            .done()
+            .await;
 
-            let id = test.solve().await.ok().id();
-            test.settle(id)
-                .await
-                .ok()
-                .await
-                .ab_order_executed(&test)
-                .await;
-        }
+        let id = test.solve().await.ok().id();
+        test.settle(id)
+            .await
+            .ok()
+            .await
+            .ab_order_executed(&test)
+            .await;
     }
 }
 
@@ -113,10 +108,10 @@ async fn submits_huge_solution() {
 
     let id = test.solve().await.ok().orders(&[ab_order()]).id();
 
-    // Assume validators downvoted gas limit, solution still settles: even though we
-    // have a rule that in the _bidding phase_ the solution needs to use less than
-    // half of the block gas limit, we want it to be submitted/settled as long as it
-    // fits in the block.
+    // Assume validators downvoted gas limit, solution still settles: even
+    // though we have a rule that in the _bidding phase_ the solution needs
+    // to use less than half of the block gas limit, we want it to be
+    // submitted/settled as long as it fits in the block.
     test.web3()
         .provider
         .raw_request::<_, bool>("evm_setBlockGasLimit".into(), (9_000_000,))
@@ -138,8 +133,8 @@ async fn does_not_bid_huge_solution() {
         .done()
         .await;
 
-    // The found solution is bigger than half of gas block limit which means it gets
-    // discarded
+    // The found solution is bigger than half of gas block limit which means it
+    // gets discarded
     test.solve().await.ok().empty();
 }
 

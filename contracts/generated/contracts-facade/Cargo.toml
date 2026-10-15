@@ -54,14 +54,10 @@ cow-contract-balances = { path = "../contracts-generated/balances" }
 cow-contract-baoswaprouter = { path = "../contracts-generated/baoswaprouter" }
 cow-contract-chainalysisoracle = { path = "../contracts-generated/chainalysisoracle" }
 cow-contract-counter = { path = "../contracts-generated/counter" }
-cow-contract-cowamm = { path = "../contracts-generated/cowamm" }
-cow-contract-cowammconstantproductfactory = { path = "../contracts-generated/cowammconstantproductfactory" }
-cow-contract-cowammfactorygetter = { path = "../contracts-generated/cowammfactorygetter" }
-cow-contract-cowammlegacyhelper = { path = "../contracts-generated/cowammlegacyhelper" }
-cow-contract-cowammuniswapv2priceoracle = { path = "../contracts-generated/cowammuniswapv2priceoracle" }
 cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoken" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }
 cow-contract-cowswaponchainorders = { path = "../contracts-generated/cowswaponchainorders" }
+cow-contract-deadlinecheck = { path = "../contracts-generated/deadlinecheck" }
 cow-contract-erc20 = { path = "../contracts-generated/erc20" }
 cow-contract-erc20mintable = { path = "../contracts-generated/erc20mintable" }
 cow-contract-erc1271signaturevalidator = { path = "../contracts-generated/erc1271signaturevalidator" }
@@ -87,6 +83,7 @@ cow-contract-iuniswapv3factory = { path = "../contracts-generated/iuniswapv3fact
 cow-contract-izeroex = { path = "../contracts-generated/izeroex" }
 cow-contract-liquoricesettlement = { path = "../contracts-generated/liquoricesettlement" }
 cow-contract-mockerc4626wrapper = { path = "../contracts-generated/mockerc4626wrapper" }
+cow-contract-multicall3 = { path = "../contracts-generated/multicall3" }
 cow-contract-nonstandarderc20balances = { path = "../contracts-generated/nonstandarderc20balances" }
 cow-contract-pancakerouter = { path = "../contracts-generated/pancakerouter" }
 cow-contract-permit2 = { path = "../contracts-generated/permit2" }

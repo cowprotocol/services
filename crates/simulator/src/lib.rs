@@ -8,6 +8,7 @@ mod utils;
 
 use {
     crate::state_override_stream::SimulationOverrides,
+    alloy_eips::BlockId,
     alloy_primitives::Address,
     eth_domain_types::{self as eth, AccessList, Tx},
     http_client::HttpClientFactory,
@@ -98,7 +99,8 @@ impl Simulator {
         let block = self.eth.current_block().borrow().number.into();
         let access_list = match &self.inner {
             Inner::Tenderly(tenderly) => {
-                // function assumes `from` has the needed ETH so no state overrides are needed
+                // function assumes `from` has the needed ETH so no state
+                // overrides are needed
                 tenderly
                     .simulate(tx.clone(), block, None, tenderly::GenerateAccessList::Yes)
                     .await
@@ -119,11 +121,23 @@ impl Simulator {
         if let Some(gas) = self.disable_gas {
             return Ok(gas);
         }
-        let block: eth::BlockNo = self.eth.current_block().borrow().number.into();
+        let (block_number, block_timestamp) = {
+            let block = self.eth.current_block().borrow();
+            (block.number, block.timestamp)
+        };
+        let block = eth::BlockNo::from(block_number);
         let state_overrides = self
             .simulation_overrides
             .as_ref()
-            .and_then(|overrides| overrides.current());
+            .and_then(|overrides| overrides.overrides_for(block_number, block_timestamp));
+        // The overrides are stamped for `block_number`, so the estimate has to
+        // run against that block. `pending` can't carry them: its timestamp is
+        // the node's wall clock, which is unknowable when the request is built
+        // and moves between calls. Without overrides nothing changes.
+        let block_id = match state_overrides {
+            Some(_) => BlockId::number(block_number),
+            None => BlockId::pending(),
+        };
         Ok(match &self.inner {
             Inner::Tenderly(tenderly) => {
                 tenderly
@@ -140,7 +154,7 @@ impl Simulator {
             }
             Inner::Ethereum => self
                 .eth
-                .estimate_gas(tx.clone(), state_overrides)
+                .estimate_gas(tx.clone(), state_overrides, block_id)
                 .await
                 .map_err(with(tx, block))?,
         })
@@ -170,7 +184,7 @@ pub enum Error {
     /// If a transaction reverted, forward that transaction together with the
     /// error.
     #[error(transparent)]
-    Revert(#[from] RevertError),
+    Revert(#[from] Box<RevertError>),
     /// Any other error that is not related to the underlying transaction
     /// failing.
     #[error(transparent)]
@@ -191,11 +205,11 @@ where
             SimulatorError::GasExceeded(..) => Some(tx.clone()),
         };
         match tx {
-            Some(tx) => Error::Revert(RevertError {
+            Some(tx) => Error::Revert(Box::new(RevertError {
                 err,
                 tx: tx.clone(),
                 block,
-            }),
+            })),
             None => Error::Other(err),
         }
     }

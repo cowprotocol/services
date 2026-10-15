@@ -49,11 +49,15 @@ pub struct Config<'a> {
     pub deadline: time::Deadline,
     /// Is this a test for the /quote endpoint?
     pub quote: bool,
+    /// For quotes: the quote id the driver passes on in the `/solve` request.
+    pub quote_id: Option<i64>,
+    /// Whether the driver should flag this `/solve` request as fast-path.
+    pub fast_path: bool,
     pub fee_handler: FeeHandler,
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
-    pub haircut_bps: u32,
+    pub solver_fee_bps: u32,
 }
 
 impl Solver {
@@ -62,8 +66,8 @@ impl Solver {
         let mut solutions_json = Vec::new();
         let mut orders_json = Vec::new();
         for quote in config.quoted_orders.iter().filter(|q| !q.order.filtered) {
-            // ETH orders get unwrapped into WETH by the driver before being passed to the
-            // solver.
+            // ETH orders get unwrapped into WETH by the driver before being
+            // passed to the solver.
             let sell_token = if quote.order.sell_token == "ETH" {
                 "WETH"
             } else {
@@ -98,12 +102,12 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Make-room for the haircut: the driver subtracts a haircut
-                    // post-hoc from buy_amount() (sell orders) / adds it to
-                    // sell_amount() (buy orders). Tightening the auction limits
-                    // here ensures solvers bid with enough headroom.
-                    if config.haircut_bps > 0 {
-                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                    // The driver injects the solver fee as an additional volume
+                    // fee policy, so in driver fee-handling mode it tightens
+                    // the limits for it exactly like for
+                    // the volume policies above.
+                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_sell_amount = eth::TokenAmount(current_sell_amount)
                             .apply_factor(1.0 / (1.0 + factor))
                             .unwrap()
@@ -135,10 +139,10 @@ impl Solver {
                             _ => {}
                         }
                     }
-                    // Make-room for the haircut (see comment in the buy-side
-                    // branch above).
-                    if config.haircut_bps > 0 {
-                        let factor = f64::from(config.haircut_bps) / 10_000.0;
+                    // Solver fee make-room (see comment in the buy-side branch
+                    // above).
+                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_buy_amount = eth::TokenAmount(current_buy_amount)
                             .apply_factor(1.0 / (1.0 - factor))
                             .unwrap()
@@ -168,18 +172,12 @@ impl Solver {
                     order::Side::Buy => "buy",
                 },
                 "partiallyFillable": matches!(quote.order.partial, Partial::Yes { .. }),
-                "class": match quote.order.kind {
-                    _ if config.quote => "market",
-                    order::Kind::Market => "market",
-                    order::Kind::Limit => "limit",
-                },
+                "class": "limit",
                 "appData": app_data::AppDataHash(quote.order.app_data.hash().0.0),
                 "signature": if config.quote { "0x".to_string() } else { const_hex::encode_prefixed(quote.order_signature(config.blockchain)) },
                 "signingScheme": if config.quote { "eip1271" } else { "eip712" },
+                "receiver": format!("0x{}", const_hex::encode(quote.order.receiver.raw_bytes())),
             });
-            if let Some(receiver) = quote.order.receiver {
-                order["receiver"] = json!(receiver.encode_hex_with_prefix());
-            }
             if let Some(flashloan) = quote.order.app_data.flashloan() {
                 order["flashloanHint"] = json!(FlashloanHint {
                     liquidity_provider: flashloan.liquidity_provider,
@@ -190,22 +188,29 @@ impl Solver {
                 });
             }
             if config.fee_handler == FeeHandler::Solver {
-                order.as_object_mut().unwrap().insert(
-                    "feePolicies".to_owned(),
-                    match quote.order.kind {
-                        _ if config.quote => json!([]),
-                        order::Kind::Market => json!([]),
-                        order::Kind::Limit => {
-                            let fee_policies_json: Vec<serde_json::Value> = quote
-                                .order
-                                .fee_policy
-                                .iter()
-                                .map(|policy| policy.to_json_value())
-                                .collect();
-                            json!(fee_policies_json)
+                let mut fee_policies_json: Vec<serde_json::Value> = if config.quote {
+                    vec![]
+                } else {
+                    quote
+                        .order
+                        .fee_policy
+                        .iter()
+                        .map(|policy| policy.to_json_value())
+                        .collect()
+                };
+                // In solver fee-handling mode the injected solver fee is
+                // forwarded to the solver as a regular volume fee policy.
+                if config.solver_fee_bps > 0 {
+                    fee_policies_json.push(json!({
+                        "volume": {
+                            "factor": f64::from(config.solver_fee_bps) / 10_000.0,
                         }
-                    },
-                );
+                    }));
+                }
+                order
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("feePolicies".to_owned(), json!(fee_policies_json));
             }
             orders_json.push(order);
         }
@@ -343,7 +348,8 @@ impl Solver {
                                 }).collect_vec(),
                             })
                         }));
-                        // Skipping the prices for JIT orders (non-surplus-capturing)
+                        // Skipping the prices for JIT orders
+                        // (non-surplus-capturing)
                         if config
                             .expected_surplus_capturing_jit_order_owners
                             .contains(&jit.quoted_order.order.owner)
@@ -378,12 +384,12 @@ impl Solver {
                             jit.quoted_order.order = jit
                                 .quoted_order
                                 .order
-                                .receiver(Some(config.private_key.address()));
+                                .receiver(config.private_key.address().into());
                             let fee_amount = jit.quoted_order.order.solver_fee.unwrap_or_default();
                             let order = json!({
                                 "sellToken": config.blockchain.get_token(jit.quoted_order.order.sell_token),
                                 "buyToken": config.blockchain.get_token(jit.quoted_order.order.buy_token),
-                                "receiver": jit.quoted_order.order.receiver.unwrap_or_default().encode_hex_with_prefix(),
+                                "receiver": format!("0x{}", const_hex::encode(jit.quoted_order.order.receiver.raw_bytes())),
                                 "sellAmount": jit.quoted_order.order.sell_amount.to_string(),
                                 "buyAmount": jit.quoted_order.order.buy_amount.unwrap_or_default().to_string(),
                                 "validTo": jit.quoted_order.order.valid_to,
@@ -486,8 +492,8 @@ impl Solver {
                 weth: Some((*config.blockchain.weth.address()).into()),
                 balances: Some((*config.blockchain.balances.address()).into()),
                 signatures: Some((*config.blockchain.signatures.address()).into()),
-                cow_amm_helper_by_factory: Default::default(),
                 flashloan_router: Some((*config.blockchain.flashloan_router.address()).into()),
+                deadline_check: Some((*config.blockchain.deadline_check.address()).into()),
             },
             &shared::current_block::Arguments {
                 block_stream_poll_interval: None,
@@ -513,7 +519,7 @@ impl Solver {
                  axum::extract::Json(req): axum::extract::Json<serde_json::Value>| async move {
                     let base_fee = eth.current_block().borrow().base_fee;
                     let effective_gas_price = eth.gas_price().await.unwrap().effective(base_fee).to_string();
-                    let expected = json!({
+                    let mut expected = json!({
                         "id": (!config.quote).then_some("1"),
                         "tokens": tokens_json,
                         "orders": orders_json,
@@ -522,6 +528,13 @@ impl Solver {
                         "deadline": config.deadline.solvers(),
                         "surplusCapturingJitOrderOwners": config.expected_surplus_capturing_jit_order_owners,
                     });
+                    if config.quote {
+                        expected["quoteId"] =
+                            config.quote_id.expect("quotes carry a quote id").to_string().into();
+                    }
+                    if config.fast_path {
+                        expected["fastPath"] = true.into();
+                    }
                     check_solve_request(req, expected);
                     let mut state = state.0.lock().unwrap();
                     assert!(

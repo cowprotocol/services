@@ -19,4 +19,17 @@ pub(crate) enum StreamUpdate {
         /// Wire message body.
         inner: Box<SubscribeUpdateTransactionInfo>,
     },
+    /// A confirmed slot-status message. The stream delivers a slot's
+    /// transactions before its confirmed status, so this message means every
+    /// buffered transaction at or below the slot is complete and can flush.
+    Confirmed {
+        /// The slot the status message reports confirmed.
+        slot: Slot,
+    },
+    /// A finalized slot-status message. Advances the finalized watermark:
+    /// rows at or below it can no longer roll back.
+    Finalized {
+        /// The slot the status message reports finalized.
+        slot: Slot,
+    },
 }

@@ -18,23 +18,32 @@ async fn route(
     state: axum::extract::State<State>,
     LoggingQuery(order): LoggingQuery<dto::Order>,
 ) -> Result<axum::Json<dto::Quote>, (axum::http::StatusCode, axum::Json<Error>)> {
+    let order = order.into_domain();
+    let quote_id = order.quote_id.0;
     let handle_request = async {
-        let order = order.into_domain();
         observe::quoting(&order);
-        let quote = order
+        let result = order
             .quote(
                 state.eth(),
                 state.solver(),
                 state.liquidity(),
                 state.tokens(),
-                &state.competition().risk_detector,
+                state.competition(),
             )
             .await;
-        observe::quoted(state.solver().name(), &order, &quote);
-        Ok(axum::response::Json(dto::Quote::new(quote?)))
+        observe::quoted(state.solver().name(), &order, &result);
+        let quote = result?;
+        Ok(axum::response::Json(dto::Quote::new(
+            quote,
+            state.solver().fast_path_enabled(),
+        )))
     };
 
     handle_request
-        .instrument(tracing::info_span!("/quote", solver = %state.solver().name()))
+        .instrument(tracing::info_span!(
+            "/quote",
+            solver = %state.solver().name(),
+            quote_id
+        ))
         .await
 }

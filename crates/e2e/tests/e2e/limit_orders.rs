@@ -25,7 +25,7 @@ use {
     eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderCreation, OrderKind},
         quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
     },
@@ -79,25 +79,25 @@ async fn local_node_no_liquidity_limit_order() {
     run_test(no_liquidity_limit_order).await;
 }
 
-/// Test that sell orders with haircut configured execute on-chain with
-/// haircutted amounts. The haircut reduces both the reported buy_amount and
-/// the on-chain buy_amount (they should match). User receives less than
-/// without haircut, with the difference going to the settlement contract.
+/// Test that sell orders with solver fee configured execute on-chain with
+/// fee-adjusted amounts. The solver fee reduces both the reported buy_amount
+/// and the on-chain buy_amount (they should match). User receives less than
+/// without solver fee, with the difference going to the settlement contract.
 #[tokio::test]
 #[ignore]
-async fn local_node_limit_order_with_haircut() {
-    run_test(sell_order_with_haircut_test).await;
+async fn local_node_limit_order_with_solver_fee() {
+    run_test(sell_order_with_solver_fee_test).await;
 }
 
-/// Test that buy orders with haircut configured execute on-chain with
-/// haircutted amounts. The haircut increases both the reported sell_amount and
-/// the on-chain sell_amount (they should match). Verifies that:
+/// Test that buy orders with solver fee configured execute on-chain with
+/// fee-adjusted amounts. The solver fee increases both the reported sell_amount
+/// and the on-chain sell_amount (they should match). Verifies that:
 /// - executedBuy == signedBuyAmount (user gets exactly what they signed for)
-/// - executedSell includes haircut (but still <= sellLimit)
+/// - executedSell includes solver fee (but still <= sellLimit)
 #[tokio::test]
 #[ignore]
-async fn local_node_buy_order_with_haircut() {
-    run_test(buy_order_with_haircut_test).await;
+async fn local_node_buy_order_with_solver_fee() {
+    run_test(buy_order_with_solver_fee_test).await;
 }
 
 /// The block number from which we will fetch state for the forked tests.
@@ -231,8 +231,7 @@ async fn single_limit_order_test(web3: Web3) {
     );
 
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -244,7 +243,8 @@ async fn single_limit_order_test(web3: Web3) {
     .unwrap();
 
     wait_for_condition(TIMEOUT, || async {
-        // after the order got filled we are able to see the quote's execution plan
+        // after the order got filled we are able to see the quote's execution
+        // plan
         let order = services.get_order(&order_id).await.unwrap();
         tracing::error!(?order);
         order.metadata.quote.unwrap().metadata != serde_json::Value::default()
@@ -395,8 +395,7 @@ async fn two_limit_orders_test(web3: Web3) {
     let order_id = services.create_order(&order_a).await.unwrap();
     onchain.mint_block().await;
 
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    services.get_order(&order_id).await.unwrap();
 
     let order_b = OrderCreation {
         sell_token: *token_b.address(),
@@ -414,8 +413,7 @@ async fn two_limit_orders_test(web3: Web3) {
     );
     let order_id = services.create_order(&order_b).await.unwrap();
 
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -449,8 +447,8 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
     token_b.mint(trader_b.address(), 10u64.eth()).await;
 
     // Create more liquid routes between token_a (token_b) and weth via base_a
-    // (base_b). base_a has more liquidity than base_b, leading to the solver that
-    // knows about base_a to offer different solution.
+    // (base_b). base_a has more liquidity than base_b, leading to the solver
+    // that knows about base_a to offer different solution.
     let [base_a, base_b] = onchain
         .deploy_tokens_with_weth_uni_v2_pools(100_000u64.eth(), 100_000u64.eth())
         .await;
@@ -502,7 +500,6 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     let services = Services::new(&onchain).await;
@@ -564,28 +561,25 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let config = Configuration::test_no_drivers();
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                drivers: vec![
-                    Solver::new(
-                        "solver1".to_string(),
-                        Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                        Account::Address(solver_a.address()),
-                    ),
-                    Solver::test("solver2", solver_b.address()),
-                ],
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "solver1",
-                    "http://localhost:11088/test_solver",
-                )]),
-                run_loop: RunLoopConfig {
-                    max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
-                    ..config.run_loop
-                },
-                ..config
+        .start_autopilot(Configuration {
+            drivers: vec![
+                Solver::new(
+                    "solver1".to_string(),
+                    Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                    Account::Address(solver_a.address()),
+                ),
+                Solver::test("solver2", solver_b.address()),
+            ],
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "solver1",
+                "http://localhost:11088/test_solver",
+            )]),
+            run_loop: RunLoopConfig {
+                max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
+                ..config.run_loop
             },
-        )
+            ..config
+        })
         .await;
 
     // Wait for trade
@@ -745,20 +739,16 @@ async fn too_many_limit_orders_test(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("test_solver", solver_address)
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("test_solver", solver_address)
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -790,8 +780,8 @@ async fn too_many_limit_orders_test(web3: Web3) {
     );
     services.create_order(&order).await.unwrap();
 
-    // Attempt to place another order, but the orderbook is configured to allow only
-    // one limit order per user.
+    // Attempt to place another order, but the orderbook is configured to allow
+    // only one limit order per user.
     let order = OrderCreation {
         sell_token: *token_a.address(),
         sell_amount: 1u64.eth(),
@@ -848,20 +838,16 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
             .await,
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("test_solver", solver_address)
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("test_solver", solver_address)
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -923,8 +909,7 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
         &trader.signer,
     );
     let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert!(limit_order.metadata.class.is_limit());
+    services.get_order(&order_id).await.unwrap();
 
     // Place another "in-market" order in order to check it is not limited
     let order = OrderCreation {
@@ -1008,7 +993,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         .unwrap();
 
     // Place Orders
-    let services = Services::new(&onchain).await;
+    let mut services = Services::new(&onchain).await;
+    services.min_solve_deadline = std::time::Duration::from_secs(1);
     services.start_protocol(solver).await;
 
     onchain.mint_block().await;
@@ -1028,8 +1014,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         &trader.signer,
     );
 
-    // Warm up co-located driver by quoting the order (otherwise placing an order
-    // may time out)
+    // Warm up co-located driver by quoting the order (otherwise placing an
+    // order may time out)
     let _ = services
         .submit_quote(&OrderQuoteRequest {
             sell_token: *token_usdt.address(),
@@ -1046,8 +1032,7 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
     let sell_token_balance_before = token_usdt.balanceOf(trader.address()).call().await.unwrap();
     let buy_token_balance_before = token_usdc.balanceOf(trader.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -1108,7 +1093,8 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .unwrap();
 
     // Place Orders
-    let services = Services::new(&onchain).await;
+    let mut services = Services::new(&onchain).await;
+    services.min_solve_deadline = std::time::Duration::from_secs(1);
     services.start_protocol(solver).await;
 
     let order = OrderCreation {
@@ -1133,8 +1119,7 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .unwrap();
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Drive solution
     tracing::info!("Waiting for trade.");
@@ -1224,8 +1209,7 @@ async fn no_liquidity_limit_order(web3: Web3) {
     );
     let order_id = services.create_order(&order).await.unwrap();
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Cannot place orders with unsupported tokens
     order.sell_token = *unsupported.address();
@@ -1256,9 +1240,9 @@ async fn no_liquidity_limit_order(web3: Web3) {
 
     // wait for trade to be indexed and post-processed
     wait_for_condition(TIMEOUT, || async {
-        // Keep minting blocks to eventually invalidate the liquidity cached by the
-        // driver making it refetch the current state which allows it to finally compute
-        // a solution.
+        // Keep minting blocks to eventually invalidate the liquidity cached by
+        // the driver making it refetch the current state which allows
+        // it to finally compute a solution.
         onchain.mint_block().await;
         services
             .get_trades(&order_id)
@@ -1292,11 +1276,11 @@ async fn no_liquidity_limit_order(web3: Web3) {
     assert!(balance_after.checked_sub(balance_before).unwrap() >= 5u64.eth());
 }
 
-/// Test that a limit order with haircut configured executes on-chain with
-/// haircutted amounts. The haircut reduces the buy_amount the user receives,
-/// both in reported amounts and on-chain execution (they should match).
-/// The haircut difference goes to the settlement contract.
-async fn sell_order_with_haircut_test(web3: Web3) {
+/// Test that a limit order with solver fee configured executes on-chain with
+/// fee-adjusted amounts. The solver fee reduces the buy_amount the user
+/// receives, both in reported amounts and on-chain execution (they should
+/// match). The solver fee difference goes to the settlement contract.
+async fn sell_order_with_solver_fee_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -1368,9 +1352,9 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     // Place Orders
     let services = Services::new(&onchain).await;
 
-    // Start protocol with 500 bps (5%) haircut
+    // Start protocol with 500 bps (5%) solver fee
     services
-        .start_protocol_with_args_and_haircut(
+        .start_protocol_with_args_and_solver_fee(
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration::test_default(),
             solver,
@@ -1378,14 +1362,14 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         )
         .await;
 
-    // Create order with generous limit to ensure there's slack for haircut
+    // Create order with generous limit to ensure there's slack for solver fee
     // Sell 10 A for at least 5 B (pool has 1:1 ratio so we'd get ~9.9 B without
     // fees)
     let order = OrderCreation {
         sell_token: *token_a.address(),
         sell_amount: 10u64.eth(),
         buy_token: *token_b.address(),
-        buy_amount: 5u64.eth(), // Generous limit creates slack for haircut
+        buy_amount: 5u64.eth(), // Generous limit creates slack for solver fee
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Sell,
         ..Default::default()
@@ -1404,11 +1388,10 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     let order_id = services.create_order(&order).await.unwrap();
 
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
-    // Drive solution - order should execute even with haircut applied
-    tracing::info!("Waiting for trade with haircut.");
+    // Drive solution - order should execute even with solver fee applied
+    tracing::info!("Waiting for trade with solver fee.");
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
         balance_after.checked_sub(trader_balance_before).unwrap() >= 5u64.eth()
@@ -1416,9 +1399,9 @@ async fn sell_order_with_haircut_test(web3: Web3) {
     .await
     .unwrap();
 
-    // Verify that haircut DOES affect on-chain execution.
-    // The haircut reduces the buy_amount the user receives, with the difference
-    // going to the settlement contract.
+    // Verify that solver fee DOES affect on-chain execution.
+    // The solver fee reduces the buy_amount the user receives, with the
+    // difference going to the settlement contract.
     let trader_balance_after = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let settlement_balance_after = token_b
         .balanceOf(*onchain.contracts().gp_settlement.address())
@@ -1433,19 +1416,19 @@ async fn sell_order_with_haircut_test(web3: Web3) {
         .checked_sub(settlement_balance_before)
         .unwrap();
 
-    // With 500 bps (5%) haircut on ~9.87 ETH buy amount, settlement should receive
-    // ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
+    // With 500 bps (5%) solver fee on ~9.87 ETH buy amount, settlement should
+    // receive ~0.49 ETH. Allow some tolerance for AMM fees and rounding.
     assert!(
         settlement_received >= 0.4.eth() && settlement_received <= 0.6.eth(),
-        "Settlement contract should have received haircut (~0.49 ETH), but got {}",
+        "Settlement contract should have received solver fee (~0.49 ETH), but got {}",
         settlement_received
     );
 
-    // Expected trader amount: AMM output minus haircut (~9.87 - 0.49 = ~9.38 ETH).
-    // Haircut reduces what trader receives on-chain.
+    // Expected trader amount: AMM output minus solver fee (~9.87 - 0.49 = ~9.38
+    // ETH). Solver fee reduces what trader receives on-chain.
     assert!(
         trader_received >= 9u64.eth() && trader_received <= 9.5.eth(),
-        "Trader should have received AMM output minus haircut (~9.38 ETH), but got {}",
+        "Trader should have received AMM output minus solver fee (~9.38 ETH), but got {}",
         trader_received
     );
 
@@ -1485,19 +1468,19 @@ async fn sell_order_with_haircut_test(web3: Web3) {
 
     assert!(
         reported_sell_amount <= signed_sell_amount,
-        "Driver reported sell_amount {} exceeds signed sell_amount {}. Haircut should reduce \
+        "Driver reported sell_amount {} exceeds signed sell_amount {}. Solver fee should reduce \
          surplus/score, not inflate the reported sell amount!",
         reported_sell_amount,
         signed_sell_amount
     );
 }
 
-/// Test that a buy order with haircut configured executes correctly.
+/// Test that a buy order with solver fee configured executes correctly.
 /// For buy orders, the user signs for a specific buy_amount they want to
 /// receive, and sell_amount is the maximum they're willing to pay.
-/// Haircut increases the sell_amount on-chain (user pays more).
+/// Solver fee increases the sell_amount on-chain (user pays more).
 /// Verifies that reported amounts match on-chain execution.
-async fn buy_order_with_haircut_test(web3: Web3) {
+async fn buy_order_with_solver_fee_test(web3: Web3) {
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -1565,12 +1548,12 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Start protocol with 500 bps (5%) haircut
+    // Start protocol with 500 bps (5%) solver fee
     let services = Services::new(&onchain).await;
 
-    // Start protocol with 500 bps (5%) haircut
+    // Start protocol with 500 bps (5%) solver fee
     services
-        .start_protocol_with_args_and_haircut(
+        .start_protocol_with_args_and_solver_fee(
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration::test_default(),
             solver,
@@ -1578,8 +1561,8 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         )
         .await;
 
-    // Create BUY order: want to buy 5 token_b, willing to sell up to 10 token_a.
-    // At 1:1 ratio (with ~0.3% AMM fee), we'd need ~5.04 token_a.
+    // Create BUY order: want to buy 5 token_b, willing to sell up to 10
+    // token_a. At 1:1 ratio (with ~0.3% AMM fee), we'd need ~5.04 token_a.
     // We use a generous sell_limit to ensure the order executes, then verify
     // that the driver's reported sell_amount doesn't exceed reasonable bounds.
     let signed_buy_amount = 5u64.eth();
@@ -1601,11 +1584,10 @@ async fn buy_order_with_haircut_test(web3: Web3) {
     let order_id = services.create_order(&order).await.unwrap();
 
     onchain.mint_block().await;
-    let limit_order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
+    services.get_order(&order_id).await.unwrap();
 
     // Wait for trade to execute
-    tracing::info!("Waiting for buy order trade with haircut.");
+    tracing::info!("Waiting for buy order trade with solver fee.");
     let trader_b_balance_before = token_b.balanceOf(trader.address()).call().await.unwrap();
     wait_for_condition(TIMEOUT, || async {
         let balance_after = token_b.balanceOf(trader.address()).call().await.unwrap();
@@ -1667,15 +1649,15 @@ async fn buy_order_with_haircut_test(web3: Web3) {
         sell_limit_u256
     );
 
-    // 3. For buy orders, haircut INCREASES sell_amount (user pays more). Base
-    //    needed is ~5.04 ETH, with 5% haircut on 5 ETH buy amount = 0.25 ETH. So
-    //    sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow up to 5.5 ETH to
-    //    account for variance.
+    // 3. For buy orders, solver fee INCREASES sell_amount (user pays more).
+    //    Base needed is ~5.04 ETH, with 5% solver fee on 5 ETH buy amount =
+    //    0.25 ETH. So sell_amount should be ~5.04 + 0.25 = ~5.29 ETH. We allow
+    //    up to 5.5 ETH to account for variance.
     let reasonable_max_sell = 5.5.eth();
     assert!(
         reported_sell_amount <= reasonable_max_sell,
-        "Driver reported sell_amount {} exceeds expected max {} (actual needed + haircut is ~5.29 \
-         ETH)",
+        "Driver reported sell_amount {} exceeds expected max {} (actual needed + solver fee is \
+         ~5.29 ETH)",
         reported_sell_amount,
         reasonable_max_sell
     );

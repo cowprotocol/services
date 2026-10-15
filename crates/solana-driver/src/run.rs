@@ -1,0 +1,79 @@
+//! Driver entry-point logic.
+
+use {
+    crate::infra::{Api, blockchain, config, observe as infra_observe, solver},
+    clap::Parser,
+    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
+    std::{path::PathBuf, sync::Arc, time::Duration},
+};
+
+/// The Solana driver command line arguments.
+#[derive(Debug, Parser)]
+#[command(author, version, about)]
+pub struct Args {
+    /// Path to the TOML configuration file.
+    #[arg(long, env)]
+    config: PathBuf,
+}
+
+/// The driver entry-point. Parses command-line arguments and runs the driver.
+pub async fn start(args: impl Iterator<Item = String>) {
+    let args = Args::parse_from(args);
+    run(args).await;
+}
+
+/// Runs the driver, blocking until the shutdown signal is received.
+pub async fn run(args: Args) {
+    let config = config::load(&args.config).await;
+
+    infra_observe::init(config.observe_config());
+
+    let version = observe::version::git_version();
+    tracing::info!(%version, "running solana driver");
+    if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
+        tracing::info!(?config, "loaded config");
+    }
+
+    let shutdown_token = tokio_util::sync::CancellationToken::new();
+    let rpc = SolanaRPC::new_with_timeout_and_commitment(
+        &config.rpc.endpoint,
+        config.rpc.request_timeout,
+        CommitmentConfig::confirmed(),
+    );
+    let solvers: Vec<solver::Solver> =
+        futures::future::try_join_all(config.solvers.iter().map(solver::Solver::new))
+            .await
+            .expect("failed to load solver signers");
+    let bundle_rpc = SolanaRPC::new_with_timeout_and_commitment(
+        &config.rpc.bundle_endpoint,
+        config.rpc.request_timeout,
+        CommitmentConfig::confirmed(),
+    );
+    let blockchain = Arc::new(blockchain::Solana::new(
+        rpc,
+        bundle_rpc,
+        config.chain.settlement_program_id,
+    ));
+    let api = Api {
+        addr: config.http.bind_address,
+        blockchain,
+        solvers,
+        priority_fee: config.priority_fee,
+    };
+    let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
+    let serve = api.serve(listener, shutdown_token.clone());
+
+    futures::pin_mut!(serve);
+    tokio::select! {
+        result = &mut serve => panic!("serve task exited: {result:?}"),
+        _ = observe::shutdown::shutdown_signal() => {
+            tracing::info!("Gracefully shutting down API");
+            shutdown_token.cancel();
+            // Shutdown timeout needs to be larger than the auction deadline
+            match tokio::time::timeout(Duration::from_secs(20), serve).await {
+                Ok(inner) => inner.expect("API failed during shutdown"),
+                Err(_) => panic!("API shutdown exceeded timeout"),
+            }
+        }
+    }
+}

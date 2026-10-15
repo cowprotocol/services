@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 
 [workspace]
+exclude = ["generated"]
 
 [dependencies]
 alloy-sol-macro-expander = "1.4.1"

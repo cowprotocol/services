@@ -50,8 +50,27 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         chain,
         "The configured chain ID does not match the connected Ethereum node"
     );
+
+    config
+        .balance_cache
+        .validate()
+        .unwrap_or_else(|err| panic!("invalid balance cache config: {err:?}"));
+
+    // Shared by every solver, so it is borrowed instead of moved into the
+    // per-solver futures.
+    let token_groups = &config.token_groups;
+
     infra::Config {
         solvers: join_all(config.solvers.into_iter().map(|solver_config| async move {
+            let tokens_supported = solver_config
+                .bad_order_detection
+                .canonicalize_token_support(token_groups)
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "invalid token support for solver {}: {err:?}",
+                        solver_config.name
+                    )
+                });
             let account = load_account(solver_config.account, config.chain_id).await;
             solver::Config {
                 endpoint: solver_config.endpoint,
@@ -77,7 +96,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 request_headers: solver_config.request_headers,
                 fee_handler: solver_config.fee_handler,
-                quote_using_limit_orders: solver_config.quote_using_limit_orders,
+                fast_path_enabled: solver_config.fast_path_enabled,
                 merge_solutions: match solver_config.merge_solutions {
                     true => SolutionMerging::Allowed {
                         max_orders_per_merged_solution: solver_config
@@ -90,13 +109,11 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 quote_tx_origin: solver_config.quote_tx_origin,
                 response_size_limit_max_bytes: solver_config.response_size_limit_max_bytes,
                 bad_order_detection: BadOrderDetection {
-                    tokens_supported: solver_config
-                        .bad_order_detection
-                        .token_supported
-                        .iter()
+                    tokens_supported: tokens_supported
+                        .into_iter()
                         .map(|(token, supported)| {
                             (
-                                eth::TokenAddress::from(*token),
+                                eth::TokenAddress::from(token),
                                 match supported {
                                     true => risk_detector::Quality::Supported,
                                     false => risk_detector::Quality::Unsupported,
@@ -104,9 +121,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             )
                         })
                         .collect(),
-                    enable_simulation_strategy: solver_config
-                        .bad_order_detection
-                        .enable_simulation_strategy,
                     enable_metrics_strategy: solver_config
                         .bad_order_detection
                         .enable_metrics_strategy,
@@ -135,7 +149,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::AtBlock::Latest => liquidity::AtBlock::Latest,
                     file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
                 },
-                haircut_bps: solver_config.haircut_bps,
+                solver_fee_bps: solver_config.solver_fee_bps,
                 submission_accounts: join_all(
                     solver_config
                         .submission_accounts
@@ -225,13 +239,14 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Preset {
                         preset,
                         max_pools_to_initialize,
-                        indexer_config,
+                        indexer_url,
                         reinit_interval,
                     } => {
-                        let pool_source = uniswap_v3_pool_source(indexer_config);
+                        let pool_indexer =
+                            liquidity::config::UniswapV3PoolIndexer { url: indexer_url };
                         let preset_defaults = match preset {
                             file::UniswapV3Preset::UniswapV3 => {
-                                liquidity::config::UniswapV3::uniswap_v3(pool_source, chain)
+                                liquidity::config::UniswapV3::uniswap_v3(pool_indexer, chain)
                             }
                         }
                         .expect("no Uniswap V3 preset for current network");
@@ -244,12 +259,12 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     file::UniswapV3Config::Manual {
                         router,
                         max_pools_to_initialize,
-                        indexer_config,
+                        indexer_url,
                         reinit_interval,
                     } => liquidity::config::UniswapV3 {
                         router: router.into(),
                         max_pools_to_initialize,
-                        pool_source: uniswap_v3_pool_source(indexer_config),
+                        pool_indexer: liquidity::config::UniswapV3PoolIndexer { url: indexer_url },
                         reinit_interval,
                     },
                 })
@@ -348,43 +363,17 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             weth: config.contracts.weth.map(Into::into),
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
-            cow_amm_helper_by_factory: config
-                .contracts
-                .cow_amms
-                .into_iter()
-                .map(|cfg| (cfg.factory.into(), cfg.helper.into()))
-                .collect(),
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
+            deadline_check: config.contracts.deadline_check.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
-        simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,
-    }
-}
-
-fn uniswap_v3_pool_source(
-    indexer_config: file::IndexerConfig,
-) -> liquidity::config::UniswapV3PoolSource {
-    match indexer_config {
-        file::IndexerConfig::Subgraph {
-            url,
-            max_pools_per_tick_query,
-        } => {
-            liquidity::config::UniswapV3PoolSource::Subgraph(liquidity::config::UniswapV3Subgraph {
-                url,
-                max_pools_per_tick_query,
-            })
-        }
-        file::IndexerConfig::PoolIndexer { url } => {
-            liquidity::config::UniswapV3PoolSource::PoolIndexer(
-                liquidity::config::UniswapV3PoolIndexer { url },
-            )
-        }
+        balance_cache: config.balance_cache,
     }
 }
 

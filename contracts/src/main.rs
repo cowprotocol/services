@@ -106,6 +106,7 @@ fn build_module() -> Module {
         .add_contract(Contract::new("ERC20"))
         .add_contract(Contract::new("ERC20Mintable"))
         .add_contract(Contract::new("IERC4626"))
+        .add_contract(Contract::new("Multicall3"))
         // GnosisSafe
         .add_contract(Contract::new("GnosisSafe"))
         .add_contract(Contract::new("GnosisSafeCompatibilityFallbackHandler"))
@@ -495,23 +496,6 @@ fn build_module() -> Module {
             INK => "0x4200000000000000000000000000000000000006",
         ]))
         .add_submodule(
-            Submodule::new("cow_amm")
-                .add_contract(Contract::new("CowAmm"))
-                .add_contract(Contract::new("CowAmmConstantProductFactory").with_networks(
-                    networks![
-                        MAINNET => ("0x40664207e3375FB4b733d4743CE9b159331fd034", 19861952),
-                        GNOSIS => ("0xdb1cba3a87f2db53b6e1e6af48e28ed877592ec0", 33874317),
-                        SEPOLIA => ("0xb808e8183e3a72d196457d127c7fd4befa0d7fd3", 5874562),
-                    ],
-                ))
-                .add_contract(Contract::new("CowAmmLegacyHelper").with_networks(networks![
-                    MAINNET => ("0x3705ceee5eaa561e3157cf92641ce28c45a3999c", 20332745),
-                    GNOSIS => ("0xd9ec06b001957498ab1bc716145515d1d0e30ffb", 35026999),
-                ]))
-                .add_contract(Contract::new("CowAmmUniswapV2PriceOracle"))
-                .add_contract(Contract::new("CowAmmFactoryGetter")),
-        )
-        .add_submodule(
             Submodule::new("test")
                 .add_contract(Contract::new("GasHog"))
                 .add_contract(Contract::new("Counter"))
@@ -559,6 +543,21 @@ fn build_module() -> Module {
                     PLASMA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     LINEA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     INK => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
-                ])),
+                ]))
+                .add_contract(Contract::new("DeadlineCheck").with_networks(networks! {
+                    MAINNET => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    ARBITRUM_ONE => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    BASE => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    AVALANCHE => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    BNB => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    // not deployed yet
+                    // OPTIMISM => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    POLYGON => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    GNOSIS => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    SEPOLIA => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    PLASMA => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    LINEA => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    INK => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                })),
         )
 }

@@ -224,8 +224,10 @@ components:
         - sell
         - buy
     OrderClass:
+      deprecated: true
       description: |
-        How the CoW Protocol order was classified.
+        Deprecated: every order is a `limit` order. Solvers should not rely on
+        this field, it is retained for compatibility and will be removed.
       type: string
       enum:
         - market
@@ -346,7 +348,6 @@ components:
         - postInteractions
         - sellTokenSource
         - buyTokenDestination
-        - class
         - appData
         - signingScheme
         - signature
@@ -371,6 +372,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        penaltyCapNative:
+          allOf:
+            - description: |-
+                Cap on the penalty a solver can incur for winning this order
+                but failing to execute it, denominated in the native token.
+            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           type: integer
         kind:
@@ -402,7 +409,10 @@ components:
             - $ref: "#/components/schemas/BuyTokenBalance"
           default: erc20
         class:
-          $ref: "#/components/schemas/OrderClass"
+          allOf:
+            - $ref: "#/components/schemas/OrderClass"
+          deprecated: true
+          default: limit
         appData:
           $ref: "#/components/schemas/AppData"
         flashloanHint:
@@ -711,6 +721,20 @@ components:
             requests that are not part of an auction (when quoting token prices
             for example).
           type: string
+        quoteId:
+          description: |
+            An opaque identifier for the quote being computed. Only set for
+            requests that are not part of an auction. The order eventually
+            placed with a quote references the same quote id, so a solver can
+            match the two.
+          type: string
+        fastPath:
+          description: |
+            Set to `true` when this is a fast-path quote request, i.e. the order
+            placed with the winning quote will be settled out of competition.
+            Absent otherwise.
+          type: boolean
+          default: false
         tokens:
           description: |
             A map of token addresses to token information.
@@ -1003,7 +1027,10 @@ components:
             $ref: "#/components/schemas/U256"
         trades:
           description: |
-            CoW Protocol order trades included in the solution.
+            CoW Protocol order trades included in the solution. Each order may
+            appear at most once: a partially fillable order can be split across
+            multiple solutions, but not across multiple trades of the same
+            solution. Solutions that violate this are rejected.
           type: array
           items:
             $ref: "#/components/schemas/Trade"

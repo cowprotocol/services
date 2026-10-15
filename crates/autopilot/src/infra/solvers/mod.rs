@@ -1,5 +1,5 @@
 use {
-    self::dto::{reveal, settle, solve},
+    self::dto::{reveal, settle, settle_fast_path, solve},
     crate::util,
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
@@ -22,6 +22,7 @@ pub struct Driver {
     pub name: String,
     pub url: Url,
     pub submission_address: eth::Address,
+    pub supports_auction_deltas: bool,
     client: Client,
 }
 
@@ -39,6 +40,7 @@ impl Driver {
         url: Url,
         name: String,
         submission_account: Account,
+        supports_auction_deltas: bool,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -54,7 +56,13 @@ impl Driver {
             }
             Account::Address(address) => address,
         };
-        tracing::info!(?name, ?url, ?submission_address, "Creating solver");
+        tracing::info!(
+            ?name,
+            ?url,
+            ?submission_address,
+            supports_auction_deltas,
+            "creating solver"
+        );
 
         Ok(Self {
             name,
@@ -65,6 +73,7 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
+            supports_auction_deltas,
         })
     }
 
@@ -81,7 +90,29 @@ impl Driver {
         request: &settle::Request,
         timeout: std::time::Duration,
     ) -> Result<()> {
-        let url = util::join(&self.url, "settle");
+        self.post_settle("settle", request, request.auction_id, timeout)
+            .await
+    }
+
+    pub async fn settle_fast_path(
+        &self,
+        request: &settle_fast_path::Request,
+        timeout: std::time::Duration,
+    ) -> Result<()> {
+        self.post_settle("settle_fast_path", request, request.auction_id, timeout)
+            .await
+    }
+
+    /// Posts a settle request and waits for the driver to acknowledge it. The
+    /// endpoints return no body, so only the status is inspected.
+    async fn post_settle<Request: serde::Serialize>(
+        &self,
+        path: &str,
+        request: &Request,
+        auction_id: i64,
+        timeout: std::time::Duration,
+    ) -> Result<()> {
+        let url = util::join(&self.url, path);
         tracing::trace!(
             path=&url.path(),
             body=%serde_json::to_string_pretty(request).unwrap(),
@@ -93,7 +124,7 @@ impl Driver {
             .post(url)
             .json(request)
             .timeout(timeout)
-            .header("X-REQUEST-ID", request.auction_id.to_string())
+            .header("X-REQUEST-ID", auction_id.to_string())
             .headers(tracing_headers())
             .send()
             .await
@@ -141,7 +172,7 @@ impl Driver {
         let text = String::from_utf8_lossy(&body);
         tracing::trace!(%status, body=%text, "solver response");
         let context = || format!("url {url}, body {text:?}");
-        if status != 200 {
+        if status != StatusCode::OK.as_u16() {
             return Err(anyhow!("bad status {status}, {}", context()));
         }
         serde_json::from_slice(&body).with_context(|| format!("bad json {}", context()))

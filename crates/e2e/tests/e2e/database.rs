@@ -20,6 +20,33 @@ pub async fn events_of_order(db: &Db, uid: &OrderUid) -> Vec<order_events::Order
         .unwrap()
 }
 
+/// Returns the persisted penalty caps of that order across all auctions.
+pub async fn penalty_caps_of_order(db: &Db, uid: &OrderUid) -> Vec<bigdecimal::BigDecimal> {
+    const QUERY: &str = r#"
+SELECT penalty_caps_native[array_position(order_uids, $1)]
+FROM competition_auctions
+WHERE order_uids @> ARRAY[$1::bytea]
+    "#;
+    let mut db = db.acquire().await.unwrap();
+    let rows: Vec<(Option<bigdecimal::BigDecimal>,)> = sqlx::query_as(QUERY)
+        .bind(ByteArray(uid.0))
+        .fetch_all(db.deref_mut())
+        .await
+        .unwrap();
+    rows.into_iter().filter_map(|(cap,)| cap).collect()
+}
+
+/// Returns the quote a fast-path auction settled, or `None` for a regular one.
+pub async fn fast_path_quote_id_of_auction(db: &Db, auction_id: i64) -> Option<i64> {
+    const QUERY: &str = "SELECT fast_path_quote_id FROM competition_auctions WHERE id = $1";
+    let mut db = db.acquire().await.unwrap();
+    sqlx::query_scalar(QUERY)
+        .bind(auction_id)
+        .fetch_one(db.deref_mut())
+        .await
+        .unwrap()
+}
+
 /// Returns quote.
 pub async fn quote_metadata(db: &Db, quote_id: i64) -> Option<(serde_json::Value,)> {
     const QUERY: &str = "SELECT metadata FROM quotes WHERE id = $1";
@@ -52,8 +79,13 @@ pub async fn auction_participants(
 pub async fn auction_prices(
     ex: &mut PgConnection,
     auction_id: i64,
-) -> anyhow::Result<Vec<database::auction_prices::AuctionPrice>> {
-    const QUERY: &str = "SELECT * FROM auction_prices WHERE auction_id = $1";
+) -> anyhow::Result<Vec<database::auction::NativePrice>> {
+    const QUERY: &str = "
+        SELECT
+            id AS auction_id,
+            unnest(price_tokens) AS token,
+            unnest(price_values) AS price
+        FROM competition_auctions WHERE id = $1";
     Ok(sqlx::query_as(QUERY).bind(auction_id).fetch_all(ex).await?)
 }
 

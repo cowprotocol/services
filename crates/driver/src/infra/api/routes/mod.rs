@@ -5,6 +5,7 @@ mod metrics;
 mod quote;
 mod reveal;
 mod settle;
+mod settle_fast_path;
 pub mod solve;
 
 pub(super) use {
@@ -15,5 +16,6 @@ pub(super) use {
     quote::{OrderError, quote},
     reveal::reveal,
     settle::settle,
+    settle_fast_path::settle_fast_path,
     solve::{AuctionError, solve},
 };

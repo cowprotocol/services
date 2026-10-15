@@ -72,13 +72,8 @@ impl Serialize for AppDataHash {
     where
         S: Serializer,
     {
-        let mut bytes = [0u8; 2 + 32 * 2];
-        bytes[..2].copy_from_slice(b"0x");
-        // Can only fail if the buffer size does not match but we know it is correct.
-        const_hex::encode_to_slice(self.0, &mut bytes[2..]).unwrap();
-        // Hex encoding is always valid utf8.
-        let s = std::str::from_utf8(&bytes).unwrap();
-        serializer.serialize_str(s)
+        let mut buffer = const_hex::Buffer::<32, true>::new();
+        serializer.serialize_str(buffer.format(&self.0))
     }
 }
 

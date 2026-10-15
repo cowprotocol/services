@@ -7,6 +7,7 @@ use {
         primitives::{Address, U256},
         signers::local::PrivateKeySigner,
     },
+    eth_domain_types::Receiver,
 };
 
 /// Order data used for calculating the order UID and signing.
@@ -17,7 +18,7 @@ pub struct Order {
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub valid_to: u32,
-    pub receiver: Option<Address>,
+    pub receiver: Receiver,
     pub user_fee: U256,
     pub side: competition::order::Side,
     pub secret_key: PrivateKeySigner,

@@ -1,10 +1,9 @@
 //! HTTP API for the solver engine.
 //!
-//! Serves the `/solve` contract the driver calls. The handler is a scaffold: it
-//! accepts any auction and returns no solutions.
+//! Serves the `/solve` contract the driver calls.
 
 use {
-    crate::config::Config,
+    crate::{dex::Dex, domain::solver::Solver, dto::auction::Auction, extract::LoggingJson},
     axum::{
         Json,
         Router,
@@ -20,24 +19,32 @@ const REQUEST_BODY_LIMIT: usize = 10 * 1024 * 1024;
 
 pub struct Api {
     pub addr: SocketAddr,
-    pub config: Config,
+    pub solver: Arc<Solver<Dex>>,
 }
 
 impl Api {
-    /// Bind and serve until `shutdown` resolves.
+    /// Bind to the configured address, returning the listener and the actual
+    /// bound address (which differs from `addr` when binding to port 0).
+    pub async fn bind(&self) -> std::io::Result<(tokio::net::TcpListener, SocketAddr)> {
+        let listener = tokio::net::TcpListener::bind(self.addr).await?;
+        let local_addr = listener.local_addr()?;
+        tracing::info!(addr = %local_addr, "solana-solvers listening");
+        Ok((listener, local_addr))
+    }
+
+    /// Serve the API on the given listener until `shutdown` resolves.
     pub async fn serve(
         self,
+        listener: tokio::net::TcpListener,
         shutdown: impl Future<Output = ()> + Send + 'static,
     ) -> std::io::Result<()> {
         let app = Router::new()
             .route("/healthz", get(healthz))
             .route("/solve", post(solve))
-            .with_state(Arc::new(self.config))
+            .with_state(self.solver)
             .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
             .layer(axum::extract::DefaultBodyLimit::disable());
 
-        let listener = tokio::net::TcpListener::bind(self.addr).await?;
-        tracing::info!(addr = %self.addr, "solana-solvers listening");
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown)
             .await
@@ -48,8 +55,11 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Scaffold `/solve`: accepts any auction and returns no solutions, so the
-/// driver wiring can be exercised against an empty result.
-async fn solve(State(_config): State<Arc<Config>>, Json(_auction): Json<Value>) -> Json<Value> {
-    Json(json!({ "solutions": [] }))
+/// Quote the auction's orders and return the single-order solutions.
+async fn solve(
+    State(solver): State<Arc<Solver<Dex>>>,
+    LoggingJson(auction): LoggingJson<Auction>,
+) -> Json<Value> {
+    let solutions = solver.solve(&auction).await;
+    Json(json!({ "solutions": solutions }))
 }

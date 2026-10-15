@@ -88,6 +88,12 @@ impl Settlement {
         self.solution_uid
     }
 
+    /// The owners whose JIT orders the associated auction treats like user
+    /// orders.
+    pub fn surplus_capturing_jit_order_owners(&self) -> &HashSet<eth::Address> {
+        &self.auction.surplus_capturing_jit_order_owners
+    }
+
     /// Summarizes settlement data required by the autopilot, see
     /// [`SettlementMetrics`] for details.
     pub(crate) fn summarize(&self) -> SettlementMetrics<'_> {
@@ -106,6 +112,10 @@ impl Settlement {
                             trade = %trade.uid(),
                             "possible incomplete surplus calculation",
                         );
+                        Metrics::get()
+                            .settlement_math_errors
+                            .with_label_values(&["surplus"])
+                            .inc();
                         num::zero()
                     });
             surplus = surplus + trade_surplus;
@@ -118,6 +128,10 @@ impl Settlement {
                         trade = %trade.uid(),
                         "possible incomplete fee calculation",
                     );
+                    Metrics::get()
+                        .settlement_math_errors
+                        .with_label_values(&["fee"])
+                        .inc();
                     num::zero()
                 });
             fee = fee + trade_fee;
@@ -128,6 +142,10 @@ impl Settlement {
                     trade = %trade.uid(),
                     "possible incomplete fee breakdown calculation",
                 );
+                Metrics::get()
+                    .settlement_math_errors
+                    .with_label_values(&["fee_breakdown"])
+                    .inc();
                 trade::FeeBreakdown {
                     total: eth::Asset {
                         token: trade.sell_token(),
@@ -170,9 +188,9 @@ impl Settlement {
         if settled.block > auction.block + max_settlement_age(chain) {
             // A settled transaction references a VERY old auction.
             //
-            // A hacky way to detect processing of production settlements in the staging
-            // environment, as production is lagging with auction ids by ~270 days on
-            // Ethereum mainnet.
+            // A hacky way to detect processing of production settlements in the
+            // staging environment, as production is lagging with
+            // auction ids by ~270 days on Ethereum mainnet.
             //
             // TODO: remove once https://github.com/cowprotocol/services/issues/2848 is resolved and ~270 days are passed since bumping.
             return Err(Error::WrongEnvironment);
@@ -194,7 +212,7 @@ impl Settlement {
             .trades
             .into_iter()
             .map(|trade| Trade::new(trade, &auction, settled.timestamp))
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         Ok(Self {
             block: settled.block,
@@ -292,6 +310,8 @@ pub enum Error {
     InconsistentData(InconsistentData),
     #[error("settlement refers to an auction from a different environment")]
     WrongEnvironment,
+    #[error("settlement lists no uniform clearing price for order {0}")]
+    MissingUniformPrice(domain::OrderUid),
 }
 
 /// Errors that can occur when fetching data from the persistence layer.
@@ -364,12 +384,19 @@ mod tests {
             settlement::{OrderMatchKey, trade_to_key},
         },
         alloy::{eips::BlockId, primitives::address},
+        chain::Chain,
         eth_domain_types::{self as eth, Address},
         hex_literal::hex,
         number::u256_ext::U256Ext,
         std::collections::{HashMap, HashSet},
         winner_selection::{self as ws, state::RankedItem},
     };
+
+    fn wrapped_native_token(chain: Chain) -> eth::WrappedNativeToken {
+        contracts::WETH9::deployment_address(&chain.id())
+            .expect("WETH9 is deployed on all chains")
+            .into()
+    }
 
     #[derive(Clone)]
     struct MockAuthenticator;
@@ -410,7 +437,7 @@ mod tests {
         let solution = ws::Solution::new(0, ws::Address::ZERO, vec![order]);
         let arbitrator = ws::Arbitrator {
             max_winners: 1,
-            weth: ws::Address::ZERO,
+            wrapped_native: ws::Address::ZERO,
         };
         let ranking = arbitrator.arbitrate(vec![solution], &context);
 
@@ -499,8 +526,8 @@ mod tests {
     }
 
     // https://etherscan.io/tx/0x030623e438f28446329d8f4ff84db897907fcac59b9943b31b7be66f23c877af
-    // A transfer transaction that emits a settlement event, but it's not actually a
-    // swap.
+    // A transfer transaction that emits a settlement event, but it's not
+    // actually a swap.
     #[tokio::test]
     async fn not_a_swap() {
         let calldata = hex!(
@@ -723,13 +750,14 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
         .unwrap_err();
 
-        // These transfer transactions don't have the auction_id attached so overall bad
-        // calldata is expected
+        // These transfer transactions don't have the auction_id attached so
+        // overall bad calldata is expected
         assert!(matches!(
             transaction,
             super::transaction::Error::Decoding(_)
@@ -831,6 +859,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -857,7 +886,7 @@ mod tests {
             orders: HashMap::from([(order_uid, vec![])]),
         };
 
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
 
         // NOTE(historical): surplus (score) read from https://api.cow.fi/mainnet/api/v1/solver_competition/by_tx_hash/0xc48dc0d43ffb43891d8c3ad7bcf05f11465518a2610869b20b0b4ccb61497634
         assert_eq!(
@@ -865,8 +894,9 @@ mod tests {
             eth::U256::from(52937525819789126u128)
         );
         // fee read from "executedFee" https://api.cow.fi/mainnet/api/v1/orders/0x10dab31217bb6cc2ace0fe601c15d342f7626a1ee5ef0495449800e73156998740a50cf069e992aa4536211b23f286ef88752187ffffffff
-        // but not equal to 6890975030480504 anymore, since after this tx we switched to
-        // convert the fee from surplus token directly to ether
+        // but not equal to 6890975030480504 anymore, since after this tx we
+        // switched to convert the fee from surplus token directly to
+        // ether
         assert_eq!(
             trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::from(6752697350740628u128)
@@ -972,6 +1002,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1006,7 +1037,7 @@ mod tests {
                 }],
             )]),
         };
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
 
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
@@ -1146,6 +1177,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1172,7 +1204,7 @@ mod tests {
             id: 0,
             orders: Default::default(),
         };
-        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0);
+        let trade = super::trade::Trade::new(transaction.trades[0].clone(), &auction, 0).unwrap();
         println!("{}", trade.uid().owner());
         assert_eq!(
             trade.surplus_in_ether(&auction.prices).unwrap().0,
@@ -1181,9 +1213,9 @@ mod tests {
     }
 
     // https://etherscan.io/tx/0x0ee0a609c54cb006d024a4d009db8751730c064b26524379793144c07c3575b3
-    // A special case where the user order and a liquidity order trade the common
-    // token, where liquidity order is supposed to be executed at its limit price
-    // and without fees.
+    // A special case where the user order and a liquidity order trade the
+    // common token, where liquidity order is supposed to be executed at its
+    // limit price and without fees.
     #[tokio::test]
     async fn settlement_with_liquidity_order_and_user_order() {
         let calldata = hex!(
@@ -1325,6 +1357,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Mainnet),
             &MockAuthenticator,
         )
         .await
@@ -1358,7 +1391,8 @@ mod tests {
                 }],
             )]),
         };
-        let jit_trade = super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0);
+        let jit_trade =
+            super::trade::Trade::new(transaction.trades[1].clone(), &auction, 0).unwrap();
         assert_eq!(
             jit_trade.fee_in_ether(&auction.prices).unwrap().0,
             eth::U256::ZERO
@@ -1381,8 +1415,8 @@ mod tests {
     }
 
     // https://gnosisscan.io/tx/0xf4556c35d421623c63571d1006fd1888932c1b78a6e0f3b9b9590bb9781b02af
-    // A special case to reproduce an issue where we don't match a settled trade due
-    // to a mismatch in executed token amounts. The smart contract, for
+    // A special case to reproduce an issue where we don't match a settled trade
+    // due to a mismatch in executed token amounts. The smart contract, for
     // non-partially-fillable orders, does force executed = sellAmount on the
     // transaction events. https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L385-L386
     // https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2Settlement.sol#L407-L408
@@ -1551,6 +1585,7 @@ mod tests {
             },
             &domain_separator,
             settlement_contract,
+            wrapped_native_token(Chain::Gnosis),
             &MockAuthenticator,
         )
         .await

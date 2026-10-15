@@ -29,16 +29,6 @@ pub enum OrderKind {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "OrderClass")]
-#[sqlx(rename_all = "lowercase")]
-pub enum OrderClass {
-    #[default]
-    Market,
-    Liquidity,
-    Limit,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SigningScheme {
@@ -84,7 +74,7 @@ pub struct Order {
     pub creation_timestamp: DateTime<Utc>,
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Option<Address>,
+    pub receiver: Address,
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
@@ -98,7 +88,11 @@ pub struct Order {
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
-    pub class: OrderClass,
+    pub valid_from: Option<i64>,
+    /// Set from the order's `enableFastPath` app-data flag at placement.
+    /// The autopilot's fast-path handler owns `valid_from` once this is
+    /// `true`; `false` orders never go through that pipeline.
+    pub fast_path: bool,
 }
 
 #[instrument(skip_all)]
@@ -146,20 +140,23 @@ INSERT INTO orders (
     sell_token_balance,
     buy_token_balance,
     cancellation_timestamp,
-    class,
-    true_valid_to
+    true_valid_to,
+    valid_from,
+    fast_path
 )
 VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
     -- Ethflow orders are inserted with valid_to set to u32::MAX. Their true validity is stored in
     -- the ethflow_orders table.
     -- If there already exists an Ethflow order with the same uid, take smaller of the two valid_to values
     CASE
-        WHEN $21 = 4294967295 THEN  -- u32::MAX
-            COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $21)
+        WHEN $20 = 4294967295 THEN  -- u32::MAX
+            COALESCE((SELECT valid_to FROM ethflow_orders WHERE uid = $1), $20)
         ELSE
-            $21
-    END
+            $20
+    END,
+    $21,
+    $22
 )
     "#;
 
@@ -168,10 +165,10 @@ pub async fn insert_order_and_ignore_conflicts(
     ex: &mut PgConnection,
     order: &Order,
 ) -> Result<bool, sqlx::Error> {
-    // To be used only for the ethflow contract order placement, where reorgs force
-    // us to update orders
-    // Since each order has a unique UID even after a reorg onchain placed orders
-    // have the same data. Hence, we can disregard any conflicts.
+    // To be used only for the ethflow contract order placement, where reorgs
+    // force us to update orders
+    // Since each order has a unique UID even after a reorg onchain placed
+    // orders have the same data. Hence, we can disregard any conflicts.
     const QUERY: &str = const_format::concatcp!(INSERT_ORDER_QUERY, "ON CONFLICT (uid) DO NOTHING");
     insert_order_execute_sqlx(QUERY, ex, order).await
 }
@@ -201,9 +198,10 @@ async fn insert_order_execute_sqlx(
         .bind(order.sell_token_balance)
         .bind(order.buy_token_balance)
         .bind(order.cancellation_timestamp)
-        .bind(order.class)
         // true_valid_to takes the same value as valid_to when inserting an order
         .bind(order.valid_to)
+        .bind(order.valid_from)
+        .bind(order.fast_path)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)
@@ -220,11 +218,60 @@ pub async fn read_order(
     ex: &mut PgConnection,
     id: &OrderUid,
 ) -> Result<Option<Order>, sqlx::Error> {
+    // Explicit column list (instead of `SELECT *`) so we can COALESCE the
+    // nullable `receiver` column into the zero address — matching the other
+    // read paths and keeping legacy NULL rows decodable.
     const QUERY: &str = r#"
-SELECT * FROM ORDERS
+SELECT uid, owner, creation_timestamp, sell_token, buy_token,
+    COALESCE(receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver,
+    sell_amount, buy_amount, valid_to, app_data, fee_amount, kind,
+    partially_fillable, signature, signing_scheme, settlement_contract,
+    sell_token_balance, buy_token_balance, cancellation_timestamp,
+    valid_from, fast_path
+FROM orders
 WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
+}
+
+/// Sets `valid_from` on the given order. The autopilot's fast-path
+/// handler is the sole writer once `orders.fast_path = true`: either
+/// `now()` (feature disabled or limit-price check failed) or
+/// `now + exclusivity` (fast-path settle about to be attempted).
+#[instrument(skip_all)]
+pub async fn set_valid_from(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+    valid_from: u32,
+) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "UPDATE orders SET valid_from = $2 WHERE uid = $1";
+    sqlx::query(QUERY)
+        .bind(uid)
+        .bind(valid_from as i64)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
+/// Flushes any fast-path orders whose `valid_from` was never populated
+/// by setting them to `now`. Called on autopilot startup: notifications
+/// for orders placed while the process was down are gone, and by the
+/// time the process comes back the intended exclusivity window has
+/// long since elapsed anyway — running the full fast-path against a
+/// stale quote would just settle against moved on-chain prices. This
+/// lets those orders enter the very next regular auction. The partial
+/// index `orders_fast_path` narrows the scan to the (small) fast-path
+/// slice; the `valid_from IS NULL` filter runs on that subset.
+///
+/// Returns the number of rows that were updated (for observability).
+#[instrument(skip_all)]
+pub async fn flush_pending_fast_path_backlog(
+    ex: &mut PgConnection,
+    now: u32,
+) -> Result<u64, sqlx::Error> {
+    const QUERY: &str = "UPDATE orders SET valid_from = $1 WHERE fast_path AND valid_from IS NULL";
+    let result = sqlx::query(QUERY).bind(now as i64).execute(ex).await?;
+    Ok(result.rows_affected())
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
@@ -356,6 +403,7 @@ pub struct Quote {
     pub solver: Address,
     pub verified: bool,
     pub metadata: serde_json::Value,
+    pub quote_id: Option<crate::quotes::QuoteId>,
 }
 
 #[instrument(skip_all)]
@@ -376,9 +424,10 @@ INSERT INTO order_quotes (
     buy_amount,
     solver,
     verified,
-    metadata
+    metadata,
+    quote_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#;
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#;
 
 #[instrument(skip_all)]
 pub async fn insert_quote_and_update_on_conflict(
@@ -393,7 +442,8 @@ pub async fn insert_quote_and_update_on_conflict(
         " ON CONFLICT (order_uid) DO UPDATE
 SET gas_amount = $2, gas_price = $3,
 sell_token_price = $4, sell_amount = $5,
-buy_amount = $6, verified = $8, metadata = $9
+buy_amount = $6, verified = $8, metadata = $9,
+quote_id = $10
     "
     );
     sqlx::query(QUERY)
@@ -406,6 +456,7 @@ buy_amount = $6, verified = $8, metadata = $9
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
+        .bind(quote.quote_id)
         .execute(ex)
         .await?;
     Ok(())
@@ -423,6 +474,7 @@ pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sq
         .bind(quote.solver)
         .bind(quote.verified)
         .bind(&quote.metadata)
+        .bind(quote.quote_id)
         .execute(ex)
         .await?;
     Ok(())
@@ -488,7 +540,7 @@ AND cancellation_timestamp IS NULL
 /// This is done as sqlx does not support reading arrays of more complicated
 /// types than just one field. The pre_ and post_interaction's data of
 /// target, value and data are composed to an array of interactions later.
-type RawInteraction = (Address, BigDecimal, Vec<u8>);
+pub type RawInteraction = (Address, BigDecimal, Vec<u8>);
 
 /// Order with extra information from other tables. Has all the information
 /// needed to construct a model::Order.
@@ -502,17 +554,24 @@ pub struct FullOrder {
     pub sell_amount: BigDecimal,
     pub buy_amount: BigDecimal,
     pub valid_to: i64,
+    /// Earliest time (unix seconds) the order may enter a batch auction.
+    pub valid_from: Option<i64>,
+    /// Whether the caller asked for fast-path treatment. See
+    /// `Order::fast_path` for the write path.
+    pub fast_path: bool,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
-    pub class: OrderClass,
+    /// Whether this is a JIT order provided by a solver rather than a user
+    /// order. JIT orders trade at their limit price and never receive surplus.
+    pub is_liquidity_order: bool,
     pub partially_fillable: bool,
     pub signature: Vec<u8>,
     pub sum_sell: BigDecimal,
     pub sum_buy: BigDecimal,
     pub sum_fee: BigDecimal,
     pub invalidated: bool,
-    pub receiver: Option<Address>,
+    pub receiver: Address,
     pub signing_scheme: SigningScheme,
     pub settlement_contract: Address,
     pub sell_token_balance: SellTokenSource,
@@ -526,6 +585,9 @@ pub struct FullOrder {
     pub executed_fee: BigDecimal,
     pub executed_fee_token: Address,
     pub full_app_data: Option<Vec<u8>>,
+    /// Share of its settlements' gas costs in native token wei, summed across
+    /// fills. `None` unless it has fills and every fill's cost is known.
+    pub gas_cost: Option<BigDecimal>,
 }
 
 impl FullOrder {
@@ -551,6 +613,7 @@ pub struct FullOrderWithQuote {
     pub quote_verified: Option<bool>,
     pub quote_metadata: Option<serde_json::Value>,
     pub solver: Option<Address>,
+    pub quote_id: Option<crate::quotes::QuoteId>,
 }
 
 impl FullOrderWithQuote {
@@ -584,6 +647,7 @@ impl FullOrderWithQuote {
                 solver,
                 verified,
                 metadata,
+                quote_id: self.quote_id,
             }),
             _ => None,
         };
@@ -615,9 +679,9 @@ impl FullOrderWithQuote {
 // that with the current amount of data this wouldn't be better.
 pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
-o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
-o.class,
+o.valid_to, o.valid_from, o.fast_path, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
+COALESCE(o.receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
+FALSE AS is_liquidity_order,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -641,7 +705,8 @@ array(Select (p.target, p.value, p.data) from interactions p where p.order_uid =
 (SELECT onchain_o.placement_error from onchain_placed_orders onchain_o where onchain_o.uid = o.uid limit 1) as onchain_placement_error,
 COALESCE((SELECT SUM(executed_fee) FROM order_execution oe WHERE oe.order_uid = o.uid), 0) as executed_fee,
 COALESCE((SELECT executed_fee_token FROM order_execution oe WHERE oe.order_uid = o.uid LIMIT 1), o.sell_token) as executed_fee_token, -- TODO surplus token
-(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data
+(SELECT full_app_data FROM app_data ad WHERE o.app_data = ad.contract_app_data LIMIT 1) as full_app_data,
+(SELECT CASE WHEN COUNT(*) = COUNT(t.gas_cost) THEN SUM(t.gas_cost) END FROM trades t WHERE t.order_uid = o.uid) as gas_cost
 "#;
 
 pub const FROM: &str = "orders o";
@@ -656,6 +721,7 @@ const FULL_ORDER_WITH_QUOTE: &str = const_format::concatcp!(
     ", o_quotes.verified as quote_verified",
     ", o_quotes.metadata as quote_metadata",
     ", o_quotes.solver as solver",
+    ", o_quotes.quote_id as quote_id",
     " FROM ",
     FROM,
     " LEFT JOIN order_quotes o_quotes ON o.uid = o_quotes.order_uid",
@@ -735,6 +801,7 @@ WHERE
 pub fn solvable_orders(
     ex: &mut PgConnection,
     min_valid_to: i64,
+    now: i64,
 ) -> BoxStream<'_, Result<FullOrder, sqlx::Error>> {
     /// The base solvable orders query used in specialized queries. Parametrized
     /// by valid_to.
@@ -752,6 +819,15 @@ pub fn solvable_orders(
         FROM   orders o
         WHERE  o.cancellation_timestamp IS NULL
             AND o.true_valid_to >= $1
+            AND (o.valid_from IS NULL OR o.valid_from <= $2)
+            -- Fast-path orders wait for the autopilot's fast-path handler
+            -- to populate `valid_from` (either `now()` for fallthrough or
+            -- `now + exclusivity` for a real fast-path settle attempt).
+            -- Until then they must not enter a regular auction. This runs
+            -- as a post-filter — the surrounding predicates already
+            -- narrow the row set enough that the `orders_fast_path`
+            -- index isn't the planner's pick here.
+            AND NOT (o.fast_path AND o.valid_from IS NULL)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
@@ -775,17 +851,19 @@ pub fn solvable_orders(
         lo.sell_amount,
         lo.buy_amount,
         lo.valid_to,
+        lo.valid_from,
+        lo.fast_path,
         lo.app_data,
         lo.fee_amount,
         lo.kind,
         lo.partially_fillable,
         lo.signature,
-        lo.receiver,
+        COALESCE(lo.receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver,
         lo.signing_scheme,
         lo.settlement_contract,
         lo.sell_token_balance,
         lo.buy_token_balance,
-        lo.class,
+        FALSE AS is_liquidity_order,
         lo.true_valid_to,
 
         COALESCE(ta.sum_buy, 0) AS sum_buy,
@@ -810,7 +888,8 @@ pub fn solvable_orders(
         NULL AS onchain_placement_error,
         COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
         COALESCE(fee_agg.executed_fee_token, lo.sell_token) AS executed_fee_token,
-        ad.full_app_data
+        ad.full_app_data,
+        NULL::numeric AS gas_cost
     FROM live_orders lo
     LEFT JOIN LATERAL (
         SELECT NOT signed AS unsigned
@@ -844,7 +923,10 @@ pub fn solvable_orders(
            (lo.kind = 'buy'  AND COALESCE(ta.sum_buy ,0) < lo.buy_amount))
     "#;
 
-    sqlx::query_as(OPEN_ORDERS).bind(min_valid_to).fetch(ex)
+    sqlx::query_as(OPEN_ORDERS)
+        .bind(min_valid_to)
+        .bind(now)
+        .fetch(ex)
 }
 
 #[instrument(skip_all)]
@@ -852,14 +934,38 @@ pub fn open_orders_by_time_or_uids<'a>(
     ex: &'a mut PgConnection,
     uids: &'a [OrderUid],
     after_timestamp: DateTime<Utc>,
+    now: i64,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL joins
+    // Optimized version using the OPEN_ORDERS pattern with CTEs and LATERAL
+    // joins.
+    //
+    // `selected_orders` has two branches:
+    // - Branch 1: the usual "changed since $1" set (created/cancelled since the
+    //   checkpoint, or explicitly requested by uid), gated by `valid_from <=
+    //   now`.
+    // - Branch 2: re-selects orders whose `valid_from` crossed since $1.
+    //   Becoming valid is not a DB write, so branch 1 never sees them. It also
+    //   skips orders that already expired (`true_valid_to < now`), so an order
+    //   with an empty window (`valid_from >= valid_to`) or one that already
+    //   closed is not picked up again.
     #[rustfmt::skip]
     const QUERY: &str = r#"
 WITH selected_orders AS (
     SELECT o.*
     FROM   orders o
-    WHERE (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
+    WHERE (
+            (o.creation_timestamp > $1 OR o.cancellation_timestamp > $1 OR o.uid = ANY($2))
+            AND (o.valid_from IS NULL OR o.valid_from <= $3)
+            -- Pending fast-path orders (autopilot handler hasn't written
+            -- `valid_from` yet) must not enter a regular auction; the
+            -- crossing branch below already excludes them because it
+            -- requires `valid_from IS NOT NULL`.
+            AND NOT (o.fast_path AND o.valid_from IS NULL)
+          )
+       OR (o.valid_from IS NOT NULL
+            AND o.valid_from >  EXTRACT(EPOCH FROM $1)::bigint
+            AND o.valid_from <= $3
+            AND o.true_valid_to >= $3)
 ),
 trades_agg AS (
      SELECT t.order_uid,
@@ -879,17 +985,19 @@ SELECT
     so.sell_amount,
     so.buy_amount,
     so.valid_to,
+    so.valid_from,
+    so.fast_path,
     so.app_data,
     so.fee_amount,
     so.kind,
     so.partially_fillable,
     so.signature,
-    so.receiver,
+    COALESCE(so.receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver,
     so.signing_scheme,
     so.settlement_contract,
     so.sell_token_balance,
     so.buy_token_balance,
-    so.class,
+    FALSE AS is_liquidity_order,
     so.true_valid_to,
 
     COALESCE(ta.sum_buy, 0) AS sum_buy,
@@ -917,7 +1025,8 @@ SELECT
     opo.onchain_placement_error,
     COALESCE(fee_agg.executed_fee,0)        AS executed_fee,
     COALESCE(fee_agg.executed_fee_token, so.sell_token) AS executed_fee_token,
-    ad.full_app_data
+    ad.full_app_data,
+    NULL::numeric AS gas_cost
 FROM selected_orders so
 LEFT JOIN LATERAL (
     SELECT NOT signed AS unsigned
@@ -953,6 +1062,7 @@ LEFT JOIN trades_agg ta ON  ta.order_uid = so.uid
     sqlx::query_as(QUERY)
         .bind(after_timestamp)
         .bind(uids)
+        .bind(now)
         .fetch(ex)
 }
 
@@ -996,7 +1106,6 @@ pub async fn user_orders_with_quote(
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
             AND NOT EXISTS (SELECT 1 FROM ethflow_refunds r WHERE r.order_uid = o.uid)
             AND  o.owner = $2
-            AND  o.class = 'limit'
     )
     SELECT
         o_quotes.sell_amount  AS quote_sell_amount,
@@ -1146,7 +1255,6 @@ mod tests {
         assert_eq!(order.app_data, full_order.app_data);
         assert_eq!(order.fee_amount, full_order.fee_amount);
         assert_eq!(order.kind, full_order.kind);
-        assert_eq!(order.class, full_order.class);
         assert_eq!(order.partially_fillable, full_order.partially_fillable);
         assert_eq!(order.signature, full_order.signature);
         assert_eq!(order.receiver, full_order.receiver);
@@ -1154,6 +1262,8 @@ mod tests {
         assert_eq!(order.settlement_contract, full_order.settlement_contract);
         assert_eq!(order.sell_token_balance, full_order.sell_token_balance);
         assert_eq!(order.buy_token_balance, full_order.buy_token_balance);
+        // Never filled, so it has no gas cost rather than one of zero.
+        assert_eq!(full_order.gas_cost, None);
     }
 
     #[tokio::test]
@@ -1497,8 +1607,8 @@ mod tests {
             "First insert should create exactly one event"
         );
 
-        // Second insert should be skipped (conflict) and should NOT create another
-        // event
+        // Second insert should be skipped (conflict) and should NOT create
+        // another event
         insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
             .await
             .unwrap();
@@ -1533,6 +1643,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+
+            quote_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         insert_quote_and_update_on_conflict(&mut db, &quote)
@@ -1609,6 +1721,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: true,
             metadata,
+
+            quote_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let quote_ = read_quote(&mut db, &quote.order_uid)
@@ -1637,6 +1751,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+
+            quote_id: None,
         };
         insert_quote(&mut db, &quote).await.unwrap();
         let order_with_quote = single_full_order_with_quote(&mut db, &quote.order_uid)
@@ -1680,7 +1796,6 @@ mod tests {
             full_order.fee_amount
         );
         assert_eq!(order_with_quote.full_order.kind, full_order.kind);
-        assert_eq!(order_with_quote.full_order.class, full_order.class);
         assert_eq!(
             order_with_quote.full_order.partially_fillable,
             full_order.partially_fillable
@@ -1730,16 +1845,17 @@ mod tests {
         assert_eq!(time, order.cancellation_timestamp.unwrap());
     }
 
-    // In the schema we set the type of executed amounts in individual events to a
-    // 78 decimal digit number. Summing over multiple events could overflow this
-    // because the smart contract only guarantees that the filled amount (which
-    // amount that is depends on order type) does not overflow a U256. This test
-    // shows that postgres does not error if this happens because inside the SUM
-    // the number can have more digits. In particular:
-    // - `executed_buy_amount` may overflow after repeated buys (since there is no
-    //   upper bound)
-    // - `executed_sell_amount` (with fees) may overflow since the total fits into a
-    //   `U512`.
+    // In the schema we set the type of executed amounts in individual events to
+    // a 78 decimal digit number. Summing over multiple events could
+    // overflow this because the smart contract only guarantees that the
+    // filled amount (which amount that is depends on order type) does not
+    // overflow a U256. This test shows that postgres does not error if this
+    // happens because inside the SUM the number can have more digits. In
+    // particular:
+    // - `executed_buy_amount` may overflow after repeated buys (since there is
+    //   no upper bound)
+    // - `executed_sell_amount` (with fees) may overflow since the total fits
+    //   into a `U512`.
     #[tokio::test]
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
@@ -1822,7 +1938,12 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_full_order(ex: &mut PgConnection) -> Option<FullOrder> {
-            solvable_orders(ex, 0).next().await.transpose().unwrap()
+            // now = i64::MAX so valid_from never gates these orders.
+            solvable_orders(ex, 0, i64::MAX)
+                .next()
+                .await
+                .transpose()
+                .unwrap()
         }
 
         async fn pre_signature_event(
@@ -1927,7 +2048,7 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
 
         async fn get_full_order(ex: &mut PgConnection, min_valid_to: i64) -> Option<FullOrder> {
-            solvable_orders(ex, min_valid_to)
+            solvable_orders(ex, min_valid_to, i64::MAX)
                 .next()
                 .await
                 .transpose()
@@ -2039,7 +2160,7 @@ mod tests {
             after_timestamp: DateTime<Utc>,
             uids: &[OrderUid],
         ) -> HashSet<OrderUid> {
-            open_orders_by_time_or_uids(ex, uids, after_timestamp)
+            open_orders_by_time_or_uids(ex, uids, after_timestamp, i64::MAX)
                 .map_ok(|o| o.uid)
                 .try_collect()
                 .await
@@ -2096,8 +2217,9 @@ mod tests {
             .await,
             hashset![ByteArray([3u8; 56]),]
         );
-        // Even though no orders should be returned after the provided timestamp,
-        // specified order UIDs list helps to return all the requested orders.
+        // Even though no orders should be returned after the provided
+        // timestamp, specified order UIDs list helps to return all the
+        // requested orders.
         assert_eq!(
             get_open_orders_by_time_or_uids(
                 &mut db,
@@ -2115,6 +2237,125 @@ mod tests {
                 ByteArray([3u8; 56]),
             ]
         )
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_solvable_orders_valid_from() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn solvable_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
+            // `min_valid_to = now` mirrors production so `valid_to` expiry is
+            // enforced.
+            solvable_orders(ex, now, now)
+                .map_ok(|o| o.uid)
+                .try_collect()
+                .await
+                .unwrap()
+        }
+
+        let gated = Order {
+            uid: ByteArray([1u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            // `valid_to` is past every checked `now`.
+            valid_to: 10_000,
+            partially_fillable: true,
+            creation_timestamp: Utc::now(),
+            valid_from: Some(1_000),
+            ..Default::default()
+        };
+        insert_order(&mut db, &gated).await.unwrap();
+
+        // Gated out before valid_from.
+        assert!(solvable_uids(&mut db, 999).await.is_empty());
+        // Eligible exactly at, and after, valid_from.
+        assert_eq!(solvable_uids(&mut db, 1_000).await, hashset![gated.uid]);
+        assert_eq!(solvable_uids(&mut db, 2_000).await, hashset![gated.uid]);
+
+        let ungated = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: 100,
+            partially_fillable: true,
+            creation_timestamp: Utc::now(),
+            valid_from: None,
+            ..Default::default()
+        };
+        insert_order(&mut db, &ungated).await.unwrap();
+        assert_eq!(solvable_uids(&mut db, 0).await, hashset![ungated.uid]);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_open_orders_valid_from_transition() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn incremental_uids(
+            ex: &mut PgConnection,
+            after: DateTime<Utc>,
+            now: i64,
+        ) -> HashSet<OrderUid> {
+            open_orders_by_time_or_uids(ex, &[], after, now)
+                .map_ok(|o| o.uid)
+                .try_collect()
+                .await
+                .unwrap()
+        }
+
+        // Anchor all times to one base so the margins survive second
+        // boundaries.
+        let base = Utc::now();
+        let checkpoint = base;
+        let valid_from = base.timestamp() + 50; // future relative to the checkpoint
+
+        // Created before the checkpoint, so only a `valid_from` crossing can
+        // pick them up.
+        let created_before = base - Duration::seconds(100);
+
+        let valid = Order {
+            uid: ByteArray([1u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: valid_from + 100,
+            partially_fillable: true,
+            creation_timestamp: created_before,
+            valid_from: Some(valid_from),
+            ..Default::default()
+        };
+        // This order will already be expired by the time it
+        // would become eligible, so it must not be picked up.
+        let expired = Order {
+            uid: ByteArray([2u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: valid_from - 10,
+            partially_fillable: true,
+            creation_timestamp: created_before,
+            valid_from: Some(valid_from),
+            ..Default::default()
+        };
+        insert_order(&mut db, &valid).await.unwrap();
+        insert_order(&mut db, &expired).await.unwrap();
+
+        assert!(
+            incremental_uids(&mut db, checkpoint, valid_from - 1)
+                .await
+                .is_empty()
+        );
+        assert_eq!(
+            incremental_uids(&mut db, checkpoint, valid_from).await,
+            hashset![valid.uid]
+        );
     }
 
     #[tokio::test]
@@ -2194,6 +2435,122 @@ mod tests {
         }
     }
 
+    async fn two_orders(db: &mut PgTransaction<'_>) -> (OrderUid, OrderUid) {
+        let (order_a, order_b) = (ByteArray([1; 56]), ByteArray([2; 56]));
+        for uid in [order_a, order_b] {
+            insert_order(
+                db,
+                &Order {
+                    uid,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        (order_a, order_b)
+    }
+
+    async fn fill(db: &mut PgTransaction<'_>, order_uid: OrderUid, log_index: i64) {
+        crate::events::append(
+            db,
+            &[(
+                EventIndex {
+                    block_number: 0,
+                    log_index,
+                },
+                Event::Trade(Trade {
+                    order_uid,
+                    ..Default::default()
+                }),
+            )],
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Attributes `gas_used` to the settled trades at a gas price of 10;
+    /// `None` leaves the settlement unattributed.
+    async fn settle(db: &mut PgTransaction<'_>, log_index: i64, tx: u8, gas_used: Option<u64>) {
+        crate::events::append(
+            db,
+            &[(
+                EventIndex {
+                    block_number: 0,
+                    log_index,
+                },
+                Event::Settlement(Settlement {
+                    transaction_hash: ByteArray([tx; 32]),
+                    ..Default::default()
+                }),
+            )],
+        )
+        .await
+        .unwrap();
+        if let Some(gas_used) = gas_used {
+            crate::trades::attribute_gas_cost(
+                db,
+                EventIndex {
+                    block_number: 0,
+                    log_index,
+                },
+                BigDecimal::from(gas_used),
+                BigDecimal::from(10),
+                &[],
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn order_gas(db: &mut PgConnection, uid: OrderUid) -> Option<BigDecimal> {
+        single_full_order_with_quote(db, &uid)
+            .await
+            .unwrap()
+            .unwrap()
+            .full_order
+            .gas_cost
+    }
+
+    /// An order's gas cost sums its share of each settlement that filled it,
+    /// and becomes unknown as soon as any fill is unattributed.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_gas_cost_across_fills() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+        let (order_a, order_b) = two_orders(&mut db).await;
+
+        // 100 gas at price 10, split over this settlement's two trades.
+        fill(&mut db, order_a, 0).await;
+        fill(&mut db, order_b, 1).await;
+        settle(&mut db, 2, 0, Some(100)).await;
+        assert_eq!(order_gas(&mut db, order_a).await, Some(500.into()));
+        assert_eq!(order_gas(&mut db, order_b).await, Some(500.into()));
+
+        // order_a fills again, alone, so it adds that settlement's whole 3000.
+        fill(&mut db, order_a, 3).await;
+        settle(&mut db, 4, 1, Some(300)).await;
+        let mut batch = many_full_orders_with_quotes(&mut db, &[order_a, order_b])
+            .await
+            .unwrap();
+        batch.sort_by_key(|order| order.full_order.uid.0);
+        assert_eq!(
+            batch
+                .iter()
+                .map(|order| (order.full_order.uid, order.full_order.gas_cost.clone()))
+                .collect::<Vec<_>>(),
+            vec![(order_a, Some(3500.into())), (order_b, Some(500.into()))]
+        );
+
+        // A fill that was never attributed makes order_a's total unknown.
+        fill(&mut db, order_a, 5).await;
+        settle(&mut db, 6, 2, None).await;
+        assert!(order_gas(&mut db, order_a).await.is_none());
+        assert_eq!(order_gas(&mut db, order_b).await, Some(500.into()));
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_latest_settlement_block() {
@@ -2234,7 +2591,6 @@ mod tests {
             &mut db,
             &Order {
                 uid: order_uid,
-                class: OrderClass::Limit,
                 ..Default::default()
             },
         )
@@ -2548,6 +2904,8 @@ mod tests {
             solver: ByteArray([1; 20]),
             verified: false,
             metadata: Default::default(),
+
+            quote_id: None,
         };
 
         // insert quote with verified and metadata fields stored as NULL

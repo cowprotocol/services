@@ -12,7 +12,10 @@
 
 use {
     crate::{
-        domain::settlement::{self, Settlement},
+        domain::{
+            Metrics,
+            settlement::{self, Settlement},
+        },
         infra,
     },
     anyhow::{Context, Result, anyhow},
@@ -31,6 +34,7 @@ impl Observer {
     /// Creates a new Observer and asynchronously schedules the first update
     /// run.
     pub fn new(eth: infra::Ethereum, persistence: infra::Persistence) -> Self {
+        Metrics::init_settlement_math_errors();
         Self { eth, persistence }
     }
 
@@ -104,6 +108,7 @@ impl Observer {
                     &transaction,
                     separator,
                     settlement_contract,
+                    self.eth.contracts().wrapped_native_token(),
                     self.eth.contracts().authenticator(),
                 )
                 .await
@@ -147,8 +152,10 @@ impl Observer {
                         Ok(None)
                     }
                     settlement::transaction::Error::Authentication(_) => {
-                        // This has to be a temporary error because the settlement contract
-                        // guarantees that SOME allow listed contract executed the transaction.
+                        // This has to be a temporary error because the
+                        // settlement contract
+                        // guarantees that SOME allow listed contract executed
+                        // the transaction.
                         Err(anyhow!(format!(
                             "could not determing solver address - err: {err:?}"
                         )))

@@ -8,7 +8,7 @@ use {
     e2e::setup::{colocation::SolverEngine, mock::Mock, solution::JitOrder, *},
     ethrpc::alloy::CallBuilderExt,
     model::{
-        order::{OrderClass, OrderCreation, OrderKind},
+        order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
     },
     number::units::EthUnit,
@@ -83,27 +83,23 @@ async fn single_limit_order_test(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
-    // We start the quoter as the baseline solver, and the mock solver as the one
-    // returning the solution
+    // We start the quoter as the baseline solver, and the mock solver as the
+    // one returning the solution
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_solver",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("mock_solver", solver.address())
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_solver",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("mock_solver", solver.address())
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -134,9 +130,8 @@ async fn single_limit_order_test(web3: Web3) {
     let trader_balance_before = token.balanceOf(trader.address()).call().await.unwrap();
     let solver_balance_before = token.balanceOf(solver.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
-    let limit_order = services.get_order(&order_id).await.unwrap();
+    services.get_order(&order_id).await.unwrap();
     onchain.mint_block().await;
-    assert_eq!(limit_order.metadata.class, OrderClass::Limit);
 
     let (jit_order, jit_order_uid) = JitOrder {
         owner: trader.address(),
@@ -152,7 +147,7 @@ async fn single_limit_order_test(web3: Web3) {
         partially_fillable: false,
         valid_to: model::time::now_in_epoch_seconds() + 300,
         app_data: Default::default(),
-        receiver: solver.address(),
+        receiver: solver.address().into(),
     }
     .sign(
         EcdsaSigningScheme::Eip712,
@@ -198,8 +193,8 @@ async fn single_limit_order_test(web3: Web3) {
 
         let trader_balance_increased =
             trader_balance_after.saturating_sub(trader_balance_before) >= 5u64.eth();
-        // Since the fee is 0 in the custom solution, the balance difference has to be
-        // exactly 10 wei
+        // Since the fee is 0 in the custom solution, the balance difference has
+        // to be exactly 10 wei
         let solver_balance_decreased =
             solver_balance_before.saturating_sub(solver_balance_after) == 10u64.eth();
         trader_balance_increased && solver_balance_decreased

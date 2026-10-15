@@ -17,8 +17,9 @@ impl<W: Write> Write for BestEffortSink<W> {
         if let Some(inner) = &mut self.0
             && let Err(err) = inner.write_all(data)
         {
-            // The sink was declared best-effort, so its failure is non-critical:
-            // log it, stop writing to it, and let the remaining sinks carry on.
+            // The sink was declared best-effort, so its failure is
+            // non-critical: log it, stop writing to it, and let the
+            // remaining sinks carry on.
             tracing::debug!(?err, "best-effort sink failed; dropping it");
             self.0 = None;
         }

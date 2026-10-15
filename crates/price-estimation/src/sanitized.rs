@@ -9,10 +9,10 @@ use {
     },
     alloy::primitives::Address,
     anyhow::anyhow,
-    bad_tokens::list_based::DenyListedTokens,
     futures::FutureExt,
     model::order::BUY_ETH_ADDRESS,
     std::sync::Arc,
+    token_info::DenyListedTokens,
     tracing::instrument,
 };
 
@@ -125,6 +125,8 @@ impl SanitizedPriceEstimator {
                 gas: 0,
                 solver: Default::default(),
                 verified: true,
+                supports_fast_path: false,
+                quote_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial price estimation");
@@ -139,6 +141,8 @@ impl SanitizedPriceEstimator {
                 gas: GAS_PER_WETH_UNWRAP + SETTLEMENT_OVERHEAD,
                 solver: Default::default(),
                 verified: true,
+                supports_fast_path: false,
+                quote_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
@@ -153,6 +157,8 @@ impl SanitizedPriceEstimator {
                 gas: GAS_PER_WETH_WRAP + SETTLEMENT_OVERHEAD,
                 solver: Default::default(),
                 verified: true,
+                supports_fast_path: false,
+                quote_id: None,
                 execution: Default::default(),
             };
             tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
@@ -211,6 +217,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -218,6 +225,8 @@ mod tests {
                     gas: 100,
                     solver: Default::default(),
                     verified: false,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -232,6 +241,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -241,6 +251,8 @@ mod tests {
                     gas: GAS_PER_WETH_UNWRAP + 100,
                     solver: Default::default(),
                     verified: false,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -253,6 +265,7 @@ mod tests {
                     in_amount: NonZeroU256::MAX,
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
@@ -270,6 +283,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -279,6 +293,8 @@ mod tests {
                     gas: GAS_PER_WETH_WRAP + 100,
                     solver: Default::default(),
                     verified: false,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -292,6 +308,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -299,6 +316,8 @@ mod tests {
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -311,6 +330,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -318,6 +338,8 @@ mod tests {
                     gas: 0,
                     solver: Default::default(),
                     verified: true,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -330,6 +352,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -338,6 +361,8 @@ mod tests {
                     gas: GAS_PER_WETH_UNWRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -350,6 +375,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -358,6 +384,8 @@ mod tests {
                     gas: GAS_PER_WETH_WRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -370,6 +398,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
@@ -386,6 +415,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Buy,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
@@ -395,7 +425,8 @@ mod tests {
             ),
         ];
 
-        // SanitizedPriceEstimator will simply forward the Query in the common case
+        // SanitizedPriceEstimator will simply forward the Query in the common
+        // case
         let first_forwarded_query = queries[0].0.clone();
         // SanitizedPriceEstimator replaces ETH buy token with native token
         let second_forwarded_query = Query {
@@ -425,6 +456,8 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
+                        supports_fast_path: false,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -441,6 +474,8 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
+                        supports_fast_path: false,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -457,6 +492,8 @@ mod tests {
                         gas: u64::MAX,
                         solver: Default::default(),
                         verified: false,
+                        supports_fast_path: false,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -473,6 +510,8 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: false,
+                        supports_fast_path: false,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -490,7 +529,8 @@ mod tests {
             match result {
                 Ok(estimate) => assert_eq!(estimate, expectation.unwrap()),
                 Err(err) => {
-                    // we only compare the error variant; everything else would be a PITA
+                    // we only compare the error variant; everything else would
+                    // be a PITA
                     let reported_error = std::mem::discriminant(&err);
                     let expected_error = std::mem::discriminant(&expectation.unwrap_err());
                     assert_eq!(reported_error, expected_error);
@@ -509,6 +549,7 @@ mod tests {
                     in_amount: Default::default(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -516,6 +557,8 @@ mod tests {
                     gas: 100,
                     solver: Default::default(),
                     verified: true,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
@@ -527,6 +570,7 @@ mod tests {
                     in_amount: NonZeroU256::try_from(1).unwrap(),
                     kind: OrderKind::Sell,
                     block_dependent: false,
+                    fast_path: false,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -534,17 +578,19 @@ mod tests {
                     gas: 100,
                     solver: Default::default(),
                     verified: true,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 }),
             ),
         ];
 
-        // SanitizedPriceEstimator will simply forward the Query in the sell=buy case
-        // if it is not calculating native price
+        // SanitizedPriceEstimator will simply forward the Query in the sell=buy
+        // case if it is not calculating native price
         let first_forwarded_query = queries[0].0.clone();
 
-        // SanitizedPriceEstimator will simply forward the Query if sell=buy of native
-        // token case if it is not calculating the native price
+        // SanitizedPriceEstimator will simply forward the Query if sell=buy of
+        // native token case if it is not calculating the native price
         let second_forwarded_query = queries[1].0.clone();
 
         let mut wrapped_estimator = MockPriceEstimating::new();
@@ -559,6 +605,8 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: true,
+                        supports_fast_path: false,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -575,6 +623,8 @@ mod tests {
                         gas: 100,
                         solver: Default::default(),
                         verified: true,
+                        supports_fast_path: false,
+                        quote_id: None,
                         execution: Default::default(),
                     })
                 }
@@ -595,7 +645,8 @@ mod tests {
             match result {
                 Ok(estimate) => assert_eq!(estimate, expectation.unwrap()),
                 Err(err) => {
-                    // we only compare the error variant; everything else would be a PITA
+                    // we only compare the error variant; everything else would
+                    // be a PITA
                     let reported_error = std::mem::discriminant(&err);
                     let expected_error = std::mem::discriminant(&expectation.unwrap_err());
                     assert_eq!(reported_error, expected_error);

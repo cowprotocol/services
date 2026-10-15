@@ -12,6 +12,7 @@ pub mod interaction;
 pub mod order_creation_simulation;
 pub mod order_quoting;
 pub mod order_validation;
+pub mod quote_storage;
 pub mod remaining_amounts;
 pub mod retry;
 pub mod token_list;

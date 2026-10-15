@@ -16,6 +16,7 @@ use {
     bigdecimal::BigDecimal,
     chrono::{DateTime, offset::Utc},
     derive_more::Debug as DeriveDebug,
+    eth_domain_types::Receiver,
     hex_literal::hex,
     num::BigUint,
     number::serialization::HexOrDecimalU256,
@@ -26,7 +27,7 @@ use {
         fmt::{self, Debug, Display},
         str::FromStr,
     },
-    strum::{AsRefStr, EnumString, VariantNames},
+    strum::EnumString,
 };
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -71,17 +72,6 @@ impl Order {
     pub fn contains_token_from(&self, token_list: &HashSet<Address>) -> bool {
         token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
     }
-
-    pub fn is_user_order(&self) -> bool {
-        match self.metadata.class {
-            OrderClass::Market | OrderClass::Limit => true,
-            OrderClass::Liquidity => false,
-        }
-    }
-
-    pub fn is_limit_order(&self) -> bool {
-        matches!(self.metadata.class, OrderClass::Limit)
-    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -118,7 +108,7 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_receiver(mut self, receiver: Option<Address>) -> Self {
+    pub fn with_receiver(mut self, receiver: Receiver) -> Self {
         self.0.data.receiver = receiver;
         self
     }
@@ -181,11 +171,6 @@ impl OrderBuilder {
         self
     }
 
-    pub fn with_class(mut self, class: OrderClass) -> Self {
-        self.0.metadata.class = class;
-        self
-    }
-
     pub fn build(self) -> Order {
         self.0
     }
@@ -202,7 +187,7 @@ pub struct OrderData {
     pub sell_token: Address,
     pub buy_token: Address,
     #[serde(default)]
-    pub receiver: Option<Address>,
+    pub receiver: Receiver,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -236,11 +221,11 @@ impl OrderData {
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 416];
         hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
-        // Some slots are not assigned (stay 0) because all values are extended to 256
-        // bits.
+        // Some slots are not assigned (stay 0) because all values are extended
+        // to 256 bits.
         hash_data[44..64].copy_from_slice(self.sell_token.as_slice());
         hash_data[76..96].copy_from_slice(self.buy_token.as_slice());
-        hash_data[108..128].copy_from_slice(self.receiver.unwrap_or(Address::ZERO).as_slice());
+        hash_data[108..128].copy_from_slice(self.receiver.raw_bytes());
         hash_data[128..160].copy_from_slice(&self.sell_amount.to_be_bytes::<32>());
         hash_data[160..192].copy_from_slice(&self.buy_amount.to_be_bytes::<32>());
         hash_data[220..224].copy_from_slice(&self.valid_to.to_be_bytes());
@@ -270,7 +255,8 @@ impl OrderData {
 
     /// Checks if the order is a market order.
     pub fn within_market(&self, quote: QuoteAmounts) -> bool {
-        // Using let here because widening_mul isn't able to infer the result size
+        // Using let here because widening_mul isn't able to infer the result
+        // size
         let lhs: U512 = (self.sell_amount + self.fee_amount).widening_mul(quote.buy);
         let rhs: U512 = (quote.sell + quote.fee).widening_mul(self.buy_amount);
         lhs >= rhs
@@ -296,10 +282,8 @@ pub struct OrderCreation {
     pub sell_token: Address,
     /// The address of the token being bought.
     pub buy_token: Address,
-    /// The receiver of the `buy_token`. When this field is `None`, the receiver
-    /// is the same as the owner.
     #[serde(default)]
-    pub receiver: Option<Address>,
+    pub receiver: Receiver,
     /// The *maximum* amount of `sell_token`s that may be sold.
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
@@ -712,10 +696,19 @@ pub struct OrderMetadata {
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_fee: U256,
     pub executed_fee_token: Address,
+    /// Share of its settlements' gas costs in native token wei, summed across
+    /// fills. `None` unless it has fills and every fill's cost is known.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_cost: Option<U256>,
     pub invalidated: bool,
     pub status: OrderStatus,
-    #[serde(flatten)]
-    pub class: OrderClass,
+    /// Deprecated: order classes were removed. Every order is a limit order
+    /// and JIT orders are flagged by `is_liquidity_order`. The field is still
+    /// serialized as `"class": "limit"` so the JSON shape stays stable for
+    /// existing API consumers.
+    #[serde(skip_deserializing, serialize_with = "serialize_legacy_order_class")]
+    pub class: (),
     pub settlement_contract: Address,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ethflow_data: Option<EthflowData>,
@@ -727,10 +720,30 @@ pub struct OrderMetadata {
     /// Full app data that `OrderData::app_data` is a hash of. Can be None if
     /// the backend doesn't know about the full app data.
     pub full_app_data: Option<String>,
+    /// Earliest time (unix seconds) at which the order may enter a batch
+    /// auction. `None` means no lower bound (eligible immediately).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid_from: Option<u32>,
+    /// Whether the caller asked for fast-path treatment (the
+    /// `enableFastPath` app-data flag was set). Persisted so the
+    /// autopilot's fast-path handler can pick the order up and decide
+    /// whether to actually run the fast path or fall through to a
+    /// regular auction.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fast_path: bool,
     /// If the order was created with a quote, then this field contains that
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,
+}
+
+/// Serializes the constant `"limit"` for the deprecated `class` field, see
+/// [`OrderMetadata::class`].
+pub fn serialize_legacy_order_class<S: Serializer>(
+    _: &(),
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str("limit")
 }
 
 /// OrderUid is 56 bytes. When hex encoded as 0x prefixes Json string it is 116.
@@ -808,7 +821,8 @@ impl Serialize for OrderUid {
     where
         S: Serializer,
     {
-        serializer.serialize_str(self.to_string().as_str())
+        let mut buffer = const_hex::Buffer::<56, true>::new();
+        serializer.serialize_str(buffer.format(&self.0))
     }
 }
 
@@ -865,48 +879,6 @@ pub enum OrderKind {
     /// exchange for some amount of token B (the exact amount is dependent on
     /// token pairs, solvers, etc).
     Sell,
-}
-
-#[derive(
-    Eq,
-    PartialEq,
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    Deserialize,
-    Serialize,
-    Hash,
-    EnumString,
-    AsRefStr,
-    VariantNames,
-)]
-#[strum(ascii_case_insensitive)]
-#[serde(tag = "class", rename_all = "lowercase")]
-pub enum OrderClass {
-    /// The most common type of order which can be placed by any user. Expected
-    /// to be fulfilled immediately (in the next block).
-    #[default]
-    Market,
-    /// Liquidity orders can only be placed by whitelisted users. These are
-    /// used for matching "coincidence of wants" trades. These are zero-fee
-    /// orders which are not expected to be fulfilled immediately and can
-    /// potentially live for a long time.
-    Liquidity,
-    /// Orders which are not expected to be fulfilled immediately, but
-    /// potentially somewhere far in the future. These are orders where
-    /// users essentially want to say: "once the price is at least X in
-    /// the future, then fulfill my order". These orders have their fee set to
-    /// zero, because it's impossible to predict fees that far in the
-    /// future. Instead, the fee is taken from the order surplus once the
-    /// order becomes fulfillable and the surplus is high enough.
-    Limit,
-}
-
-impl OrderClass {
-    pub fn is_limit(&self) -> bool {
-        matches!(self, Self::Limit)
-    }
 }
 
 impl OrderKind {
@@ -1073,8 +1045,9 @@ mod tests {
 
     #[test]
     fn deserialization_and_back() {
-        // Input JSON has v=0x01, which gets normalized to v=28 (0x1c) for Solidity
-        // ecrecover compatibility. Serialization then outputs v=0x1c.
+        // Input JSON has v=0x01, which gets normalized to v=28 (0x1c) for
+        // Solidity ecrecover compatibility. Serialization then outputs
+        // v=0x1c.
         let input_json = json!(
         {
             "creationDate": "1970-01-01T00:00:03Z",
@@ -1117,7 +1090,6 @@ mod tests {
         let expected = Order {
             metadata: OrderMetadata {
                 creation_date: Utc.timestamp_millis_opt(3_000).unwrap(),
-                class: OrderClass::Limit,
                 owner: Address::with_last_byte(1),
                 uid: OrderUid([17u8; 56]),
                 available_balance: None,
@@ -1136,7 +1108,7 @@ mod tests {
             data: OrderData {
                 sell_token: Address::with_last_byte(10),
                 buy_token: Address::with_last_byte(9),
-                receiver: Some(Address::with_last_byte(11)),
+                receiver: Receiver::new(Address::with_last_byte(11)),
                 sell_amount: U256::ONE,
                 buy_amount: U256::ZERO,
                 valid_to: u32::MAX,
@@ -1213,7 +1185,7 @@ mod tests {
         let template_order = OrderCreation {
             sell_token: Address::repeat_byte(0x11),
             buy_token: Address::repeat_byte(0x22),
-            receiver: Some(Address::repeat_byte(0x33)),
+            receiver: Receiver::new(Address::repeat_byte(0x33)),
             sell_amount: U256::from(123),
             buy_amount: U256::from(456),
             valid_to: 1337,
@@ -1317,6 +1289,41 @@ mod tests {
     }
 
     #[test]
+    fn order_creation_receiver_normalizes_missing_and_null_to_zero() {
+        let base = json!({
+            "sellToken": "0x1111111111111111111111111111111111111111",
+            "buyToken": "0x2222222222222222222222222222222222222222",
+            "sellAmount": "123",
+            "buyAmount": "456",
+            "validTo": 1337,
+            "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
+            "feeAmount": "789",
+            "kind": "sell",
+            "partiallyFillable": false,
+            "signingScheme": "presign",
+            "signature": "0x",
+        });
+
+        // Field missing entirely → ZERO.
+        let missing: OrderCreation = serde_json::from_value(base.clone()).unwrap();
+        assert_eq!(missing.receiver, Receiver::OWNER);
+        assert!(missing.receiver.is_default());
+
+        // Field present but `null` → ZERO.
+        let mut null = base.clone();
+        null["receiver"] = serde_json::Value::Null;
+        let null: OrderCreation = serde_json::from_value(null).unwrap();
+        assert_eq!(null.receiver, Receiver::OWNER);
+
+        // Non-zero receiver → preserved as-is.
+        let mut explicit = base;
+        explicit["receiver"] =
+            serde_json::Value::String("0x3333333333333333333333333333333333333333".into());
+        let explicit: OrderCreation = serde_json::from_value(explicit).unwrap();
+        assert_eq!(explicit.receiver, Receiver::new(Address::repeat_byte(0x33)));
+    }
+
+    #[test]
     fn order_creation_app_data() {
         #[derive(Debug, Deserialize, Serialize, Eq, PartialEq)]
         struct S {
@@ -1360,8 +1367,8 @@ mod tests {
         assert_eq!(serde_json::from_value::<S>(json).unwrap(), s);
     }
 
-    // from the test `should recover signing address for all supported ECDSA-based
-    // schemes` in <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
+    // from the test `should recover signing address for all supported
+    // ECDSA-based schemes` in <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
     #[test]
     fn order_creation_signature() {
         let domain_separator = DomainSeparator(hex!(
@@ -1390,7 +1397,7 @@ mod tests {
             let order = OrderData {
                 sell_token: hex!("0101010101010101010101010101010101010101").into(),
                 buy_token: hex!("0202020202020202020202020202020202020202").into(),
-                receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
+                receiver: Receiver::new(hex!("0303030303030303030303030303030303030303").into()),
                 sell_amount: U256::from(0x0246ddf97976680000_u128),
                 buy_amount: U256::from(0xb98bc829a6f90000_u128),
                 valid_to: 0xffffffff,
@@ -1424,7 +1431,7 @@ mod tests {
         let order = OrderData {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
-            receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
+            receiver: Receiver::new(hex!("0303030303030303030303030303030303030303").into()),
             sell_amount: U256::from(0x0246ddf97976680000_u128),
             buy_amount: U256::from(0xb98bc829a6f90000_u128),
             valid_to: 0xffffffff,

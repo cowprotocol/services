@@ -14,7 +14,7 @@ pub struct Order {
     pub side: Side,
     pub created: u32,
     pub valid_to: u32,
-    pub receiver: Option<eth::Address>,
+    pub receiver: eth::Receiver,
     pub owner: eth::Address,
     pub partially_fillable: bool,
     pub executed: TargetAmount,
@@ -27,6 +27,9 @@ pub struct Order {
     pub app_data: AppDataHash,
     pub signature: Signature,
     pub quote: Option<domain::Quote>,
+    /// Cap on the penalty a solver can incur for winning this order but
+    /// failing to execute it, in native token (CIP-87).
+    pub penalty_cap_native: Option<eth::Ether>,
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo

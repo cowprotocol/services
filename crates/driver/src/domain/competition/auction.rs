@@ -22,7 +22,7 @@ use {
 #[derive(Debug, Clone)]
 pub struct Auction {
     /// See the [`Self::id`] method.
-    pub(crate) id: Option<Id>,
+    pub(crate) id: Kind,
     /// See the [`Self::orders`] method.
     pub(crate) orders: Vec<competition::Order>,
     /// The tokens that are used in the orders of this auction.
@@ -32,9 +32,23 @@ pub struct Auction {
     pub(crate) surplus_capturing_jit_order_owners: Arc<HashSet<eth::Address>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A round of the official solver competition, which can end in an
+    /// on-chain settlement.
+    Competition(Id),
+    /// The quote this auction was built to compute.
+    Quote {
+        id: crate::domain::quote::Id,
+        /// Whether the quote opted into fast-path (out-of-competition)
+        /// execution.
+        fast_path: bool,
+    },
+}
+
 impl Auction {
     pub async fn new(
-        id: Option<Id>,
+        id: Kind,
         mut orders: Vec<competition::Order>,
         tokens: impl Iterator<Item = Token>,
         deadline: chrono::DateTime<chrono::Utc>,
@@ -45,7 +59,8 @@ impl Auction {
         let weth = eth.contracts().weth_address();
 
         // Filter out orders with 0 amounts (can lead to numerical issues)
-        // or where the auction doesn't contain information about the traded tokens.
+        // or where the auction doesn't contain information about the traded
+        // tokens.
         orders.retain(|order| {
             if order.available().is_zero() {
                 tracing::debug!(?order, "filtered out order with 0 amounts");
@@ -78,15 +93,56 @@ impl Auction {
         })
     }
 
-    /// [`None`] if this auction applies to a quote. See
-    /// [`crate::domain::quote`].
-    pub fn id(&self) -> Option<Id> {
-        self.id
+    /// The id of the competition auction this is, or [`None`] if it only
+    /// computes a quote. Anything scoped to a real auction — archiving,
+    /// settlement, solver notifications — applies in the former case only.
+    pub fn auction_id(&self) -> Option<Id> {
+        match self.id {
+            Kind::Competition(id) => Some(id),
+            Kind::Quote { .. } => None,
+        }
+    }
+
+    /// The id of the quote this auction computes, or [`None`] if it is a
+    /// competition auction.
+    pub fn quote_id(&self) -> Option<crate::domain::quote::Id> {
+        match self.id {
+            Kind::Competition(_) => None,
+            Kind::Quote { id, .. } => Some(id),
+        }
+    }
+
+    /// Whether this auction only computes a quote.
+    pub fn is_quote(&self) -> bool {
+        matches!(self.id, Kind::Quote { .. })
+    }
+
+    /// Whether this is a fast-path quote.
+    pub fn fast_path(&self) -> bool {
+        matches!(
+            self.id,
+            Kind::Quote {
+                fast_path: true,
+                ..
+            }
+        )
     }
 
     /// The orders for the auction.
     pub fn orders(&self) -> &[competition::Order] {
         &self.orders
+    }
+
+    /// Inject the configured solver fee (see
+    /// [`crate::infra::Solver::solver_fee`]) so that the existing protocol
+    /// fee machinery makes the delivered price correspondingly worse.
+    pub fn with_solver_fee(mut self, policy: &competition::order::FeePolicy) -> Self {
+        for order in &mut self.orders {
+            Arc::make_mut(&mut order.data)
+                .protocol_fees
+                .push(policy.clone());
+        }
+        self
     }
 
     /// The tokens used in the auction.
@@ -144,6 +200,26 @@ impl Tokens {
 
     pub fn iter(&self) -> impl Iterator<Item = &Token> {
         self.0.values()
+    }
+
+    /// A copy with `prices` applied to the matching tokens. Tokens absent from
+    /// `prices` keep their existing price.
+    pub fn with_native_prices(&self, prices: &Prices) -> Self {
+        Self(
+            self.0
+                .iter()
+                .map(|(address, token)| {
+                    let price = prices.get(address).copied().or(token.price);
+                    (
+                        *address,
+                        Token {
+                            price,
+                            ..token.clone()
+                        },
+                    )
+                })
+                .collect(),
+        )
     }
 }
 
@@ -239,7 +315,7 @@ impl From<eth::U256> for Price {
 /// All auction prices
 pub type Prices = HashMap<eth::TokenAddress, Price>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub i64);
 
 impl Id {
@@ -278,4 +354,37 @@ pub struct InvalidPrice;
 pub enum Error {
     #[error("blockchain error: {0:?}")]
     Blockchain(#[from] blockchain::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_native_prices_applies_only_given_tokens() {
+        let addr = |b: u8| -> eth::TokenAddress { eth::Address::from([b; 20]).into() };
+        let token = |b: u8| Token {
+            decimals: None,
+            symbol: None,
+            address: addr(b),
+            price: None,
+            available_balance: Default::default(),
+            trusted: false,
+        };
+        let tokens = Tokens(
+            [token(1), token(2)]
+                .into_iter()
+                .map(|t| (t.address, t))
+                .collect(),
+        );
+
+        let priced =
+            tokens.with_native_prices(&Prices::from([(addr(1), Price::from(eth::U256::from(5)))]));
+
+        assert_eq!(
+            priced.get(&addr(1)).unwrap().price.unwrap().0.0,
+            eth::U256::from(5),
+        );
+        assert!(priced.get(&addr(2)).unwrap().price.is_none());
+    }
 }

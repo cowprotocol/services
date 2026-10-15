@@ -88,6 +88,7 @@ impl<'de, const N: usize> DeserializeAs<'de, [u8; N]> for Hex {
 
 impl<const N: usize> SerializeAs<[u8; N]> for Hex {
     fn serialize_as<S: Serializer>(source: &[u8; N], serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&const_hex::encode_prefixed(source))
+        let mut buffer = const_hex::Buffer::<N, true>::new();
+        serializer.serialize_str(buffer.format(source))
     }
 }

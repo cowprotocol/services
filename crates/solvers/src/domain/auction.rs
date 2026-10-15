@@ -32,23 +32,15 @@ impl Tokens {
     }
 }
 
-/// The ID of an auction.
+/// The ID of an auction: the id of an official solver competition auction, or
+/// the id of the quote the auction was built to compute. Quote auctions carry
+/// no token prices, which is how they are told apart.
 #[derive(Clone, Copy, Debug)]
-pub enum Id {
-    /// An auction as part of an official solver competition, that could
-    /// translate to an on-chain settlement transaction.
-    Solve(i64),
-    /// An auction that is used for computing a price quote and will not get
-    /// executed on chain.
-    Quote,
-}
+pub struct Id(pub i64);
 
 impl Display for Id {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            Id::Solve(id) => write!(f, "{id}"),
-            Id::Quote => f.write_str("quote"),
-        }
+        write!(f, "{}", self.0)
     }
 }
 

@@ -38,7 +38,11 @@ async fn sell() {
     ])
     .await;
 
-    let engine = tests::SolverEngine::new("bitget", super::config(&api.address)).await;
+    // The swap does not satisfy the order, so it is never simulated.
+    let node = mock::http::setup(vec![]).await;
+
+    let engine =
+        tests::SolverEngine::new("bitget", super::config(&api.address, &node.address)).await;
 
     let solution = engine
         .solve(json!({
@@ -73,7 +77,7 @@ async fn sell() {
                     "fullBuyAmount": "1000000000000000000000000000000000000",
                     "kind": "sell",
                     "partiallyFillable": false,
-                    "class": "market",
+                    "class": "limit",
                     "sellTokenSource": "erc20",
                     "buyTokenDestination": "erc20",
                     "preInteractions": [],

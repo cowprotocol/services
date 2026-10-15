@@ -90,9 +90,10 @@ where
         timeout: Duration,
     ) -> futures::future::BoxFuture<'_, NativePriceEstimateResult> {
         async move {
-            // We must subscribe before we send the request, so we get the `rx` pointing to
-            // the current memory point, this way we avoid losing the result for
-            // the corner case in which the request is sent between the `unbounded_send()`
+            // We must subscribe before we send the request, so we get the `rx`
+            // pointing to the current memory point, this way we
+            // avoid losing the result for the corner case in which
+            // the request is sent between the `unbounded_send()`
             // and the `subscribe()`
             let mut rx = self.results.subscribe();
 
@@ -227,7 +228,8 @@ where
         let delay = tokio::time::sleep(config.debouncing_time).fuse();
         futures::pin_mut!(delay);
 
-        // Append new elements to the bulk until reaching either of the scenarios:
+        // Append new elements to the bulk until reaching either of the
+        // scenarios:
         // - reach maximum number of elements per batch (`max_batch_len)
         // - we reach the `debouncing_time`
         while chunk.len() < max_batch_size {
@@ -284,7 +286,8 @@ mod tests {
         let mut inner = MockNativePriceEstimating::new();
         inner
             .expect_estimate_native_price()
-            // Because it gets the value from the batch estimator, it does not need to do this call at all
+            // Because it gets the value from the batch estimator, it does not need to do this call
+            // at all
             .never();
 
         let mut native_price_batch_fetcher = MockNativePriceBatchFetching::new();
@@ -293,16 +296,18 @@ mod tests {
             .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
-            // We expect this to be requested just one, because for the second call it fetches the cached one
+            // We expect this to be requested just one, because for the second call it fetches the
+            // cached one
             .times(1)
             .returning(|input, _| {
                 let input_cloned = input.clone();
                 async move {
                     Ok(input_cloned
-                    .iter()
-                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>())
-                }.boxed()
+                        .iter()
+                        .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
+                        .collect::<HashMap<_, _>>())
+                }
+                .boxed()
             });
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
@@ -326,14 +331,18 @@ mod tests {
             .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
-            // We expect this to be requested just one, because for the second call it fetches the cached one
+            // We expect this to be requested just one, because for the second call it fetches the
+            // cached one
             .times(1)
             .returning(|input, _| {
                 let input_cloned = input.clone();
-                async move { Ok(input_cloned
-                    .iter()
-                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>()) }.boxed()
+                async move {
+                    Ok(input_cloned
+                        .iter()
+                        .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
+                        .collect::<HashMap<_, _>>())
+                }
+                .boxed()
             });
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
@@ -361,9 +370,7 @@ mod tests {
             .expect_fetch_native_prices()
             // We expect this to be requested just one
             .times(1)
-            .returning(|_, _| {
-                async { Err(PriceEstimationError::NoLiquidity) }.boxed()
-            });
+            .returning(|_, _| async { Err(PriceEstimationError::NoLiquidity) }.boxed());
 
         let config = Configuration {
             max_concurrent_requests: NonZeroUsize::new(1),
@@ -419,14 +426,18 @@ mod tests {
             .returning(move || tokens_requested);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
-            // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
+            // We expect this to be requested exactly one time because the max batch is 20, so all
+            // petitions fit into one batch request
             .times(1)
             .returning(|input, _| {
                 let input_cloned = input.clone();
-                async move { Ok(input_cloned
-                    .iter()
-                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>()) }.boxed()
+                async move {
+                    Ok(input_cloned
+                        .iter()
+                        .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
+                        .collect::<HashMap<_, _>>())
+                }
+                .boxed()
             });
 
         let config = Configuration {
@@ -453,20 +464,25 @@ mod tests {
             .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
-            // We expect this to be requested exactly one time because the max batch is 20, so all petitions fit into one batch request
+            // We expect this to be requested exactly one time because the max batch is 20, so all
+            // petitions fit into one batch request
             .times(1)
             .returning(|input, _| {
                 let input_cloned = input.clone();
-                async move { Ok(input_cloned
-                    .iter()
-                    .enumerate()
-                    .map(|(i, token)|
-                        if i % 2 == 0 {
-                            (*token, Ok::<_, PriceEstimationError>(1.0))
-                        } else {
-                            (*token, Err(PriceEstimationError::NoLiquidity))
-                        }
-                    ).collect::<HashMap<_, _>>()) }.boxed()
+                async move {
+                    Ok(input_cloned
+                        .iter()
+                        .enumerate()
+                        .map(|(i, token)| {
+                            if i % 2 == 0 {
+                                (*token, Ok::<_, PriceEstimationError>(1.0))
+                            } else {
+                                (*token, Err(PriceEstimationError::NoLiquidity))
+                            }
+                        })
+                        .collect::<HashMap<_, _>>())
+                }
+                .boxed()
             });
 
         let config = Configuration {
@@ -514,14 +530,18 @@ mod tests {
             .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
-            // We expect this to be requested exactly two times because the max batch is 20, so all petitions fit into one batch request
+            // We expect this to be requested exactly two times because the max batch is 20, so all
+            // petitions fit into one batch request
             .times(2)
             .returning(|input, _| {
                 let input_cloned = input.clone();
-                async move { Ok(input_cloned
-                    .iter()
-                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>()) }.boxed()
+                async move {
+                    Ok(input_cloned
+                        .iter()
+                        .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
+                        .collect::<HashMap<_, _>>())
+                }
+                .boxed()
             });
 
         let config = Configuration {
@@ -573,14 +593,18 @@ mod tests {
             .returning(|| 20);
         native_price_batch_fetcher
             .expect_fetch_native_prices()
-            // We expect this to be requested exactly two times because there are two batches petitions separated by 250 ms
+            // We expect this to be requested exactly two times because there are two batches
+            // petitions separated by 250 ms
             .times(2)
             .returning(|input, _| {
                 let input_cloned = input.clone();
-                async move { Ok(input_cloned
-                    .iter()
-                    .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
-                    .collect::<HashMap<_, _>>()) }.boxed()
+                async move {
+                    Ok(input_cloned
+                        .iter()
+                        .map(|token| (*token, Ok::<_, PriceEstimationError>(1.0)))
+                        .collect::<HashMap<_, _>>())
+                }
+                .boxed()
             });
 
         let config = Configuration {

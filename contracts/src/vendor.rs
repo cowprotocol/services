@@ -204,6 +204,12 @@ pub fn run(artifacts_dir: &Path) -> Result<()> {
         .manual(
             "ChainalysisOracle",
             "Chainalysis does not publish its code",
+        )
+        .manual(
+            "Multicall3",
+            "mds1/multicall does not commit build artifacts; ABI and creation bytecode were \
+             taken from the verified mainnet deployment at \
+             0xcA11bde05977b3631167028862bE2a173976CA11",
         );
 
     Ok(())

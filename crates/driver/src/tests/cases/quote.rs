@@ -30,26 +30,25 @@ fn extract_buy_amount(response_body: &str, sell_amount: eth::U256) -> eth::U256 
     sell_amount * price_low / price_high
 }
 
-/// Run a matrix of tests for all meaningful combinations of order kind and
-/// side, verifying that they get quoted successfully.
+/// Run a matrix of tests for all meaningful order sides, verifying that they
+/// get quoted successfully. Quotes always use limit orders, so there is no
+/// order-kind dimension.
 #[tokio::test]
 #[ignore]
 async fn matrix() {
     for side in [order::Side::Buy, order::Side::Sell] {
-        for kind in [order::Kind::Market, order::Kind::Limit] {
-            let test = tests::setup()
-                .name(format!("{side:?} {kind:?}"))
-                .pool(ab_pool())
-                .order(ab_order().side(side).kind(kind))
-                .solution(ab_solution())
-                .quote()
-                .done()
-                .await;
+        let test = tests::setup()
+            .name(format!("{side:?}"))
+            .pool(ab_pool())
+            .order(ab_order().side(side))
+            .solution(ab_solution())
+            .quote()
+            .done()
+            .await;
 
-            let quote = test.quote().await;
+        let quote = test.quote().await;
 
-            quote.ok().amount().interactions();
-        }
+        quote.ok().amount().interactions();
     }
 }
 
@@ -57,12 +56,9 @@ async fn matrix() {
 #[ignore]
 async fn with_jit_order() {
     let side = order::Side::Sell;
-    let kind = order::Kind::Limit;
     let jit_order = setup::JitOrder {
         order: ab_order()
-            .kind(order::Kind::Limit)
             .side(side)
-            .kind(kind)
             .pre_interaction(setup::blockchain::Interaction {
                 address: ab_order().owner,
                 calldata: std::iter::repeat_n(0xab, 32).collect(),
@@ -74,10 +70,10 @@ async fn with_jit_order() {
     };
 
     let test = tests::setup()
-        .name(format!("{side:?} {kind:?}"))
+        .name(format!("{side:?}"))
         .pool(ab_pool())
         .jit_order(jit_order)
-        .order(ab_order().side(side).kind(kind).no_surplus())
+        .order(ab_order().side(side).no_surplus())
         .solution(ab_solution())
         .quote()
         .done()
@@ -89,81 +85,232 @@ async fn with_jit_order() {
     quote.ok().amount().interactions().jit_order();
 }
 
-/// Test that quote haircut correctly reduces the executed amount for quotes
-/// when configured. The haircut should make quotes more conservative without
+/// A fast-path quote is cached under the orderbook's quote id; the response
+/// carries no driver-minted id for the autopilot to hold on to.
+#[tokio::test]
+#[ignore]
+async fn fast_path_quote_carries_no_solution_id() {
+    let test = fast_path_test().await;
+    test.quote().await.ok().no_solution_id();
+}
+
+/// A fast-path quote is only useful if the cached solution can actually be
+/// executed later. If the solver returns a solution with no interactions
+/// (e.g. because it can't commit to an execution path yet, as for RWA trades)
+/// the driver must refuse to serve the fast-path quote rather than cache an
+/// unsettleable solution.
+#[tokio::test]
+#[ignore]
+async fn fast_path_rejects_solution_without_interactions() {
+    let test = tests::setup()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution().no_interactions())
+        .solvers(vec![setup::test_solver().fast_path_enabled()])
+        .auction_id(42)
+        .quote()
+        .quote_fast_path()
+        .done()
+        .await;
+
+    test.quote().await.err().kind("QuotingFailed");
+}
+
+/// Set up a fast-path quote test: a fast-path solver quoting `ab_order`.
+async fn fast_path_test() -> setup::Test {
+    tests::setup()
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .solvers(vec![setup::test_solver().fast_path_enabled()])
+        .auction_id(42)
+        .quote()
+        .quote_fast_path()
+        .done()
+        .await
+}
+
+/// `/settle` carrying the real signed order re-encodes the cached solution and
+/// executes on-chain.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle() {
+    let test = fast_path_test().await;
+    test.quote().await.ok();
+    test.settle_with_order(test.quote_id(), test.order_json(), test.limit_prices_json())
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
+}
+
+/// The re-encoded settlement fills the order at exactly the signed limit, not
+/// the surplus the cached route would otherwise deliver.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_fills_at_limit() {
+    let test = fast_path_test().await;
+    test.quote().await.ok();
+    let limit_prices = test.limit_prices_json();
+    let expected_buy: eth::U256 = limit_prices["buy"].as_str().unwrap().parse().unwrap();
+    test.settle_with_order(test.quote_id(), test.order_json(), limit_prices)
+        .await
+        .ok()
+        .await
+        .balance(&test, "B", setup::Balance::GreaterBy(expected_buy))
+        .await;
+}
+
+/// Without the fast-path inputs there is nothing to re-encode: a cached quote
+/// is not a queued solution, so a regular `/settle` finds nothing under its id.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_requires_order() {
+    let test = fast_path_test().await;
+    test.quote().await.ok();
+    test.settle(test.quote_id() as u64)
+        .await
+        .err()
+        .kind("SolutionNotAvailable");
+}
+
+/// A fast-path quote cached under one quote id cannot be settled under another.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_requires_matching_quote_id() {
+    let test = fast_path_test().await;
+    test.quote().await.ok();
+    test.settle_with_order(
+        test.quote_id() + 1,
+        test.order_json(),
+        test.limit_prices_json(),
+    )
+    .await
+    .err()
+    .kind("SolutionNotAvailable");
+}
+
+/// A settle order that doesn't match the quote — different buy token — is
+/// rejected as an invalid fast-path order.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_rejects_mismatched_order() {
+    let test = fast_path_test().await;
+    test.quote().await.ok();
+    let mut order = test.order_json();
+    order["buyToken"] = serde_json::json!("0x0101010101010101010101010101010101010101");
+    test.settle_with_order(test.quote_id(), order, test.limit_prices_json())
+        .await
+        .err()
+        .kind("FastPathOrderMismatch");
+}
+
+/// A settle order for a different amount than the quote is rejected.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_rejects_wrong_amount() {
+    let test = fast_path_test().await;
+    test.quote().await.ok();
+    let mut order = test.order_json();
+    order["sellAmount"] = serde_json::json!("1");
+    test.settle_with_order(test.quote_id(), order, test.limit_prices_json())
+        .await
+        .err()
+        .kind("FastPathOrderMismatch");
+}
+
+/// A settle whose limit prices demand more than the cached quote can deliver is
+/// rejected, so the order falls back to the normal auction.
+#[tokio::test]
+#[ignore]
+async fn fast_path_settle_rejects_tight_limit() {
+    let test = fast_path_test().await;
+    test.quote().await.ok();
+    let mut limit_prices = test.limit_prices_json();
+    limit_prices["buy"] = serde_json::json!("1000000000000000000000000000000");
+    test.settle_with_order(test.quote_id(), test.order_json(), limit_prices)
+        .await
+        .err()
+        .kind("FastPathLimitNotMet");
+}
+
+/// Test that quote solver fee correctly reduces the executed amount for quotes
+/// when configured. The solver fee should make quotes more conservative without
 /// affecting the ability to place and execute orders.
 #[tokio::test]
 #[ignore]
-async fn with_quote_haircut() {
-    // Test with a sell order - haircut should reduce the buy amount user receives
-    // Set up an order that sells 50 A tokens for at least 40 B tokens (creating
-    // slack) The solver will quote ~41-42 B tokens, leaving room for 2% haircut
-    let test_no_haircut = tests::setup()
-        .name("Sell order without haircut (baseline)")
+async fn with_quote_solver_fee() {
+    // Test with a sell order - solver fee should reduce the buy amount user
+    // receives Set up an order that sells 50 A tokens for at least 40 B
+    // tokens (creating slack) The solver will quote ~41-42 B tokens,
+    // leaving room for 2% solver fee
+    let test_without_fee = tests::setup()
+        .name("Sell order without solver fee (baseline)")
         .pool(ab_pool())
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .kind(order::Kind::Limit)
-                .buy_amount(40u64.ether().into_wei()) // Set a limit to create slack
+                .buy_amount(40u64.ether().into_wei()), // Set a limit to create slack
         )
         .solution(ab_solution())
-        .solvers(vec![tests::setup::test_solver().haircut_bps(0)]) // No haircut
+        .solvers(vec![tests::setup::test_solver().solver_fee_bps(0)]) // No solver fee
         .quote()
         .done()
         .await;
 
-    let quote_no_haircut = test_no_haircut.quote().await;
-    let response_no_haircut = quote_no_haircut.ok();
+    let quote_without_fee = test_without_fee.quote().await;
+    let response_without_fee = quote_without_fee.ok();
 
     let sell_amount = ab_order().sell_amount;
-    let buy_amount_no_haircut = extract_buy_amount(response_no_haircut.body(), sell_amount);
+    let buy_amount_without_fee = extract_buy_amount(response_without_fee.body(), sell_amount);
 
-    // Now get a quote with 200 bps (2%) haircut
-    let test_with_haircut = tests::setup()
-        .name("Sell order with 200 bps (2%) haircut")
+    // Now get a quote with 200 bps (2%) solver fee
+    let test_with_fee = tests::setup()
+        .name("Sell order with 200 bps (2%) solver fee")
         .pool(ab_pool())
         .order(
             ab_order()
                 .side(order::Side::Sell)
-                .kind(order::Kind::Limit)
-                .buy_amount(40u64.ether().into_wei()) // Same limit to create slack
+                .buy_amount(40u64.ether().into_wei()), // Same limit to create slack
         )
         .solution(ab_solution())
-        .solvers(vec![tests::setup::test_solver().haircut_bps(200)]) // 2% haircut
+        .solvers(vec![tests::setup::test_solver().solver_fee_bps(200)]) // 2% solver fee
         .quote()
         .done()
         .await;
 
-    let quote_with_haircut = test_with_haircut.quote().await;
-    let response_with_haircut = quote_with_haircut.ok();
+    let quote_with_fee = test_with_fee.quote().await;
+    let response_with_fee = quote_with_fee.ok();
 
-    let buy_amount_with_haircut = extract_buy_amount(response_with_haircut.body(), sell_amount);
+    let buy_amount_with_fee = extract_buy_amount(response_with_fee.body(), sell_amount);
 
-    // Verify haircut was applied: haircutted amount should be ~2% less than
-    // baseline Expected: buy_amount_with_haircut ≈ buy_amount_no_haircut * 0.98
-    let expected_haircutted = buy_amount_no_haircut * eth::U256::from(98) / eth::U256::from(100);
+    // Verify solver fee was applied: fee-adjusted amount should be ~2% less
+    // than baseline Expected: buy_amount_with_fee ≈ buy_amount_without_fee
+    // * 0.98
+    let expected_with_fee = buy_amount_without_fee * eth::U256::from(98) / eth::U256::from(100);
 
-    // Calculate actual haircut in basis points for diagnostics
-    let ratio = buy_amount_with_haircut * eth::U256::from(10000) / buy_amount_no_haircut;
-    let haircut_bps = eth::U256::from(10000) - ratio;
+    // Calculate actual solver fee in basis points for diagnostics
+    let ratio = buy_amount_with_fee * eth::U256::from(10000) / buy_amount_without_fee;
+    let solver_fee_bps = eth::U256::from(10000) - ratio;
 
     tracing::info!(
-        buy_amount_no_haircut = %buy_amount_no_haircut,
-        buy_amount_with_haircut = %buy_amount_with_haircut,
-        expected_haircutted = %expected_haircutted,
-        haircut_bps = %haircut_bps,
-        "Comparing buy amounts with and without haircut"
+        buy_amount_without_fee = %buy_amount_without_fee,
+        buy_amount_with_fee = %buy_amount_with_fee,
+        expected_with_fee = %expected_with_fee,
+        solver_fee_bps = %solver_fee_bps,
+        "Comparing buy amounts with and without solver fee"
     );
 
-    // The haircutted amount should be approximately 2% less (within 1% tolerance)
+    // The fee-adjusted amount should be approximately 2% less (within 1%
+    // tolerance)
     assert!(
-        buy_amount_with_haircut.is_approx_eq(&expected_haircutted, Some(0.01)),
-        "Haircutted amount {} should be approximately 2% less than baseline {} (expected: {}, \
-         actual haircut: {} bps)",
-        buy_amount_with_haircut,
-        buy_amount_no_haircut,
-        expected_haircutted,
-        haircut_bps
+        buy_amount_with_fee.is_approx_eq(&expected_with_fee, Some(0.01)),
+        "Fee-adjusted amount {} should be approximately 2% less than baseline {} (expected: {}, \
+         actual solver fee: {} bps)",
+        buy_amount_with_fee,
+        buy_amount_without_fee,
+        expected_with_fee,
+        solver_fee_bps
     );
 }

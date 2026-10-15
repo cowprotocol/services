@@ -89,7 +89,7 @@ User signs order → Orderbook validates → Autopilot includes in auction
   - Database tests: `cargo nextest run postgres -p orderbook -p database -p autopilot --test-threads 1 --run-ignored ignored-only`
   - E2E local tests: `cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only`
   - E2E forked tests: `cargo nextest run -p e2e forked_node --test-threads 1 --run-ignored ignored-only --failure-output final`
-  - Driver tests: `RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only`
+  - Driver tests: `RUST_MIN_STACK=3145728 cargo nextest run -p driver --run-ignored ignored-only`
 - E2E tests available in `crates/e2e`
 
 ### Testing Requirements
@@ -129,7 +129,7 @@ configs/        # Configuration files
 - Tokio-console support: **Only available in playground environment** (set `TOKIO_CONSOLE=true` to activate when running in playground)
 - Production builds do **not** include tokio-console overhead
 - Runtime log filter changes via UNIX socket at `/tmp/log_filter_override_<program_name>_<pid>.sock`
-- Memory allocator: Uses jemalloc by default with built-in heap profiling support (enable at runtime via MALLOC_CONF environment variable). Can optionally use mimalloc via `--features mimalloc-allocator`
+- Memory allocator: Uses jemalloc with built-in heap profiling support (enable at runtime via MALLOC_CONF environment variable)
 
 ## Playground Environment
 
@@ -154,9 +154,7 @@ Use rust-analyzer MCP when appropriate such as finding usages or renaming. After
 
 ## Code Style
 
-Instead of using full paths like `volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride>`, import the type at the beginning so you don't have to use the full path later.
-
-Don't add a lot of comments. Add comments only if the code is a bit weird or the concept is not clear.
+See `docs/CODE_STYLE.md` for the code style rules — follow them for all non-trivial changes.
 
 ## CoW Protocol Database Access
 

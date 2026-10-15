@@ -1,0 +1,286 @@
+//! Configuration of infrastructural components.
+
+use {
+    crate::domain::{
+        priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
+        settlement::MaxNativeShortfall,
+        solver_fee::SolverFee,
+    },
+    configs::shared::LoggingConfig,
+    serde::Deserialize,
+    serde_ext::{
+        deserialize_nonempty_vec,
+        deserialize_solana_pubkey_b58,
+        deserialize_url_with_trailing_slash,
+    },
+    solana_sdk::pubkey::Pubkey,
+    std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
+    tokio::fs,
+};
+
+/// Load the driver configuration from a TOML file.
+///
+/// # Panics
+///
+/// This method panics if the config is invalid or on I/O errors.
+pub async fn load(path: &Path) -> Config {
+    let data = fs::read_to_string(path)
+        .await
+        .unwrap_or_else(|e| panic!("I/O error while reading {path:?}: {e:?}"));
+
+    let config: Config = toml::de::from_str(&data).unwrap_or_else(|err| {
+        if std::env::var("TOML_TRACE_ERROR").is_ok_and(|v| v == "1") {
+            panic!("failed to parse TOML config at {path:?}: {err:#?}")
+        } else {
+            panic!(
+                "failed to parse TOML config at: {path:?}. Set TOML_TRACE_ERROR=1 to print \
+                 parsing error but this may leak secrets."
+            )
+        }
+    });
+    let priority_fee = &config.priority_fee;
+    assert!(
+        priority_fee.percentile <= 100,
+        "priority-fee: percentile is above 100"
+    );
+    assert!(
+        (1..=MAX_RECENT_SLOTS).contains(&priority_fee.recent_slots),
+        "priority-fee: recent-slots is outside 1..={MAX_RECENT_SLOTS}"
+    );
+    config
+}
+
+/// Configuration of infrastructural components.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Config {
+    /// Chain and deployment-specific configuration.
+    pub chain: Chain,
+    /// RPC client configuration.
+    pub rpc: Rpc,
+    /// The priority fee policy for transactions.
+    #[serde(default)]
+    pub priority_fee: PriorityFeePolicy,
+    /// HTTP API server configuration.
+    pub http: Http,
+    /// Logging configuration.
+    #[serde(default)]
+    pub logging: LoggingConfig,
+    /// Configured solver engines to query for solutions.
+    #[serde(deserialize_with = "deserialize_nonempty_vec")]
+    pub solvers: Vec<Solver>,
+}
+
+impl Config {
+    /// Build the `observe::Config` for the tracing framework from the logging
+    /// configuration.
+    pub fn observe_config(&self) -> observe::Config {
+        observe::Config::new(
+            &self.logging.filter,
+            self.logging.stderr_threshold,
+            self.logging.use_json,
+            None,
+        )
+    }
+}
+
+fn default_settlement_program_id() -> Pubkey {
+    cow_settlement_interface::ID
+}
+
+/// Solana chain configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Chain {
+    /// On-chain program id of the settlement contract. Defaults to the
+    /// official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
+    pub settlement_program_id: Pubkey,
+}
+
+/// RPC client configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Rpc {
+    /// RPC endpoint to connect to.
+    pub endpoint: url::Url,
+    /// RPC endpoint for `simulateBundle` only, so a metered plan on the main
+    /// endpoint is spared its cost.
+    ///
+    /// TODO: the split is temporary. Once a single endpoint serves every
+    /// method, drop this field and `Solana::bundle_rpc` and route the call
+    /// through `endpoint`.
+    pub bundle_endpoint: url::Url,
+    /// Timeout for individual RPC requests.
+    #[serde(with = "humantime_serde")]
+    pub request_timeout: Duration,
+}
+
+/// HTTP API server configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Http {
+    /// Address the HTTP API server binds to and listens on.
+    pub bind_address: SocketAddr,
+}
+
+/// A configured solver engine.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Solver {
+    /// Human-readable name identifying this solver, used for logging and
+    /// metrics.
+    pub name: String,
+    /// HTTP endpoint of the solver engine API.
+    #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
+    pub endpoint: url::Url,
+    /// The solver's settlement signer. The driver's on-chain identity for
+    /// this solver derives from it.
+    pub signer: cow_solana_signer::Config,
+    /// Temporary staging knob: solve only auctions whose id is a multiple of
+    /// this value and sit the rest out, so other solvers win settlements to
+    /// test against. Absent means every auction.
+    #[serde(default)]
+    pub solve_every_nth_auction: Option<NonZero<u64>>,
+    /// Volume-based solver fee in basis points, `0..10_000`. Sell orders
+    /// deliver `(1 − fee)` of the fill's buy leg; buy orders pull `(1 + fee)`
+    /// of its sell leg. The difference stays in the buy-mint buffer PDA (sell
+    /// orders) or the solver's sell ATA (buy orders). Bids and quotes shrink
+    /// accordingly. Absent means no fee.
+    #[serde(default)]
+    pub solver_fee_bps: Option<SolverFee>,
+    /// The largest share of a settlement's native SOL payouts, in basis points
+    /// `0..10_000`, that the solver's own SOL covers when the swap delivers
+    /// less SOL than the payouts. A larger shortfall reverts the settlement.
+    /// Absent means none.
+    #[serde(default)]
+    pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::path::Path};
+
+    #[tokio::test]
+    async fn load_example_toml() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("example.toml");
+        let config = load(&path).await;
+
+        assert_eq!(
+            config.rpc.endpoint.as_str(),
+            "https://api.mainnet-beta.solana.com/"
+        );
+        assert_eq!(
+            config.rpc.bundle_endpoint.as_str(),
+            "https://bundles.example.com/"
+        );
+        assert_eq!(config.solvers.len(), 1);
+        assert_eq!(config.solvers[0].name, "baseline");
+        assert!(matches!(
+            &config.solvers[0].signer,
+            cow_solana_signer::Config::Keypair(path) if path == Path::new("/path/to/keypair.json")
+        ));
+        assert_eq!(config.logging.filter, "info,solana_driver=debug");
+        assert_eq!(config.logging.stderr_threshold, None);
+        assert!(!config.logging.use_json);
+        assert_eq!(config.priority_fee, PriorityFeePolicy::default());
+    }
+
+    #[test]
+    fn solver_config_parses() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(solver.name, "baseline");
+        assert!(matches!(
+            &solver.signer,
+            cow_solana_signer::Config::Keypair(path) if path == Path::new("/path/to/keypair.json")
+        ));
+    }
+
+    #[test]
+    fn chain_defaults_to_interface_program_id() {
+        let chain: Chain = toml::de::from_str("").unwrap();
+        assert_eq!(chain.settlement_program_id, cow_settlement_interface::ID);
+    }
+
+    #[test]
+    fn solver_fee_bps_defaults_to_none() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert!(solver.solver_fee_bps.is_none());
+    }
+
+    #[test]
+    fn solver_fee_bps_parses() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            solver-fee-bps = 500
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(
+            solver.solver_fee_bps,
+            Some(SolverFee::try_from(500).unwrap())
+        );
+    }
+
+    #[test]
+    fn solver_fee_bps_at_max_is_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            solver-fee-bps = 10000
+        "#;
+        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
+    }
+
+    #[test]
+    fn solver_fee_bps_out_of_u16_range_is_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            solver-fee-bps = 65536
+        "#;
+        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
+    }
+
+    #[test]
+    fn max_native_shortfall_bps_parses() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            max-native-shortfall-bps = 40
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(
+            solver.max_native_shortfall_bps,
+            Some(MaxNativeShortfall::try_from(40).unwrap())
+        );
+    }
+
+    #[test]
+    fn max_native_shortfall_bps_at_max_is_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            max-native-shortfall-bps = 10000
+        "#;
+        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
+    }
+}

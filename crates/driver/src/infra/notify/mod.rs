@@ -32,9 +32,9 @@ pub fn scoring_failed(
             notification::Kind::ScoringFailed(ScoreKind::InvalidClearingPrices)
         }
         solution::error::Scoring::Math(_)
-        | solution::error::Scoring::CalculateCustomPrices(
-            solution::error::Trade::Math(_) | solution::error::Trade::ProtocolFeeOnStaticOrder,
-        ) => return,
+        | solution::error::Scoring::CalculateCustomPrices(solution::error::Trade::Math(_)) => {
+            return;
+        }
         solution::error::Scoring::CalculateCustomPrices(
             solution::error::Trade::InvalidExecutedAmount,
         ) => notification::Kind::ScoringFailed(ScoreKind::InvalidExecutedAmount),
@@ -72,6 +72,12 @@ pub fn encoding_failed(
             used.0, limit.0
         )),
         solution::Error::Encoding(_) => return,
+        solution::Error::FastPathTradeCount(_)
+        | solution::Error::FastPathOrderMismatch
+        | solution::Error::FastPathLimitNotMet
+        | solution::Error::FastPathTrade(_)
+        | solution::Error::Math(_)
+        | solution::Error::MissingAuctionId => return,
     };
 
     solver.notify(auction_id, Some(solution_id.clone()), notification);

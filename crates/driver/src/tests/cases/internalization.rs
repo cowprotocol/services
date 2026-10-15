@@ -37,8 +37,8 @@ async fn untrusted_internalization() {
 
     let solve = test.solve().await;
 
-    // TODO When we add metrics, assert that an untrusted internalization error is
-    // traced.
+    // TODO When we add metrics, assert that an untrusted internalization error
+    // is traced.
     solve.ok().empty();
 }
 

@@ -1,0 +1,314 @@
+//! Wire DTOs for the driver's `/solve` and `/settle` endpoints.
+//!
+//! Conventions shared with the solver engine API: camelCase fields, pubkeys
+//! as base58 strings, order uids as `0x`-hex, token amounts as decimal
+//! strings (u64 does not survive JSON number consumers).
+
+use {
+    crate::domain::auction,
+    chain_types::solana::{AppData, IntentHash, Pubkey, Signature},
+    serde::{Deserialize, Serialize},
+    serde_with::{DisplayFromStr, base64::Base64, serde_as},
+    std::collections::HashMap,
+};
+
+/// The auction posted to `/solve`.
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SolveRequest {
+    /// Autopilot-assigned auction id.
+    pub id: i64,
+    /// Deadline for answering `/solve`.
+    pub deadline: chrono::DateTime<chrono::Utc>,
+    pub orders: Vec<Order>,
+    /// Reference data per auction token, keyed by mint. Tokens without a
+    /// price are absent.
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    pub tokens: HashMap<Pubkey, Token>,
+}
+
+/// What the autopilot knows about an auction token.
+#[serde_as]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// Lamports per 10^9 atoms of the token.
+    #[serde_as(as = "DisplayFromStr")]
+    pub price: u64,
+}
+
+/// One solvable order in the auction.
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Order {
+    #[serde_as(as = "DisplayFromStr")]
+    pub uid: IntentHash,
+    #[serde_as(as = "DisplayFromStr")]
+    pub owner: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_token: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_token: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_token_account: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_token_account: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_amount: u64,
+    /// Unix seconds.
+    pub valid_to: u32,
+    pub kind: Kind,
+    pub partially_fillable: bool,
+    #[serde_as(as = "DisplayFromStr")]
+    pub order_pda: Pubkey,
+    #[serde_as(as = "DisplayFromStr")]
+    pub app_data: AppData,
+    /// The cumulative fill on the order's own side.
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed: u64,
+    /// The owner-signed creation transaction of an order not created on
+    /// chain yet, serialized and base64-encoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<Base64>")]
+    pub creation: Option<Vec<u8>>,
+    /// What the sell token account can fund, for the driver to scale a
+    /// partially fillable order's remainder down to. Absent for a pending
+    /// sponsored order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub sell_balance: Option<u64>,
+}
+
+/// Whether the order sells or buys an exact amount.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Sell,
+    Buy,
+}
+
+impl From<&auction::Order> for Order {
+    fn from(order: &auction::Order) -> Self {
+        Self {
+            uid: order.uid,
+            owner: order.owner,
+            sell_token: order.sell_token,
+            buy_token: order.buy_token,
+            sell_token_account: order.sell_token_account,
+            buy_token_account: order.buy_token_account,
+            sell_amount: order.sell_amount,
+            buy_amount: order.buy_amount,
+            valid_to: order.valid_to,
+            kind: match order.kind {
+                auction::OrderKind::Sell => Kind::Sell,
+                auction::OrderKind::Buy => Kind::Buy,
+            },
+            partially_fillable: order.partially_fillable,
+            order_pda: order.order_pda,
+            app_data: order.app_data,
+            executed: order.executed,
+            creation: order.creation.clone(),
+            sell_balance: order.sell_balance,
+        }
+    }
+}
+
+/// The driver's `/solve` answer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SolveResponse {
+    pub solutions: Vec<Solution>,
+}
+
+/// One proposed solution: enough to rank it, detect order overlap between
+/// winners, and attribute its settlement on chain.
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Solution {
+    pub solution_id: u64,
+    /// The keypair the driver settles with, the on-chain solver identity.
+    #[serde_as(as = "DisplayFromStr")]
+    pub solver: Pubkey,
+    /// Executed amounts per filled order.
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    pub orders: HashMap<IntentHash, TradedAmounts>,
+}
+
+/// What a solution executes for one order.
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TradedAmounts {
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed_sell: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed_buy: u64,
+}
+
+/// Asks the driver to submit a previously proposed solution.
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettleRequest {
+    pub auction_id: i64,
+    pub solution_id: u64,
+    /// The last slot the settlement transaction may land in.
+    pub submission_deadline_slot: u64,
+    /// Fully signed sponsored creation transactions the driver must land
+    /// before the settlement, each serialized and base64-encoded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde_as(as = "Vec<Base64>")]
+    pub creations: Vec<Vec<u8>>,
+}
+
+/// The driver's `/settle` answer.
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettleResponse {
+    /// Transaction signature of the submitted settlement.
+    #[serde_as(as = "DisplayFromStr")]
+    pub tx_signature: Signature,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order() -> auction::Order {
+        auction::Order {
+            uid: IntentHash([0x11; 32]),
+            owner: Pubkey([0x22; 32]),
+            sell_token: Pubkey([0x33; 32]),
+            buy_token: Pubkey([0x44; 32]),
+            sell_token_account: Pubkey([0x55; 32]),
+            buy_token_account: Pubkey([0x66; 32]),
+            sell_amount: u64::MAX,
+            buy_amount: 2_000,
+            valid_to: 42,
+            kind: auction::OrderKind::Sell,
+            partially_fillable: false,
+            order_pda: Pubkey([0x77; 32]),
+            app_data: AppData([0; 32]),
+            created_on_chain: true,
+            executed: 400,
+            creation: None,
+            sell_balance: Some(500),
+        }
+    }
+
+    /// One pass pins the wire conventions with literals (a pure round trip
+    /// is self-consistent even when the format is wrong) and round-trips
+    /// every DTO through serde.
+    #[test]
+    fn dtos_round_trip_and_pin_the_wire_format() {
+        let request = SolveRequest {
+            id: 7,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
+            orders: vec![Order::from(&order())],
+            tokens: HashMap::from([(
+                Pubkey([0x33; 32]),
+                Token {
+                    price: 1_500_000_000,
+                },
+            )]),
+        };
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["deadline"], "2026-01-01T00:00:00Z");
+        assert_eq!(
+            json["tokens"],
+            serde_json::json!({"4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4": {"price": "1500000000"}})
+        );
+        assert_eq!(
+            json["orders"][0]["uid"],
+            "0x1111111111111111111111111111111111111111111111111111111111111111"
+        );
+        // u64::MAX survives as a decimal string.
+        assert_eq!(json["orders"][0]["sellAmount"], "18446744073709551615");
+        assert_eq!(json["orders"][0]["kind"], "sell");
+        assert_eq!(json["orders"][0]["executed"], "400");
+        assert_eq!(json["orders"][0]["sellBalance"], "500");
+        assert_eq!(
+            json["orders"][0]["appData"],
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        // Base58 of 32 bytes of 0x22, precomputed so this does not just
+        // compare the Display impl against itself.
+        assert_eq!(
+            json["orders"][0]["owner"],
+            "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3"
+        );
+        assert_eq!(
+            serde_json::from_value::<SolveRequest>(json).unwrap(),
+            request
+        );
+        // A creation travels as base64, the literal the driver's test pins.
+        let sponsored = SolveRequest {
+            orders: vec![Order {
+                creation: Some(vec![1, 2, 3]),
+                ..Order::from(&order())
+            }],
+            ..request
+        };
+        let json = serde_json::to_value(&sponsored).unwrap();
+        assert_eq!(json["orders"][0]["creation"], "AQID");
+
+        let solve = SolveResponse {
+            solutions: vec![Solution {
+                solution_id: 3,
+                solver: Pubkey([0x22; 32]),
+                orders: HashMap::from([(
+                    IntentHash([0x11; 32]),
+                    TradedAmounts {
+                        executed_sell: 100,
+                        executed_buy: 200,
+                    },
+                )]),
+            }],
+        };
+        let json = serde_json::to_value(&solve).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SolveResponse>(json).unwrap(),
+            solve
+        );
+
+        let settle = SettleResponse {
+            tx_signature: Signature([9; 64]),
+        };
+        let json = serde_json::to_value(&settle).unwrap();
+        assert_eq!(
+            serde_json::from_value::<SettleResponse>(json).unwrap(),
+            settle
+        );
+
+        let settle_request = SettleRequest {
+            auction_id: 7,
+            solution_id: 3,
+            submission_deadline_slot: 125,
+            creations: vec![vec![1, 2, 3]],
+        };
+        let json = serde_json::to_value(&settle_request).unwrap();
+        assert_eq!(json["submissionDeadlineSlot"], 125);
+        // Base64 on the wire, and an empty list is omitted entirely.
+        assert_eq!(json["creations"], serde_json::json!(["AQID"]));
+        assert_eq!(
+            serde_json::from_value::<SettleRequest>(json).unwrap(),
+            settle_request
+        );
+        let empty = SettleRequest {
+            creations: vec![],
+            ..settle_request
+        };
+        let json = serde_json::to_value(&empty).unwrap();
+        assert!(json.get("creations").is_none());
+        assert_eq!(
+            serde_json::from_value::<SettleRequest>(json).unwrap(),
+            empty
+        );
+    }
+}

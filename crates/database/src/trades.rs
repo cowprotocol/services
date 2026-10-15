@@ -1,7 +1,15 @@
 use {
-    crate::{Address, OrderUid, TransactionHash, auction::AuctionId, events::EventIndex},
+    crate::{
+        Address,
+        OrderUid,
+        PgTransaction,
+        TransactionHash,
+        auction::AuctionId,
+        events::EventIndex,
+    },
     bigdecimal::BigDecimal,
     sqlx::PgConnection,
+    std::ops::DerefMut,
     tracing::{Instrument, info_span, instrument},
 };
 
@@ -18,105 +26,155 @@ pub struct TradesQueryRow {
     pub sell_token: Address,
     pub tx_hash: Option<TransactionHash>,
     pub auction_id: Option<AuctionId>,
+    /// Share of the settlement's gas cost in native token wei.
+    /// [`attribute_gas_cost`] sets this value. It is `None` for settlements
+    /// without attribution, and for all settlements from before this column.
+    /// A liquidity-only JIT order has `0`.
+    pub gas_cost: Option<BigDecimal>,
 }
 
-pub fn trades<'a>(
+/// `trades_by_owner` and `trades_by_order_uid` build a `page` CTE with
+/// all the relevant trades to return. This expression then takes that
+/// `page` and gathers all the data for each row to build a full
+/// [`TradesQueryRow`].
+const HYDRATE_TRADES_PAGE: &str = r#"
+SELECT
+    trades.block_number,
+    trades.log_index,
+    trades.order_uid,
+    trades.buy_amount,
+    trades.sell_amount,
+    trades.sell_amount - trades.fee_amount AS sell_amount_before_fees,
+    COALESCE(orders.owner, jit.owner) AS owner,
+    COALESCE(orders.buy_token, jit.buy_token) AS buy_token,
+    COALESCE(orders.sell_token, jit.sell_token) AS sell_token,
+    trades.gas_cost,
+    settlement.tx_hash,
+    settlement.auction_id
+FROM page
+JOIN trades ON trades.block_number = page.block_number AND trades.log_index = page.log_index
+LEFT JOIN orders ON orders.uid = trades.order_uid
+LEFT JOIN LATERAL (
+    SELECT owner, buy_token, sell_token
+    FROM jit_orders
+    WHERE jit_orders.uid = trades.order_uid
+    LIMIT 1
+) jit ON true
+LEFT JOIN LATERAL (
+    SELECT tx_hash, auction_id FROM settlements
+    WHERE settlements.block_number = trades.block_number
+    AND   settlements.log_index > trades.log_index
+    ORDER BY settlements.log_index ASC
+    LIMIT 1
+) AS settlement ON true
+ORDER BY trades.block_number DESC, trades.log_index DESC
+"#;
+
+/// Trades filtered by `order_uid`.
+///
+/// A trade whose corresponding order row is missing (from both `orders` and
+/// `jit_orders`) is excluded.
+pub fn trades_by_order_uid<'a>(
     ex: &'a mut PgConnection,
-    owner_filter: Option<&'a Address>,
-    order_uid_filter: Option<&'a OrderUid>,
+    order_uid: &'a OrderUid,
     offset: i64,
     limit: i64,
 ) -> instrument::Instrumented<impl Future<Output = Result<Vec<TradesQueryRow>, sqlx::Error>>> {
-    const SELECT: &str = r#"
-SELECT
-    t.block_number,
-    t.log_index,
-    t.order_uid,
-    t.buy_amount,
-    t.sell_amount,
-    t.sell_amount - t.fee_amount as sell_amount_before_fees,
-    o.owner,
-    o.buy_token,
-    o.sell_token,
-    settlement.tx_hash,
-    settlement.auction_id"#;
-
-    const SETTLEMENT_JOIN: &str = r#"
-LEFT OUTER JOIN LATERAL (
-    SELECT tx_hash, auction_id FROM settlements s
-    WHERE s.block_number = t.block_number
-    AND   s.log_index > t.log_index
-    ORDER BY s.log_index ASC
-    LIMIT 1
-) AS settlement ON true"#;
-
+    // The EXISTS guard filters orphan trades (a trade whose uid is not in
+    // either metadata table). Its argument doesn't depend on `trades`, so
+    // Postgres evaluates it once for the whole scan.
     const QUERY: &str = const_format::concatcp!(
-        "(",
-        SELECT,
-        " FROM trades t",
-        SETTLEMENT_JOIN,
-        " JOIN orders o ON o.uid = t.order_uid",
-        // the uid already contains the owner address and we have
-        // an index on this expression so this is very efficient
-        " WHERE ($1 IS NULL OR substring(t.order_uid, 33, 20) = $1)",
-        " AND ($2 IS NULL OR t.order_uid = $2)",
-        " ORDER BY t.block_number DESC, t.log_index DESC",
-        " LIMIT $3 + $4",
-        ")",
-        " UNION ",
-        "(",
-        SELECT,
-        " FROM trades t",
-        SETTLEMENT_JOIN,
-        " JOIN orders o ON o.uid = t.order_uid",
-        " JOIN onchain_placed_orders onchain_o",
-        " ON onchain_o.uid = t.order_uid",
-        " WHERE ($1 IS NULL OR onchain_o.sender = $1)",
-        " AND ($2 IS NULL OR t.order_uid = $2)",
-        " ORDER BY t.block_number DESC, t.log_index DESC",
-        " LIMIT $3 + $4",
-        ")",
-        " UNION ",
-        // Note that we apply 2 tricks here:
-        // 1. we invert the join order (join `trades` onto `jit_orders` instead
-        // of `jit_orders` onto `trades`). For cases where 1 account has MANY
-        // trades joining `jit_orders` onto the trades means fetching data for
-        // MANY `jit_orders`. But given that `jit_orders` are rare inverting the
-        // join order means we only fetch few or no `jit_orders` at all when
-        // looking them up by `owner`.
-        // 2. we explicitly use a MATERIALIZED CTE to force the query planner
-        // to follow this lookup order. Without using `MATERIALIZED` the query
-        // planner can "inline" this sub-query and which can lead to incorrect
-        // optimization decisions.
-        // Specifically NOT using `MATERIALIZED` can lead to the query
-        // planner doing full scans on the `trades` table instead of searching
-        // via the `owner` index on the `jit_orders` table.
-        "(",
-        " WITH jit AS MATERIALIZED (",
-        "   SELECT uid, owner, buy_token, sell_token",
-        "   FROM jit_orders",
-        "   WHERE ($1 IS NULL OR owner = $1)",
-        "   AND ($2 IS NULL OR uid = $2)",
-        ")",
-        SELECT,
-        " FROM jit o",
-        " JOIN trades t ON o.uid = t.order_uid",
-        SETTLEMENT_JOIN,
-        " ORDER BY t.block_number DESC, t.log_index DESC",
-        " LIMIT $3 + $4",
-        ")",
-        " ORDER BY block_number DESC, log_index DESC",
-        " LIMIT $3",
-        " OFFSET $4",
+        r#"
+WITH page AS (
+    SELECT block_number, log_index
+    FROM trades
+    WHERE order_uid = $1
+    AND (EXISTS (SELECT 1 FROM orders WHERE uid = $1)
+         OR EXISTS (SELECT 1 FROM jit_orders WHERE uid = $1))
+    ORDER BY block_number DESC, log_index DESC
+    LIMIT $2 OFFSET $3
+)
+"#,
+        HYDRATE_TRADES_PAGE,
     );
 
     sqlx::query_as(QUERY)
-        .bind(owner_filter)
-        .bind(order_uid_filter)
+        .bind(order_uid)
         .bind(limit)
         .bind(offset)
         .fetch_all(ex)
-        .instrument(info_span!("trades"))
+        .instrument(info_span!("trades_by_order_uid"))
+}
+
+/// Trades filtered by `owner`.
+///
+/// "Owner" is spread across three tables depending on the order type, so we
+/// gather candidate `(block_number, log_index)` pairs from each source
+/// separately and hydrate the paged result at the outer level. This keeps the
+/// per-row work in the settlement lateral, metadata joins and outer sort
+/// proportional to the page size instead of `3 * (limit + offset)`.
+pub fn trades_by_owner<'a>(
+    ex: &'a mut PgConnection,
+    owner: &'a Address,
+    offset: i64,
+    limit: i64,
+) -> instrument::Instrumented<impl Future<Output = Result<Vec<TradesQueryRow>, sqlx::Error>>> {
+    // The three candidate branches are mutually disjoint on
+    // `(block_number, log_index)`: offchain orders encode the owner in
+    // `uid[32:52]`, onchain orders identify the user via
+    // `onchain_placed_orders.sender` (where `uid[32:52]` is the placement
+    // contract, not the user), and `jit_orders` uids never appear in `orders`
+    // or `onchain_placed_orders`. `DISTINCT` in the page CTE is defense in
+    // depth for edge cases where those assumptions might not hold.
+    //
+    // The `jit_uids` MATERIALIZED CTE in branch 3 forces the planner to first
+    // resolve the JIT uids owned by the user, then join to `trades` by uid.
+    // Without the fence, the planner may pick the opposite order (scan
+    // `trades`, filter by `jit_orders.owner`), which becomes catastrophic for
+    // owners with many JIT trades since it iterates the entire `trades` table.
+    const QUERY: &str = const_format::concatcp!(
+        r#"
+WITH candidates AS (
+    (SELECT t.block_number, t.log_index
+     FROM trades t
+     JOIN orders o ON o.uid = t.order_uid
+     WHERE substring(t.order_uid, 33, 20) = $1
+     ORDER BY t.block_number DESC, t.log_index DESC
+     LIMIT $2 + $3)
+    UNION ALL
+    (SELECT t.block_number, t.log_index
+     FROM onchain_placed_orders op
+     JOIN orders o ON o.uid = op.uid
+     JOIN trades t ON t.order_uid = op.uid
+     WHERE op.sender = $1
+     ORDER BY t.block_number DESC, t.log_index DESC
+     LIMIT $2 + $3)
+    UNION ALL
+    (WITH jit_uids AS MATERIALIZED (
+        SELECT DISTINCT uid FROM jit_orders WHERE owner = $1
+     )
+     SELECT t.block_number, t.log_index
+     FROM jit_uids
+     JOIN trades t ON t.order_uid = jit_uids.uid
+     ORDER BY t.block_number DESC, t.log_index DESC
+     LIMIT $2 + $3)
+),
+page AS (
+    SELECT DISTINCT block_number, log_index
+    FROM candidates
+    ORDER BY block_number DESC, log_index DESC
+    LIMIT $2 OFFSET $3
+)
+"#,
+        HYDRATE_TRADES_PAGE,
+    );
+
+    sqlx::query_as(QUERY)
+        .bind(owner)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(ex)
+        .instrument(info_span!("trades_by_owner"))
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, sqlx::FromRow)]
@@ -126,32 +184,98 @@ pub struct TradeEvent {
     pub order_uid: OrderUid,
 }
 
+/// A CTE named `settled` holding the trades one settlement settled. Prefix it
+/// to a query that binds the settlement's block number to `$1` and its log
+/// index to `$2`.
+///
+/// The lower bound is the log index of the previous (lower log index)
+/// settlement in the same block, or 0 if there is no previous settlement.
+/// `order_uid` is only needed by the read path.
+const SETTLED_TRADES_CTE: &str = r#"
+WITH previous_settlement AS (
+    SELECT COALESCE(MAX(log_index), 0)
+    FROM settlements
+    WHERE block_number = $1 AND log_index < $2
+),
+settled AS (
+    SELECT block_number, log_index, order_uid
+    FROM trades
+    WHERE block_number = $1
+    AND log_index BETWEEN (SELECT * from previous_settlement) AND $2
+)
+"#;
+
 #[instrument(skip_all)]
 pub async fn get_trades_for_settlement(
     ex: &mut PgConnection,
     settlement: EventIndex,
 ) -> Result<Vec<TradeEvent>, sqlx::Error> {
-    const QUERY: &str = r#"
-WITH
-    -- The log index in this query is the log index of the settlement event from the previous (lower log index) settlement in the same transaction or 0 if there is no previous settlement.
-    previous_settlement AS (
-        SELECT COALESCE(MAX(log_index), 0)
-        FROM settlements
-        WHERE block_number = $1 AND log_index < $2
-    )
-SELECT
-    block_number,
-    log_index,
-    order_uid
-FROM trades t
-WHERE t.block_number = $1
-AND t.log_index BETWEEN (SELECT * from previous_settlement) AND $2
-"#;
+    const QUERY: &str = const_format::concatcp!(
+        SETTLED_TRADES_CTE,
+        "SELECT block_number, log_index, order_uid FROM settled"
+    );
     sqlx::query_as(QUERY)
         .bind(settlement.block_number)
         .bind(settlement.log_index)
         .fetch_all(ex)
         .await
+}
+
+/// Splits a settlement's gas cost equally between the user trades it settled,
+/// storing each share in `trades.gas_cost`.
+///
+/// A trade is a user trade if its order is in the `orders` table, or if its
+/// owner is in `surplus_capturing_jit_order_owners`. Every other trade settled
+/// a JIT order that only provides liquidity for the user trades, so it gets a
+/// share of 0 instead of taking one away from them.
+///
+/// Shares round down, so they add up to at most the cost attributed to the
+/// settlement. As with `settlements.gas_used`, a transaction with two
+/// settlements attributes its full cost twice, once per settlement. We do not
+/// expect this to happen.
+///
+/// Must run after the settled orders' rows exist: an on-chain order whose row
+/// is not indexed yet is permanently classed as liquidity-only.
+#[instrument(skip_all)]
+pub async fn attribute_gas_cost(
+    ex: &mut PgTransaction<'_>,
+    settlement: EventIndex,
+    gas_used: BigDecimal,
+    effective_gas_price: BigDecimal,
+    surplus_capturing_jit_order_owners: &[Address],
+) -> Result<(), sqlx::Error> {
+    // The divisor is never 0: only rows that are in `gas_paying` divide by it.
+    // Bytes 33 to 52 of an order uid are the owner, see the
+    // `trades_order_uid_owner` index.
+    const QUERY: &str = const_format::concatcp!(
+        SETTLED_TRADES_CTE,
+        ", gas_paying AS (
+            SELECT block_number, log_index
+            FROM settled s
+            WHERE EXISTS (SELECT 1 FROM orders o WHERE o.uid = s.order_uid)
+            OR    substring(s.order_uid, 33, 20) = ANY($5)
+        )
+        UPDATE trades t SET gas_cost =
+            CASE
+                WHEN p.log_index IS NULL THEN 0
+                ELSE FLOOR($3 * $4 / (SELECT COUNT(*) FROM gas_paying))
+            END
+            FROM settled s
+            LEFT JOIN gas_paying p
+                ON  p.block_number = s.block_number
+                AND p.log_index = s.log_index
+            WHERE t.block_number = s.block_number
+            AND   t.log_index = s.log_index"
+    );
+    sqlx::query(QUERY)
+        .bind(settlement.block_number)
+        .bind(settlement.log_index)
+        .bind(gas_used)
+        .bind(effective_gas_price)
+        .bind(surplus_capturing_jit_order_owners)
+        .execute(ex.deref_mut())
+        .await
+        .map(|_| ())
 }
 
 #[instrument(skip_all)]
@@ -185,7 +309,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            PgTransaction,
             byte_array::ByteArray,
             events::{Event, EventIndex, Settlement, Trade},
             onchain_broadcasted_orders::{OnchainOrderPlacement, insert_onchain_order},
@@ -273,10 +396,17 @@ mod tests {
         expected: &[TradesQueryRow],
     ) {
         // Use large limit to get all trades
-        let mut filtered = trades(db, owner_filter, order_uid_filter, 0, 1000)
-            .into_inner()
-            .await
-            .unwrap();
+        let mut filtered = match (owner_filter, order_uid_filter) {
+            (Some(owner), None) => trades_by_owner(db, owner, 0, 1000)
+                .into_inner()
+                .await
+                .unwrap(),
+            (None, Some(uid)) => trades_by_order_uid(db, uid, 0, 1000)
+                .into_inner()
+                .await
+                .unwrap(),
+            _ => panic!("assert_trades requires exactly one of owner_filter or order_uid_filter"),
+        };
         filtered.sort_by_key(|t| (t.block_number, t.log_index));
         assert_eq!(filtered, expected);
     }
@@ -284,28 +414,29 @@ mod tests {
     // Testing trades without corresponding settlement events
     #[tokio::test]
     #[ignore]
-    async fn postgres_trades_without_filter() {
+    async fn postgres_trades_no_settlements() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         // 1 user with 2 orders
         let users_and_orders = generate_owners_and_order_ids(&[2]).await;
-        assert_trades(&mut db, None, None, &[]).await;
+        let owner = users_and_orders[0].0;
+        assert_trades(&mut db, Some(&owner), None, &[]).await;
         let event_index_a = EventIndex {
             block_number: 0,
             log_index: 0,
         };
         let trade_a = add_order_and_trade(
             &mut db,
-            users_and_orders[0].0,
+            owner,
             users_and_orders[0].1[0],
             event_index_a,
             None,
             None,
         )
         .await;
-        assert_trades(&mut db, None, None, std::slice::from_ref(&trade_a)).await;
+        assert_trades(&mut db, Some(&owner), None, std::slice::from_ref(&trade_a)).await;
 
         let event_index_b = EventIndex {
             block_number: 1,
@@ -313,14 +444,14 @@ mod tests {
         };
         let trade_b = add_order_and_trade(
             &mut db,
-            users_and_orders[0].0,
+            owner,
             users_and_orders[0].1[1],
             event_index_b,
             None,
             None,
         )
         .await;
-        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
+        assert_trades(&mut db, Some(&owner), None, &[trade_a, trade_b]).await;
     }
 
     #[tokio::test]
@@ -361,7 +492,7 @@ mod tests {
         }
 
         let now = std::time::Instant::now();
-        trades(&mut db, Some(&ByteArray([2u8; 20])), None, 0, 100)
+        trades_by_owner(&mut db, &ByteArray([2u8; 20]), 0, 100)
             .into_inner()
             .await
             .unwrap();
@@ -451,6 +582,62 @@ mod tests {
             std::slice::from_ref(&trade_2),
         )
         .await;
+    }
+
+    /// `trades_by_owner` must surface trades whose order metadata lives only
+    /// in `jit_orders` and not in `orders`.
+    ///
+    /// Also asserts that a JIT order re-observed at a different
+    /// `(block_number, log_index)` does not duplicate the trade in the
+    /// result: the JIT branch's `SELECT DISTINCT uid` collapses the two rows.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_by_owner_finds_jit_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let users_and_orders = generate_owners_and_order_ids(&[1]).await;
+        let (owner, uid) = (users_and_orders[0].0, users_and_orders[0].1[0]);
+
+        // Two `jit_orders` rows for the same uid/owner at different event
+        // indices (PK is `(block_number, log_index)`, so both inserts land).
+        crate::jit_orders::insert(
+            &mut db,
+            &[
+                crate::jit_orders::JitOrder {
+                    block_number: 0,
+                    log_index: 0,
+                    uid,
+                    owner,
+                    ..Default::default()
+                },
+                crate::jit_orders::JitOrder {
+                    block_number: 1,
+                    log_index: 0,
+                    uid,
+                    owner,
+                    ..Default::default()
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let trade = add_trade(
+            &mut db,
+            owner,
+            uid,
+            EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+
+        assert_trades(&mut db, Some(&owner), None, std::slice::from_ref(&trade)).await;
     }
 
     #[tokio::test]
@@ -550,6 +737,185 @@ mod tests {
         settlement
     }
 
+    async fn gas_costs(ex: &mut PgConnection) -> Vec<(i64, Option<BigDecimal>)> {
+        sqlx::query_as("SELECT log_index, gas_cost FROM trades ORDER BY log_index")
+            .fetch_all(ex)
+            .await
+            .unwrap()
+    }
+
+    /// A settlement's gas cost is split between the trades it settled, and a
+    /// second settlement in the same block only takes its own trades.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_attribute_gas_cost() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+
+        // Two settlements in one block: the first settles the trades at log 0
+        // and 1, the second those at log 3, 4 and 5.
+        for log_index in [0, 1, 3, 4, 5] {
+            let uid = ByteArray([u8::try_from(log_index).unwrap(); 56]);
+            add_order_and_trade(
+                &mut db,
+                Default::default(),
+                uid,
+                event(log_index),
+                None,
+                None,
+            )
+            .await;
+        }
+        let first = event(2);
+        add_settlement(&mut db, first, Default::default(), ByteArray([1; 32]), 1).await;
+        let second = event(6);
+        add_settlement(&mut db, second, Default::default(), ByteArray([2; 32]), 2).await;
+
+        // Nothing is attributed until the settlement is observed.
+        assert!(
+            gas_costs(&mut db)
+                .await
+                .iter()
+                .all(|(_, cost)| cost.is_none())
+        );
+
+        attribute_gas_cost(&mut db, first, 100.into(), 10.into(), &[])
+            .await
+            .unwrap();
+
+        // 1000 wei split between the first settlement's 2 trades. The second
+        // settlement's trades are untouched.
+        assert_eq!(
+            gas_costs(&mut db).await,
+            vec![
+                (0, Some(500.into())),
+                (1, Some(500.into())),
+                (3, None),
+                (4, None),
+                (5, None),
+            ]
+        );
+
+        // 700 wei over 3 trades does not divide evenly. The share rounds down,
+        // so the shares never add up to more than the transaction paid.
+        attribute_gas_cost(&mut db, second, 70.into(), 10.into(), &[])
+            .await
+            .unwrap();
+        assert_eq!(
+            gas_costs(&mut db).await,
+            vec![
+                (0, Some(500.into())),
+                (1, Some(500.into())),
+                (3, Some(233.into())),
+                (4, Some(233.into())),
+                (5, Some(233.into())),
+            ]
+        );
+    }
+
+    /// JIT orders only provide liquidity for the user orders, so they take no
+    /// share of the gas cost, unless the auction lets their owner capture
+    /// surplus.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_attribute_gas_cost_of_jit_orders() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+        let uid = |owner: Address| {
+            let mut uid = [0u8; 56];
+            uid[32..52].copy_from_slice(&owner.0);
+            ByteArray(uid)
+        };
+        let user = ByteArray([1; 20]);
+        let market_maker = ByteArray([2; 20]);
+        let liquidity_provider = ByteArray([3; 20]);
+
+        // A user order, a JIT order of an owner the auction lets capture
+        // surplus and a plain liquidity JIT order.
+        add_order_and_trade(&mut db, user, uid(user), event(0), None, None).await;
+        add_trade(
+            &mut db,
+            market_maker,
+            uid(market_maker),
+            event(1),
+            None,
+            None,
+        )
+        .await;
+        add_trade(
+            &mut db,
+            liquidity_provider,
+            uid(liquidity_provider),
+            event(2),
+            None,
+            None,
+        )
+        .await;
+        let settlement = event(3);
+        add_settlement(
+            &mut db,
+            settlement,
+            Default::default(),
+            ByteArray([1; 32]),
+            1,
+        )
+        .await;
+
+        attribute_gas_cost(&mut db, settlement, 100.into(), 10.into(), &[market_maker])
+            .await
+            .unwrap();
+
+        // 1000 wei split between the user order and the surplus capturing JIT
+        // order. The liquidity JIT order paid nothing.
+        assert_eq!(
+            gas_costs(&mut db).await,
+            vec![
+                (0, Some(500.into())),
+                (1, Some(500.into())),
+                (2, Some(0.into())),
+            ]
+        );
+    }
+
+    /// A settlement that settled no trades must not fail on a zero divisor.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_attribute_gas_cost_without_trades() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let settlement = EventIndex {
+            block_number: 0,
+            log_index: 0,
+        };
+        add_settlement(
+            &mut db,
+            settlement,
+            Default::default(),
+            Default::default(),
+            1,
+        )
+        .await;
+
+        attribute_gas_cost(&mut db, settlement, 100.into(), 10.into(), &[])
+            .await
+            .unwrap();
+        assert!(gas_costs(&mut db).await.is_empty());
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_having_same_settlement_with_and_without_orders() {
@@ -559,7 +925,8 @@ mod tests {
 
         // 1 user with 2 orders
         let users_and_orders = generate_owners_and_order_ids(&[2]).await;
-        assert_trades(&mut db, None, None, &[]).await;
+        let owner = users_and_orders[0].0;
+        assert_trades(&mut db, Some(&owner), None, &[]).await;
 
         let settlement = add_settlement(
             &mut db,
@@ -575,7 +942,7 @@ mod tests {
 
         let trade_a = add_order_and_trade(
             &mut db,
-            users_and_orders[0].0,
+            owner,
             users_and_orders[0].1[0],
             EventIndex {
                 block_number: 0,
@@ -585,11 +952,11 @@ mod tests {
             Some(1),
         )
         .await;
-        assert_trades(&mut db, None, None, std::slice::from_ref(&trade_a)).await;
+        assert_trades(&mut db, Some(&owner), None, std::slice::from_ref(&trade_a)).await;
 
         let trade_b = add_order_and_trade(
             &mut db,
-            users_and_orders[0].0,
+            owner,
             users_and_orders[0].1[1],
             EventIndex {
                 block_number: 0,
@@ -599,7 +966,7 @@ mod tests {
             Some(1),
         )
         .await;
-        assert_trades(&mut db, None, None, &[trade_a, trade_b]).await;
+        assert_trades(&mut db, Some(&owner), None, &[trade_a, trade_b]).await;
     }
 
     #[tokio::test]
@@ -611,7 +978,8 @@ mod tests {
 
         // 1 user with 2 orders
         let users_and_trades = generate_owners_and_order_ids(&[2]).await;
-        assert_trades(&mut db, None, None, &[]).await;
+        let owner = users_and_trades[0].0;
+        assert_trades(&mut db, Some(&owner), None, &[]).await;
 
         let settlement = add_settlement(
             &mut db,
@@ -627,7 +995,7 @@ mod tests {
 
         add_trade(
             &mut db,
-            users_and_trades[0].0,
+            owner,
             users_and_trades[0].1[0],
             EventIndex {
                 block_number: 0,
@@ -640,7 +1008,7 @@ mod tests {
 
         add_trade(
             &mut db,
-            users_and_trades[0].0,
+            owner,
             users_and_trades[0].1[1],
             EventIndex {
                 block_number: 0,
@@ -651,7 +1019,7 @@ mod tests {
         )
         .await;
         // Trades query returns nothing when there are no corresponding orders.
-        assert_trades(&mut db, None, None, &[]).await;
+        assert_trades(&mut db, Some(&owner), None, &[]).await;
     }
 
     #[tokio::test]
@@ -663,7 +1031,8 @@ mod tests {
 
         // 1 user with 2 orders
         let users_and_orders = generate_owners_and_order_ids(&[2]).await;
-        assert_trades(&mut db, None, None, &[]).await;
+        let owner = users_and_orders[0].0;
+        assert_trades(&mut db, Some(&owner), None, &[]).await;
 
         let settlement_a_event = EventIndex {
             block_number: 0,
@@ -693,7 +1062,7 @@ mod tests {
 
         let trade_a = add_order_and_trade(
             &mut db,
-            users_and_orders[0].0,
+            owner,
             users_and_orders[0].1[0],
             EventIndex {
                 block_number: 0,
@@ -703,11 +1072,11 @@ mod tests {
             Some(1),
         )
         .await;
-        assert_trades(&mut db, None, None, std::slice::from_ref(&trade_a)).await;
+        assert_trades(&mut db, Some(&owner), None, std::slice::from_ref(&trade_a)).await;
 
         let trade_b = add_order_and_trade(
             &mut db,
-            users_and_orders[0].0,
+            owner,
             users_and_orders[0].1[1],
             EventIndex {
                 block_number: 0,
@@ -717,9 +1086,16 @@ mod tests {
             Some(1),
         )
         .await;
-        assert_trades(&mut db, None, None, &[trade_a.clone(), trade_b.clone()]).await;
+        assert_trades(
+            &mut db,
+            Some(&owner),
+            None,
+            &[trade_a.clone(), trade_b.clone()],
+        )
+        .await;
 
-        // make sure that for a settlement_a in the same block, only trade_a is returned
+        // make sure that for a settlement_a in the same block, only trade_a is
+        // returned
         assert_eq!(
             get_trades_for_settlement(&mut db, settlement_a_event)
                 .await
@@ -731,7 +1107,8 @@ mod tests {
             }]
         );
 
-        // make sure that for a settlement_b in the same block, only trade_b is returned
+        // make sure that for a settlement_b in the same block, only trade_b is
+        // returned
         assert_eq!(
             get_trades_for_settlement(&mut db, settlement_b_event)
                 .await
@@ -741,6 +1118,54 @@ mod tests {
                 log_index: 2,
                 order_uid: trade_b.order_uid,
             }]
+        );
+    }
+
+    /// A trade whose settlement was never attributed reports no cost at all.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_report_attributed_gas_cost() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
+        let (owner, orders) = &users_and_orders[0];
+        let event = |log_index| EventIndex {
+            block_number: 0,
+            log_index,
+        };
+
+        // Two settlements in one block: the first settles both orders, the
+        // second only order[0]'s next fill.
+        add_order_and_trade(&mut db, *owner, orders[0], event(0), None, None).await;
+        add_order_and_trade(&mut db, *owner, orders[1], event(1), None, None).await;
+        let first = event(2);
+        add_settlement(&mut db, first, Default::default(), ByteArray([1; 32]), 1).await;
+        add_trade(&mut db, *owner, orders[0], event(3), None, None).await;
+        let second = event(4);
+        add_settlement(&mut db, second, Default::default(), ByteArray([2; 32]), 2).await;
+
+        // Only the first settlement is attributed.
+        attribute_gas_cost(&mut db, first, 100.into(), 10.into(), &[])
+            .await
+            .unwrap();
+
+        let mut rows = trades_by_owner(&mut db, owner, 0, 1000)
+            .into_inner()
+            .await
+            .unwrap();
+        rows.sort_by_key(|row| row.log_index);
+        assert_eq!(
+            rows.iter()
+                .map(|row| (row.order_uid, row.gas_cost.clone(), row.tx_hash))
+                .collect::<Vec<_>>(),
+            vec![
+                // 1000 wei split between the first settlement's 2 trades.
+                (orders[0], Some(500.into()), Some(ByteArray([1; 32]))),
+                (orders[1], Some(500.into()), Some(ByteArray([1; 32]))),
+                (orders[0], None, Some(ByteArray([2; 32]))),
+            ]
         );
     }
 
@@ -820,7 +1245,7 @@ mod tests {
         expected_trades.sort_by_key(|trade| std::cmp::Reverse(trade.block_number));
 
         // Test limit: get first 2 trades (blocks 4 and 3 in DESC order)
-        let result = trades(&mut db, Some(&owner), None, 0, 2)
+        let result = trades_by_owner(&mut db, &owner, 0, 2)
             .into_inner()
             .await
             .unwrap();
@@ -829,7 +1254,7 @@ mod tests {
         assert_eq!(result[1], expected_trades[1]); // block 3
 
         // Test offset: skip first 2, get next 2 (blocks 2 and 1 in DESC order)
-        let result = trades(&mut db, Some(&owner), None, 2, 2)
+        let result = trades_by_owner(&mut db, &owner, 2, 2)
             .into_inner()
             .await
             .unwrap();
@@ -838,18 +1263,101 @@ mod tests {
         assert_eq!(result[1], expected_trades[3]); // block 1
 
         // Test offset beyond available trades
-        let result = trades(&mut db, Some(&owner), None, 10, 2)
+        let result = trades_by_owner(&mut db, &owner, 10, 2)
             .into_inner()
             .await
             .unwrap();
         assert_eq!(result.len(), 0);
 
         // Test large limit returns all available trades in DESC order
-        let result = trades(&mut db, Some(&owner), None, 0, 100)
+        let result = trades_by_owner(&mut db, &owner, 0, 100)
             .into_inner()
             .await
             .unwrap();
         assert_eq!(result.len(), 5);
         assert_eq!(result, expected_trades);
+    }
+
+    /// A JIT uid re-observed in `jit_orders` must not fill the per-branch
+    /// `LIMIT offset+limit` with duplicates and drop a distinct trade of the
+    /// same owner. Fails without the branch's `SELECT DISTINCT uid`.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_trades_by_owner_jit_distinct_survives_pagination() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
+        let owner = users_and_orders[0].0;
+        let uid_dup = users_and_orders[0].1[0]; // re-observed twice
+        let uid_single = users_and_orders[0].1[1];
+
+        crate::jit_orders::insert(
+            &mut db,
+            &[
+                crate::jit_orders::JitOrder {
+                    block_number: 10,
+                    log_index: 0,
+                    uid: uid_dup,
+                    owner,
+                    ..Default::default()
+                },
+                crate::jit_orders::JitOrder {
+                    block_number: 11,
+                    log_index: 0,
+                    uid: uid_dup,
+                    owner,
+                    ..Default::default()
+                },
+                crate::jit_orders::JitOrder {
+                    block_number: 5,
+                    log_index: 0,
+                    uid: uid_single,
+                    owner,
+                    ..Default::default()
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        add_trade(
+            &mut db,
+            owner,
+            uid_dup,
+            EventIndex {
+                block_number: 10,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+        add_trade(
+            &mut db,
+            owner,
+            uid_single,
+            EventIndex {
+                block_number: 5,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+
+        // Page of 2 must hold both trades. Without the `DISTINCT` the
+        // duplicated uid yields [10, 10], fills `LIMIT 2`, and drops
+        // block 5.
+        let mut rows = trades_by_owner(&mut db, &owner, 0, 2)
+            .into_inner()
+            .await
+            .unwrap();
+        rows.sort_by_key(|t| (t.block_number, t.log_index));
+        assert_eq!(
+            rows.iter().map(|t| t.block_number).collect::<Vec<_>>(),
+            vec![5, 10]
+        );
     }
 }

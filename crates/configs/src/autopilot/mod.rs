@@ -1,16 +1,17 @@
 use {
     crate::{
         autopilot::{
-            cow_amm::CowAmmGroupConfig,
             ethflow::EthflowConfig,
             fee_policy::FeePoliciesConfig,
             native_price::NativePriceConfig,
             order_events_cleanup::OrderEventsCleanupConfig,
+            penalty_cap::PenaltyCapConfig,
             run_loop::RunLoopConfig,
             s3::S3Config,
             solver::Solver,
             trusted_tokens::TrustedTokensConfig,
         },
+        balance_cache::BalanceCacheConfig,
         banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
         http_client::HttpClient,
@@ -25,11 +26,11 @@ use {
     url::Url,
 };
 
-pub mod cow_amm;
 pub mod ethflow;
 pub mod fee_policy;
 pub mod native_price;
 pub mod order_events_cleanup;
+pub mod penalty_cap;
 pub mod run_loop;
 pub mod s3;
 pub mod solver;
@@ -73,6 +74,11 @@ pub struct Configuration {
     /// Describes how the protocol fees should be calculated.
     pub fee_policies: FeePoliciesConfig,
 
+    /// Describes how per-order penalty caps should be calculated (CIP-87).
+    /// If absent, orders don't get a penalty cap assigned.
+    #[serde(default)]
+    pub penalty_cap: Option<PenaltyCapConfig>,
+
     /// Configuration for trusted tokens that the settlement contract is willing
     /// to internalize.
     #[serde(default)]
@@ -114,9 +120,10 @@ pub struct Configuration {
     #[serde(default = "default_api_address")]
     pub api_address: SocketAddr,
 
-    /// Configuration for CoW AMM indexing and archive node access.
+    /// Allowlist of owner addresses whose JIT orders are allowed to capture
+    /// surplus in the auction.
     #[serde(default)]
-    pub cow_amm: CowAmmGroupConfig,
+    pub surplus_capturing_jit_order_owners: Vec<Address>,
 
     /// Configuration for the autopilot's main auction run loop.
     #[serde(default)]
@@ -160,10 +167,30 @@ pub struct Configuration {
     /// Configurations for the order creation process.
     pub order_quoting: OrderQuoting,
 
+    /// Number of blocks a fast-path order stays exclusive to the winning
+    /// quote's solver: it may settle out of competition within this many
+    /// blocks before the order falls back to the regular auction. Also
+    /// caps the `/settle` attempt. `None` disables the fast path: orders
+    /// are still accepted at placement but drop straight into the next
+    /// regular auction.
+    #[serde(default)]
+    pub fast_path_submission_deadline: Option<u64>,
+
+    /// Whether fast-path orders get the CIP-87 penalty cap. Off at launch so
+    /// fast-path penalties stay decoupled from the regular auction's; enable
+    /// once solvers understand the feature. Has no effect unless `penalty_cap`
+    /// is also configured.
+    #[serde(default)]
+    pub fast_path_penalty_cap_enabled: bool,
+
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
     pub price_estimation: PriceEstimation,
+
+    /// Settings for the on-chain balance cache.
+    #[serde(default)]
+    pub balance_cache: BalanceCacheConfig,
 }
 
 impl Configuration {
@@ -191,6 +218,7 @@ impl Configuration {
             "colocation is enabled but no drivers are configured"
         );
         self.shared.validate()?;
+        self.balance_cache.validate()?;
         Ok(self)
     }
 }
@@ -207,6 +235,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![],
             fee_policies: Default::default(),
+            penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
             banned_users: Default::default(),
@@ -217,7 +246,7 @@ impl Configuration {
             shadow: Default::default(),
             metrics_address: default_metrics_address(),
             api_address: default_api_address(),
-            cow_amm: Default::default(),
+            surplus_capturing_jit_order_owners: Default::default(),
             run_loop: TestDefault::test_default(),
             disable_order_balance_filter: false,
             max_maintenance_timeout: default_max_maintenance_timeout(),
@@ -227,7 +256,10 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
+            fast_path_submission_deadline: None,
+            fast_path_penalty_cap_enabled: false,
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
@@ -238,6 +270,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![Solver::test(name, solver_address)],
             fee_policies: Default::default(),
+            penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
             banned_users: Default::default(),
@@ -248,7 +281,7 @@ impl Configuration {
             shadow: Default::default(),
             metrics_address: default_metrics_address(),
             api_address: default_api_address(),
-            cow_amm: Default::default(),
+            surplus_capturing_jit_order_owners: Default::default(),
             run_loop: TestDefault::test_default(),
             disable_order_balance_filter: false,
             max_maintenance_timeout: default_max_maintenance_timeout(),
@@ -258,7 +291,10 @@ impl Configuration {
             max_auction_age: default_max_auction_age(),
             http_client: Default::default(),
             order_quoting: TestDefault::test_default(),
+            fast_path_submission_deadline: None,
+            fast_path_penalty_cap_enabled: false,
             price_estimation: TestDefault::test_default(),
+            balance_cache: TestDefault::test_default(),
         }
     }
 
@@ -303,9 +339,12 @@ mod tests {
     fn deserialize_full_configuration() {
         let toml = r#"
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
+        surplus-capturing-jit-order-owners = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         min-order-validity-period = "2m"
         max-auction-age = "10m"
         native-price-timeout = "3s"
+        fast-path-submission-deadline = 3
+        fast-path-penalty-cap-enabled = true
 
         [[drivers]]
         name = "solver1"
@@ -361,6 +400,10 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [balance-cache]
+        eviction-time = "10s"
+        refresh-cooldown = "1.2s"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
@@ -446,9 +489,22 @@ mod tests {
             config.unsupported_tokens[0],
             address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
         );
+        assert_eq!(config.surplus_capturing_jit_order_owners.len(), 1);
+        assert_eq!(
+            config.surplus_capturing_jit_order_owners[0],
+            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+        );
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
         assert_eq!(config.max_auction_age, Duration::from_secs(600));
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
+        assert_eq!(config.fast_path_submission_deadline, Some(3));
+        assert!(config.fast_path_penalty_cap_enabled);
+
+        assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
+        assert_eq!(
+            config.balance_cache.refresh_cooldown,
+            Duration::from_millis(1200)
+        );
     }
 
     #[test]
@@ -508,9 +564,12 @@ mod tests {
         assert!(config.s3.is_none());
 
         assert!(config.unsupported_tokens.is_empty());
+        assert!(config.surplus_capturing_jit_order_owners.is_empty());
         assert_eq!(config.min_order_validity_period, Duration::from_secs(60));
         assert_eq!(config.max_auction_age, Duration::from_secs(300));
         assert_eq!(config.native_price_timeout, Duration::ZERO);
+        assert_eq!(config.fast_path_submission_deadline, None);
+        assert!(!config.fast_path_penalty_cap_enabled);
     }
 
     #[test]

@@ -56,14 +56,6 @@ impl IntoResponse for PartialValidationErrorWrapper {
                 error("UnsupportedSellTokenSource", format!("Type {src:?}")),
             )
                 .into_response(),
-            PartialValidationError::UnsupportedOrderType => (
-                StatusCode::BAD_REQUEST,
-                error(
-                    "UnsupportedOrderType",
-                    "This order type is currently not supported",
-                ),
-            )
-                .into_response(),
             PartialValidationError::Forbidden => (
                 StatusCode::FORBIDDEN,
                 error("Forbidden", "Forbidden, your account is deny-listed"),
@@ -249,6 +241,24 @@ impl IntoResponse for ValidationErrorWrapper {
             ValidationError::ZeroAmount => (
                 StatusCode::BAD_REQUEST,
                 error("ZeroAmount", "Buy or sell amount is zero."),
+            )
+                .into_response(),
+            ValidationError::InvalidValidFrom => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "InvalidValidFrom",
+                    "appData validFrom must be earlier than the order's validTo.",
+                ),
+            )
+                .into_response(),
+            ValidationError::FastPathLimitTooTight => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "FastPathLimitTooTight",
+                    "signed limit price doesn't leave room for the configured protocol and \
+                     partner volume fees; sign a lower buy amount (or higher sell amount for buy \
+                     orders) or drop the fast-path opt-in.",
+                ),
             )
                 .into_response(),
             ValidationError::IncompatibleSigningScheme => (

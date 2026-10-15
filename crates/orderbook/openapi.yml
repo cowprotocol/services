@@ -531,22 +531,28 @@ paths:
   /api/v1/quote/stream:
     post:
       operationId: quoteStream
-      summary: Stream quotes from individual solvers as they arrive.
+      summary: Stream progressively improving quotes as solvers respond.
       description: >
         Accepts the same request body as `POST /api/v1/quote`. Instead of
         waiting for all solvers and returning the single best quote, this
-        endpoint opens a Server-Sent Events stream and emits one event per quote
-        as solvers respond. Solvers without a usable quote emit no event, so you
-        may receive fewer events than there are solvers. The stream closes when
-        the quote timeout elapses or all solvers have responded. Each emitted
-        quote carries an `id` that can be referenced when placing an order.
-        Clients can use this to show progressive quote updates in real time.
+        endpoint opens a Server-Sent Events stream and emits quotes as solvers
+        respond. A quote is emitted only when it ranks better than the best one
+        already sent; the first goes out as soon as the fastest solver answers.
+        Solvers without a usable quote, and quotes that do not beat the best
+        already sent, emit no event, so you may receive fewer events than there
+        are solvers. The stream closes when the quote timeout elapses or all
+        solvers have responded. Each emitted quote carries an `id` that can be
+        referenced when placing an order.
 
-        The `priceQuality` field of the request body is ignored: this endpoint
-        always queries all solvers and attempts verification, emitting each
-        result with its own `verified` flag. If no solver returns a usable
-        quote, a terminal event named `error` is sent with a
-        `PriceEstimationError` body before the stream closes.
+        The `priceQuality` field uses the same estimator and ranking semantics
+        as `POST /api/v1/quote`. `verified` attempts verification and prefers a
+        verified quote over an unverified one regardless of amount, so a later
+        quote may report a lower `out_amount`. `optimal` skips verification and
+        ranks all responses by their promised price. `fast` is not supported
+        because the streaming endpoint already returns the first usable quote
+        as soon as it arrives. Individual solver errors are not streamed; if no
+        solver returns a usable quote, a terminal event named `error` is sent
+        with a `PriceEstimationError` body before the stream closes.
       requestBody:
         description: The order parameters to compute quotes for.
         required: true
@@ -558,8 +564,8 @@ paths:
         "200":
           description: >
             A Server-Sent Events stream. Each event's `data` field is a JSON
-            object matching `OrderQuoteResponse`. Events arrive one per quote
-            as solvers respond.
+            object matching `OrderQuoteResponse`. Events arrive as the
+            best-ranked quote improves.
           content:
             text/event-stream:
               schema:
@@ -964,12 +970,15 @@ components:
         - buy
         - sell
     OrderClass:
-      description: Order class.
+      deprecated: true
+      description: |-
+        Deprecated. Order classes were removed: every order is a limit order whose
+        fee is taken from the surplus, and JIT orders are flagged by
+        `isLiquidityOrder`. The field is still returned for backwards
+        compatibility and always reads `limit`.
       type: string
       enum:
-        - market
         - limit
-        - liquidity
     SellTokenSource:
       description: |-
         Where should the `sellToken` be drawn from?
@@ -1000,9 +1009,14 @@ components:
         How good should the price estimate be?
 
         Fast: The price estimate is chosen among the fastest N price estimates.
-        Optimal: The price estimate is chosen among all price estimates.
-        Verified: The price estimate is chosen among all verified/simulated
-        price estimates.
+        Estimates do not get verified by simulation.
+        Optimal: The price estimate is chosen among all price estimates, ranked
+        purely by the promised price. Estimates do not get verified by simulation.
+        Verified: All price estimates get verified by simulation whenever
+        possible and verified estimates are preferred over unverified ones,
+        even when an unverified estimate promises a better price. The
+        response's `verified` flag indicates whether the returned estimate
+        was actually verified.
 
         **NOTE**: Orders are supposed to be created from `verified` or `optimal`
         price estimates.
@@ -1294,9 +1308,9 @@ components:
           type: string
           example: "2020-12-03T18:35:18.814523Z"
         class:
+          deprecated: true
           description: >
-            The class of the order (market, limit, or liquidity). Determines
-            how fees are handled.
+            Deprecated, always `limit`. See `OrderClass`.
           allOf:
             - $ref: "#/components/schemas/OrderClass"
         owner:
@@ -1402,11 +1416,28 @@ components:
           allOf:
             - $ref: "#/components/schemas/Address"
           nullable: false
+        gasCost:
+          description: >
+            Estimated gas cost attributed to this order, in native token wei,
+            summed across its fills. Omitted unless the cost of every fill is
+            known, rather than reporting a partial total: absent for an unsettled
+            order, until the latest fill's settlement has been attributed, and
+            for orders with a fill predating this being recorded.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
         fullAppData:
           description: >
             Full `appData`, which the contract-level `appData` is a hash of. See
             `OrderCreation` for more information.
           type: string
+          nullable: true
+        validFrom:
+          description: >
+            Earliest time (unix seconds) at which the order may enter a batch
+            auction, taken from the order's `appData`. Omitted when the order
+            has no lower bound (eligible immediately). Mutually exclusive with
+            `enableFastPath`: an order that sets both is rejected.
+          type: integer
           nullable: true
         settlementContract:
           description: >
@@ -1544,7 +1575,10 @@ components:
             - $ref: "#/components/schemas/BuyTokenDestination"
           default: erc20
         class:
-          $ref: "#/components/schemas/OrderClass"
+          deprecated: true
+          description: Deprecated, always `limit`. See `OrderClass`.
+          allOf:
+            - $ref: "#/components/schemas/OrderClass"
         appData:
           $ref: "#/components/schemas/AppDataHash"
         signature:
@@ -1561,6 +1595,12 @@ components:
             A winning quote.
           allOf:
             - $ref: "#/components/schemas/Quote"
+        penaltyCapNative:
+          description: >
+            Cap on the penalty a solver can incur for winning this order but
+            failing to execute it, denominated in the native token.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - uid
         - sellToken
@@ -1663,7 +1703,7 @@ components:
             properties:
               solver:
                 type: string
-                description: Name of the solver.
+                description: The on-chain address of the solver.
               executedAmounts:
                 $ref: "#/components/schemas/ExecutedAmounts"
             required:
@@ -1774,6 +1814,24 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ExecutedProtocolFee"
+        gasCost:
+          description: >
+            Estimated gas cost attributed to this trade, in native token wei:
+            the settlement's gas cost split equally between the user trades it
+            settled, not weighted by the gas each one consumed. Omitted until
+            the settlement has been attributed, shortly after it is indexed,
+            and permanently if it predates this being recorded. `0` for a JIT
+            order that only provided liquidity.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+        penaltyCapNative:
+          description: >-
+            Cap on the penalty the winning solver could incur for not executing
+            the order in the auction this trade settled, denominated in native
+            token wei. Absent when the auction had a pre CIP-87 global penalty cap.
+          allOf:
+            - $ref: "#/components/schemas/BigUint"
+          nullable: true
       required:
         - blockNumber
         - logIndex
@@ -1887,12 +1945,13 @@ components:
         Error quoting an order.
 
         Possible `errorType` values per HTTP status:
-        * 400: `AppDataHashMismatch`, `CustomSolverError`, `ExcessiveValidTo`,
+        * 400: `AppDataHashMismatch`, `ExcessiveValidTo`,
           `InsufficientLiquidity`, `InsufficientValidTo`, `InvalidAppData`,
           `InvalidNativeSellToken`, `QuoteNotVerified`, `SameBuyAndSellToken`,
           `SellAmountDoesNotCoverFee`, `TokenTemporarilySuspended`,
           `TradingOutsideAllowedWindow`, `UnsupportedBuyTokenDestination`,
-          `UnsupportedOrderType`, `UnsupportedSellTokenSource`,
+          `UnsupportedOrderType`, `UnsupportedPriceQuality`,
+          `UnsupportedSellTokenSource`,
           `UnsupportedToken`
         * 403: `Forbidden`
         * 404: `NoLiquidity`
@@ -1919,6 +1978,7 @@ components:
             - TradingOutsideAllowedWindow
             - UnsupportedBuyTokenDestination
             - UnsupportedOrderType
+            - UnsupportedPriceQuality
             - UnsupportedSellTokenSource
             - UnsupportedToken
         description:
@@ -2143,6 +2203,9 @@ components:
         auctionDeadlineBlock:
           type: integer
           description: Block deadline by which the auction must be settled.
+        fastPath:
+          type: boolean
+          description: Whether this is a fast-path auction.
         transactionHashes:
           type: array
           description: |

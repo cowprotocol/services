@@ -1,5 +1,6 @@
 use {
     alloy::{
+        eips::BlockId,
         primitives::{Address, B256, U256},
         rpc::types::state::{AccountOverride, StateOverride},
         sol,
@@ -54,14 +55,20 @@ async fn estimate_gas_state_override(web3: Web3) {
     let eth = ethereum(web3).await;
 
     let gated_call = gated_contract.gate().into_transaction_request();
-    let without = eth.estimate_gas(gated_call.clone(), None).await;
+    let without = eth
+        .estimate_gas(gated_call.clone(), None, BlockId::pending())
+        .await;
     assert!(
         without.is_err(),
         "gate() should revert without the slot-0 override, got {without:?}",
     );
 
     let with = eth
-        .estimate_gas(gated_call, Some(unlock_override(*gated_contract.address())))
+        .estimate_gas(
+            gated_call,
+            Some(unlock_override(*gated_contract.address())),
+            BlockId::pending(),
+        )
         .await;
     assert!(
         with.is_ok(),

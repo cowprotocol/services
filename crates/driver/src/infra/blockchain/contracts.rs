@@ -3,7 +3,6 @@ use {
     contracts::{FlashLoanRouter, GPv2Settlement, WETH9, support::Balances},
     eth_domain_types as eth,
     ethrpc::Web3,
-    std::collections::HashMap,
 };
 
 #[derive(Debug, Clone)]
@@ -22,9 +21,11 @@ pub struct Contracts {
     // everywhere
     flashloan_router: Option<FlashLoanRouter::Instance>,
     balance_helper: Balances::Instance,
-    /// Mapping from CoW AMM factory address to the corresponding CoW AMM
-    /// helper.
-    cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
+
+    /// Contract that reverts when the current block exceeds a deadline.
+    /// Used to guarantee on-chain that a settlement cannot be included
+    /// after its submission deadline.
+    deadline_check: contracts::support::DeadlineCheck::Instance,
     web3: Web3,
 }
 
@@ -34,8 +35,8 @@ pub struct Addresses {
     pub signatures: Option<eth::ContractAddress>,
     pub weth: Option<eth::ContractAddress>,
     pub balances: Option<eth::ContractAddress>,
-    pub cow_amm_helper_by_factory: HashMap<eth::ContractAddress, eth::ContractAddress>,
     pub flashloan_router: Option<eth::ContractAddress>,
+    pub deadline_check: Option<eth::ContractAddress>,
 }
 
 impl Contracts {
@@ -96,6 +97,15 @@ impl Contracts {
             })
             .map(|address| FlashLoanRouter::Instance::new(*address, web3.provider.clone()));
 
+        let deadline_check = contracts::support::DeadlineCheck::Instance::new(
+            addresses
+                .deadline_check
+                .map(Into::into)
+                .or_else(|| contracts::support::DeadlineCheck::deployment_address(&chain.id()))
+                .unwrap(),
+            web3.provider.clone(),
+        );
+
         Ok(Self {
             settlement,
             vault_relayer: vault_relayer.into(),
@@ -104,7 +114,7 @@ impl Contracts {
             settlement_domain_separator,
             flashloan_router,
             balance_helper,
-            cow_amm_helper_by_factory: addresses.cow_amm_helper_by_factory,
+            deadline_check,
             web3: web3.clone(),
         })
     }
@@ -141,13 +151,11 @@ impl Contracts {
         &self.balance_helper
     }
 
-    pub fn web3(&self) -> &Web3 {
-        &self.web3
+    pub fn deadline_check(&self) -> &contracts::support::DeadlineCheck::Instance {
+        &self.deadline_check
     }
 
-    pub fn cow_amm_helper_by_factory(
-        &self,
-    ) -> &HashMap<eth::ContractAddress, eth::ContractAddress> {
-        &self.cow_amm_helper_by_factory
+    pub fn web3(&self) -> &Web3 {
+        &self.web3
     }
 }

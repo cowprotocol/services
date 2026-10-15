@@ -1,0 +1,54 @@
+//! The order status endpoint: auction progress by uid.
+
+pub mod dto;
+
+use {
+    super::order::{self, now_unix},
+    crate::infra::{
+        api::{State, error, extract},
+        db,
+    },
+    axum::{Json, http::StatusCode},
+};
+
+/// Handle `GET /api/v1/orders/{uid}/status`.
+pub async fn order_status(
+    state: axum::extract::State<State>,
+    extract::PathUid(uid): extract::PathUid,
+) -> Result<Json<dto::Status>, error::Reply> {
+    let internal = |err: anyhow::Error| {
+        tracing::error!(?err, "order status lookup failed");
+        error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+    };
+    // A trade outranks the event log so an executed order stays traded even
+    // when a later event said otherwise.
+    if db::order_has_trade(state.pool(), uid)
+        .await
+        .map_err(internal)?
+    {
+        return Ok(Json(dto::Status::Traded(Vec::new())));
+    }
+    let row = db::find_order_by_uid(state.pool(), uid)
+        .await
+        .map_err(internal)?
+        .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "order status not found"))?;
+    // Cancellation is on-chain state, no auction event records it.
+    if row.cancellation_timestamp.is_some() {
+        return Ok(Json(dto::Status::Cancelled));
+    }
+    // Expiry depends on the clock and the chain height, no auction event
+    // records it.
+    let block_height = order::block_height_for(&state, &row).await;
+    if order::dto::status(&row, now_unix(), block_height) == order::dto::Status::Expired {
+        return Ok(Json(dto::Status::Expired));
+    }
+    if let Some(label) = db::find_latest_order_event(state.pool(), uid)
+        .await
+        .map_err(internal)?
+    {
+        return Ok(Json(dto::Status::from(label)));
+    }
+    // Orders are created on-chain, an indexed order can predate its first
+    // auction event.
+    Ok(Json(dto::Status::Scheduled))
+}

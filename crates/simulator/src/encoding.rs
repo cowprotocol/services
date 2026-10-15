@@ -19,6 +19,7 @@ use {
     balance_overrides::{ApprovalOverrideRequest, BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     derive_more::Debug,
+    eth_domain_types::Receiver,
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -129,7 +130,7 @@ pub struct JitOrder {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
-    pub receiver: Address,
+    pub receiver: Receiver,
     pub valid_to: u32,
     pub app_data: AppDataHash,
     pub side: Side,
@@ -161,7 +162,9 @@ pub fn encode_trade(
     (
         U256::from(sell_token_index),
         U256::from(buy_token_index),
-        order.receiver.unwrap_or(Address::ZERO),
+        // Use the actual raw bytes that got signed by the owner intead of the
+        // resolved address to make the signature recovery work in the contract.
+        Address::from(*order.receiver.raw_bytes()),
         order.sell_amount,
         order.buy_amount,
         order.valid_to,
@@ -348,9 +351,12 @@ pub(crate) async fn finish_simulation_builder(
         return Err(BuildError::NoOrder);
     }
 
-    let block = match builder.block {
-        Block::Latest => builder.simulator.0.current_block.borrow().number,
-        Block::Number(n) => n,
+    let (block, block_timestamp) = match builder.block {
+        Block::Latest => {
+            let block = builder.simulator.0.current_block.borrow();
+            (block.number, Some(block.timestamp))
+        }
+        Block::Number(n) => (n, None),
     };
 
     let executed_amounts = futures::future::try_join_all(
@@ -498,10 +504,11 @@ pub(crate) async fn finish_simulation_builder(
     // propAMM state when simulated on historic blocks is slightly different
     // from what you would have gotten if you actually traded with the propAMM
     // on that block but we can't do anything about it and most likely the
-    // price is close enough to not affect the simulation.
-    if matches!(builder.block, Block::Latest)
+    // price is close enough to not affect the simulation. Only the tip has a
+    // known timestamp, which is what gates the overrides to it here.
+    if let Some(block_timestamp) = block_timestamp
         && let Some(stream) = builder.simulator.0.simulation_overrides.as_ref()
-        && let Some(state_overrides) = stream.current()
+        && let Some(state_overrides) = stream.overrides_for(block, block_timestamp)
     {
         for (account, state) in state_overrides {
             builder
@@ -581,8 +588,9 @@ async fn build_final_state_overrides(
                 AccountOverride::default().with_balance(U256::MAX / U256::from(2)),
             )),
             AccountOverrideRequest::AuthenticateAsSolver(addr) => {
-                // GPv2AllowListAuthentication stores `mapping(address => bool) solvers`
-                // at storage slot 1. Solidity mapping key: keccak256(address_padded ++
+                // GPv2AllowListAuthentication stores `mapping(address => bool)
+                // solvers` at storage slot 1. Solidity mapping
+                // key: keccak256(address_padded ++
                 // slot_padded).
                 // <https://github.com/cowprotocol/contracts/blob/main/src/contracts/GPv2AllowListAuthentication.sol#L22>
                 let mut buf = [0u8; 64];
@@ -616,19 +624,19 @@ async fn build_final_state_overrides(
                 },
             )),
             AccountOverrideRequest::PreSignature(order) => {
-                // GPv2Settlement stores the `mapping(bytes => uint256) public preSignature` at
-                // storage slot 0.
-                // Solidity mapping key: keccak256(order_uid_without_padding ++ slot_padded).
-                // <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L57>
+                // GPv2Settlement stores the `mapping(bytes => uint256) public
+                // preSignature` at storage slot 0.
+                // Solidity mapping key: keccak256(order_uid_without_padding ++
+                // slot_padded). <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L57>
                 let mut buf = [0u8; 56 + 32];
                 buf[0..56].copy_from_slice(order.0.as_slice());
-                // no need to copy anything for storage slot 0 since the array gets 0
-                // initialized.
+                // no need to copy anything for storage slot 0 since the array
+                // gets 0 initialized.
                 let slot = keccak256(buf);
 
-                // Sentinel value expected by the settlement contract to indicate that the order
-                // was pre-signed by the user.
-                // See <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L44-L46>
+                // Sentinel value expected by the settlement contract to
+                // indicate that the order was pre-signed by the
+                // user. See <https://github.com/cowprotocol/contracts/blob/c6b61ce75841ce4c25ab126def9cc981c568e6c6/src/contracts/mixins/GPv2Signing.sol#L44-L46>
                 const PRE_SIGN_SENTINEL: B256 =
                     b256!("f59c009283ff87aa78203fc4d9c2df025ee851130fb69cc3e068941f6b5e2d6f");
                 Some((

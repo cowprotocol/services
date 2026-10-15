@@ -18,10 +18,10 @@ pub(crate) struct OrderUid(pub [u8; 32]);
 
 impl fmt::Display for OrderUid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "OrderUid(0x")?;
+        write!(f, "0x")?;
         for byte in self.0 {
             write!(f, "{byte:02x}")?;
         }
-        write!(f, ")")
+        Ok(())
     }
 }

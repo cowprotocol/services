@@ -1,6 +1,5 @@
 pub mod blockchain;
 pub mod competition;
-pub mod cow_amm;
 pub mod flashloan;
 pub mod interaction;
 pub mod liquidity;

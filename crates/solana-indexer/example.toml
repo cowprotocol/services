@@ -1,0 +1,24 @@
+# Example configuration for the Solana indexer.
+
+[database]
+# The Postgres database the indexer writes to. A value like "%DB_WRITE_URL"
+# reads the URL from that environment variable.
+write-url = "postgresql://"
+
+[chain]
+# The settlement program deployed on devnet.
+# Defaults to the official deployment the interface crate exports.
+# settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
+
+[yellowstone]
+endpoint = "https://yellowstone.example.com"
+# A value like "%YELLOWSTONE_X_TOKEN" reads the token from that environment
+# variable.
+# x-token = "%YELLOWSTONE_X_TOKEN"
+
+[rpc]
+endpoint = "https://api.devnet.solana.com"
+request-timeout = "10s"
+
+[logging]
+filter = "info,solana_indexer=debug"

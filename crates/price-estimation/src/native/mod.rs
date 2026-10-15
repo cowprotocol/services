@@ -95,6 +95,7 @@ impl NativePriceEstimator {
             kind: OrderKind::Buy,
             verification: Default::default(),
             block_dependent: false,
+            fast_path: false,
             timeout,
         }
     }
@@ -154,6 +155,8 @@ mod tests {
                     gas: 0,
                     solver: Address::repeat_byte(1),
                     verified: false,
+                    supports_fast_path: false,
+                    quote_id: None,
                     execution: Default::default(),
                 })
             }

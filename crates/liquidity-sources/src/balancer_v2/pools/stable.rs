@@ -60,10 +60,10 @@ impl AmplificationParameter {
 
     /// This is the format used to pass along to HTTP solver.
     pub fn as_big_rational(&self) -> BigRational {
-        // We can assert that the precision is non-zero as we check when constructing
-        // new `AmplificationParameter` instances that this invariant holds, and we
-        // don't allow modifications of `self.precision` such that it could
-        // become 0.
+        // We can assert that the precision is non-zero as we check when
+        // constructing new `AmplificationParameter` instances that this
+        // invariant holds, and we don't allow modifications of
+        // `self.precision` such that it could become 0.
         debug_assert!(!self.precision.is_zero());
         BigRational::new(self.factor.into(), self.precision.into())
     }

@@ -7,6 +7,7 @@ use {
         instrumented::InstrumentedPriceEstimator,
         native::{self, NativePriceEstimating, NativePriceEstimator},
         native_price_cache::{self, ApproximationToken},
+        quote_id::QuoteIdAllocator,
         sanitized::SanitizedPriceEstimator,
         trade_verifier::{TradeVerifier, TradeVerifying},
     },
@@ -14,11 +15,13 @@ use {
         ExternalSolver,
         buffered::{self, BufferedRequest, NativePriceBatchFetching},
         competition::PriceRanking,
-        config::{native_price::NativePriceConfig, price_estimation::BalanceOverridesConfigExt},
+        config::{
+            native_price::{Eip4626Config, NativePriceConfig},
+            price_estimation::BalanceOverridesConfigExt,
+        },
     },
     alloy::primitives::Address,
     anyhow::{Context as _, Result},
-    bad_tokens::list_based::DenyListedTokens,
     configs::price_estimation::PriceEstimation,
     contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
@@ -29,13 +32,16 @@ use {
     reqwest::Url,
     simulator::{self, simulation_builder::SettlementSimulator, tenderly},
     std::{collections::HashMap, num::NonZeroUsize, sync::Arc},
-    token_info::TokenInfoFetching,
+    token_info::{DenyListedTokens, TokenInfoFetching},
 };
 
 #[derive(Clone)]
 struct EstimatorEntry {
-    optimal: Arc<dyn PriceEstimating>,
-    fast: Arc<dyn PriceEstimating>,
+    /// The estimator wrapped in trade verification (falls back to the
+    /// unverified estimator when no trade verifier is configured).
+    verified: Arc<dyn PriceEstimating>,
+    /// The raw estimator without trade verification.
+    unverified: Arc<dyn PriceEstimating>,
     native: Arc<dyn PriceEstimating>,
 }
 
@@ -57,6 +63,9 @@ pub struct Components {
     pub http_factory: HttpClientFactory,
     pub deny_listed_tokens: DenyListedTokens,
     pub tokens: Arc<dyn TokenInfoFetching>,
+    /// Where the ids quotes are stored under come from. Every solver asked
+    /// for a quote is sent its own id.
+    pub quote_id_generator: Arc<dyn crate::QuoteIdGenerating>,
 }
 
 /// A factory for initializing shared price estimators.
@@ -65,6 +74,9 @@ pub struct PriceEstimatorFactory<'a> {
     config: &'a NativePriceConfig,
     network: Network,
     components: Components,
+    /// Hands out the ids quote requests are sent with. Shared by all external
+    /// estimators so that ids are drawn from the database in bulk.
+    quote_ids: Arc<QuoteIdAllocator>,
     settlement_simulator: Option<SettlementSimulator>,
     trade_verifier: Option<Arc<dyn TradeVerifying>>,
     estimators: HashMap<String, EstimatorEntry>,
@@ -88,6 +100,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             args,
             config,
             network,
+            quote_ids: Arc::new(QuoteIdAllocator::new(components.quote_id_generator.clone())),
             components,
             estimators: HashMap::new(),
         })
@@ -119,10 +132,9 @@ impl<'a> PriceEstimatorFactory<'a> {
         });
         let settlement_contract =
             GPv2Settlement::GPv2Settlement::new(network.settlement, web3.provider.clone());
-        let simulation_overrides = args
-            .state_override_stream
-            .as_ref()
-            .map(|cfg| simulator::state_override_stream::spawn(cfg, network.block_stream.clone()));
+        let simulation_overrides = args.state_override_stream.as_ref().map(|cfg| {
+            simulator::state_override_stream::spawn_pamm_stream(cfg, network.block_stream.clone())
+        });
         let simulator = SettlementSimulator::new(
             settlement_contract,
             network.flash_loan_router,
@@ -183,24 +195,24 @@ impl<'a> PriceEstimatorFactory<'a> {
             .as_ref()
             .and_then(|trade_verifier| estimator.verified(trade_verifier));
 
-        let fast = instrument(estimator, name);
-        let optimal = match verified {
+        let unverified = instrument(estimator, name);
+        let verified = match verified {
             Some(verified) => instrument(verified, name),
-            None => fast.clone(),
+            None => unverified.clone(),
         };
 
         // Eagerly create the native price estimator, even if we don't use it.
         // It just simplifies price estimator creation code and only costs a few
         // extra cycles during initialization. Also note that we intentionally
-        // don't share price estimators between optimal/fast and the native
-        // price estimator (this is because request sharing isn't benificial),
-        // nor do we configure the trade verifier (because external price
-        // precision is less critical).
+        // don't share price estimators between verified/unverified and the
+        // native price estimator (this is because request sharing isn't
+        // benificial), nor do we configure the trade verifier (because
+        // external price precision is less critical).
         let native = instrument(T::init(self, name, params)?, name);
 
         Ok(EstimatorEntry {
-            optimal,
-            fast,
+            verified,
+            unverified,
             native,
         })
     }
@@ -383,11 +395,28 @@ impl<'a> PriceEstimatorFactory<'a> {
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
-        let estimators = self.get_estimators(solvers, |entry| &entry.optimal)?;
+        let estimators = self.get_estimators(solvers, |entry| &entry.verified)?;
         Ok(Arc::new(
             self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
                 .with_verification(self.args.quote_verification),
         ))
+    }
+
+    /// Like [`Self::price_estimator`] but without quote verification: all
+    /// estimators are queried and the best quote wins ranked purely by the
+    /// promised price, without simulating estimates or preferring verified
+    /// ones.
+    pub fn unverified_price_estimator(
+        &mut self,
+        solvers: &[ExternalSolver],
+        native: Arc<dyn NativePriceEstimating>,
+        gas: Arc<dyn GasPriceEstimating>,
+    ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
+        let estimators = self.get_estimators(solvers, |entry| &entry.unverified)?;
+        Ok(Arc::new(self.sanitized_competition(
+            estimators,
+            PriceRanking::BestBangForBuck { native, gas },
+        )))
     }
 
     pub fn fast_price_estimator(
@@ -396,17 +425,15 @@ impl<'a> PriceEstimatorFactory<'a> {
         fast_price_estimation_results_required: NonZeroUsize,
         native: Arc<dyn NativePriceEstimating>,
         gas: Arc<dyn GasPriceEstimating>,
-    ) -> Result<Arc<dyn PriceEstimating>> {
-        let estimators = self.get_estimators(solvers, |entry| &entry.fast)?;
+    ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
+        let estimators = self.get_estimators(solvers, |entry| &entry.unverified)?;
         Ok(Arc::new(
             self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
                 .with_early_return(fast_price_estimation_results_required),
         ))
     }
 
-    /// Creates a native price estimator from the given sources. When `eip4626`
-    /// is true the resulting estimator is wrapped in an [`native::Eip4626`]
-    /// layer that transparently prices vault tokens.
+    /// Creates a native price estimator from the given sources.
     pub async fn native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
@@ -432,23 +459,27 @@ impl<'a> PriceEstimatorFactory<'a> {
     /// Creates a [`CachingNativePriceEstimator`] that wraps a native price
     /// estimator with an in-memory cache.
     ///
-    /// If `eip4626` is true, it will wrap the estimator with EIP-4626
-    /// unwrapping.
+    /// If `eip4626` is enabled, the estimator is wrapped in a
+    /// [`native::Eip4626`] layer that transparently prices vault tokens.
     pub async fn caching_native_price_estimator(
         &mut self,
         native: &[Vec<NativePriceEstimatorSource>],
         results_required: NonZeroUsize,
         weth: &WETH9::Instance,
         cache: native_price_cache::Cache,
-        eip4626: bool,
+        eip4626: &Eip4626Config,
     ) -> native_price_cache::CachingNativePriceEstimator {
         let inner = self
             .native_price_estimator(native, results_required, weth)
             .await
             .expect("failed to build native price estimator");
-        let inner = if eip4626 {
+        let inner = if eip4626.enabled {
             Box::new(InstrumentedPriceEstimator::new(
-                native::Eip4626::new(inner, self.network.web3.provider.clone()),
+                native::Eip4626::new(
+                    inner,
+                    self.network.web3.provider.clone(),
+                    eip4626.exemptions.iter().copied(),
+                ),
                 "Eip4626".to_string(),
             ))
         } else {
@@ -551,6 +582,7 @@ impl PriceEstimatorCreating for ExternalPriceEstimator {
             factory.components.http_factory.create(),
             factory.rate_limiter(name),
             factory.network.block_stream.clone(),
+            factory.quote_ids.clone(),
         ))
     }
 

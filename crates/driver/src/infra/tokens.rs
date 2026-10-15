@@ -11,7 +11,7 @@ use {
         collections::HashMap,
         sync::{Arc, RwLock},
     },
-    tracing::Instrument,
+    tracing::instrument,
 };
 
 #[derive(Clone, Debug)]
@@ -37,10 +37,7 @@ impl Fetcher {
             cache: RwLock::new(HashMap::new()),
             requests: BoxRequestSharing::labelled("token_info".into()),
         });
-        tokio::task::spawn(
-            update_task(block_stream, Arc::downgrade(&inner))
-                .instrument(tracing::info_span!("token_fetcher")),
-        );
+        tokio::task::spawn(update_task(block_stream, Arc::downgrade(&inner)));
         Self(inner)
     }
 
@@ -58,8 +55,9 @@ impl Fetcher {
     /// of the given tokens if they are already present in the cache. That only
     /// really makes sense for tokens where internal buffer trading is allowed.
     pub fn keep_track_of_balances<'a>(&self, tokens: impl IntoIterator<Item = &'a eth::Address>) {
-        // most of the time no updates are needed so we first take a read lock to
-        // check if we even have to take a write lock for updating the tokens at all
+        // most of the time no updates are needed so we first take a read lock
+        // to check if we even have to take a write lock for updating
+        // the tokens at all
         let tokens_to_update: Vec<_> = {
             let cache = self.0.cache.read().unwrap();
             tokens
@@ -99,6 +97,7 @@ async fn update_task(blocks: CurrentBlockWatcher, inner: std::sync::Weak<Inner>)
 }
 
 /// Updates the settlement contract's balance for every cached token.
+#[instrument(skip_all)]
 async fn update_balances(inner: Arc<Inner>) -> Result<(), blockchain::Error> {
     let settlement = *inner.eth.contracts().settlement().address();
     let futures: Vec<_> = {
@@ -163,9 +162,10 @@ impl Inner {
             let build_request = |token: &eth::TokenAddress| {
                 let token = self.eth.erc20(*token);
                 async move {
-                    // Use `try_join` because these calls get batched under the hood
-                    // so if one of them fails the others will as well.
-                    // Also this way we won't get incomplete data for a token.
+                    // Use `try_join` because these calls get batched under the
+                    // hood so if one of them fails the
+                    // others will as well. Also this way we
+                    // won't get incomplete data for a token.
                     let (decimals, symbol, balance) = futures::future::try_join3(
                         token.decimals(),
                         token.symbol(),
@@ -205,8 +205,8 @@ impl Inner {
             let cache = self.cache.read().unwrap();
             if tokens.iter().all(|token| cache.contains_key(token)) {
                 // Often multiple callers are racing to fetch the same Metadata.
-                // If somebody else already cached the data we don't want to take an
-                // exclusive lock for nothing.
+                // If somebody else already cached the data we don't want to
+                // take an exclusive lock for nothing.
                 return;
             }
         }

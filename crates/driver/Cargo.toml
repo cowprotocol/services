@@ -23,7 +23,6 @@ alloy = {
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
-bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes = { workspace = true }
@@ -32,7 +31,6 @@ chain = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }
 configs = { workspace = true }
 const-hex = { workspace = true }
-cow-amm = { workspace = true }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
 eth-domain-types = { workspace = true }
@@ -44,9 +42,9 @@ hex-literal = { workspace = true }
 http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
+indexmap = { workspace = true }
 itertools = { workspace = true }
 liquidity-sources = { workspace = true }
-mimalloc = { workspace = true, optional = true }
 moka = { workspace = true, features = ["future"] }
 num = { workspace = true }
 number = { workspace = true }
@@ -99,7 +97,6 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
 
 [features]
-mimalloc-allocator = ["dep:mimalloc"]
 tokio-console = ["observe/tokio-console"]
 
 [lints]

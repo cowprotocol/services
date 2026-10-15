@@ -1,9 +1,16 @@
 use {
     alloy::primitives::Address,
     app_data::AppDataHash,
+    eth_domain_types::Receiver,
     model::{
         interaction::InteractionData,
-        order::{BuyTokenDestination, OrderClass, OrderKind, OrderUid, SellTokenSource},
+        order::{
+            BuyTokenDestination,
+            OrderKind,
+            OrderUid,
+            SellTokenSource,
+            serialize_legacy_order_class,
+        },
         signature::Signature,
     },
     number::serialization::HexOrDecimalU256,
@@ -26,7 +33,7 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
     pub kind: OrderKind,
-    pub receiver: Option<Address>,
+    pub receiver: Receiver,
     pub owner: Address,
     pub partially_fillable: bool,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -35,12 +42,16 @@ pub struct Order {
     pub post_interactions: Vec<InteractionData>,
     pub sell_token_balance: SellTokenSource,
     pub buy_token_balance: BuyTokenDestination,
-    #[serde(flatten)]
-    pub class: OrderClass,
+    /// Deprecated: always `"limit"`, kept so the JSON shape stays stable.
+    #[serde(skip_deserializing, serialize_with = "serialize_legacy_order_class")]
+    pub class: (),
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: Signature,
-    pub quote: Quote,
+    pub quote: Option<Quote>,
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub penalty_cap_native: Option<alloy::primitives::U256>,
 }
 
 #[serde_as]
@@ -90,7 +101,7 @@ pub struct ExecutedAmounts {
 #[serde(rename_all = "camelCase")]
 pub struct SolutionInclusion {
     /// The name or identifier of the solver.
-    pub solver: String,
+    pub solver: Address,
     /// The executed amounts for the order as proposed by the solver, included
     /// if the solution was for the desired order, or omitted otherwise.
     pub executed_amounts: Option<ExecutedAmounts>,

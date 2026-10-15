@@ -6,13 +6,13 @@ use {
             self,
             settlement::{SettlementEvent, TradeEvent, transaction::EncodedTrade},
         },
-        infra::persistence::dto::RawAuctionData,
     },
     ::winner_selection::state::RankedItem,
-    alloy::primitives::B256,
+    alloy::primitives::{Address, B256},
     anyhow::Context,
     bigdecimal::{BigDecimal, ToPrimitive},
     boundary::database::byte_array::ByteArray,
+    bytes::Bytes,
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
@@ -26,15 +26,18 @@ use {
         },
         solver_competition_v2::{self, Order, Solution},
     },
-    domain::auction::order::{
-        BuyTokenDestination as DomainBuyTokenDestination,
-        SellTokenSource as DomainSellTokenSource,
-        SigningScheme as DomainSigningScheme,
+    domain::{
+        auction::order::{
+            BuyTokenDestination as DomainBuyTokenDestination,
+            SellTokenSource as DomainSellTokenSource,
+            SigningScheme as DomainSigningScheme,
+        },
+        competition::Score,
     },
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
-    shared::db_order_conversions::full_order_into_model_order,
+    shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
@@ -58,8 +61,8 @@ pub struct Persistence {
 
 struct AuctionUpload {
     auction_id: domain::auction::Id,
-    /// Contains everything buy the auction_id.
-    auction_data: RawAuctionData,
+    /// The serialized auction, containing everything but the auction_id.
+    json: Bytes,
 }
 
 impl Persistence {
@@ -84,7 +87,7 @@ impl Persistence {
         tokio::task::spawn(async move {
             while let Some(upload) = receiver.recv().await {
                 if let Err(err) = db
-                    .replace_current_auction(upload.auction_id, upload.auction_data)
+                    .replace_current_auction(upload.auction_id, upload.json)
                     .await
                 {
                     tracing::error!(?err, "failed to replace auction in DB");
@@ -99,46 +102,6 @@ impl Persistence {
         LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
     }
 
-    /// Spawns a background task that listens for new order notifications from
-    /// PostgreSQL and notifies via the provided Notify.
-    pub fn spawn_order_listener(&self, notify: Arc<tokio::sync::Notify>) {
-        let pool = self.postgres.pool.clone();
-        tokio::spawn(async move {
-            loop {
-                let mut listener = match sqlx::postgres::PgListener::connect_with(&pool).await {
-                    Ok(listener) => listener,
-                    Err(err) => {
-                        tracing::error!(?err, "failed to create PostgreSQL listener");
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        continue;
-                    }
-                };
-
-                tracing::info!("connected to PostgreSQL for order notifications");
-
-                if let Err(err) = listener.listen("new_order").await {
-                    tracing::error!(?err, "failed to listen on 'new_order' channel");
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                    continue;
-                }
-
-                loop {
-                    match listener.recv().await {
-                        Ok(notification) => {
-                            let order_uid = notification.payload();
-                            tracing::debug!(order_uid, "received order notification from postgres");
-                            notify.notify_one();
-                        }
-                        Err(err) => {
-                            tracing::error!(?err, "error receiving notification from postgres");
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-    }
-
     /// Fetches the ID that should be used for the next auction.
     pub async fn get_next_auction_id(&self) -> Result<domain::auction::Id, DatabaseError> {
         let _timer = Metrics::get()
@@ -151,33 +114,55 @@ impl Persistence {
             .map_err(DatabaseError)
     }
 
-    /// Spawns a background task that replaces the current auction in the DB
-    /// with the new one.
-    pub fn replace_current_auction_in_db(
-        &self,
-        new_auction_id: domain::auction::Id,
-        new_auction_data: &domain::RawAuctionData,
-    ) {
-        self.upload_queue
-            .send(AuctionUpload {
-                auction_id: new_auction_id,
-                auction_data: dto::auction::from_domain(new_auction_data.clone()),
+    /// Archives the auction to the DB and, if configured, to S3.
+    ///
+    /// Only the conversion into the archival shape is on the run loop's
+    /// critical path; the serialization and both sinks happen in background
+    /// tasks. The auction is taken by reference so the conversion doesn't
+    /// need a deep clone.
+    #[instrument(skip_all)]
+    pub fn archive_auction(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
+        let auction_data = {
+            let _timer = observe::metrics::metrics()
+                .on_auction_overhead_start("autopilot", "convert_auction");
+            dto::auction::from_domain(auction)
+        };
+
+        let upload_to_s3 = !auction.orders.is_empty();
+        let this = self.clone();
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            span.in_scope(|| {
+                let json = match serde_json::to_vec(&auction_data).map(Bytes::from) {
+                    Ok(json) => json,
+                    Err(err) => {
+                        tracing::error!(?err, ?id, "failed to serialize auction");
+                        return;
+                    }
+                };
+
+                this.upload_queue
+                    .send(AuctionUpload {
+                        auction_id: id,
+                        json: json.clone(),
+                    })
+                    .expect("upload queue should be alive at all times");
+
+                if upload_to_s3 {
+                    this.upload_auction_to_s3(id, json);
+                }
             })
-            .expect("upload queue should be alive at all times");
+        });
     }
 
-    /// Spawns a background task that uploads the auction to S3.
-    pub fn upload_auction_to_s3(&self, id: domain::auction::Id, auction: &domain::RawAuctionData) {
-        if auction.orders.is_empty() {
-            return;
-        }
+    /// Spawns a background task that uploads the already serialized auction to
+    /// S3.
+    fn upload_auction_to_s3(&self, id: domain::auction::Id, json: Bytes) {
         let Some(s3) = self.s3.clone() else {
             return;
         };
-        let auction = auction.clone();
         tokio::task::spawn(async move {
-            let auction_dto = dto::auction::from_domain(auction);
-            match s3.upload(id.to_string(), auction_dto).await {
+            match s3.upload_json_bytes(id.to_string(), json).await {
                 Ok(key) => tracing::info!(?key, "uploaded auction to s3"),
                 Err(err) => tracing::warn!(?err, "failed to upload auction to s3"),
             }
@@ -195,28 +180,27 @@ impl Persistence {
             .context("failed to fetch all solvable orders")
     }
 
-    /// Saves the competition data to the DB
-    pub async fn save_competition(
-        &self,
-        competition: boundary::Competition,
-    ) -> Result<(), DatabaseError> {
-        self.postgres
-            .save_competition(competition)
-            .await
-            .map_err(DatabaseError)
-    }
-
     /// Save all valid solutions that participated in the competition for an
-    /// auction.
+    /// auction, together with the reference score of each participating solver.
     pub async fn save_solutions(
         &self,
         auction_id: domain::auction::Id,
         solutions: impl Iterator<Item = &domain::competition::Bid>,
+        reference_scores: HashMap<Address, Score>,
     ) -> Result<(), DatabaseError> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["save_solutions"])
             .start_timer();
+
+        let reference_scores: Vec<_> = reference_scores
+            .into_iter()
+            .map(|(solver, score)| database::reference_scores::Score {
+                auction_id,
+                solver: ByteArray(solver.0.0),
+                reference_score: u256_to_big_decimal(&score.get().0),
+            })
+            .collect();
 
         let mut ex = self.postgres.pool.begin().await?;
 
@@ -257,6 +241,8 @@ impl Persistence {
         )
         .await?;
 
+        database::reference_scores::insert(&mut ex, &reference_scores).await?;
+
         Ok(ex.commit().await?)
     }
 
@@ -286,13 +272,14 @@ impl Persistence {
         reason: Option<OrderFilterReason>,
     ) where
         I: IntoIterator + Send + 'static,
+        I::IntoIter: Send,
         I::Item: Send,
         F: (Fn(I::Item) -> domain::OrderUid) + Send + 'static,
     {
         let db = self.postgres.clone();
         tokio::spawn(
             async move {
-                let order_uids = items.into_iter().map(convert).collect();
+                let order_uids = items.into_iter().map(convert);
                 match db.pool.acquire().await {
                     Ok(mut tx) => {
                         store_order_events(&mut tx, order_uids, label, reason, Utc::now()).await;
@@ -395,13 +382,27 @@ impl Persistence {
                     .iter()
                     .map(|owner| ByteArray(owner.0.0))
                     .collect(),
+                // Mapped one-to-one with `order_uids` above; all-or-nothing
+                // because caps are computed for every order iff penalties are
+                // enabled.
+                penalty_caps_native: auction
+                    .orders
+                    .iter()
+                    .map(|order| {
+                        order
+                            .penalty_cap_native
+                            .map(|cap| u256_to_big_decimal(&cap.0))
+                    })
+                    .collect(),
+                fast_path_quote_id: None,
             },
         )
         .await?;
 
-        // Inserting into `competition_auctions` grows the pending list of its GIN
-        // index, which periodically causes DB latency spikes. Clean it right
-        // where the need originates, without blocking auction post-processing.
+        // Inserting into `competition_auctions` grows the pending list of its
+        // GIN index, which periodically causes DB latency spikes. Clean
+        // it right where the need originates, without blocking auction
+        // post-processing.
         let postgres = self.postgres.clone();
         tokio::spawn(async move {
             if let Err(err) = postgres.gin_clean_pending_list().await {
@@ -460,11 +461,13 @@ impl Persistence {
             .into();
 
         let orders = {
-            // Code that uses the data assembled by this function determines JIT orders
-            // by their presence in the `orders => fee_policies` mapping. If an order has
-            // a mapping it is assumed that this was a regular order and not a JIT order.
-            // So in order to not misclassify JIT orders as regular orders we only fetch
-            // fee policies for orders that were part of the original auction.
+            // Code that uses the data assembled by this function determines JIT
+            // orders by their presence in the `orders =>
+            // fee_policies` mapping. If an order has a mapping it
+            // is assumed that this was a regular order and not a JIT order.
+            // So in order to not misclassify JIT orders as regular orders we
+            // only fetch fee policies for orders that were part of
+            // the original auction.
             let auction_orders: HashSet<domain::OrderUid> = auction_row
                 .order_uids
                 .into_iter()
@@ -476,7 +479,8 @@ impl Persistence {
                 .map(|t| t.uid)
                 .collect();
 
-            // get fee policies for all orders that were part of the competition auction
+            // get fee policies for all orders that were part of the competition
+            // auction
             let fee_policies = database::fee_policies::fetch_all(
                 &mut ex,
                 relevant_orders
@@ -551,8 +555,9 @@ impl Persistence {
         let started_at = chrono::offset::Utc::now();
         let mut tx = self.postgres.pool.begin().await.context("begin")?;
         // Set the transaction isolation level to REPEATABLE READ
-        // so all the SELECT queries below are executed in the same database snapshot
-        // taken at the moment before the first query is executed.
+        // so all the SELECT queries below are executed in the same database
+        // snapshot taken at the moment before the first query is
+        // executed.
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(tx.deref_mut())
             .await?;
@@ -567,8 +572,8 @@ impl Persistence {
             database::orders::updated_order_uids_after(&mut tx, after_block).await?
         };
 
-        // Fetch the orders that were updated after the given block and were created or
-        // cancelled after the given timestamp.
+        // Fetch the orders that were updated after the given block and were
+        // created or cancelled after the given timestamp.
         let next_orders: HashMap<domain::OrderUid, Arc<model::order::Order>> = {
             let _timer = Metrics::get()
                 .database_queries
@@ -579,6 +584,7 @@ impl Persistence {
                 &mut tx,
                 &updated_order_uids,
                 after_timestamp,
+                started_at.timestamp(),
             )
             .map(|result| match result {
                 Ok(order) => full_order_into_model_order(order)
@@ -647,9 +653,10 @@ impl Persistence {
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            // Fetch quotes only for newly created and also on-chain placed orders due to
-            // the following case: if a block containing an on-chain order
-            // (e.g., ethflow) gets reorganized, the same order with the same
+            // Fetch quotes only for newly created and also on-chain placed
+            // orders due to the following case: if a block
+            // containing an on-chain order (e.g., ethflow) gets
+            // reorganized, the same order with the same
             // UID might be created in the new block, and the temporary quote
             // associated with it may have changed in the meantime.
             let order_uids = current_orders
@@ -790,18 +797,38 @@ impl Persistence {
                 "settlement update",
             );
 
-            database::settlements::update_settlement_solver(
+            database::settlements::update_settlement_solver_and_gas(
                 &mut ex,
                 block_number,
                 log_index,
                 solver,
                 settlement.solution_uid(),
+                // We're not expecting this to actually happen, BUT, since this is the cost of a
+                // transaction we'll double count this value if 1 transaction has 2 settlements
+                u256_to_big_decimal(&gas.0),
+                u256_to_big_decimal(&gas_price.0.0),
+            )
+            .await?;
+
+            database::trades::attribute_gas_cost(
+                &mut ex,
+                EventIndex {
+                    block_number,
+                    log_index,
+                },
+                u256_to_big_decimal(&gas.0),
+                u256_to_big_decimal(&gas_price.0.0),
+                &settlement
+                    .surplus_capturing_jit_order_owners()
+                    .iter()
+                    .map(|owner| ByteArray(owner.0.0))
+                    .collect::<Vec<_>>(),
             )
             .await?;
 
             store_order_events(
                 &mut ex,
-                fee_breakdown.keys().cloned().collect(),
+                fee_breakdown.keys().cloned(),
                 OrderEventLabel::Traded,
                 None,
                 Utc::now(),
@@ -831,7 +858,8 @@ impl Persistence {
             }
 
             if !jit_orders.is_empty() {
-                // each jit order should have a corresponding trade event, try to find them
+                // each jit order should have a corresponding trade event, try
+                // to find them
                 let trade_events = self
                     .get_trades_for_settlement(&event)
                     .await?
@@ -865,7 +893,7 @@ impl Persistence {
                                     kind: jit_order.side.into(),
                                     partially_fillable: jit_order.partially_fillable,
                                     signature: jit_order.signature.to_bytes(),
-                                    receiver: ByteArray(jit_order.receiver.0.0),
+                                    receiver: ByteArray(*jit_order.receiver.raw_bytes()),
                                     signing_scheme: match jit_order.signature.scheme() {
                                         DomainSigningScheme::Eip712 => DbSigningScheme::Eip712,
                                         DomainSigningScheme::EthSign => DbSigningScheme::EthSign,
@@ -1009,6 +1037,224 @@ impl Persistence {
             .map(|o| crate::domain::OrderUid(o.0))
             .collect())
     }
+
+    /// Sets `orders.valid_from` for a fast-path order the handler has
+    /// classified. Writing this column is what makes the order eligible
+    /// for the solvable-orders cache — either immediately (`now`, when
+    /// fast-path settle isn't going to fire) or delayed by the
+    /// exclusivity window.
+    #[instrument(skip_all)]
+    pub async fn set_order_valid_from(
+        &self,
+        uid: domain::OrderUid,
+        valid_from: u32,
+    ) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["set_order_valid_from"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        database::orders::set_valid_from(&mut ex, &ByteArray(uid.0), valid_from).await?;
+        Ok(())
+    }
+
+    /// Bulk-flushes fast-path orders whose `valid_from` was never
+    /// populated: their `new_order` notification landed while the
+    /// autopilot was down, and by the time it comes back the intended
+    /// exclusivity window has long since elapsed. Running the full
+    /// fast-path against a stale quote would just settle against
+    /// moved on-chain prices, so we drop them straight into the next
+    /// regular auction by setting `valid_from = now`. Returns the
+    /// number of rows updated.
+    pub async fn flush_pending_fast_path_backlog(&self, now: u32) -> anyhow::Result<u64> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["flush_pending_fast_path_backlog"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        Ok(database::orders::flush_pending_fast_path_backlog(&mut ex, now).await?)
+    }
+
+    /// Returns the order iff it is a fast-path order the handler still
+    /// owes a `valid_from` write to. Callers use `Some` as the "we own
+    /// this order" signal — non-fast-path orders (or ones the handler
+    /// already classified) return `None` and must be left alone.
+    ///
+    /// [`FastPathOrder::staged`] carries the staged quote competition
+    /// when one exists; ethflow fast-path orders that never went
+    /// through the quoter return `None` there, meaning no
+    /// out-of-competition settle is possible and the caller should just
+    /// mark the order eligible for the regular auction.
+    #[instrument(skip_all)]
+    pub async fn pending_fast_path_order(
+        &self,
+        uid: domain::OrderUid,
+    ) -> anyhow::Result<Option<FastPathOrder>> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["pending_fast_path_order"])
+            .start_timer();
+
+        let row = {
+            let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+            database::fast_path::pending_fast_path_order(&mut ex, &ByteArray(uid.0)).await?
+        };
+
+        let Some(pending) = row else {
+            return Ok(None);
+        };
+
+        let model_order = fast_path_order_into_model(&pending)?;
+        let staged = match (pending.quote_id, pending.competition) {
+            (Some(quote_id), Some(competition)) => Some(StagedFastPathCompetition {
+                quote_id,
+                data: serde_json::from_value(competition)
+                    .context("deserialize staged quote competition")?,
+            }),
+            // The LEFT JOIN returns both columns as NULL together — no
+            // staged data means no fast-path settle is possible.
+            _ => None,
+        };
+        Ok(Some(FastPathOrder {
+            model_order,
+            staged,
+        }))
+    }
+
+    /// Moves a fast-path order's staged competition into the permanent
+    /// tables. In a single transaction, writes `competition_auctions`,
+    /// the pre-built `proposed_solutions` / `proposed_trade_executions`
+    /// rows carried on the [`FastPathPromotion`], its fee-policy rows, and
+    /// deletes the `quote_competitions` staging row.
+    ///
+    /// All fee math and per-solution encoding decisions are done by the
+    /// caller (`fast_path.rs`) — this function only stitches the caller's
+    /// domain values into the surrounding DB rows and inserts everything
+    /// atomically.
+    pub async fn finalize_fast_path(&self, promotion: FastPathPromotion) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["finalize_fast_path"])
+            .start_timer();
+
+        let (price_tokens, price_values): (Vec<_>, Vec<_>) = promotion
+            .native_prices
+            .iter()
+            .map(|(token, value)| (ByteArray(token.0.0), u256_to_big_decimal(value)))
+            .unzip();
+
+        let auction_row = database::auction::Auction {
+            id: promotion.auction_id,
+            block: i64::try_from(promotion.block).context("block does not fit in i64")?,
+            deadline: i64::try_from(promotion.deadline).context("deadline does not fit in i64")?,
+            order_uids: vec![ByteArray(promotion.order_uid.0)],
+            price_tokens,
+            price_values,
+            surplus_capturing_jit_order_owners: Vec::new(),
+            penalty_caps_native: Some(vec![promotion.penalty_cap_native]),
+            fast_path_quote_id: Some(promotion.quote_id),
+        };
+
+        let policy_rows: Vec<_> = promotion
+            .fee_policies
+            .iter()
+            .map(|p| dto::fee_policy::from_domain(promotion.auction_id, promotion.order_uid, *p))
+            .collect();
+
+        let mut tx = self.postgres.pool.begin().await.context("begin")?;
+        database::auction::save(tx.deref_mut(), auction_row)
+            .await
+            .context("save competition_auctions row")?;
+        database::solver_competition_v2::save(&mut tx, promotion.auction_id, &promotion.solutions)
+            .await
+            .context("save proposed_solutions / proposed_trade_executions")?;
+        database::reference_scores::insert(&mut tx, &[promotion.reference_score])
+            .await
+            .context("insert fast-path reference_scores")?;
+        database::fee_policies::insert_batch(tx.deref_mut(), policy_rows)
+            .await
+            .context("insert fast-path fee policies")?;
+        database::fast_path::delete_competition(tx.deref_mut(), promotion.quote_id)
+            .await
+            .context("delete quote_competitions staging row")?;
+        database::orders::set_valid_from(
+            tx.deref_mut(),
+            &ByteArray(promotion.order_uid.0),
+            promotion.valid_from,
+        )
+        .await
+        .context("set valid_from")?;
+        tx.commit().await.context("commit")?;
+        Ok(())
+    }
+}
+
+/// A pending fast-path order the handler has fetched. `staged` is
+/// present when the order went through the API quoter (and can
+/// therefore be settled out of competition); ethflow fast-path orders
+/// arrive with `staged = None` and fall straight through to the regular
+/// auction.
+#[derive(Debug)]
+pub struct FastPathOrder {
+    /// The order in the raw API model form. Callers pass this to
+    /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
+    /// `boundary::order::to_domain` once the resulting policies are known.
+    pub model_order: model::order::Order,
+    /// Staged quote competition, when one is available.
+    pub staged: Option<StagedFastPathCompetition>,
+}
+
+/// The staged quote competition produced when the fast-path order was
+/// quoted. Carries the `quote_id` back to `finalize_fast_path` so the
+/// staging row can be dropped atomically with the promotion.
+#[derive(Debug)]
+pub struct StagedFastPathCompetition {
+    pub quote_id: database::quotes::QuoteId,
+    pub data: shared::quote_storage::StagedQuoteCompetition,
+}
+
+impl StagedFastPathCompetition {
+    /// The winning solution. Non-empty by construction of
+    /// `save_quote_competition`, which bails out when no quotes were
+    /// produced.
+    pub fn winner(&self) -> &shared::quote_storage::StagedSolution {
+        self.data
+            .solutions
+            .first()
+            .expect("staged competition is guaranteed to have at least one solution")
+    }
+}
+
+/// All the data needed to finalize a fast path order. The finalization happens
+/// by promoting the data that was so far only in the temporary
+/// `quote_competitions` table into the persistent tables that describe the
+/// usual auctions (e.g. `competition_auctions`, `proposed_solutions`, etc.).
+pub struct FastPathPromotion {
+    pub quote_id: database::quotes::QuoteId,
+    pub auction_id: database::auction::AuctionId,
+    pub order_uid: domain::OrderUid,
+    /// Block and deadline recorded on the promoted competition row — the
+    /// window the fast-path handler committed to when asking the driver to
+    /// settle.
+    pub block: u64,
+    pub deadline: u64,
+    /// Unix timestamp (seconds) the order becomes eligible for the
+    /// regular auction if the fast-path settle attempt doesn't land in
+    /// time. Written atomically with the rest of the promotion so the
+    /// order can never be observed "settle-committed, exclusivity not
+    /// claimed" from another connection.
+    pub valid_from: u32,
+    pub native_prices: HashMap<eth::Address, eth::U256>,
+    /// Fully-built solver-competition rows (one per staged solution).
+    /// Constructed by the caller so per-bid encoding decisions —
+    /// `filtered_out`, score, executed amounts — live in the domain
+    /// handler rather than here.
+    pub solutions: Vec<database::solver_competition_v2::Solution>,
+    pub fee_policies: Vec<domain::fee::Policy>,
+    pub reference_score: database::reference_scores::Score,
+    /// Cap of the penalty the solver will get for not executing the order.
+    /// Denominated in the native token.
+    pub penalty_cap_native: BigDecimal,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]

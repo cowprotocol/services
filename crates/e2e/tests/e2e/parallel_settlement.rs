@@ -87,7 +87,6 @@ async fn test_parallel_settlement_submission(web3: Web3) {
         onchain.contracts(),
         vec![solver_engine],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     // Wait for the driver to become available.
@@ -308,13 +307,13 @@ async fn solve_order(
                 "created": model::time::now_in_epoch_seconds(),
                 "validTo": order.valid_to,
                 "kind": "buy",
-                "receiver": null,
+                "receiver": format!("{:?}", Address::ZERO),
                 "owner": format!("{owner:?}"),
                 "partiallyFillable": false,
                 "executed": "0",
                 "preInteractions": [],
                 "postInteractions": [],
-                "class": "market",
+                "class": "limit",
                 "appData": format!("0x{}", const_hex::encode([0u8; 32])),
                 "signingScheme": "eip712",
                 "signature": format!("0x{}", const_hex::encode(&sig_bytes)),

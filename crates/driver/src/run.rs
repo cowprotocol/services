@@ -1,9 +1,6 @@
 use {
     crate::{
-        domain::{
-            Mempools,
-            competition::{order::app_data::AppDataRetriever, risk_detector},
-        },
+        domain::{Mempools, competition::order::app_data::AppDataRetriever},
         infra::{
             self,
             Api,
@@ -15,6 +12,8 @@ use {
             solver::Solver,
         },
     },
+    alloy::providers::Provider,
+    chain::Chain,
     clap::Parser,
     futures::future::join_all,
     http_client::HttpClientFactory,
@@ -22,6 +21,7 @@ use {
     simulator::{self, Simulator},
     std::{net::SocketAddr, time::Duration},
     tokio::sync::oneshot,
+    url::Url,
 };
 
 /// The driver entry-point. This function exists in order to be able to run the
@@ -48,11 +48,16 @@ pub async fn run(
 /// Run the driver. This function exists to avoid multiple monomorphizations of
 /// the `run` code, which bloats the binaries and increases compile times.
 async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAddr>>) {
+    // use dedicated function instead of reading this from `ethrpc` to make
+    // sure we fully initialize the metrics registry before calling any code
+    // that populates those metrics
+    let chain_name = get_chain_name(args.ethrpc.clone()).await;
+
     infra::observe::init(observe::Config::new(
         &args.log,
         args.stderr_threshold,
         args.use_json_logs,
-        tracing_config(&args.tracing, "driver".into()),
+        tracing_config(&args.tracing, format!("driver-{chain_name}")),
     ));
 
     let ethrpc = ethrpc(&args).await;
@@ -126,10 +131,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
             eth.clone(),
         )
         .unwrap(),
-        bad_token_detector: risk_detector::bad_tokens::Detector::new(
-            config.simulation_bad_token_max_age,
-            &eth,
-        ),
+        balance_cache: config.balance_cache,
         eth,
         addr: args.addr,
         addr_sender,
@@ -145,7 +147,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     futures::pin_mut!(serve);
     tokio::select! {
         result = &mut serve => panic!("serve task exited: {result:?}"),
-        _ = shutdown_signal() => {
+        _ = observe::shutdown::shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             // Shutdown timeout needs to be larger than the auction deadline
@@ -162,7 +164,7 @@ fn simulator(
     eth: simulator::Ethereum,
     http_factory: &HttpClientFactory,
 ) -> Simulator {
-    let block_stream = eth.current_block().clone();
+    let blocks = eth.current_block().clone();
     let mut simulator = match &config.simulator {
         configs::simulator::Config {
             kind: configs::simulator::SimulatorKind::Tenderly(config),
@@ -181,8 +183,9 @@ fn simulator(
         simulator.disable_gas(gas);
     }
     if let Some(cfg) = &config.simulator.state_override_stream {
-        simulator
-            .set_simulation_overrides(simulator::state_override_stream::spawn(cfg, block_stream));
+        simulator.set_simulation_overrides(simulator::state_override_stream::spawn_pamm_stream(
+            cfg, blocks,
+        ));
     }
 
     simulator
@@ -230,29 +233,13 @@ fn liquidity_sources_notifier(
         .expect("initialize notify sources notifier")
 }
 
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept signals for graceful shutdown. Kubernetes sends sigterm, Ctrl-C
-    // sends sigint.
-    let sigterm = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .unwrap()
-            .recv()
-            .await
-    };
-    let sigint = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .unwrap()
-            .recv()
-            .await;
-    };
-    futures::pin_mut!(sigint);
-    futures::pin_mut!(sigterm);
-    futures::future::select(sigterm, sigint).await;
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // No support for signal handling on Windows.
-    std::future::pending().await
+async fn get_chain_name(rpc: Url) -> &'static str {
+    let provider = alloy::providers::builder::<alloy::network::Ethereum>().connect_http(rpc);
+    provider
+        .get_chain_id()
+        .await
+        .ok()
+        .and_then(|id| Chain::try_from(id).ok())
+        .map(|chain| chain.name())
+        .unwrap_or("unknown")
 }

@@ -15,6 +15,7 @@ use {
             OrderQuoteRequest,
             OrderQuoteResponse,
             OrderQuoteSide,
+            PriceQuality,
             QuoteSigningScheme,
             SellAmount,
         },
@@ -294,8 +295,13 @@ async fn uses_stale_liquidity(web3: Web3) {
     assert_eq!(first.quote.buy_amount, second.quote.buy_amount);
 
     tracing::info!("waiting for liquidity state to update");
-    wait_for_condition(TIMEOUT, || async {
-        // Mint blocks until we evict the cached liquidty and fetch the new state.
+    // Pool-fetching caches a few blocks' worth of liquidity, and the
+    // auto-update background loop can take a while to re-poll on a loaded
+    // CI runner. Give it generous headroom beyond the default 30s wait
+    // window.
+    wait_for_condition(Duration::from_secs(120), || async {
+        // Mint blocks until we evict the cached liquidty and fetch the new
+        // state.
         onchain.mint_block().await;
         let Ok(next) = services.submit_quote(&quote).await else {
             return false;
@@ -333,7 +339,7 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -342,12 +348,11 @@ async fn quote_timeout(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     /// The default quote timeout used when the user does not override it.
@@ -409,13 +414,22 @@ async fn quote_timeout(web3: Web3) {
     };
 
     let assert_within_variance = |start_timestamp: Instant, target| {
-        const VARIANCE: u64 = 100; // small buffer to allow for variance in the test
-        const HTTP_BUFFER: u64 = 100;
-        let min = target - HTTP_BUFFER;
+        // Loaded CI runners occasionally add hundreds of ms of scheduling
+        // jitter on top of the solver's artificial sleep. Keep the lower bound
+        // tight (we care that the deadline was enforced) but give the upper
+        // bound enough headroom to not flake.
+        const VARIANCE: u64 = 500;
+        let http_buffer = driver::infra::Solver::quote_timeouts()
+            .http_delay
+            .num_milliseconds() as u64;
+        let min = target - http_buffer;
         let max = min + VARIANCE;
         let elapsed = start_timestamp.elapsed().as_millis() as u64;
         tracing::debug!(target, actual = ?elapsed, "finished request");
-        assert!((min..max).contains(&elapsed));
+        assert!(
+            (min..max).contains(&elapsed),
+            "expected elapsed in [{min}, {max}) but got {elapsed}"
+        );
     };
 
     // native token price requests use the default timeout
@@ -515,7 +529,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -524,12 +538,11 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
@@ -568,31 +581,35 @@ async fn quote_custom_solver_errors(web3: Web3) {
     let cases = vec![
         (
             SolverErrorCode::TradingOutsideAllowedWindow,
+            StatusCode::BAD_REQUEST,
             "TradingOutsideAllowedWindow",
             None,
             "Token can only be traded during specific time windows",
         ),
         (
             SolverErrorCode::TokenTemporarilySuspended,
+            StatusCode::BAD_REQUEST,
             "TokenTemporarilySuspended",
             Some("token is suspended"),
             "token is suspended",
         ),
         (
             SolverErrorCode::InsufficientLiquidity,
+            StatusCode::BAD_REQUEST,
             "InsufficientLiquidity",
             Some("not enough liquidity"),
             "not enough liquidity",
         ),
         (
             SolverErrorCode::Other,
-            "CustomSolverError",
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
             Some("some solver specific error"),
-            "some solver specific error",
+            "no route found",
         ),
     ];
 
-    for (code, expected_kind, sent_message, expected_message) in cases {
+    for (code, expected_http_code, expected_kind, sent_message, expected_message) in cases {
         mock_solver.configure_response(SolverResponse::Error {
             error: SolverError {
                 code,
@@ -601,7 +618,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
         });
 
         let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, expected_http_code);
         assert!(
             body.contains(expected_kind),
             "response should include error kind {expected_kind}, got {body}"
@@ -637,7 +654,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -646,12 +663,11 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 endpoint: mock_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
@@ -678,27 +694,31 @@ async fn native_price_custom_solver_errors(web3: Web3) {
     let cases = vec![
         (
             SolverErrorCode::TradingOutsideAllowedWindow,
+            StatusCode::BAD_REQUEST,
             "TradingOutsideAllowedWindow",
             "native window closed",
         ),
         (
             SolverErrorCode::TokenTemporarilySuspended,
+            StatusCode::BAD_REQUEST,
             "TokenTemporarilySuspended",
             "native token suspended",
         ),
         (
             SolverErrorCode::InsufficientLiquidity,
+            StatusCode::BAD_REQUEST,
             "InsufficientLiquidity",
             "native not enough liquidity",
         ),
         (
             SolverErrorCode::Other,
-            "CustomSolverError",
-            "native custom solver reason",
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
+            "no route found",
         ),
     ];
 
-    for (code, expected_kind, message) in cases {
+    for (code, expected_http_code, expected_kind, message) in cases {
         mock_solver.configure_response(SolverResponse::Error {
             error: SolverError {
                 code,
@@ -710,7 +730,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
             .get_native_price(sell_token.address())
             .await
             .unwrap_err();
-        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(status, expected_http_code);
         assert!(
             body.contains(expected_kind),
             "response should include error kind {expected_kind}, got {body}"
@@ -747,7 +767,7 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 endpoint: custom_error_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -756,12 +776,11 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 endpoint: no_liquidity_solver.url.clone(),
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
-                haircut_bps: 0,
+                solver_fee_bps: 0,
                 submission_keys: vec![],
             },
         ],
         colocation::LiquidityProvider::UniswapV2,
-        false,
     );
 
     services
@@ -817,13 +836,13 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
     };
 
     let (status, body) = services.submit_quote(&quote_request).await.unwrap_err();
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert!(
-        body.contains("CustomSolverError"),
+        body.contains("NoLiquidity"),
         "response should include custom solver error, got {body}"
     );
     assert!(
-        body.contains("priority custom solver error"),
+        body.contains("no route found"),
         "response should include prioritized custom error message, got {body}"
     );
 }
@@ -859,8 +878,8 @@ async fn volume_fee(web3: Web3) {
     tracing::info!("Starting services with volume fee.");
     let services = Services::new(&onchain).await;
     // Start API with 0.02% (2 bps) default volume fee
-    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must be
-    // in bucket)
+    // Bucket override: WETH<->override_token pair gets 5 bps (both tokens must
+    // be in bucket)
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
@@ -950,9 +969,48 @@ async fn volume_fee(web3: Web3) {
     );
 }
 
-// Smoke test for the SSE streaming quote endpoint. Posts a quote request to
-// /api/v1/quote/stream and asserts that at least one SSE data line parses as
-// a valid OrderQuoteResponse carrying a persisted quote id.
+async fn parse_streaming_quotes(response: reqwest::Response) -> Vec<OrderQuoteResponse> {
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "expected 200 from /api/v1/quote/stream"
+    );
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content_type.starts_with("text/event-stream"),
+        "expected text/event-stream, got {content_type:?}"
+    );
+
+    let body = response.text().await.expect("failed to read SSE body");
+    tracing::info!(%body, "SSE response body");
+
+    // SSE lines look like: "data: <json>\n"
+    let parsed = body
+        .lines()
+        .filter(|line| line.starts_with("data:"))
+        .filter_map(|line| {
+            let json = line.trim_start_matches("data:").trim();
+            serde_json::from_str(json).ok()
+        })
+        .collect::<Vec<_>>();
+
+    assert!(
+        !parsed.is_empty(),
+        "expected at least one valid OrderQuoteResponse in SSE stream, body was: {body}"
+    );
+    parsed
+}
+
+// Smoke test for the SSE streaming quote endpoint. Asserts that fast quotes are
+// rejected and optimal quotes are unverified, then posts a verified quote
+// request and asserts that at least one SSE data line parses as a valid,
+// verified OrderQuoteResponse carrying a persisted quote id.
 async fn quote_stream_smoke(web3: Web3) {
     tracing::info!("Setting up chain state.");
     let mut onchain = OnchainComponents::deploy(web3).await;
@@ -999,48 +1057,63 @@ async fn quote_stream_smoke(web3: Web3) {
         ..Default::default()
     };
 
-    tracing::info!("Sending streaming quote request.");
     let stream_url = format!("{API_HOST}{QUOTING_ENDPOINT}/stream");
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::new();
+
+    tracing::info!("Sending fast streaming quote request.");
+    let mut fast_request = request.clone();
+    fast_request.price_quality = PriceQuality::Fast;
+    let response = client
+        .post(&stream_url)
+        .json(&fast_request)
+        .send()
+        .await
+        .expect("fast streaming quote request failed");
+
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "expected fast streaming quote request to be rejected"
+    );
+    assert_eq!(
+        response
+            .json::<serde_json::Value>()
+            .await
+            .expect("failed to parse fast streaming quote error"),
+        json!({
+            "errorType": "UnsupportedPriceQuality",
+            "description": "Fast price quality is not supported for streamed quotes",
+        })
+    );
+
+    tracing::info!("Sending optimal streaming quote request.");
+    let mut optimal_request = request.clone();
+    optimal_request.price_quality = PriceQuality::Optimal;
+    let response = client
+        .post(&stream_url)
+        .json(&optimal_request)
+        .send()
+        .await
+        .expect("optimal streaming quote request failed");
+    let optimal_quotes = parse_streaming_quotes(response).await;
+    assert!(
+        optimal_quotes.iter().all(|quote| !quote.verified),
+        "expected optimal streaming quotes to be unverified, got {optimal_quotes:?}"
+    );
+
+    tracing::info!("Sending verified streaming quote request.");
+    let response = client
         .post(&stream_url)
         .json(&request)
         .send()
         .await
         .expect("streaming quote request failed");
-
-    assert_eq!(
-        response.status(),
-        reqwest::StatusCode::OK,
-        "expected 200 from /api/v1/quote/stream"
-    );
-
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default()
-        .to_string();
+    let parsed = parse_streaming_quotes(response).await;
+    // The endpoint does not guarantee a verified quote, but in this setup every
+    // streamed quote can be verified, so at least one of them should be.
     assert!(
-        content_type.starts_with("text/event-stream"),
-        "expected text/event-stream, got {content_type:?}"
-    );
-
-    let body = response.text().await.expect("failed to read SSE body");
-    tracing::info!(%body, "SSE response body");
-
-    // SSE lines look like: "data: <json>\n"
-    let parsed: Vec<OrderQuoteResponse> = body
-        .lines()
-        .filter(|line| line.starts_with("data:"))
-        .filter_map(|line| {
-            let json = line.trim_start_matches("data:").trim();
-            serde_json::from_str(json).ok()
-        })
-        .collect();
-
-    assert!(
-        !parsed.is_empty(),
-        "expected at least one valid OrderQuoteResponse in SSE stream, body was: {body}"
+        parsed.iter().any(|quote| quote.verified),
+        "expected at least one verified streaming quote, got {parsed:?}"
     );
 
     let weth = *onchain.contracts().weth.address();

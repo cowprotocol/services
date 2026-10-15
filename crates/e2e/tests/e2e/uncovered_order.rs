@@ -111,16 +111,16 @@ async fn test_full_balance_check(web3: Web3) {
         .await;
     let weth = &onchain.contracts().weth;
 
-    // Initial allowance is enough to pass basic checks, but not enough to execute
-    // the order
+    // Initial allowance is enough to pass basic checks, but not enough to
+    // execute the order
     weth.approve(onchain.contracts().allowance, 1u64.eth())
         .from(trader.address())
         .send_and_watch()
         .await
         .unwrap();
 
-    // Initial balance is enough to pass basic checks, but not enough to execute the
-    // order
+    // Initial balance is enough to pass basic checks, but not enough to execute
+    // the order
     weth.deposit()
         .from(trader.address())
         .value(1u64.eth())
@@ -165,8 +165,9 @@ async fn test_full_balance_check(web3: Web3) {
     // The account has 1 WEI of the token and allowance for this amount.
     services.create_order(&unchecked_order).await.unwrap();
 
-    // This order can not be created, because despite the token being transferrable
-    // The account does not have enough sell token balance to cover the order.
+    // This order can not be created, because despite the token being
+    // transferrable The account does not have enough sell token balance to
+    // cover the order.
     assert!(
         services
             .create_order(&order)

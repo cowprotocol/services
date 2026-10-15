@@ -255,7 +255,8 @@ mod tests {
         )
         .unwrap();
 
-        // Test with zero amount - should not panic and use relative slippage fallback
+        // Test with zero amount - should not panic and use relative slippage
+        // fallback
         let asset_with_zero_amount = eth::Asset {
             token: token("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
             amount: U256::ZERO, // Zero amount

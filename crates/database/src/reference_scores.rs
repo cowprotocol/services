@@ -1,7 +1,7 @@
 use {
-    crate::{Address, PgTransaction, auction::AuctionId},
+    crate::{Address, auction::AuctionId},
     bigdecimal::BigDecimal,
-    sqlx::{PgConnection, QueryBuilder},
+    sqlx::{PgConnection, PgTransaction, QueryBuilder},
     std::ops::DerefMut,
     tracing::instrument,
 };

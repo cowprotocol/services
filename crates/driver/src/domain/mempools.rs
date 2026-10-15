@@ -1,7 +1,7 @@
 use {
-    super::competition::solution::{GasFeeOverride, settlement},
+    super::competition::solution::GasFeeOverride,
     crate::{
-        domain::{blockchain::TxStatus, competition::solution::Settlement},
+        domain::{blockchain::TxStatus, competition::solution::settlement::EncodedSettlement},
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
@@ -21,8 +21,10 @@ use {
 /// we increase slightly more.
 const GAS_PRICE_BUMP_PCT: u64 = 13;
 
-/// The gas amount required to cancel a transaction.
-const CANCELLATION_GAS_AMOUNT: u64 = 21000;
+/// The gas amount required to cancel a transaction. Self-transfer intrinsic
+/// 21000 plus the fallback of the EIP-7702 delegate (21396 measured on
+/// mainnet).
+const CANCELLATION_GAS_AMOUNT: u64 = 22_000;
 
 /// How the settlement transaction should be submitted on-chain.
 #[derive(Debug, Clone)]
@@ -63,28 +65,33 @@ impl Mempools {
     /// failure errors.
     pub async fn execute(
         &self,
-        settlement: &Settlement,
+        settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<eth::TxId, Error> {
         let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
-        let res = select_ok(self.mempools.iter().zip(stats.iter_mut()).map(
-            |(mempool, stat)| {
-                async move {
-                    let result = self
-                        .submit(mempool, settlement, submission_deadline, mode)
-                        .instrument(tracing::info_span!("mempool", kind = %mempool))
-                        .await;
-                    // Log inline so errors from mempools that later get superseded still surface;
-                    // metrics are emitted from `update_metrics` once the race outcome is known.
-                    observe::mempool_log(mempool, settlement, &result);
-                    *stat = Outcome::from(&result);
-                    result
-                }
-                .boxed()
-            },
-        ))
+        let res = select_ok(
+            self.mempools
+                .iter()
+                .zip(stats.iter_mut())
+                .map(|(mempool, stat)| {
+                    async move {
+                        let result = self
+                            .submit(mempool, settlement, submission_deadline, mode)
+                            .instrument(tracing::info_span!("mempool", kind = %mempool))
+                            .await;
+                        // Log inline so errors from mempools that later get
+                        // superseded still surface;
+                        // metrics are emitted from `update_metrics` once the
+                        // race outcome is known.
+                        observe::mempool_log(mempool, settlement, &result);
+                        *stat = Outcome::from(&result);
+                        result
+                    }
+                    .boxed()
+                }),
+        )
         .await
         // Drop the remaining futures (and the mutable borrow on `stats` they
         // carry) so `update_metrics` can read `stats` below.
@@ -96,12 +103,12 @@ impl Mempools {
     }
 
     /// A mempool is disabled if all of the following are true:
-    /// * the settlement may revert (see [`Settlement::may_revert`])
+    /// * the settlement may revert (see [`EncodedSettlement::may_revert`])
     /// * the pool has revert protection enabled (see
     ///   [`Self::revert_protection`])
     /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
-    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &Settlement) -> bool {
-        settlement.may_revert()
+    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &EncodedSettlement) -> bool {
+        settlement.may_revert
             && matches!(self.revert_protection(), RevertProtection::Enabled)
             && mempool.reverts_can_get_mined()
     }
@@ -122,7 +129,7 @@ impl Mempools {
     async fn submit(
         &self,
         mempool: &infra::mempool::Mempool,
-        settlement: &Settlement,
+        settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
@@ -130,20 +137,20 @@ impl Mempools {
             return Err(Error::Disabled);
         }
 
-        let tx = settlement.transaction(settlement::Internalization::Enable);
-        let tx = prepare_submission(tx, mode);
+        let tx = prepare_submission(&settlement.internalized, mode);
         let signer = tx.from;
 
-        // Instantiate block stream and skip the current block before we submit the
-        // settlement. This way we only run iterations in blocks that can potentially
-        // include the settlement.
+        // Instantiate block stream and skip the current block before we submit
+        // the settlement. This way we only run iterations in blocks
+        // that can potentially include the settlement.
         let mut block_stream = into_stream(self.ethereum.current_block().clone());
         block_stream.next().await;
 
         let current_block = self.ethereum.current_block().borrow().number;
-        // The tx is simulated before submitting the solution to the competition, but a
-        // delay between that and the actual execution can cause the simulation to be
-        // invalid which doesn't make sense to submit to the mempool anymore.
+        // The tx is simulated before submitting the solution to the
+        // competition, but a delay between that and the actual
+        // execution can cause the simulation to be invalid which
+        // doesn't make sense to submit to the mempool anymore.
         if mempool.reverts_can_get_mined() {
             if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
                 if err.is_revert() {
@@ -166,12 +173,13 @@ impl Mempools {
             tracing::trace!("skipping tx simulation because mempool does not mine reverting txs");
         }
 
-        // Fetch the nonce for the signing account (not the solver in 7702 mode).
+        // Fetch the nonce for the signing account (not the solver in 7702
+        // mode).
         let nonce = mempool.get_nonce(signer).await?;
 
         // estimate the gas price such that the tx should still be included
-        // even if the gas price increases the maximum amount until the submission
-        // deadline
+        // even if the gas price increases the maximum amount until the
+        // submission deadline
         let current_gas_price = self
             .ethereum
             .gas_price()
@@ -180,8 +188,8 @@ impl Mempools {
         let submission_block = self.ethereum.current_block().borrow().number.into();
         let blocks_until_deadline = submission_deadline.saturating_sub(submission_block);
 
-        // if there is still a tx pending we also have to make sure we outbid that one
-        // enough to make the node replace it in the mempool
+        // if there is still a tx pending we also have to make sure we outbid
+        // that one enough to make the node replace it in the mempool
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, signer, nonce)
             .await;
@@ -196,7 +204,7 @@ impl Mempools {
 
         let final_gas_price = apply_gas_fee_override(
             final_gas_price,
-            settlement.gas_fee_override(),
+            settlement.gas_fee_override,
             replacement_gas_price.as_ref(),
         );
 
@@ -330,8 +338,9 @@ impl Mempools {
         .await;
 
         if result.is_err() {
-            // One last check in case the tx landed after the loop exited, e.g. the
-            // receipt finally caught up to a block we had already processed.
+            // One last check in case the tx landed after the loop exited, e.g.
+            // the receipt finally caught up to a block we had
+            // already processed.
             if let Ok(TxStatus::Executed { block_number }) =
                 self.ethereum.transaction_status(&hash).await
             {
@@ -415,9 +424,10 @@ impl Mempools {
                 None
             }
         } else {
-            // If we don't have the last submission in-memory (i.e. first submission
-            // attempt after a restart) we try to inspect the nodes transaction mempool.
-            // This is only done as a backup since it can incur significant latency and
+            // If we don't have the last submission in-memory (i.e. first
+            // submission attempt after a restart) we try to inspect
+            // the nodes transaction mempool. This is only done as a
+            // backup since it can incur significant latency and
             // is generally not very widely supported.
             let pending_tx = mempool
                 .find_pending_tx_in_mempool(signer, next_nonce)
@@ -736,9 +746,10 @@ mod tests {
 
     #[test]
     fn failed_nonce_lookup_never_cancels() {
-        // An unknown pending nonce must never trigger a cancel, even on a revert.
-        // Otherwise a flaky nonce lookup reverts to the original bug: cancelling a
-        // tx that may have mined or is still queued.
+        // An unknown pending nonce must never trigger a cancel, even on a
+        // revert. Otherwise a flaky nonce lookup reverts to the
+        // original bug: cancelling a tx that may have mined or is still
+        // queued.
         assert!(!requires_cancellation(
             true,
             &NONCE_LOOKUP_FAILED,

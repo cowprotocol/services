@@ -17,22 +17,24 @@ use {
         },
         domain,
         event_updater::EventUpdater,
+        fast_path::FastPathHandler,
         infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
+        settle_call::SettleCall,
         shadow,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     account_balances::{self, BalanceSimulator},
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
-    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
     contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
+    futures::channel::mpsc,
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -40,17 +42,18 @@ use {
     price_estimation::{
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
-        native::NativePriceEstimating,
+        native::{NativePriceEstimating, to_normalized_price},
     },
     shared::{
         order_quoting::{self, OrderQuoter},
         token_list::{AutoUpdatingTokenList, TokenListConfiguration},
     },
     std::{
+        collections::HashSet,
         sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    token_info::{CachedTokenInfoFetcher, DenyListedTokens, TokenInfoFetcher, TokenInfoFetching},
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };
@@ -132,6 +135,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .validate()
         .expect("failed to validate configuration file");
 
+    let chain_name = config
+        .shared
+        .chain_id
+        .and_then(|id| Chain::try_from(id).ok())
+        .map(|chain| chain.name())
+        .unwrap_or("unknown");
     let tracing_config = config
         .shared
         .tracing
@@ -140,7 +149,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .map(|endpoint| {
             observe::TracingConfig::new(
                 endpoint.clone(),
-                "autopilot".into(),
+                format!("autopilot-{chain_name}"),
                 config.shared.tracing.exporter_timeout,
                 config.shared.tracing.level,
             )
@@ -264,6 +273,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             balance_overrider,
         ),
         eth.current_block().clone(),
+        config.balance_cache.eviction_time,
+        config.balance_cache.refresh_cooldown,
     );
 
     let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config
@@ -319,6 +330,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
+            quote_id_generator: Arc::new(db_write.clone()),
         },
     )
     .instrument(info_span!("price_estimator_factory"))
@@ -343,7 +355,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
-                config.native_price_estimation.eip4626,
+                &config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("api_native_price_estimator"))
             .await,
@@ -356,7 +368,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.native_price_estimation.shared.results_required,
                 &weth,
                 shared_cache.clone(),
-                config.native_price_estimation.eip4626,
+                &config.native_price_estimation.eip4626,
             )
             .instrument(info_span!("competition_native_price_updater"))
             .await;
@@ -405,9 +417,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             block
         }
         _ => {
-            // If the deployment information can't be found, start from 0 (default
-            // behaviour). For real contracts, the deployment information is specified
-            // for all the networks, but it isn't specified for the e2e tests which deploy
+            // If the deployment information can't be found, start from 0
+            // (default behaviour). For real contracts, the
+            // deployment information is specified for all the
+            // networks, but it isn't specified for the e2e tests which deploy
             // the contracts from scratch
             tracing::warn!("Settlement contract deployment information not found");
             0
@@ -425,27 +438,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         block_retriever.clone(),
         skip_event_sync_start,
     );
-
-    let archive_node_web3 = config
-        .cow_amm
-        .archive_node_url
-        .as_ref()
-        .map_or(web3.clone(), |url| boundary::web3_client(url, &ethrpc_args));
-
-    let mut cow_amm_registry = cow_amm::Registry::new(Arc::new(BlockRetriever {
-        provider: archive_node_web3.provider,
-        block_stream: eth.current_block().clone(),
-    }));
-    for cow_amm_config in &config.cow_amm.contracts {
-        cow_amm_registry
-            .add_listener(
-                cow_amm_config.index_start,
-                cow_amm_config.factory,
-                cow_amm_config.helper,
-                db_write.pool.clone(),
-            )
-            .await;
-    }
 
     let quoter = Arc::new(OrderQuoter::new(
         price_estimator,
@@ -465,44 +457,80 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.order_quoting.standard_offchain_quote_validity,
             )
             .unwrap(),
+            fast_path_quote: chrono::Duration::from_std(
+                config.order_quoting.fast_path_quote_validity,
+            )
+            .unwrap(),
         },
         config.price_estimation.quote_timeout,
         config.price_estimation.max_quote_timeout,
     ));
 
-    let solvable_orders_cache = SolvableOrdersCache::new(
-        config.min_order_validity_period,
-        persistence.clone(),
-        infra::banned::Users::new(
+    let banned_users =
+        Arc::new(order_validation::banned::Users::new(
             eth.contracts().chainalysis_oracle().clone(),
-            config
-                .banned_users
-                .hermod
-                .clone()
-                .map(|hermod| infra::banned::HermodConfig {
+            config.banned_users.hermod.clone().map(|hermod| {
+                order_validation::banned::HermodConfig {
                     url: hermod.url,
                     hmac_key: hermod.hmac_key,
                     api_key: hermod.api_key,
-                }),
+                }
+            }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
-        ),
+        ));
+
+    // New-order notifications from the DB fan out to two subscribers: the run
+    // loop wakes on any new order to consider it for the next auction cycle,
+    // and the fast-path handler receives the uid so it can look up the
+    // staged competition and settle out-of-band.
+    let wake_runloop = Arc::new(tokio::sync::Notify::new());
+    let (fast_path_sender, fast_path_receiver) = mpsc::unbounded();
+    infra::order_notify::Notifier::new(
+        banned_users.clone(),
+        wake_runloop.clone(),
+        fast_path_sender,
+    )
+    .spawn(db_write.pool.clone());
+
+    let penalty_cap_calculator = match &config.penalty_cap {
+        Some(penalty_cap_config) => Some(Arc::new(
+            build_penalty_cap_calculator(
+                penalty_cap_config,
+                *eth.contracts().weth().address(),
+                token_info_fetcher.as_ref(),
+                &competition_native_price_updater,
+            )
+            .await,
+        )),
+        None => None,
+    };
+
+    let protocol_fees = Arc::new(domain::ProtocolFees::new(
+        &config.fee_policies,
+        config
+            .shared
+            .volume_fee_bucket_overrides
+            .iter()
+            .map(Into::into)
+            .collect(),
+        config.shared.enable_sell_equals_buy_volume_fee,
+        *eth.contracts().weth().address(),
+    ));
+    let surplus_capturing_jit_order_owners =
+        Arc::new(config.surplus_capturing_jit_order_owners.clone());
+
+    let solvable_orders_cache = SolvableOrdersCache::new(
+        config.min_order_validity_period,
+        persistence.clone(),
+        banned_users.clone(),
         balance_fetcher.clone(),
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
-        domain::ProtocolFees::new(
-            &config.fee_policies,
-            config
-                .shared
-                .volume_fee_bucket_overrides
-                .iter()
-                .map(Into::into)
-                .collect(),
-            config.shared.enable_sell_equals_buy_volume_fee,
-            *eth.contracts().weth().address(),
-        ),
-        cow_amm_registry.clone(),
+        protocol_fees.clone(),
+        penalty_cap_calculator.clone(),
+        surplus_capturing_jit_order_owners.clone(),
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
@@ -535,11 +563,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         db_write.clone(),
     );
 
-    tokio::task::spawn(
-        order_events_cleaner
-            .run_forever()
-            .instrument(tracing::info_span!("order_events_cleaner")),
-    );
+    tokio::task::spawn(order_events_cleaner.run_forever());
 
     let market_makable_token_list_configuration = TokenListConfiguration {
         url: config.trusted_tokens.url.clone(),
@@ -559,7 +583,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         db_write.clone(),
         settlement_observer,
     );
-    maintenance.add_cow_amm_indexer(&cow_amm_registry);
 
     if !config.ethflow.contracts.is_empty() {
         let ethflow_refund_start_block = determine_ethflow_refund_indexing_start(
@@ -624,10 +647,15 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .drivers
         .into_iter()
         .map(|driver| async move {
-            infra::Driver::try_new(driver.url, driver.name.clone(), driver.submission_account)
-                .await
-                .map(Arc::new)
-                .expect("failed to load solver configuration")
+            infra::Driver::try_new(
+                driver.url,
+                driver.name.clone(),
+                driver.submission_account,
+                driver.supports_auction_deltas,
+            )
+            .await
+            .map(Arc::new)
+            .expect("failed to load solver configuration")
         })
         .collect::<Vec<_>>();
 
@@ -639,6 +667,31 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let awaiter = maintenance
         .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
+
+    let settle_coordinator = Arc::new(SettleCall::new(
+        eth.clone(),
+        persistence.clone(),
+        awaiter.clone(),
+        run_loop_config.max_settlement_transaction_wait,
+    ));
+    // Fast-path penalties are decoupled from the regular auction's: the handler
+    // only gets the calculator when explicitly enabled, so orders carry no
+    // penalty cap at launch.
+    let fast_path_penalty_cap_calculator = config
+        .fast_path_penalty_cap_enabled
+        .then(|| penalty_cap_calculator.clone())
+        .flatten();
+    let fast_path_handler = FastPathHandler::new(
+        eth.clone(),
+        persistence.clone(),
+        drivers.clone(),
+        protocol_fees,
+        surplus_capturing_jit_order_owners,
+        settle_coordinator.clone(),
+        config.fast_path_submission_deadline,
+        fast_path_penalty_cap_calculator,
+    );
+    fast_path_handler.spawn(fast_path_receiver).await;
 
     let run = RunLoop::new(
         run_loop_config,
@@ -652,6 +705,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             startup,
         },
         awaiter,
+        wake_runloop,
+        settle_coordinator,
     );
     run.run_forever(shutdown_controller).await;
 
@@ -683,6 +738,8 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
+                // the shadow autopilot always sends full auctions
+                false,
             )
             .await
             .map(Arc::new)
@@ -750,4 +807,33 @@ async fn shadow_mode(config: Configuration) -> ! {
         (*weth.address()).into(),
     );
     shadow.run_forever().await;
+}
+
+/// Builds the penalty cap calculator by fetching the USD reference token's
+/// decimals and initial native price. Panics when either fetch fails.
+async fn build_penalty_cap_calculator(
+    config: &configs::autopilot::penalty_cap::PenaltyCapConfig,
+    native_token: Address,
+    token_infos: &dyn TokenInfoFetching,
+    native_price_updater: &price_estimation::native_price_cache::NativePriceUpdater,
+) -> domain::penalty_cap::PenaltyCapCalculator {
+    const STARTUP_PRICE_TIMEOUT: Duration = Duration::from_secs(5);
+
+    let decimals = token_infos
+        .get_token_info(config.usd_reference_token)
+        .await
+        .ok()
+        .and_then(|info| info.decimals)
+        .expect("could not fetch decimals of the penalty cap USD reference token");
+    let price = native_price_updater
+        .update_tokens_and_fetch_prices(
+            HashSet::from([config.usd_reference_token]),
+            STARTUP_PRICE_TIMEOUT,
+        )
+        .await
+        .remove(&config.usd_reference_token)
+        .and_then(|result| result.ok())
+        .and_then(to_normalized_price)
+        .expect("could not fetch the native price of the penalty cap USD reference token");
+    domain::penalty_cap::PenaltyCapCalculator::new(config, native_token, decimals, price)
 }

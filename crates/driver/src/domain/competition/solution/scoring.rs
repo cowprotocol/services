@@ -96,14 +96,16 @@ impl Trade {
             // `surplus` of sell orders is already in buy tokens so we simply convert it to ETH
             Side::Sell => native_price_buy.in_eth(eth::TokenAmount(surplus_in_surplus_token)),
             Side::Buy => {
-                // `surplus` of buy orders is in sell tokens. We start with following formula:
-                // buy_amount / sell_amount == buy_price / sell_price
+                // `surplus` of buy orders is in sell tokens. We start with
+                // following formula: buy_amount / sell_amount
+                // == buy_price / sell_price
                 //
-                // since `surplus` of buy orders is in sell tokens we convert to buy amount via:
-                // buy_amount == (buy_price / sell_price) * surplus
+                // since `surplus` of buy orders is in sell tokens we convert to
+                // buy amount via: buy_amount == (buy_price /
+                // sell_price) * surplus
                 //
-                // to avoid loss of precision because we work with integers we first multiply
-                // and then divide:
+                // to avoid loss of precision because we work with integers we
+                // first multiply and then divide:
                 // buy_amount = surplus * buy_price / sell_price
                 let surplus_in_buy_tokens = surplus_in_surplus_token
                     .widening_mul(self.signed_buy.amount.0)
@@ -112,7 +114,8 @@ impl Trade {
                 let surplus_in_buy_tokens = eth::U256::uint_try_from(surplus_in_buy_tokens)
                     .map_err(|_| Error::Math(Math::Overflow))?;
 
-                // Afterwards we convert the buy token surplus to the native token.
+                // Afterwards we convert the buy token surplus to the native
+                // token.
                 native_price_buy.in_eth(surplus_in_buy_tokens.into())
             }
         };
@@ -144,10 +147,11 @@ impl Trade {
             Side::Sell => {
                 // scale limit buy to support partially fillable orders
 
-                // `checked_ceil_div`` to be consistent with how settlement contract calculates
-                // traded buy amounts
-                // smallest allowed executed_buy_amount per settlement contract is
-                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
+                // `checked_ceil_div`` to be consistent with how settlement
+                // contract calculates traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract
+                // is executed_sell_amount *
+                // ceil(price_limits.buy / price_limits.sell)
                 let limit_buy = self
                     .executed
                     .0
@@ -169,18 +173,34 @@ impl Trade {
     }
 
     /// Protocol fees are defined by fee policies attached to the order.
+    ///
+    /// Policies are unwound in reverse, each one's price reconstruction feeding
+    /// the next, so every fee has to be taken off the price regardless of
+    /// whether it ends up in the score. A fee the solver charges for itself
+    /// (see [`FeePolicy::contributes_to_score`]) is therefore unwound like any
+    /// other but left out of the returned total; skipping it entirely would
+    /// make the policies applied before it look smaller than they were.
     fn fees(&self) -> Result<eth::SurplusTokenAmount, Error> {
         let mut current_trade = self.clone();
-        let mut total = eth::SurplusTokenAmount::default();
+        let mut unwound = eth::SurplusTokenAmount::default();
+        let mut scored = eth::SurplusTokenAmount::default();
         for protocol_fee in self.policies.iter().rev() {
-            total = total
+            let fee = current_trade.protocol_fee(protocol_fee)?;
+            unwound = unwound
                 .0
-                .checked_add(current_trade.protocol_fee(protocol_fee)?.0)
+                .checked_add(fee.0)
                 .ok_or(Error::Math(Math::Overflow))?
                 .into();
-            current_trade.custom_price = self.calculate_custom_prices(total)?;
+            if protocol_fee.contributes_to_score() {
+                scored = scored
+                    .0
+                    .checked_add(fee.0)
+                    .ok_or(Error::Math(Math::Overflow))?
+                    .into();
+            }
+            current_trade.custom_price = self.calculate_custom_prices(unwound)?;
         }
-        Ok(total)
+        Ok(scored)
     }
 
     /// The effective amount that left the user's wallet including all fees.
@@ -271,7 +291,7 @@ impl Trade {
                     self.volume_fee(*max_volume_factor)?,
                 )
             }
-            FeePolicy::Volume { factor } => self.volume_fee(*factor)?,
+            FeePolicy::Volume { factor, .. } => self.volume_fee(*factor)?,
         };
         Ok(eth::SurplusTokenAmount(amount.0))
     }
@@ -290,8 +310,8 @@ impl Trade {
             },
         )?;
         let surplus = self.surplus_over(quote);
-        // negative surplus is not error in this case, as solutions often have no
-        // improvement over quote which results in negative surplus
+        // negative surplus is not error in this case, as solutions often have
+        // no improvement over quote which results in negative surplus
         if let Err(Math::Negative) = surplus {
             return Ok(eth::SurplusTokenAmount(eth::U256::ZERO));
         }
@@ -314,10 +334,11 @@ impl Trade {
         surplus: eth::SurplusTokenAmount,
         factor: f64,
     ) -> Result<eth::SurplusTokenAmount, Error> {
-        // Surplus fee is specified as a `factor` from raw surplus (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of the eventually traded
-        // amounts using a different factor `factor'`.
+        // Surplus fee is specified as a `factor` from raw surplus (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of the eventually traded amounts using a
+        // different factor `factor'`.
         //
         // The protocol fee before being applied is:
         //    fee = surplus_before_fee * factor
@@ -340,16 +361,17 @@ impl Trade {
 
     /// Protocol fee as a cut of the trade volume.
     fn volume_fee(&self, factor: f64) -> Result<eth::SurplusTokenAmount, Error> {
-        // Volume fee is specified as a `factor` from raw volume (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of a the eventually
-        // traded amount using a different factor `factor'` .
+        // Volume fee is specified as a `factor` from raw volume (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of a the eventually traded amount using a
+        // different factor `factor'` .
         //
         // The protocol fee before being applied is:
         // case Sell: fee = traded_buy_amount * factor, resulting in the REDUCED
         // buy amount
-        // case Buy: fee = traded_sell_amount * factor, resulting in the INCREASED
-        // sell amount
+        // case Buy: fee = traded_sell_amount * factor, resulting in the
+        // INCREASED sell amount
         //
         // The protocol fee after being applied is:
         // case Sell: fee = traded_buy_amount' * factor',
@@ -445,5 +467,70 @@ mod tests {
 
         let score = trade.score(&native_prices).unwrap();
         assert_eq!(score.0, U256::from(911));
+    }
+
+    /// A fee the solver keeps for itself does not count towards the score, but
+    /// it still has to be unwound so that the protocol fee applied before it is
+    /// measured against the output it actually took its cut from.
+    ///
+    /// Raw output 1000, of which a 10% protocol fee takes 100, leaving 900, and
+    /// a 20% solver fee takes 180, leaving the user 720. The protocol's 100 is
+    /// what the score may count; reconstructing it from the 720 the user ended
+    /// up with would yield 80.
+    #[test]
+    fn solver_fee_is_unwound_but_not_scored() {
+        const SELL: Address = address!("0000000000000000000000000000000000000001");
+        const BUY: Address = address!("0000000000000000000000000000000000000002");
+
+        let trade = |policies| Trade {
+            signed_sell: eth::Asset {
+                token: SELL.into(),
+                amount: U256::from(1000u128).into(),
+            },
+            // Signed at what the user ends up with, so all that is left in the
+            // score is the fees.
+            signed_buy: eth::Asset {
+                token: BUY.into(),
+                amount: U256::from(720u128).into(),
+            },
+            side: Side::Sell,
+            executed: order::TargetAmount(U256::from(1000u128)),
+            custom_price: CustomClearingPrices {
+                sell: U256::from(720u128),
+                buy: U256::from(1000u128),
+            },
+            policies,
+        };
+        let protocol_fee = FeePolicy::Volume {
+            factor: 0.1,
+            contributes_to_score: true,
+        };
+        let solver_fee = FeePolicy::Volume {
+            factor: 0.2,
+            contributes_to_score: false,
+        };
+
+        let native_prices: HashMap<_, _> = [
+            (
+                SELL.into(),
+                Price(eth::Ether(U256::from(1000000000000000000u128))),
+            ),
+            (
+                BUY.into(),
+                Price(eth::Ether(U256::from(1000000000000000000u128))),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let scored = trade(vec![protocol_fee.clone(), solver_fee])
+            .score(&native_prices)
+            .unwrap();
+        assert_eq!(scored.0, U256::from(100u128));
+
+        // Dropping the solver fee from the list instead of unwinding it is what
+        // undercounts the protocol fee.
+        let dropped = trade(vec![protocol_fee]).score(&native_prices).unwrap();
+        assert_eq!(dropped.0, U256::from(80u128));
     }
 }

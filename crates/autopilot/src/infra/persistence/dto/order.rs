@@ -27,7 +27,7 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
-    pub receiver: Option<Address>,
+    pub receiver: eth::Receiver,
     pub owner: Address,
     pub partially_fillable: bool,
     #[serde_as(as = "HexOrDecimalU256")]
@@ -36,15 +36,27 @@ pub struct Order {
     pub post_interactions: Vec<boundary::InteractionData>,
     pub sell_token_balance: boundary::SellTokenSource,
     pub buy_token_balance: boundary::BuyTokenDestination,
-    #[serde(flatten)]
-    pub class: boundary::OrderClass,
+    /// Deprecated: always `"limit"`, kept so drivers and API consumers that
+    /// still expect the field keep working.
+    #[serde(
+        skip_deserializing,
+        serialize_with = "boundary::serialize_legacy_order_class"
+    )]
+    pub class: (),
     pub app_data: AppDataHash,
     #[serde(flatten)]
     pub signature: boundary::Signature,
     pub quote: Option<Quote>,
+    /// Cap on the penalty a solver can incur for winning this order but
+    /// failing to execute it, in native token.
+    #[serde_as(as = "Option<HexOrDecimalU256>")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub penalty_cap_native: Option<U256>,
 }
 
-pub fn from_domain(order: domain::Order) -> Order {
+/// Takes the order by reference so callers that still need the domain order
+/// afterwards don't have to deep-clone it just to convert it.
+pub fn from_domain(order: &domain::Order) -> Order {
     Order {
         uid: order.uid.into(),
         sell_token: order.sell.token.into(),
@@ -53,7 +65,8 @@ pub fn from_domain(order: domain::Order) -> Order {
         buy_amount: order.buy.amount.into(),
         protocol_fees: order
             .protocol_fees
-            .into_iter()
+            .iter()
+            .copied()
             .map(FeePolicy::from_domain)
             .collect(),
         created: order.created,
@@ -63,18 +76,25 @@ pub fn from_domain(order: domain::Order) -> Order {
         owner: order.owner,
         partially_fillable: order.partially_fillable,
         executed: order.executed.into(),
-        pre_interactions: order.pre_interactions.into_iter().map(Into::into).collect(),
-        post_interactions: order
-            .post_interactions
-            .into_iter()
+        pre_interactions: order
+            .pre_interactions
+            .iter()
+            .cloned()
             .map(Into::into)
             .collect(),
-        sell_token_balance: order.sell_token_balance.into(),
-        buy_token_balance: order.buy_token_balance.into(),
-        class: boundary::OrderClass::Limit,
-        app_data: order.app_data.into(),
-        signature: order.signature.into(),
-        quote: order.quote.map(Quote::from_domain),
+        post_interactions: order
+            .post_interactions
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect(),
+        sell_token_balance: order.sell_token_balance.clone().into(),
+        buy_token_balance: order.buy_token_balance.clone().into(),
+        class: (),
+        app_data: order.app_data.clone().into(),
+        signature: order.signature.clone().into(),
+        quote: order.quote.as_ref().map(Quote::from_domain),
+        penalty_cap_native: order.penalty_cap_native.map(Into::into),
     }
 }
 
@@ -112,6 +132,7 @@ pub fn to_domain(order: Order) -> domain::Order {
         app_data: order.app_data.into(),
         signature: order.signature.into(),
         quote: order.quote.map(|q| q.to_domain(order.uid.into())),
+        penalty_cap_native: order.penalty_cap_native.map(Into::into),
     }
 }
 
@@ -346,7 +367,7 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn from_domain(quote: domain::Quote) -> Self {
+    fn from_domain(quote: &domain::Quote) -> Self {
         Quote {
             sell_amount: quote.sell_amount.0,
             buy_amount: quote.buy_amount.0,

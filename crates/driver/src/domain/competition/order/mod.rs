@@ -8,6 +8,7 @@ use {
     derive_more::{From, Into},
     eth_domain_types as eth,
     model::order::{BuyTokenDestination, SellTokenSource},
+    number::u256_ext::U256Ext,
     std::sync::Arc,
 };
 pub use {fees::FeePolicy, signature::Signature};
@@ -18,11 +19,12 @@ pub mod signature;
 
 /// The immutable, auction-independent data of an order. Wrapped in [`Arc`] so
 /// that per-solver copies of [`Order`] share a single allocation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OrderData {
     pub uid: Uid,
-    /// The user specified a custom address to receive the output of this order.
-    pub receiver: Option<eth::Address>,
+    /// The user specified a custom address to receive the output of this
+    /// order. `Address::ZERO` means "pay the owner".
+    pub receiver: eth::Receiver,
     pub created: util::Timestamp,
     pub valid_to: util::Timestamp,
     /// The minimum amount this order must buy when completely filled.
@@ -30,7 +32,6 @@ pub struct OrderData {
     /// The maximum amount this order is allowed to sell when completely filled.
     pub sell: eth::Asset,
     pub side: Side,
-    pub kind: Kind,
     /// The onchain calls to run before sending user funds to the settlement
     /// contract.
     /// These are set by the user and included in the settlement transaction.
@@ -48,6 +49,9 @@ pub struct OrderData {
     pub protocol_fees: Vec<FeePolicy>,
     /// The winning quote.
     pub quote: Option<Quote>,
+    /// Cap on the penalty a solver can incur for winning this order but
+    /// failing to execute it, in native token.
+    pub penalty_cap_native: Option<eth::Ether>,
 }
 
 /// An order in the auction.
@@ -159,7 +163,7 @@ impl Order {
     /// address. Otherwise, return the address which was used to place the
     /// order.
     pub fn receiver(&self) -> eth::Address {
-        self.receiver.unwrap_or(self.signature.signer)
+        self.receiver.resolve(self.signature.signer)
     }
 
     /// Returns the order's available amounts to be passed to a solver engine.
@@ -177,22 +181,23 @@ impl Order {
         };
         let target = self.target();
 
-        amounts.sell.amount = util::math::mul_ratio(amounts.sell.amount.0, available.0, target.0)
+        amounts.sell.amount = amounts
+            .sell
+            .amount
+            .0
+            .checked_mul_ratio(&available.0, &target.0)
             .unwrap_or_default()
             .into();
 
-        amounts.buy.amount =
-            util::math::mul_ratio_ceil(amounts.buy.amount.0, available.0, target.0)
-                .unwrap_or_default()
-                .into();
+        amounts.buy.amount = amounts
+            .buy
+            .amount
+            .0
+            .checked_mul_ratio_ceil(&available.0, &target.0)
+            .unwrap_or_default()
+            .into();
 
         amounts
-    }
-
-    /// Should the order fee be determined by the solver? This is true for
-    /// partial limit orders.
-    pub fn solver_determines_fee(&self) -> bool {
-        matches!(self.kind, Kind::Limit)
     }
 }
 
@@ -310,23 +315,6 @@ impl From<Uid> for [u8; UID_LEN] {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    /// Order intended to be immediately executed. This is the "regular" type of
-    /// order.
-    Market,
-    /// Order intended to be fulfilled possibly far into the future, when the
-    /// price is such that the order can be executed. Because the fulfillment
-    /// can happen any time into the future, it's impossible to calculate
-    /// the order fees ahead of time, so the fees are taken from the order
-    /// surplus instead.
-    ///
-    /// The order surplus is the additional money that the solver managed to
-    /// solve for, above what the user specified in the order. The exact amount
-    /// of fees that are taken is determined by the solver.
-    Limit,
-}
-
 /// [Balancer V2](https://docs.balancer.fi/) integration, used for settlement encoding.
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
 pub enum SellTokenBalance {
@@ -407,7 +395,7 @@ pub struct Jit {
     /// The amount this order wants to buy when completely filled.
     /// The actual executed amount depends on partial fills and the order side.
     pub buy: eth::Asset,
-    pub receiver: eth::Address,
+    pub receiver: eth::Receiver,
     pub valid_to: util::Timestamp,
     pub partially_fillable: bool,
     pub app_data: app_data::AppDataHash,
@@ -480,7 +468,6 @@ mod tests {
                     buy: buy(buy_amount),
                     sell: sell(sell_amount),
                     side,
-                    kind: Kind::Limit,
                     pre_interactions: Default::default(),
                     post_interactions: Default::default(),
                     sell_token_balance: SellTokenBalance::Erc20,
@@ -492,6 +479,7 @@ mod tests {
                     },
                     protocol_fees: Default::default(),
                     quote: Default::default(),
+                    penalty_cap_native: Default::default(),
                 }),
                 app_data: Default::default(),
                 partial,

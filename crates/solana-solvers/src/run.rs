@@ -1,14 +1,15 @@
 //! Binary entry: parse args, initialize observability, dispatch to the engine.
 
-#[cfg(unix)]
-use tokio::signal::unix::{self, SignalKind};
 use {
     crate::{
         api::Api,
         cli::{Args, Command},
         config,
+        dex,
+        domain::solver::Solver,
     },
     clap::Parser,
+    std::sync::Arc,
 };
 
 /// Parse args and run the selected solver engine until shutdown.
@@ -28,30 +29,27 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
     match args.command {
         Command::Jupiter { config: path } => {
             let config = config::load(&path).await;
+            let jupiter = dex::jupiter::Jupiter::new(&config.dex)
+                .unwrap_or_else(|err| panic!("build jupiter dex: {err}"));
+            let solver = Solver::new(
+                dex::Dex::Jupiter(jupiter),
+                config.concurrent_requests,
+                config.rate_limiting(),
+            );
             let api = Api {
                 addr: args.addr,
-                config,
+                solver: Arc::new(solver),
             };
-            if let Err(err) = api.serve(shutdown_signal()).await {
+            let (listener, _addr) = api
+                .bind()
+                .await
+                .unwrap_or_else(|err| panic!("bind solana-solvers: {err}"));
+            if let Err(err) = api
+                .serve(listener, observe::shutdown::shutdown_signal())
+                .await
+            {
                 tracing::error!(?err, "server error");
             }
         }
     }
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Kubernetes sends SIGTERM; locally SIGINT (ctrl-c) is most common.
-    let mut interrupt = unix::signal(SignalKind::interrupt()).expect("install SIGINT handler");
-    let mut terminate = unix::signal(SignalKind::terminate()).expect("install SIGTERM handler");
-    tokio::select! {
-        _ = interrupt.recv() => (),
-        _ = terminate.recv() => (),
-    };
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // Signal handling is not supported on Windows.
-    std::future::pending().await
 }

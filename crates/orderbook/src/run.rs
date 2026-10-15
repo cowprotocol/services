@@ -12,7 +12,6 @@ use {
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
-    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     configs::orderbook::Configuration,
@@ -34,7 +33,7 @@ use {
     },
     order_validation,
     price_estimation::{
-        PriceEstimating,
+        CompetitionPriceEstimating,
         config::price_estimation::BalanceOverridesConfigExt,
         factory::{self, PriceEstimatorFactory},
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
@@ -44,7 +43,7 @@ use {
         order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    token_info::{CachedTokenInfoFetcher, DenyListedTokens, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
 };
 
@@ -55,6 +54,12 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .expect("failed to load configuration file")
         .validate()
         .expect("failed to validate configuration file");
+    let chain_name = config
+        .shared
+        .chain_id
+        .and_then(|id| Chain::try_from(id).ok())
+        .map(|chain| chain.name())
+        .unwrap_or("unknown");
     let tracing_config = config
         .shared
         .tracing
@@ -63,7 +68,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
         .map(|endpoint| {
             observe::TracingConfig::new(
                 endpoint.clone(),
-                "orderbook".into(),
+                format!("orderbook-{chain_name}"),
                 config.shared.tracing.exporter_timeout,
                 config.shared.tracing.level,
             )
@@ -260,6 +265,7 @@ pub async fn run(config: Configuration) {
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
+            quote_id_generator: Arc::new(postgres_write.clone()),
         },
     )
     .await
@@ -300,36 +306,25 @@ pub async fn run(config: Configuration) {
             .await,
     );
 
+    let price_estimation_solvers: Vec<_> = config
+        .order_quoting
+        .price_estimation_drivers
+        .iter()
+        .map(|driver| configs::native_price_estimators::ExternalSolver {
+            name: driver.name.clone(),
+            url: driver.url.clone(),
+        })
+        .collect();
     let price_estimator = price_estimator_factory
         .price_estimator(
-            &config
-                .order_quoting
-                .price_estimation_drivers
-                .iter()
-                .map(
-                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
-                        name: price_estimator_driver.name.clone(),
-                        url: price_estimator_driver.url.clone(),
-                    },
-                )
-                .collect::<Vec<_>>(),
+            &price_estimation_solvers,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
         )
         .unwrap();
     let fast_price_estimator = price_estimator_factory
         .fast_price_estimator(
-            &config
-                .order_quoting
-                .price_estimation_drivers
-                .iter()
-                .map(
-                    |price_estimator_driver| configs::native_price_estimators::ExternalSolver {
-                        name: price_estimator_driver.name.clone(),
-                        url: price_estimator_driver.url.clone(),
-                    },
-                )
-                .collect::<Vec<_>>(),
+            &price_estimation_solvers,
             config.native_price_estimation.shared.results_required,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -338,11 +333,10 @@ pub async fn run(config: Configuration) {
 
     let validity_configuration = OrderValidPeriodConfiguration {
         min: config.order_validation.min_order_validity_period,
-        max_market: config.order_validation.max_order_validity_period,
-        max_limit: config.order_validation.max_limit_order_validity_period,
+        max: config.order_validation.max_order_validity_period,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
+    let create_quoter = |price_estimator: Arc<dyn CompetitionPriceEstimating>| {
         OrderQuoter::new(
             price_estimator,
             native_price_estimator.clone(),
@@ -361,20 +355,36 @@ pub async fn run(config: Configuration) {
                     config.order_quoting.standard_offchain_quote_validity,
                 )
                 .unwrap(),
+                fast_path_quote: chrono::Duration::from_std(
+                    config.order_quoting.fast_path_quote_validity,
+                )
+                .unwrap(),
             },
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,
         )
     };
 
-    let optimal_quoter = Arc::new(
+    let verified_quoter = Arc::new(
         create_quoter(price_estimator.clone()).with_streaming_estimator(price_estimator.clone()),
     );
 
-    // Fast quoting is able to return early and if none of the produced quotes are
-    // verifiable we are left with no quote at all. Since fast estimates don't
-    // make any promises on correctness we can just skip quote verification for
-    // them.
+    let unverified_price_estimator = price_estimator_factory
+        .unverified_price_estimator(
+            &price_estimation_solvers,
+            native_price_estimator.clone(),
+            gas_price_estimator.clone(),
+        )
+        .unwrap();
+    let optimal_quoter = Arc::new(
+        create_quoter(unverified_price_estimator.clone())
+            .with_streaming_estimator(unverified_price_estimator),
+    );
+
+    // Fast quoting is able to return early and if none of the produced quotes
+    // are verifiable we are left with no quote at all. Since fast estimates
+    // don't make any promises on correctness we can just skip quote
+    // verification for them.
     let fast_quoter = Arc::new(create_quoter(fast_price_estimator));
 
     let app_data_validator = Validator::new(config.app_data_size_limit);
@@ -394,6 +404,22 @@ pub async fn run(config: Configuration) {
         }
     });
 
+    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
+        .shared
+        .volume_fee_bucket_overrides
+        .iter()
+        .map(Into::into)
+        .collect();
+    // Shared between the fast-path limit-price check in `OrderValidator` and
+    // the quote-time volume fee adjustment in `QuoteHandler` so a single
+    // configuration change propagates everywhere.
+    let volume_fee_policy = Arc::new(shared::fee::VolumeFeePolicy::new(
+        volume_fee_bucket_overrides,
+        config.volume_fee.as_ref().and_then(|c| c.factor),
+        config.shared.enable_sell_equals_buy_volume_fee,
+        *native_token.address(),
+    ));
+
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -412,7 +438,7 @@ pub async fn run(config: Configuration) {
         config.eip1271_skip_creation_validation,
         deny_listed_tokens.clone(),
         hooks_contract,
-        optimal_quoter.clone(),
+        verified_quoter.clone(),
         balance_fetcher,
         signature_validator,
         validator_simulator,
@@ -421,6 +447,8 @@ pub async fn run(config: Configuration) {
         app_data_validator.clone(),
         config.order_validation.max_gas_per_order,
         config.order_validation.same_tokens_policy,
+        Some(volume_fee_policy.clone()),
+        config.order_quoting.max_partner_fee,
     ));
     let ipfs = config
         .ipfs
@@ -449,24 +477,17 @@ pub async fn run(config: Configuration) {
     ));
 
     check_database_connection(orderbook.as_ref()).await;
-    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
-        .shared
-        .volume_fee_bucket_overrides
-        .iter()
-        .map(Into::into)
-        .collect();
     let quotes = QuoteHandler::new(
         order_validator,
         optimal_quoter.clone(),
         app_data.clone(),
         config.volume_fee,
-        volume_fee_bucket_overrides,
-        config.shared.enable_sell_equals_buy_volume_fee,
-        *native_token.address(),
+        volume_fee_policy,
         token_info_fetcher.clone(),
     )
+    .with_verified_quoter(verified_quoter.clone())
     .with_fast_quoter(fast_quoter)
-    .with_streaming_quoter(optimal_quoter.clone());
+    .with_streaming_quoters(optimal_quoter, verified_quoter);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
@@ -499,7 +520,7 @@ pub async fn run(config: Configuration) {
     tokio::select! {
         result = &mut serve_api => panic!("API task exited {result:?}"),
         result = metrics_task => panic!("metrics task exited {result:?}"),
-        _ = shutdown_signal() => {
+        _ = observe::shutdown::shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
@@ -508,33 +529,6 @@ pub async fn run(config: Configuration) {
             }
         }
     };
-}
-
-#[cfg(unix)]
-async fn shutdown_signal() {
-    // Intercept main signals for graceful shutdown
-    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common
-    let sigterm = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .unwrap()
-            .recv()
-            .await
-    };
-    let sigint = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-            .unwrap()
-            .recv()
-            .await;
-    };
-    futures::pin_mut!(sigint);
-    futures::pin_mut!(sigterm);
-    futures::future::select(sigterm, sigint).await;
-}
-
-#[cfg(windows)]
-async fn shutdown_signal() {
-    // We don't support signal handling on windows
-    std::future::pending().await
 }
 
 async fn check_database_connection(orderbook: &Orderbook) {

@@ -50,8 +50,8 @@ impl BlockRetrieving for AlloyProvider {
         let (start, end) = range.into_inner();
 
         // Uses FuturesUnordered instead of try_join_all, since the latter
-        // starts using FuturesOrdered once the number of futures exceeds 30, which
-        // doesn't support fail-fast behavior.
+        // starts using FuturesOrdered once the number of futures exceeds 30,
+        // which doesn't support fail-fast behavior.
         let futures = FuturesUnordered::new();
         for block_num in start..=end {
             let block_id = BlockNumberOrTag::Number(block_num).into();

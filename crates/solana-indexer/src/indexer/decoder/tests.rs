@@ -1,19 +1,18 @@
 use {
-    super::{
-        Decoder,
-        PLACEHOLDER_AMOUNT_RECEIVED,
-        PLACEHOLDER_AUCTION_ID,
-        ResolvedOrder,
-        build_account_keys,
-        decode_settlement,
-        relevant_instructions,
-    },
+    super::{DecodeFailed, Decoder, build_account_keys, decode_settlement, relevant_instructions},
     crate::{
-        persistence::Persistence,
+        indexer::ingester::Ingester,
+        persistence::Postgres,
         types::{
             Signature,
-            channel::StreamUpdate,
-            events::{SettlementEvent, TradeDelta},
+            events::{
+                CreatedOrder,
+                DecodedEvent,
+                FinalizedSettlement,
+                OrderKind,
+                SettlementEvent,
+                TradeDelta,
+            },
             order::OrderUid,
             slot::Slot,
             tx::TxContext,
@@ -22,36 +21,71 @@ use {
                 InnerInstruction,
                 InnerInstructions,
                 Message,
+                SlotStatus,
+                SubscribeUpdate,
+                SubscribeUpdateSlot,
+                SubscribeUpdateTransaction,
                 SubscribeUpdateTransactionInfo,
                 Transaction,
+                TransactionError,
                 TransactionStatusMeta,
+                UpdateOneof,
             },
         },
     },
+    base64::Engine,
     bytes::Bytes,
-    settlement_interface::{
+    cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{EncodedOrderIntent, OrderIntent, OrderKind},
+        data::intent::{Asset, Flags, OrderIntent, OrderKind as IntentOrderKind, TokenAsset},
+        pda::order::find_order_pda,
     },
+    cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
+    futures::StreamExt,
     solana_sdk::pubkey::Pubkey,
-    tokio::sync::mpsc::Sender,
+    std::{
+        num::NonZeroU64,
+        sync::{Arc, atomic::AtomicU64},
+    },
 };
 
 fn pubkey(n: u8) -> Pubkey {
     Pubkey::new_from_array([n; 32])
 }
 
-fn key_bytes(key: Pubkey) -> Vec<u8> {
-    key.to_bytes().to_vec()
+/// Compile client-built instructions into the proto transaction shape: the
+/// account list starts with the fee payer, then every referenced key in
+/// encounter order.
+fn tx_from_instructions(
+    payer: Pubkey,
+    instructions: &[cow_settlement_interface::Instruction],
+) -> SubscribeUpdateTransactionInfo {
+    let mut keys = vec![payer];
+    let index_of = |keys: &mut Vec<Pubkey>, key: Pubkey| -> u8 {
+        if let Some(index) = keys.iter().position(|k| *k == key) {
+            return u8::try_from(index).unwrap();
+        }
+        keys.push(key);
+        u8::try_from(keys.len() - 1).unwrap()
+    };
+    let compiled = instructions
+        .iter()
+        .map(|instruction| CompiledInstruction {
+            program_id_index: u32::from(index_of(&mut keys, instruction.program_id)),
+            accounts: instruction
+                .accounts
+                .iter()
+                .map(|meta| index_of(&mut keys, meta.pubkey))
+                .collect(),
+            data: instruction.data.clone(),
+        })
+        .collect();
+    tx_info(keys, vec![], vec![], compiled, vec![])
 }
 
-fn compiled(program_id_index: u32, accounts: Vec<u8>, data: Vec<u8>) -> CompiledInstruction {
-    CompiledInstruction {
-        program_id_index,
-        accounts,
-        data,
-    }
+fn key_bytes(key: Pubkey) -> Vec<u8> {
+    key.to_bytes().to_vec()
 }
 
 fn inner(
@@ -112,8 +146,16 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
         vec![solflow, acct_b],
         // top-level: a router call (dropped) then a solflow call (kept, index 1)
         vec![
-            compiled(0, vec![1], vec![0]),
-            compiled(3, vec![1, 4], vec![1, 2, 3]),
+            CompiledInstruction {
+                program_id_index: 0,
+                accounts: vec![1],
+                data: vec![0],
+            },
+            CompiledInstruction {
+                program_id_index: 3,
+                accounts: vec![1, 4],
+                data: vec![1, 2, 3],
+            },
         ],
         // settlement invoked as a CPI under top-level instruction 0
         vec![InnerInstructions {
@@ -129,7 +171,7 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
         vec![router, acct_a, settlement, solflow, acct_b]
     );
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
 
     // Execution order: top-level 0's settlement CPI runs before top-level 1's
     // solflow call. The router at top-level 0 is dropped.
@@ -162,11 +204,23 @@ fn unresolvable_programs_dropped_account_indices_carried_through() {
                 account_keys: vec![key_bytes(settlement), vec![1, 2, 3, 4, 5]],
                 instructions: vec![
                     // program index 9 is out of range -> dropped
-                    compiled(9, vec![0], vec![0]),
+                    CompiledInstruction {
+                        program_id_index: 9,
+                        accounts: vec![0],
+                        data: vec![0],
+                    },
                     // program index 1 is the zeroed bad key -> untracked, dropped
-                    compiled(1, vec![0], vec![0]),
+                    CompiledInstruction {
+                        program_id_index: 1,
+                        accounts: vec![0],
+                        data: vec![0],
+                    },
                     // settlement, with an out-of-range account index carried as-is
-                    compiled(0, vec![5], vec![7]),
+                    CompiledInstruction {
+                        program_id_index: 0,
+                        accounts: vec![5],
+                        data: vec![7],
+                    },
                 ],
                 ..Default::default()
             }),
@@ -177,7 +231,7 @@ fn unresolvable_programs_dropped_account_indices_carried_through() {
 
     assert_eq!(build_account_keys(&tx), vec![settlement, Pubkey::default()]);
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program_id, settlement);
     assert_eq!(relevant[0].instruction_index, 2);
@@ -197,7 +251,11 @@ fn inner_ix_path_tracks_cpi_nesting_depth() {
         vec![],
         vec![],
         // one top-level router call (dropped)
-        vec![compiled(0, vec![4], vec![0])],
+        vec![CompiledInstruction {
+            program_id_index: 0,
+            accounts: vec![4],
+            data: vec![0],
+        }],
         vec![InnerInstructions {
             index: 0,
             instructions: vec![
@@ -209,14 +267,15 @@ fn inner_ix_path_tracks_cpi_nesting_depth() {
         }],
     );
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(relevant.len(), 3);
 
     assert_eq!(relevant[0].program_id, settlement);
     assert_eq!(relevant[0].inner_ix_path, vec![0]);
     assert_eq!(relevant[0].data, Bytes::from(vec![10]));
 
-    // the dropped depth-2 CPI still advanced the counter, so this sibling is [0, 1]
+    // the dropped depth-2 CPI still advanced the counter, so this sibling is
+    // [0, 1]
     assert_eq!(relevant[1].program_id, settlement);
     assert_eq!(relevant[1].inner_ix_path, vec![0, 1]);
     assert_eq!(relevant[1].data, Bytes::from(vec![12]));
@@ -236,14 +295,18 @@ fn corrupt_stack_height_is_clamped() {
         vec![pubkey(9), settlement], // [router(0), settlement(1)]
         vec![],
         vec![],
-        vec![compiled(0, vec![1], vec![0])], // top-level router, dropped
+        vec![CompiledInstruction {
+            program_id_index: 0,
+            accounts: vec![1],
+            data: vec![0],
+        }], // top-level router, dropped
         vec![InnerInstructions {
             index: 0,
             instructions: vec![inner(1, vec![1], vec![7], Some(10_000))],
         }],
     );
 
-    let relevant = relevant_instructions(&tx, &settlement, &solflow);
+    let relevant = relevant_instructions(&tx, &settlement, Some(&solflow));
     assert_eq!(relevant.len(), 1);
     assert_eq!(relevant[0].program_id, settlement);
     // depth 9999 clamped to 4, so the path is bounded, not 9999 elements
@@ -254,66 +317,88 @@ fn signature(n: u8) -> Signature {
     Signature::from([n; 64])
 }
 
-fn test_decoder(settlement: Pubkey, solflow: Pubkey) -> (Decoder, Sender<StreamUpdate>) {
-    let (sender, rx) = tokio::sync::mpsc::channel(16);
-    let decoder = Decoder::new(Persistence {}, rx, settlement, solflow);
-    (decoder, sender)
-}
-
-/// A transaction carrying one settlement instruction, so draining it also
-/// routes into `decode_settlement`.
-fn stream_tx(slot: Slot, signature: Signature, settlement: Pubkey) -> StreamUpdate {
-    let info = tx_info(
-        vec![settlement, pubkey(8)],
-        vec![],
-        vec![],
-        vec![compiled(0, vec![1], vec![0])],
-        vec![],
-    );
-    StreamUpdate::Tx {
-        slot,
-        signature,
-        inner: Box::new(info),
+/// A slot-status message in the proto envelope the ingester reads.
+fn slot_status_update(slot: u64, status: SlotStatus) -> SubscribeUpdate {
+    SubscribeUpdate {
+        update_oneof: Some(UpdateOneof::Slot(SubscribeUpdateSlot {
+            slot,
+            status: status as i32,
+            ..Default::default()
+        })),
+        ..Default::default()
     }
 }
 
-/// Verifies the run loop drains buffered updates and returns Ok when the sender
-/// drops. It does not assert the decoded event yet: decode output is dropped
-/// until the persistence adapter lands, at which point this test should assert
-/// the emitted event.
-#[tokio::test]
-async fn run_drains_transactions_until_the_sender_drops() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let (mut decoder, sender) = test_decoder(settlement, solflow);
-
-    sender
-        .send(stream_tx(Slot(7), signature(3), settlement))
-        .await
-        .unwrap();
-    drop(sender);
-
-    assert!(decoder.run().await.is_ok());
+/// Wrap a transaction fixture in the proto envelope the ingester reads.
+fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate {
+    SubscribeUpdate {
+        update_oneof: Some(UpdateOneof::Transaction(SubscribeUpdateTransaction {
+            slot,
+            transaction: Some(info),
+        })),
+        ..Default::default()
+    }
 }
 
-/// A crafted `CreateOrder` decodes to `OrderCreated` with the real UID (the
-/// hash of the encoded intent), the intent's owner, and the `created_by`
-/// account resolved from the instruction's account list. The account-list owner
-/// differs from the intent owner, so this also pins that the event owner comes
-/// from the intent data, not the accounts.
-#[test]
-fn create_order_decodes_to_order_created() {
-    let (settlement, solflow) = (pubkey(1), pubkey(2));
-    let created_by = pubkey(12);
-    // Account list: [settlement(0), owner(1), created_by(2), order_pda(3),
-    // system(4)].
-    let account_keys = vec![settlement, pubkey(11), created_by, pubkey(13), pubkey(14)];
+/// Verifies the run loop drains buffered updates and returns Ok when the
+/// sender drops. Event content is not asserted here: the persistence bodies
+/// are no-ops, so nothing is observable through them. Decode output is
+/// asserted directly in
+/// `decode_wraps_settlement_events_as_decoded`.
+/// Build a `CreateOrder` transaction fixture with the client crate. Returns
+/// the tx and the full event its decode must produce. The account-list owner
+/// (`pubkey(11)`) differs from the intent owner (`[0x11; 32]`) so callers can
+/// pin that the event owner comes from the intent data, not the accounts.
+fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
+    let (instruction, expected) = create_order_parts();
+    (tx_from_instructions(pubkey(9), &[instruction]), expected)
+}
 
-    // Build the encoded intent through the interface's public API so the test
-    // hashes it independently of the decoder.
-    let intent = OrderIntent {
+/// The intent behind [`create_order_parts`] and the cancellation test.
+fn sample_intent() -> OrderIntent {
+    OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
-        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
-        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
+        sell_amount: NonZeroU64::new(1_000).unwrap(),
+        buy_amount: NonZeroU64::new(2_000).unwrap(),
+        valid_to: 42,
+        flags: Flags {
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
+        app_data: [0x44; 32],
+    }
+}
+
+/// The `CreateOrder` instruction and the event its decode must produce.
+fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
+    let settlement = pubkey(1);
+    let created_by = pubkey(12);
+    let intent = sample_intent();
+    let instruction = cow_settlement_client::instruction::CreateOrder {
+        program_id: settlement,
+        owner: pubkey(11),
+        created_by,
+        intent: &intent,
+    }
+    .into();
+    let expected = CreatedOrder {
+        signature: signature(6),
+        order_uid: OrderUid(intent.uid().to_bytes()),
+        owner: Pubkey::new_from_array([0x11; 32]),
+        created_by,
+        order_pda: find_order_pda(&settlement, &intent.uid()).0,
+        sell_token_account: Pubkey::new_from_array([0x33; 32]),
+        sell_mint: Pubkey::new_from_array([0x66; 32]),
+        buy_token_account: Pubkey::new_from_array([0x22; 32]),
+        buy_mint: Pubkey::new_from_array([0x55; 32]),
         sell_amount: 1_000,
         buy_amount: 2_000,
         valid_to: 42,
@@ -321,17 +406,360 @@ fn create_order_decodes_to_order_created() {
         partially_fillable: false,
         app_data: [0x44; 32],
     };
-    let encoded = EncodedOrderIntent::from(&intent);
-    let intent_bytes: [u8; EncodedOrderIntent::SIZE] = (&encoded).into();
-    let mut data = vec![SettlementInstruction::CreateOrder.discriminator()];
-    data.extend_from_slice(&intent_bytes);
+    (instruction, expected)
+}
 
-    // CreateOrder accounts: [owner, created_by, order_pda, system].
+/// `CancelOrder` carrying intent bytes created the order cancelled, so it
+/// decodes to the creation followed by the cancellation. Without them only
+/// the cancellation is emitted.
+#[test]
+fn cancel_order_decodes_to_the_cancellation() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (_, created) = create_order_parts();
+    let intent = sample_intent();
+    let cancelled = SettlementEvent::OrderCancelled {
+        signature: signature(6),
+        order_pda: find_order_pda(&settlement, &intent.uid()).0,
+    };
+    let creating: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::CancelOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+    let existing: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::cancel_order::CancelOutstandingOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+
+    for (instruction, expected) in [
+        (
+            creating,
+            vec![
+                SettlementEvent::OrderCreated(Box::new(created.clone())),
+                cancelled.clone(),
+            ],
+        ),
+        (existing, vec![cancelled.clone()]),
+    ] {
+        let tx = tx_from_instructions(pubkey(9), &[instruction]);
+        let ctx = TxContext {
+            slot: Slot(5),
+            signature: signature(6),
+            account_keys: build_account_keys(&tx),
+            post_token_balances: vec![],
+        };
+        let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
+        assert_eq!(decode_settlement(&instructions, &ctx), Ok(expected));
+    }
+}
+
+/// The RPC wire form of a signed transaction, as `getTransaction` returns it
+/// with base64 encoding.
+fn rpc_transaction_json(
+    tx: &solana_sdk::transaction::VersionedTransaction,
+    slot: u64,
+) -> serde_json::Value {
+    let bytes = bincode::serialize(tx).unwrap();
+    serde_json::json!({
+        "slot": slot,
+        "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
+        "meta": {
+            "err": null,
+            "status": { "Ok": null },
+            "fee": 0u64,
+            "preBalances": [],
+            "postBalances": [],
+            "innerInstructions": [],
+            "logMessages": [],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "rewards": []
+        },
+        "blockTime": null
+    })
+}
+
+/// A signed transaction in the `VersionedTransaction` envelope `decode()`
+/// returns, carrying a legacy message with the given instruction.
+fn versioned_tx(
+    instruction: solana_sdk::instruction::Instruction,
+) -> solana_sdk::transaction::VersionedTransaction {
+    let message = solana_sdk::message::Message::new_with_blockhash(
+        &[instruction],
+        Some(&pubkey(9)),
+        &solana_sdk::hash::Hash::default(),
+    );
+    // As many signatures as the header demands, or `sanitize` rejects the
+    // payload. The first doubles as the transaction signature.
+    let signatures = vec![signature(6); usize::from(message.header.num_required_signatures)];
+    solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    }
+}
+
+/// An RPC-fetched transaction decodes to the same event as its streamed
+/// form.
+#[tokio::test]
+async fn backfilled_transaction_decodes_like_the_streamed_one() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (instruction, expected) = create_order_parts();
+    let tx = versioned_tx(instruction);
+    let encoded: cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta =
+        serde_json::from_value(rpc_transaction_json(&tx, 43)).unwrap();
+    let info = super::backfill::convert(encoded, signature(6)).expect("convertible");
+    let decoder = pure_decoder(settlement, solflow);
+    let events = decoder
+        .decode(info, Slot(43), signature(6))
+        .expect("clean decode");
+    assert_eq!(
+        events,
+        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+            Box::new(expected)
+        ))]
+    );
+}
+
+/// The converter maps the V0 shape too: an ALT-loaded settlement program
+/// reached only through a CPI decodes to the same event as the streamed
+/// form.
+#[tokio::test]
+async fn backfilled_v0_cpi_decodes_like_the_streamed_one() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (instruction, expected) = create_order_parts();
+    let (payer, router) = (pubkey(9), pubkey(8));
+
+    let mut static_keys = vec![payer, router];
+    static_keys.extend(instruction.accounts.iter().map(|meta| meta.pubkey));
+    let settlement_index = u8::try_from(static_keys.len()).unwrap();
+    let account_indices: Vec<u8> = (2..settlement_index).collect();
+
+    let streamed = tx_info(
+        static_keys.clone(),
+        vec![],
+        vec![settlement],
+        vec![CompiledInstruction {
+            program_id_index: 1,
+            accounts: vec![],
+            data: vec![0],
+        }],
+        vec![InnerInstructions {
+            index: 0,
+            instructions: vec![inner(
+                u32::from(settlement_index),
+                account_indices.clone(),
+                instruction.data.clone(),
+                Some(2),
+            )],
+        }],
+    );
+
+    let message = solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+        header: solana_sdk::message::MessageHeader {
+            num_required_signatures: 1,
+            num_readonly_signed_accounts: 0,
+            num_readonly_unsigned_accounts: 0,
+        },
+        account_keys: static_keys,
+        recent_blockhash: solana_sdk::hash::Hash::default(),
+        instructions: vec![
+            solana_sdk::message::compiled_instruction::CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![0],
+            },
+        ],
+        address_table_lookups: vec![solana_sdk::message::v0::MessageAddressTableLookup {
+            account_key: pubkey(7),
+            writable_indexes: vec![],
+            readonly_indexes: vec![0],
+        }],
+    });
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![signature(6)],
+        message,
+    };
+    let bytes = bincode::serialize(&tx).unwrap();
+    let json = serde_json::json!({
+        "slot": 43u64,
+        "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
+        "meta": {
+            "err": null,
+            "status": { "Ok": null },
+            "fee": 0u64,
+            "preBalances": [],
+            "postBalances": [],
+            "innerInstructions": [{
+                "index": 0,
+                "instructions": [{
+                    "programIdIndex": settlement_index,
+                    "accounts": account_indices,
+                    "data": solana_sdk::bs58::encode(&instruction.data).into_string(),
+                    "stackHeight": 2
+                }]
+            }],
+            "logMessages": [],
+            "preTokenBalances": [],
+            "postTokenBalances": [],
+            "rewards": [],
+            "loadedAddresses": {
+                "writable": [],
+                "readonly": [settlement.to_string()]
+            }
+        },
+        "blockTime": null
+    });
+    let encoded: cow_solana_rpc::EncodedConfirmedTransactionWithStatusMeta =
+        serde_json::from_value(json).unwrap();
+    let backfilled = super::backfill::convert(encoded, signature(6)).expect("convertible");
+
+    let decoder = pure_decoder(settlement, solflow);
+    let expected = vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+        Box::new(expected),
+    ))];
+    assert_eq!(
+        decoder
+            .decode(streamed, Slot(43), signature(6))
+            .expect("streamed decode"),
+        expected
+    );
+    assert_eq!(
+        decoder
+            .decode(backfilled, Slot(43), signature(6))
+            .expect("backfilled decode"),
+        expected
+    );
+}
+
+/// A decoder over a lazy pool that never connects: `decode` is pure, tests
+/// of it stay database-free.
+fn pure_decoder(settlement: Pubkey, solflow: Pubkey) -> Decoder {
+    let pool = sqlx::PgPool::connect_lazy("postgresql://").unwrap();
+    let (_sender, rx) = tokio::sync::mpsc::channel(1);
+    Decoder::new(
+        Postgres::new(pool),
+        SolanaRPC::new_mock_with_mocks(Default::default()),
+        rx,
+        settlement,
+        Some(solflow),
+    )
+}
+
+/// The finalization audit asks for two signatures (the dead letter and the
+/// healthy create), both still known to the chain.
+fn mock_rpc_with_signature_statuses() -> SolanaRPC {
+    let status = serde_json::json!({
+        "slot": 43u64,
+        "confirmations": null,
+        "err": null,
+        "status": { "Ok": null },
+        "confirmationStatus": "finalized",
+    });
+    let statuses = serde_json::json!({
+        "context": { "slot": 43u64, "apiVersion": "2.0.0" },
+        "value": [status.clone(), status],
+    });
+    SolanaRPC::new_mock_with_mocks(Mocks::from([(RpcRequest::GetSignatureStatuses, statuses)]))
+}
+
+/// `decode` wraps settlement events as `DecodedEvent::Settlement` for `run`
+/// to persist, and gates on the transaction meta: a set `meta.err` means a
+/// revert that rolled back every account write, so nothing is emitted and
+/// nothing is dead-lettered, while an absent meta carries no success flag at
+/// all, so nothing is emitted and the transaction is dead-lettered. One
+/// fixture throughout, the meta is the only difference.
+#[tokio::test]
+async fn decode_wraps_events_and_gates_on_transaction_meta() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (mut tx, expected) = create_order_tx();
+    let decoder = pure_decoder(settlement, solflow);
+
+    let events = decoder
+        .decode(tx.clone(), Slot(5), signature(6))
+        .expect("clean decode");
+    assert_eq!(
+        events,
+        vec![DecodedEvent::Settlement(SettlementEvent::OrderCreated(
+            Box::new(expected.clone())
+        ))]
+    );
+
+    tx.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
+    let events = decoder
+        .decode(tx.clone(), Slot(5), signature(6))
+        .expect("a revert is not a decode failure");
+    assert_eq!(events, vec![]);
+
+    tx.meta = None;
+    let result = decoder.decode(tx.clone(), Slot(5), signature(6));
+    assert_eq!(result, Err(DecodeFailed));
+}
+
+/// A settlement instruction with an unknown discriminator fails the whole
+/// transaction, the cleanly decoding instruction next to it does not rescue
+/// it.
+#[test]
+fn unknown_discriminator_fails_the_whole_transaction() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (mut tx, _) = create_order_tx();
+    // Prepend a settlement instruction whose discriminator byte matches no
+    // known instruction.
+    let message = tx.transaction.as_mut().unwrap().message.as_mut().unwrap();
+    let settlement_index = message
+        .account_keys
+        .iter()
+        .position(|key| key.as_slice() == settlement.to_bytes())
+        .unwrap();
+    message.instructions.insert(
+        0,
+        CompiledInstruction {
+            program_id_index: u32::try_from(settlement_index).unwrap(),
+            accounts: vec![1],
+            data: vec![0xFF],
+        },
+    );
+
+    let ctx = TxContext {
+        slot: Slot(5),
+        signature: signature(6),
+        account_keys: build_account_keys(&tx),
+        post_token_balances: vec![],
+    };
+    let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
+    assert_eq!(decode_settlement(&instructions, &ctx), Err(DecodeFailed));
+}
+
+/// A `BeginSettle` whose named `FinalizeSettle` is not present in the
+/// transaction emits no event and sets the failure flag.
+#[test]
+fn unpaired_begin_settle_sets_failure_flag() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    // Account list: [solver(0), settlement(1), sysvar(2), state(3), token(4)].
+    let account_keys = vec![pubkey(10), settlement, pubkey(22), pubkey(23), pubkey(24)];
+
+    // BeginSettle body with zero orders, naming finalize index 1 while the tx
+    // has no instruction 1.
+    let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
+    begin_data.extend_from_slice(&1u16.to_le_bytes());
+    begin_data.extend_from_slice(&4242i64.to_le_bytes());
+    begin_data.push(0);
+
     let tx = tx_info(
         account_keys,
         vec![],
         vec![],
-        vec![compiled(0, vec![1, 2, 3, 4], data)],
+        vec![CompiledInstruction {
+            program_id_index: 1,
+            accounts: vec![2, 3, 4],
+            data: begin_data,
+        }],
         vec![],
     );
 
@@ -341,77 +769,80 @@ fn create_order_decodes_to_order_created() {
         account_keys: build_account_keys(&tx),
         post_token_balances: vec![],
     };
-    let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let events = decode_settlement(&instructions, &ctx, |_| None);
-
-    assert_eq!(
-        events,
-        vec![SettlementEvent::OrderCreated {
-            order_uid: OrderUid(intent.uid().to_bytes()),
-            owner: Pubkey::new_from_array([0x11; 32]),
-            created_by,
-        }]
-    );
+    let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
+    assert_eq!(decode_settlement(&instructions, &ctx), Err(DecodeFailed));
 }
 
-/// A crafted `BeginSettle` + `FinalizeSettle` pair decodes to one
-/// `SettlementFinalized`: the real summed sell amount and the resolved order
-/// UID (via the injected map), with the auction id and buy-side amount left at
-/// their documented placeholders and the solver read as the fee payer.
+/// A `BeginSettle` + `FinalizeSettle` pair built by the client crate decodes
+/// to one `SettlementFinalized`, where:
+///
+/// - the auction id comes from the `BeginSettle` instruction data,
+/// - the order's sell amount is the sum of its pulls (300 + 700, both taken
+///   from the same order's sell account),
+/// - the buy-side amount comes from the `FinalizeSettle` entry paired to its
+///   order by position (order `i` is paid by entry `i`),
+/// - the trade names the canonical order PDA the builder derives,
+/// - the solver is the signer `BeginSettle` names, not the fee payer.
 #[test]
 fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let (settlement, solflow) = (pubkey(1), pubkey(2));
     let solver = pubkey(10);
-    let order_pda = pubkey(20);
-    // Account list:
-    // [solver(0), settlement(1), sysvar(2), state(3), token(4), order_pda(5),
-    //  sell(6), dest0(7), dest1(8)].
-    let account_keys = vec![
-        solver,
-        settlement,
-        pubkey(22),
-        pubkey(23),
-        pubkey(24),
-        order_pda,
-        pubkey(26),
-        pubkey(27),
-        pubkey(28),
-    ];
-
-    // BeginSettle body: finalize index 1, one order, bump 0xAA, two transfers of
-    // 300 and 700 (sum 1000 = the sell-side amount withdrawn).
-    let mut begin_data = vec![SettlementInstruction::BeginSettle.discriminator()];
-    begin_data.extend_from_slice(&1u16.to_be_bytes());
-    begin_data.push(1);
-    begin_data.push(0xAA);
-    begin_data.push(2);
-    begin_data.extend_from_slice(&300u64.to_be_bytes());
-    begin_data.extend_from_slice(&700u64.to_be_bytes());
-
-    // FinalizeSettle body: begin index 0.
-    let mut finalize_data = vec![SettlementInstruction::FinalizeSettle.discriminator()];
-    finalize_data.extend_from_slice(&0u16.to_be_bytes());
-
-    let tx = tx_info(
-        account_keys,
-        vec![],
-        vec![],
-        vec![
-            // BeginSettle @ 0: sysvar, state, token, order_pda, sell, dest0, dest1.
-            compiled(1, vec![2, 3, 4, 5, 6, 7, 8], begin_data),
-            // FinalizeSettle @ 1: sysvar only.
-            compiled(1, vec![2], finalize_data),
-        ],
-        vec![],
-    );
-
-    let expected_uid = OrderUid([0x55; 32]);
-    let resolve_order = |pda: &Pubkey| {
-        (*pda == order_pda).then_some(ResolvedOrder {
-            order_uid: expected_uid,
-            order_fulfilled: true,
-        })
+    let fee_payer = pubkey(9);
+    let intent = OrderIntent {
+        owner: InterfacePubkey::new_from_array([0x11; 32]),
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
+        sell_amount: NonZeroU64::new(1_000).unwrap(),
+        buy_amount: NonZeroU64::new(1_234).unwrap(),
+        valid_to: 42,
+        flags: Flags {
+            kind: IntentOrderKind::Sell,
+            partially_fillable: false,
+        },
+        app_data: [0x44; 32],
     };
+    let order_pda = find_order_pda(&settlement, &intent.uid()).0;
+
+    let begin = cow_settlement_client::instruction::BeginSettle {
+        only_token_program: None,
+        program_id: settlement,
+        solver,
+        finalize_ix_index: 1,
+        auction_id: 4242,
+        orders: &[cow_settlement_client::instruction::InitializedIntent {
+            intent: &intent,
+            pulls: &[
+                cow_settlement_client::instruction::Pull {
+                    destination: pubkey(27),
+                    amount: 300,
+                },
+                cow_settlement_client::instruction::Pull {
+                    destination: pubkey(28),
+                    amount: 700,
+                },
+            ],
+            use_transfer_checked: false,
+        }],
+    }
+    .into();
+    let finalize = cow_settlement_client::instruction::FinalizeSettle {
+        only_token_program: None,
+        program_id: settlement,
+        begin_ix_index: 0,
+        orders: &[cow_settlement_client::instruction::FinalizedIntent {
+            intent: &intent,
+            amount: 1_234,
+            use_transfer_checked: false,
+        }],
+    }
+    .into();
+    let tx = tx_from_instructions(fee_payer, &[begin, finalize]);
 
     let ctx = TxContext {
         slot: Slot(5),
@@ -419,22 +850,308 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
         account_keys: build_account_keys(&tx),
         post_token_balances: vec![],
     };
-    let instructions = relevant_instructions(&tx, &settlement, &solflow);
-    let events = decode_settlement(&instructions, &ctx, resolve_order);
+    let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
+    let events = decode_settlement(&instructions, &ctx).expect("clean decode");
 
     assert_eq!(
         events,
-        vec![SettlementEvent::SettlementFinalized {
-            auction_id: PLACEHOLDER_AUCTION_ID,
+        vec![SettlementEvent::SettlementFinalized(FinalizedSettlement {
+            auction_id: 4242,
             solver,
             tx_signature: signature(6),
             slot: Slot(5),
+            instruction_index: 0,
             trades: vec![TradeDelta {
-                order_uid: expected_uid,
+                order_pda,
                 amount_withdrawn_delta: 1_000,
-                amount_received_delta: PLACEHOLDER_AMOUNT_RECEIVED,
-                order_fulfilled: true,
+                amount_received_delta: 1_234,
             }],
-        }]
+        })]
     );
+}
+
+/// Both components as one pipeline: proto `SubscribeUpdate`s go into the
+/// ingester and come out of the decoder as persistence writes. This is the
+/// only test spanning the channel, so it pins that what the ingester forwards
+/// is what the decoder can consume, and it drives all three persistence
+/// writes: the bare slot advance for a slot with no events, the dead letter for
+/// a failed decode (which suppresses that transaction's events entirely),
+/// and the flush driven by a slot status moving past the hold-back window.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_ingester_to_decoder_persists_decoded_events() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (info, expected) = create_order_tx();
+
+    // Slot 42: a reverted transaction, so the slot decodes to no events.
+    // The ingester drops transactions without a well-formed signature.
+    let mut reverted = info.clone();
+    reverted.signature = signature(9).as_ref().to_vec();
+    reverted.meta.as_mut().unwrap().err = Some(TransactionError { err: vec![1] });
+
+    // Slot 43, first transaction: a good `CreateOrder` plus an unknown
+    // discriminator, so the whole transaction is dead-lettered and none of
+    // its events persist.
+    let mut partial = info.clone();
+    partial.signature = signature(10).as_ref().to_vec();
+    let message = partial
+        .transaction
+        .as_mut()
+        .unwrap()
+        .message
+        .as_mut()
+        .unwrap();
+    let settlement_index = message
+        .account_keys
+        .iter()
+        .position(|key| key.as_slice() == settlement.to_bytes())
+        .unwrap();
+    message.instructions.insert(
+        0,
+        CompiledInstruction {
+            program_id_index: u32::try_from(settlement_index).unwrap(),
+            accounts: vec![1],
+            data: vec![0xFF],
+        },
+    );
+
+    // Slot 43, second transaction: a clean `CreateOrder`, its event persists
+    // with the slot even though its sibling transaction failed.
+    let mut healthy = info;
+    healthy.signature = signature(11).as_ref().to_vec();
+
+    // A live channel drives the ingester so the test can interleave sends
+    // with database assertions.
+    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
+    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
+
+    let (sender, receiver) = tokio::sync::mpsc::channel(16);
+    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
+    let mut decoder = Decoder::new(
+        Postgres::new(pool.clone()),
+        mock_rpc_with_signature_statuses(),
+        receiver,
+        settlement,
+        Some(solflow),
+    );
+    let ingester_task = tokio::spawn(async move { ingester.run().await });
+    let decoder_task = tokio::spawn(async move { decoder.run().await });
+
+    for update in [
+        Ok(tx_update(42, reverted)),
+        Ok(tx_update(43, partial)),
+        Ok(tx_update(43, healthy)),
+    ] {
+        geyser_tx.send(update).await.unwrap();
+    }
+    // No confirmed status arrived yet, so nothing may flush: the buffers
+    // wait and the watermark stays unset.
+    let reader = Postgres::new(pool.clone());
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), None);
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_pda")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(events, 0);
+
+    // The confirmed 45 status flushes both buffered slots and advances the
+    // watermark to 45. The finalized status advances the finalized
+    // watermark, and the quiet confirmed 50 moves the last indexed slot to
+    // 50 with nothing to flush. Closing the channel ends the ingester (a
+    // terminal stream end) and the decoder drains cleanly behind it, so
+    // joining both tasks is the guarantee that every write below has landed.
+    for update in [
+        slot_status_update(45, SlotStatus::SlotConfirmed),
+        slot_status_update(43, SlotStatus::SlotFinalized),
+        slot_status_update(50, SlotStatus::SlotConfirmed),
+    ] {
+        geyser_tx.send(Ok(update)).await.unwrap();
+    }
+    drop(geyser_tx);
+    assert!(ingester_task.await.unwrap().is_err());
+    assert!(decoder_task.await.unwrap().is_ok());
+
+    assert_eq!(reader.last_indexed_slot().await.unwrap(), Some(Slot(50)));
+    let finalized: i64 = sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(finalized, 43);
+
+    // Slot 42 held only the reverted transaction: no dead letter, no rows.
+    // The slot-43 transaction with the unknown discriminator is dead-lettered
+    // whole, while its clean sibling's `CreateOrder` persists.
+    let dead: Vec<(Vec<u8>, i64)> =
+        sqlx::query_as("SELECT tx_signature, slot FROM solana.dead_letter")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(dead, vec![(signature(10).as_ref().to_vec(), 43)]);
+    let pda: Vec<(Vec<u8>, Vec<u8>)> =
+        sqlx::query_as("SELECT order_uid, created_by FROM solana.order_pda")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        pda,
+        vec![(
+            expected.order_uid.0.to_vec(),
+            expected.created_by.to_bytes().to_vec()
+        )]
+    );
+    let (sell_token, buy_token): (Vec<u8>, Vec<u8>) =
+        sqlx::query_as("SELECT sell_token, buy_token FROM solana.orders WHERE uid = $1")
+            .bind(expected.order_uid.0)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sell_token, expected.sell_mint.to_bytes().to_vec());
+    assert_eq!(buy_token, expected.buy_mint.to_bytes().to_vec());
+}
+
+/// Backfill end to end: the watermark trails the tip past the replay window,
+/// RPC history supplies the missing transaction, and the watermark lands
+/// the signature index allowance below the scanned tip with the recovered
+/// order persisted.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_backfill_recovers_the_gap() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence.write_last_indexed_slot(Slot(40)).await.unwrap();
+
+    let settlement = pubkey(1);
+    let (instruction, expected) = create_order_parts();
+    let tx = versioned_tx(instruction);
+    let mut mocks = Mocks::default();
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(100u64));
+    mocks.insert(
+        RpcRequest::GetSignaturesForAddress,
+        serde_json::json!([{
+            "signature": signature(6).to_string(),
+            "slot": 43u64,
+            "err": null,
+            "memo": null,
+            "blockTime": null,
+            "confirmationStatus": "finalized"
+        }]),
+    );
+    mocks.insert(RpcRequest::GetTransaction, rpc_transaction_json(&tx, 43));
+
+    // A decoder without a stream.
+    let (_closed, rx) = tokio::sync::mpsc::channel(1);
+    let backfiller = Decoder::new(
+        Postgres::new(pool.clone()),
+        SolanaRPC::new_mock_with_mocks(mocks),
+        rx,
+        settlement,
+        None,
+    );
+    backfiller.backfill().await;
+
+    assert_eq!(
+        persistence.last_indexed_slot().await.unwrap(),
+        Some(Slot(100 - super::backfill::SIGNATURE_INDEX_LAG))
+    );
+    let (uid, created_by_tx, created_in_slot): (Vec<u8>, Vec<u8>, i64) = sqlx::query_as(
+        "SELECT o.uid, p.created_by_tx, p.created_in_slot
+         FROM solana.orders o JOIN solana.order_pda p ON p.order_uid = o.uid",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(uid, expected.order_uid.0.to_vec());
+    assert_eq!(created_by_tx, signature(6).as_ref().to_vec());
+    assert_eq!(created_in_slot, 43);
+}
+
+/// A decoder without a stream over the given mocks.
+fn replayer(pool: &sqlx::PgPool, mocks: Mocks) -> Decoder {
+    let (_closed, rx) = tokio::sync::mpsc::channel(1);
+    Decoder::new(
+        Postgres::new(pool.clone()),
+        SolanaRPC::new_mock_with_mocks(mocks),
+        rx,
+        pubkey(1),
+        None,
+    )
+}
+
+/// A healed dead letter: the transaction re-fetches into an order, the row
+/// unparks, and the watermark stays put.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_replay_heals_a_dead_letter() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence
+        .write_last_indexed_slot(Slot(100))
+        .await
+        .unwrap();
+    persistence
+        .record_decode_failure(signature(6), Slot(43))
+        .await
+        .unwrap();
+
+    let (instruction, expected) = create_order_parts();
+    let mocks = Mocks::from([(
+        RpcRequest::GetTransaction,
+        rpc_transaction_json(&versioned_tx(instruction), 43),
+    )]);
+    replayer(&pool, mocks).replay().await.unwrap();
+
+    let uid: Vec<u8> = sqlx::query_scalar("SELECT uid FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(uid, expected.order_uid.0.to_vec());
+    let parked: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.dead_letter")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(parked, 0);
+    assert_eq!(
+        persistence.last_indexed_slot().await.unwrap(),
+        Some(Slot(100))
+    );
+}
+
+/// A dead letter that fails again stays parked: an undecodable payload
+/// leaves the row untouched.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_replay_keeps_failing_dead_letters_parked() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence
+        .record_decode_failure(signature(6), Slot(43))
+        .await
+        .unwrap();
+
+    // An envelope whose payload is not a transaction.
+    let garbage = Mocks::from([(
+        RpcRequest::GetTransaction,
+        serde_json::json!({
+            "slot": 43u64,
+            "transaction": ["aGVsbG8=", "base64"],
+            "meta": { "err": null, "status": { "Ok": null }, "fee": 0u64,
+                      "preBalances": [], "postBalances": [], "innerInstructions": [],
+                      "logMessages": [], "preTokenBalances": [], "postTokenBalances": [],
+                      "rewards": [] },
+            "blockTime": null
+        }),
+    )]);
+    replayer(&pool, garbage).replay().await.unwrap();
+    let reason: String = sqlx::query_scalar("SELECT reason FROM solana.dead_letter")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(reason, "decoder_error");
 }

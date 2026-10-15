@@ -1,5 +1,4 @@
 pub mod http;
-pub mod math;
 mod percent;
 mod time;
 

@@ -55,8 +55,9 @@ impl GasPriceEstimator {
 
         let max_priority_fee_per_gas = {
             // Calculate additional tip in integer space to avoid precision loss
-            // Convert percentage to basis points (multiply by 10000) to maintain precision
-            // e.g., additional_tip_percentage = 0.125 (12.5%) becomes 1250
+            // Convert percentage to basis points (multiply by 10000) to
+            // maintain precision e.g., additional_tip_percentage =
+            // 0.125 (12.5%) becomes 1250
             let overflow_err = || {
                 Error::GasPrice(anyhow!(
                     "overflow on multiplication (max_priority_fee_per_gas * tip_percentage_as_bps)"
@@ -77,8 +78,9 @@ impl GasPriceEstimator {
             )
         };
 
-        // make sure the used max fee per gas is at least big enough to cover the tip -
-        // otherwise the tx will be rejected by the node immediately
+        // make sure the used max fee per gas is at least big enough to cover
+        // the tip - otherwise the tx will be rejected by the node
+        // immediately
         let suggested_max_fee_per_gas = eth::U256::from(estimate.max_fee_per_gas);
         let suggested_max_fee_per_gas =
             std::cmp::max(suggested_max_fee_per_gas, max_priority_fee_per_gas);

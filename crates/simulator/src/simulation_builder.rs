@@ -92,6 +92,20 @@ impl SettlementSimulator {
         self.0.provider.clone()
     }
 
+    /// Gas price for simulations. Nodes default `eth_call`s without one to 0
+    /// and some sneaky tokens detect that to behave differently than they would
+    /// on-chain. Doubling the base fee leaves headroom in case it moved on
+    /// since we last saw a block; otherwise nodes reject the call for
+    /// having a fee cap below the base fee.
+    pub fn simulation_gas_price(&self) -> u128 {
+        let base_fee = self.0.current_block.borrow().base_fee;
+        let gas_price = u128::from(base_fee) * 2;
+        // on some networks (e.g. BNB) the block reports a base fee of 0 which
+        // effectively disables this security measure. That's why we always
+        // return a gas price of at least 1 here.
+        gas_price.max(1)
+    }
+
     pub fn settlement_address(&self) -> Address {
         *self.0.settlement.address()
     }
@@ -223,8 +237,9 @@ impl SimulationBuilder {
                 let mut wrapper_calls = Vec::with_capacity(protocol.wrappers.len());
                 for w in protocol.wrappers {
                     // TODO: REMOVE THIS HACK!
-                    // Unconditionally add state override for euler compatibility.
-                    // If this state override gets added to calls that don't need it
+                    // Unconditionally add state override for euler
+                    // compatibility. If this state override
+                    // gets added to calls that don't need it
                     // it will not interfere with the simulation.
                     self.account_override_requests
                         .extend(compute_euler_override(&w));

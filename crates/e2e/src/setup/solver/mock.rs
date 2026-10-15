@@ -1,7 +1,6 @@
 //! Mock solver for testing purposes. It returns a custom solution.
 
 use {
-    crate::setup::solver::shutdown_signal,
     axum::Json,
     futures::{FutureExt, future::BoxFuture},
     reqwest::Url,
@@ -95,7 +94,7 @@ impl Mock {
 
         tokio::task::spawn(async move {
             axum::serve(listener, app)
-                .with_graceful_shutdown(shutdown_signal())
+                .with_graceful_shutdown(observe::shutdown::shutdown_signal())
                 .await
                 .unwrap();
         });
@@ -111,7 +110,7 @@ async fn solve(
     state: axum::extract::State<State>,
     Json(auction): Json<Auction>,
 ) -> (axum::http::StatusCode, Json<SolverResponse>) {
-    let auction_id = auction.id.unwrap_or_default();
+    let auction_id = auction.id.id();
     state.auctions.lock().unwrap().push(auction);
     let response = {
         let response_generator = state.response.lock().unwrap().clone();

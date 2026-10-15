@@ -186,9 +186,8 @@ pub struct Config {
     pub request_headers: HashMap<String, String>,
     /// Determines whether the `solver` or the `driver` handles the fees
     pub fee_handler: FeeHandler,
-    /// Use limit orders for quoting
-    /// TODO: Remove once all solvers are moved to use limit orders for quoting
-    pub quote_using_limit_orders: bool,
+    /// Whether this solver supports fast-path (out-of-competition) execution.
+    pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
     /// S3 configuration for storing the auctions in the form they are sent to
     /// the solver engine
@@ -206,10 +205,12 @@ pub struct Config {
     /// Defines at which block the liquidity needs to be fetched on /solve
     /// requests.
     pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
-    /// Quote haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make competition bids more conservative. Does not modify
-    /// interaction calldata. Default: 0 (no haircut).
-    pub haircut_bps: u32,
+    /// Volume-based solver fee in basis points (0-10000). Injected as an
+    /// additional `FeePolicy::Volume` on every auction order, reusing the
+    /// protocol fee machinery to make competition bids and delivered prices
+    /// more conservative. Does not modify interaction calldata.
+    /// Default: 0 (no fee).
+    pub solver_fee_bps: u32,
     /// Additional EOAs for parallel settlement submission via EIP-7702.
     /// When non-empty, these accounts submit txs to the solver EOA (which
     /// delegates to Solver7702Delegate), enabling concurrent submissions.
@@ -223,6 +224,12 @@ pub struct Config {
 
 impl Config {
     fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.solver_fee_bps < dto::MAX_BASE_POINT,
+            "solver '{}': solver-fee-bps must be below {}",
+            self.name,
+            dto::MAX_BASE_POINT,
+        );
         if self.submission_accounts.is_empty() {
             anyhow::ensure!(
                 self.max_solutions_to_propose.get() == 1,
@@ -313,14 +320,25 @@ impl Solver {
         self.config.account.clone()
     }
 
-    /// Timeout configuration for this solver.
-    pub fn timeouts(&self) -> Timeouts {
+    /// Timeout configuration for `/solve` requests for this solver.
+    pub fn solve_timeouts(&self) -> Timeouts {
         self.config.timeouts
     }
 
-    /// Use limit orders for quoting instead of market orders
-    pub fn quote_using_limit_orders(&self) -> bool {
-        self.config.quote_using_limit_orders
+    /// Timeout configuration for `/quote` requests.
+    pub fn quote_timeouts() -> Timeouts {
+        Timeouts {
+            // quote requests are tiny so the network buffer can be small
+            http_delay: chrono::Duration::milliseconds(25),
+            // the driver doesn't do any post-processing for quote responses so we can use
+            // the entire time for computing solutions
+            solving_share_of_deadline: 1.0.try_into().expect("literal is in allowed range"),
+        }
+    }
+
+    /// Whether this solver supports fast-path (out-of-competition) execution.
+    pub fn fast_path_enabled(&self) -> bool {
+        self.config.fast_path_enabled
     }
 
     pub fn solution_merging(&self) -> SolutionMerging {
@@ -343,9 +361,17 @@ impl Solver {
         self.config.fetch_liquidity_at_block.clone()
     }
 
-    /// Quote haircut in basis points (0-10000) for conservative bidding.
-    pub fn haircut_bps(&self) -> u32 {
-        self.config.haircut_bps
+    /// The volume-based fee policy injected for this solver, if configured.
+    /// Reuses the protocol fee machinery for conservative bidding.
+    pub fn solver_fee(&self) -> Option<order::FeePolicy> {
+        (self.config.solver_fee_bps > 0).then(|| order::FeePolicy::Volume {
+            factor: f64::from(self.config.solver_fee_bps) / f64::from(dto::MAX_BASE_POINT),
+            // A protocol fee counts towards the score because the protocol
+            // captures it on top of the surplus the solution delivers. This
+            // one the solver keeps for itself, so counting it would let a
+            // solver bid with money it never passes on.
+            contributes_to_score: false,
+        })
     }
 
     /// Additional submission accounts for EIP-7702 parallel settlement.
@@ -371,6 +397,12 @@ impl Solver {
         // Fetch the solutions from the solver.
         let weth = self.eth.contracts().weth_address();
 
+        let timeout_config = match auction.id {
+            auction::Kind::Quote { .. } => Self::quote_timeouts(),
+            auction::Kind::Competition(_) => self.solve_timeouts(),
+        };
+        let deadlines = auction.deadline(timeout_config);
+
         let auction_dto = dto::auction::new(
             auction,
             liquidity,
@@ -379,18 +411,18 @@ impl Solver {
             self.config.solver_native_token,
             &flashloan_hints,
             &wrappers,
-            auction.deadline(self.timeouts()).solvers(),
-            self.config.haircut_bps,
+            deadlines.solvers(),
         );
 
         let url = shared::url::join(&self.config.endpoint, "solve");
 
-        // Real auctions (those with an ID) are archived to S3; quotes aren't, so
-        // they skip the gzip capture entirely and just stream the body.
+        // Real auctions (those with an ID) are archived to S3; quotes aren't,
+        // so they skip the gzip capture entirely and just stream the
+        // body.
         let archive_id = self
             .persistence
             .archives_enabled()
-            .then(|| auction.id())
+            .then(|| auction.auction_id())
             .flatten();
         let (body, measurements) = match archive_id {
             // Stream the request body while capturing a gzipped copy for S3, so
@@ -407,7 +439,7 @@ impl Solver {
         // through the same streaming path but would skew the metric. The stream
         // reports the timing once serialization finishes, independently of
         // whether the auction was archived.
-        if auction.id().is_some() {
+        if auction.auction_id().is_some() {
             let solver = self.config.name.clone();
             tokio::spawn(async move {
                 if let Ok(measurements) = measurements.await {
@@ -425,9 +457,12 @@ impl Solver {
             });
         }
 
-        let timeout = match auction.deadline(self.timeouts()).solvers().remaining() {
-            Ok(timeout) => timeout,
-            Err(_) => {
+        let (driver_timeout, solver_timeout) = match (
+            deadlines.driver().remaining(),
+            deadlines.solvers().remaining(),
+        ) {
+            (Ok(driver_timeout), Ok(solver_timeout)) => (driver_timeout, solver_timeout),
+            _ => {
                 tracing::warn!("auction deadline exceeded before sending request to solver");
                 return Ok(Default::default());
             }
@@ -437,14 +472,21 @@ impl Solver {
             .post(url.clone())
             .body(body)
             .headers(tracing_headers())
-            .timeout(timeout);
+            // Using the driver timeout here gives solvers a little grace period so that
+            // they don't necessarily **have to** add a buffer on their end as well. They
+            // are still supposed to respond before `solver_timeout`.
+            // Solvers responding too late may not leave the driver enough time to do the
+            // post-processing but in that case enforcing the `solver_timeout` here would
+            // produce the same result (no solution).
+            .timeout(driver_timeout);
+
         if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
         super::observe::sending_solve_request(
             self.config.name.as_str(),
-            timeout,
-            auction.id().is_none(),
+            solver_timeout,
+            auction.is_quote(),
         );
         let started_at = std::time::Instant::now();
         let res = util::http::send(self.config.response_size_limit_max_bytes, req).await;
@@ -453,14 +495,15 @@ impl Solver {
             res.as_deref(),
             self.config.name.as_str(),
             started_at.elapsed(),
-            auction.id().is_none(),
+            solver_timeout,
+            auction.is_quote(),
         );
         let res = res?;
         let res: solvers_dto::solution::SolverResponse =
             serde_json::from_str(&res).inspect_err(|err| {
                 tracing::warn!(res, ?err, "failed to parse solver response");
                 self.notify(
-                    auction.id(),
+                    auction.auction_id(),
                     None,
                     notify::Kind::DeserializationError(format!("Request format invalid: {err}")),
                 );
@@ -498,14 +541,7 @@ impl Solver {
             .orders()
             .iter()
             .flat_map(|order| {
-                let hint = order.app_data.flashloan()?;
-                let flashloan = domain::flashloan::Flashloan {
-                    liquidity_provider: hint.liquidity_provider.into(),
-                    protocol_adapter: hint.protocol_adapter.into(),
-                    receiver: hint.receiver,
-                    token: hint.token.into(),
-                    amount: hint.amount.into(),
-                };
+                let flashloan = order.app_data.flashloan()?.into();
                 Some((order.uid, flashloan))
             })
             .collect()
@@ -600,7 +636,7 @@ mod tests {
             },
             request_headers: Default::default(),
             fee_handler: FeeHandler::Driver,
-            quote_using_limit_orders: false,
+            fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,
             solver_native_token: ManageNativeToken {
@@ -611,7 +647,6 @@ mod tests {
             response_size_limit_max_bytes: 1024,
             bad_order_detection: BadOrderDetection {
                 tokens_supported: Default::default(),
-                enable_simulation_strategy: false,
                 enable_metrics_strategy: false,
                 metrics_strategy_failure_ratio: 0.9,
                 metrics_strategy_required_measurements: 20,
@@ -623,7 +658,7 @@ mod tests {
             settle_queue_size: 0,
             flashloans_enabled: false,
             fetch_liquidity_at_block: infra::liquidity::AtBlock::Latest,
-            haircut_bps: 0,
+            solver_fee_bps: 0,
             submission_accounts: vec![],
             max_solutions_to_propose: NonZeroUsize::new(1).unwrap(),
             post_processing_concurrency_limit: NonZeroUsize::MAX,
@@ -703,7 +738,6 @@ impl Error {
 pub struct BadOrderDetection {
     /// Tokens that are explicitly allow- or deny-listed.
     pub tokens_supported: HashMap<eth::TokenAddress, risk_detector::Quality>,
-    pub enable_simulation_strategy: bool,
     pub enable_metrics_strategy: bool,
     pub metrics_strategy_failure_ratio: f64,
     pub metrics_strategy_required_measurements: u32,

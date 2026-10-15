@@ -1,5 +1,6 @@
 use {
     crate::{Address, PgTransaction, TransactionHash},
+    bigdecimal::BigDecimal,
     sqlx::{Executor, PgConnection},
     tracing::instrument,
 };
@@ -67,21 +68,25 @@ WHERE block_number = $2 AND log_index = $3
 }
 
 #[instrument(skip_all)]
-pub async fn update_settlement_solver(
+pub async fn update_settlement_solver_and_gas(
     ex: &mut PgConnection,
     block_number: i64,
     log_index: i64,
     solver: Address,
     solution_uid: i64,
+    gas_used: BigDecimal,
+    effective_gas_price: BigDecimal,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 UPDATE settlements
-SET solver = $1, solution_uid = $2
-WHERE block_number = $3 AND log_index = $4
+SET solver = $1, solution_uid = $2, gas_used = $3, effective_gas_price = $4
+WHERE block_number = $5 AND log_index = $6
     ;"#;
     sqlx::query(QUERY)
         .bind(solver)
         .bind(solution_uid)
+        .bind(gas_used)
+        .bind(effective_gas_price)
         .bind(block_number)
         .bind(log_index)
         .execute(ex)

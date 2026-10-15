@@ -100,7 +100,7 @@ async fn summarize_request(req: Request<axum::body::Body>, next: Next) -> Respon
     let response = next.run(req).await;
     let status = response.status().as_u16();
 
-    tracing::info!(
+    tracing::trace!(
         method,
         uri,
         user_agent,
@@ -123,6 +123,11 @@ async fn with_matched_path_metric(req: Request<axum::body::Body>, next: Next) ->
         .map(|path| path.as_str())
         .unwrap_or("unknown");
     let method_with_path = format!("{http_method} {matched_path}");
+
+    metrics
+        .requests_started
+        .with_label_values(&[method_with_path.as_str()])
+        .inc();
 
     let response = {
         let _timer = metrics
@@ -356,6 +361,10 @@ pub fn handle_all_routes(
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "api")]
 struct ApiMetrics {
+    /// Number of started API requests.
+    #[metric(labels("method"))]
+    requests_started: prometheus::IntCounterVec,
+
     /// Number of completed API requests.
     #[metric(labels("method", "status_code"))]
     requests_complete: prometheus::IntCounterVec,
@@ -472,7 +481,8 @@ impl IntoResponse for PriceEstimationErrorWrapper {
                 .into_response(),
             PriceEstimationError::NoLiquidity
             | PriceEstimationError::RateLimited
-            | PriceEstimationError::EstimatorInternal(_) => (
+            | PriceEstimationError::EstimatorInternal(_)
+            | PriceEstimationError::CustomSolverError { .. } => (
                 StatusCode::NOT_FOUND,
                 error("NoLiquidity", "no route found"),
             )
@@ -492,9 +502,6 @@ impl IntoResponse for PriceEstimationErrorWrapper {
                 error("InsufficientLiquidity", message),
             )
                 .into_response(),
-            PriceEstimationError::CustomSolverError { message } => {
-                (StatusCode::BAD_REQUEST, error("CustomSolverError", message)).into_response()
-            }
             PriceEstimationError::ProtocolInternal(err) => {
                 tracing::error!(?err, "PriceEstimationError::Other");
                 internal_error_reply()
@@ -604,7 +611,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn maps_custom_price_estimation_errors_to_bad_request_responses() {
+    async fn maps_known_solver_errors_to_bad_request_responses() {
         let cases = [
             (
                 PriceEstimationError::TradingOutsideAllowedWindow {
@@ -627,13 +634,6 @@ mod tests {
                 "InsufficientLiquidity",
                 "insufficient liquidity",
             ),
-            (
-                PriceEstimationError::CustomSolverError {
-                    message: "custom solver reason".to_string(),
-                },
-                "CustomSolverError",
-                "custom solver reason",
-            ),
         ];
 
         for (err, expected_type, expected_description) in cases {
@@ -648,6 +648,20 @@ mod tests {
             assert_eq!(body.error_type, expected_type);
             assert_eq!(body.description.as_ref(), expected_description);
         }
+    }
+
+    #[tokio::test]
+    async fn maps_unknown_solver_errors_to_no_liquidity_responses() {
+        let response = PriceEstimationErrorWrapper(PriceEstimationError::CustomSolverError {
+            message: "custom solver reason".to_string(),
+        })
+        .into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Error = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body.error_type, "NoLiquidity");
     }
 
     // Tests for Axum extractor type parsing.

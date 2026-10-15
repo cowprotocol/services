@@ -1,3 +1,7 @@
-fn main() {
-    println!("solana-indexer starting");
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[tokio::main]
+async fn main() {
+    solana_indexer::run::start(std::env::args()).await;
 }

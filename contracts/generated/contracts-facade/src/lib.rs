@@ -55,6 +55,7 @@ pub use {
     cow_contract_iuniswapv3factory as IUniswapV3Factory,
     cow_contract_izeroex as IZeroex,
     cow_contract_liquoricesettlement as LiquoriceSettlement,
+    cow_contract_multicall3 as Multicall3,
     cow_contract_pancakerouter as PancakeRouter,
     cow_contract_permit2 as Permit2,
     cow_contract_solver7702delegate as Solver7702Delegate,
@@ -72,6 +73,7 @@ pub mod support {
     pub use {
         cow_contract_anyoneauthenticator as AnyoneAuthenticator,
         cow_contract_balances as Balances,
+        cow_contract_deadlinecheck as DeadlineCheck,
         cow_contract_signatures as Signatures,
         cow_contract_solver as Solver,
         cow_contract_spardose as Spardose,
@@ -86,14 +88,5 @@ pub mod test {
         cow_contract_mockerc4626wrapper as MockERC4626Wrapper,
         cow_contract_nonstandarderc20balances as NonStandardERC20Balances,
         cow_contract_remoteerc20balances as RemoteERC20Balances,
-    };
-}
-pub mod cow_amm {
-    pub use {
-        cow_contract_cowamm as CowAmm,
-        cow_contract_cowammconstantproductfactory as CowAmmConstantProductFactory,
-        cow_contract_cowammfactorygetter as CowAmmFactoryGetter,
-        cow_contract_cowammlegacyhelper as CowAmmLegacyHelper,
-        cow_contract_cowammuniswapv2priceoracle as CowAmmUniswapV2PriceOracle,
     };
 }

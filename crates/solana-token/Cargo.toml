@@ -1,0 +1,17 @@
+[package]
+name = "solana-token"
+version = "0.1.0"
+edition = "2024"
+description = "Which mints and token accounts the settlement program can move tokens through"
+
+[dependencies]
+cow-settlement-interface = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
+solana-sdk = { workspace = true }
+spl-token-2022-interface = { workspace = true }
+
+[dev-dependencies]
+solana-testlib = { workspace = true }
+
+[lints]
+workspace = true

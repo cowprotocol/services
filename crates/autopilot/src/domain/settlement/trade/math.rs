@@ -42,40 +42,29 @@ impl Trade {
                 let limit_sell = price_limits
                     .sell
                     .0
-                    .checked_mul(self.executed.into())
-                    .ok_or(error::Math::Overflow)?
-                    .checked_div(price_limits.buy.0)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio(&self.executed.into(), &price_limits.buy.0)?;
                 let sold = self
                     .executed
                     .0
-                    .checked_mul(prices.buy)
-                    .ok_or(error::Math::Overflow)?
-                    .checked_div(prices.sell)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio(&prices.buy, &prices.sell)?;
                 limit_sell.checked_sub(sold).ok_or(error::Math::Negative)
             }
             order::Side::Sell => {
                 // scale limit buy to support partially fillable orders
 
-                // `checked_ceil_div`` to be consistent with how settlement contract calculates
-                // traded buy amounts
-                // smallest allowed executed_buy_amount per settlement contract is
-                // executed_sell_amount * ceil(price_limits.buy / price_limits.sell)
+                // `checked_ceil_div`` to be consistent with how settlement
+                // contract calculates traded buy amounts
+                // smallest allowed executed_buy_amount per settlement contract
+                // is executed_sell_amount *
+                // ceil(price_limits.buy / price_limits.sell)
                 let limit_buy = self
                     .executed
                     .0
-                    .checked_mul(price_limits.buy.0)
-                    .ok_or(error::Math::Overflow)?
-                    .checked_ceil_div(&price_limits.sell.0)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio_ceil(&price_limits.buy.0, &price_limits.sell.0)?;
                 let bought = self
                     .executed
                     .0
-                    .checked_mul(prices.sell)
-                    .ok_or(error::Math::Overflow)?
-                    .checked_ceil_div(&prices.buy)
-                    .ok_or(error::Math::DivisionByZero)?;
+                    .checked_mul_ratio_ceil(&prices.sell, &prices.buy)?;
                 bought.checked_sub(limit_buy).ok_or(error::Math::Negative)
             }
         }
@@ -114,10 +103,8 @@ impl Trade {
             order::Side::Buy => fee.0,
             order::Side::Sell => fee
                 .0
-                .checked_mul(self.prices.uniform.buy)
-                .ok_or(error::Math::Overflow)?
-                .checked_div(self.prices.uniform.sell)
-                .ok_or(error::Math::DivisionByZero)?,
+                .checked_mul_ratio(&self.prices.uniform.buy, &self.prices.uniform.sell)
+                .map_err(error::Math::from)?,
         };
         Ok(eth::SellTokenAmount(fee_in_sell_token))
     }
@@ -169,8 +156,9 @@ impl Trade {
                     .checked_add(fee.0)
                     .ok_or(Error::Math(Math::Overflow))?,
             );
-            // Do not need to calculate the last custom prices because in the last iteration
-            // the prices are not used anymore to calculate the protocol fee and an error
+            // Do not need to calculate the last custom prices because in the
+            // last iteration the prices are not used anymore to
+            // calculate the protocol fee and an error
             // in this calculation fails the whole function unnecessarily.
             if i != 0 {
                 current_trade.prices.custom = self.calculate_custom_prices(total)?;
@@ -190,10 +178,7 @@ impl Trade {
             order::Side::Buy => self
                 .executed
                 .0
-                .checked_mul(self.prices.custom.buy)
-                .ok_or(error::Math::Overflow)?
-                .checked_div(self.prices.custom.sell)
-                .ok_or(error::Math::DivisionByZero)?,
+                .checked_mul_ratio(&self.prices.custom.buy, &self.prices.custom.sell)?,
         }
         .into())
     }
@@ -208,10 +193,7 @@ impl Trade {
             order::Side::Sell => self
                 .executed
                 .0
-                .checked_mul(self.prices.custom.sell)
-                .ok_or(error::Math::Overflow)?
-                .checked_ceil_div(&self.prices.custom.buy)
-                .ok_or(error::Math::DivisionByZero)?,
+                .checked_mul_ratio_ceil(&self.prices.custom.sell, &self.prices.custom.buy)?,
             order::Side::Buy => self.executed.0,
         }
         .into())
@@ -279,8 +261,8 @@ impl Trade {
         quote: &domain::fee::Quote,
     ) -> Result<eth::SurplusTokenAmount, Error> {
         let surplus = self.surplus_over_quote(quote);
-        // negative surplus is not error in this case, as solutions often have no
-        // improvement over quote which results in negative surplus
+        // negative surplus is not error in this case, as solutions often have
+        // no improvement over quote which results in negative surplus
         if let Err(error::Math::Negative) = surplus {
             return Ok(eth::SurplusTokenAmount(eth::U256::ZERO));
         }
@@ -332,10 +314,11 @@ impl Trade {
         surplus: eth::SurplusTokenAmount,
         factor: f64,
     ) -> Result<eth::SurplusTokenAmount, Error> {
-        // Surplus fee is specified as a `factor` from raw surplus (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of the eventually traded
-        // amounts using a different factor `factor'`.
+        // Surplus fee is specified as a `factor` from raw surplus (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of the eventually traded amounts using a
+        // different factor `factor'`.
         //
         // The protocol fee before being applied is:
         //    fee = surplus_before_fee * factor
@@ -359,16 +342,17 @@ impl Trade {
 
     /// Protocol fee as a cut of the trade volume.
     fn volume_fee(&self, factor: f64) -> Result<eth::SurplusTokenAmount, Error> {
-        // Volume fee is specified as a `factor` from raw volume (before fee). Since
-        // this module works with trades that already have the protocol fee applied, we
-        // need to calculate the protocol fee as an observation of a the eventually
-        // traded amount using a different factor `factor'` .
+        // Volume fee is specified as a `factor` from raw volume (before fee).
+        // Since this module works with trades that already have the
+        // protocol fee applied, we need to calculate the protocol fee
+        // as an observation of a the eventually traded amount using a
+        // different factor `factor'` .
         //
         // The protocol fee before being applied is:
         // case Sell: fee = traded_buy_amount * factor, resulting in the REDUCED
         // buy amount
-        // case Buy: fee = traded_sell_amount * factor, resulting in the INCREASED
-        // sell amount
+        // case Buy: fee = traded_sell_amount * factor, resulting in the
+        // INCREASED sell amount
         //
         // The protocol fee after being applied is:
         // case Sell: fee = traded_buy_amount' * factor',
@@ -548,5 +532,82 @@ pub mod error {
         DivisionByZero,
         #[error("negative")]
         Negative,
+    }
+
+    impl From<number::MathError> for Math {
+        fn from(err: number::MathError) -> Self {
+            match err {
+                number::MathError::DivisionByZero => Self::DivisionByZero,
+                number::MathError::Overflow => Self::Overflow,
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, std::str::FromStr};
+
+    /// The trade from prod xdai settlement
+    /// 0xb02d542de9a45dfad68d152cfede1fa0c322b988ecc6be4b398c0f9c6b1048c1
+    /// (auction 16489395), whose solver-encoded uniform clearing prices of
+    /// magnitude 1e60 made `amount * price` exceed 256 bits. The old math
+    /// overflowed, the whole fee calculation bailed, and the execution was
+    /// persisted with zeroed fees.
+    fn incident_trade(side: order::Side) -> Trade {
+        let prices = ClearingPrices {
+            sell: eth::U256::from_str(
+                "1457533905173705573868216339202397616043789250000000000000000",
+            )
+            .unwrap(),
+            buy: eth::U256::from_str(
+                "1457533885739920430673304276561480416152609058094152638608893",
+            )
+            .unwrap(),
+        };
+        Trade {
+            uid: domain::OrderUid([0; 56]),
+            sell: eth::Asset {
+                amount: eth::U256::from(80502414430363770111_u128).into(),
+                token: eth::Address::default().into(),
+            },
+            buy: eth::Asset {
+                amount: eth::U256::from(80500000000000000000_u128).into(),
+                token: eth::Address::default().into(),
+            },
+            side,
+            executed: order::TargetAmount(eth::U256::from(80500000000000000000_u128)),
+            prices: Prices {
+                uniform: prices,
+                custom: prices,
+            },
+        }
+    }
+
+    #[test]
+    fn surplus_survives_hugely_scaled_clearing_prices() {
+        let trade = incident_trade(order::Side::Buy);
+        let surplus = trade
+            .surplus_over(
+                &trade.prices.uniform,
+                PriceLimits {
+                    sell: trade.sell.amount,
+                    buy: trade.buy.amount,
+                },
+            )
+            .unwrap();
+        assert_eq!(surplus.0, eth::U256::from(2415503697089133_u64));
+    }
+
+    /// Sell side hits the fee-to-sell-token conversion, which multiplies the
+    /// fee by the uniform buy price and overflowed the same way.
+    #[test]
+    fn fee_conversion_survives_hugely_scaled_clearing_prices() {
+        let fee = incident_trade(order::Side::Sell)
+            .fee_into_sell_token(eth::SurplusTokenAmount(eth::U256::from(
+                1_000_000_000_000_000_000_u128,
+            )))
+            .unwrap();
+        assert_eq!(fee.0, eth::U256::from(999999986666666844_u64));
     }
 }

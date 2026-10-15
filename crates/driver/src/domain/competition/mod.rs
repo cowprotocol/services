@@ -1,5 +1,4 @@
 use {
-    self::solution::settlement,
     super::{
         Mempools,
         mempools::SubmissionMode,
@@ -22,7 +21,6 @@ use {
             observe::{self, OrderExcludedFromAuctionReason, metrics},
             solver::{self, Account, SolutionMerging, Solver},
         },
-        util::math,
     },
     alloy::{network::TxSigner as _, primitives::Bytes},
     anyhow::Context as _,
@@ -30,6 +28,7 @@ use {
     eth_domain_types as eth,
     futures::{FutureExt, StreamExt},
     itertools::Itertools,
+    number::u256_ext::U256Ext,
     simulator::{RevertError, Simulator, SimulatorError},
     std::{
         cmp::Reverse,
@@ -44,6 +43,7 @@ use {
 pub mod auction;
 pub mod order;
 mod pre_processing;
+pub mod quote_cache;
 pub mod risk_detector;
 pub mod solution;
 pub mod sorting;
@@ -53,7 +53,13 @@ use {
     eth_domain_types::BlockNo,
     ethrpc::block_stream::BlockInfo,
 };
-pub use {auction::Auction, order::Order, pre_processing::DataAggregator, solution::Solution};
+pub use {
+    auction::Auction,
+    order::Order,
+    pre_processing::DataAggregator,
+    quote_cache::{CachedQuoteSolution, FastPathQuoteCache},
+    solution::Solution,
+};
 
 type BalanceGroup = (order::Trader, eth::TokenAddress, order::SellTokenBalance);
 type Balances = HashMap<BalanceGroup, order::SellAmount>;
@@ -269,11 +275,18 @@ pub struct Competition {
     pub mempools: Mempools,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
+    /// Fast-path quote solutions cached at quote time, keyed per solver
+    /// account.
+    quote_cache: FastPathQuoteCache,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
+    /// Reason each order got filtered for in the most recent auction. Used to
+    /// only log changes since most orders get filtered for the same reason
+    /// in every auction.
+    filtered_orders: Mutex<FilteredOrders>,
 }
 
 impl Competition {
@@ -288,6 +301,7 @@ impl Competition {
         risk_detector: Arc<risk_detector::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
+        quote_cache: FastPathQuoteCache,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
         if !submission_accounts.is_empty() {
@@ -308,10 +322,12 @@ impl Competition {
             simulator,
             mempools,
             settlements: Default::default(),
+            quote_cache,
             risk_detector,
             fetcher,
             order_sorting_strategies,
             submitter_pool,
+            filtered_orders: Default::default(),
         })
     }
 
@@ -331,6 +347,14 @@ impl Competition {
             })?;
 
         let auction = self.assemble_auction(&tasks).await;
+
+        // Inject the configured solver fee as an additional volume-based fee
+        // policy on every order, reusing the protocol fee machinery for
+        // conservative bidding.
+        let auction = match self.solver.solver_fee() {
+            Some(policy) => auction.with_solver_fee(&policy),
+            None => auction,
+        };
 
         let liquidity = async {
             match self.solver.liquidity() {
@@ -362,11 +386,11 @@ impl Competition {
             .await
             .inspect_err(|err| {
                 if err.is_timeout() {
-                    notify::solver_timeout(&self.solver, auction.id());
+                    notify::solver_timeout(&self.solver, auction.auction_id());
                 }
             })?;
 
-        let deadline = auction.deadline(self.solver.timeouts()).driver();
+        let deadline = auction.deadline(self.solver.solve_timeouts()).driver();
         observe::postprocessing(&solutions, deadline);
 
         // Discard solutions that don't have unique ID.
@@ -374,7 +398,7 @@ impl Competition {
         let solutions = solutions.into_iter().filter(|solution| {
             if !ids.insert(solution.id().clone()) {
                 observe::duplicated_solution_id(self.solver.name(), solution.id());
-                notify::duplicated_solution_id(&self.solver, auction.id(), solution.id());
+                notify::duplicated_solution_id(&self.solver, auction.auction_id(), solution.id());
                 false
             } else {
                 true
@@ -385,7 +409,7 @@ impl Competition {
         let solutions = solutions.filter(|solution| {
             if solution.is_empty(auction.surplus_capturing_jit_order_owners()) {
                 observe::empty_solution(self.solver.name(), solution.id());
-                notify::empty_solution(&self.solver, auction.id(), solution.id().clone());
+                notify::empty_solution(&self.solver, auction.auction_id(), solution.id().clone());
                 false
             } else {
                 true
@@ -404,12 +428,7 @@ impl Competition {
                 observe::encoding(solution.id());
                 let settlement = solution
                     .clone()
-                    .encode(
-                        auction,
-                        &self.eth,
-                        &self.simulator,
-                        self.solver.solver_native_token(),
-                    )
+                    .encode(auction, &self.eth, &self.simulator)
                     .await;
                 (solution, settlement)
             })
@@ -420,7 +439,6 @@ impl Competition {
                     .user_trades()
                     .map(|trade| trade.order().uid)
                     .collect();
-                let has_haircut = solution.has_haircut();
                 match result {
                     Ok(encoded) => {
                         self.risk_detector.encoding_succeeded(&orders);
@@ -430,24 +448,15 @@ impl Competition {
                     Err(_err) if id.solutions().len() > 1 => None,
                     Err(err) => {
                         self.risk_detector.encoding_failed(&orders);
-                        observe::encoding_failed(
-                            self.solver.name(),
-                            &id,
-                            &err,
-                            has_haircut,
-                            &orders,
-                        );
-                        // don't notify on errors for solutions with haircut
-                        if !has_haircut {
-                            notify::encoding_failed(&self.solver, auction.id(), &id, &err);
-                        }
+                        observe::encoding_failed(self.solver.name(), &id, &err, &orders);
+                        notify::encoding_failed(&self.solver, auction.auction_id(), &id, &err);
                         None
                     }
                 }
             });
 
-        // Encode settlements as they arrive until there are no more new settlements or
-        // timeout is reached.
+        // Encode settlements as they arrive until there are no more new
+        // settlements or timeout is reached.
         let mut settlements = Vec::new();
         let future = async {
             let mut encoded = std::pin::pin!(encoded);
@@ -460,7 +469,7 @@ impl Competition {
             .is_err()
         {
             observe::postprocessing_timed_out(&settlements);
-            notify::postprocessing_timed_out(&self.solver, auction.id())
+            notify::postprocessing_timed_out(&self.solver, auction.auction_id())
         }
 
         // Score the settlements.
@@ -481,7 +490,7 @@ impl Competition {
                         observe::scoring_failed(self.solver.name(), &err);
                         notify::scoring_failed(
                             &self.solver,
-                            auction.id(),
+                            auction.auction_id(),
                             settlement.solution(),
                             &err,
                         );
@@ -513,12 +522,8 @@ impl Competition {
         // Cache all settlements so they can be revealed/settled later. Keep
         // solutions from previous overlapping auctions around long enough
         // for their /settle to complete.
-        {
-            let mut lock = self.settlements.lock().unwrap();
-            for (_, settlement) in &scored {
-                lock.push_front(settlement.clone());
-            }
-            lock.truncate(max_to_propose * MAX_CONCURRENT_AUCTIONS);
+        for (_, settlement) in &scored {
+            self.queue_settlement(settlement.clone());
         }
 
         if let Ok(remaining) = deadline.remaining() {
@@ -530,6 +535,72 @@ impl Competition {
         }
 
         Ok(scored.into_iter().map(|(solved, _)| solved).collect())
+    }
+
+    /// Cache a fast-path quote's solution under this solver's account, to be
+    /// settled later via [`Competition::reencode_quote_solution`].
+    pub async fn cache_quote_solution(
+        &self,
+        quote_id: crate::domain::quote::Id,
+        auction: Auction,
+        solution: Solution,
+    ) {
+        self.quote_cache
+            .store(self.solver.address(), quote_id, auction, solution)
+            .await;
+    }
+
+    /// Take the fast-path quote solution cached under `quote_id`, re-encode it
+    /// against the real signed `order`, and promote it into the regular settle
+    /// queue. Returns the id of the queued solution, which
+    /// [`Competition::settle`] settles by.
+    ///
+    /// TODO: The slippage of AMM interactions will only be capped at a
+    /// fraction of the traded tokens but not at a total ETH value which means
+    /// very large trades can still incur big amounts of slippage. This should
+    /// be fixed.
+    #[instrument(skip_all)]
+    pub async fn reencode_quote_solution(
+        &self,
+        auction_id: auction::Id,
+        quote_id: crate::domain::quote::Id,
+        mut order: Order,
+        limit_prices: solution::LimitPrices,
+    ) -> Result<u64, Error> {
+        let cached = self
+            .quote_cache
+            .take(self.solver.address(), &quote_id)
+            .await
+            .ok_or(Error::SolutionNotAvailable)?;
+        self.fetcher.resolve_app_data(&mut order).await;
+        let solution = cached
+            .solution
+            .finalize_fast_path_solution(order.clone(), limit_prices)
+            .map_err(|err| match err {
+                solution::Error::FastPathOrderMismatch => Error::FastPathOrderMismatch,
+                solution::Error::FastPathLimitNotMet => Error::FastPathLimitNotMet,
+                other => Error::FastPathInvalidOrder(other),
+            })?;
+        // The quote was solved outside of any auction; its settlement runs
+        // under the auction the autopilot allocated for it.
+        let auction = Auction {
+            id: auction::Kind::Competition(auction_id),
+            orders: vec![order],
+            ..cached.auction
+        };
+        let settlement = solution
+            .encode(&auction, &self.eth, &self.simulator)
+            .await?;
+        let solution_id = settlement.solution().get();
+        tracing::debug!(solution_id, orders = ?settlement.orders().keys(), "reencoded fast path solution");
+        self.queue_settlement(settlement);
+        Ok(solution_id)
+    }
+
+    fn queue_settlement(&self, settlement: Settlement) {
+        let mut lock = self.settlements.lock().unwrap();
+        lock.push_front(settlement);
+        lock.truncate(self.solver.max_solutions_to_propose() * MAX_CONCURRENT_AUCTIONS);
     }
 
     /// Re-simulate all proposed solutions on every new block and drop any
@@ -581,35 +652,26 @@ impl Competition {
         auction: &Auction,
     ) -> Option<u64> {
         let err = match self.simulate_settlement(settlement).await {
-            Err(simulator::Error::Revert(err)) => err,
+            Err(SimulateError::Simulator(simulator::Error::Revert(err))) => err,
             _ => return None,
         };
-        let has_haircut = settlement.has_haircut();
-        observe::winner_voided(self.solver.name(), block, &err, has_haircut);
-        if !has_haircut {
-            notify::simulation_failed(
-                &self.solver,
-                auction.id(),
-                settlement.solution(),
-                &simulator::Error::Revert(err),
-                true,
-            );
-        }
+        observe::winner_voided(self.solver.name(), block, &err);
+        notify::simulation_failed(
+            &self.solver,
+            auction.auction_id(),
+            settlement.solution(),
+            &simulator::Error::Revert(err),
+            true,
+        );
         Some(solved.id.get())
     }
 
     async fn assemble_auction(&self, tasks: &DataFetchingTasks) -> Auction {
-        let (base_auction, cow_amm_orders) =
-            tokio::join!(tasks.auction.clone(), tasks.cow_amm_orders.clone());
+        let base_auction = tasks.auction.clone().await;
 
         let auction = Auction {
             id: base_auction.id,
-            orders: base_auction
-                .orders
-                .iter()
-                .cloned()
-                .chain(cow_amm_orders.iter().cloned())
-                .collect(),
+            orders: base_auction.orders.clone(),
             tokens: base_auction.tokens.clone(),
             gas_price: base_auction.gas_price,
             deadline: base_auction.deadline,
@@ -622,8 +684,9 @@ impl Competition {
         let order_sorting_strategies = self.order_sorting_strategies.clone();
 
         let sort_orders_future = Self::run_blocking_with_timer("sort_orders", move || {
-            // Use spawn_blocking() because a lot of CPU bound computations are happening
-            // and we don't want to block the runtime for too long.
+            // Use spawn_blocking() because a lot of CPU bound computations are
+            // happening and we don't want to block the runtime for
+            // too long.
             Self::sort_orders(auction, solver_address, order_sorting_strategies)
         });
 
@@ -634,18 +697,20 @@ impl Competition {
             tasks.app_data.clone()
         );
 
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
-            // Same as before with sort_orders, we use spawn_blocking() because a lot of CPU
-            // bound computations are happening and we want to avoid blocking
-            // the runtime.
-            Self::update_orders(auction, balances, app_data, cow_amm_orders)
+        let (auction, filtered) = Self::run_blocking_with_timer("update_orders", move || {
+            // Same as before with sort_orders, we use spawn_blocking() because
+            // a lot of CPU bound computations are happening and we
+            // want to avoid blocking the runtime.
+            Self::update_orders(auction, balances, app_data)
         })
         .await;
+
+        self.update_filtered_orders(filtered);
         self.without_unsupported_orders(auction).await
     }
 
-    // Oders already need to be sorted from most relevant to least relevant so that
-    // we allocate balances for the most relevants first.
+    // Oders already need to be sorted from most relevant to least relevant so
+    // that we allocate balances for the most relevants first.
     fn sort_orders(
         mut auction: Auction,
         solver: eth::Address,
@@ -661,21 +726,20 @@ impl Competition {
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner
-    /// and updates the fetched app data.
+    /// and updates the fetched app data. Returns the updated auction and the
+    /// reason each removed order got filtered for.
     /// It allocates available funds from left to right so the orders should
     /// already be sorted by priority going in.
     fn update_orders(
         mut auction: Auction,
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
-        cow_amm_orders: Arc<Vec<Order>>,
-    ) -> Auction {
-        // Clone balances since we only aggregate data once but each solver needs
-        // to use and modify the data individually.
+    ) -> (Auction, FilteredOrders) {
+        // Clone balances since we only aggregate data once but each solver
+        // needs to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
-        let cow_amms: HashSet<_> = cow_amm_orders.iter().map(|o| o.uid).collect();
 
-        let mut discarded_orders = BTreeMap::<OrderExcludedFromAuctionReason, Vec<Uid>>::new();
+        let mut filtered = FilteredOrders::default();
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -686,15 +750,6 @@ impl Competition {
         // down in case the available user balance is only enough to partially
         // cover the rest of the order.
         auction.orders.retain_mut(|order| {
-            if cow_amms.contains(&order.uid) {
-                // cow amm orders already get constructed fully initialized
-                // so we don't have to handle them here anymore.
-                // Without this short circuiting logic they would get filtered
-                // out later because we don't bother fetching their balances
-                // for performance reasons.
-                return true;
-            }
-
             // Update order app data if it was fetched.
             if let Some(fetched_app_data) = app_data.get(&order.app_data.hash()) {
                 order.app_data = fetched_app_data.clone().into();
@@ -718,10 +773,10 @@ impl Competition {
             )) {
                 Some(balance) => balance,
                 None => {
-                    discarded_orders
-                        .entry(OrderExcludedFromAuctionReason::CouldNotFetchBalance)
-                        .or_default()
-                        .push(order.uid);
+                    filtered.insert(
+                        OrderExcludedFromAuctionReason::CouldNotFetchBalance,
+                        order.uid,
+                    );
                     return false;
                 }
             };
@@ -734,36 +789,39 @@ impl Competition {
                 _ => order::SellAmount::default(),
             };
             if allocated_balance.0.is_zero() {
-                discarded_orders
-                    .entry(OrderExcludedFromAuctionReason::InsufficientBalance)
-                    .or_default()
-                    .push(order.uid);
+                filtered.insert(
+                    OrderExcludedFromAuctionReason::InsufficientBalance,
+                    order.uid,
+                );
                 return false;
             }
 
             // We need to scale the available amount in the order based on
             // allocated balance. We cannot naively just set the `available`
             // amount to equal the `allocated_balance` because of two reasons:
-            // 1. They are in different units. `available` is a `TargetAmount` which means
-            //    it would be in buy token for buy orders and not in sell token like the
-            //    `allocated_balance`
-            // 2. Account for fees. Even in the case of sell orders, `available` is
-            //    potentially different to `allocated_balance` because of fee scaling. For
-            //    example, imagine a partially fillable order selling 100 tokens with a fee
-            //    of 10 for a user with a balance of 50. The `allocated_balance` would be 50
-            //    tokens, but the `available` amount needs to be less! We want the
-            //    following: `available + (fee * available / sell) <= allocated_balance`
+            // 1. They are in different units. `available` is a `TargetAmount`
+            //    which means it would be in buy token for buy orders and not in
+            //    sell token like the `allocated_balance`
+            // 2. Account for fees. Even in the case of sell orders, `available`
+            //    is potentially different to `allocated_balance` because of fee
+            //    scaling. For example, imagine a partially fillable order
+            //    selling 100 tokens with a fee of 10 for a user with a balance
+            //    of 50. The `allocated_balance` would be 50 tokens, but the
+            //    `available` amount needs to be less! We want the following:
+            //    `available + (fee * available / sell) <= allocated_balance`
             if let order::Partial::Yes { available } = &mut order.partial {
                 *available = order::TargetAmount(
-                    math::mul_ratio(available.0, allocated_balance.0, max_sell.0)
+                    available
+                        .0
+                        .checked_mul_ratio(&allocated_balance.0, &max_sell.0)
                         .unwrap_or_default(),
                 );
             }
             if order.available().is_zero() {
-                discarded_orders
-                    .entry(OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining)
-                    .or_default()
-                    .push(order.uid);
+                filtered.insert(
+                    OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
+                    order.uid,
+                );
                 return false;
             }
 
@@ -772,16 +830,23 @@ impl Competition {
             true
         });
 
-        let discarded_total = discarded_orders.values().map(Vec::len).sum::<usize>();
-        if discarded_total > 0 {
+        (auction, filtered)
+    }
+
+    /// Stores the orders filtered in the current auction and logs how they
+    /// differ from the previous auction.
+    fn update_filtered_orders(&self, current: FilteredOrders) {
+        let mut previous = self.filtered_orders.lock().unwrap();
+        let diff = current.diff(&previous);
+        if !diff.is_empty() {
             tracing::debug!(
-                total = discarded_total,
-                ?discarded_orders,
-                "filtered orders during solver specific prioritization logic"
+                total = current.len(),
+                now_filtered = ?diff.now_filtered,
+                no_longer_filtered = ?diff.no_longer_filtered,
+                "filtered orders during solver specific prioritization logic changed"
             );
         }
-
-        auction
+        *previous = current;
     }
 
     /// Runs a blocking function on a background thread, timing it using the
@@ -816,15 +881,13 @@ impl Competition {
             .find(|s| s.solution().get() == solution_id && s.auction_id == auction_id)
             .cloned()
             .ok_or(Error::SolutionNotAvailable)?;
+        let encoded = settlement.encode(&self.eth, None).map_err(|err| {
+            tracing::warn!(?err, "failed to encode settlement for reveal");
+            Error::EncodingFailed(err)
+        })?;
         Ok(Revealed {
-            internalized_calldata: settlement
-                .transaction(settlement::Internalization::Enable)
-                .input
-                .clone(),
-            uninternalized_calldata: settlement
-                .transaction(settlement::Internalization::Disable)
-                .input
-                .clone(),
+            internalized_calldata: encoded.internalized.input,
+            uninternalized_calldata: encoded.uninternalized.input,
         })
     }
 
@@ -890,7 +953,15 @@ impl Competition {
                 .ok_or(Error::SolutionNotAvailable)?
         };
 
-        // Asynchronously notify liquidity sources to not block settlement execution.
+        let encoded = settlement
+            .encode(&self.eth, Some(submission_deadline))
+            .map_err(|err| {
+                tracing::warn!(?err, "failed to encode settlement for submission");
+                Error::EncodingFailed(err)
+            })?;
+
+        // Asynchronously notify liquidity sources to not block settlement
+        // execution.
         {
             let liquidity_sources_notifier_clone = self.liquidity_sources_notifier.clone();
             let settlement_clone = settlement.clone();
@@ -921,7 +992,7 @@ impl Competition {
 
         let executed = self
             .mempools
-            .execute(&settlement, submission_deadline, &mode)
+            .execute(&encoded, submission_deadline, &mode)
             .await;
 
         notify::executed(
@@ -934,14 +1005,8 @@ impl Competition {
         match executed {
             Err(_) => Err(Error::SubmissionError),
             Ok(tx_hash) => Ok(Settled {
-                internalized_calldata: settlement
-                    .transaction(settlement::Internalization::Enable)
-                    .input
-                    .clone(),
-                uninternalized_calldata: settlement
-                    .transaction(settlement::Internalization::Disable)
-                    .input
-                    .clone(),
+                internalized_calldata: encoded.internalized.input,
+                uninternalized_calldata: encoded.uninternalized.input,
                 tx_hash,
             }),
         }
@@ -958,15 +1023,16 @@ impl Competition {
     }
 
     /// Returns whether the settlement can be executed or would revert.
-    async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), simulator::Error> {
-        let tx = settlement.transaction(settlement::Internalization::Enable);
-        let gas_needed_for_tx = self.simulator.gas(tx.clone()).await?;
-        if gas_needed_for_tx > settlement.gas.limit {
-            return Err(simulator::Error::Revert(RevertError {
-                err: SimulatorError::GasExceeded(gas_needed_for_tx, settlement.gas.limit),
-                tx: tx.clone(),
+    async fn simulate_settlement(&self, settlement: &Settlement) -> Result<(), SimulateError> {
+        let encoded = settlement.encode(&self.eth, None)?;
+        let gas_needed_for_tx = self.simulator.gas(encoded.internalized.clone()).await?;
+        if gas_needed_for_tx > encoded.gas.limit {
+            return Err(simulator::Error::Revert(Box::new(RevertError {
+                err: SimulatorError::GasExceeded(gas_needed_for_tx, encoded.gas.limit),
+                tx: encoded.internalized,
                 block: self.eth.current_block().borrow().number.into(),
-            }));
+            }))
+            .into());
         }
         Ok(())
     }
@@ -979,6 +1045,63 @@ impl Competition {
         self.risk_detector
             .filter_unsupported_orders_in_auction(auction)
             .await
+    }
+}
+
+/// Orders that got filtered out of an auction grouped by the reason.
+#[derive(Default, Debug)]
+struct FilteredOrders(BTreeMap<OrderExcludedFromAuctionReason, HashSet<Uid>>);
+
+impl FilteredOrders {
+    fn insert(&mut self, reason: OrderExcludedFromAuctionReason, uid: Uid) {
+        self.0.entry(reason).or_default().insert(uid);
+    }
+
+    fn len(&self) -> usize {
+        self.0.values().map(HashSet::len).sum()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.values().all(HashSet::is_empty)
+    }
+
+    /// Computes which orders started and which stopped getting filtered
+    /// compared to `previous`.
+    fn diff(&self, previous: &Self) -> FilteredOrdersDiff {
+        FilteredOrdersDiff {
+            now_filtered: self.missing_from(previous),
+            no_longer_filtered: previous.missing_from(self),
+        }
+    }
+
+    /// Orders in `self` which are not in `other` for the same reason.
+    fn missing_from(&self, other: &Self) -> Self {
+        let missing = self
+            .0
+            .iter()
+            .map(|(reason, uids)| {
+                let missing = match other.0.get(reason) {
+                    Some(other) => uids.difference(other).copied().collect(),
+                    None => uids.clone(),
+                };
+                (*reason, missing)
+            })
+            .filter(|(_, uids)| !uids.is_empty())
+            .collect();
+        Self(missing)
+    }
+}
+
+/// Orders that started or stopped getting filtered for each reason between two
+/// auctions. An order whose reason changed shows up in both.
+struct FilteredOrdersDiff {
+    now_filtered: FilteredOrders,
+    no_longer_filtered: FilteredOrders,
+}
+
+impl FilteredOrdersDiff {
+    fn is_empty(&self) -> bool {
+        self.now_filtered.is_empty() && self.no_longer_filtered.is_empty()
     }
 }
 
@@ -1101,4 +1224,22 @@ pub enum Error {
     NoValidOrdersFound,
     #[error("could not parse the request")]
     MalformedRequest,
+    #[error("fast-path settle order does not match the quote")]
+    FastPathOrderMismatch,
+    #[error("fast-path fill would not meet the order's signed limit")]
+    FastPathLimitNotMet,
+    #[error(transparent)]
+    FastPathInvalidOrder(solution::Error),
+    #[error("failed to build fast-path settlement: {0:?}")]
+    FastPathSettlement(#[from] solution::Error),
+    #[error("failed to encode settlement: {0:?}")]
+    EncodingFailed(solution::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SimulateError {
+    #[error(transparent)]
+    Simulator(#[from] simulator::Error),
+    #[error(transparent)]
+    Encoding(#[from] solution::Error),
 }

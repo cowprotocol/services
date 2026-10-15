@@ -4,12 +4,12 @@
 //! making them small enough to efficiently send to/from the Pod Service.
 
 pub use state::{RankType, Unscored};
-use {
-    crate::{
-        primitives::{OrderUid, Side},
-        state,
-    },
-    alloy_primitives::{Address, U256},
+
+use crate::{
+    chain::ChainTypes,
+    evm::{Evm, U256},
+    primitives::Side,
+    state,
 };
 pub type Scored = state::Scored<U256>;
 pub type Ranked = state::Ranked<U256>;
@@ -19,39 +19,39 @@ pub type Ranked = state::Ranked<U256>;
 /// This contains only what's absolutely necessary to run the winner selection
 /// algorithm.
 #[derive(Debug, Clone)]
-pub struct Solution<State> {
+pub struct Solution<State, C: ChainTypes = Evm> {
     /// Solution ID from solver (unique per solver).
     id: u64,
 
     /// Solver's submission address (used for identifying the solver).
-    solver: Address,
+    solver: C::AccountId,
 
     /// Orders executed in this solution.
-    orders: Vec<Order>,
+    orders: Vec<Order<C>>,
 
     /// State marker (score and ranking information).
     state: State,
 }
 
-impl<T> Solution<T> {
+impl<T, C: ChainTypes> Solution<T, C> {
     /// Get the solution ID.
     pub fn id(&self) -> u64 {
         self.id
     }
 
     /// Get the solver address.
-    pub fn solver(&self) -> Address {
+    pub fn solver(&self) -> C::AccountId {
         self.solver
     }
 
     /// Get the orders.
-    pub fn orders(&self) -> &[Order] {
+    pub fn orders(&self) -> &[Order<C>] {
         &self.orders
     }
 }
 
-impl<State> state::HasState for Solution<State> {
-    type Next<NewState> = Solution<NewState>;
+impl<State, C: ChainTypes> state::HasState for Solution<State, C> {
+    type Next<NewState> = Solution<NewState, C>;
     type State = State;
 
     fn with_state<NewState>(self, state: NewState) -> Self::Next<NewState> {
@@ -68,9 +68,9 @@ impl<State> state::HasState for Solution<State> {
     }
 }
 
-impl Solution<Unscored> {
+impl<C: ChainTypes> Solution<Unscored, C> {
     /// Create a new unscored solution.
-    pub fn new(id: u64, solver: Address, orders: Vec<Order>) -> Self {
+    pub fn new(id: u64, solver: C::AccountId, orders: Vec<Order<C>>) -> Self {
         Self {
             id,
             solver,
@@ -86,35 +86,35 @@ impl Solution<Unscored> {
 /// including limit amounts (from the original order) and executed amounts
 /// (what actually happened in this solution).
 #[derive(Debug, Clone)]
-pub struct Order {
-    /// Unique order identifier (56 bytes).
-    pub uid: OrderUid,
+pub struct Order<C: ChainTypes = Evm> {
+    /// Unique order identifier.
+    pub uid: C::OrderUid,
 
     /// Sell token address.
-    pub sell_token: Address,
+    pub sell_token: C::TokenId,
 
     /// Buy token address.
-    pub buy_token: Address,
+    pub buy_token: C::TokenId,
 
     /// Limit amount of sell token (from original order parameters).
     ///
     /// This is the maximum amount the user is willing to sell.
-    pub sell_amount: U256,
+    pub sell_amount: C::Amount,
 
     /// Limit amount of buy token (from original order parameters).
     ///
     /// This is the minimum amount the user wants to receive.
-    pub buy_amount: U256,
+    pub buy_amount: C::Amount,
 
     /// Amount of sell token that left the user's wallet (including fees).
     ///
     /// This is the actual executed amount in this solution.
-    pub executed_sell: U256,
+    pub executed_sell: C::Amount,
 
     /// Amount of buy token the user received (after fees).
     ///
     /// This is the actual amount the user got in this solution.
-    pub executed_buy: U256,
+    pub executed_buy: C::Amount,
 
     /// Order side (Buy or Sell).
     ///

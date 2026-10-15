@@ -9,7 +9,10 @@ use {
         interaction::InteractionData,
         order::{Order, SellTokenSource},
     },
-    std::sync::{Arc, LazyLock},
+    std::{
+        sync::{Arc, LazyLock},
+        time::Duration,
+    },
 };
 
 mod cached;
@@ -55,16 +58,17 @@ impl From<anyhow::Error> for TransferSimulationError {
 #[cfg_attr(any(test, feature = "test-util"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
-    // Returns the balance available to the allowance manager for the given owner
-    // and token taking both balance as well as "allowance" into account.
+    // Returns the balance available to the allowance manager for the given
+    // owner and token taking both balance as well as "allowance" into
+    // account.
     async fn get_balances(&self, queries: &[Query]) -> Vec<anyhow::Result<U256>>;
 
-    // Check that the settlement contract can make use of this user's token balance.
-    // This check could fail if the user does not have enough balance, has not
-    // given the allowance to the allowance manager or if the token does not
-    // allow freely transferring amounts around for example if it is paused
-    // or takes a fee on transfer. If the node supports the trace_callMany we
-    // can perform more extensive tests.
+    // Check that the settlement contract can make use of this user's token
+    // balance. This check could fail if the user does not have enough
+    // balance, has not given the allowance to the allowance manager or if
+    // the token does not allow freely transferring amounts around for
+    // example if it is paused or takes a fee on transfer. If the node
+    // supports the trace_callMany we can perform more extensive tests.
     async fn can_transfer(
         &self,
         query: &Query,
@@ -93,9 +97,11 @@ pub fn cached(
     web3: &Web3,
     balance_simulator: BalanceSimulator,
     blocks: CurrentBlockWatcher,
+    eviction_time: Duration,
+    refresh_cooldown: Duration,
 ) -> Arc<dyn BalanceFetching> {
     let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
-    cached.spawn_background_task(blocks);
+    cached.spawn_background_task(blocks, eviction_time, refresh_cooldown);
     cached
 }
 
@@ -147,8 +153,8 @@ impl BalanceSimulator {
         // We simulate the balances from the Settlement contract's context. This
         // allows us to check:
         // 1. How the pre-interactions would behave as part of the settlement
-        // 2. Simulate the actual VaultRelayer transfers that would happen as part of a
-        //    settlement
+        // 2. Simulate the actual VaultRelayer transfers that would happen as
+        //    part of a settlement
         //
         // This allows us to end up with very accurate balance simulations.
         let balance_call = Balances::Balances::balanceCall {

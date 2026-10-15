@@ -1,15 +1,9 @@
 use {
     super::{QuoteVerificationMode, native::NativePriceEstimating},
-    crate::{
-        PriceEstimateResult,
-        PriceEstimating,
-        PriceEstimationError,
-        Query,
-        StreamingPriceEstimating,
-    },
+    crate::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
-        stream::{BoxStream, FuturesUnordered, StreamExt},
+        stream::{FuturesUnordered, StreamExt},
     },
     gas_price_estimation::GasPriceEstimating,
     model::order::OrderKind,
@@ -107,8 +101,8 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         'outer: while stage_index < self.stages.len() {
             let mut requests = FuturesUnordered::new();
 
-            // Collect requests until it's at least theoretically possible to produce enough
-            // results to return early.
+            // Collect requests until it's at least theoretically possible to
+            // produce enough results to return early.
             let requests_for_batch = missing_results(&results);
             let remaining_stages = Arc::new(OnceLock::new());
 
@@ -127,8 +121,8 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
                 requests.extend(futures);
                 stage_index += 1;
             }
-            // Init remaining stages once we know how many stages we had to kick-off and
-            // BEFORE we start polling the futures.
+            // Init remaining stages once we know how many stages we had to
+            // kick-off and BEFORE we start polling the futures.
             remaining_stages
                 .set(self.stages.len() - stage_index)
                 .expect("this is the only place where we init the value");
@@ -159,32 +153,28 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
         &self,
         query: &Q,
         kind: OrderKind,
-        (index, result): ResultWithIndex<R>,
-    ) -> Result<R, PriceEstimationError> {
+        (index, result): &ResultWithIndex<R>,
+    ) {
         let EstimatorIndex(stage_index, estimator_index) = index;
-        let (name, _estimator) = &self.stages[stage_index][estimator_index];
-        tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
-        if result.is_ok() {
-            metrics()
-                .queries_won
-                .with_label_values(&[name.as_str(), kind.label()])
-                .inc();
-        }
-        result
+        let (name, _estimator) = &self.stages[*stage_index][*estimator_index];
+        report_winner_by_name(query, kind, name, result);
     }
 }
 
-impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>> {
-    /// Runs every estimator concurrently across all stages and yields each
-    /// result as it arrives. No ranking, no early return. The caller stops
-    /// by dropping the stream.
-    fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
-        self.stages
-            .iter()
-            .flatten()
-            .map(|(_name, estimator)| estimator.estimate(query.clone()))
-            .collect::<FuturesUnordered<_>>()
-            .boxed()
+/// Logs the winning estimate and, if it is a quote, counts the win for its
+/// estimator.
+fn report_winner_by_name<Q: Debug, R: Debug>(
+    query: &Q,
+    kind: OrderKind,
+    name: &str,
+    result: &Result<R, PriceEstimationError>,
+) {
+    tracing::debug!(?query, ?result, estimator = name, "winning price estimate");
+    if result.is_ok() {
+        metrics()
+            .queries_won
+            .with_label_values(&[name, kind.label()])
+            .inc();
     }
 }
 
@@ -269,6 +259,7 @@ mod tests {
     use {
         super::*,
         crate::{
+            CompetitionPriceEstimating,
             Estimate,
             HEALTHY_PRICE_ESTIMATION_TIME,
             MockPriceEstimating,
@@ -296,6 +287,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -305,6 +297,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Sell,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -314,6 +307,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -323,6 +317,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
             Arc::new(Query {
@@ -332,6 +327,7 @@ mod tests {
                 in_amount: NonZeroU256::try_from(1).unwrap(),
                 kind: OrderKind::Buy,
                 block_dependent: false,
+                fast_path: false,
                 timeout: HEALTHY_PRICE_ESTIMATION_TIME,
             }),
         ];
@@ -386,31 +382,40 @@ mod tests {
             PriceRanking::MaxOutAmount,
         );
 
-        let result = priority.estimate(queries[0].clone()).await;
-        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+        let result = priority
+            .estimates(queries[0].clone())
+            .await
+            .map(|r| r.into_vec());
+        assert_eq!(result.unwrap(), vec![estimates[0].clone()]);
 
-        let result = priority.estimate(queries[1].clone()).await;
-        // buy 2 is better than buy 1
-        assert_eq!(result.as_ref().unwrap(), &estimates[1]);
+        let result = priority
+            .estimates(queries[1].clone())
+            .await
+            .map(|r| r.into_vec());
+        // sell order: higher out_amount wins; both quotes appear in ranked
+        // order
+        assert_eq!(result.as_ref().unwrap()[0], estimates[1]);
+        assert_eq!(result.as_ref().unwrap()[1], estimates[0]);
 
-        let result = priority.estimate(queries[2].clone()).await;
-        // pay 1 is better than pay 2
-        assert_eq!(result.as_ref().unwrap(), &estimates[0]);
+        let result = priority
+            .estimates(queries[2].clone())
+            .await
+            .map(|r| r.into_vec());
+        // buy order: lower sell cost wins; both quotes appear in ranked order
+        assert_eq!(result.as_ref().unwrap()[0], estimates[0]);
+        assert_eq!(result.as_ref().unwrap()[1], estimates[1]);
 
-        let result = priority.estimate(queries[3].clone()).await;
         // arbitrarily returns one of equal priority errors
+        let err = priority.estimates(queries[3].clone()).await.unwrap_err();
         assert!(matches!(
-            result.as_ref().unwrap_err(),
+            err,
             PriceEstimationError::ProtocolInternal(err)
                 if err.to_string() == "a" || err.to_string() == "b",
         ));
 
-        let result = priority.estimate(queries[4].clone()).await;
         // unsupported token has higher priority than no liquidity
-        assert!(matches!(
-            result.as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken { .. }
-        ));
+        let err = priority.estimates(queries[4].clone()).await.unwrap_err();
+        assert!(matches!(err, PriceEstimationError::UnsupportedToken { .. }));
     }
 
     #[tokio::test]
@@ -422,6 +427,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Buy,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -435,7 +441,8 @@ mod tests {
 
         let mut first = MockPriceEstimating::new();
         first.expect_estimate().times(1).returning(move |_| {
-            // immediately return an error (not enough to terminate price competition early)
+            // immediately return an error (not enough to terminate price
+            // competition early)
             async { Err(PriceEstimationError::NoLiquidity) }.boxed()
         });
 
@@ -443,7 +450,8 @@ mod tests {
         second.expect_estimate().times(1).returning(|_| {
             async {
                 sleep(Duration::from_millis(10)).await;
-                // return good result after some time; now we can terminate early
+                // return good result after some time; now we can terminate
+                // early
                 Ok(estimate(1))
             }
             .boxed()
@@ -470,8 +478,9 @@ mod tests {
         );
         let racing = racing.with_early_return(1.try_into().unwrap());
 
-        let result = racing.estimate(query).await;
-        assert_eq!(result.as_ref().unwrap(), &estimate(1));
+        // third was cancelled, so only the one good result (second) is returned
+        let result = racing.estimates(query).await.unwrap().into_vec();
+        assert_eq!(result, vec![estimate(1)]);
     }
 
     #[tokio::test]
@@ -483,6 +492,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -497,8 +507,8 @@ mod tests {
         let mut first = MockPriceEstimating::new();
         first.expect_estimate().times(1).returning(move |_| {
             async {
-                // First stage takes longer than second to test they are not executed in
-                // parallel
+                // First stage takes longer than second to test they are not
+                // executed in parallel
                 sleep(Duration::from_millis(20)).await;
                 Ok(estimate(1))
             }
@@ -547,8 +557,11 @@ mod tests {
         );
         let racing = racing.with_early_return(2.try_into().unwrap());
 
-        let result = racing.estimate(query).await;
-        assert_eq!(result.as_ref().unwrap(), &estimate(3));
+        // sell order: estimate(3) beats estimate(1); second returned Err so
+        // only 2 Ok quotes
+        let result = racing.estimates(query).await.unwrap().into_vec();
+        assert_eq!(result[0], estimate(3));
+        assert_eq!(result[1], estimate(1));
     }
 
     #[tokio::test]
@@ -560,6 +573,7 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 
@@ -594,8 +608,8 @@ mod tests {
             .boxed()
         });
 
-        // After the first combined stage is done, we are only missing one positive
-        // result, thus we query third but not fourth
+        // After the first combined stage is done, we are only missing one
+        // positive result, thus we query third but not fourth
         let mut third = MockPriceEstimating::new();
         third
             .expect_estimate()
@@ -617,7 +631,8 @@ mod tests {
             verification_mode: QuoteVerificationMode::Unverified,
         };
 
-        racing.estimate(query).await.unwrap();
+        let result = racing.estimates(query).await.unwrap().into_vec();
+        assert_eq!(result, vec![estimate(1), estimate(1)]);
     }
 
     fn make_query() -> Arc<Query> {
@@ -628,8 +643,67 @@ mod tests {
             in_amount: NonZeroU256::try_from(1).unwrap(),
             kind: OrderKind::Sell,
             block_dependent: false,
+            fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         })
+    }
+
+    /// The stream reports the competition like the one-shot path: the final
+    /// best estimate wins, no matter how many improvements were forwarded
+    /// before it.
+    #[tokio::test]
+    async fn estimate_stream_counts_the_final_best_as_the_winner() {
+        let wins = |name: &str| {
+            metrics()
+                .queries_won
+                .with_label_values(&[name, OrderKind::Sell.label()])
+                .get()
+        };
+        let (fast_before, slow_before) = (wins("stream-fast"), wins("stream-slow"));
+
+        let fast = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    Ok(Estimate {
+                        out_amount: U256::from(1u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let slow = {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(|_| {
+                async {
+                    sleep(Duration::from_millis(10)).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(2u64),
+                        gas: 1,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            m
+        };
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                ("stream-fast".to_owned(), Arc::new(fast)),
+                ("stream-slow".to_owned(), Arc::new(slow)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        // Both quotes were forwarded, the slow one improved on the fast one.
+        assert_eq!(results.len(), 2);
+        assert_eq!(wins("stream-slow") - slow_before, 1);
+        assert_eq!(wins("stream-fast"), fast_before);
     }
 
     #[tokio::test]
@@ -686,14 +760,16 @@ mod tests {
         assert_eq!(amounts, vec![U256::from(1u64), U256::from(2u64)]);
     }
 
+    /// A transient error is held back, not forwarded: once a later solver
+    /// returns a usable quote, the client sees only the quote, never the error.
     #[tokio::test]
-    async fn estimate_stream_passes_through_errors() {
+    async fn estimate_stream_suppresses_errors_when_a_quote_arrives() {
         let ok = {
             let mut m = MockPriceEstimating::new();
             m.expect_estimate().times(1).returning(|_| {
                 async {
-                    // Resolve after the error so the error is yielded first. This
-                    // proves an error does not abort the remaining results.
+                    // Resolve after the error to prove the earlier error is
+                    // dropped rather than forwarded ahead of the quote.
                     sleep(Duration::from_millis(10)).await;
                     Ok(Estimate {
                         out_amount: U256::from(1u64),
@@ -723,9 +799,110 @@ mod tests {
 
         let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
 
-        assert_eq!(results.len(), 2);
-        assert!(results[0].is_err());
-        assert!(results[1].is_ok());
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].as_ref().unwrap().out_amount, U256::from(1u64));
+    }
+
+    /// When every estimator fails, nothing is forwarded until the stream ends,
+    /// then it emits the single highest-priority error — exactly what the
+    /// one-shot `estimate` returns for the same query.
+    #[tokio::test]
+    async fn estimate_stream_ends_with_highest_priority_error_when_all_fail() {
+        fn failing(err: PriceEstimationError) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate()
+                .times(1)
+                .return_once(move |_| async move { Err(err) }.boxed());
+            Arc::new(m)
+        }
+
+        let estimator: CompetitionEstimator<Arc<dyn PriceEstimating>> = CompetitionEstimator::new(
+            vec![vec![
+                (
+                    "low".to_owned(),
+                    failing(PriceEstimationError::ProtocolInternal(anyhow!("boom"))),
+                ),
+                (
+                    "high".to_owned(),
+                    failing(PriceEstimationError::RateLimited),
+                ),
+            ]],
+            PriceRanking::MaxOutAmount,
+        );
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        assert_eq!(results.len(), 1);
+        assert!(matches!(results[0], Err(PriceEstimationError::RateLimited)));
+    }
+
+    /// Best-so-far under `QuoteVerificationMode::Prefer`: a quote is forwarded
+    /// only when it ranks better than the best already sent. Errors are dropped
+    /// mid-stream, and because a verified quote outranks an unverified one
+    /// regardless of `out_amount` (same as the one-shot competition), a later
+    /// verified quote supersedes an earlier, higher unverified one.
+    #[tokio::test]
+    async fn estimate_stream_only_forwards_improving_quotes() {
+        // Staggered delays make the arrival order deterministic.
+        fn quote(delay_ms: u64, out_amount: u64, verified: bool) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(move |_| {
+                async move {
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    Ok(Estimate {
+                        out_amount: U256::from(out_amount),
+                        gas: 1,
+                        verified,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            });
+            Arc::new(m)
+        }
+
+        fn failing(delay_ms: u64) -> Arc<dyn PriceEstimating> {
+            let mut m = MockPriceEstimating::new();
+            m.expect_estimate().times(1).returning(move |_| {
+                async move {
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    Err(PriceEstimationError::NoLiquidity)
+                }
+                .boxed()
+            });
+            Arc::new(m)
+        }
+
+        // Arrival order: fast unverified 100, better unverified 200, an error,
+        // then a worse (lower) verified 150.
+        let estimator = CompetitionEstimator::new(
+            vec![vec![
+                ("unverified-fast".to_owned(), quote(0, 100, false)),
+                ("unverified-better".to_owned(), quote(10, 200, false)),
+                ("err".to_owned(), failing(20)),
+                ("verified-worse".to_owned(), quote(30, 150, true)),
+            ]],
+            PriceRanking::MaxOutAmount,
+        )
+        .with_verification(QuoteVerificationMode::Prefer);
+
+        let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
+
+        assert!(
+            results.iter().all(|r| r.is_ok()),
+            "no error should be yielded"
+        );
+        let amounts: Vec<_> = results
+            .iter()
+            .map(|r| r.as_ref().unwrap().out_amount)
+            .collect();
+        // 100 (best) -> 200 (improves) -> error (dropped) -> 150 (verified,
+        // supersedes).
+        assert_eq!(
+            amounts,
+            vec![U256::from(100u64), U256::from(200u64), U256::from(150u64)]
+        );
+        assert!(results.last().unwrap().as_ref().unwrap().verified);
     }
 
     #[test]

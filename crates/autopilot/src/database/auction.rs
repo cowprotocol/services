@@ -1,31 +1,36 @@
 use {
     super::Postgres,
     crate::{boundary, domain, infra::persistence::dto},
+    alloy::primitives::Address,
     anyhow::{Context, Result},
+    bigdecimal::BigDecimal,
+    bytes::Bytes,
     chrono::{DateTime, Utc},
-    futures::{StreamExt, TryStreamExt},
+    futures::{
+        StreamExt,
+        TryStreamExt,
+        future::{BoxFuture, FutureExt},
+    },
     model::{order::Order, quote::QuoteId},
     num::ToPrimitive,
+    price_estimation::QuoteIdGenerating,
     shared::{
         db_order_conversions::full_order_into_model_order,
-        event_storing_helpers::{create_db_search_parameters, create_quote_row},
-        order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+        order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters, QuoteStoring},
+        quote_storage::{find_quote, get_quote, save_quote},
     },
     std::{collections::HashMap, ops::DerefMut, sync::Arc},
 };
 
 #[async_trait::async_trait]
 impl QuoteStoring for Postgres {
-    async fn save(&self, data: QuoteData) -> Result<QuoteId> {
+    async fn save(&self, data: QuoteCompetition) -> Result<QuoteId> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_quote"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let row = create_quote_row(data)?;
-        let id = database::quotes::save(&mut ex, &row).await?;
-        Ok(id)
+        save_quote(&self.pool, data).await
     }
 
     async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>> {
@@ -34,9 +39,7 @@ impl QuoteStoring for Postgres {
             .with_label_values(&["get_quote"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
-        let quote = database::quotes::get(&mut ex, id).await?;
-        quote.map(TryFrom::try_from).transpose()
+        get_quote(&self.pool, id).await
     }
 
     async fn find(
@@ -49,14 +52,18 @@ impl QuoteStoring for Postgres {
             .with_label_values(&["find_quote"])
             .start_timer();
 
+        find_quote(&self.pool, params, expiration).await
+    }
+
+    async fn next_quote_id(&self) -> Result<QuoteId> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["next_quote_id"])
+            .start_timer();
         let mut ex = self.pool.acquire().await?;
-        let params = create_db_search_parameters(params, expiration);
-        let quote = database::quotes::find(&mut ex, &params)
+        database::quotes::next_id(&mut ex)
             .await
-            .context("failed finding quote by parameters")?;
-        quote
-            .map(|quote| Ok((quote.id, quote.try_into()?)))
-            .transpose()
+            .context("failed to allocate next quote id")
     }
 }
 
@@ -70,13 +77,14 @@ impl Postgres {
         let start = chrono::offset::Utc::now();
         let mut ex = self.pool.begin().await?;
         // Set the transaction isolation level to REPEATABLE READ
-        // so the both SELECT queries below are executed in the same database snapshot
-        // taken at the moment before the first query is executed.
+        // so the both SELECT queries below are executed in the same database
+        // snapshot taken at the moment before the first query is
+        // executed.
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             .execute(ex.deref_mut())
             .await?;
         let orders: HashMap<domain::OrderUid, Arc<Order>> =
-            database::orders::solvable_orders(&mut ex, i64::from(min_valid_to))
+            database::orders::solvable_orders(&mut ex, i64::from(min_valid_to), start.timestamp())
                 .map(|result| match result {
                     Ok(order) => full_order_into_model_order(order)
                         .map(|order| (domain::OrderUid(order.metadata.uid.0), Arc::new(order))),
@@ -116,21 +124,47 @@ impl Postgres {
     pub async fn replace_current_auction(
         &self,
         new_auction_id: dto::AuctionId,
-        new_auction_data: dto::RawAuctionData,
+        json: Bytes,
     ) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["insert_auction_with_id"])
             .start_timer();
 
-        let data = tokio::task::spawn_blocking(move || {
-            serde_json::to_string(&new_auction_data).context("failed to serialize auction")
-        })
-        .await
-        .context("auction serialization task panicked")??;
+        let data = std::str::from_utf8(&json).context("serialized auction is not valid UTF-8")?;
 
         let mut ex = self.pool.acquire().await?;
-        database::auction::insert_auction_with_id(&mut ex, new_auction_id, &data).await?;
+        database::auction::insert_auction_with_id(&mut ex, new_auction_id, data).await?;
         Ok(())
+    }
+
+    pub async fn fetch_latest_prices(&self) -> Result<HashMap<Address, BigDecimal>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["fetch_latest_prices"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        Ok(database::auction::fetch_latest_prices(&mut ex)
+            .await?
+            .into_iter()
+            .map(|auction_price| (Address::new(auction_price.token.0), auction_price.price))
+            .collect::<HashMap<_, _>>())
+    }
+}
+
+impl QuoteIdGenerating for Postgres {
+    fn generate(&self, n: usize) -> BoxFuture<'_, Result<Vec<QuoteId>>> {
+        async move {
+            let _timer = super::Metrics::get()
+                .database_queries
+                .with_label_values(&["next_quote_id_generator"])
+                .start_timer();
+            let mut ex = self.pool.acquire().await?;
+            database::quotes::next_ids(&mut ex, n)
+                .await
+                .context("failed to allocate quote ids")
+        }
+        .boxed()
     }
 }

@@ -15,56 +15,99 @@ use {
 /// two consecutive account snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TradeDelta {
-    /// Order UID this delta applies to.
-    pub order_uid: OrderUid,
+    /// Order PDA this delta applies to, as the `BeginSettle` wire names it.
+    /// Persistence resolves it to the order UID through the orders table.
+    pub order_pda: Pubkey,
     /// Change in `amount_withdrawn` since the previous snapshot.
     pub amount_withdrawn_delta: u64,
     /// Change in `amount_received` since the previous snapshot.
     pub amount_received_delta: u64,
-    /// Whether the order is fully filled after this trade.
-    ///
-    /// This is **not** a field emitted by the settlement program's event data;
-    /// it is inferred by the decoder from the order PDA's post-trade snapshot.
-    /// It is `true` when post-trade `amount_withdrawn` equals the order's full
-    /// sell amount, or `amount_received` equals the full buy amount.
-    pub order_fulfilled: bool,
+}
+
+/// Whether an order sells an exact amount or buys an exact amount.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OrderKind {
+    Sell,
+    Buy,
+}
+
+/// A created order's full intent. The indexer is the only writer of the
+/// `solana.orders` row for orders placed directly on chain, so the event
+/// carries everything that row needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreatedOrder {
+    /// Transaction the order was created in, the replay key when indexing
+    /// it fails partway.
+    pub signature: Signature,
+    /// Order UID this order is identified by.
+    pub order_uid: OrderUid,
+    /// Owner of the order.
+    pub owner: Pubkey,
+    /// Address that created the order (relayer / solver).
+    pub created_by: Pubkey,
+    /// Canonical order PDA address.
+    pub order_pda: Pubkey,
+    /// Account the sell amount is pulled from.
+    pub sell_token_account: Pubkey,
+    /// Mint of the sell token, carried by the intent.
+    pub sell_mint: Pubkey,
+    /// Account the buy amount is pushed to.
+    pub buy_token_account: Pubkey,
+    /// Mint of the buy token, carried by the intent.
+    pub buy_mint: Pubkey,
+    /// Amount sold, in the sell token's native units.
+    pub sell_amount: u64,
+    /// Amount bought, in the buy token's native units.
+    pub buy_amount: u64,
+    /// Expiry as unix seconds.
+    pub valid_to: u32,
+    /// Sell or buy order.
+    pub kind: OrderKind,
+    /// Whether partial fills are allowed.
+    pub partially_fillable: bool,
+    /// App-data hash carried by the intent.
+    pub app_data: [u8; 32],
+}
+
+/// A finalized settlement: one `BeginSettle`/`FinalizeSettle` pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FinalizedSettlement {
+    /// Auction id this settlement belongs to.
+    pub auction_id: i64,
+    /// Solver that won the auction.
+    pub solver: Pubkey,
+    /// Transaction signature.
+    pub tx_signature: Signature,
+    /// Slot the settlement was observed at.
+    pub slot: Slot,
+    /// Top-level index of the `BeginSettle` instruction, part of the
+    /// trade rows' primary key.
+    pub instruction_index: u32,
+    /// Per-order accounting deltas.
+    pub trades: Vec<TradeDelta>,
 }
 
 /// Settlement-program events decoded from on-chain instructions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SettlementEvent {
-    /// A new order was created on-chain.
-    OrderCreated {
-        /// Order UID this order is identified by.
-        order_uid: OrderUid,
-        /// Owner of the order.
-        owner: Pubkey,
-        /// Address that created the order (relayer / solver).
-        created_by: Pubkey,
-    },
+    /// A new order was created on-chain. Boxed: the full intent dwarfs the
+    /// other variants.
+    OrderCreated(Box<CreatedOrder>),
     /// An order was closed.
     OrderClosed {
         /// Order UID this order is identified by.
         order_uid: OrderUid,
     },
-    /// An order was cancelled.
+    /// An order was cancelled. The wire names the order PDA, not the UID.
     OrderCancelled {
-        /// Order UID this order is identified by.
-        order_uid: OrderUid,
+        /// Transaction the cancellation landed in, the key that lifts it
+        /// again when the transaction vanishes before finalizing.
+        signature: Signature,
+        /// Canonical order PDA address.
+        order_pda: Pubkey,
     },
     /// A settlement was finalized on-chain.
-    SettlementFinalized {
-        /// Auction id this settlement belongs to.
-        auction_id: u64,
-        /// Solver that won the auction.
-        solver: Pubkey,
-        /// Transaction signature.
-        tx_signature: Signature,
-        /// Slot the settlement was observed at.
-        slot: Slot,
-        /// Per-order accounting deltas.
-        trades: Vec<TradeDelta>,
-    },
+    SettlementFinalized(FinalizedSettlement),
     /// A new buffer PDA was created.
     BufferCreated {
         /// Token the buffer is denominated in.

@@ -28,8 +28,6 @@ pub struct Metrics {
     /// How many orders detected by specific solver and strategy.
     #[metric(labels("solver"))]
     pub bad_orders_detected: prometheus::IntCounterVec,
-    /// How many tokens detected by specific solver and strategy.
-    pub bad_tokens_detected: prometheus::IntCounter,
     /// Time spent in the auction preprocessing stage.
     #[metric(
         labels("stage"),
@@ -58,6 +56,10 @@ pub struct Metrics {
         )
     )]
     pub used_solve_time: prometheus::HistogramVec,
+
+    /// Count of solver responses that arrived after the solver deadline.
+    #[metric(labels("solver", "kind"))]
+    pub solver_deadline_overruns: prometheus::IntCounterVec,
 
     /// Time spent serializing and streaming the solve request body to each
     /// solver, split by `phase`: `serialization` (isolated CPU cost) and

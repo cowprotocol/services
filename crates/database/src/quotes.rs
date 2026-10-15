@@ -39,12 +39,36 @@ pub struct Quote {
     pub metadata: serde_json::Value,
 }
 
-/// Stores the quote and returns the id. The id of the quote parameter is not
-/// used.
+/// Allocates the id of the next quote from the `quotes` id sequence, so the
+/// id is known before the quote is computed and stored.
+#[instrument(skip_all)]
+pub async fn next_id(ex: &mut PgConnection) -> Result<QuoteId, sqlx::Error> {
+    const QUERY: &str = r#"SELECT nextval(pg_get_serial_sequence('quotes', 'id'))::bigint;"#;
+    let (id,) = sqlx::query_as(QUERY).fetch_one(ex).await?;
+    Ok(id)
+}
+
+/// Allocates `n` quote ids from the `quotes` id sequence in one round trip.
+#[instrument(skip_all)]
+pub async fn next_ids(ex: &mut PgConnection, n: usize) -> Result<Vec<QuoteId>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT nextval(pg_get_serial_sequence('quotes', 'id'))::bigint
+FROM generate_series(1, $1);
+    "#;
+    let ids: Vec<(QuoteId,)> = sqlx::query_as(QUERY)
+        .bind(i64::try_from(n).unwrap_or(i64::MAX))
+        .fetch_all(ex)
+        .await?;
+    Ok(ids.into_iter().map(|(id,)| id).collect())
+}
+
+/// Stores the quote under its `id` (allocated with [`next_id`] or
+/// [`next_ids`]) and returns it.
 #[instrument(skip_all)]
 pub async fn save(ex: &mut PgConnection, quote: &Quote) -> Result<QuoteId, sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO quotes (
+    id,
     sell_token,
     buy_token,
     sell_amount,
@@ -59,10 +83,11 @@ INSERT INTO quotes (
     verified,
     metadata
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
+        .bind(quote.id)
         .bind(quote.sell_token)
         .bind(quote.buy_token)
         .bind(&quote.sell_amount)
@@ -102,6 +127,7 @@ pub struct QuoteSearchParameters {
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
     pub quote_kind: QuoteKind,
+    pub fast_path: bool,
 }
 
 #[instrument(skip_all)]
@@ -111,7 +137,8 @@ pub async fn find(
 ) -> Result<Option<Quote>, sqlx::Error> {
     const QUERY: &str = r#"
 SELECT *
-FROM quotes
+FROM quotes q
+LEFT JOIN quote_competitions qc ON qc.quote_id = q.id
 WHERE
     sell_token = $1 AND
     buy_token = $2 AND
@@ -122,7 +149,9 @@ WHERE
     ) AND
     order_kind = $6 AND
     expiration_timestamp >= $7 AND
-    quote_kind = $8
+    quote_kind = $8 AND
+    -- if a fast path quote is requested the quote competition data must exist
+    (qc.quote_id IS NOT NULL) = $9
 -- Return the best quote for the user, mirroring the price-estimation
 -- competition: prefer verified quotes over unverified ones, then take the
 -- highest buy/sell exchange rate net of the sell-token-denominated fee.
@@ -140,6 +169,7 @@ LIMIT 1
         .bind(params.kind)
         .bind(params.expiration)
         .bind(&params.quote_kind)
+        .bind(params.fast_path)
         .fetch_optional(ex)
         .await
 }
@@ -176,6 +206,16 @@ mod tests {
         Utc.timestamp_opt(Utc::now().timestamp(), 0).unwrap()
     }
 
+    /// Stores `quote` under a freshly allocated id, the way the orderbook
+    /// does: the id is minted before the quote is computed, and `save` is
+    /// expected to honour it.
+    async fn save_with_new_id(db: &mut PgConnection, quote: &mut Quote) -> QuoteId {
+        quote.id = next_id(db).await.unwrap();
+        let id = save(db, quote).await.unwrap();
+        assert_eq!(id, quote.id);
+        id
+    }
+
     #[tokio::test]
     #[ignore]
     async fn postgres_save_and_get_quote_by_id() {
@@ -200,7 +240,7 @@ mod tests {
             verified: false,
             metadata: Default::default(),
         };
-        let id = save(&mut db, &quote).await.unwrap();
+        let id = save_with_new_id(&mut db, &mut quote).await;
         quote.id = id;
         assert_eq!(get(&mut db, id).await.unwrap().unwrap(), quote);
 
@@ -262,7 +302,7 @@ mod tests {
                     gas_amount: 100_u32.into(),
                     ..quote_a.clone()
                 };
-                let id = save(&mut db, &quote).await.unwrap();
+                let id = save_with_new_id(&mut db, &mut quote).await;
                 quote.id = id;
                 quote
             },
@@ -272,7 +312,7 @@ mod tests {
                     gas_amount: 200_u32.into(),
                     ..quote_a.clone()
                 };
-                let id = save(&mut db, &quote).await.unwrap();
+                let id = save_with_new_id(&mut db, &mut quote).await;
                 quote.id = id;
                 quote
             },
@@ -285,7 +325,7 @@ mod tests {
                 gas_amount: 10_u32.into(),
                 ..quote_b.clone()
             };
-            let id = save(&mut db, &quote).await.unwrap();
+            let id = save_with_new_id(&mut db, &mut quote).await;
             quote.id = id;
             quote
         }];
@@ -300,6 +340,7 @@ mod tests {
             kind: quote_a.order_kind,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(
             find(&mut db, &search_a).await.unwrap().unwrap(),
@@ -360,6 +401,7 @@ mod tests {
             kind: quote_b.order_kind,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(
             find(&mut db, &search_b).await.unwrap().unwrap(),
@@ -392,7 +434,8 @@ mod tests {
             None
         );
 
-        // Query that previously succeeded after cleaning up expired measurements.
+        // Query that previously succeeded after cleaning up expired
+        // measurements.
         remove_expired_quotes(&mut db, now + Duration::seconds(120))
             .await
             .unwrap();
@@ -408,8 +451,8 @@ mod tests {
         crate::clear_DANGER_(&mut db).await.unwrap();
 
         let now = low_precision_now();
-        // All candidates quote the same sell order (same sell amount); they only
-        // differ in buy amount and fee.
+        // All candidates quote the same sell order (same sell amount); they
+        // only differ in buy amount and fee.
         let base = Quote {
             id: Default::default(),
             sell_token: ByteArray([1; 20]),
@@ -435,17 +478,17 @@ mod tests {
             solver: ByteArray([1; 20]),
             ..base.clone()
         };
-        high_buy_high_fee.id = save(&mut db, &high_buy_high_fee).await.unwrap();
+        save_with_new_id(&mut db, &mut high_buy_high_fee).await;
 
-        // Lower absolute buy amount, but a negligible fee -> best net-of-fee rate.
-        // net rate = 200 / (1000 + 1*1/0.1) = 200/1010 ≈ 0.198
+        // Lower absolute buy amount, but a negligible fee -> best net-of-fee
+        // rate. net rate = 200 / (1000 + 1*1/0.1) = 200/1010 ≈ 0.198
         let mut best_rate = Quote {
             buy_amount: 200.into(),
             gas_amount: 1.,
             solver: ByteArray([2; 20]),
             ..base.clone()
         };
-        best_rate.id = save(&mut db, &best_rate).await.unwrap();
+        save_with_new_id(&mut db, &mut best_rate).await;
 
         let search = QuoteSearchParameters {
             sell_token: base.sell_token,
@@ -456,6 +499,7 @@ mod tests {
             kind: OrderKind::Sell,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), best_rate);
     }
@@ -487,25 +531,25 @@ mod tests {
             metadata: Default::default(),
         };
 
-        // Lowest absolute sell amount, but an expensive fee -> total spend 3000.
-        // net rate = 100 / (1000 + 200*1/0.1) = 100/3000 ≈ 0.033
+        // Lowest absolute sell amount, but an expensive fee -> total spend
+        // 3000. net rate = 100 / (1000 + 200*1/0.1) = 100/3000 ≈ 0.033
         let mut low_sell_high_fee = Quote {
             sell_amount: 1000.into(),
             gas_amount: 200.,
             solver: ByteArray([1; 20]),
             ..base.clone()
         };
-        low_sell_high_fee.id = save(&mut db, &low_sell_high_fee).await.unwrap();
+        save_with_new_id(&mut db, &mut low_sell_high_fee).await;
 
-        // Higher absolute sell amount, but a negligible fee -> total spend 1110.
-        // net rate = 100 / (1100 + 1*1/0.1) = 100/1110 ≈ 0.090
+        // Higher absolute sell amount, but a negligible fee -> total spend
+        // 1110. net rate = 100 / (1100 + 1*1/0.1) = 100/1110 ≈ 0.090
         let mut high_sell_low_fee = Quote {
             sell_amount: 1100.into(),
             gas_amount: 1.,
             solver: ByteArray([2; 20]),
             ..base.clone()
         };
-        high_sell_low_fee.id = save(&mut db, &high_sell_low_fee).await.unwrap();
+        save_with_new_id(&mut db, &mut high_sell_low_fee).await;
 
         let search = QuoteSearchParameters {
             sell_token: base.sell_token,
@@ -516,6 +560,7 @@ mod tests {
             kind: OrderKind::Buy,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
 
         assert_eq!(
@@ -558,7 +603,7 @@ mod tests {
             solver: ByteArray([1; 20]),
             ..base.clone()
         };
-        unverified_better.id = save(&mut db, &unverified_better).await.unwrap();
+        save_with_new_id(&mut db, &mut unverified_better).await;
 
         // Verified with a worse rate -> should still win
         let mut verified_worse = Quote {
@@ -567,7 +612,7 @@ mod tests {
             solver: ByteArray([2; 20]),
             ..base.clone()
         };
-        verified_worse.id = save(&mut db, &verified_worse).await.unwrap();
+        save_with_new_id(&mut db, &mut verified_worse).await;
 
         let search = QuoteSearchParameters {
             sell_token: base.sell_token,
@@ -578,6 +623,7 @@ mod tests {
             kind: OrderKind::Sell,
             expiration: now,
             quote_kind: QuoteKind::Standard,
+            fast_path: false,
         };
         assert_eq!(
             find(&mut db, &search).await.unwrap().unwrap(),
@@ -611,7 +657,7 @@ mod tests {
                 verified: false,
                 metadata: Default::default(),
             };
-            let id = save(&mut db, &quote).await.unwrap();
+            let id = save_with_new_id(&mut db, &mut quote).await;
             quote.id = id;
             quote
         };
@@ -625,11 +671,79 @@ mod tests {
             kind: quote.order_kind,
             expiration: quote.expiration_timestamp,
             quote_kind: quote.quote_kind.clone(),
+            fast_path: false,
         };
 
         assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
         search_a.quote_kind = QuoteKind::Standard;
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_find_quote_differentiates_fast_path() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        let base = Quote {
+            id: Default::default(),
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
+            sell_amount: 100.into(),
+            buy_amount: 200.into(),
+            gas_amount: 1.,
+            gas_price: 1.,
+            sell_token_price: 1.,
+            order_kind: OrderKind::Sell,
+            expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
+            solver: ByteArray([1; 20]),
+            verified: false,
+            metadata: Default::default(),
+        };
+
+        // A regular quote (no staged competition).
+        let mut regular = base.clone();
+        save_with_new_id(&mut db, &mut regular).await;
+
+        // A fast-path quote (staged competition attached).
+        let mut fast_path = base.clone();
+        save_with_new_id(&mut db, &mut fast_path).await;
+        crate::fast_path::save_competition(&mut db, fast_path.id, serde_json::json!({}))
+            .await
+            .unwrap();
+
+        let search = QuoteSearchParameters {
+            sell_token: base.sell_token,
+            buy_token: base.buy_token,
+            sell_amount_0: base.sell_amount.clone(),
+            sell_amount_1: base.sell_amount.clone(),
+            buy_amount: base.buy_amount.clone(),
+            kind: base.order_kind,
+            expiration: now,
+            quote_kind: QuoteKind::Standard,
+            fast_path: false,
+        };
+
+        // Regular searches skip the quote with a staged competition.
+        assert_eq!(find(&mut db, &search).await.unwrap().unwrap(), regular);
+
+        // Fast-path searches only return the quote with a staged competition.
+        assert_eq!(
+            find(
+                &mut db,
+                &QuoteSearchParameters {
+                    fast_path: true,
+                    ..search.clone()
+                }
+            )
+            .await
+            .unwrap()
+            .unwrap(),
+            fast_path,
+        );
     }
 
     #[tokio::test]
@@ -653,7 +767,7 @@ mod tests {
         )
         .unwrap();
 
-        let quote = Quote {
+        let mut quote = Quote {
             id: Default::default(),
             sell_token: ByteArray([1; 20]),
             buy_token: ByteArray([2; 20]),
@@ -670,7 +784,7 @@ mod tests {
             metadata: metadata.clone(),
         };
         // store quote in database
-        let id = save(&mut db, &quote).await.unwrap();
+        let id = save_with_new_id(&mut db, &mut quote).await;
 
         let stored_quote = get(&mut db, id).await.unwrap().unwrap();
         assert_eq!(stored_quote.metadata, metadata);

@@ -75,6 +75,24 @@ impl Default for CacheConfig {
     }
 }
 
+/// Configuration for pricing EIP-4626 vault tokens by unwrapping them into
+/// their underlying asset.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Eip4626Config {
+    /// Enable EIP-4626 vault token pricing. When enabled, the native price
+    /// estimator will attempt to price vault tokens by querying their
+    /// underlying asset and conversion rate on-chain.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Tokens that will not be priced as EIP-4626 — i.e. they'll be sent for
+    /// estimation without being unwrapped.
+    #[serde(default)]
+    pub exemptions: Vec<Address>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

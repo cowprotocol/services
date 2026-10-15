@@ -1,7 +1,9 @@
 use {
     crate::{
+        fee::VolumeFeePolicy,
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
+            AdditionalCost,
             CalculateQuoteError,
             OrderQuoting,
             Quote,
@@ -12,11 +14,11 @@ use {
     account_balances::{self, BalanceFetching, TransferSimulationError},
     alloy::primitives::{Address, B256, U256},
     anyhow::{Result, anyhow},
-    app_data::{AppDataHash, Hook, Hooks, ValidatedAppData, Validator},
+    app_data::{AppDataHash, ExecutionMode, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
-    bad_tokens::list_based::DenyListedTokens,
     balance_overrides::BalanceOverrideRequest,
     contracts::{HooksTrampoline, ICowAuthWrapper, WETH9},
+    eth_domain_types::Receiver,
     futures::future::OptionFuture,
     model::{
         DomainSeparator,
@@ -27,7 +29,6 @@ use {
             BuyTokenDestination,
             Interactions,
             Order,
-            OrderClass,
             OrderCreation,
             OrderCreationAppData,
             OrderData,
@@ -46,6 +47,7 @@ use {
         sync::Arc,
         time::{Duration, Instant},
     },
+    token_info::DenyListedTokens,
     tracing::instrument,
 };
 
@@ -230,7 +232,6 @@ pub enum PartialValidationError {
     SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
-    UnsupportedOrderType,
     UnsupportedToken { token: Address, reason: String },
     Other(anyhow::Error),
 }
@@ -275,6 +276,14 @@ pub enum ValidationError {
     /// reverted or did not return the expected value.
     InvalidEip1271Signature(B256),
     ZeroAmount,
+    /// `valid_from` leaves too small a window before `valid_to` for the order
+    /// to be settled.
+    InvalidValidFrom,
+    /// The order opts into the fast path but the signed limit price doesn't
+    /// leave room for the configured protocol and partner volume fees.
+    /// Applying those fees would push the effective execution price past
+    /// the user's limit, making the order unfillable on chain.
+    FastPathLimitTooTight,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
@@ -386,6 +395,14 @@ pub struct OrderValidator {
     app_data_validator: Validator,
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
+    /// Volume-fee policy the orderbook consults to determine the protocol
+    /// volume factor applicable to a fast-path order's token pair. `None`
+    /// means no protocol volume fee is applied (partner fees may still be).
+    protocol_volume_fee_policy: Option<Arc<VolumeFeePolicy>>,
+    /// Upper bound the orderbook enforces on the combined partner
+    /// volume-fee factor from an order's app-data. `None` disables partner
+    /// fees entirely for the fast-path limit-price check.
+    max_partner_fee: Option<configs::fee_factor::FeeFactor>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -393,19 +410,13 @@ pub struct PreOrderData {
     pub owner: Address,
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Address,
+    pub receiver: Receiver,
     pub valid_to: u32,
     pub partially_fillable: bool,
     pub buy_token_balance: BuyTokenDestination,
     pub sell_token_balance: SellTokenSource,
     pub signing_scheme: SigningScheme,
-    pub class: OrderClass,
     pub kind: OrderKind,
-}
-
-fn actual_receiver(owner: Address, order: &OrderData) -> Address {
-    let receiver = order.receiver.unwrap_or_default();
-    if receiver.is_zero() { owner } else { receiver }
 }
 
 impl PreOrderData {
@@ -418,16 +429,12 @@ impl PreOrderData {
             owner,
             sell_token: order.sell_token,
             buy_token: order.buy_token,
-            receiver: actual_receiver(owner, order),
+            receiver: order.receiver,
             valid_to: order.valid_to,
             partially_fillable: order.partially_fillable,
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
             signing_scheme,
-            class: match order.fee_amount.is_zero() {
-                true => OrderClass::Limit,
-                false => OrderClass::Market,
-            },
             kind: order.kind,
         }
     }
@@ -439,15 +446,19 @@ pub struct OrderAppData {
 }
 
 impl OrderValidator {
-    /// Returns whether one of the order's wrappers is an auth wrapper whose `WrapperAndAppData`
-    /// envelope hash equals `expected` — i.e. the order's on-chain appData is the envelope this
-    /// wrapper commits to (`hashStruct(WrapperAndAppData)`) rather than `keccak256(full_app_data)`.
+    /// Returns whether one of the order's wrappers is an auth wrapper whose
+    /// `WrapperAndAppData` envelope hash equals `expected` — i.e. the
+    /// order's on-chain appData is the envelope this wrapper commits to
+    /// (`hashStruct(WrapperAndAppData)`) rather than
+    /// `keccak256(full_app_data)`.
     ///
-    /// The envelope depends on the wrapper's EIP-712 param encoding, which we cannot reproduce
-    /// generically off-chain, so we ask the wrapper contract to recompute it via its
-    /// `computeOrderAppData` view. A plain (non-auth) wrapper has no such method, so the call
-    /// reverts and that wrapper is skipped. Any RPC/decode error is treated as "no match", so the
-    /// order falls through to the standard `AppDataHashMismatch` rejection (fail-closed).
+    /// The envelope depends on the wrapper's EIP-712 param encoding, which we
+    /// cannot reproduce generically off-chain, so we ask the wrapper
+    /// contract to recompute it via its `computeOrderAppData` view. A plain
+    /// (non-auth) wrapper has no such method, so the call reverts and that
+    /// wrapper is skipped. Any RPC/decode error is treated as "no match", so
+    /// the order falls through to the standard `AppDataHashMismatch`
+    /// rejection (fail-closed).
     async fn wrapper_envelope_matches(
         &self,
         wrappers: &[app_data::WrapperCall],
@@ -486,6 +497,16 @@ impl OrderValidator {
         app_data_validator: Validator,
         max_gas_per_order: u64,
         same_tokens_policy: SameTokensPolicy,
+        // Default fast-path exclusivity applied when the app-data doesn't
+        // Volume-fee policy the fast-path limit-price check consults for the
+        // protocol side of the fee stack. `None` skips the protocol
+        // contribution.
+        protocol_volume_fee_policy: Option<Arc<VolumeFeePolicy>>,
+        // Max partner volume-fee budget consulted by the fast-path
+        // limit-price check; should mirror the autopilot's
+        // `fee_policies.max_partner_fee`. `None` disables partner fees for
+        // the check.
+        max_partner_fee: Option<configs::fee_factor::FeeFactor>,
     ) -> Self {
         Self {
             native_token,
@@ -503,7 +524,39 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
+            protocol_volume_fee_policy,
+            max_partner_fee,
         }
+    }
+
+    /// Validates that a fast-path order's signed sell/buy amounts leave
+    /// enough room for the compounded protocol + partner volume fees the
+    /// autopilot would charge at settlement time. The pure math lives in
+    /// [`crate::fee::check_fast_path_limit_fits`]; the autopilot's
+    /// fast-path handler calls the same helper.
+    fn check_fast_path_limit_price_fits(
+        &self,
+        data: &OrderData,
+        quote: &Quote,
+        app_data: &ValidatedAppData,
+    ) -> Result<(), ValidationError> {
+        let protocol_factor = self.protocol_volume_fee_policy.as_ref().and_then(|policy| {
+            policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
+        });
+        let partner_factors = self
+            .max_partner_fee
+            .map(|cap| crate::fee::capped_partner_volume_factors(&app_data.protocol, cap))
+            .unwrap_or_default();
+
+        crate::fee::check_fast_path_limit_fits(
+            data.kind,
+            data.sell_amount,
+            data.buy_amount,
+            quote.sell_amount,
+            quote.buy_amount,
+            protocol_factor.into_iter().chain(partner_factors),
+        )
+        .map_err(|_| ValidationError::FastPathLimitTooTight)
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -610,15 +663,20 @@ impl OrderValidator {
                     | TransferSimulationError::TransferFailed(_)
                         if order.signature == Signature::PreSign || has_wrappers =>
                     {
-                        // Pre-sign orders do not require sufficient balance or allowance.
-                        // The idea is that this allows smart contracts to place orders bundled with
-                        // other transactions that either produce the required balance or set the
-                        // allowance. This would, for example, allow a Gnosis Safe to bundle the
-                        // pre-signature transaction with a WETH wrap and WETH approval to the vault
-                        // relayer contract.
+                        // Pre-sign orders do not require sufficient balance or
+                        // allowance. The idea is that
+                        // this allows smart contracts to place orders bundled
+                        // with other transactions that
+                        // either produce the required balance or set the
+                        // allowance. This would, for example, allow a Gnosis
+                        // Safe to bundle the
+                        // pre-signature transaction with a WETH wrap and WETH
+                        // approval to the vault relayer
+                        // contract.
                         //
-                        // Similarly, orders with wrappers may produce the required balance or
-                        // allowance as part of the wrapper execution.
+                        // Similarly, orders with wrappers may produce the
+                        // required balance or allowance
+                        // as part of the wrapper execution.
                         return Ok(());
                     }
                     TransferSimulationError::InsufficientAllowance => {
@@ -626,8 +684,9 @@ impl OrderValidator {
                         return Err(ValidationError::InsufficientAllowance);
                     }
                     TransferSimulationError::InsufficientBalance => {
-                        // Since the amount either starts at 1 atom, or is set to the full sell
-                        // token amount if this error is triggered then it
+                        // Since the amount either starts at 1 atom, or is set
+                        // to the full sell token amount
+                        // if this error is triggered then it
                         // will be triggered for the other amounts too
                         return Err(ValidationError::InsufficientBalance);
                     }
@@ -644,20 +703,22 @@ impl OrderValidator {
         };
 
         if order.full_balance_check {
-            // If requested at order creation, simulate transferring full sell_amount
-            // into the settlement contract.
+            // If requested at order creation, simulate transferring full
+            // sell_amount into the settlement contract.
             // This will ensure the account has enough allowance and balance for
             // the transfer at the order creation time.
             simulate_transfers([order.data().sell_amount].as_slice()).await
         } else {
-            // Simulate transferring a small token balance into the settlement contract.
-            // As a spam protection we require that an account must have at least 1 atom
-            // of the sell_token. However, some tokens (e.g. rebasing tokens) actually run
-            // into numerical issues with such small amounts. But there are also tokens
-            // where a single atom is already quite expensive (tokenized stocks).
-            // To cover both cases we simulate multiple small transfers. As soon as one
-            // passes we consider the token transferable. If all transfers fail we return
-            // the last error.
+            // Simulate transferring a small token balance into the settlement
+            // contract. As a spam protection we require that an
+            // account must have at least 1 atom of the sell_token.
+            // However, some tokens (e.g. rebasing tokens) actually run
+            // into numerical issues with such small amounts. But there are also
+            // tokens where a single atom is already quite expensive
+            // (tokenized stocks). To cover both cases we simulate
+            // multiple small transfers. As soon as one
+            // passes we consider the token transferable. If all transfers fail
+            // we return the last error.
             match simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await {
                 // A zero/low balance is acceptable as long as the owner has already set a
                 // real on-chain approval that covers the order (spam protection).
@@ -678,23 +739,68 @@ impl OrderValidator {
             }
         }
     }
+
+    fn compute_and_validate_valid_from(
+        &self,
+        app_data: &OrderAppData,
+        quote: Option<&Quote>,
+        order: &OrderData,
+    ) -> Result<Option<u32>, ValidationError> {
+        if matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::FastPath
+        ) {
+            let Some(quote) = quote else {
+                return Err(ValidationError::FastPathLimitTooTight);
+            };
+            // Fast-path settlement has no surplus by design — the solver's
+            // on-chain output is what the quote said. Any volume fees the
+            // autopilot would charge at settlement time eat into that
+            // output. If the user signed a limit that doesn't leave room
+            // for those fees, the trade would revert on chain and the
+            // solver would be blamed for a failure they had no way to
+            // avoid. Reject at placement instead so integrators find out
+            // before signing rather than after landing an un-settleable
+            // order.
+            self.check_fast_path_limit_price_fits(order, quote, &app_data.inner)?;
+            // The autopilot's fast-path handler owns `valid_from` for
+            // these orders (see `crates/autopilot/src/fast_path.rs`); the
+            // orderbook writes `NULL` so the handler can classify the
+            // order after placement.
+            return Ok(None);
+        }
+
+        // Non-fast-path orders may still declare `valid_from` explicitly
+        // in app-data.
+        let valid_from = match app_data.inner.protocol.execution_mode {
+            ExecutionMode::ValidFrom(valid_from) => Some(valid_from),
+            _ => None,
+        };
+        if let Some(valid_from) = valid_from {
+            let min = self.validity_configuration.min.as_secs();
+            if u64::from(order.valid_to) < u64::from(valid_from) + min {
+                return Err(ValidationError::InvalidValidFrom);
+            }
+        }
+        Ok(valid_from)
+    }
 }
 
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     #[instrument(skip_all)]
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
+        // only check the receiver if it's actually different from the owner
+        let receiver = order.receiver.resolve(order.owner);
+        let receiver_check = receiver.ne(&order.owner).then_some(receiver);
+
         if !self
             .banned_users
-            .banned([order.receiver, order.owner])
+            .banned(std::iter::once(order.owner).chain(receiver_check))
             .await
             .is_empty()
         {
             return Err(PartialValidationError::Forbidden);
-        }
-
-        if order.class == OrderClass::Market && order.partially_fillable {
-            return Err(PartialValidationError::UnsupportedOrderType);
         }
 
         if order.buy_token_balance != BuyTokenDestination::Erc20 {
@@ -764,12 +870,17 @@ impl OrderValidating for OrderValidator {
                         .wrapper_envelope_matches(&validated.protocol.wrappers, *expected)
                         .await
                 {
-                    // An auth wrapper (e.g. `CowAuthWrapper`) sets the order's on-chain appData to
-                    // the `WrapperAndAppData` envelope hash rather than `keccak256(full)`. We could
-                    // not reproduce that hash locally (it depends on the wrapper's EIP-712 param
-                    // encoding), so we asked the wrapper contract to recompute it and it matched
-                    // `expected`. Keep `expected` as the stored hash so the order is settled with the
-                    // exact appData the user signed (see the settlement/`tload` binding on-chain).
+                    // An auth wrapper (e.g. `CowAuthWrapper`) sets the order's
+                    // on-chain appData to
+                    // the `WrapperAndAppData` envelope hash rather than
+                    // `keccak256(full)`. We could
+                    // not reproduce that hash locally (it depends on the
+                    // wrapper's EIP-712 param encoding), so
+                    // we asked the wrapper contract to recompute it and it
+                    // matched `expected`. Keep `expected`
+                    // as the stored hash so the order is settled with the
+                    // exact appData the user signed (see the settlement/`tload`
+                    // binding on-chain).
                     ValidatedAppData {
                         hash: *expected,
                         document: validated.document,
@@ -794,8 +905,9 @@ impl OrderValidating for OrderValidator {
                     )));
                 };
 
-                // Keep the validated document, since the order creation simulator re-parses
-                // this document to rebuild the pre/post hooks, so dropping it
+                // Keep the validated document, since the order creation
+                // simulator re-parses this document to rebuild
+                // the pre/post hooks, so dropping it
                 // makes the simulation skip the hooks (e.g. a permit approval)
                 // and revert spuriously.
                 ValidatedAppData {
@@ -823,8 +935,9 @@ impl OrderValidating for OrderValidator {
         settlement_contract: Address,
         full_app_data_override: Option<String>,
     ) -> Result<(Order, Option<Quote>), ValidationError> {
-        // Happens before signature verification because a miscalculated app data hash
-        // by the API user would lead to being unable to validate the signature below.
+        // Happens before signature verification because a miscalculated app
+        // data hash by the API user would lead to being unable to
+        // validate the signature below.
         let app_data = self
             .validate_app_data(&order.app_data, &full_app_data_override)
             .await?;
@@ -846,9 +959,16 @@ impl OrderValidating for OrderValidator {
         if data.buy_amount.is_zero() || data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
+        // Historically an order paid for its execution by signing a fixed
+        // `fee_amount` upfront which the API quoted and enforced at placement
+        // time. Fees have since moved into the limit price & slippage
+        // tolerance. A non-zero signed fee is rejected instead
+        // of being silently kept as an extra payment to the protocol.
+        if !data.fee_amount.is_zero() {
+            return Err(ValidationError::NonZeroFee);
+        }
 
         let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
-        let class = pre_order.class;
         self.partial_validate(pre_order)
             .await
             .map_err(ValidationError::Partial)?;
@@ -932,7 +1052,7 @@ impl OrderValidating for OrderValidator {
 
         let verification = Verification {
             from: owner,
-            receiver: order.receiver.unwrap_or(owner),
+            receiver: order.receiver,
             app_data: Arc::new(app_data.inner.document.clone()),
         };
 
@@ -949,29 +1069,20 @@ impl OrderValidating for OrderValidator {
                 verification_gas_limit,
             )
             .map_err(|_| ValidationError::InvalidSignature)?,
-            additional_gas: app_data.inner.protocol.hooks.gas_limit(),
+            hook_gas: app_data.inner.protocol.hooks.gas_limit(),
             verification,
+            fast_path: matches!(
+                app_data.inner.protocol.execution_mode,
+                ExecutionMode::FastPath
+            ),
         };
 
-        // Check if we need to re-classify the market order if it is outside the market
-        // price. We consider out-of-price orders as liquidity orders. See
-        // <https://github.com/cowprotocol/services/pull/301>.
-        let (class, quote) = match class {
-            // This has to be here in order to keep the previous behaviour
-            OrderClass::Market => {
-                let quote = get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    Some(data.fee_amount),
-                )
-                .await?;
-                tracing::debug!(
-                    ?uid,
-                    ?order,
-                    ?quote,
-                    "checking if order is outside market price"
-                );
+        let quote = match get_or_create_quote(&*self.quoter, &quote_parameters, order.quote_id)
+            .await
+        {
+            Ok(quote) => {
+                // Out of market orders are the ones a user can accumulate, so
+                // cap how many of them a single owner may have open.
                 if is_order_outside_market_price(
                     &Amounts {
                         sell: data.sell_amount,
@@ -985,82 +1096,34 @@ impl OrderValidating for OrderValidator {
                     },
                     data.kind,
                 ) {
-                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
-                    (OrderClass::Limit, Some(quote))
-                } else {
-                    (class, Some(quote))
-                }
-            }
-            OrderClass::Limit => {
-                match get_quote_and_check_fee(
-                    &*self.quoter,
-                    &quote_parameters,
-                    order.quote_id,
-                    None,
-                )
-                .await
-                {
-                    Ok(quote) => {
-                        // If the order is not "In-Market", check for the limit orders
-                        if is_order_outside_market_price(
-                            &Amounts {
-                                sell: data.sell_amount,
-                                buy: data.buy_amount,
-                                fee: data.fee_amount,
-                            },
-                            &Amounts {
-                                sell: quote.sell_amount,
-                                buy: quote.buy_amount,
-                                fee: quote.fee_amount,
-                            },
-                            data.kind,
-                        ) {
-                            tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
-                            self.check_max_limit_orders(owner).await?;
-                        }
-                        (class, Some(quote))
-                    }
-                    // If there is not enough liquidity, it's still possible to place this order (as
-                    // an implicit out of market order)
-                    Err(ValidationError::PriceForQuote(PriceEstimationError::NoLiquidity)) => {
-                        tracing::debug!("placing order without quote");
-                        (class, None)
-                    }
-                    Err(other) => return Err(other),
-                }
-            }
-            OrderClass::Liquidity => {
-                let quote =
-                    get_quote_and_check_fee(&*self.quoter, &quote_parameters, order.quote_id, None)
-                        .await?;
-                // If the order is not "In-Market", check for the limit orders
-                if is_order_outside_market_price(
-                    &Amounts {
-                        sell: data.sell_amount,
-                        buy: data.buy_amount,
-                        fee: data.fee_amount,
-                    },
-                    &Amounts {
-                        sell: quote.sell_amount,
-                        buy: quote.buy_amount,
-                        fee: quote.fee_amount,
-                    },
-                    data.kind,
-                ) {
-                    tracing::debug!(%uid, ?owner, ?class, "order being flagged as outside market price");
+                    tracing::debug!(%uid, ?owner, "order being flagged as outside market price");
                     self.check_max_limit_orders(owner).await?;
                 }
-                (OrderClass::Limit, None)
+                Some(quote)
             }
+            // If there is not enough liquidity, it's still possible to place this order (as
+            // an implicit out of market order)
+            Err(ValidationError::PriceForQuote(PriceEstimationError::NoLiquidity)) => {
+                tracing::debug!("placing order without quote");
+                None
+            }
+            Err(other) => return Err(other),
         };
 
         if quote.as_ref().is_some_and(|quote| {
-            // Quoted gas does not include additional gas for hooks nor ERC1271 signatures
-            quote.data.fee_parameters.gas_amount as u64 + quote_parameters.additional_cost()
+            // Quoted gas does not include gas for ERC1271 signatures.
+            quote.data.fee_parameters.gas_amount as u64
+                + quote_parameters.additional_cost(quote.data.verified)
                 > self.max_gas_per_order
         }) {
             return Err(ValidationError::TooMuchGas);
         }
+
+        let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
+        let fast_path = matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::FastPath
+        );
 
         let order = Order {
             metadata: OrderMetadata {
@@ -1068,7 +1131,6 @@ impl OrderValidating for OrderValidator {
                 creation_date: chrono::offset::Utc::now(),
                 uid,
                 settlement_contract,
-                class,
                 full_app_data: match order.app_data {
                     OrderCreationAppData::Both { full, .. }
                     | OrderCreationAppData::Full { full } => Some(full),
@@ -1079,6 +1141,8 @@ impl OrderValidating for OrderValidator {
                     .map(|q| q.try_to_model_order_quote())
                     .transpose()
                     .map_err(ValidationError::Other)?,
+                valid_from,
+                fast_path,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1094,8 +1158,7 @@ impl OrderValidating for OrderValidator {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrderValidPeriodConfiguration {
     pub min: Duration,
-    pub max_market: Duration,
-    pub max_limit: Duration,
+    pub max: Duration,
 }
 
 impl OrderValidPeriodConfiguration {
@@ -1103,8 +1166,7 @@ impl OrderValidPeriodConfiguration {
     pub fn any() -> Self {
         Self {
             min: Duration::ZERO,
-            max_market: Duration::MAX,
-            max_limit: Duration::MAX,
+            max: Duration::MAX,
         }
     }
 
@@ -1129,12 +1191,7 @@ impl OrderValidPeriodConfiguration {
         if order.signing_scheme == SigningScheme::PreSign {
             return Duration::MAX;
         }
-
-        match order.class {
-            OrderClass::Market => self.max_market,
-            OrderClass::Limit => self.max_limit,
-            OrderClass::Liquidity => Duration::MAX,
-        }
+        self.max
     }
 }
 
@@ -1144,31 +1201,12 @@ pub enum OrderValidToError {
     Excessive,
 }
 
-/// Retrieves the quote for an order that is being created and verify that its
-/// fee is sufficient.
-///
-/// The fee is checked only if `fee_amount` is specified.
-pub async fn get_quote_and_check_fee(
-    quoter: &dyn OrderQuoting,
-    quote_search_parameters: &QuoteSearchParameters,
-    quote_id: Option<i64>,
-    fee_amount: Option<U256>,
-) -> Result<Quote, ValidationError> {
-    let quote = get_or_create_quote(quoter, quote_search_parameters, quote_id).await?;
-
-    if fee_amount.is_some_and(|fee| !fee.is_zero()) {
-        return Err(ValidationError::NonZeroFee);
-    }
-
-    Ok(quote)
-}
-
 /// Retrieves the quote for an order that is being created
 ///
 /// This works by first trying to find an existing quote, and then falling back
 /// to calculating a brand new one if none can be found.
 #[instrument(skip_all)]
-async fn get_or_create_quote(
+pub async fn get_or_create_quote(
     quoter: &dyn OrderQuoting,
     quote_search_parameters: &QuoteSearchParameters,
     quote_id: Option<i64>,
@@ -1205,15 +1243,18 @@ async fn get_or_create_quote(
                 },
                 verification: quote_search_parameters.verification.clone(),
                 signing_scheme: quote_search_parameters.signing_scheme,
-                additional_gas: quote_search_parameters.additional_gas,
+                hook_gas: quote_search_parameters.hook_gas,
+                fast_path: false,
                 timeout: None, // let &dyn OrderQuoting chose default
             };
 
-            let quote = quoter.calculate_quote(parameters).await?;
-            let quote = quoter
-                .store_quote(quote)
+            let competition = quoter.calculate_quote(parameters.clone()).await?;
+            let id = quoter
+                .store_quote(competition.clone())
                 .await
                 .map_err(ValidationError::Other)?;
+            let mut quote = competition.to_final_quote(&parameters);
+            quote.id = Some(id);
 
             tracing::debug!(
                 original_quote_id = ?quote_id,
@@ -1299,7 +1340,14 @@ mod tests {
         super::*,
         crate::{
             order_creation_simulation::MockOrderSimulating,
-            order_quoting::{FindQuoteError, MockOrderQuoting},
+            order_quoting::{
+                FindQuoteError,
+                MockOrderQuoting,
+                QuoteCompetition,
+                QuoteCompetitionMetadata,
+                QuoteRequest,
+                QuoteResponse,
+            },
         },
         account_balances::MockBalanceFetching,
         alloy::{
@@ -1327,8 +1375,7 @@ mod tests {
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
@@ -1354,6 +1401,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         // App data with a pre-hook (a gasless approval, the shape that surfaced
@@ -1389,8 +1438,9 @@ mod tests {
         assert!(!reparsed.interactions.pre.is_empty());
     }
 
-    /// Builds an `OrderValidator` whose `native_token` (and therefore the provider used by
-    /// `wrapper_envelope_matches`) is backed by the supplied mock `asserter`.
+    /// Builds an `OrderValidator` whose `native_token` (and therefore the
+    /// provider used by `wrapper_envelope_matches`) is backed by the
+    /// supplied mock `asserter`.
     fn validator_with_mocked_provider(asserter: &Asserter) -> OrderValidator {
         let native_token = WETH9::Instance::new(
             Address::repeat_byte(0xef),
@@ -1405,8 +1455,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::from_set(Default::default())),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(100),
             },
             false,
             DenyListedTokens::default(),
@@ -1425,12 +1474,15 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         )
     }
 
-    // A `Both` app-data whose `expected` is the `WrapperAndAppData` envelope (not `keccak256(full)`)
-    // is accepted when the order's auth wrapper recomputes the same envelope, and the envelope is
-    // kept as the stored appData (so the order settles with the value the user signed).
+    // A `Both` app-data whose `expected` is the `WrapperAndAppData` envelope
+    // (not `keccak256(full)`) is accepted when the order's auth wrapper
+    // recomputes the same envelope, and the envelope is kept as the stored
+    // appData (so the order settles with the value the user signed).
     #[tokio::test]
     async fn wrapper_order_appdata_validated_via_getter() {
         let asserter = Asserter::new();
@@ -1439,11 +1491,12 @@ mod tests {
         let full = r#"{"version":"1.1.0","appCode":"test","metadata":{"wrappers":[{"address":"0x00000000000000000000000000000000000000aa","data":"0xdeadbeef"}]}}"#;
         let expected = AppDataHash([0x11; 32]);
 
-        // The wrapper contract recomputes the envelope and it matches `expected`.
+        // The wrapper contract recomputes the envelope and it matches
+        // `expected`.
         asserter.push_success(
-            &ICowAuthWrapper::ICowAuthWrapper::computeOrderAppDataCall::abi_encode_returns(&B256::from(
-                expected.0,
-            )),
+            &ICowAuthWrapper::ICowAuthWrapper::computeOrderAppDataCall::abi_encode_returns(
+                &B256::from(expected.0),
+            ),
         );
 
         let validated = validator
@@ -1457,12 +1510,14 @@ mod tests {
             .await
             .unwrap();
 
-        // Accepted, and the stored appData is the signed envelope, not `keccak256(full)`.
+        // Accepted, and the stored appData is the signed envelope, not
+        // `keccak256(full)`.
         assert_eq!(validated.inner.hash, expected);
         assert_ne!(validated.inner.hash, hash_app_data_as(full));
     }
 
-    // If the wrapper recomputes a *different* envelope, the order is rejected as a mismatch.
+    // If the wrapper recomputes a *different* envelope, the order is rejected
+    // as a mismatch.
     #[tokio::test]
     async fn wrapper_order_appdata_rejected_on_envelope_mismatch() {
         let asserter = Asserter::new();
@@ -1473,9 +1528,9 @@ mod tests {
 
         // Wrapper returns some other envelope hash.
         asserter.push_success(
-            &ICowAuthWrapper::ICowAuthWrapper::computeOrderAppDataCall::abi_encode_returns(&B256::from(
-                [0x22; 32],
-            )),
+            &ICowAuthWrapper::ICowAuthWrapper::computeOrderAppDataCall::abi_encode_returns(
+                &B256::from([0x22; 32]),
+            ),
         );
 
         let result = validator
@@ -1488,7 +1543,8 @@ mod tests {
             )
             .await;
 
-        // `OrderAppData` isn't `Debug`, so match on the result rather than `unwrap_err()`.
+        // `OrderAppData` isn't `Debug`, so match on the result rather than
+        // `unwrap_err()`.
         assert!(matches!(
             result,
             Err(AppDataValidationError::Mismatch { .. })
@@ -1505,8 +1561,7 @@ mod tests {
         let native_token_address = *native_token.address();
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
         let banned_users = hashset![Address::from(U160::from(1))];
         let legit_valid_to =
@@ -1534,14 +1589,9 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
-        let result = validator
-            .partial_validate(PreOrderData {
-                partially_fillable: true,
-                ..Default::default()
-            })
-            .await;
-        std::assert_matches!(result, Err(PartialValidationError::UnsupportedOrderType));
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
@@ -1554,7 +1604,7 @@ mod tests {
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
-                    receiver: Address::with_last_byte(1),
+                    receiver: Receiver::new(Address::with_last_byte(1)),
                     ..Default::default()
                 })
                 .await,
@@ -1596,34 +1646,7 @@ mod tests {
         std::assert_matches!(
             validator
                 .partial_validate(PreOrderData {
-                    valid_to: 0,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::ValidTo(
-                OrderValidToError::Insufficient,
-            ))
-        );
-        std::assert_matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to
-                        + validity_configuration.max_market.as_secs() as u32
-                        + 1,
-                    ..Default::default()
-                })
-                .await,
-            Err(PartialValidationError::ValidTo(
-                OrderValidToError::Excessive,
-            ))
-        );
-        std::assert_matches!(
-            validator
-                .partial_validate(PreOrderData {
-                    valid_to: legit_valid_to
-                        + validity_configuration.max_limit.as_secs() as u32
-                        + 1,
-                    class: OrderClass::Limit,
+                    valid_to: legit_valid_to + validity_configuration.max.as_secs() as u32 + 1,
                     ..Default::default()
                 })
                 .await,
@@ -1671,8 +1694,7 @@ mod tests {
             WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
@@ -1698,6 +1720,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1722,23 +1746,8 @@ mod tests {
         assert!(
             validator
                 .partial_validate(PreOrderData {
-                    class: OrderClass::Limit,
-                    owner: Address::with_last_byte(0x42),
-                    valid_to: time::now_in_epoch_seconds()
-                        + validity_configuration.max_market.as_secs() as u32
-                        + 2,
-                    ..order()
-                })
-                .await
-                .is_ok()
-        );
-        assert!(
-            validator
-                .partial_validate(PreOrderData {
                     partially_fillable: true,
-                    class: OrderClass::Liquidity,
                     owner: Address::with_last_byte(0x42),
-                    valid_to: u32::MAX,
                     ..order()
                 })
                 .await
@@ -1752,8 +1761,7 @@ mod tests {
             WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
@@ -1779,6 +1787,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::AllowSell,
+            None,
+            None,
         );
 
         let order = || PreOrderData {
@@ -1850,8 +1860,7 @@ mod tests {
             WETH9::Instance::new(Address::repeat_byte(0xef), ethrpc::mock::web3().provider);
         let validity_configuration = OrderValidPeriodConfiguration {
             min: Duration::from_secs(1),
-            max_market: Duration::from_secs(100),
-            max_limit: Duration::from_secs(200),
+            max: Duration::from_secs(200),
         };
 
         let mut limit_order_counter = MockLimitOrderCounting::new();
@@ -1877,16 +1886,19 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Allow,
+            None,
+            None,
         );
 
         let valid_to =
             time::now_in_epoch_seconds() + validity_configuration.min.as_secs() as u32 + 2;
 
-        // `Allow` permits same-token orders of either side. The second pair is the
-        // native-equivalent case: `validate_same_sell_and_buy_token` treats selling
-        // WETH for `BUY_ETH_ADDRESS` (native ETH) as a sell==buy order. The rejection
-        // side is covered by `pre_validate_err` (Disallow) and
-        // `pre_validate_same_tokens_allow_sell` (AllowSell).
+        // `Allow` permits same-token orders of either side. The second pair is
+        // the native-equivalent case:
+        // `validate_same_sell_and_buy_token` treats selling
+        // WETH for `BUY_ETH_ADDRESS` (native ETH) as a sell==buy order. The
+        // rejection side is covered by `pre_validate_err` (Disallow)
+        // and `pre_validate_same_tokens_allow_sell` (AllowSell).
         for (sell_token, buy_token) in [
             (Address::with_last_byte(2), Address::with_last_byte(2)),
             (*native_token.address(), BUY_ETH_ADDRESS),
@@ -1906,6 +1918,128 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn enforces_minimum_validity_window() {
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _| Ok(()));
+        let mut signature_validating = MockSignatureValidating::new();
+        signature_validating
+            .expect_validate_signature_and_get_additional_gas()
+            .never();
+        let hooks = HooksTrampoline::Instance::new(
+            Address::from([0xcf; 20]),
+            ProviderBuilder::new()
+                .connect_mocked_client(Asserter::new())
+                .erased(),
+        );
+        let mut limit_order_counter = MockLimitOrderCounting::new();
+        limit_order_counter.expect_count().returning(|_| Ok(0u64));
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(60),
+                max: Duration::from_secs(200),
+            },
+            false,
+            Default::default(),
+            hooks,
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validating),
+            None,
+            Arc::new(limit_order_counter),
+            1,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+            None,
+            None,
+        );
+
+        let now = time::now_in_epoch_seconds();
+        let plain = |valid_to: u32| OrderCreation {
+            valid_to,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(0),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        };
+        let delayed = |valid_from: u32, valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "validFrom": valid_from } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        let validate = async |creation| {
+            validator
+                .validate_and_construct_order(
+                    creation,
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+
+        // No `valid_from`: the window is measured from `now`.
+        std::assert_matches!(
+            validate(plain(now + 30)).await,
+            Err(ValidationError::Partial(PartialValidationError::ValidTo(
+                OrderValidToError::Insufficient
+            )))
+        );
+        validate(plain(now + 150)).await.unwrap();
+
+        // With `valid_from`: the window is measured from `valid_from`, so a
+        // far-future `valid_to` doesn't help.
+        std::assert_matches!(
+            validate(delayed(now + 50, now + 90)).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+        // A user-set `valid_from` is respected.
+        let (order, _) = validate(delayed(now + 50, now + 150)).await.unwrap();
+        assert_eq!(order.metadata.valid_from, Some(now + 50));
+
+        // Fast-path orders never carry `valid_from` at placement — the
+        // autopilot's fast-path handler owns that field. See
+        // `crates/autopilot/src/fast_path.rs`.
+        let fast_path = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true } }).to_string(),
+            },
+            ..plain(now + 150)
+        };
+        let (order, _) = validate(fast_path).await.unwrap();
+        assert!(order.metadata.valid_from.is_none());
+        assert!(order.metadata.fast_path);
+
+        let both = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true, "validFrom": now + 50 } })
+                    .to_string(),
+            },
+            ..plain(now + 150)
+        };
+        std::assert_matches!(
+            validate(both).await,
+            Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+        );
     }
 
     #[tokio::test]
@@ -1942,8 +2076,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(200),
             },
             false,
             Default::default(),
@@ -1957,6 +2090,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -2096,7 +2231,6 @@ mod tests {
             .await
             .unwrap();
         assert!(order.metadata.quote.is_some());
-        assert!(order.metadata.class.is_limit());
 
         let creation_ = OrderCreation {
             fee_amount: alloy::primitives::U256::ZERO,
@@ -2111,7 +2245,6 @@ mod tests {
             .await
             .unwrap();
         assert!(order.metadata.quote.is_some());
-        assert!(order.metadata.class.is_limit());
     }
 
     #[tokio::test]
@@ -2150,8 +2283,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(200),
             },
             false,
             Default::default(),
@@ -2170,6 +2302,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -2243,6 +2377,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -2304,6 +2440,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2358,6 +2496,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2416,6 +2556,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2424,7 +2566,7 @@ mod tests {
             buy_token: Address::with_last_byte(2),
             buy_amount: alloy::primitives::U256::from(1),
             sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::ZERO,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -2480,6 +2622,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2488,7 +2632,7 @@ mod tests {
             buy_token: Address::with_last_byte(2),
             buy_amount: alloy::primitives::U256::from(1),
             sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::ZERO,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
             app_data: OrderCreationAppData::Full {
                 full: "{}".to_string(),
@@ -2514,8 +2658,9 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Err(TransferSimulationError::InsufficientBalance));
-        // ... but a pre-existing on-chain approval already covers the sell amount,
-        // so the order is accepted (it stays unfillable until the account is funded).
+        // ... but a pre-existing on-chain approval already covers the sell
+        // amount, so the order is accepted (it stays unfillable until
+        // the account is funded).
         balance_fetcher
             .expect_allowance()
             .returning(|_, _, _| Ok(alloy::primitives::U256::from(1)));
@@ -2544,6 +2689,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let order = OrderCreation {
@@ -2603,6 +2750,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -2611,7 +2760,7 @@ mod tests {
             buy_token: Address::with_last_byte(2),
             buy_amount: alloy::primitives::U256::from(1),
             sell_amount: alloy::primitives::U256::from(1),
-            fee_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::ZERO,
             from: Some(Address::repeat_byte(1)),
             signature: Signature::Eip1271(vec![1, 2, 3]),
             app_data: OrderCreationAppData::Full {
@@ -2673,6 +2822,8 @@ mod tests {
                 Default::default(),
                 u64::MAX,
                 SameTokensPolicy::Disallow,
+                None,
+                None,
             );
 
             let order = OrderCreation {
@@ -2767,6 +2918,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         // Test with flashloan hint that covers the sell amount
@@ -2795,7 +2948,8 @@ mod tests {
             ..Default::default()
         };
 
-        // This should succeed because the flashloan amount (150) >= sell amount (100)
+        // This should succeed because the flashloan amount (150) >= sell amount
+        // (100)
         validator
             .validate_and_construct_order(
                 order_with_sufficient_flashloan,
@@ -2832,7 +2986,8 @@ mod tests {
             ..Default::default()
         };
 
-        // This should fail because the flashloan amount (50) < sell amount (100)
+        // This should fail because the flashloan amount (50) < sell amount
+        // (100)
         let result = validator
             .validate_and_construct_order(
                 order_with_insufficient_flashloan,
@@ -2869,7 +3024,8 @@ mod tests {
             ..Default::default()
         };
 
-        // This should fail because the flashloan token doesn't match the sell token
+        // This should fail because the flashloan token doesn't match the sell
+        // token
         let result = validator
             .validate_and_construct_order(
                 order_with_wrong_token_flashloan,
@@ -2896,31 +3052,26 @@ mod tests {
                 onchain_order: true,
                 verification_gas_limit: default_verification_gas_limit(),
             },
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
                 ..Default::default()
             },
+            fast_path: false,
         };
         let quote_data = Quote {
             fee_amount: alloy::primitives::U256::from(6),
             ..Default::default()
         };
-        let fee_amount = U256::ZERO;
         let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
             .with(eq(quote_id), eq(quote_search_parameters.clone()))
             .returning(move |_, _| Ok(quote_data.clone()));
 
-        let quote = get_quote_and_check_fee(
-            &order_quoter,
-            &quote_search_parameters,
-            quote_id,
-            Some(fee_amount),
-        )
-        .await
-        .unwrap();
+        let quote = get_or_create_quote(&order_quoter, &quote_search_parameters, quote_id)
+            .await
+            .unwrap();
 
         assert_eq!(
             quote,
@@ -2951,11 +3102,25 @@ mod tests {
             verification: verification.clone(),
             ..Default::default()
         };
-        let quote_data = Quote {
-            fee_amount: alloy::primitives::U256::from(6),
-            ..Default::default()
-        };
-        let fee_amount = U256::ZERO;
+        // Craft a QuoteCompetition whose winner + metadata produce
+        // fee_amount = 6 via `FeeParameters::fee()`
+        // (gas_amount * gas_price / sell_token_price = 6 * 1 / 1).
+        let competition = QuoteCompetition::new(
+            QuoteRequest {
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            QuoteResponse {
+                gas_amount: 6.,
+                ..Default::default()
+            },
+            [],
+            QuoteCompetitionMetadata {
+                gas_price: 1.,
+                sell_token_price: 1.,
+                ..Default::default()
+            },
+        );
         order_quoter
             .expect_calculate_quote()
             .with(eq(QuoteParameters {
@@ -2968,36 +3133,28 @@ mod tests {
                 },
                 verification,
                 signing_scheme: QuoteSigningScheme::Eip712,
-                additional_gas: 0,
+                hook_gas: 0,
+                fast_path: false,
                 timeout: None,
             }))
             .returning({
-                let quote_data = quote_data.clone();
-                move |_| Ok(quote_data.clone())
+                let competition = competition.clone();
+                move |_| Ok(competition.clone())
             });
         order_quoter
             .expect_store_quote()
-            .with(eq(quote_data.clone()))
-            .returning(|quote| {
-                Ok(Quote {
-                    id: Some(42),
-                    ..quote
-                })
-            });
+            .with(eq(competition.clone()))
+            .returning(|_| Ok(42));
 
-        let quote = get_quote_and_check_fee(
-            &order_quoter,
-            &quote_search_parameters,
-            None,
-            Some(fee_amount),
-        )
-        .await
-        .unwrap();
+        let quote = get_or_create_quote(&order_quoter, &quote_search_parameters, None)
+            .await
+            .unwrap();
 
         assert_eq!(
             quote,
             Quote {
                 id: Some(42),
+                data: competition.to_quote_data(),
                 fee_amount: alloy::primitives::U256::from(6),
                 ..Default::default()
             }
@@ -3125,12 +3282,13 @@ mod tests {
                 onchain_order: false,
                 verification_gas_limit: default_verification_gas_limit(),
             },
-            additional_gas: 0,
+            hook_gas: 0,
             verification: Verification {
                 from: Address::from([0xf0; 20]),
-                receiver: Address::from([0xf0; 20]),
+                receiver: Receiver::new(Address::from([0xf0; 20])),
                 app_data: Arc::new("{}".to_string()),
             },
+            fast_path: false,
         };
         let quote_id = Some(42);
         let quote_data = Quote {
@@ -3159,8 +3317,7 @@ mod tests {
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(1),
-                max_market: Duration::from_secs(100),
-                max_limit: Duration::from_secs(200),
+                max: Duration::from_secs(200),
             },
             false,
             Default::default(),
@@ -3179,6 +3336,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         );
 
         let creation = OrderCreation {
@@ -3193,7 +3352,7 @@ mod tests {
                 full: "{}".to_string(),
             },
             from: Some(Address::repeat_byte(0xf0)),
-            receiver: Some(Address::repeat_byte(0xf0)),
+            receiver: Receiver::new(Address::repeat_byte(0xf0)),
             quote_id,
             ..Default::default()
         };
@@ -3275,6 +3434,8 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
+            None,
+            None,
         )
     }
 

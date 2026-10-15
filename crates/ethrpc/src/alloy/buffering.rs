@@ -10,23 +10,33 @@
 //! read from. The background task then does the batching, forwards the requests
 //! to the next layer, and reports the results of the individual calls back via
 //! another channel.
+//!
+//! To prevent a single caller from monopolizing the pipeline, each enqueued
+//! call is tagged with the tokio task id of the caller. The background worker
+//! keeps a queue per caller and assembles batches by round-robin across those
+//! queues. Fairness is best-effort: it depends on each subsystem driving its
+//! RPC calls from a stable task rather than spawning a fresh task per request.
 use {
     crate::Config,
     alloy_json_rpc::{RequestPacket, Response, ResponsePacket, SerializedRequest},
     alloy_transport::{RpcError, TransportError, TransportErrorKind},
     futures::{
-        channel::{mpsc, oneshot},
+        channel::{
+            mpsc::{self, TryRecvError},
+            oneshot,
+        },
         stream::StreamExt as _,
     },
     std::{
-        collections::{HashMap, VecDeque},
+        collections::{HashMap, VecDeque, hash_map::Entry},
         fmt::Debug,
         marker::PhantomData,
         pin::Pin,
+        sync::Arc,
         task::{Context, Poll},
+        time::{Duration, Instant},
     },
-    tokio::task::JoinHandle,
-    tokio_stream::StreamExt,
+    tokio::{sync::Semaphore, task::JoinHandle},
     tower::{Layer, Service},
 };
 
@@ -62,13 +72,25 @@ where
 #[derive(Debug, Clone)]
 pub(crate) struct BatchCallProvider<S> {
     inner: PhantomData<S>,
-    calls: mpsc::UnboundedSender<CallContext>,
+    calls: mpsc::UnboundedSender<CallContext<SerializedRequest, Result<Response, TransportError>>>,
 }
 
-type CallContext = (
-    oneshot::Sender<Result<Response, TransportError>>,
-    SerializedRequest,
-);
+/// Identifies which tokio task enqueued a call. `None` covers contexts
+/// without a task id (e.g. calls issued from blocking tasks).
+/// The tokio runtime reuses ids under certain conditions. In practice
+/// we should not run into those cases but even if we do the worst thing
+/// that can happen is that we think the old task sent more requests
+/// which is not a huge issue.
+type CallerId = Option<tokio::task::Id>;
+
+struct CallContext<Req, Resp> {
+    /// tokio task that issued this request
+    caller: CallerId,
+    /// when the call got handed to the batching layer
+    queued_at: Instant,
+    request: Req,
+    response_sender: oneshot::Sender<Resp>,
+}
 
 type ResponseSender = oneshot::Sender<Result<Response, RpcError<TransportErrorKind>>>;
 
@@ -96,8 +118,8 @@ impl BatchRequestEntry {
             self.value.is_some(),
             "cannot push_back after you start pop_front"
         );
-        // Never puts anything in `value` because it would break the whole premise of
-        // "pushing back"
+        // Never puts anything in `value` because it would break the whole
+        // premise of "pushing back"
         self.duplicates.push_back(sender);
     }
 
@@ -136,102 +158,313 @@ where
         &self,
         request: SerializedRequest,
     ) -> oneshot::Receiver<Result<Response, TransportError>> {
-        let (sender, receiver) = oneshot::channel();
+        let (response_sender, receiver) = oneshot::channel();
+        // Tag with the caller's tokio task id so the worker can interleave
+        // requests from different subsystems fairly.
+        let caller = tokio::task::try_id();
         // Theoreticallly we could propagate the error to the caller, however
         // this is a critical error we can't recover from (i.e. we'll not be
-        // able to send any more RPC calls). That's why we panic ASAP to immediately
-        // cause a restart of the pod if this is running in kubernetes.
+        // able to send any more RPC calls). That's why we panic ASAP to
+        // immediately cause a restart of the pod if this is running in
+        // kubernetes.
         self.calls
-            .unbounded_send((sender, request))
+            .unbounded_send(CallContext {
+                caller,
+                queued_at: Instant::now(),
+                request,
+                response_sender,
+            })
             .expect("worker task unexpectedly dropped");
         receiver
     }
 
     /// Start a background worker for batching buffered requests.
+    ///
+    /// The worker keeps one queue per caller (keyed by the tokio task id
+    /// captured at enqueue time). Each batch is assembled by round-robin
+    /// across those queues, which prevents a single caller from monopolizing
+    /// the pipeline when many requests are enqueued in a burst.
     fn background_worker(
         mut inner: S,
         config: Config,
-        calls: mpsc::UnboundedReceiver<CallContext>,
+        mut calls: mpsc::UnboundedReceiver<
+            CallContext<SerializedRequest, Result<Response, TransportError>>,
+        >,
     ) -> JoinHandle<()> {
-        let process_batch = move |batch: Vec<(ResponseSender, SerializedRequest)>| {
-            // Clones service via [`std::mem::replace`] as recommended by
-            // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>
-            let clone: S = inner.clone();
-            let mut inner = std::mem::replace(&mut inner, clone);
+        let permits = if config.ethrpc_max_concurrent_requests == 0 {
+            Semaphore::MAX_PERMITS
+        } else {
+            config.ethrpc_max_concurrent_requests
+        };
+        let semaphore = Arc::new(Semaphore::new(permits));
+        let max_batch_size = config.ethrpc_max_batch_size;
+        let batch_delay = config.ethrpc_batch_delay;
 
-            // Map<Id, Senders> because even with random IDs we might get duplicates,
-            // (e.g. some ID outgrew another and now they overlap) in that case
-            // we use the Deque to enforce FIFO and hope the node didn't re-order responses
-            let mut senders: HashMap<_, BatchRequestEntry> = HashMap::with_capacity(batch.len());
-            let mut requests = Vec::with_capacity(batch.len());
+        tokio::task::spawn(async move {
+            let mut queue =
+                FairQueue::<SerializedRequest, Result<Response, TransportError>>::default();
 
-            async move {
-                for (sender, request) in batch {
-                    if sender.is_canceled() {
-                        tracing::trace!(request_id = %request.id(), "canceled sender");
-                        continue;
-                    }
+            loop {
+                // first wait for a concurrency slot to become available.
+                // that way we end up with the most up-to-data batch
+                // possible in the end.
+                let permit = {
+                    let _timer = Metrics::get().concurrency_wait_seconds.start_timer();
+                    semaphore
+                        .clone()
+                        .acquire_owned()
+                        .await
+                        .expect("semaphore never closed")
+                };
 
-                    match senders.entry(request.id().clone()) {
-                        std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
-                            occupied_entry.get_mut().push_back(sender);
-                        }
-                        std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-                            vacant_entry.insert(BatchRequestEntry::new(sender));
-                        }
-                    }
-                    requests.push(request);
-                }
-
-                if requests.is_empty() {
-                    tracing::trace!("all callers stopped awaiting their request");
+                if !queue
+                    .collect_requests(&mut calls, max_batch_size, batch_delay)
+                    .await
+                {
+                    tracing::debug!("rpc batching channel closed");
                     return;
                 }
 
-                let result = inner
-                    .call(RequestPacket::Batch(requests))
-                    .await
-                    .map(|response| match response {
-                        ResponsePacket::Batch(res) => res,
-                        ResponsePacket::Single(res) => {
-                            tracing::warn!("received single response for batch request");
-                            vec![res]
-                        }
-                    });
+                let batch = queue.build_fair_batch(max_batch_size);
+                Metrics::get().batch_size.observe(batch.len() as f64);
 
-                match result {
-                    Ok(responses) => {
-                        for response in responses {
-                            tracing::trace!(response_id = %response.id, "attempting to remove response");
-                            let Some(entry) = senders.get_mut(&response.id) else {
-                                tracing::warn!(response_id = %response.id, "missing sender for response");
-                                continue;
-                            };
-                            let Some(sender) = entry.pop_front() else {
-                                tracing::warn!(response_id = %response.id, "more responses than senders (may have lost some sender)");
-                                continue;
-                            };
-                            tracing::debug!(response_id = %response.id, "sending response");
-                            let _ = sender.send(Ok(response));
-                        }
-                    }
-                    Err(err) => {
-                        let err = format!("batch call failed: {err:?}");
-                        senders
-                            .into_values()
-                            .flat_map(|sender| sender.into_iter())
-                            .for_each(|sender| {
-                                let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
-                            });
+                // Clone the inner service per batch as recommended in
+                // <https://docs.rs/tower/latest/tower/trait.Service.html#be-careful-when-cloning-inner-services>.
+                let clone = inner.clone();
+                let this_inner = std::mem::replace(&mut inner, clone);
+
+                tokio::task::spawn(async move {
+                    // move permit into the task so we only return it when
+                    // task is done
+                    let _permit = permit;
+                    Metrics::get().batches_inflight.inc();
+                    // In case the current task panics, this handle's drop will
+                    // run, correctly decrementing the
+                    // metric
+                    let _guard = scopeguard::guard((), |()| Metrics::get().batches_inflight.dec());
+                    process_batch(this_inner, batch).await;
+                });
+            }
+        })
+    }
+}
+
+/// Fair FIFO queue of pending calls partitioned by caller. Items are
+/// enqueued into per-caller sub-queues and dequeued round-robin, so a
+/// single caller with a large backlog cannot monopolize the pipeline.
+///
+/// Invariant: a caller is in `round_robin` iff its entry in `per_caller`
+/// is non-empty, and `len` equals the sum of all per-caller queue lengths.
+struct FairQueue<Req, Resp> {
+    per_caller: HashMap<CallerId, VecDeque<CallContext<Req, Resp>>>,
+    round_robin: VecDeque<CallerId>,
+    len: usize,
+}
+
+impl<Req, Resp> Default for FairQueue<Req, Resp> {
+    fn default() -> Self {
+        Self {
+            per_caller: Default::default(),
+            round_robin: Default::default(),
+            len: 0,
+        }
+    }
+}
+
+impl<Req, Resp> FairQueue<Req, Resp> {
+    /// Enqueues request and adds caller to the round-robin queue if necessary.
+    fn enqueue(&mut self, call: CallContext<Req, Resp>) {
+        let caller = call.caller;
+        let queue = self.per_caller.entry(caller).or_default();
+        let first = queue.is_empty();
+        queue.push_back(call);
+        if first {
+            self.round_robin.push_back(caller);
+        }
+        self.len += 1;
+        Metrics::get().requests_queued.inc();
+    }
+
+    /// Pop the next call in round-robin order, if any.
+    fn pop(&mut self) -> Option<CallContext<Req, Resp>> {
+        let caller = self.round_robin.pop_front()?;
+        let queue = self
+            .per_caller
+            .get_mut(&caller)
+            .expect("caller in round_robin has a non-empty per-caller queue");
+        let item = queue
+            .pop_front()
+            .expect("caller in round_robin has a non-empty per-caller queue");
+        if queue.is_empty() {
+            self.per_caller.remove(&caller);
+        } else {
+            self.round_robin.push_back(caller);
+        }
+        self.len -= 1;
+        Metrics::get().requests_queued.dec();
+        Some(item)
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Drains the items from `calls` into the fair queue until we have at least
+    /// `max_batch_size` items or waited for `batch_delay` after starting to
+    /// build a batch.
+    /// 1. drain all immediately available items from `calls`
+    /// 2. if we still have no items, await the next one
+    /// 3. if we don't have at least `max_batch_size` items yet, await for
+    ///    `batch_delay` time longer (to avoid tiny batches)
+    ///
+    /// Returns `true` if the `calls` channels is still alive and continuing
+    /// to process requests makes sense.
+    async fn collect_requests(
+        &mut self,
+        calls: &mut mpsc::UnboundedReceiver<CallContext<Req, Resp>>,
+        max_batch_size: usize,
+        batch_delay: Duration,
+    ) -> bool {
+        loop {
+            match calls.try_recv() {
+                Ok(call) => self.enqueue(call),
+                Err(TryRecvError::Closed) => {
+                    return false;
+                }
+                Err(TryRecvError::Empty) => break,
+            }
+        }
+
+        // wait for the next request to appear. do this outside the select
+        // loop below to only start the timeout when we actually have an item
+        // in the pipeline
+        if self.is_empty() {
+            let Some(call) = calls.next().await else {
+                return false;
+            };
+            self.enqueue(call);
+        }
+
+        if self.len() < max_batch_size && !batch_delay.is_zero() {
+            let deadline = tokio::time::sleep(batch_delay);
+            tokio::pin!(deadline);
+            while self.len() < max_batch_size {
+                tokio::select! {
+                    _ = &mut deadline => break,
+                    msg = calls.next() => {
+                        let Some(call) = msg else {
+                            return false;
+                        };
+                        self.enqueue(call);
                     }
                 }
             }
-        };
-        tokio::task::spawn(
-            calls
-                .chunks_timeout(config.ethrpc_max_batch_size, config.ethrpc_batch_delay)
-                .for_each_concurrent(config.ethrpc_max_concurrent_requests, process_batch),
-        )
+        }
+
+        true
+    }
+
+    /// Batches at most `max_batch_size` items in a round-robin fashion to
+    /// prevent individual callers from starving all the others.
+    fn build_fair_batch(&mut self, max_batch_size: usize) -> Vec<(Req, oneshot::Sender<Resp>)> {
+        let mut batch = Vec::with_capacity(self.len().min(max_batch_size));
+        while batch.len() < max_batch_size {
+            let Some(call) = self.pop() else {
+                break;
+            };
+            // If the caller is no longer waiting for the response,
+            // we don't add it to the batch
+            if call.response_sender.is_canceled() {
+                Metrics::get().requests_canceled.inc();
+                continue;
+            }
+            Metrics::get()
+                .request_queue_delay_seconds
+                .observe(call.queued_at.elapsed().as_secs_f64());
+            batch.push((call.request, call.response_sender));
+        }
+        batch
+    }
+}
+
+async fn process_batch<S>(mut inner: S, batch: Vec<(SerializedRequest, ResponseSender)>)
+where
+    S: Service<RequestPacket, Response = ResponsePacket, Error = TransportError>,
+{
+    // Map<Id, Senders> because even with random IDs we might get duplicates,
+    // (e.g. some ID outgrew another and now they overlap) in that case
+    // we use the Deque to enforce FIFO and hope the node didn't re-order
+    // responses
+    let mut senders: HashMap<_, BatchRequestEntry> = HashMap::with_capacity(batch.len());
+    let mut requests = Vec::with_capacity(batch.len());
+
+    for (request, sender) in batch {
+        if sender.is_canceled() {
+            tracing::trace!(request_id = %request.id(), "canceled sender");
+            continue;
+        }
+        match senders.entry(request.id().clone()) {
+            Entry::Occupied(mut occupied_entry) => {
+                occupied_entry.get_mut().push_back(sender);
+            }
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(BatchRequestEntry::new(sender));
+            }
+        }
+        requests.push(request);
+    }
+
+    if requests.is_empty() {
+        tracing::trace!("all callers stopped awaiting their request");
+        return;
+    }
+
+    let started_at = Instant::now();
+    let result = inner
+        .call(RequestPacket::Batch(requests))
+        .await
+        .map(|response| match response {
+            ResponsePacket::Batch(res) => res,
+            ResponsePacket::Single(res) => {
+                tracing::warn!("received single response for batch request");
+                vec![res]
+            }
+        });
+    let result_label = if result.is_ok() { "ok" } else { "error" };
+    Metrics::get()
+        .batch_execution_seconds
+        .with_label_values(&[result_label])
+        .observe(started_at.elapsed().as_secs_f64());
+
+    match result {
+        Ok(responses) => {
+            for response in responses {
+                tracing::trace!(response_id = %response.id, "attempting to remove response");
+                let Some(entry) = senders.get_mut(&response.id) else {
+                    tracing::warn!(response_id = %response.id, "missing sender for response");
+                    continue;
+                };
+                let Some(sender) = entry.pop_front() else {
+                    tracing::warn!(response_id = %response.id, "more responses than senders (may have lost some sender)");
+                    continue;
+                };
+                tracing::debug!(response_id = %response.id, "sending response");
+                let _ = sender.send(Ok(response));
+            }
+        }
+        Err(err) => {
+            let err = format!("batch call failed: {err:?}");
+            senders
+                .into_values()
+                .flat_map(|sender| sender.into_iter())
+                .for_each(|sender| {
+                    let _ = sender.send(Err(TransportErrorKind::custom_str(&err)));
+                });
+        }
     }
 }
 
@@ -286,9 +519,54 @@ where
     }
 }
 
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "alloy_rpc_batching")]
+struct Metrics {
+    /// Number of calls waiting to be assembled into a batch.
+    requests_queued: prometheus::IntGauge,
+
+    /// Number of batches currently being executed by the node.
+    batches_inflight: prometheus::IntGauge,
+
+    /// Number of calls in each dispatched batch.
+    #[metric(buckets(1, 2, 3, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200))]
+    batch_size: prometheus::Histogram,
+
+    /// Time a call spends in the queue before its batch gets dispatched.
+    #[metric(buckets(
+        0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5
+    ))]
+    request_queue_delay_seconds: prometheus::Histogram,
+
+    /// Time the worker waits for a free concurrency slot before it starts
+    /// assembling the next batch. High values mean the node is the bottleneck.
+    #[metric(buckets(
+        0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5
+    ))]
+    concurrency_wait_seconds: prometheus::Histogram,
+
+    /// Round-trip time of a single dispatched batch, from sending the batch
+    /// request until the node's response arrives.
+    #[metric(
+        labels("result"),
+        buckets(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+    )]
+    batch_execution_seconds: prometheus::HistogramVec,
+
+    /// Number of calls dropped before execution because the caller stopped
+    /// awaiting the response.
+    requests_canceled: prometheus::IntCounter,
+}
+
+impl Metrics {
+    fn get() -> &'static Self {
+        Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use {crate::alloy::buffering::BatchRequestEntry, futures::channel::oneshot};
+    use {super::*, futures::FutureExt as _};
 
     #[test]
     fn test_batch_request_entry_pop_twice() {
@@ -318,5 +596,98 @@ mod test {
 
         let third_pop = entry.pop_front();
         assert!(third_pop.is_none());
+    }
+
+    /// Tests that the fair queue builds batches in a round robin fashion.
+    /// Also tests that the associated response senders send the data to
+    /// the correct caller.
+    #[tokio::test]
+    async fn batching_does_round_robin() {
+        let (request_sender, mut receiver) = mpsc::unbounded();
+        let mut queue = FairQueue::default();
+
+        fn call_context(index: u64) -> (CallContext<u64, u64>, oneshot::Receiver<u64>) {
+            let (response_sender, receiver) = oneshot::channel();
+            let context = CallContext {
+                caller: tokio::task::try_id(),
+                queued_at: Instant::now(),
+                request: index,
+                response_sender,
+            };
+            (context, receiver)
+        }
+
+        // spammy producer that enques 100 calls before other
+        // tasks even start
+        let mut response_receivers: Vec<_> = (0..100)
+            .map(|id| {
+                let (context, receiver) = call_context(id);
+                request_sender.unbounded_send(context).unwrap();
+                receiver
+            })
+            .collect();
+
+        for id in 100..103 {
+            let request_sender2 = request_sender.clone();
+
+            // enqueue calls from new separate tasks to give each one
+            // its own queue to test round robin (keyed by task id)
+            #[allow(clippy::async_yields_async)]
+            let receiver = tokio::task::spawn(async move {
+                let (context, receiver) = call_context(id);
+                request_sender2.unbounded_send(context).unwrap();
+                receiver
+            })
+            .await
+            .unwrap();
+            response_receivers.push(receiver);
+        }
+
+        let should_continue = queue
+            .collect_requests(&mut receiver, 5, Default::default())
+            .now_or_never()
+            .expect("if we have enough requests already enqueued this is actually sync");
+        assert!(should_continue);
+
+        let batch = queue.build_fair_batch(5);
+
+        // ASSERT THAT BATCH WAS FAIR (ROUND ROBIN)
+        assert_eq!(batch.len(), 5);
+        let mut iter = batch.into_iter();
+        // first request of spammy producer
+        let (request, sender) = iter.next().unwrap();
+        assert_eq!(request, 0);
+        sender.send(0).unwrap();
+
+        // requests of other producers
+        let (request, sender) = iter.next().unwrap();
+        assert_eq!(request, 100);
+        sender.send(100).unwrap();
+        let (request, sender) = iter.next().unwrap();
+        assert_eq!(request, 101);
+        sender.send(101).unwrap();
+        let (request, sender) = iter.next().unwrap();
+        assert_eq!(request, 102);
+        sender.send(102).unwrap();
+
+        // round robin wrapped around so this is the second request of the
+        // spammy producer
+        let (request, sender) = iter.next().unwrap();
+        assert_eq!(request, 1);
+        sender.send(1).unwrap();
+
+        // ASSERT THAT RESPONSES REACHED THE CORRECT CALLERS
+        let mut responses = response_receivers.into_iter();
+        // first 2 calls of the spammy producer resolved
+        assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(0));
+        assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(1));
+        // next 98 calls fo the spammy producer did not resolve yet
+        for _ in 0..98 {
+            assert!(responses.next().unwrap().now_or_never().is_none());
+        }
+        // requests of other producers resolved
+        assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(100));
+        assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(101));
+        assert_eq!(responses.next().unwrap().now_or_never().unwrap(), Ok(102));
     }
 }

@@ -65,15 +65,16 @@ async fn custom_order_simulation(web3: Web3) {
     let app_data = "{}";
 
     // Sign an OrderCreation with the same fields the simulation will encode.
-    // simulate_custom_order hashes `app_data` with keccak256; OrderCreation::Full
-    // does the same, so the signature covers exactly the same OrderData hash.
+    // simulate_custom_order hashes `app_data` with keccak256;
+    // OrderCreation::Full does the same, so the signature covers exactly
+    // the same OrderData hash.
     let signed = OrderCreation {
         sell_token: *token.address(),
         buy_token: *onchain.contracts().weth.address(),
         sell_amount,
         buy_amount: 1u64.eth(),
         kind: OrderKind::Sell,
-        receiver: Some(Address::default()),
+        receiver: Address::default().into(),
         sell_token_balance: SellTokenSource::Erc20,
         buy_token_balance: BuyTokenDestination::Erc20,
         fee_amount: U256::ZERO,
@@ -184,11 +185,19 @@ async fn order_simulation(web3: Web3) {
         )
         .await;
 
+    // The order is intentionally unfillable by any real solver (buy_amount
+    // is well beyond what 2 WETH could ever buy out of the 1000:1000 pool)
+    // so the autopilot never settles it on-chain while this test runs. The
+    // debug/simulation endpoint uses a Fake solver that provides the buy
+    // tokens itself, so pool liquidity doesn't matter for the assertions
+    // below — but a real settlement would, because it would mark the order
+    // as filled and every subsequent simulation would revert with
+    // "GPv2: order filled".
     let order = OrderCreation {
         sell_token: *onchain.contracts().weth.address(),
         sell_amount: 2u64.eth(),
         buy_token: *token.address(),
-        buy_amount: 1u64.eth(),
+        buy_amount: 1_000u64.eth(),
         valid_to: model::time::now_in_epoch_seconds() + 300,
         kind: OrderKind::Buy,
         ..Default::default()
@@ -360,7 +369,8 @@ async fn order_simulation_partial_fill(web3: Web3) {
 
     let client = services.client();
 
-    // filledAmount=0 on-chain; full 4 WETH needed; trader only has 1 → must fail.
+    // filledAmount=0 on-chain; full 4 WETH needed; trader only has 1 → must
+    // fail.
     let response = client
         .get(format!(
             "{API_HOST}/restricted/api/v1/debug/simulation/{uid}"

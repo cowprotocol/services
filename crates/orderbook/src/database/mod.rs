@@ -1,11 +1,9 @@
 pub mod app_data;
-pub mod auction_prices;
 pub mod auctions;
 pub mod debug_report;
 mod fee_policies;
 pub mod orders;
 pub mod quotes;
-pub mod solver_competition;
 pub mod solver_competition_v2;
 pub mod total_surplus;
 pub mod trades;

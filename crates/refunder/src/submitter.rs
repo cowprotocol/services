@@ -63,14 +63,18 @@ impl ChainWrite for Submitter {
             let ethflow_contract =
                 CoWSwapEthFlow::Instance::new(ethflow_contract, self.web3.provider.clone());
             let tx_result = ethflow_contract
-            .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
-            // Gas conversions are lossy but technically the should not have decimal points even though they're floats
-            .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas)
-            .max_fee_per_gas(gas_price.max_fee_per_gas)
-            .from(self.signer_address)
-            .nonce(nonce)
-            .send()
-            .await?.with_timeout(Some(TIMEOUT_5_BLOCKS)).get_receipt().await;
+                .invalidateOrdersIgnoringNotAllowed(encoded_ethflow_orders)
+                // Gas conversions are lossy but technically the should not have decimal points even
+                // though they're floats
+                .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas)
+                .max_fee_per_gas(gas_price.max_fee_per_gas)
+                .from(self.signer_address)
+                .nonce(nonce)
+                .send()
+                .await?
+                .with_timeout(Some(TIMEOUT_5_BLOCKS))
+                .get_receipt()
+                .await;
 
             match tx_result {
                 Ok(receipt) => {

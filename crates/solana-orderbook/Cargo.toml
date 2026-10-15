@@ -1,0 +1,68 @@
+[package]
+name = "solana-orderbook"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Solana orderbook API for CoW Protocol"
+repository = "https://github.com/cowprotocol/services"
+
+[lib]
+name = "solana_orderbook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "solana-orderbook"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+base64 = { workspace = true }
+bigdecimal = { workspace = true }
+bincode = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true }
+configs = { workspace = true }
+const-hex = { workspace = true }
+cow-settlement-interface = { workspace = true }
+cow-solana-rpc = { workspace = true }
+database = { workspace = true }
+futures = { workspace = true }
+humantime-serde = { workspace = true }
+observe = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde-ext = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+solana-compute-budget-interface = { workspace = true }
+solana-sdk = { workspace = true }
+solana-system-interface = { workspace = true, features = ["bincode", "serde"] }
+solana-token = { workspace = true }
+spl-associated-token-account-interface = { workspace = true }
+spl-token-interface = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tikv-jemallocator = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal"] }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "decompression-br", "trace"] }
+tracing = { workspace = true }
+url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+cow-settlement-client = { workspace = true }
+cow-settlement-interface = { workspace = true, features = ["test-fixtures"] }
+cow-solana-rpc = { workspace = true, features = ["test-util"] }
+solana-testlib = { workspace = true }
+spl-token-2022-interface = { workspace = true }
+
+[features]
+default = []
+
+[lints]
+workspace = true

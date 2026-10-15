@@ -147,7 +147,8 @@ impl ApprovalStrategy {
                 (*target_contract, slot)
             }
             Self::SoladyMapping { target_contract } => {
-                // keccak256(owner_20 ‖ 0x00×8 ‖ 0x7f5e9f20 ‖ spender_20)  [52 bytes]
+                // keccak256(owner_20 ‖ 0x00×8 ‖ 0x7f5e9f20 ‖ spender_20)  [52
+                // bytes]
                 let mut buf = [0u8; 52];
                 buf[0..20].copy_from_slice(owner.as_slice());
                 buf[28..32].copy_from_slice(ALLOWANCE_SLOT_SEED);
@@ -461,7 +462,8 @@ mod tests {
         let (contract, slot) = strategy.slot(owner, spender);
         assert_eq!(contract, token);
 
-        // Compute expected: keccak256(owner_20 ‖ 0x00×8 ‖ 0x7f5e9f20 ‖ spender_20)
+        // Compute expected: keccak256(owner_20 ‖ 0x00×8 ‖ 0x7f5e9f20 ‖
+        // spender_20)
         let mut buf = [0u8; 52];
         buf[0..20].copy_from_slice(owner.as_slice());
         buf[28..32].copy_from_slice(&[0x7f, 0x5e, 0x9f, 0x20]);

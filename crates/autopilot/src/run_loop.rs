@@ -1,6 +1,5 @@
 use {
     crate::{
-        database::competition::Competition,
         domain::{
             self,
             auction::Id,
@@ -10,7 +9,6 @@ use {
                 Unscored,
                 winner_selection::{self, Ranking},
             },
-            settlement::{ExecutionEnded, ExecutionStarted},
         },
         infra::{
             self,
@@ -19,6 +17,7 @@ use {
         leader_lock_tracker::LeaderLockTracker,
         maintenance::{MaintenanceSync, SyncTarget},
         run::Liveness,
+        settle_call::{self, SettleCall, SettleError},
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
@@ -28,17 +27,10 @@ use {
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
     database::order_events::OrderEventLabel,
-    eth_domain_types::{self as eth, Address, TxId},
-    ethrpc::block_stream::BlockInfo,
-    futures::{FutureExt, TryFutureExt},
+    eth_domain_types::Address,
+    ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
+    futures::{StreamExt, TryFutureExt},
     itertools::Itertools,
-    model::solver_competition::{
-        CompetitionAuction,
-        Order,
-        Score,
-        SolverCompetitionDB,
-        SolverSettlement,
-    },
     num::ToPrimitive,
     rand::seq::SliceRandom,
     shared::token_list::AutoUpdatingTokenList,
@@ -67,6 +59,7 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
     pub compress_solve_request: bool,
+    pub auction_delta_checkpoint_interval: Duration,
 }
 
 impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
@@ -80,6 +73,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             compress_solve_request: value.compress_solve_request,
+            auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
                     slot_length: cfg.slot_length,
@@ -102,11 +96,60 @@ pub struct Probes {
     pub startup: Arc<Option<AtomicBool>>,
 }
 
+/// The auction sent to the delta drivers in the previous run, and when the
+/// last full auction (checkpoint) was sent to them.
+struct DeltaState {
+    previous_auction: Option<Arc<domain::Auction>>,
+    last_checkpoint: Option<Instant>,
+    interval: Duration,
+}
+
+impl DeltaState {
+    fn new(interval: Duration) -> Self {
+        Self {
+            previous_auction: Default::default(),
+            last_checkpoint: Default::default(),
+            interval,
+        }
+    }
+
+    /// Resets `previous_auction` and `last_checkpoint` to their default values.
+    fn reset(&mut self) {
+        self.previous_auction = Default::default();
+        self.last_checkpoint = Default::default();
+    }
+
+    /// Returns the auction to diff `auction` against, and stores `auction`
+    /// to be diffed against in the next cycle. A delta is always relative to
+    /// the auction sent immediately before it.
+    ///
+    /// Returns `None` when a full auction (checkpoint) is due instead: on the
+    /// very first auction and on the first auction that starts once `interval`
+    /// passed since the last checkpoint.
+    fn advance(
+        &mut self,
+        now: Instant,
+        auction: &Arc<domain::Auction>,
+    ) -> Option<Arc<domain::Auction>> {
+        let previous = self.previous_auction.replace(auction.clone());
+        match (previous, self.last_checkpoint) {
+            (Some(previous), Some(checkpoint))
+                if now.duration_since(checkpoint) < self.interval =>
+            {
+                Some(previous)
+            }
+            _ => {
+                self.last_checkpoint = Some(now);
+                None
+            }
+        }
+    }
+}
+
 pub struct RunLoop {
     config: Config,
     eth: infra::Ethereum,
     persistence: infra::Persistence,
-    drivers: Vec<Arc<infra::Driver>>,
     solvable_orders_cache: Arc<SolvableOrdersCache>,
     trusted_tokens: AutoUpdatingTokenList,
     probes: Probes,
@@ -116,6 +159,16 @@ pub struct RunLoop {
     winner_selection: winner_selection::Arbitrator,
     /// Notifier that wakes the main loop on new blocks or orders
     wake_notify: Arc<tokio::sync::Notify>,
+
+    /// State for building delta requests for drivers that opted into
+    /// incremental auctions.
+    delta_state: std::sync::Mutex<DeltaState>,
+
+    /// Drivers that do NOT support delta auctions
+    drivers: Vec<Arc<infra::Driver>>,
+    /// Sends `/settle` calls to drivers and waits for the resulting
+    /// transaction to be mined.
+    settle_coordinator: Arc<SettleCall>,
 }
 
 impl RunLoop {
@@ -129,28 +182,29 @@ impl RunLoop {
         trusted_tokens: AutoUpdatingTokenList,
         probes: Probes,
         maintenance: MaintenanceSync,
+        wake_runloop: Arc<tokio::sync::Notify>,
+        settle_coordinator: Arc<SettleCall>,
     ) -> Self {
         let max_winners = config.max_winners_per_auction.get();
         let weth = eth.contracts().wrapped_native_token();
 
-        // Create notifier that wakes the main loop on new blocks or orders
-        let wake_notify = Arc::new(tokio::sync::Notify::new());
-
-        // Spawn background tasks to listen for events
-        persistence.spawn_order_listener(wake_notify.clone());
-        Self::spawn_block_listener(eth.current_block().clone(), wake_notify.clone());
+        Self::spawn_block_listener(eth.current_block().clone(), wake_runloop.clone());
 
         Self {
+            delta_state: std::sync::Mutex::new(DeltaState::new(
+                config.auction_delta_checkpoint_interval,
+            )),
             config,
             eth,
             persistence,
-            drivers,
             solvable_orders_cache,
             trusted_tokens,
             probes,
             maintenance,
             winner_selection: winner_selection::Arbitrator::new(max_winners, weth),
-            wake_notify,
+            wake_notify: wake_runloop,
+            drivers,
+            settle_coordinator,
         }
     }
 
@@ -178,8 +232,9 @@ impl RunLoop {
             // order, new block). We only update the cache afterwards to update
             // to the most recent state.
             self_arc.wake_notify.notified().await;
-            let start_block = self_arc
-                .update_caches(&mut last_block, leader_lock_tracker.is_leader())
+            let start_block = self_arc.wait_until_auction_start(&last_block).await;
+            self_arc
+                .update_caches(start_block, leader_lock_tracker.is_leader())
                 .await;
 
             // caches are warmed up, we're ready to do leader work
@@ -188,6 +243,11 @@ impl RunLoop {
             }
 
             if !leader_lock_tracker.is_leader() {
+                // While not leading another instance sends the auctions, so
+                // the previous auction this instance recorded is not the one
+                // the drivers received; ensure we start from a checkpoint when
+                // leadership is (re)gained.
+                self_arc.delta_state.lock().unwrap().reset();
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -199,7 +259,7 @@ impl RunLoop {
             {
                 let auction_id = auction.id;
                 self_arc
-                    .single_run(auction)
+                    .single_run(&auction, start_block)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
             }
@@ -234,12 +294,13 @@ impl RunLoop {
     }
 
     #[instrument(skip_all)]
-    async fn update_caches(&self, prev_block: &mut Option<B256>, is_leader: bool) -> BlockInfo {
+    async fn wait_until_auction_start(&self, prev_block: &Option<B256>) -> BlockInfo {
         let current_block = *self.eth.current_block().borrow();
         let time_since_last_block = current_block.observed_at.elapsed();
-        let auction_block = if time_since_last_block > self.config.max_run_loop_delay {
+        if time_since_last_block > self.config.max_run_loop_delay {
             if prev_block.is_some_and(|prev_block| prev_block != current_block.hash) {
-                // don't emit warning if we finished prev run loop within the same block
+                // don't emit warning if we finished prev run loop within the
+                // same block
                 tracing::warn!(
                     missed_by = ?time_since_last_block - self.config.max_run_loop_delay,
                     "missed optimal auction start, wait for new block"
@@ -248,8 +309,11 @@ impl RunLoop {
             ethrpc::block_stream::next_block(self.eth.current_block()).await
         } else {
             current_block
-        };
+        }
+    }
 
+    #[instrument(skip_all)]
+    async fn update_caches(&self, auction_block: BlockInfo, is_leader: bool) {
         {
             let _timer = Metrics::get().service_maintenance_time.start_timer();
             self.maintenance
@@ -271,7 +335,6 @@ impl RunLoop {
                 tracing::warn!(?err, "failed to update auction");
             }
         }
-        auction_block
     }
 
     /// Sleeps until the next auction is supposed to start, builds it and
@@ -280,28 +343,27 @@ impl RunLoop {
     async fn next_auction(
         &self,
         start_block: BlockInfo,
-        prev_auction: &mut Option<domain::Auction>,
+        prev_auction: &mut Option<Arc<domain::Auction>>,
         prev_block: &mut Option<B256>,
-    ) -> Option<domain::Auction> {
+    ) -> Option<Arc<domain::Auction>> {
         // wait for appropriate time to start building the auction
         let auction = self.cut_auction().await?;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
-        let previous = prev_auction.replace(auction.clone());
-        if previous.as_ref() == Some(&auction)
-            && prev_block.replace(start_block.hash) == Some(start_block.hash)
-        {
+        let previous_auction = prev_auction.replace(auction.clone());
+        let previous_block = prev_block.replace(start_block.hash);
+        if previous_auction.as_ref() == Some(&auction) && previous_block == Some(start_block.hash) {
             return None;
         }
 
-        observe::log_auction_delta(&previous, &auction, &start_block);
+        observe::log_auction_delta(previous_auction.as_deref(), &auction, &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
     }
 
-    async fn cut_auction(&self) -> Option<domain::Auction> {
+    async fn cut_auction(&self) -> Option<Arc<domain::Auction>> {
         let Some(auction) = self.solvable_orders_cache.current_auction().await else {
             tracing::debug!("no current auction");
             return None;
@@ -314,28 +376,28 @@ impl RunLoop {
             .ok()?;
         Metrics::auction(id);
 
-        // always update the auction because the tests use this as a readiness probe
-        self.persistence.replace_current_auction_in_db(id, &auction);
-        self.persistence.upload_auction_to_s3(id, &auction);
+        // always update the auction because the tests use this as a readiness
+        // probe
+        self.persistence.archive_auction(id, &auction);
 
         if auction.orders.is_empty() {
-            // Updating liveness probe to not report unhealthy due to this optimization
+            // Updating liveness probe to not report unhealthy due to this
+            // optimization
             self.probes.liveness.auction();
             tracing::debug!("skipping empty auction");
             return None;
         }
-        Some(domain::Auction {
+        Some(Arc::new(domain::Auction {
             id,
             block: auction.block,
             orders: auction.orders,
             prices: auction.prices,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
-        })
+        }))
     }
 
     #[instrument(skip_all)]
-    async fn single_run(self: &Arc<Self>, auction: domain::Auction) {
-        let single_run_start = Instant::now();
+    async fn single_run(self: &Arc<Self>, auction: &Arc<domain::Auction>, start_block: BlockInfo) {
         tracing::info!(auction_id = ?auction.id, "solving");
 
         // Mark all auction orders as `Ready` for competition
@@ -344,13 +406,13 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
-        let solutions = self.fetch_solutions(&auction).await;
+        let solutions = self.fetch_solutions(auction).await;
         observe::bids(&solutions);
         if solutions.is_empty() {
             return;
         }
 
-        let ranking = self.winner_selection.arbitrate(solutions, &auction);
+        let ranking = self.winner_selection.arbitrate(solutions, auction);
 
         // Count and record the number of winners
         let num_winners = ranking.winners().count();
@@ -361,15 +423,11 @@ impl RunLoop {
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
-        // Post-processing should not be executed asynchronously since it includes steps
-        // of storing all the competition/auction-related data to the DB.
+        // Post-processing should not be executed asynchronously since it
+        // includes steps of storing all the competition/auction-related
+        // data to the DB.
         if let Err(err) = self
-            .post_processing(
-                &auction,
-                competition_simulation_block,
-                &ranking,
-                block_deadline,
-            )
+            .post_processing(auction, &ranking, block_deadline)
             .await
         {
             tracing::error!(?err, "failed to post-process competition");
@@ -394,6 +452,7 @@ impl RunLoop {
             OrderEventLabel::Considered,
         );
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
+        Metrics::winner_declared(start_block, self.eth.current_block());
 
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
@@ -401,7 +460,7 @@ impl RunLoop {
 
             self.start_settlement_execution(
                 auction.id,
-                single_run_start,
+                start_block,
                 driver,
                 solution,
                 solution_uid,
@@ -409,7 +468,7 @@ impl RunLoop {
             );
         }
         tracing::trace!(auction_id = ?auction.id, "settlement execution started");
-        observe::unsettled(&ranking, &auction);
+        observe::unsettled(&ranking, auction);
     }
 
     /// Starts settlement execution in a background task. The function is async
@@ -417,7 +476,7 @@ impl RunLoop {
     fn start_settlement_execution(
         self: &Arc<Self>,
         auction_id: Id,
-        single_run_start: Instant,
+        start_block: BlockInfo,
         driver: &Arc<infra::Driver>,
         solution: &Solution,
         solution_uid: usize,
@@ -433,15 +492,15 @@ impl RunLoop {
             tracing::info!(driver = %driver_.name, solution = %solution_id, "settling");
             let submission_start = Instant::now();
 
+            let request = settle_call::Request::Auction(settle::Request {
+                solution_id,
+                submission_deadline_latest_block: block_deadline,
+                auction_id,
+            });
+
             match self_
-                .settle(
-                    &driver_,
-                    solver,
-                    auction_id,
-                    solution_id,
-                    solution_uid,
-                    block_deadline,
-                )
+                .settle_coordinator
+                .settle(&driver_, solver, solution_uid, request)
                 .await
             {
                 Ok(tx_hash) => {
@@ -457,7 +516,7 @@ impl RunLoop {
                     tracing::warn!(?err, driver = %driver_.name, "settlement failed");
                 }
             }
-            Metrics::single_run_completed(single_run_start.elapsed());
+            Metrics::single_run_completed(start_block.observed_at.elapsed());
         }
         .instrument(tracing::Span::current());
 
@@ -468,17 +527,12 @@ impl RunLoop {
     async fn post_processing(
         &self,
         auction: &domain::Auction,
-        competition_simulation_block: u64,
         ranking: &Ranking,
         block_deadline: u64,
     ) -> Result<()> {
         let start = Instant::now();
         let reference_scores = ranking.reference_scores().clone();
 
-        let participants = ranking
-            .all()
-            .map(|bid| bid.solution().solver())
-            .collect::<HashSet<_>>();
         let order_lookup: std::collections::HashMap<_, _> = auction
             .orders
             .iter()
@@ -500,80 +554,13 @@ impl RunLoop {
             })
             .collect();
 
-        let mut solutions: Vec<_> = ranking
-            .enumerated()
-            .map(|(index, bid)| SolverSettlement {
-                solver: bid.driver().name.clone(),
-                solver_address: bid.solution().solver(),
-                score: Some(Score::Solver(bid.score().get().0)),
-                ranking: index + 1,
-                orders: bid
-                    .solution()
-                    .orders()
-                    .iter()
-                    .map(|(id, order)| Order::Colocated {
-                        id: (*id).into(),
-                        sell_amount: order.executed_sell.0,
-                        buy_amount: order.executed_buy.0,
-                    })
-                    .collect(),
-                // Always empty — kept to avoid breaking the solver competition
-                // API (`/api/v1/solver_competition`).
-                // NOTE: since the v1 has been removed,
-                // we'll probably be able to remove this soon too
-                clearing_prices: Default::default(),
-                is_winner: bid.is_winner(),
-                filtered_out: bid.is_filtered_out(),
-            })
-            .collect();
-        // reverse as solver competition table is sorted from worst to best,
-        // so we need to keep the ordering for backwards compatibility
-        solutions.reverse();
-
-        let competition_table = SolverCompetitionDB {
-            auction_start_block: auction.block,
-            competition_simulation_block,
-            auction: CompetitionAuction {
-                orders: auction
-                    .orders
-                    .iter()
-                    .map(|order| order.uid.into())
-                    .collect(),
-                prices: auction
-                    .prices
-                    .iter()
-                    .map(|(key, value)| (Address::from(*key), value.get().0))
-                    .collect(),
-            },
-            solutions,
-        };
-        let competition = Competition {
-            auction_id: auction.id,
-            reference_scores,
-            participants,
-            prices: auction
-                .prices
-                .clone()
-                .into_iter()
-                .map(|(key, value)| (*key, value.get().0))
-                .collect(),
-            block_deadline,
-            competition_simulation_block,
-            competition_table,
-        };
-
-        tracing::trace!(?competition, "saving competition");
-
         futures::try_join!(
             self.persistence
                 .save_auction(auction, block_deadline)
                 .map_err(|e| e.0.context("failed to save auction")),
             self.persistence
-                .save_solutions(auction.id, ranking.all())
+                .save_solutions(auction.id, ranking.all(), reference_scores)
                 .map_err(|e| e.0.context("failed to save solutions")),
-            self.persistence
-                .save_competition(competition)
-                .map_err(|e| e.0.context("failed to save competition")),
             self.persistence
                 .store_fee_policies(auction.id, fee_policies)
                 .map_err(|e| e.context("failed to fee_policies")),
@@ -586,26 +573,54 @@ impl RunLoop {
         Ok(())
     }
 
+    /// Builds the auction requests, if no drivers have opted-in to
+    /// delta-auctions or if a checkpoint is due, the second request will
+    /// effectively be a copy of the first.
+    async fn build_auction_requests(
+        &self,
+        auction: &Arc<domain::Auction>,
+    ) -> (solve::Request, solve::Request) {
+        let deadline = self.pick_solve_deadline();
+        let trusted_tokens = self.trusted_tokens.all();
+
+        let (request, delta_request) = tokio::join!(
+            solve::Request::new(
+                auction,
+                &trusted_tokens,
+                deadline,
+                self.config.compress_solve_request,
+            ),
+            async {
+                self.build_delta_request(auction, &trusted_tokens, deadline)
+                    .await
+            },
+        );
+        Metrics::solve_request_body_size("full", request.body_size());
+
+        // On checkpoint auctions the delta drivers receive the full body.
+        let delta_request = delta_request.unwrap_or_else(|| request.clone());
+        Metrics::solve_request_body_size("delta", delta_request.body_size());
+
+        (request, delta_request)
+    }
+
     /// Runs the solver competition, making all configured drivers participate.
     /// Returns all fair solutions sorted by their score (best to worst).
     #[instrument(skip_all)]
-    async fn fetch_solutions(&self, auction: &domain::Auction) -> Vec<competition::Bid<Unscored>> {
-        let deadline = self.pick_solve_deadline();
+    async fn fetch_solutions(
+        &self,
+        auction: &Arc<domain::Auction>,
+    ) -> Vec<competition::Bid<Unscored>> {
+        let (request, delta_request) = self.build_auction_requests(auction).await;
 
-        let request = solve::Request::new(
-            auction,
-            &self.trusted_tokens.all(),
-            deadline,
-            self.config.compress_solve_request,
-        )
-        .await;
-        Metrics::solve_request_body_size(request.body_size());
-
-        let mut bids = futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.solve(driver.clone(), request.clone())),
-        )
+        let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
+            let solve_request = if driver.supports_auction_deltas {
+                delta_request.clone()
+            } else {
+                request.clone()
+            };
+            self.solve(driver, solve_request)
+        }))
         .await
         .into_iter()
         .flatten()
@@ -616,8 +631,8 @@ impl RunLoop {
             let submission_address = bid.driver().submission_address;
             let is_solution_from_driver = bid.solution().solver() == submission_address;
 
-            // Filter out solutions that don't come from their corresponding submission
-            // address
+            // Filter out solutions that don't come from their corresponding
+            // submission address
             if !is_solution_from_driver {
                 tracing::warn!(
                     driver = bid.driver().name,
@@ -637,6 +652,39 @@ impl RunLoop {
         // Shuffle so that sorting randomly splits ties.
         bids.shuffle(&mut rand::rng());
         bids
+    }
+
+    /// Builds the delta request for this auction, shared by all drivers that
+    /// opted into incremental auctions. Returns `None` when a full auction
+    /// (checkpoint) is due instead.
+    async fn build_delta_request(
+        &self,
+        auction: &Arc<domain::Auction>,
+        trusted_tokens: &HashSet<Address>,
+        deadline: chrono::DateTime<chrono::Utc>,
+    ) -> Option<solve::Request> {
+        if !self
+            .drivers
+            .iter()
+            .any(|driver| driver.supports_auction_deltas)
+        {
+            return None;
+        }
+        let previous = self
+            .delta_state
+            .lock()
+            .unwrap()
+            .advance(Instant::now(), auction)?;
+        Some(
+            solve::Request::new_delta(
+                &previous,
+                auction,
+                trusted_tokens,
+                deadline,
+                self.config.compress_solve_request,
+            )
+            .await,
+        )
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and
@@ -722,182 +770,6 @@ impl RunLoop {
         }
         Ok(response.into_domain())
     }
-
-    /// Execute the solver's solution. Returns Ok when the corresponding
-    /// transaction has been mined.
-    #[instrument(skip_all, fields(driver = driver.name, solution_uid))]
-    async fn settle(
-        &self,
-        driver: &infra::Driver,
-        solver: eth::Address,
-        auction_id: i64,
-        solution_id: u64,
-        solution_uid: usize,
-        submission_deadline_latest_block: u64,
-    ) -> Result<TxId, SettleError> {
-        let settle = async move {
-            let current_block = self.eth.current_block().borrow().number;
-            anyhow::ensure!(
-                current_block < submission_deadline_latest_block,
-                "submission deadline was missed"
-            );
-
-            let request = settle::Request {
-                solution_id,
-                submission_deadline_latest_block,
-                auction_id,
-            };
-
-            self.store_execution_started(
-                auction_id,
-                solver,
-                solution_uid,
-                current_block,
-                submission_deadline_latest_block,
-            );
-            driver
-                .settle(&request, self.config.max_settlement_transaction_wait)
-                .await
-        }
-        .boxed();
-
-        let wait_for_settlement_transaction = self
-            .wait_for_settlement_transaction(
-                auction_id,
-                solver,
-                submission_deadline_latest_block,
-                solution_uid,
-            )
-            .boxed();
-
-        // Wait for either the settlement transaction to be mined or the driver returned
-        // a result.
-        let result = match futures::future::select(wait_for_settlement_transaction, settle).await {
-            futures::future::Either::Left((res, _)) => res,
-            futures::future::Either::Right((driver_result, wait_for_settlement_transaction)) => {
-                match driver_result {
-                    Ok(_) => wait_for_settlement_transaction.await,
-                    Err(err) => Err(SettleError::Other(err)),
-                }
-            }
-        };
-
-        self.store_execution_ended(solver, auction_id, solution_uid, &result);
-
-        result
-    }
-
-    /// Stores settlement execution started event in the DB in a background task
-    /// to not block the runloop.
-    fn store_execution_started(
-        &self,
-        auction_id: i64,
-        solver: eth::Address,
-        solution_uid: usize,
-        start_block: u64,
-        deadline_block: u64,
-    ) {
-        let persistence = self.persistence.clone();
-        tokio::spawn(async move {
-            let execution_started = ExecutionStarted {
-                auction_id,
-                solver,
-                solution_uid,
-                start_timestamp: chrono::Utc::now(),
-                start_block,
-                deadline_block,
-            };
-
-            if let Err(err) = persistence
-                .store_settlement_execution_started(execution_started)
-                .await
-            {
-                tracing::error!(?err, "failed to store settlement execution event");
-            }
-        });
-    }
-
-    /// Stores settlement execution ended event in the DB in a background task
-    /// to not block the runloop.
-    fn store_execution_ended(
-        &self,
-        solver: eth::Address,
-        auction_id: i64,
-        solution_uid: usize,
-        result: &Result<TxId, SettleError>,
-    ) {
-        let end_timestamp = chrono::Utc::now();
-        let current_block = self.eth.current_block().borrow().number;
-        let persistence = self.persistence.clone();
-        let outcome = match result {
-            Ok(_) => "success".to_string(),
-            Err(SettleError::Timeout) => "timeout".to_string(),
-            Err(SettleError::Other(err)) => format!("driver failed: {err}"),
-        };
-
-        tokio::spawn(async move {
-            let execution_ended = ExecutionEnded {
-                auction_id,
-                solver,
-                solution_uid,
-                end_timestamp,
-                end_block: current_block,
-                outcome,
-            };
-            if let Err(err) = persistence
-                .store_settlement_execution_ended(execution_ended)
-                .await
-            {
-                tracing::error!(?err, "failed to update settlement execution event");
-            }
-        });
-    }
-
-    /// Tries to find a `settle` contract call with calldata ending in `tag` and
-    /// originated from the `solver`.
-    ///
-    /// Returns None if no transaction was found within the deadline or the task
-    /// is cancelled.
-    #[instrument(skip_all)]
-    async fn wait_for_settlement_transaction(
-        &self,
-        auction_id: i64,
-        solver: eth::Address,
-        submission_deadline_latest_block: u64,
-        solution_uid: usize,
-    ) -> Result<eth::TxId, SettleError> {
-        let current = self.eth.current_block().borrow().number;
-        tracing::debug!(%current, deadline=%submission_deadline_latest_block, %auction_id, "waiting for tag");
-        loop {
-            let block = ethrpc::block_stream::next_block(self.eth.current_block()).await;
-            // Run maintenance to ensure the system processed the last available block so
-            // it's possible to find the tx in the DB in the next line.
-            self.maintenance
-                .wait_until_block_processed(SyncTarget::FullyProcessed(block.number))
-                .await;
-
-            match self
-                .persistence
-                .find_settlement_transaction(auction_id, solver, solution_uid)
-                .await
-            {
-                Ok(Some(transaction)) => return Ok(transaction),
-                Ok(None) => {}
-                Err(err) => {
-                    tracing::warn!(
-                        ?err,
-                        ?auction_id,
-                        ?solver,
-                        "failed to find settlement transaction"
-                    );
-                }
-            }
-            if block.number >= submission_deadline_latest_block {
-                break;
-            }
-        }
-        Err(SettleError::Timeout)
-    }
 }
 
 /// Picks a `/solve` deadline that ends shortly before a block gets
@@ -966,14 +838,6 @@ enum SolveError {
     SolverDenyListed,
 }
 
-#[derive(Debug, thiserror::Error)]
-enum SettleError {
-    #[error(transparent)]
-    Other(anyhow::Error),
-    #[error("settlement transaction await reached deadline")]
-    Timeout,
-}
-
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "runloop")]
 struct Metrics {
@@ -1030,20 +894,55 @@ struct Metrics {
     #[metric(buckets(0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2, 2.5, 5))]
     service_maintenance_time: prometheus::Histogram,
 
+    /// Total time between seeing the start block of the auction and declaring
+    /// a winning driver.
+    #[metric(buckets(
+        0, 1, 2, 3, 4, 5, 6, 7, 7.25, 7.5, 7.75, 8, 8.25, 8.5, 8.75, 9, 9.25, 9.5, 9.75, 10, 10.25,
+        10.5, 10.75, 11, 11.25, 11.5, 11.75, 12, 12.5, 13, 15, 17, 20
+    ))]
+    winner_declared: prometheus::Histogram,
+
     /// Total time spent in a single run of the run loop.
     #[metric(buckets(0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48))]
     single_run_time: prometheus::Histogram,
 
     /// Time difference between the current block and when the single run
     /// function is started.
-    #[metric(buckets(0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6))]
+    #[metric(buckets(
+        0.25, 0.35, 0.40, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 1, 1.25, 1.5, 2
+    ))]
     current_block_delay: prometheus::Histogram,
 
-    /// Tracks the size of the `/solve` request body in bytes.
-    #[metric(buckets(
-        1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000
-    ))]
-    solve_request_body_size: prometheus::Histogram,
+    /// Blocks between the auction's start block and the `/settle` call. Zero
+    /// means the call still fits in the block the auction was built on; higher
+    /// values count the block windows a single run burns.
+    #[metric(buckets(0, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64))]
+    settle_blocks_elapsed: prometheus::Histogram,
+
+    /// Seconds from the `/settle` call to the block the auction aimed at,
+    /// negative once that block was already due. The `reference` label picks
+    /// the clock: `block_timestamp` (nominal start) or `observed_at`.
+    #[metric(
+        labels("reference"),
+        buckets(
+            -4, -3, -2, -1.5, -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2,
+            2.5, 3, 4, 6, 8, 12
+        )
+    )]
+    settle_time_to_next_block: prometheus::HistogramVec,
+
+    /// Tracks the size of the `/solve` request body in bytes. The `kind` label
+    /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
+    /// to the drivers that opted into incremental auctions. Both are equal on
+    /// checkpoint auctions and while no driver has opted in.
+    #[metric(
+        labels("kind"),
+        buckets(
+            1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_000_000,
+            3_000_000, 4_000_000
+        )
+    )]
+    solve_request_body_size: prometheus::HistogramVec,
 }
 
 impl Metrics {
@@ -1121,14 +1020,85 @@ impl Metrics {
         Self::get().single_run_time.observe(elapsed.as_secs_f64());
     }
 
+    /// Records when the winner is declared, acts as a proxy to the time at
+    /// which we call `/settle` on solvers. Additionally it records more
+    /// metrics around `/settle` see [`Metrics::record_settle_block_metrics`]
+    /// for details.
+    fn winner_declared(start_block: BlockInfo, current_block: &CurrentBlockWatcher) {
+        let elapsed = start_block.observed_at.elapsed();
+        Self::get().winner_declared.observe(elapsed.as_secs_f64());
+
+        Self::record_settle_block_metrics(start_block, current_block);
+    }
+
     fn auction_ready(init_block_timestamp: Instant) {
         Self::get()
             .current_block_delay
             .observe(init_block_timestamp.elapsed().as_secs_f64())
     }
 
-    fn solve_request_body_size(size: usize) {
-        Self::get().solve_request_body_size.observe(size as f64)
+    /// Records where the `/settle` request lands relative to block production:
+    /// block windows burned, plus the runway to the block the auction aimed at.
+    /// Call immediately before the request goes out.
+    fn record_settle_block_metrics(
+        start_block: BlockInfo,
+        current_block: &ethrpc::block_stream::CurrentBlockWatcher,
+    ) {
+        let head = current_block.borrow().number;
+        Self::get()
+            .settle_blocks_elapsed
+            .observe(head.saturating_sub(start_block.number) as f64);
+
+        Self::record_settle_time_to_next_block(start_block.number + 1, current_block.clone());
+    }
+
+    /// Runway to `target`, the block the auction aimed at; negative once it was
+    /// already due. Recorded against both the block's self-reported timestamp
+    /// and `observed_at`, which trails it by the block observation lag.
+    fn record_settle_time_to_next_block(
+        target: u64,
+        watcher: ethrpc::block_stream::CurrentBlockWatcher,
+    ) {
+        if watcher.borrow().number > target {
+            // The watcher holds only the head, so `target`'s clocks are gone.
+            // These calls are `settle_blocks_elapsed` past its `le=1` bucket.
+            return;
+        }
+
+        // Two clocks: `block.timestamp` is wall clock, `block.observed_at` is
+        // monotonic, and neither is comparable to the other.
+        let sent_at_monotonic = Instant::now();
+        let sent_at = Utc::now().timestamp_millis() as f64 / 1e3;
+        tokio::spawn(async move {
+            let mut stream = ethrpc::block_stream::into_stream(watcher);
+            while let Some(block) = stream.next().await {
+                if block.number >= target {
+                    let metric = &Self::get().settle_time_to_next_block;
+                    metric
+                        .with_label_values(&["block_timestamp"])
+                        .observe(block.timestamp as f64 - sent_at);
+                    metric
+                        .with_label_values(&["observed_at"])
+                        .observe(signed_secs_between(sent_at_monotonic, block.observed_at));
+                    return;
+                }
+            }
+        });
+    }
+
+    fn solve_request_body_size(kind: &str, size: usize) {
+        Self::get()
+            .solve_request_body_size
+            .with_label_values(&[kind])
+            .observe(size as f64)
+    }
+}
+
+/// Seconds from `from` to `to`, negative when `to` is the earlier instant.
+fn signed_secs_between(from: Instant, to: Instant) -> f64 {
+    match to.checked_duration_since(from) {
+        Some(forward) => forward.as_secs_f64(),
+        None => -from.duration_since(to).as_secs_f64(),
     }
 }
 
@@ -1143,7 +1113,7 @@ pub mod observe {
     };
 
     pub fn log_auction_delta(
-        previous: &Option<domain::Auction>,
+        previous: Option<&domain::Auction>,
         current: &domain::Auction,
         start_block: &BlockInfo,
     ) {
@@ -1228,6 +1198,16 @@ mod tests {
     }
 
     #[test]
+    fn signed_secs_between_handles_both_directions() {
+        let earlier = Instant::now();
+        let later = earlier + Duration::from_millis(1500);
+
+        assert_eq!(signed_secs_between(earlier, later), 1.5);
+        assert_eq!(signed_secs_between(later, earlier), -1.5);
+        assert_eq!(signed_secs_between(earlier, earlier), 0.0);
+    }
+
+    #[test]
     fn solve_deadline_aligned_with_blockchain() {
         let min_solve_time = Duration::from_secs(9);
 
@@ -1239,27 +1219,29 @@ mod tests {
         // default deadline is `now + min_solve_time` (now + 9s)
         let standard_deadline = "2026-06-01T12:00:10Z".parse::<Ts>().unwrap();
 
-        // syncing to blockchain is not configured -> deadline = now + min_solve_time
+        // syncing to blockchain is not configured -> deadline = now +
+        // min_solve_time
         let deadline = pick_solve_deadline_impl(now, min_solve_time, None, last_block);
         assert_eq!(deadline, standard_deadline);
 
-        // both sync parameters provided -> deadline gets synced to expected block
-        // production
+        // both sync parameters provided -> deadline gets synced to expected
+        // block production
         let slot_config = Some(SlotConfig {
             slot_length: Duration::from_secs(12),
             tx_propagation_latency: Duration::from_secs(2),
         });
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
-        // now is 1s after the last block (n), 11s left before the slot ends, 9s before
-        // we are supposed to submit a solution, 9s minimum solve time => synced
-        // deadline is equal to standard deadline (2s before block n+1)
+        // now is 1s after the last block (n), 11s left before the slot ends, 9s
+        // before we are supposed to submit a solution, 9s minimum solve
+        // time => synced deadline is equal to standard deadline (2s
+        // before block n+1)
         assert_eq!(deadline, standard_deadline);
 
-        // now is 2s after the last block (n), 10s left before the slot ends, 8s before
-        // we are supposed to submit a solution for this slot, 9s minimum solve
-        // time => we barely missed the deadline of the current slot so now
-        // solvers get until 2s before the block n+2
+        // now is 2s after the last block (n), 10s left before the slot ends, 8s
+        // before we are supposed to submit a solution for this slot, 9s
+        // minimum solve time => we barely missed the deadline of the
+        // current slot so now solvers get until 2s before the block n+2
         let deadline = pick_solve_deadline_impl(
             now + Duration::from_secs(1),
             min_solve_time,
@@ -1268,8 +1250,8 @@ mod tests {
         );
         assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
 
-        // let's move to gnosis chain where 1 block is 5s (1 block is not enough for
-        // the solve deadline)
+        // let's move to gnosis chain where 1 block is 5s (1 block is not enough
+        // for the solve deadline)
         let slot_config = Some(SlotConfig {
             slot_length: Duration::from_secs(5),
             tx_propagation_latency: Duration::from_secs(2),
@@ -1277,10 +1259,51 @@ mod tests {
         let last_block_time = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
         let last_block = block_with_timestamp(last_block_time);
         let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
-        // now is 1s after the last block n, 4s left in the block, we need to submit 2s
-        // before a block, min_solve_time 9s => deadline is 2s before block n+3
+        // now is 1s after the last block n, 4s left in the block, we need to
+        // submit 2s before a block, min_solve_time 9s => deadline is 2s
+        // before block n+3
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
+    }
+
+    #[test]
+    fn delta_checkpoint_cadence() {
+        let auction = |id| domain::Auction {
+            id,
+            block: 0,
+            orders: vec![],
+            prices: Default::default(),
+            surplus_capturing_jit_order_owners: vec![],
+        };
+        let interval = Duration::from_secs(30);
+        let mut state = DeltaState::new(interval);
+        let start = Instant::now();
+
+        // With a 30s interval the very first auction is sent in full (no
+        // previous auction yet) and so is the first auction that starts 30s or
+        // more after that checkpoint. Every delta is against the auction right
+        // before it.
+        let mut diffed_against = vec![];
+        for (id, offset) in (0..).zip([0, 10, 20, 30, 40, 50, 60, 70]) {
+            diffed_against.push(
+                state
+                    .advance(start + Duration::from_secs(offset), &Arc::new(auction(id)))
+                    .map(|prev| prev.id),
+            );
+        }
+        assert_eq!(
+            diffed_against,
+            [
+                None,
+                Some(0),
+                Some(1),
+                None,
+                Some(3),
+                Some(4),
+                None,
+                Some(6)
+            ]
+        );
     }
 }
