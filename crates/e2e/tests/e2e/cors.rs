@@ -16,6 +16,7 @@ use {
 #[ignore]
 async fn local_node_cors_preflight() {
     run_test(cors_preflight).await;
+    panic!("deliberate failure: probe whether a failing shard blocks the merge");
 }
 
 async fn cors_preflight(web3: Web3) {
