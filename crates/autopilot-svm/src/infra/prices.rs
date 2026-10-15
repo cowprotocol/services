@@ -69,9 +69,8 @@ fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
     Cache::builder().max_capacity(MAX_CACHE_SIZE).build()
 }
 
-/// A price source answered 429: its quota is spent and the lookup can only
-/// be retried later. Surfaced so the orderbook can tell a spent quota from a
-/// token nobody prices.
+/// A price source answered 429. Its quota is spent, so the lookup backs off
+/// instead of caching the token as unpriced.
 #[derive(Debug, thiserror::Error)]
 #[error("rate limited by the price source")]
 pub struct RateLimited;
@@ -250,10 +249,8 @@ impl NativePrices {
     }
 
     /// The price of one token, see [`Self::prices`]. `None` for a token no
-    /// estimator prices. Concurrent lookups of one token share one fetch and
-    /// so one error, and a caller that stops waiting does not cancel it. The
-    /// refresher keeps maintaining the latest cut's tokens: a quote lookup
-    /// must not displace them.
+    /// estimator prices. Concurrent lookups of one token share one fetch, and
+    /// the refresher keeps maintaining the latest cut's tokens, not this one.
     pub async fn price(&self, token: Pubkey) -> Result<Option<u64>, Arc<anyhow::Error>> {
         match self {
             Self::Denominated => Ok(Some(Solana::NATIVE_PRICE_DENOMINATOR)),
@@ -336,7 +333,6 @@ impl Inner {
         }
     }
 
-    /// Hand the refresher the tokens of the latest cut.
     fn maintain(&self, tokens: &HashSet<Pubkey>) {
         let mut maintained = self.maintained.lock().expect("maintained set poisoned");
         *maintained = tokens
@@ -346,8 +342,6 @@ impl Inner {
             .collect();
     }
 
-    /// The cached prices of `tokens`, fetching the missing and expired ones
-    /// inline.
     async fn lookup(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
@@ -1017,9 +1011,8 @@ mod tests {
         assert_eq!(result.get(&listed), Some(&5_000_000_000));
     }
 
-    /// A single-token lookup reads and fetches like a cut's, but leaves the
-    /// refresher maintaining the cut's tokens: a quote for one token must not
-    /// shrink the maintained set to it.
+    /// A quote for one token must not shrink the refresher's maintained set
+    /// to it.
     #[tokio::test]
     async fn single_lookups_leave_the_maintained_set_alone() {
         let [cut_a, cut_b, quoted, unpriced] = std::array::from_fn(|_| Pubkey::new_unique());
@@ -1042,8 +1035,6 @@ mod tests {
         );
     }
 
-    /// Concurrent lookups of one token share a fetch, so a burst of quotes
-    /// spends one source request.
     #[tokio::test]
     async fn concurrent_single_lookups_share_a_fetch() {
         let token = Pubkey::new_unique();
@@ -1063,8 +1054,6 @@ mod tests {
         assert_eq!(requests.load(Ordering::Relaxed), 1);
     }
 
-    /// A waiter that gives up leaves the fetch running, so the next lookup
-    /// reads the verdict from the cache instead of asking the source again.
     #[tokio::test]
     async fn abandoned_single_lookups_still_fill_the_cache() {
         let token = Pubkey::new_unique();
@@ -1112,9 +1101,7 @@ mod tests {
         assert!(err.is::<RateLimited>(), "{err:?}");
     }
 
-    /// A 429 leaves the sources alone for a back-off window: the next lookup
-    /// of any token fails as rate limited without a source request, so a
-    /// burst of quotes cannot keep spending a quota that is already gone.
+    /// The next lookup of any token fails without a source request.
     #[tokio::test]
     async fn rate_limited_sources_are_left_alone_during_the_back_off() {
         let requests = Arc::new(AtomicUsize::new(0));

@@ -747,8 +747,6 @@ mod tests {
         assert_eq!(dropped, [orders[2].uid]);
     }
 
-    /// An order missing the price of either token stays out: its solutions
-    /// would score nothing.
     #[test]
     fn drops_orders_without_both_native_prices() {
         let prices = HashMap::from([

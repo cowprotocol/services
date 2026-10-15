@@ -36,7 +36,6 @@ struct NativePriceQuery {
     timeout_ms: Option<u64>,
 }
 
-/// Serve the API on `listener` until the task is dropped.
 pub async fn serve(listener: TcpListener, prices: NativePrices) -> std::io::Result<()> {
     let app = Router::new()
         .route("/native_price/{mint}", get(native_price))
@@ -50,8 +49,6 @@ pub async fn serve(listener: TcpListener, prices: NativePrices) -> std::io::Resu
     axum::serve(listener, app).await
 }
 
-/// Handle `GET /native_price/{mint}`: 200 with the price, 400 for a path that
-/// is no mint, 429 while the sources are rate limited, and 404 otherwise.
 async fn native_price(
     Path(mint): Path<String>,
     Query(query): Query<NativePriceQuery>,
@@ -99,8 +96,6 @@ mod tests {
         (response.status(), response.text().await.unwrap())
     }
 
-    /// A priced mint answers its price as a decimal string, an unpriced one
-    /// 404, and a path that is no mint 400.
     #[tokio::test]
     async fn serves_the_price_cache() {
         let priced = Pubkey::new_unique();
@@ -128,7 +123,6 @@ mod tests {
         );
     }
 
-    /// Without estimators every mint prices at the denominator.
     #[tokio::test]
     async fn prices_at_the_denominator_without_sources() {
         let addr = spawn(NativePrices::Denominated).await;
@@ -167,8 +161,6 @@ mod tests {
         )
     }
 
-    /// The sources' spent quota answers 429, so the orderbook can tell it
-    /// from a mint nobody prices.
     #[tokio::test]
     async fn rate_limited_sources_answer_429() {
         let prices = coingecko(get(|| async { StatusCode::TOO_MANY_REQUESTS })).await;
@@ -183,7 +175,6 @@ mod tests {
         );
     }
 
-    /// A failed source answers 404 like a mint nobody prices.
     #[tokio::test]
     async fn failed_sources_answer_404() {
         let prices = coingecko(get(|| async { StatusCode::INTERNAL_SERVER_ERROR })).await;
@@ -195,7 +186,6 @@ mod tests {
         );
     }
 
-    /// The budget cuts a hung source short of the source's own timeout.
     #[tokio::test]
     async fn lookups_past_the_budget_answer_404() {
         let prices = coingecko(get(std::future::pending::<()>)).await;

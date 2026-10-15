@@ -1,5 +1,5 @@
-//! Client for the autopilot's native price route, the orderbook's only price
-//! source.
+//! Client for the autopilot's native price route: the prices auctions are
+//! scored with, and the orderbook's only price source.
 
 use {
     anyhow::{Context, anyhow},
@@ -11,8 +11,6 @@ use {
     url::Url,
 };
 
-/// Reads native prices from the autopilot, which keeps the cache the auctions
-/// are scored with.
 #[derive(Clone, Debug)]
 pub struct NativePrices {
     client: reqwest::Client,
@@ -102,8 +100,6 @@ mod tests {
             .await
     }
 
-    /// 404 is no liquidity, 429 rate limited, and anything else, a dead
-    /// autopilot included, is internal.
     #[tokio::test]
     async fn maps_the_autopilot_answers() {
         let route = "/native_price/{mint}";
@@ -138,8 +134,7 @@ mod tests {
         assert_eq!(price(autopilot).await.unwrap(), 1000);
     }
 
-    /// A base URL with a path keeps it. The config guarantees the trailing
-    /// slash `Url::join` needs.
+    /// The config guarantees the trailing slash `Url::join` needs.
     #[tokio::test]
     async fn keeps_the_base_path() {
         let base = autopilot(
