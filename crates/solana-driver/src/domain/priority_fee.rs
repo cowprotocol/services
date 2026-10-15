@@ -19,6 +19,10 @@ use {
 /// builtin, up to this ceiling), so this is the conservative pick.
 const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
+/// The base fee of one signature, in lamports. The settlement carries the
+/// solver keypair's signature only.
+const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
+
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
 
@@ -58,6 +62,16 @@ pub(crate) struct Estimate {
     pub(crate) compute_unit_price: u64,
     /// The priority fee the transaction pays at that price, in lamports.
     pub(crate) lamports: u128,
+}
+
+impl Estimate {
+    /// The network fee of the transaction paying this priority fee, in
+    /// lamports: the signature fee plus the priority fee.
+    pub(crate) fn network_fee(&self) -> u64 {
+        u64::try_from(self.lamports)
+            .unwrap_or(u64::MAX)
+            .saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
