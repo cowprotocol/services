@@ -144,10 +144,10 @@ impl<Q: Quote + Sync> Solver<Q> {
 
     /// Quotes `orders`, orders of one side on one directed pair
     /// as one swap over their total and fills each in full at the swap's
-    /// uniform price. If the joint order violates the limit, the tail of the
-    /// sorted list is left out and the rest is quoted again. Every
-    /// round drops at least one order, so the batch ends cleared, down to a
-    /// single order, or empty.
+    /// uniform price. If the joint order violates a limit, the least
+    /// permissive tail order is left out and the rest is quoted again. Every
+    /// round drops one order, so the batch ends cleared, down to a single
+    /// order, or empty.
     async fn solve_group(
         &self,
         id: u64,
@@ -161,22 +161,23 @@ impl<Q: Quote + Sync> Solver<Q> {
             // encode, which for a batch of buys is a little worse than the
             // swap's own.
             let (in_amount, out_amount) = swap.clearing_rate(batch.side, orders.len())?;
-            let (cleared, undercut): (Vec<_>, Vec<_>) = orders
-                .into_iter()
-                .partition(|order| dex::satisfies(&order.to_dex_order(), in_amount, out_amount));
-            if undercut.is_empty() {
-                return assemble(id, &cleared, swap);
+            if orders
+                .iter()
+                .all(|order| dex::satisfies(&order.to_dex_order(), in_amount, out_amount))
+            {
+                return assemble(id, &orders, swap);
             }
-            for order in &undercut {
-                tracing::debug!(
-                    order = %order.uid,
-                    in_amount,
-                    out_amount,
-                    shortfall = %dex::shortfall(&order.to_dex_order(), in_amount, out_amount),
-                    "swap does not satisfy order, requoting without it"
-                );
-            }
-            orders = cleared;
+            // The orders are sorted most to least permissive. Removing only
+            // the tail matters because price impact can make orders that fail
+            // at this size clear once the batch is smaller.
+            let order = orders.pop()?;
+            tracing::debug!(
+                order = %order.uid,
+                in_amount,
+                out_amount,
+                shortfall = %dex::shortfall(&order.to_dex_order(), in_amount, out_amount),
+                "swap does not satisfy order, requoting without it"
+            );
         }
         tracing::debug!("swap satisfies no order");
         None
@@ -627,6 +628,41 @@ mod tests {
         assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![3_000, 2_000]);
     }
 
+    /// Four orders of 1000 on the `IMPACT` mint, with limits 1.2 through
+    /// 1.5: the batch of four rates 5000/4000, so only the first clears at
+    /// that size. Dropping one tail order per round improves the rate until
+    /// the two most permissive orders clear together at 3000/2000. Dropping
+    /// every order that misses the first quote would incorrectly keep only
+    /// the first one.
+    #[tokio::test]
+    async fn drops_only_the_least_permissive_order_before_requoting() {
+        let auction = auction(
+            vec![
+                sell_with_limit(0x03, pubkey(IMPACT), 1_400),
+                sell_with_limit(0x01, pubkey(IMPACT), 1_200),
+                sell_with_limit(0x04, pubkey(IMPACT), 1_500),
+                sell_with_limit(0x02, pubkey(IMPACT), 1_300),
+            ],
+            Duration::from_secs(60),
+        );
+        let solver = batching(1, 4);
+
+        let solutions = solver.solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        let batch = &solutions[0];
+        assert_eq!(
+            trades(batch),
+            vec![(OrderUid([1; 32]), 1_000), (OrderUid([2; 32]), 1_000)]
+        );
+        assert_eq!(batch.prices[&pubkey(IMPACT)], 3_000);
+        assert_eq!(batch.prices[&pubkey(2)], 2_000);
+        assert_eq!(
+            *solver.quoter.amounts.lock().unwrap(),
+            vec![4_000, 3_000, 2_000]
+        );
+    }
+
     /// Limits 0 and 1.6 on the `IMPACT` mint: the batch of two rates
     /// 3000/2000, under the second order's limit, so the first is requoted
     /// alone and becomes a single-order candidate.
@@ -649,8 +685,9 @@ mod tests {
         assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![2_000, 1_000]);
     }
 
-    /// A limit of 2.5 on the `IMPACT` mint: the single order's swap rates
-    /// 2000/1000, so the pair yields nothing after one quote.
+    /// Limits 2.5 and 2.6 on the `IMPACT` mint: neither the batch's 3000/2000
+    /// nor the most permissive order's 2000/1000 rate clears, so the pair
+    /// yields nothing after quoting down to one order.
     #[tokio::test]
     async fn a_swap_undercutting_every_order_yields_nothing() {
         let auction = auction(
@@ -663,7 +700,7 @@ mod tests {
         let solver = batching(1, 4);
 
         assert!(solver.solve(&auction).await.is_empty());
-        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![2_000]);
+        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![2_000, 1_000]);
     }
 
     /// One group per side, pair and swap destination, numbered in order of
