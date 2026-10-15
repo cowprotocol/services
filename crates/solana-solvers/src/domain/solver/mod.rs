@@ -5,11 +5,10 @@ use {
     crate::{
         dex::{self, Dex},
         dto::{
-            auction::{self, Auction, Token},
+            auction::{self, Auction},
             solution::Solution,
         },
     },
-    alloy_primitives::U256,
     configs::rate_limit::Strategy,
     futures::{Stream, StreamExt, future, stream},
     rate_limit::RateLimiter,
@@ -101,13 +100,13 @@ impl<Q: Quote + Sync> Solver<Q> {
     fn solution_stream<'a>(&'a self, auction: &'a Auction) -> impl Stream<Item = Solution> + 'a {
         // A group's index is its solution's id, unique within one response.
         stream::iter(self.groups(auction).into_iter().enumerate())
-            .map(|(id, (orders, estimated_surplus))| {
+            .map(|(id, (orders, limit_to_native))| {
                 let span = tracing::info_span!(
                     "solve",
                     auction_id = ?auction.id,
                     group = id,
                     orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>(),
-                    ?estimated_surplus
+                    ?limit_to_native
                 );
                 self.solve_group(id as u64, orders, auction)
                     .instrument(span)
@@ -124,10 +123,12 @@ impl<Q: Quote + Sync> Solver<Q> {
     ///
     /// The groups come in the order they are quoted in, which decides who
     /// is left out when the deadline or the rate limit cuts quoting short:
-    /// the most [`estimated_surplus`] first, then the groups without a price
-    /// for their mints. Ties keep their order of first appearance, so one
-    /// auction groups the same on every run.
-    fn groups<'a>(&self, auction: &'a Auction) -> Vec<(Vec<&'a auction::Order>, Option<u128>)> {
+    /// the most permissive first by [`limit_to_native`], then the groups
+    /// whose sell mint has no price. Ties keep their order of first
+    /// appearance, so one auction groups the same on every run. A group
+    /// whose buy mint has no price is left out when the auction prices
+    /// anything: the arbitrator cannot score its solution.
+    fn groups<'a>(&self, auction: &'a Auction) -> Vec<(Vec<&'a auction::Order>, Option<f64>)> {
         let mut groups: Vec<Vec<&auction::Order>> = Vec::new();
         let mut group_by_pair = HashMap::new();
         for order in &auction.orders {
@@ -149,16 +150,28 @@ impl<Q: Quote + Sync> Solver<Q> {
             orders.truncate(self.max_batch_size.get());
             orders.truncate(summable_prefix(orders));
         }
+        let priced = auction.has_native_prices();
         let mut groups: Vec<_> = groups
             .into_iter()
-            .map(|orders| {
-                let surplus = estimated_surplus(&orders, &auction.tokens);
-                (orders, surplus)
+            .filter_map(|orders| {
+                // Within a group the prices are shared, so its most
+                // permissive order, the first, stands for it.
+                let head = *orders.first()?;
+                if priced && auction.native_price(&head.buy_mint).is_none() {
+                    tracing::debug!(
+                        orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>(),
+                        "skipping group, its buy mint has no native price"
+                    );
+                    return None;
+                }
+                Some((orders, limit_to_native(head, auction)))
             })
             .collect();
-        // Stable, and `None` sorts below every `Some`, so reversed it goes
-        // last.
-        groups.sort_by_key(|(_, surplus)| std::cmp::Reverse(*surplus));
+        // Stable, highest first, `None` last.
+        groups.sort_by(|(_, a), (_, b)| match (a, b) {
+            (Some(a), Some(b)) => b.total_cmp(a),
+            (a, b) => b.is_some().cmp(&a.is_some()),
+        });
         groups
     }
 
@@ -262,35 +275,22 @@ fn by_permissiveness(a: &auction::Order, b: &auction::Order) -> std::cmp::Orderi
         .then_with(|| a.uid.0.cmp(&b.uid.0))
 }
 
-/// The surplus `orders`, one group, would earn filled at the auction's
-/// native prices, the prices the autopilot scores with, in lamports scaled
-/// by 10^9. Buy-order surplus is converted from sell to buy units at the
-/// order's limit price, like the autopilot's arbitrator. `None` when a mint
-/// has no price. Price impact is not modelled.
-fn estimated_surplus(orders: &[&auction::Order], tokens: &HashMap<Pubkey, Token>) -> Option<u128> {
-    let first = orders.first()?;
-    let price_sell = u128::from(tokens.get(&first.sell_mint)?.reference_price);
-    let price_buy = u128::from(tokens.get(&first.buy_mint)?.reference_price);
-    let surplus = orders
-        .iter()
-        .map(|order| {
-            let given = u128::from(order.sell_amount) * price_sell;
-            let accepted = u128::from(order.buy_amount) * price_buy;
-            let surplus = given.saturating_sub(accepted);
-            match order.side {
-                dex::Side::Sell => surplus,
-                dex::Side::Buy if surplus == 0 => 0,
-                // Buy surplus starts in sell-token units. The arbitrator
-                // converts it to buy tokens at the order's limit ratio before
-                // applying the buy token's native price. In native-value terms
-                // that is `surplus * accepted / given`.
-                dex::Side::Buy => {
-                    (U256::from(surplus) * U256::from(accepted) / U256::from(given)).to::<u128>()
-                }
-            }
-        })
-        .fold(0u128, u128::saturating_add);
-    Some(surplus)
+/// How far `order`'s limit sits inside the native exchange rate: the
+/// native value it gives up over the native value its limit accepts,
+/// `sell × p_sell / (buy × p_buy)`, for sells and buys alike. Above 1 the
+/// native rate clears the limit, and the higher it is the more room there
+/// is for price impact. Size-independent like the EVM driver's
+/// `ExternalPrice` ordering, and on one pair it ranks like
+/// [`by_permissiveness`]. `None` when a mint has no price; an order
+/// accepting nothing is infinitely permissive.
+fn limit_to_native(order: &auction::Order, auction: &Auction) -> Option<f64> {
+    let given = order.sell_amount as f64 * auction.native_price(&order.sell_mint)? as f64;
+    let accepted = order.buy_amount as f64 * auction.native_price(&order.buy_mint)? as f64;
+    Some(match (given > 0., accepted > 0.) {
+        (_, true) => given / accepted,
+        (true, false) => f64::INFINITY,
+        (false, false) => 0.,
+    })
 }
 
 /// How many leading `orders`, all of one side, quote an amount whose total
@@ -379,9 +379,7 @@ mod tests {
     /// ones.
     fn priced(mut auction: Auction, sell_prices: &[(Pubkey, u64)]) -> Auction {
         let prices = std::iter::once((pubkey(2), 1_000_000_000)).chain(sell_prices.iter().copied());
-        auction.tokens = prices
-            .map(|(mint, reference_price)| (mint, Token { reference_price }))
-            .collect();
+        auction.tokens = tokens(&prices.collect::<Vec<_>>());
         auction
     }
 
@@ -900,20 +898,24 @@ mod tests {
         );
     }
 
-    /// Four groups, each mint at twice the buy mint's native price: 3000
-    /// sold (6000 of surplus at native prices) goes before 1000 sold (2000),
-    /// a limit the native rate misses (5000 for at least 20000) counts
-    /// nothing, and an unpriced mint goes last. One quote at a time, so the
+    /// Sell mints at twice the buy mint's native price, so the native rate
+    /// is 2. A small order whose limit asks 1.5 goes before a large one
+    /// asking 1.67, size does not matter; a limit of 4 the native rate
+    /// misses comes after both; a sell mint without a price goes last; a
+    /// buy mint without a price is never quoted. One quote at a time, so the
     /// quoted amounts show the order.
     #[tokio::test]
-    async fn quotes_the_groups_with_the_most_estimated_surplus_first() {
+    async fn quotes_the_most_permissive_groups_first() {
+        let mut unpriced_buy = sell_of(0x05, pubkey(0x20), 9_000, 0);
+        unpriced_buy.buy_mint = pubkey(0x30);
         let auction = priced(
             auction(
                 vec![
-                    sell_of(0x01, pubkey(0x20), 1_000, 0),
-                    sell_of(0x02, pubkey(0x22), 5_000, 20_000),
+                    sell_of(0x01, pubkey(0x22), 5_000, 20_000),
+                    sell_of(0x02, pubkey(0x21), 3_000, 5_000),
+                    unpriced_buy,
                     sell_of(0x03, pubkey(0x23), 7_000, 0),
-                    sell_of(0x04, pubkey(0x21), 3_000, 0),
+                    sell_of(0x04, pubkey(0x20), 1_000, 1_500),
                 ],
                 Duration::from_secs(60),
             ),
@@ -929,16 +931,17 @@ mod tests {
 
         assert_eq!(
             *solver.quoter.amounts.lock().unwrap(),
-            vec![3_000, 1_000, 5_000, 7_000]
+            vec![1_000, 3_000, 5_000, 7_000]
         );
         // The solution ids follow the quoting order; the out-of-market
         // group yields none.
         solutions.sort_by_key(|solution| solution.id);
         assert_eq!(ids(&solutions), vec![0, 1, 3]);
-        assert_eq!(trades(&solutions[0]), vec![(OrderUid([4; 32]), 3_000)]);
+        assert_eq!(trades(&solutions[0]), vec![(OrderUid([4; 32]), 1_000)]);
     }
 
-    /// Without native prices every group ties, so the auction order stays.
+    /// Without native prices nothing can be ranked or skipped, so every
+    /// group is quoted in auction order.
     #[tokio::test]
     async fn quotes_unpriced_groups_in_auction_order() {
         let auction = auction(
@@ -955,96 +958,74 @@ mod tests {
         assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![1_000, 3_000]);
     }
 
-    fn tokens(prices: &[(Pubkey, u64)]) -> HashMap<Pubkey, Token> {
+    fn tokens(prices: &[(Pubkey, u64)]) -> HashMap<Pubkey, auction::Token> {
         prices
             .iter()
-            .map(|&(mint, reference_price)| (mint, Token { reference_price }))
+            .map(|&(mint, price)| {
+                let token = auction::Token {
+                    reference_price: Some(price),
+                };
+                (mint, token)
+            })
             .collect()
     }
 
-    /// Selling at 2 per buy unit: a limit of 1 leaves 1000 of the 2000 sold,
-    /// a limit of 3 counts nothing, so the group earns 1000.
-    #[test]
-    fn estimated_surplus_adds_the_orders_the_native_rate_clears() {
-        let orders = [
-            sell_of(0x01, pubkey(0x20), 1_000, 1_000),
-            sell_of(0x02, pubkey(0x20), 1_000, 3_000),
-        ];
-        let tokens = tokens(&[(pubkey(0x20), 2), (pubkey(2), 1)]);
-
-        assert_eq!(
-            estimated_surplus(&orders.iter().collect::<Vec<_>>(), &tokens),
-            Some(1_000)
-        );
+    fn priced_with(prices: &[(Pubkey, u64)]) -> Auction {
+        let mut auction = auction(vec![], Duration::from_secs(60));
+        auction.tokens = tokens(prices);
+        auction
     }
 
-    /// An open buy limit, `u64::MAX` to sell, is normalized at its limit ratio
-    /// like it is in the arbitrator. Integer rounding leaves just under the
-    /// native value of the 1000 units it buys.
+    /// A buy willing to sell 1000 at 2 for 1000 at 1 sits at 2, a sell
+    /// giving up 1000 at 1 for at least 250 at 1 at 4: the sell ranks first,
+    /// whatever the side.
     #[test]
-    fn estimated_buy_surplus_uses_the_order_limit_ratio() {
-        let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
-        buy.sell_amount = u64::MAX;
-        buy.buy_amount = 1_000;
-        let tokens = tokens(&[(pubkey(0x20), 2), (pubkey(2), 1)]);
-
-        assert_eq!(estimated_surplus(&[&buy], &tokens), Some(999));
-    }
-
-    /// The widening intermediate also covers real wire maxima: both factors
-    /// in `surplus * accepted` can exceed `u64` and their product can exceed
-    /// `u128`, while the normalized result still fits.
-    #[test]
-    fn estimated_buy_surplus_does_not_overflow() {
-        let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
-        buy.sell_amount = u64::MAX;
-        buy.buy_amount = u64::MAX / 2;
-        let tokens = tokens(&[(pubkey(0x20), u64::MAX), (pubkey(2), u64::MAX)]);
-
-        assert_eq!(
-            estimated_surplus(&[&buy], &tokens),
-            Some(u128::from(u64::MAX / 2) * u128::from(u64::MAX.div_ceil(2)))
-        );
-    }
-
-    /// The raw native-value gap would rank the buy first (1000 versus 750),
-    /// but the arbitrator normalizes its sell-token surplus at the order's
-    /// limit ratio, giving it 500 and putting the sell first.
-    #[test]
-    fn group_priority_matches_the_arbitrator_for_buy_surplus() {
+    fn limit_to_native_ranks_sells_and_buys_alike() {
         let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
         buy.sell_amount = 1_000;
         buy.buy_amount = 1_000;
-        buy.amount = 1_000;
         let sell = sell_of(0x02, pubkey(0x21), 1_000, 250);
-        let auction = priced(
-            auction(vec![buy, sell], Duration::from_secs(60)),
-            &[(pubkey(0x20), 2_000_000_000), (pubkey(0x21), 1_000_000_000)],
-        );
+        let auction = priced_with(&[(pubkey(0x20), 2), (pubkey(0x21), 1), (pubkey(2), 1)]);
 
-        let groups = batching(1, 4).groups(&auction);
-
-        assert_eq!(
-            groups
-                .iter()
-                .map(|(orders, surplus)| (orders[0].uid, *surplus))
-                .collect::<Vec<_>>(),
-            vec![
-                (OrderUid([0x02; 32]), Some(750_000_000_000)),
-                (OrderUid([0x01; 32]), Some(500_000_000_000)),
-            ]
-        );
+        assert_eq!(limit_to_native(&buy, &auction), Some(2.));
+        assert_eq!(limit_to_native(&sell, &auction), Some(4.));
     }
 
     #[test]
-    fn estimated_surplus_needs_both_prices() {
-        let orders = [sell_of(0x01, pubkey(0x20), 1_000, 0)];
-        let orders: Vec<_> = orders.iter().collect();
+    fn limit_to_native_handles_open_and_empty_legs() {
+        let auction = priced_with(&[(pubkey(0x20), 2), (pubkey(2), 1)]);
+        let market = sell_of(0x01, pubkey(0x20), 1_000, 0);
+        let empty = sell_of(0x02, pubkey(0x20), 0, 0);
+        let mut open_buy = order(0x03, dex::Side::Buy, pubkey(0x20));
+        open_buy.sell_amount = u64::MAX;
+        open_buy.buy_amount = 1_000;
 
-        assert_eq!(estimated_surplus(&orders, &tokens(&[(pubkey(2), 1)])), None);
+        assert_eq!(limit_to_native(&market, &auction), Some(f64::INFINITY));
+        assert_eq!(limit_to_native(&empty, &auction), Some(0.));
+        assert!(limit_to_native(&open_buy, &auction).unwrap() > 1e15);
+    }
+
+    #[test]
+    fn limit_to_native_needs_both_prices() {
+        let order = sell_of(0x01, pubkey(0x20), 1_000, 0);
+
         assert_eq!(
-            estimated_surplus(&orders, &tokens(&[(pubkey(0x20), 2)])),
+            limit_to_native(&order, &priced_with(&[(pubkey(2), 1)])),
             None
         );
+        assert_eq!(
+            limit_to_native(&order, &priced_with(&[(pubkey(0x20), 2)])),
+            None
+        );
+    }
+
+    /// A zero price on the buy mint counts as none, so with other mints
+    /// priced the group is skipped rather than ranked.
+    #[test]
+    fn skips_a_group_whose_buy_mint_prices_at_zero() {
+        let mut auction = priced_with(&[(pubkey(0x20), 2), (pubkey(2), 0)]);
+        auction.orders = vec![sell_of(0x01, pubkey(0x20), 1_000, 0)];
+
+        assert!(batching(1, 4).groups(&auction).is_empty());
     }
 }

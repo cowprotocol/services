@@ -38,9 +38,30 @@ pub struct Auction {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
-    /// Lamports per 10^9 atoms of the mint. Decimal string on the wire.
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    pub reference_price: u64,
+    /// Lamports per 10^9 atoms of the mint. Decimal string on the wire,
+    /// absent or null when the mint has no price.
+    #[serde(default)]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
+    pub reference_price: Option<u64>,
+}
+
+impl Auction {
+    /// The native price of `mint`, `None` when the auction has none for it.
+    /// A zero price counts as none: it would value the mint at nothing.
+    pub fn native_price(&self, mint: &Pubkey) -> Option<u64> {
+        self.tokens
+            .get(mint)?
+            .reference_price
+            .filter(|price| *price > 0)
+    }
+
+    /// Whether the auction prices any mint. An autopilot without price
+    /// estimators sends no prices and scores every token.
+    pub fn has_native_prices(&self) -> bool {
+        self.tokens
+            .keys()
+            .any(|mint| self.native_price(mint).is_some())
+    }
 }
 
 /// One order to quote.
@@ -170,7 +191,7 @@ mod tests {
         assert_eq!(order.side, dex::Side::Sell);
         assert!(!order.partially_fillable);
         assert_eq!(auction.tokens.len(), 1);
-        assert_eq!(auction.tokens[&pubkey(1)].reference_price, 1_500_000_000);
+        assert_eq!(auction.native_price(&pubkey(1)), Some(1_500_000_000));
     }
 
     /// A driver that predates native prices sends no `tokens`.
@@ -186,5 +207,30 @@ mod tests {
         let auction: Auction = serde_json::from_value(json).unwrap();
 
         assert!(auction.tokens.is_empty());
+        assert!(!auction.has_native_prices());
+    }
+
+    /// A null, absent or zero price leaves the mint unpriced without failing
+    /// the request.
+    #[test]
+    fn treats_null_absent_and_zero_prices_as_unpriced() {
+        let json = serde_json::json!({
+            "id": 1,
+            "taker": pubkey(3).to_string(),
+            "orders": [],
+            "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(1).to_string()): {"referencePrice": null},
+                (pubkey(2).to_string()): {},
+                (pubkey(4).to_string()): {"referencePrice": "0"},
+            },
+        });
+
+        let auction: Auction = serde_json::from_value(json).unwrap();
+
+        for mint in [1, 2, 4] {
+            assert_eq!(auction.native_price(&pubkey(mint)), None);
+        }
+        assert!(!auction.has_native_prices());
     }
 }
