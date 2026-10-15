@@ -76,6 +76,10 @@ fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
 #[error("rate limited by the price source")]
 pub struct RateLimited;
 
+/// How long a 429 keeps every source unasked. CoinGecko's quotas are per
+/// minute, so a few probes a minute find the quota back without spending it.
+const RATE_LIMIT_BACK_OFF: Duration = Duration::from_secs(10);
+
 /// Native price lookups for auction tokens, cached per token. The configured
 /// estimators are asked in order: a token the first one does not price is
 /// asked from the next. A background task keeps the tokens of the latest
@@ -105,6 +109,8 @@ pub struct Inner {
     /// Single-token lookups in flight, so a burst of quotes on one uncached
     /// token spends one source request instead of one each.
     single_lookups: BoxRequestSharing<Pubkey, Result<Option<u64>, Arc<anyhow::Error>>>,
+    /// Set by a 429: no source is asked before it.
+    rate_limited_until: Mutex<Option<Instant>>,
 }
 
 /// What pricing reads from a mint account.
@@ -209,6 +215,7 @@ impl NativePrices {
             mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
             single_lookups: RequestSharing::labelled("native_price".to_owned()),
+            rate_limited_until: Mutex::new(None),
         });
         let refresher = Arc::clone(&inner);
         tokio::spawn(async move {
@@ -291,6 +298,7 @@ impl NativePrices {
             mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
             single_lookups: RequestSharing::labelled("native_price".to_owned()),
+            rate_limited_until: Mutex::new(None),
         }))
     }
 }
@@ -375,6 +383,14 @@ impl Inner {
     /// priced, and cache every verdict.
     async fn fetch_into_cache(&self, tokens: &[Pubkey]) -> Result<()> {
         let now = Instant::now();
+        if self
+            .rate_limited_until
+            .lock()
+            .expect("back-off poisoned")
+            .is_some_and(|until| now < until)
+        {
+            return Err(RateLimited.into());
+        }
         let mints = self.mints(tokens, now).await?;
         // A token whose mint did not resolve cannot be scaled, so it counts
         // as unpriced until its entry expires.
@@ -414,6 +430,8 @@ impl Inner {
         }
         if failures == self.sources.len() && !self.sources.is_empty() {
             if rate_limited {
+                *self.rate_limited_until.lock().expect("back-off poisoned") =
+                    Some(now + RATE_LIMIT_BACK_OFF);
                 return Err(RateLimited.into());
             }
             return Err(anyhow!("every native price source failed"));
@@ -1092,6 +1110,45 @@ mod tests {
         );
         let err = prices.price(token).await.unwrap_err();
         assert!(err.is::<RateLimited>(), "{err:?}");
+    }
+
+    /// A 429 leaves the sources alone for a back-off window: the next lookup
+    /// of any token fails as rate limited without a source request, so a
+    /// burst of quotes cannot keep spending a quota that is already gone.
+    #[tokio::test]
+    async fn rate_limited_sources_are_left_alone_during_the_back_off() {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&requests);
+        let app = axum::Router::new().route(
+            "/simple/token_price/solana",
+            axum::routing::get(move || {
+                counter.fetch_add(1, Ordering::Relaxed);
+                async { axum::http::StatusCode::TOO_MANY_REQUESTS }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        // The mock answers each queued response once: one mint read per token.
+        let mint = mint_mocks(1)
+            .remove(&RpcRequest::GetMultipleAccounts)
+            .unwrap();
+        let rpc = SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+            (RpcRequest::GetMultipleAccounts, mint.clone()),
+            (RpcRequest::GetMultipleAccounts, mint),
+        ]));
+        let prices = NativePrices::new(
+            &coingecko_config(format!("http://{addr}/simple/token_price").parse().unwrap()),
+            rpc,
+            Pubkey::new_unique(),
+        );
+
+        let [first, second] = std::array::from_fn(|_| Pubkey::new_unique());
+        let err = prices.price(first).await.unwrap_err();
+        assert!(err.is::<RateLimited>(), "{err:?}");
+        let err = prices.price(second).await.unwrap_err();
+        assert!(err.is::<RateLimited>(), "{err:?}");
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
     }
 
     /// The price cache evicts down to its cap, so a long-running autopilot
