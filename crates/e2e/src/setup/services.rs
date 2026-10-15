@@ -65,6 +65,10 @@ fn orders_for_owner(owner: &Address, offset: u64, limit: u64) -> String {
     format!("{ACCOUNT_ENDPOINT}/{owner:?}/orders?offset={offset}&limit={limit}")
 }
 
+/// Default per-auction solve deadline used by [`Services`] when a test does
+/// not override [`Services::min_solve_deadline`].
+pub const DEFAULT_MIN_SOLVE_TIME: Duration = Duration::from_millis(200);
+
 pub struct ServicesBuilder {
     timeout: Duration,
 }
@@ -93,6 +97,7 @@ impl ServicesBuilder {
             http: Client::builder().timeout(self.timeout).build().unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
             web3: onchain_components.web3(),
+            min_solve_deadline: DEFAULT_MIN_SOLVE_TIME,
         }
     }
 }
@@ -110,6 +115,12 @@ pub struct Services<'a> {
     http: Client,
     db: Db,
     web3: &'a Web3,
+    /// Per-auction `/solve` deadline enforced by the autopilot. Defaults to
+    /// [`DEFAULT_MIN_SOLVE_TIME`] (200 ms) but latency-sensitive tests (notably
+    /// forked tests whose RPC round trips dominate on CI, or anything crossing
+    /// an extra mocked HTTP service) can bump this before starting the
+    /// protocol.
+    pub min_solve_deadline: Duration,
 }
 
 impl<'a> Services<'a> {
@@ -122,6 +133,7 @@ impl<'a> Services<'a> {
                 .unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
             web3: onchain_components.web3(),
+            min_solve_deadline: DEFAULT_MIN_SOLVE_TIME,
         }
     }
 
@@ -154,18 +166,13 @@ impl<'a> Services<'a> {
     }
 
     /// Start the autopilot service in a background task.
-    /// Optionally specify a solve deadline to use instead of the default 2s.
-    /// (note: specifying a larger solve deadline will impact test times as the
-    /// driver delays the submission of the solution until shortly before the
-    /// deadline in case the solution would start to revert at some point).
+    /// Uses [`Self::min_solve_deadline`] as the per-auction solve deadline.
     /// Allows to externally control the shutdown of autopilot.
     pub async fn start_autopilot_with_shutdown_controller(
         &self,
-        min_solve_time: Option<Duration>,
         config: configs::autopilot::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
-        let min_solve_time = min_solve_time.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
             .contracts
             .ethflows
@@ -184,7 +191,7 @@ impl<'a> Services<'a> {
                 ..config.ethflow
             },
             run_loop: RunLoopConfig {
-                min_solve_time,
+                min_solve_time: self.min_solve_deadline,
                 ..config.run_loop
             },
             ..config
@@ -197,17 +204,12 @@ impl<'a> Services<'a> {
     }
 
     /// Start the autopilot service in a background task.
-    /// Optionally specify a solve deadline to use instead of the default 2s.
-    /// (note: specifying a larger solve deadline will impact test times as the
-    /// driver delays the submission of the solution until shortly before the
-    /// deadline in case the solution would start to revert at some point)
+    /// Uses [`Self::min_solve_deadline`] as the per-auction solve deadline.
     pub async fn start_autopilot(
         &self,
-        solve_deadline: Option<Duration>,
         config: configs::autopilot::Configuration,
     ) -> JoinHandle<()> {
         self.start_autopilot_with_shutdown_controller(
-            solve_deadline,
             config,
             autopilot::shutdown_controller::ShutdownController::default(),
         )
@@ -304,18 +306,22 @@ impl<'a> Services<'a> {
             ..orderbook_config
         };
 
-        self.start_autopilot(None, autopilot_config).await;
-        self.start_api(orderbook_config).await;
+        tokio::join!(
+            self.start_autopilot(autopilot_config),
+            self.start_api(orderbook_config),
+        );
     }
 
     /// Starts a basic version of the protocol with a single external solver.
     /// Optionally starts a baseline solver and uses it for price estimation.
     pub async fn start_protocol_external_solver(
-        &self,
+        &mut self,
         solver: TestAccount,
         solver_endpoint: Option<Url>,
         run_baseline: bool,
     ) {
+        // configure mainnet's actual solve deadline
+        self.min_solve_deadline = Duration::from_secs(7);
         let external_solver_endpoint =
             solver_endpoint.unwrap_or("http://localhost:8000/".parse().unwrap());
 
@@ -413,9 +419,10 @@ impl<'a> Services<'a> {
             colocation::LiquidityProvider::UniswapV2,
         );
 
-        self.start_autopilot(Some(Duration::from_secs(11)), autopilot_config)
-            .await;
-        self.start_api(orderbook_config).await;
+        tokio::join!(
+            self.start_autopilot(autopilot_config),
+            self.start_api(orderbook_config),
+        );
     }
 
     async fn wait_for_api_to_come_up() {

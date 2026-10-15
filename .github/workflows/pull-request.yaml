@@ -163,9 +163,16 @@ jobs:
           just-version: 1.39.0
       - run: just test-db-solana
 
-  test-local-node:
+  # Sharded with nextest partitions, one runner per shard. The gate jobs
+  # carry the names the branch ruleset requires.
+  test-local-node-shard:
+    name: test-local-node (${{ matrix.shard }}/4)
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -196,15 +203,26 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - run: just test-e2e-local
+      - run: just test-e2e-local --partition count:${{ matrix.shard }}/4
+
+  test-local-node:
+    needs: test-local-node-shard
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test-local-node-shard.result }}" = success
 
   test-forked-node:
+    name: test-forked-node (${{ matrix.shard }}/2)
     # Do not run this job on forks since some secrets are required for it.
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -237,7 +255,7 @@ jobs:
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0
-      - run: just test-e2e-forked
+      - run: just test-e2e-forked --partition count:${{ matrix.shard }}/2
 
   test-driver:
     timeout-minutes: 60
