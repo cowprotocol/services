@@ -259,17 +259,13 @@ impl NativePrices {
                 inner
                     .single_lookups
                     .shared_or_else(token, move |&token| {
-                        // Spawned so a waiter's budget running out cannot
-                        // cancel the fetch: its verdict still lands in the
-                        // cache for the next lookup.
-                        tokio::spawn(async move {
+                        async move {
                             fetcher
                                 .lookup(HashSet::from([token]))
                                 .await
                                 .map(|mut prices| prices.remove(&token))
                                 .map_err(Arc::new)
-                        })
-                        .map(|joined| joined.expect("native price lookup panicked"))
+                        }
                         .boxed()
                     })
                     .await
@@ -738,12 +734,10 @@ mod tests {
         )])
     }
 
-    /// Serve a fixed CoinGecko response at the given path after `delay`,
-    /// counting requests.
+    /// Serve a fixed CoinGecko response at the given path, counting requests.
     async fn coingecko_server_at(
         path: &str,
         response: serde_json::Value,
-        delay: Duration,
     ) -> (Url, Arc<AtomicUsize>) {
         let requests = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&requests);
@@ -752,10 +746,7 @@ mod tests {
             axum::routing::get(move || {
                 counter.fetch_add(1, Ordering::Relaxed);
                 let response = response.clone();
-                async move {
-                    tokio::time::sleep(delay).await;
-                    axum::Json(response)
-                }
+                async move { axum::Json(response) }
             }),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -764,20 +755,12 @@ mod tests {
         (format!("http://{addr}/").parse().unwrap(), requests)
     }
 
-    async fn coingecko_server_delayed(
-        response: serde_json::Value,
-        delay: Duration,
-    ) -> (Url, Arc<AtomicUsize>) {
-        let (root, requests) =
-            coingecko_server_at("/simple/token_price/solana", response, delay).await;
+    async fn coingecko_server(response: serde_json::Value) -> (Url, Arc<AtomicUsize>) {
+        let (root, requests) = coingecko_server_at("/simple/token_price/solana", response).await;
         (
             format!("{root}simple/token_price").parse().unwrap(),
             requests,
         )
-    }
-
-    async fn coingecko_server(response: serde_json::Value) -> (Url, Arc<AtomicUsize>) {
-        coingecko_server_delayed(response, Duration::ZERO).await
     }
 
     /// Serve one fixed driver quote: the probe the request asks for sells
@@ -894,7 +877,6 @@ mod tests {
         let (endpoint, _) = coingecko_server_at(
             "/api/v3/simple/token_price/solana",
             serde_json::json!({ listed.to_string(): { "sol": 0.005 } }),
-            Duration::ZERO,
         )
         .await;
         let endpoint = format!("{}api/v3/simple/token_price", endpoint.as_str())
@@ -1051,32 +1033,6 @@ mod tests {
         let (first, second) = futures::join!(prices.price(token), prices.price(token));
         assert_eq!(first.unwrap(), Some(5_000_000_000));
         assert_eq!(second.unwrap(), Some(5_000_000_000));
-        assert_eq!(requests.load(Ordering::Relaxed), 1);
-    }
-
-    #[tokio::test]
-    async fn abandoned_single_lookups_still_fill_the_cache() {
-        let token = Pubkey::new_unique();
-        let delay = Duration::from_millis(100);
-        let (endpoint, requests) = coingecko_server_delayed(
-            serde_json::json!({ token.to_string(): { "sol": 0.005 } }),
-            delay,
-        )
-        .await;
-        let prices = NativePrices::new(
-            &coingecko_config(endpoint),
-            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
-            Pubkey::new_unique(),
-        );
-
-        let abandoned = tokio::time::timeout(delay / 10, prices.price(token)).await;
-        assert!(
-            abandoned.is_err(),
-            "the waiter gives up before the source answers"
-        );
-        tokio::time::sleep(delay * 3).await;
-
-        assert_eq!(prices.price(token).await.unwrap(), Some(5_000_000_000));
         assert_eq!(requests.load(Ordering::Relaxed), 1);
     }
 
