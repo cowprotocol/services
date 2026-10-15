@@ -12,6 +12,9 @@ bind-address = "0.0.0.0:8080"
 [quoting]
 # The drivers asked to quote orders. The best answer wins.
 drivers = ["http://localhost:8000"]
+# The autopilot, whose native prices gate quotes: a pair with a token no
+# estimator prices answers NoLiquidity.
+autopilot = "http://localhost:12088"
 # How long the driver has to answer. Defaults to 5s.
 # timeout = "5s"
 # Bounds on a quoted order's validTo and how long the amounts are honored.
