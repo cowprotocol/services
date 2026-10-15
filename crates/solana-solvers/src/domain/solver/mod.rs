@@ -14,23 +14,35 @@ use {
     tracing::Instrument,
 };
 
-/// Quotes one order into a swap. A seam over [`Dex`] so the loop is testable
-/// without the network.
-pub trait Quote {
+/// Prices orders and builds the swaps of the quotes kept. A seam over [`Dex`]
+/// so the loop is testable without the network.
+pub trait Aggregator {
     fn quote(
         &self,
         order: &dex::Order,
+    ) -> impl Future<Output = Result<dex::Quote, dex::jupiter::Error>> + Send;
+
+    fn swap(
+        &self,
+        quote: &dex::Quote,
         taker: &Pubkey,
     ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send;
 }
 
-impl Quote for Dex {
+impl Aggregator for Dex {
     fn quote(
         &self,
         order: &dex::Order,
+    ) -> impl Future<Output = Result<dex::Quote, dex::jupiter::Error>> + Send {
+        Dex::quote(self, order)
+    }
+
+    fn swap(
+        &self,
+        quote: &dex::Quote,
         taker: &Pubkey,
     ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
-        self.swap(order, taker)
+        Dex::swap(self, quote, taker)
     }
 }
 
@@ -47,7 +59,7 @@ pub struct Solver<Q> {
     max_batch_size: NonZeroUsize,
 }
 
-impl<Q: Quote + Sync> Solver<Q> {
+impl<Q: Aggregator + Sync> Solver<Q> {
     pub fn new(
         quoter: Q,
         concurrent_requests: NonZeroUsize,
@@ -147,7 +159,8 @@ impl<Q: Quote + Sync> Solver<Q> {
     /// uniform price. If the joint order violates a limit, the least
     /// permissive tail order is left out and the rest is quoted again. Every
     /// round drops one order, so the batch ends cleared, down to a single
-    /// order, or empty.
+    /// order, or empty. Rounds only price the batch, the swap is built once
+    /// it clears.
     async fn solve_group(
         &self,
         id: u64,
@@ -156,15 +169,18 @@ impl<Q: Quote + Sync> Solver<Q> {
     ) -> Option<Solution> {
         while !orders.is_empty() {
             let batch = batch_order(&orders)?;
-            let swap = self.quote(&batch, &auction.taker).await?;
+            let quote = self.limited(self.quoter.quote(&batch)).await?;
             // The limits are checked at the rate the solution's prices will
             // encode, which for a batch of buys is a little worse than the
             // swap's own.
-            let (in_amount, out_amount) = swap.clearing_rate(batch.side, orders.len())?;
+            let (in_amount, out_amount) = quote.clearing_rate(batch.side, orders.len())?;
             if orders
                 .iter()
                 .all(|order| dex::satisfies(&order.to_dex_order(), in_amount, out_amount))
             {
+                let swap = self
+                    .limited(self.quoter.swap(&quote, &auction.taker))
+                    .await?;
                 return assemble(id, &orders, swap);
             }
             // The orders are sorted most to least permissive. Removing only
@@ -183,11 +199,14 @@ impl<Q: Quote + Sync> Solver<Q> {
         None
     }
 
-    /// One quote through the rate limiter. A quote dropped during a back-off
-    /// counts as rate limited.
-    async fn quote(&self, order: &dex::Order, taker: &Pubkey) -> Option<dex::Swap> {
+    /// One aggregator request through the rate limiter. A request dropped
+    /// during a back-off counts as rate limited.
+    async fn limited<T>(
+        &self,
+        request: impl Future<Output = Result<T, dex::jupiter::Error>>,
+    ) -> Option<T> {
         self.rate_limiter
-            .execute_with_back_off(self.quoter.quote(order, taker), |result| {
+            .execute_with_back_off(request, |result| {
                 matches!(result, Err(dex::jupiter::Error::RateLimited))
             })
             .await
@@ -349,9 +368,9 @@ mod tests {
     }
 
     /// A solver without batching.
-    fn solver(concurrent_requests: usize, min_back_off: Duration) -> Solver<MockQuote> {
+    fn solver(concurrent_requests: usize, min_back_off: Duration) -> Solver<MockAggregator> {
         Solver::new(
-            MockQuote::default(),
+            MockAggregator::default(),
             NonZeroUsize::new(concurrent_requests).unwrap(),
             Strategy::try_new(2.0, min_back_off, min_back_off * 8).unwrap(),
             NonZeroUsize::new(1).unwrap(),
@@ -359,9 +378,9 @@ mod tests {
     }
 
     /// A solver batching up to `max_batch_size` orders, without back-off.
-    fn batching(concurrent_requests: usize, max_batch_size: usize) -> Solver<MockQuote> {
+    fn batching(concurrent_requests: usize, max_batch_size: usize) -> Solver<MockAggregator> {
         Solver::new(
-            MockQuote::default(),
+            MockAggregator::default(),
             NonZeroUsize::new(concurrent_requests).unwrap(),
             Strategy::try_new(2.0, Duration::ZERO, Duration::ZERO).unwrap(),
             NonZeroUsize::new(max_batch_size).unwrap(),
@@ -373,22 +392,46 @@ mod tests {
     /// `NO_ROUTE` mint (no route), the `RATE_LIMITED` mint (429), the
     /// `SLOW` mint (ten seconds) and the `IMPACT` mint, whose rate worsens
     /// with size: `in + 1000` out. Rejects other buys. Records when
-    /// each quote started, the amounts quoted in that order, and the most
-    /// that ran at once.
+    /// each quote started, the amounts quoted in that order, the most that
+    /// ran at once, and the input of every swap built.
     #[derive(Default)]
-    struct MockQuote {
+    struct MockAggregator {
         started: Mutex<Vec<Instant>>,
         amounts: Mutex<Vec<u64>>,
+        swaps: Mutex<Vec<u64>>,
         in_flight: AtomicUsize,
         max_in_flight: AtomicUsize,
     }
 
-    impl Quote for MockQuote {
+    fn quote_of(in_amount: u64, out_amount: u64) -> dex::Quote {
+        dex::Quote {
+            in_amount,
+            out_amount,
+            destination: pubkey(3),
+            raw: serde_json::Value::Null,
+        }
+    }
+
+    impl Aggregator for MockAggregator {
+        fn swap(
+            &self,
+            quote: &dex::Quote,
+            _taker: &Pubkey,
+        ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
+            self.swaps.lock().unwrap().push(quote.in_amount);
+            let swap = dex::Swap {
+                in_amount: quote.in_amount,
+                out_amount: quote.out_amount,
+                instructions: vec![],
+                address_lookup_tables: vec![],
+            };
+            async move { Ok(swap) }
+        }
+
         fn quote(
             &self,
             order: &dex::Order,
-            _taker: &Pubkey,
-        ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
+        ) -> impl Future<Output = Result<dex::Quote, dex::jupiter::Error>> + Send {
             let (side, sell_mint, amount) = (order.side, order.sell_mint, order.amount());
             // Nothing runs before the first poll: a quote still held back by
             // the back-off is not recorded.
@@ -398,12 +441,9 @@ mod tests {
                 let running = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                 self.max_in_flight.fetch_max(running, Ordering::SeqCst);
                 let result = match side {
-                    dex::Side::Buy if sell_mint == pubkey(ROUTES_BUYS) => Ok(dex::Swap {
-                        in_amount: amount / 2,
-                        out_amount: amount,
-                        instructions: vec![],
-                        address_lookup_tables: vec![],
-                    }),
+                    dex::Side::Buy if sell_mint == pubkey(ROUTES_BUYS) => {
+                        Ok(quote_of(amount / 2, amount))
+                    }
                     dex::Side::Buy => Err(dex::jupiter::Error::OrderNotSupported),
                     dex::Side::Sell if sell_mint == pubkey(NO_ROUTE) => {
                         Err(dex::jupiter::Error::NotFound)
@@ -423,12 +463,7 @@ mod tests {
                         } else {
                             amount.saturating_mul(2)
                         };
-                        Ok(dex::Swap {
-                            in_amount: amount,
-                            out_amount,
-                            instructions: vec![],
-                            address_lookup_tables: vec![],
-                        })
+                        Ok(quote_of(amount, out_amount))
                     }
                 };
                 self.in_flight.fetch_sub(1, Ordering::SeqCst);
@@ -661,6 +696,8 @@ mod tests {
             *solver.quoter.amounts.lock().unwrap(),
             vec![4_000, 3_000, 2_000]
         );
+        // Only the batch that clears gets its swap built.
+        assert_eq!(*solver.quoter.swaps.lock().unwrap(), vec![2_000]);
     }
 
     /// Limits 0 and 1.6 on the `IMPACT` mint: the batch of two rates
@@ -701,6 +738,7 @@ mod tests {
 
         assert!(solver.solve(&auction).await.is_empty());
         assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![2_000, 1_000]);
+        assert!(solver.quoter.swaps.lock().unwrap().is_empty());
     }
 
     /// One group per side, pair and swap destination, numbered in order of
