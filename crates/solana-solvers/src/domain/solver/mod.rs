@@ -4,7 +4,10 @@
 use {
     crate::{
         dex::{self, Dex},
-        dto::{auction, auction::Auction, solution::Solution},
+        dto::{
+            auction::{self, Auction, Token},
+            solution::Solution,
+        },
     },
     configs::rate_limit::Strategy,
     futures::{Stream, StreamExt, future, stream},
@@ -97,12 +100,13 @@ impl<Q: Quote + Sync> Solver<Q> {
     fn solution_stream<'a>(&'a self, auction: &'a Auction) -> impl Stream<Item = Solution> + 'a {
         // A group's index is its solution's id, unique within one response.
         stream::iter(self.groups(auction).into_iter().enumerate())
-            .map(|(id, orders)| {
+            .map(|(id, (orders, estimated_surplus))| {
                 let span = tracing::info_span!(
                     "solve",
                     auction_id = ?auction.id,
                     group = id,
-                    orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>()
+                    orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>(),
+                    ?estimated_surplus
                 );
                 self.solve_group(id as u64, orders, auction)
                     .instrument(span)
@@ -111,13 +115,18 @@ impl<Q: Quote + Sync> Solver<Q> {
             .filter_map(future::ready)
     }
 
-    /// The auction's orders in groups that each yield at most one solution,
-    /// in order of first appearance so one auction groups the same on every
-    /// run: per side, directed mint pair and swap destination, the
+    /// The auction's orders in groups that each yield at most one solution:
+    /// per side, directed mint pair and swap destination, the
     /// `max_batch_size` most permissive orders (fewer when their total would
     /// overflow). Sells and buys on one pair stay apart: one swap fixes
     /// either its input or its output.
-    fn groups<'a>(&self, auction: &'a Auction) -> Vec<Vec<&'a auction::Order>> {
+    ///
+    /// The groups come in the order they are quoted in, which decides who
+    /// is left out when the deadline or the rate limit cuts quoting short:
+    /// the most [`estimated_surplus`] first, then the groups without a price
+    /// for their mints. Ties keep their order of first appearance, so one
+    /// auction groups the same on every run.
+    fn groups<'a>(&self, auction: &'a Auction) -> Vec<(Vec<&'a auction::Order>, Option<u128>)> {
         let mut groups: Vec<Vec<&auction::Order>> = Vec::new();
         let mut group_by_pair = HashMap::new();
         for order in &auction.orders {
@@ -139,6 +148,16 @@ impl<Q: Quote + Sync> Solver<Q> {
             orders.truncate(self.max_batch_size.get());
             orders.truncate(summable_prefix(orders));
         }
+        let mut groups: Vec<_> = groups
+            .into_iter()
+            .map(|orders| {
+                let surplus = estimated_surplus(&orders, &auction.tokens);
+                (orders, surplus)
+            })
+            .collect();
+        // Stable, and `None` sorts below every `Some`, so reversed it goes
+        // last.
+        groups.sort_by_key(|(_, surplus)| std::cmp::Reverse(*surplus));
         groups
     }
 
@@ -242,6 +261,28 @@ fn by_permissiveness(a: &auction::Order, b: &auction::Order) -> std::cmp::Orderi
         .then_with(|| a.uid.0.cmp(&b.uid.0))
 }
 
+/// The surplus `orders`, one group, would earn filled at the auction's
+/// native prices, the prices the autopilot scores with, in lamports scaled
+/// by 10^9. `None` when a mint has no price. Price impact is not modelled.
+fn estimated_surplus(orders: &[&auction::Order], tokens: &HashMap<Pubkey, Token>) -> Option<u128> {
+    let first = orders.first()?;
+    let price_sell = u128::from(tokens.get(&first.sell_mint)?.reference_price);
+    let price_buy = u128::from(tokens.get(&first.buy_mint)?.reference_price);
+    let surplus = orders
+        .iter()
+        .map(|order| {
+            let given = u128::from(order.sell_amount) * price_sell;
+            let accepted = u128::from(order.buy_amount) * price_buy;
+            let exact = match order.side {
+                dex::Side::Sell => given,
+                dex::Side::Buy => accepted,
+            };
+            given.saturating_sub(accepted).min(exact)
+        })
+        .fold(0u128, u128::saturating_add);
+    Some(surplus)
+}
+
 /// How many leading `orders`, all of one side, quote an amount whose total
 /// fits in a `u64`, and so can be quoted as one swap.
 fn summable_prefix(orders: &[&auction::Order]) -> usize {
@@ -320,7 +361,26 @@ mod tests {
             taker: pubkey(1),
             orders,
             deadline: chrono::Utc::now() + deadline_in,
+            tokens: HashMap::new(),
         }
+    }
+
+    /// Native prices of 10^9 for the buy mint, `pubkey(2)`, and the given
+    /// ones.
+    fn priced(mut auction: Auction, sell_prices: &[(Pubkey, u64)]) -> Auction {
+        let prices = std::iter::once((pubkey(2), 1_000_000_000)).chain(sell_prices.iter().copied());
+        auction.tokens = prices
+            .map(|(mint, reference_price)| (mint, Token { reference_price }))
+            .collect();
+        auction
+    }
+
+    fn sell_of(uid: u8, sell_mint: Pubkey, sell_amount: u64, buy_amount: u64) -> auction::Order {
+        let mut order = order(uid, dex::Side::Sell, sell_mint);
+        order.sell_amount = sell_amount;
+        order.amount = sell_amount;
+        order.buy_amount = buy_amount;
+        order
     }
 
     fn order(uid: u8, side: dex::Side, sell_mint: Pubkey) -> auction::Order {
@@ -827,6 +887,108 @@ mod tests {
                 .map(|order| order.uid.0[0])
                 .collect::<Vec<_>>(),
             vec![0x02, 0x03, 0x04, 0x05, 0x01]
+        );
+    }
+
+    /// Four groups, each mint at twice the buy mint's native price: 3000
+    /// sold (6000 of surplus at native prices) goes before 1000 sold (2000),
+    /// a limit the native rate misses (5000 for at least 20000) counts
+    /// nothing, and an unpriced mint goes last. One quote at a time, so the
+    /// quoted amounts show the order.
+    #[tokio::test]
+    async fn quotes_the_groups_with_the_most_estimated_surplus_first() {
+        let auction = priced(
+            auction(
+                vec![
+                    sell_of(0x01, pubkey(0x20), 1_000, 0),
+                    sell_of(0x02, pubkey(0x22), 5_000, 20_000),
+                    sell_of(0x03, pubkey(0x23), 7_000, 0),
+                    sell_of(0x04, pubkey(0x21), 3_000, 0),
+                ],
+                Duration::from_secs(60),
+            ),
+            &[
+                (pubkey(0x20), 2_000_000_000),
+                (pubkey(0x21), 2_000_000_000),
+                (pubkey(0x22), 2_000_000_000),
+            ],
+        );
+        let solver = batching(1, 4);
+
+        let mut solutions = solver.solve(&auction).await;
+
+        assert_eq!(
+            *solver.quoter.amounts.lock().unwrap(),
+            vec![3_000, 1_000, 5_000, 7_000]
+        );
+        // The solution ids follow the quoting order; the out-of-market
+        // group yields none.
+        solutions.sort_by_key(|solution| solution.id);
+        assert_eq!(ids(&solutions), vec![0, 1, 3]);
+        assert_eq!(trades(&solutions[0]), vec![(OrderUid([4; 32]), 3_000)]);
+    }
+
+    /// Without native prices every group ties, so the auction order stays.
+    #[tokio::test]
+    async fn quotes_unpriced_groups_in_auction_order() {
+        let auction = auction(
+            vec![
+                sell_of(0x01, pubkey(0x20), 1_000, 0),
+                sell_of(0x02, pubkey(0x21), 3_000, 0),
+            ],
+            Duration::from_secs(60),
+        );
+        let solver = batching(1, 4);
+
+        solver.solve(&auction).await;
+
+        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![1_000, 3_000]);
+    }
+
+    fn tokens(prices: &[(Pubkey, u64)]) -> HashMap<Pubkey, Token> {
+        prices
+            .iter()
+            .map(|&(mint, reference_price)| (mint, Token { reference_price }))
+            .collect()
+    }
+
+    /// Selling at 2 per buy unit: a limit of 1 leaves 1000 of the 2000 sold,
+    /// a limit of 3 counts nothing, so the group earns 1000.
+    #[test]
+    fn estimated_surplus_adds_the_orders_the_native_rate_clears() {
+        let orders = [
+            sell_of(0x01, pubkey(0x20), 1_000, 1_000),
+            sell_of(0x02, pubkey(0x20), 1_000, 3_000),
+        ];
+        let tokens = tokens(&[(pubkey(0x20), 2), (pubkey(2), 1)]);
+
+        assert_eq!(
+            estimated_surplus(&orders.iter().collect::<Vec<_>>(), &tokens),
+            Some(1_000)
+        );
+    }
+
+    /// An open buy limit, `u64::MAX` to sell, counts at most what the order
+    /// buys: 1000 at a price of 1.
+    #[test]
+    fn estimated_surplus_caps_an_order_at_its_exact_leg() {
+        let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
+        buy.sell_amount = u64::MAX;
+        buy.buy_amount = 1_000;
+        let tokens = tokens(&[(pubkey(0x20), 2), (pubkey(2), 1)]);
+
+        assert_eq!(estimated_surplus(&[&buy], &tokens), Some(1_000));
+    }
+
+    #[test]
+    fn estimated_surplus_needs_both_prices() {
+        let orders = [sell_of(0x01, pubkey(0x20), 1_000, 0)];
+        let orders: Vec<_> = orders.iter().collect();
+
+        assert_eq!(estimated_surplus(&orders, &tokens(&[(pubkey(2), 1)])), None);
+        assert_eq!(
+            estimated_surplus(&orders, &tokens(&[(pubkey(0x20), 2)])),
+            None
         );
     }
 }

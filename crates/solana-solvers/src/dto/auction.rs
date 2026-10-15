@@ -9,6 +9,7 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
+    std::collections::HashMap,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -24,6 +25,22 @@ pub struct Auction {
     pub orders: Vec<Order>,
     /// Absolute deadline by which solutions must be returned.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The auction's native prices by mint, the ones the autopilot scores
+    /// solutions with. A mint without a price is absent, and a driver that
+    /// predates them sends none.
+    #[serde(default)]
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, _>")]
+    pub tokens: HashMap<Pubkey, Token>,
+}
+
+/// What the auction knows about one mint.
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// Lamports per 10^9 atoms of the mint. Decimal string on the wire.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub reference_price: u64,
 }
 
 /// One order to quote.
@@ -131,6 +148,9 @@ mod tests {
                 "partiallyFillable": false,
             }],
             "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(1).to_string()): {"referencePrice": "1500000000"},
+            },
         });
 
         let auction: Auction = serde_json::from_value(json).unwrap();
@@ -149,5 +169,22 @@ mod tests {
         );
         assert_eq!(order.side, dex::Side::Sell);
         assert!(!order.partially_fillable);
+        assert_eq!(auction.tokens.len(), 1);
+        assert_eq!(auction.tokens[&pubkey(1)].reference_price, 1_500_000_000);
+    }
+
+    /// A driver that predates native prices sends no `tokens`.
+    #[test]
+    fn parses_a_request_without_native_prices() {
+        let json = serde_json::json!({
+            "id": 1,
+            "taker": pubkey(3).to_string(),
+            "orders": [],
+            "deadline": "2026-01-01T00:00:00Z",
+        });
+
+        let auction: Auction = serde_json::from_value(json).unwrap();
+
+        assert!(auction.tokens.is_empty());
     }
 }
