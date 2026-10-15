@@ -105,6 +105,23 @@ async fn healthz_returns_200() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 }
 
+/// The version route answers like the EVM orderbook's: the build's
+/// `<ref>@<sha>` as plain text.
+#[tokio::test]
+async fn version_reports_the_build() {
+    let addr = spawn_server().await;
+    let response = reqwest::Client::new()
+        .get(format!("http://{addr}/api/v1/version"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        response.text().await.unwrap(),
+        observe::version::git_version()
+    );
+}
+
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
     let api = mock_api().await;

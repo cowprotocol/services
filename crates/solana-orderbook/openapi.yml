@@ -291,6 +291,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/version:
+    get:
+      operationId: getApiVersion
+      summary: Get the API's current deployed version.
+      description: |
+        The build the API runs as `<ref>@<sha>`: the release tag or branch the
+        image was built from and its git commit (code:
+        https://github.com/cowprotocol/services).
+      responses:
+        "200":
+          description: Version
+          content:
+            text/plain: {}
 components:
   schemas:
     OrderUid:
