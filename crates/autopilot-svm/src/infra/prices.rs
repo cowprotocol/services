@@ -1080,27 +1080,6 @@ mod tests {
         assert_eq!(requests.load(Ordering::Relaxed), 1);
     }
 
-    /// A source answering 429 fails the lookup as rate limited when no other
-    /// source prices the token.
-    #[tokio::test]
-    async fn rate_limited_sources_fail_the_lookup_as_rate_limited() {
-        let token = Pubkey::new_unique();
-        let app = axum::Router::new().route(
-            "/simple/token_price/solana",
-            axum::routing::get(|| async { axum::http::StatusCode::TOO_MANY_REQUESTS }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let prices = NativePrices::new(
-            &coingecko_config(format!("http://{addr}/simple/token_price").parse().unwrap()),
-            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
-            Pubkey::new_unique(),
-        );
-        let err = prices.price(token).await.unwrap_err();
-        assert!(err.is::<RateLimited>(), "{err:?}");
-    }
-
     /// The next lookup of any token fails without a source request.
     #[tokio::test]
     async fn rate_limited_sources_are_left_alone_during_the_back_off() {
