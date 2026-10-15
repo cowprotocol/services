@@ -118,7 +118,9 @@ pub struct Response {
     pub funder: Option<Pubkey>,
 }
 
-/// The quoted order.
+/// The quoted order. The amounts are the trader's to sign: the driver's
+/// quote with the execution cost, `network_fees` plus `buy_token_ata_costs`,
+/// taken out of the side the order does not fix at that token's native price.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -253,7 +253,9 @@ paths:
       description: |
         What one order would trade for right now. Indicative: no component
         simulates the settlement, so `verified` is always false and the
-        amounts are not a commitment.
+        amounts are not a commitment. The amounts are net of the execution
+        cost, `networkFees` plus `buyTokenAtaCosts`, taken out of the side
+        the order does not fix at that token's native price.
       requestBody:
         required: true
         content:
@@ -279,9 +281,10 @@ paths:
             (default two minutes) or further than the configured maximum
             (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
             a mint the settlement program cannot move (`UnsupportedToken`),
-            or a buy token account that exists but cannot take the payout,
+            a buy token account that exists but cannot take the payout,
             frozen, another mint's, or refusing plain credits
-            (`InvalidBuyTokenAccount`).
+            (`InvalidBuyTokenAccount`), or a quote the execution cost eats
+            whole (`SellAmountDoesNotCoverFee`).
           content:
             application/json:
               schema:
@@ -628,9 +631,19 @@ components:
             - $ref: "#/components/schemas/Pubkey"
           nullable: true
         sellAmount:
-          $ref: "#/components/schemas/TokenAmount"
+          description: >-
+            For a buy order, the driver's sell amount plus the execution
+            cost, `networkFees` plus `buyTokenAtaCosts`, converted at the
+            sell token's native price and rounded up.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
-          $ref: "#/components/schemas/TokenAmount"
+          description: >-
+            For a sell order, the driver's buy amount less the execution
+            cost, `networkFees` plus `buyTokenAtaCosts`, converted at the
+            buy token's native price and rounded up.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: Unix timestamp (`uint32`) the quoted order expires at.
           type: integer

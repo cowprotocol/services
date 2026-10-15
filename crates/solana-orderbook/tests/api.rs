@@ -62,17 +62,27 @@ async fn spawn_server_with(quoter: Quoter) -> SocketAddr {
 /// A tiny axum server that answers `/native_price/{mint}` with `price` for
 /// every mint, or 404 without one. It stands in for the autopilot.
 async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
+    spawn_mock_autopilot_with(move |_| price).await
+}
+
+/// A tiny axum server that answers `/native_price/{mint}` with `prices(mint)`,
+/// or 404 when that is `None`. It stands in for the autopilot.
+async fn spawn_mock_autopilot_with(
+    prices: impl Fn(&str) -> Option<u64> + Clone + Send + Sync + 'static,
+) -> NativePrices {
     let app = axum::Router::new().route(
         "/native_price/{mint}",
-        axum::routing::get(move || async move {
-            match price {
-                Some(price) => (
-                    axum::http::StatusCode::OK,
-                    serde_json::json!({ "price": price.to_string() }).to_string(),
-                ),
-                None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
-            }
-        }),
+        axum::routing::get(
+            move |axum::extract::Path(mint): axum::extract::Path<String>| async move {
+                match prices(&mint) {
+                    Some(price) => (
+                        axum::http::StatusCode::OK,
+                        serde_json::json!({ "price": price.to_string() }).to_string(),
+                    ),
+                    None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
+                }
+            },
+        ),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -199,6 +209,17 @@ async fn post_quote(addr: SocketAddr, body: serde_json::Value) -> (reqwest::Stat
     )
 }
 
+async fn quote_json(addr: SocketAddr, body: serde_json::Value) -> serde_json::Value {
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    response.json().await.unwrap()
+}
+
 /// Validation runs before any driver is asked, so every rejection here
 /// answers 400 without reaching the dead quoter.
 #[tokio::test]
@@ -235,15 +256,16 @@ async fn quote_validation_rejects_bad_orders() {
 
 /// Without sponsoring the quote reads no wallet, so a native SOL buy quoted
 /// under the rent-exempt minimum of an empty account answers
-/// `InvalidNativeBuy`.
+/// `InvalidNativeBuy`. The payout is the driver's amount less its 6,400
+/// lamport fee.
 #[tokio::test]
 async fn quote_rejects_a_native_buy_under_the_payout_floor() {
     for (buy_amount, expected) in [
         (
-            "890879",
+            "897279",
             (reqwest::StatusCode::BAD_REQUEST, "InvalidNativeBuy"),
         ),
-        ("890880", (reqwest::StatusCode::OK, "")),
+        ("897280", (reqwest::StatusCode::OK, "")),
     ] {
         let driver = spawn_mock_driver(serde_json::json!({
             "sellAmount": "10000000",
@@ -267,17 +289,18 @@ async fn quote_rejects_a_native_buy_under_the_payout_floor() {
 
 /// With sponsoring on, a native SOL buy quoted under the rent-exempt minimum
 /// of an empty account reads its wallet: a funded wallet takes the payout, a
-/// wallet the payout leaves under the minimum does not. The lookups answer
-/// the sell mint, then the wallet.
+/// wallet the payout leaves under the minimum does not. The payout is the
+/// driver's amount less its 6,400 lamport fee. The lookups answer the sell
+/// mint, then the wallet.
 #[tokio::test]
 async fn quote_reads_the_wallet_of_a_small_native_buy() {
     let floor = solana_sdk::rent::Rent::default().minimum_balance(0);
     for (lamports, buy_amount, expected) in [
-        (floor, 1, (reqwest::StatusCode::OK, "")),
-        (1_000, floor - 1_000, (reqwest::StatusCode::OK, "")),
+        (floor, 6_400 + 1, (reqwest::StatusCode::OK, "")),
+        (1_000, 6_400 + floor - 1_000, (reqwest::StatusCode::OK, "")),
         (
             1_000,
-            floor - 1_001,
+            6_400 + floor - 1_001,
             (reqwest::StatusCode::BAD_REQUEST, "InvalidNativeBuy"),
         ),
     ] {
@@ -334,7 +357,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
 async fn quote_answers_in_the_evm_shape() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "3000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
         "networkFee": "6400",
     }))
@@ -367,7 +390,9 @@ async fn quote_answers_in_the_evm_shape() {
                 "buyToken": body["buyToken"],
                 "receiver": body["receiver"],
                 "sellAmount": "10000000",
-                "buyAmount": "1234567",
+                // The driver's 3,000,000 less the fee and the rent below, at
+                // the mock autopilot's one lamport per atom.
+                "buyAmount": "773360",
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
@@ -402,7 +427,7 @@ async fn quote_answers_in_the_evm_shape() {
 async fn quote_names_the_funder_when_sponsoring_is_on() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "3000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
         "networkFee": "6400",
     }))
@@ -448,7 +473,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
 async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "3000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
         "networkFee": "6400",
     }))
@@ -507,22 +532,23 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
     }
 }
 
-/// With several drivers configured, the best answer wins: the largest buy
-/// amount for a sell order.
+/// With several drivers configured, the best answer net of its own fee wins:
+/// the largest buy amount for a sell order. A larger raw amount under a
+/// heavier fee loses, and the winner's fee is the one reported.
 #[tokio::test]
 async fn quote_picks_the_best_driver_answer() {
     let worse = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1500000",
+        "buyAmount": "5000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
-        "networkFee": "6400",
+        "networkFee": "1000000",
     }))
     .await;
     let better = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "2000000",
+        "buyAmount": "4500000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
-        "networkFee": "6400",
+        "networkFee": "100000",
     }))
     .await;
     let addr = spawn_server_with(Quoter::new(
@@ -543,7 +569,147 @@ async fn quote_picks_the_best_driver_answer() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(json["quote"]["buyAmount"], "2000000");
+    // 4,500,000 less the fee and the unread account's 2,220,240 rent, at one
+    // lamport per atom.
+    assert_eq!(json["quote"]["buyAmount"], "2179760");
+    assert_eq!(json["quote"]["networkFees"], "100000");
+}
+
+/// The cost, the network fee plus the rent, comes out of the side the trader
+/// does not fix, at that token's native price: the buy token of a sell order,
+/// the sell token of a buy order. Without sponsoring the rent is the unread
+/// account's 2,220,240 lamports, 2,226,640 with the fee.
+#[tokio::test]
+async fn quote_nets_the_cost_at_the_price_of_the_side_it_cuts() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    // Two lamports per sell atom, four per buy atom.
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        prices: spawn_mock_autopilot_with(|mint| match mint {
+            "So11111111111111111111111111111111111111112" => Some(2_000_000_000),
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v" => Some(4_000_000_000),
+            _ => None,
+        })
+        .await,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let sell = quote_body(serde_json::json!({"validFor": 1800}));
+    let mut buy = quote_body(serde_json::json!({"validFor": 1800}));
+    buy["kind"] = serde_json::json!("buy");
+    buy["buyAmountAfterFee"] = buy
+        .as_object_mut()
+        .unwrap()
+        .remove("sellAmountBeforeFee")
+        .unwrap();
+    for (body, sell_amount, buy_amount) in [
+        // 556,660 atoms off the buy.
+        (sell, "10000000", "677907"),
+        // 1,113,320 atoms onto the sell.
+        (buy, "11113320", "1234567"),
+    ] {
+        let json = quote_json(addr, body).await;
+        assert_eq!(json["quote"]["sellAmount"], sell_amount);
+        assert_eq!(json["quote"]["buyAmount"], buy_amount);
+        assert_eq!(json["quote"]["networkFees"], "6400");
+        assert_eq!(json["quote"]["buyTokenAtaCosts"], "2220240");
+    }
+}
+
+/// A sell order whose buy amount the cost eats whole answers
+/// `SellAmountDoesNotCoverFee`: at one lamport per atom, the 6,400 fee and
+/// the unread account's 2,220,240 rent leave nothing of 2,226,640.
+#[tokio::test]
+async fn quote_refuses_a_sell_the_cost_eats() {
+    for (buy_amount, expected) in [
+        (
+            "2226640",
+            (
+                reqwest::StatusCode::BAD_REQUEST,
+                "SellAmountDoesNotCoverFee",
+            ),
+        ),
+        ("2226641", (reqwest::StatusCode::OK, "")),
+    ] {
+        let driver = spawn_mock_driver(serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": buy_amount,
+            "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+            "networkFee": "6400",
+        }))
+        .await;
+        let addr = spawn_server_with(Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ))
+        .await;
+        let (status, kind) =
+            post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+        assert_eq!((status, kind.as_str()), expected);
+    }
+}
+
+/// A buy token account that exists owes no rent, so the sell quote is cut by
+/// the network fee alone. The lookups answer the mints, then the owner, its
+/// associated token account, the buy mint and the rent sysvar.
+#[tokio::test]
+async fn quote_nets_only_the_fee_into_an_existing_buy_token_account() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let body = quote_body(serde_json::json!({"validFor": 1800}));
+    let owner = body["from"].as_str().unwrap().parse().unwrap();
+    let buy_mint = body["buyToken"].as_str().unwrap().parse().unwrap();
+    let mocks = MocksMap::from_iter([
+        (RpcRequest::GetMultipleAccounts, classic_mints()),
+        (
+            RpcRequest::GetMultipleAccounts,
+            solana_testlib::multiple_accounts_json([
+                serde_json::Value::Null,
+                solana_testlib::token_account_json(&buy_mint, &owner),
+                serde_json::Value::Null,
+                serde_json::Value::Null,
+            ]),
+        ),
+    ]);
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+            funder: solana_sdk::pubkey::Pubkey::new_unique(),
+            settlement_program: cow_settlement_interface::id(),
+            rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
+            max_priority_fee_lamports: 100_000,
+            mints: Default::default(),
+        }),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let json = quote_json(addr, body).await;
+    assert_eq!(json["quote"]["buyAmount"], "1228167");
+    assert_eq!(json["quote"]["networkFees"], "6400");
+    assert_eq!(json["quote"]["buyTokenAtaCosts"], "0");
 }
 
 /// A sponsoring deployment reads the quoted mints and refuses one the
@@ -653,7 +819,7 @@ async fn solana_db_quote_is_persisted() {
     let solver = solana_sdk::pubkey::Pubkey::new_unique();
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "3000000",
         "solver": solver.to_string(),
         "networkFee": "6400",
     }))
@@ -707,7 +873,8 @@ async fn solana_db_quote_is_persisted() {
     assert_eq!(row.1, sell.to_bytes());
     assert_eq!(row.2, buy.to_bytes());
     assert_eq!(row.3, "10000000");
-    assert_eq!(row.4, "1234567");
+    // The stored amounts are the netted ones the trader signs.
+    assert_eq!(row.4, "773360");
     assert_eq!(row.5, "sell");
     assert_eq!(row.6, solver.to_bytes());
     // The stored expiry is the answered one, up to timestamptz rounding.

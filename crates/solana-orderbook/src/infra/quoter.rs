@@ -16,7 +16,7 @@ use {
 /// this client's own timeout.
 const RESPONSE_RESERVE: Duration = Duration::from_millis(500);
 
-/// Asks every configured driver to quote an order and keeps the best answer.
+/// Asks every configured driver to quote an order.
 #[derive(Clone, Debug)]
 pub struct Quoter {
     client: Client,
@@ -95,21 +95,21 @@ impl Quoter {
         }
     }
 
-    /// Quote `order` on every driver concurrently and return the best answer:
-    /// the largest buy for a sell order, the smallest sell for a buy order.
-    pub async fn quote(&self, order: &Order) -> Result<Quote, Error> {
-        let quotes = join_all(
+    /// Quote `order` on every driver concurrently and return every answer.
+    pub async fn quotes(&self, order: &Order) -> Result<Vec<Quote>, Error> {
+        let quotes: Vec<_> = join_all(
             self.endpoints
                 .iter()
                 .map(|endpoint| self.quote_one(endpoint, order)),
         )
-        .await;
-        let quotes = quotes.into_iter().flatten();
-        match order.kind {
-            Kind::Sell => quotes.max_by_key(|quote| quote.buy_amount),
-            Kind::Buy => quotes.min_by_key(|quote| quote.sell_amount),
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
+        if quotes.is_empty() {
+            return Err(Error::NoQuotes);
         }
-        .ok_or(Error::NoQuotes)
+        Ok(quotes)
     }
 
     /// Quote `order` on one driver. Failures are logged and swallowed: a

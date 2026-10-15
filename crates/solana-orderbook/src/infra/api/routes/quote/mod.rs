@@ -11,6 +11,7 @@ use {
         quoter,
     },
     axum::{Json, http::StatusCode},
+    chain_types::{ChainTypes, solana::Solana},
     chrono::Utc,
     cow_settlement_interface::{
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
@@ -67,7 +68,7 @@ pub async fn quote(
         // estimator errors.
         state
             .quoter()
-            .quote(&order)
+            .quotes(&order)
             .await
             .map_err(|quoter::Error::NoQuotes| {
                 error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
@@ -82,13 +83,32 @@ pub async fn quote(
             .await
             .map_err(|err| price_error(token, err))
     };
-    // TODO(BE-366): net the execution cost out of the quote with these prices.
-    let (quoted, buy_token_ata_costs, _sell_price, _buy_price) = futures::try_join!(
+    let (quotes, buy_token_ata_costs, sell_price, buy_price) = futures::try_join!(
         quote,
         buy_account_rent(state.sponsoring(), &request, buy_program),
         price(request.sell_token),
         price(request.buy_token),
     )?;
+    // Each driver's answer is ranked net of its own fee, so the best raw
+    // amount need not win.
+    let price = match kind {
+        dto::Kind::Sell => buy_price,
+        dto::Kind::Buy => sell_price,
+    };
+    let netted = quotes
+        .into_iter()
+        .filter_map(|quote| net(kind, quote, buy_token_ata_costs, price));
+    let quoted = match kind {
+        dto::Kind::Sell => netted.max_by_key(|quote| quote.buy_amount),
+        dto::Kind::Buy => netted.min_by_key(|quote| quote.sell_amount),
+    }
+    .ok_or_else(|| {
+        error::reply(
+            StatusCode::BAD_REQUEST,
+            "SellAmountDoesNotCoverFee",
+            "The sell amount does not cover the execution cost.",
+        )
+    })?;
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
     let expiration = now + state.quote_expiry();
@@ -141,6 +161,31 @@ pub async fn quote(
         verified: false,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// `quote` with the execution cost, its network fee plus `rent`, taken out of
+/// the side the trader does not fix, the one the driver cuts at solve: the
+/// buy amount of a sell order, the sell amount of a buy order. The cost
+/// converts at `price`, lamports per 10^9 atoms of that side's token, and
+/// rounds against the trader. `None` when the cost eats the whole buy amount,
+/// or when the token cannot carry it: priced at zero, or past `u64` on the
+/// sell side.
+fn net(kind: dto::Kind, mut quote: quoter::Quote, rent: u64, price: u64) -> Option<quoter::Quote> {
+    if price == 0 {
+        return None;
+    }
+    let cost = u128::from(quote.network_fee) + u128::from(rent);
+    let cut = (cost * u128::from(Solana::NATIVE_PRICE_DENOMINATOR)).div_ceil(u128::from(price));
+    let cut = u64::try_from(cut).ok()?;
+    match kind {
+        dto::Kind::Sell => {
+            quote.buy_amount = quote.buy_amount.checked_sub(cut).filter(|buy| *buy > 0)?;
+        }
+        dto::Kind::Buy => {
+            quote.sell_amount = quote.sell_amount.checked_add(cut)?;
+        }
+    }
+    Some(quote)
 }
 
 /// An unpriced or rate-limited token is no liquidity, anything else is the
@@ -484,6 +529,47 @@ mod tests {
             data: vec![0; data_len],
             ..Account::default()
         }
+    }
+
+    fn driver_quote(sell_amount: u64, buy_amount: u64, network_fee: u64) -> quoter::Quote {
+        quoter::Quote {
+            sell_amount,
+            buy_amount,
+            solver: Pubkey::new_unique(),
+            network_fee,
+        }
+    }
+
+    /// The cut rounds up on both sides: a sell order delivers less, a buy
+    /// order pulls more.
+    #[test]
+    fn net_rounds_the_cut_against_the_trader() {
+        // 7 lamports at 3 lamports per atom are 2.33 atoms, cut 3.
+        let amounts = |kind| {
+            let quote = net(kind, driver_quote(100, 50, 5), 2, 3_000_000_000).unwrap();
+            (quote.sell_amount, quote.buy_amount)
+        };
+        assert_eq!(amounts(dto::Kind::Sell), (100, 47));
+        assert_eq!(amounts(dto::Kind::Buy), (103, 50));
+    }
+
+    /// A cost the token cannot carry leaves no quote.
+    #[test]
+    fn net_refuses_a_quote_the_cost_eats() {
+        let lamport_per_atom = Solana::NATIVE_PRICE_DENOMINATOR;
+        // 7 lamports against a buy of 7 leave nothing to deliver.
+        let sell =
+            |buy_amount, price| net(dto::Kind::Sell, driver_quote(100, buy_amount, 5), 2, price);
+        assert!(sell(7, lamport_per_atom).is_none());
+        assert!(sell(8, lamport_per_atom).is_some());
+        assert!(sell(50, 0).is_none());
+        let overflow = net(
+            dto::Kind::Buy,
+            driver_quote(u64::MAX, 50, 5),
+            2,
+            lamport_per_atom,
+        );
+        assert!(overflow.is_none());
     }
 
     #[test]
