@@ -630,10 +630,10 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         networkFees:
           description: >-
-            The settlement's network fee, in lamports: the base fee of one
-            signature plus the runtime's compute unit ceiling at a fixed
-            compute unit price. An estimate, as the solution does not exist
-            at quote time.
+            The settlement's network fee, in lamports. A placeholder until
+            the orderbook reports the driver's estimate for the quoted route:
+            the base fee of one signature plus the runtime's compute unit
+            ceiling at a fixed compute unit price.
           type: string
           example: "6400"
         buyTokenAtaCosts:

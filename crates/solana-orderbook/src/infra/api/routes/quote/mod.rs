@@ -35,10 +35,10 @@ const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 /// once fee policies consume the link and the id becomes load-bearing.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// The network fee of one settlement, in lamports: the base fee of its one
-/// signature plus the runtime's compute unit ceiling at a fixed price of
-/// 1,000 micro-lamports per unit, as the solution does not exist at quote
-/// time. TODO(BE-366): take the price from the quoting config.
+/// The network fee of one settlement, in lamports, a placeholder: the base
+/// fee of its one signature plus the runtime's compute unit ceiling at a
+/// fixed price of 1,000 micro-lamports per unit. TODO(BE-366): report the
+/// `networkFee` the driver's `/quote` answers for the quoted route instead.
 const NETWORK_FEES: u64 = 5_000 + (1_400_000 * 1_000_u64).div_ceil(1_000_000);
 
 /// Handle `POST /api/v1/quote`.
