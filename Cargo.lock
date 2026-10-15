@@ -9770,6 +9770,7 @@ dependencies = [
  "base64 0.22.1",
  "bigdecimal",
  "bincode",
+ "chain-types",
  "chrono",
  "clap",
  "configs",
