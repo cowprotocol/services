@@ -149,7 +149,12 @@ impl Order {
         let liquidity = match solver.liquidity() {
             solver::Liquidity::Fetch => {
                 liquidity
-                    .fetch(&self.token_liquidity(), infra::liquidity::AtBlock::Recent)
+                    .fetch(
+                        &self.token_liquidity(),
+                        infra::liquidity::AtBlock::Recent {
+                            schedule_update: false,
+                        },
+                    )
                     .await
             }
             solver::Liquidity::Skip => Default::default(),
