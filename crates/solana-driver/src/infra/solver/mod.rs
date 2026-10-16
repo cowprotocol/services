@@ -8,15 +8,17 @@ use {
     crate::{
         domain::{
             self,
-            order_uid::OrderUid,
+            fee::{Charge, Margin},
             settlement::MaxNativeShortfall,
-            solver_fee::SolverFee,
         },
-        infra::{config, solver::dto::auction::Auction},
+        infra::{
+            config::{self, FeeHandler},
+            solver::dto::auction::Auction,
+        },
     },
     cow_solana_signer::Signer,
     solana_sdk::pubkey::Pubkey,
-    std::{collections::HashSet, num::NonZero, sync::Arc},
+    std::{num::NonZero, sync::Arc},
     thiserror::Error,
 };
 
@@ -30,7 +32,8 @@ pub struct Solver {
     client: reqwest::Client,
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
-    solver_fee: Option<SolverFee>,
+    fee_handler: FeeHandler,
+    margin: Margin,
     max_native_shortfall: Option<MaxNativeShortfall>,
 }
 
@@ -55,9 +58,15 @@ impl Solver {
         self.solve_every_nth_auction
     }
 
-    /// The volume-based solver fee, `None` when no fee is configured.
-    pub fn solver_fee(&self) -> Option<SolverFee> {
-        self.solver_fee
+    /// Who prices the execution costs into this solver's fills.
+    pub fn fee_handler(&self) -> FeeHandler {
+        self.fee_handler
+    }
+
+    /// The share of every fill the driver takes on top of the execution
+    /// costs when it prices them.
+    pub fn margin(&self) -> Margin {
+        self.margin
     }
 
     /// The largest share of the native SOL payouts the solver's own SOL
@@ -84,31 +93,30 @@ impl Solver {
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
-            solver_fee: config.solver_fee_bps,
+            fee_handler: config.fee_handler,
+            margin: config.solver_fee_bps,
             max_native_shortfall: config.max_native_shortfall_bps,
         })
     }
 
     /// POST the auction to this engine's `/solve` endpoint and return the
-    /// domain solutions it produced.
+    /// domain solutions it produced. An auction with no order left to send
+    /// after `charge` is not posted.
     ///
     /// `program_id` is the settlement program the swap instructions are built
-    /// for. `missing_buy_token_accounts` marks the orders whose payout account
-    /// the settlement creates.
+    /// for.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
     pub async fn solve(
         &self,
         auction: &domain::Auction,
         program_id: Pubkey,
-        missing_buy_token_accounts: &HashSet<OrderUid>,
+        charge: &Charge,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(
-            auction,
-            self.pubkey(),
-            program_id,
-            self.solver_fee,
-            missing_buy_token_accounts,
-        );
+        let auction_dto = Auction::new(auction, self.pubkey(), program_id, charge);
+        if auction_dto.orders.is_empty() {
+            tracing::debug!("no order to send; skipping the engine");
+            return Ok(Default::default());
+        }
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -193,7 +201,8 @@ mod tests {
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer: cow_solana_signer::Config::Keypair(keypair_path),
             solve_every_nth_auction: None,
-            solver_fee_bps: None,
+            fee_handler: FeeHandler::default(),
+            solver_fee_bps: Margin::default(),
             max_native_shortfall_bps: None,
         })
         .await
@@ -209,7 +218,7 @@ mod tests {
         };
 
         let solutions = solver
-            .solve(&auction, Pubkey::default(), &Default::default())
+            .solve(&auction, Pubkey::default(), &Charge::default())
             .await
             .expect("solve should succeed with no solutions");
         assert!(
