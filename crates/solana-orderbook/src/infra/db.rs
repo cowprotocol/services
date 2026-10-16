@@ -35,6 +35,13 @@ pub struct OrderRow {
     /// still awaits its on-chain creation. `None` once created, and for
     /// orders that were never sponsored.
     pub last_valid_block_height: Option<i64>,
+    /// The quote the order was placed against, joined from
+    /// `solana.order_quotes`. All four are `None` together: an order placed
+    /// without a quote, or one whose quote link was dropped.
+    pub quote_id: Option<i64>,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_solver: Option<ByteArray<32>>,
 }
 
 /// Read one order with its fill state. `None` when the uid is unknown.
@@ -48,9 +55,12 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        COALESCE(p.amount_received, 0) AS amount_received,
        p.cancellation_timestamp,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
-            THEN o.last_valid_block_height END AS last_valid_block_height
+            THEN o.last_valid_block_height END AS last_valid_block_height,
+       q.quote_id, q.sell_amount AS quote_sell_amount,
+       q.buy_amount AS quote_buy_amount, q.solver AS quote_solver
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.order_quotes q ON q.order_uid = o.uid
 WHERE o.uid = $1 AND NOT COALESCE(p.is_reorged, false)
     "#;
     sqlx::query_as(QUERY)
@@ -76,9 +86,12 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        COALESCE(p.amount_received, 0) AS amount_received,
        p.cancellation_timestamp,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
-            THEN o.last_valid_block_height END AS last_valid_block_height
+            THEN o.last_valid_block_height END AS last_valid_block_height,
+       q.quote_id, q.sell_amount AS quote_sell_amount,
+       q.buy_amount AS quote_buy_amount, q.solver AS quote_solver
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.order_quotes q ON q.order_uid = o.uid
 WHERE o.owner = $1
 ORDER BY o.creation_timestamp DESC
 LIMIT $2 OFFSET $3
@@ -497,6 +510,17 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         assert_eq!(copied.1, Some(7));
         assert_eq!(copied.2, "2100");
         assert_eq!(copied.3, [0xDD; 32].to_vec());
+
+        // The linked quote joins onto the order the API serves.
+        let read = find_order_by_uid(&pool, order.uid.0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(read.quote_id, Some(7));
+        assert_eq!(read.quote_sell_amount, Some(BigDecimal::from(1_000u64)));
+        assert_eq!(read.quote_buy_amount, Some(BigDecimal::from(2_100u64)));
+        assert_eq!(read.quote_solver, Some(ByteArray([0xDD; 32])));
+
         let events: Vec<(Vec<u8>, OrderEventLabel)> =
             sqlx::query_as("SELECT order_uid, label FROM solana.order_events")
                 .fetch_all(&pool)
