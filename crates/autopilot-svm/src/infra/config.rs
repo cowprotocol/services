@@ -84,10 +84,11 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePrices {
-    /// Price sources in fallback order: a token the first one does not price
-    /// is asked from the next. Empty, the autopilot prices every token at the
-    /// native denominator, so scores compare raw surplus. Pricing through a
-    /// third party stays a deployment decision, there is no default source.
+    /// Price sources. The CoinGecko ones are asked first, then the driver
+    /// ones together for the tokens they did not price. Empty, the autopilot
+    /// prices every token at the native denominator, so scores compare raw
+    /// surplus. Pricing through a third party stays a deployment decision,
+    /// there is no default source.
     #[serde(default)]
     pub estimators: Vec<NativePriceEstimator>,
     /// How long a fetched price serves auctions before it is refetched.

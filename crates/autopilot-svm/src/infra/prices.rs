@@ -8,7 +8,7 @@ use {
         solana::{NATIVE_SOL, Solana},
     },
     cow_solana_rpc::SolanaRPC,
-    futures::{StreamExt, stream},
+    futures::{StreamExt, future, stream},
     moka::sync::Cache,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -68,9 +68,9 @@ fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
     Cache::builder().max_capacity(MAX_CACHE_SIZE).build()
 }
 
-/// Native price lookups for auction tokens, cached per token. The configured
-/// estimators are asked in order: a token the first one does not price is
-/// asked from the next. A background task keeps the tokens of the latest
+/// Native price lookups for auction tokens, cached per token. The CoinGecko
+/// sources are asked first, then the driver sources together for the tokens
+/// they did not price. A background task keeps the tokens of the latest
 /// lookup fresh, so a cut normally reads the cache instead of waiting on a
 /// source. Without sources every token prices at the native denominator.
 pub enum NativePrices {
@@ -318,8 +318,8 @@ impl Inner {
         Ok(result)
     }
 
-    /// Ask the sources in order for the tokens none of the earlier ones
-    /// priced, and cache every verdict.
+    /// Ask the sources stage by stage for the tokens none of the earlier
+    /// stages priced, and cache every verdict.
     async fn fetch_into_cache(&self, tokens: &[Pubkey]) -> Result<()> {
         let now = Instant::now();
         let mints = self.mints(tokens, now).await?;
@@ -337,25 +337,41 @@ impl Inner {
         }
 
         let mut failures = 0;
-        for source in &self.sources {
+        for stage in self.stages() {
             if remaining.is_empty() {
                 break;
             }
-            match source.fetch(&remaining, &mints, self.wrapped_native).await {
-                Ok(priced) => {
-                    remaining.retain(|token| match priced.get(token) {
-                        Some(price) => {
-                            self.prices.insert(*token, (now, Some(*price)));
-                            false
+            let answers = future::join_all(
+                stage
+                    .iter()
+                    .map(|source| source.fetch(&remaining, &mints, self.wrapped_native)),
+            )
+            .await;
+            let mut priced: HashMap<Pubkey, u64> = HashMap::new();
+            for (source, answer) in stage.iter().zip(answers) {
+                match answer {
+                    Ok(prices) => {
+                        for (token, price) in prices {
+                            // Several drivers can route one token. The best
+                            // route sells the probe into the most atoms, so
+                            // the lowest price wins.
+                            let best = priced.entry(token).or_insert(price);
+                            *best = (*best).min(price);
                         }
-                        None => true,
-                    });
-                }
-                Err(err) => {
-                    failures += 1;
-                    tracing::warn!(source = source.name(), ?err, "price source failed");
+                    }
+                    Err(err) => {
+                        failures += 1;
+                        tracing::warn!(source = source.name(), ?err, "price source failed");
+                    }
                 }
             }
+            remaining.retain(|token| match priced.get(token) {
+                Some(price) => {
+                    self.prices.insert(*token, (now, Some(*price)));
+                    false
+                }
+                None => true,
+            });
         }
         if failures == self.sources.len() && !self.sources.is_empty() {
             return Err(anyhow!("every native price source failed"));
@@ -369,6 +385,23 @@ impl Inner {
             }
         }
         Ok(())
+    }
+
+    /// The sources in asking order: each CoinGecko source alone, then every
+    /// driver source together. A listed token costs CoinGecko one batched
+    /// request, and a token one solver routes should not wait on the other
+    /// solvers' probes.
+    fn stages(&self) -> Vec<Vec<&Source>> {
+        let (listings, probes): (Vec<_>, Vec<_>) = self
+            .sources
+            .iter()
+            .partition(|source| matches!(source, Source::CoinGecko { .. }));
+        let mut stages: Vec<Vec<&Source>> =
+            listings.into_iter().map(|source| vec![source]).collect();
+        if !probes.is_empty() {
+            stages.push(probes);
+        }
+        stages
     }
 
     /// The [`MintInfo`] per mint, from the cache or the mint accounts on
@@ -697,11 +730,17 @@ mod tests {
     /// Serve one fixed driver quote: the probe the request asks for sells
     /// into `buy_amount` token atoms.
     async fn driver_server(buy_amount: u64) -> Url {
+        driver_server_delayed(buy_amount, Duration::ZERO).await
+    }
+
+    /// [`driver_server`] answering after `delay`.
+    async fn driver_server_delayed(buy_amount: u64, delay: Duration) -> Url {
         let app = axum::Router::new().route(
             "/quote",
             axum::routing::post(
                 move |axum::Json(request): axum::Json<serde_json::Value>| async move {
                     assert_eq!(request["kind"], "sell", "the probe sells the native token");
+                    tokio::time::sleep(delay).await;
                     axum::Json(serde_json::json!({
                         "sellAmount": request["amount"],
                         "buyAmount": buy_amount.to_string(),
@@ -965,6 +1004,49 @@ mod tests {
             Pubkey::new_unique(),
         );
         let result = prices.prices(HashSet::from([token])).await.unwrap();
+        // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
+        assert_eq!(result.get(&token), Some(&5_000_000_000));
+    }
+
+    /// The driver sources are asked together, so a lookup takes one probe's
+    /// time rather than their sum, and the probe selling into the most atoms
+    /// sets the price.
+    #[tokio::test]
+    async fn driver_probes_run_together_and_the_best_route_wins() {
+        let token = Pubkey::new_unique();
+        let (coingecko, _) = coingecko_server(serde_json::json!({})).await;
+        let delay = Duration::from_millis(500);
+        let worse = driver_server_delayed(10_000_000, delay).await;
+        let better = driver_server_delayed(20_000_000, delay).await;
+        let config = config::NativePrices {
+            estimators: vec![
+                config::NativePriceEstimator::CoinGecko {
+                    endpoint: coingecko,
+                    api_key: String::new(),
+                },
+                config::NativePriceEstimator::Driver {
+                    name: "worse".to_owned(),
+                    url: worse,
+                },
+                config::NativePriceEstimator::Driver {
+                    name: "better".to_owned(),
+                    url: better,
+                },
+            ],
+            ttl: Duration::from_secs(60),
+            driver_probe_lamports: PROBE_LAMPORTS,
+        };
+        let prices = NativePrices::new(
+            &config,
+            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+        let started = Instant::now();
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert!(
+            started.elapsed() < delay * 2,
+            "the probes ran one after another"
+        );
         // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
         assert_eq!(result.get(&token), Some(&5_000_000_000));
     }

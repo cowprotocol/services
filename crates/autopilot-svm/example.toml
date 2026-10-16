@@ -35,8 +35,8 @@ submission-deadline-slots = 25
 name = "baseline"
 url = "http://localhost:11088"
 
-# Native price lookups for auction tokens. Sources are asked in order: a
-# token the first one does not price is asked from the next.
+# Native price lookups for auction tokens. CoinGecko sources are asked first,
+# then the driver sources together for the tokens they did not price.
 [native-prices]
 ttl = "30s"
 # Lamports a driver source sells per probe quote.
