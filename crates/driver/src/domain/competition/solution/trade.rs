@@ -316,6 +316,21 @@ pub struct CustomClearingPrices {
     pub buy: eth::U256,
 }
 
+impl CustomClearingPrices {
+    /// Checks the signed limit with the same checked products as
+    /// GPv2Settlement. Comparing rounded execution amounts can hide a
+    /// limit-price violation.
+    pub fn satisfies_limit(&self, limits: competition::PriceLimits) -> bool {
+        let Some(sell_value) = limits.sell.0.checked_mul(self.sell) else {
+            return false;
+        };
+        let Some(buy_value) = limits.buy.0.checked_mul(self.buy) else {
+            return false;
+        };
+        sell_value >= buy_value
+    }
+}
+
 /// A trade which adds a JIT order. See [`order::Jit`].
 #[derive(Debug, Clone)]
 pub struct Jit {
@@ -465,4 +480,151 @@ pub struct Execution {
     pub sell: eth::Asset,
     /// The total amount being bought.
     pub buy: eth::Asset,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn captured_fee_adjusted_prices_match_settlement_limit_checks() {
+        use {number::serialization::HexOrDecimalU256, serde_with::serde_as};
+
+        #[derive(serde::Deserialize)]
+        struct Fixtures {
+            invalid_count: usize,
+            successful_trade_count: usize,
+            cases: Vec<Case>,
+        }
+        #[serde_as]
+        #[derive(serde::Deserialize)]
+        struct Case {
+            #[serde_as(as = "HexOrDecimalU256")]
+            sell_amount: eth::U256,
+            #[serde_as(as = "HexOrDecimalU256")]
+            buy_amount: eth::U256,
+            #[serde_as(as = "HexOrDecimalU256")]
+            sell_price: eth::U256,
+            #[serde_as(as = "HexOrDecimalU256")]
+            buy_price: eth::U256,
+            valid: bool,
+        }
+        let fixtures: Fixtures =
+            serde_json::from_str(include_str!("fixtures/fee_adjusted_clearing_prices.json"))
+                .unwrap();
+        assert_eq!(fixtures.invalid_count, 32);
+        assert_eq!(fixtures.successful_trade_count, 7);
+        assert_eq!(
+            fixtures.cases.iter().filter(|case| !case.valid).count(),
+            fixtures.invalid_count
+        );
+        assert_eq!(
+            fixtures.cases.len(),
+            fixtures.invalid_count + fixtures.successful_trade_count
+        );
+        for (index, case) in fixtures.cases.into_iter().enumerate() {
+            let prices = CustomClearingPrices {
+                sell: case.sell_price,
+                buy: case.buy_price,
+            };
+            assert_eq!(
+                prices.satisfies_limit(competition::PriceLimits {
+                    sell: case.sell_amount.into(),
+                    buy: case.buy_amount.into(),
+                }),
+                case.valid,
+                "fixture {index}"
+            );
+        }
+    }
+
+    #[test]
+    fn signed_limit_checks_use_exact_products() {
+        for (sell_price, buy_price, valid) in [
+            (200, 100, true), // exactly the signed limit
+            (201, 100, true),
+            (199, 100, false), // one buy-token atom short
+            (200, 101, false), // one sell-token atom too much
+            (100, 50, true),   // partial fill at the same ratio
+            (99, 50, false),
+            (0, 100, false),
+            (200, 0, true), // a buy order can receive tokens for free
+            (0, 0, true),   // satisfies the limit; division validity is a separate check
+        ] {
+            let prices = CustomClearingPrices {
+                sell: eth::U256::from(sell_price),
+                buy: eth::U256::from(buy_price),
+            };
+            assert_eq!(
+                prices.satisfies_limit(competition::PriceLimits {
+                    sell: eth::U256::from(100).into(),
+                    buy: eth::U256::from(200).into(),
+                }),
+                valid,
+                "{prices:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn rounded_partial_fill_does_not_hide_invalid_price_ratio() {
+        // A one-atom fill rounds up to one bought atom, meeting the rounded
+        // pro-rata minimum. GPv2 still rejects the prices: 3 * 1 < 2 * 2.
+        assert!(
+            !CustomClearingPrices {
+                sell: eth::U256::from(1),
+                buy: eth::U256::from(2),
+            }
+            .satisfies_limit(competition::PriceLimits {
+                sell: eth::U256::from(3).into(),
+                buy: eth::U256::from(2).into(),
+            })
+        );
+    }
+
+    #[test]
+    fn overflowing_limit_products_are_not_encodable() {
+        for (sell_limit, buy_limit, sell_price, buy_price) in [
+            (
+                eth::U256::MAX,
+                eth::U256::ONE,
+                eth::U256::from(2),
+                eth::U256::ONE,
+            ),
+            (
+                eth::U256::ONE,
+                eth::U256::MAX,
+                eth::U256::ONE,
+                eth::U256::from(2),
+            ),
+            (
+                eth::U256::MAX,
+                eth::U256::MAX,
+                eth::U256::from(2),
+                eth::U256::from(2),
+            ),
+        ] {
+            assert!(
+                !CustomClearingPrices {
+                    sell: sell_price,
+                    buy: buy_price,
+                }
+                .satisfies_limit(competition::PriceLimits {
+                    sell: sell_limit.into(),
+                    buy: buy_limit.into(),
+                })
+            );
+        }
+        // Large values alone are not a reason to reject a valid price.
+        assert!(
+            CustomClearingPrices {
+                sell: eth::U256::ONE,
+                buy: eth::U256::ONE,
+            }
+            .satisfies_limit(competition::PriceLimits {
+                sell: eth::U256::MAX.into(),
+                buy: eth::U256::MAX.into(),
+            })
+        );
+    }
 }

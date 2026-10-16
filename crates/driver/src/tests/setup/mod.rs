@@ -1008,7 +1008,7 @@ impl Setup {
             .into_iter()
             .map(|order| blockchain.quote(&order))
             .collect::<Vec<_>>();
-        let solvers_with_address = join_all(self.solvers.iter().map(|solver| async {
+        let solver_instances = join_all(self.solvers.iter().map(|solver| async {
             let instance = SolverInstance::new(solver::Config {
                 blockchain: &blockchain,
                 solutions: &solutions,
@@ -1034,7 +1034,7 @@ impl Setup {
             })
             .await;
 
-            (solver.clone(), instance.addr)
+            (solver.clone(), instance)
         }))
         .await;
 
@@ -1047,12 +1047,19 @@ impl Setup {
                 orderbook,
                 flashloans_enabled: self.flashloans_enabled,
             },
-            &solvers_with_address,
+            &solver_instances
+                .iter()
+                .map(|(config, instance)| (config.clone(), instance.addr))
+                .collect::<Vec<_>>(),
             &blockchain,
         )
         .await;
 
         Test {
+            solvers: solver_instances
+                .into_iter()
+                .map(|(config, instance)| (config.name, instance))
+                .collect(),
             blockchain,
             driver,
             client: Default::default(),
@@ -1104,6 +1111,7 @@ impl Setup {
 }
 
 pub struct Test {
+    solvers: HashMap<String, SolverInstance>,
     quoted_orders: Vec<blockchain::QuotedOrder>,
     blockchain: Blockchain,
     driver: Driver,
@@ -1125,6 +1133,26 @@ pub struct Test {
 }
 
 impl Test {
+    /// Wait for the first notification sent to the default solver.
+    pub async fn first_notification(&self) -> serde_json::Value {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if let Some(notification) = self.solvers[solver::NAME]
+                    .notifications
+                    .lock()
+                    .unwrap()
+                    .first()
+                    .cloned()
+                {
+                    return notification;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("driver did not notify solver")
+    }
+
     /// Call the /solve endpoint.
     pub async fn solve(&self) -> Solve<'_> {
         self.solve_with_solver(solver::NAME).await

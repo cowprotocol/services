@@ -26,6 +26,8 @@ pub enum Error {
     InvalidInteractionExecution(Box<competition::solution::interaction::Liquidity>),
     #[error("invalid clearing price: {0:?}")]
     InvalidClearingPrice(eth::TokenAddress),
+    #[error("fee-adjusted clearing prices violate the signed limit for order {0:?}")]
+    InvalidClearingPrices(order::Uid),
     #[error(transparent)]
     Math(#[from] Math),
     // TODO: remove when contracts are deployed everywhere
@@ -93,6 +95,15 @@ pub fn tx(
                 }
 
                 let custom_prices = trade.custom_prices(&uniform_prices)?;
+                // Fees can consume more than the surplus even when the solver's
+                // uniform prices respect the order limit. Check the exact prices
+                // that will be encoded, after all fee adjustments and merging.
+                if !custom_prices.satisfies_limit(competition::PriceLimits {
+                    sell: trade.order().sell.amount,
+                    buy: trade.order().buy.amount,
+                }) {
+                    return Err(Error::InvalidClearingPrices(trade.order().uid));
+                }
                 (
                     Price {
                         sell_token: trade.order().sell.token.into(),
