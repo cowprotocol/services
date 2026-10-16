@@ -207,7 +207,7 @@ async fn single_limit_order_test(web3: Web3) {
         // jit order can be found on /api/v1/orders
         services.get_order(&jit_order_uid).await.ok()?;
 
-        // jit order can be found on /api/v1/trades
+        // jit order can be found on /api/v2/trades
         let tx_hash = services
             .get_trades(&jit_order_uid)
             .await

@@ -145,10 +145,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
-                fetch_liquidity_at_block: match config.liquidity.fetch_at_block {
-                    file::AtBlock::Latest => liquidity::AtBlock::Latest,
-                    file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
-                },
                 solver_fee_bps: solver_config.solver_fee_bps,
                 submission_accounts: join_all(
                     solver_config
@@ -321,6 +317,15 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     api_key: config.api_key,
                     http_timeout: config.http_timeout,
                 }),
+            fetch_at_block: match config.liquidity.fetch_at_block {
+                file::AtBlock::Latest => liquidity::AtBlock::Latest,
+                file::AtBlock::Recent => liquidity::AtBlock::Recent {
+                    schedule_update: true,
+                },
+            },
+            refresh_cooldown: config.liquidity.refresh_cooldown,
+            max_recent_block_age: config.liquidity.max_recent_block_age,
+            max_auto_updated_pairs: config.liquidity.max_auto_updated_pairs,
         },
         liquidity_sources_notifier: config.liquidity_sources_notifier.map(|notifier| {
             notify::liquidity_sources::config::Config {
