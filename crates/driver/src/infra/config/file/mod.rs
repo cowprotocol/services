@@ -325,6 +325,16 @@ struct SolverConfig {
     #[serde(default, alias = "haircut-bps")]
     solver_fee_bps: u32,
 
+    /// Estimated probability that a winning solution of this solver settles
+    /// before the deadline. When set, the driver bids the risk-adjusted score
+    /// `max(p * S, S - (1 - p) / p * c_l)` instead of the full score `S`,
+    /// where `c_l` is the sum of the penalty caps of the solution's orders.
+    /// The difference is kept by the solver. Solver engines can override it
+    /// per solution via `successProbability`. Must be in (0, 1].
+    /// Default: unset (bid the full score).
+    #[serde(default)]
+    success_probability: Option<f64>,
+
     /// Additional EOAs that submit settlement txs on behalf of the solver
     /// via EIP-7702 delegation. When non-empty, enables parallel submission
     /// with one lane per account.

@@ -94,6 +94,11 @@ pub struct Solution {
     pub flashloans: Option<HashMap<OrderUid, Flashloan>>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub wrappers: Vec<WrapperCall>,
+    /// The solver's estimate of the probability that this solution settles
+    /// if it wins. Overrides the driver's configured default for the
+    /// risk-adjusted score. Must be in (0, 1].
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub success_probability: Option<f64>,
 }
 
 /// A partially fillable order may be split across several solutions, but a

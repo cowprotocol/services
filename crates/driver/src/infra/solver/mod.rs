@@ -211,6 +211,12 @@ pub struct Config {
     /// more conservative. Does not modify interaction calldata.
     /// Default: 0 (no fee).
     pub solver_fee_bps: u32,
+    /// Default probability that a winning solution settles, used to compute
+    /// the risk-adjusted score (see [`solution::risk`]). Solver engines may
+    /// override it per solution.
+    ///
+    /// [`solution::risk`]: crate::domain::competition::solution::risk
+    pub success_probability: Option<f64>,
     /// Additional EOAs for parallel settlement submission via EIP-7702.
     /// When non-empty, these accounts submit txs to the solver EOA (which
     /// delegates to Solver7702Delegate), enabling concurrent submissions.
@@ -230,6 +236,20 @@ impl Config {
             self.name,
             dto::MAX_BASE_POINT,
         );
+        if let Some(p) = self.success_probability {
+            anyhow::ensure!(
+                p > 0.0 && p <= 1.0,
+                "solver '{}': success-probability must be in (0, 1]",
+                self.name,
+            );
+            // Both make the bid more conservative; combining them would
+            // shade the bid twice.
+            anyhow::ensure!(
+                self.solver_fee_bps == 0,
+                "solver '{}': success-probability and solver-fee-bps are mutually exclusive",
+                self.name,
+            );
+        }
         if self.submission_accounts.is_empty() {
             anyhow::ensure!(
                 self.max_solutions_to_propose.get() == 1,
@@ -372,6 +392,11 @@ impl Solver {
             // solver bid with money it never passes on.
             contributes_to_score: false,
         })
+    }
+
+    /// The configured default probability that a winning solution settles.
+    pub fn success_probability(&self) -> Option<f64> {
+        self.config.success_probability
     }
 
     /// Additional submission accounts for EIP-7702 parallel settlement.
@@ -659,6 +684,7 @@ mod tests {
             flashloans_enabled: false,
             fetch_liquidity_at_block: infra::liquidity::AtBlock::Latest,
             solver_fee_bps: 0,
+            success_probability: None,
             submission_accounts: vec![],
             max_solutions_to_propose: NonZeroUsize::new(1).unwrap(),
             post_processing_concurrency_limit: NonZeroUsize::MAX,
@@ -693,6 +719,30 @@ mod tests {
         let err = config.validate().unwrap_err();
 
         assert!(err.to_string().contains("main account must be a signer"));
+    }
+
+    #[test]
+    fn validates_success_probability() {
+        let mut config = config();
+        config.success_probability = Some(0.95);
+        assert!(config.validate().is_ok());
+
+        for invalid in [0.0, -0.1, 1.1, f64::NAN] {
+            config.success_probability = Some(invalid);
+            let err = config.validate().unwrap_err();
+            assert!(err.to_string().contains("must be in (0, 1]"));
+        }
+    }
+
+    #[test]
+    fn rejects_success_probability_with_solver_fee() {
+        let mut config = config();
+        config.success_probability = Some(0.95);
+        config.solver_fee_bps = 10;
+
+        let err = config.validate().unwrap_err();
+
+        assert!(err.to_string().contains("mutually exclusive"));
     }
 }
 
