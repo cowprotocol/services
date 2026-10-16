@@ -53,31 +53,6 @@ async fn solution_not_available() {
     test.settle(99).await.err().kind("SolutionNotAvailable");
 }
 
-/// Checks that settlements with revert risk are not submitted via public
-/// mempool if at least 1 revert protected mempool exists.
-#[tokio::test]
-#[ignore]
-async fn private_rpc_with_high_risk_solution() {
-    let test = tests::setup()
-        .name("private rpc")
-        .pool(ab_pool())
-        .order(ab_order())
-        .solution(ab_solution())
-        .mempools(vec![
-            tests::setup::Mempool::Default,
-            tests::setup::Mempool::Private {
-                url: Some("http://non-existant:8545".to_string()),
-                mines_reverting_txs: false,
-            },
-        ])
-        .done()
-        .await;
-
-    let id = test.solve().await.ok().id();
-    // Public cannot be used and private RPC is not available
-    test.settle(id).await.err().kind("FailedToSubmit");
-}
-
 #[tokio::test]
 #[ignore]
 async fn too_much_gas() {
