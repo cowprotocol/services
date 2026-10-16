@@ -175,10 +175,10 @@ impl NativePrices {
             .build()
             .expect("reqwest client");
         let source = |estimator: &config::NativePriceEstimator| match estimator {
-            config::NativePriceEstimator::CoinGecko { endpoint, api_key } => Source::CoinGecko {
+            config::NativePriceEstimator::CoinGecko => Source::CoinGecko {
                 client: client.clone(),
-                endpoint: endpoint.clone(),
-                api_key: Some(api_key.clone()).filter(|key| !key.is_empty()),
+                endpoint: config.coin_gecko.url.clone(),
+                api_key: Some(config.coin_gecko.api_key.clone()).filter(|key| !key.is_empty()),
             },
             config::NativePriceEstimator::Driver { name, url } => Source::Driver {
                 client: client.clone(),
@@ -691,15 +691,10 @@ mod tests {
     };
 
     fn coingecko_config(endpoint: Url) -> config::NativePrices {
-        native_prices(vec![vec![coingecko(endpoint)]], 2)
+        native_prices(Some(endpoint), vec![vec![COINGECKO]], 2)
     }
 
-    fn coingecko(endpoint: Url) -> config::NativePriceEstimator {
-        config::NativePriceEstimator::CoinGecko {
-            endpoint,
-            api_key: String::new(),
-        }
-    }
+    const COINGECKO: config::NativePriceEstimator = config::NativePriceEstimator::CoinGecko;
 
     fn driver(name: &str, url: Url) -> config::NativePriceEstimator {
         config::NativePriceEstimator::Driver {
@@ -708,7 +703,10 @@ mod tests {
         }
     }
 
+    /// The config of the given stages, with CoinGecko at `coingecko` when the
+    /// stages name it.
     fn native_prices(
+        coingecko: Option<Url>,
         stages: Vec<Vec<config::NativePriceEstimator>>,
         results_required: usize,
     ) -> config::NativePrices {
@@ -717,6 +715,10 @@ mod tests {
             results_required: NonZero::new(results_required).unwrap(),
             ttl: Duration::from_secs(60),
             driver_probe_lamports: PROBE_LAMPORTS,
+            coin_gecko: config::CoinGecko {
+                url: coingecko.unwrap_or_else(|| config::CoinGecko::default().url),
+                api_key: String::new(),
+            },
         }
     }
 
@@ -830,7 +832,7 @@ mod tests {
     async fn prices_at_the_denominator_without_sources() {
         let token = Pubkey::new_unique();
         let prices = NativePrices::new(
-            &native_prices(Vec::new(), 2),
+            &native_prices(None, Vec::new(), 2),
             SolanaRPC::new_mock_with_mocks(Mocks::default()),
             Pubkey::new_unique(),
         );
@@ -1013,10 +1015,8 @@ mod tests {
         let baseline = driver_server(20_000_000).await;
         let prices = NativePrices::new(
             &native_prices(
-                vec![
-                    vec![coingecko(coingecko_url)],
-                    vec![driver("baseline", baseline)],
-                ],
+                Some(coingecko_url),
+                vec![vec![COINGECKO], vec![driver("baseline", baseline)]],
                 2,
             ),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
@@ -1039,8 +1039,9 @@ mod tests {
         let better = driver_server_delayed(20_000_000, delay).await;
         let prices = NativePrices::new(
             &native_prices(
+                Some(coingecko_url),
                 vec![
-                    vec![coingecko(coingecko_url)],
+                    vec![COINGECKO],
                     vec![driver("worse", worse), driver("better", better)],
                 ],
                 2,
@@ -1069,9 +1070,10 @@ mod tests {
         let (coingecko_url, requests) = coingecko_server(serde_json::json!({})).await;
         let prices = NativePrices::new(
             &native_prices(
+                Some(coingecko_url),
                 vec![
                     vec![driver("fast", fast), driver("hanging", hanging)],
-                    vec![coingecko(coingecko_url)],
+                    vec![COINGECKO],
                 ],
                 1,
             ),
@@ -1098,6 +1100,7 @@ mod tests {
         let better = driver_server_delayed(20_000_000, delay).await;
         let prices = NativePrices::new(
             &native_prices(
+                None,
                 vec![vec![driver("worse", worse)], vec![driver("better", better)]],
                 2,
             ),
@@ -1226,12 +1229,9 @@ mod tests {
     #[tokio::test]
     async fn fails_closed_only_when_every_source_fails() {
         let token = Pubkey::new_unique();
-        let dead = config::NativePriceEstimator::CoinGecko {
-            endpoint: "http://127.0.0.1:1/".parse().unwrap(),
-            api_key: String::new(),
-        };
+        let dead: Url = "http://127.0.0.1:1/".parse().unwrap();
         let prices = NativePrices::new(
-            &native_prices(vec![vec![dead.clone()]], 2),
+            &native_prices(Some(dead.clone()), vec![vec![COINGECKO]], 2),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
@@ -1239,7 +1239,11 @@ mod tests {
 
         let baseline = driver_server(20_000_000).await;
         let prices = NativePrices::new(
-            &native_prices(vec![vec![dead], vec![driver("baseline", baseline)]], 2),
+            &native_prices(
+                Some(dead),
+                vec![vec![COINGECKO], vec![driver("baseline", baseline)]],
+                2,
+            ),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );

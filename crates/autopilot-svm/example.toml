@@ -45,16 +45,21 @@ ttl = "30s"
 results-required = 2
 # Lamports a driver source sells per probe quote.
 driver-probe-lamports = 10000000
-# The CoinGecko key is optional: without one the public API and its rate
-# limits apply. An api-key like "%COIN_GECKO_API_KEY" reads the key from that
-# environment variable and fails the load when it is unset. A driver is quoted
-# through its regular /quote route, its url includes the solver path like the
-# [[drivers]] entries, and its solver must answer sell orders: the probe sells
-# a fixed amount of wSOL.
+# Entries read like the EVM autopilot's. A Driver is quoted through its
+# regular /quote route, its url includes the solver path like the [[drivers]]
+# entries, and its solver must answer sell orders: the probe sells a fixed
+# amount of wSOL.
 estimators = [
-  [{ type = "coin-gecko", endpoint = "https://api.coingecko.com/api/v3/simple/token_price" }],
-  [{ type = "driver", name = "baseline", url = "http://localhost:11088/baseline/" }],
+  [{ type = "CoinGecko" }],
+  [{ type = "Driver", name = "baseline", url = "http://localhost:11088/baseline/" }],
 ]
+
+# The CoinGecko source. Without a key the public API and its rate limits
+# apply. An api-key like "%COIN_GECKO_API_KEY" reads the key from that
+# environment variable and fails the load when it is unset.
+[native-prices.coin-gecko]
+url = "https://api.coingecko.com/api/v3/simple/token_price"
+# api-key = "%COIN_GECKO_API_KEY"
 
 [logging]
 filter = "info,autopilot_svm=debug"
