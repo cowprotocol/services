@@ -91,6 +91,28 @@ impl SolanaRPC {
         }
     }
 
+    /// Creates a client that accepts every sent transaction and records it,
+    /// answering everything else from canned responses, for tests.
+    #[cfg(feature = "test-util")]
+    pub fn new_mock_recording_sends(
+        mocks: Mocks,
+    ) -> (
+        Self,
+        std::sync::Arc<std::sync::Mutex<Vec<VersionedTransaction>>>,
+    ) {
+        let sender = mock::RecordingSender::new(mocks);
+        let sent = sender.sent();
+        let client = Self {
+            inner: RpcClient::new_sender(
+                sender,
+                solana_rpc_client::rpc_client::RpcClientConfig::with_commitment(
+                    CommitmentConfig::default(),
+                ),
+            ),
+        };
+        (client, sent)
+    }
+
     /// Creates a client that fails each request with its queued transaction
     /// errors before answering from its queue of canned responses, for
     /// tests.
@@ -389,6 +411,56 @@ mod mock {
         solana_sdk::transaction::TransactionError,
         std::{collections::VecDeque, sync::Mutex},
     };
+
+    /// A mock sender that accepts every sent transaction and records it, so
+    /// tests can check what reached the node.
+    pub struct RecordingSender {
+        inner: MockSender,
+        sent: std::sync::Arc<Mutex<Vec<VersionedTransaction>>>,
+    }
+
+    impl RecordingSender {
+        pub fn new(mocks: Mocks) -> Self {
+            Self {
+                inner: MockSender::new_with_mocks("mock", mocks),
+                sent: Default::default(),
+            }
+        }
+
+        pub fn sent(&self) -> std::sync::Arc<Mutex<Vec<VersionedTransaction>>> {
+            std::sync::Arc::clone(&self.sent)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RpcSender for RecordingSender {
+        async fn send(
+            &self,
+            request: RpcRequest,
+            params: serde_json::Value,
+        ) -> Result<serde_json::Value, Error> {
+            if request != RpcRequest::SendTransaction {
+                return self.inner.send(request, params).await;
+            }
+            let encoded = params[0].as_str().expect("an encoded transaction");
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .expect("a base64 transaction");
+            let transaction: VersionedTransaction =
+                bincode::deserialize(&bytes).expect("a versioned transaction");
+            let signature = transaction.signatures[0].to_string();
+            self.sent.lock().unwrap().push(transaction);
+            Ok(serde_json::Value::String(signature))
+        }
+
+        fn get_transport_stats(&self) -> RpcTransportStats {
+            self.inner.get_transport_stats()
+        }
+
+        fn url(&self) -> String {
+            self.inner.url()
+        }
+    }
 
     /// A mock sender that fails a request with its queued transaction errors
     /// before answering it from the canned responses.

@@ -6,7 +6,7 @@ pub mod bitget;
 mod dto;
 pub mod jupiter;
 
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey, transaction::VersionedTransaction};
 
 /// A single order to quote, distilled from the auction.
 #[derive(Debug, Clone)]
@@ -89,6 +89,17 @@ impl Dex {
             Dex::Bitget(bitget) => bitget.swap(order, user).await,
         }
     }
+
+    /// Add the signatures a swap's other signers owe on `transaction`.
+    pub async fn cosign(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<VersionedTransaction, Error> {
+        match self {
+            Dex::Jupiter(_) => Err(Error::CosignNotSupported),
+            Dex::Bitget(bitget) => bitget.cosign(transaction).await,
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -99,6 +110,8 @@ pub enum Error {
     NotFound,
     #[error("order type is not supported")]
     OrderNotSupported,
+    #[error("co-signing is not supported")]
+    CosignNotSupported,
     #[error("rate limited")]
     RateLimited,
     #[error("dex api error {status}: {body}")]

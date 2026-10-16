@@ -15,8 +15,8 @@ use {
         infra::{config, solver::dto::auction::Auction},
     },
     cow_solana_signer::Signer,
-    solana_sdk::pubkey::Pubkey,
-    std::{collections::HashSet, num::NonZero, sync::Arc},
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    std::{collections::HashSet, num::NonZero, sync::Arc, time::Duration},
     thiserror::Error,
 };
 
@@ -149,6 +149,62 @@ impl Solver {
             .into_domain(&auction_dto, self.pubkey())
             .map_err(Error::BadResponse)
     }
+
+    /// POST the signed `transaction` to this engine's `/cosign` endpoint for
+    /// the signatures of its other required signers.
+    #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
+    pub async fn cosign(
+        &self,
+        transaction: &VersionedTransaction,
+        timeout: Duration,
+    ) -> Result<VersionedTransaction, Error> {
+        let body = serde_json::to_string(&dto::cosign::Transaction::new(transaction))?;
+        let url = self.base_url.join("cosign").expect("valid /cosign path");
+        let response = self
+            .client
+            .post(url.as_str())
+            .header("content-type", "application/json")
+            .timeout(timeout)
+            .body(body)
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(Error::HttpStatus {
+                status,
+                body: response.text().await?,
+            });
+        }
+        let cosigned = response
+            .json::<dto::cosign::Transaction>()
+            .await?
+            .into_transaction()
+            .map_err(Error::Cosign)?;
+        verify_cosigned(transaction, &cosigned)?;
+        Ok(cosigned)
+    }
+}
+
+/// The co-signed transaction must be `own` with the empty slots filled: the
+/// same message, the same driver signature, and every signature valid.
+fn verify_cosigned(
+    own: &VersionedTransaction,
+    cosigned: &VersionedTransaction,
+) -> Result<(), Error> {
+    if cosigned.message != own.message {
+        return Err(Error::Cosign("the message changed".into()));
+    }
+    if cosigned.signatures.len() != own.signatures.len()
+        || cosigned.signatures.first() != own.signatures.first()
+    {
+        return Err(Error::Cosign(
+            "the signature slots or the driver's signature changed".into(),
+        ));
+    }
+    if cosigned.verify_with_results().contains(&false) {
+        return Err(Error::Cosign("a signature does not verify".into()));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Error)]
@@ -175,11 +231,72 @@ pub enum Error {
         #[source]
         error: cow_solana_signer::Error,
     },
+    /// The engine's co-signed transaction is unusable.
+    #[error("co-signing failed: {0}")]
+    Cosign(String),
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, solana_testlib::temp_keypair};
+    use {
+        super::*,
+        solana_sdk::{
+            hash::Hash,
+            message::{VersionedMessage, v0},
+            signature::Signature,
+            signer::{Signer as _, keypair::Keypair},
+        },
+        solana_testlib::temp_keypair,
+    };
+
+    /// A transaction the driver signed and `cosigner` still has to, and the
+    /// same transaction with the co-signature filled in.
+    fn signed_and_cosigned(
+        driver: &Keypair,
+        cosigner: &Keypair,
+    ) -> (VersionedTransaction, VersionedTransaction) {
+        let instruction = solana_system_interface::instruction::transfer(
+            &cosigner.pubkey(),
+            &Pubkey::new_unique(),
+            1,
+        );
+        let message = VersionedMessage::V0(
+            v0::Message::try_compile(&driver.pubkey(), &[instruction], &[], Hash::new_unique())
+                .unwrap(),
+        );
+        let bytes = message.serialize();
+        let own = VersionedTransaction {
+            signatures: vec![driver.sign_message(&bytes), Signature::default()],
+            message,
+        };
+        let mut cosigned = own.clone();
+        cosigned.signatures[1] = cosigner.sign_message(&bytes);
+        (own, cosigned)
+    }
+
+    #[test]
+    fn rejects_a_changed_message() {
+        let (driver, cosigner) = (Keypair::new(), Keypair::new());
+        let (own, _) = signed_and_cosigned(&driver, &cosigner);
+        let (_, other) = signed_and_cosigned(&driver, &cosigner);
+        assert!(verify_cosigned(&own, &other).is_err());
+    }
+
+    #[test]
+    fn rejects_a_replaced_driver_signature() {
+        let (own, mut cosigned) = signed_and_cosigned(&Keypair::new(), &Keypair::new());
+        cosigned.signatures[0] = Signature::default();
+        assert!(verify_cosigned(&own, &cosigned).is_err());
+    }
+
+    /// Verification pairs signatures with keys up to the shorter list, so a
+    /// dropped slot would otherwise verify.
+    #[test]
+    fn rejects_a_dropped_signature() {
+        let (own, mut cosigned) = signed_and_cosigned(&Keypair::new(), &Keypair::new());
+        cosigned.signatures.pop();
+        assert!(verify_cosigned(&own, &cosigned).is_err());
+    }
 
     #[tokio::test]
     async fn solve_with_past_deadline_returns_empty() {
