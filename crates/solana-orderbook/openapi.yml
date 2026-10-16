@@ -168,6 +168,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/{auction_id}:
+    get:
+      operationId: getSolverCompetition
+      description: |
+        Every solution proposed for one auction. A competition stays hidden
+        until the current auction's tip slot passes its deadline slot, so
+        solutions are not revealed while they can still be submitted.
+      parameters:
+        - name: auction_id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetition"
+        "400":
+          description: The auction id is not a non-negative integer (`InvalidAuctionId`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No competition for this auction, or its deadline has not passed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/by_tx_hash/{tx_signature}:
+    get:
+      operationId: getSolverCompetitionByTxSignature
+      description: |
+        The competition of the auction a settlement transaction claims. The
+        path keeps the EVM name, the parameter is a Solana signature.
+      parameters:
+        - name: tx_signature
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Signature"
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetition"
+        "400":
+          description: The signature is not base58 (`InvalidTxSignature`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: |
+            No settlement indexed under this signature, or its auction's
+            deadline has not passed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/orders:
     post:
       operationId: createOrder
@@ -517,6 +584,122 @@ components:
             has not been indexed.
           type: integer
           format: int64
+          nullable: true
+    SolverCompetition:
+      description: |
+        Every solution proposed for one auction. The EVM `solver_competition`
+        v2 shape, with slots for blocks, signatures for transaction hashes,
+        and no clearing prices.
+      type: object
+      required:
+        - auctionId
+        - auctionStartSlot
+        - auctionDeadlineSlot
+        - transactionSignatures
+        - referenceScores
+        - auction
+        - solutions
+      properties:
+        auctionId:
+          type: integer
+          format: int64
+        auctionStartSlot:
+          description: The chain tip slot the auction was cut at.
+          type: integer
+          format: int64
+        auctionDeadlineSlot:
+          description: The last slot a winning solution may settle in.
+          type: integer
+          format: int64
+        transactionSignatures:
+          description: The settlement transactions that claim this auction.
+          type: array
+          items:
+            $ref: "#/components/schemas/Signature"
+        referenceScores:
+          description: Per winning solver, the winners' total score without that solver.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
+        auction:
+          type: object
+          required:
+            - orders
+            - prices
+          properties:
+            orders:
+              type: array
+              items:
+                $ref: "#/components/schemas/OrderUid"
+            prices:
+              description: Native price per mint, keyed by base58 mint.
+              type: object
+              additionalProperties:
+                $ref: "#/components/schemas/TokenAmount"
+        solutions:
+          description: Every proposed solution, worst ranked first.
+          type: array
+          items:
+            $ref: "#/components/schemas/SolverCompetitionSolution"
+    SolverCompetitionSolution:
+      type: object
+      required:
+        - solverAddress
+        - score
+        - ranking
+        - orders
+        - isWinner
+        - filteredOut
+      properties:
+        solverAddress:
+          $ref: "#/components/schemas/Pubkey"
+        score:
+          $ref: "#/components/schemas/TokenAmount"
+        ranking:
+          description: 1 for the best solution. Filtered out solutions rank last.
+          type: integer
+          format: int64
+        orders:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - sellAmount
+              - buyAmount
+              - sellToken
+              - buyToken
+            properties:
+              id:
+                $ref: "#/components/schemas/OrderUid"
+              sellAmount:
+                description: Sell tokens the solution executes.
+                allOf:
+                  - $ref: "#/components/schemas/TokenAmount"
+              buyAmount:
+                description: Buy tokens the solution executes.
+                allOf:
+                  - $ref: "#/components/schemas/TokenAmount"
+              sellToken:
+                $ref: "#/components/schemas/Pubkey"
+              buyToken:
+                $ref: "#/components/schemas/Pubkey"
+        isWinner:
+          type: boolean
+        filteredOut:
+          description: Excluded from the ranking by the fairness filter.
+          type: boolean
+        txSignature:
+          description: |
+            The settlement of this solution. Null until settlements are
+            attributed to solutions.
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+          nullable: true
+        referenceScore:
+          description: The solver's reference score, when it won.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
           nullable: true
     QuoteRequest:
       description: |

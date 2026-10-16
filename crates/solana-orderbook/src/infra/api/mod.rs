@@ -125,6 +125,14 @@ impl Api {
             .route("/api/v1/orders/{uid}", get(routes::order))
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
             .route("/api/v2/trades", get(routes::trades))
+            .route(
+                "/api/v2/solver_competition/by_tx_hash/{tx_signature}",
+                get(routes::solver_competition_by_tx),
+            )
+            .route(
+                "/api/v2/solver_competition/{auction_id}",
+                get(routes::solver_competition),
+            )
             .route("/api/v1/orders", post(routes::create_order))
             .route("/api/v1/quote", post(routes::quote))
             .layer(cors)

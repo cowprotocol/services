@@ -4,6 +4,7 @@ mod healthz;
 mod mint;
 mod order;
 mod quote;
+mod solver_competition;
 mod status;
 mod trades;
 mod version;
@@ -15,6 +16,7 @@ pub use {
     healthz::healthz,
     order::order,
     quote::quote,
+    solver_competition::{solver_competition, solver_competition_by_tx},
     status::order_status,
     trades::trades,
     version::version,
