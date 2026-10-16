@@ -4,7 +4,7 @@ use {
         infra::{
             self,
             Api,
-            blockchain::{self, Ethereum, gas},
+            blockchain::{self, Ethereum},
             cli,
             config,
             liquidity,
@@ -74,7 +74,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         &args.current_block,
         config.tx_gas_limit.into(),
         &config.gas_estimator,
-        gas::adjustments(&config.mempools),
+        config.gas_price_parameters.clone(),
     )
     .await;
 
