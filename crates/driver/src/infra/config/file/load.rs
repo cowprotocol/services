@@ -338,14 +338,18 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 }),
             }
         }),
+        gas_price_parameters: blockchain::gas::GasPriceParameters {
+            max_additional_tip: config.submission.max_additional_tip,
+            additional_tip_factor: config.submission.additional_tip_percentage,
+            max_fee_per_gas: config.submission.gas_price_cap,
+            min_priority_fee: config.submission.min_priority_fee,
+        },
         mempools: config
             .submission
             .mempools
             .iter()
             .enumerate()
             .map(|(index, mempool)| mempool::Config {
-                min_priority_fee: config.submission.min_priority_fee,
-                gas_price_cap: config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 nonce_block_number: config.submission.nonce_block_number.map(Into::into),
@@ -358,8 +362,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     true => mempool::RevertProtection::Disabled,
                     false => mempool::RevertProtection::Enabled,
                 },
-                max_additional_tip: mempool.max_additional_tip,
-                additional_tip_percentage: mempool.additional_tip_percentage,
             })
             .collect(),
         simulator: config.simulator,

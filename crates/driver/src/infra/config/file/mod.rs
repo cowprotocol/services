@@ -126,6 +126,18 @@ struct SubmissionConfig {
     #[serde(default)]
     nonce_block_number: Option<BlockNumber>,
 
+    /// Maximum additional tip in Gwei that we are willing to give to
+    /// the validator above regular gas price estimation.
+    #[serde(default = "default_max_additional_tip")]
+    #[serde_as(as = "serde_ext::U256")]
+    max_additional_tip: eth::U256,
+
+    /// Additional tip in percentage of max_fee_per_gas we are giving to
+    /// validator above regular gas price estimation. Expects a
+    /// floating point value between 0 and 1.
+    #[serde(default = "default_additional_tip_percentage")]
+    additional_tip_percentage: f64,
+
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
@@ -158,16 +170,6 @@ struct Mempool {
     name: Option<String>,
     /// The RPC URL to use.
     url: Url,
-    /// Maximum additional tip in Gwei that we are willing to give to
-    /// the validator above regular gas price estimation.
-    #[serde(default = "default_max_additional_tip")]
-    #[serde_as(as = "serde_ext::U256")]
-    max_additional_tip: eth::U256,
-    /// Additional tip in percentage of max_fee_per_gas we are giving to
-    /// validator above regular gas price estimation. Expects a
-    /// floating point value between 0 and 1.
-    #[serde(default = "default_additional_tip_percentage")]
-    additional_tip_percentage: f64,
     /// Informs the submission logic whether a reverting transaction will
     /// actually be mined or just ignored. This is an advanced feature
     /// for private mempools so for most configured mempools you have to
