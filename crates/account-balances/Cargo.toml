@@ -25,6 +25,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+ethrpc = { workspace = true, features = ["test-util"] }
 mockall = { workspace = true }
 
 [features]
