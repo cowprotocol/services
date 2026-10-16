@@ -22,6 +22,7 @@ use {
         infra::solver,
         util::http,
     },
+    alloy::rpc::types::mev::EthBundleHash,
     eth_domain_types as eth,
     ethrpc::block_stream::BlockInfo,
     observe::tracing::lazy::Lazy,
@@ -398,6 +399,21 @@ pub fn mempool_log(
     }
 }
 
+/// Log the submission of a settlement to the block builders.
+pub fn builders_log(
+    settlement: &EncodedSettlement,
+    result: &Result<SubmissionSuccess, mempools::Error>,
+) {
+    match result {
+        Ok(submission) => tracing::info!(
+            txid = ?submission.tx_hash,
+            ?settlement,
+            "sending transaction via builders succeeded",
+        ),
+        Err(err) => tracing::warn!(?err, ?settlement, "sending transaction via builders failed",),
+    }
+}
+
 /// Emit per-receiver submission counters with the final, reclassified label
 /// (`Success` / `Revert` / `Expired` / `Other` / `Superseded` / `Disabled`).
 /// Called once per receiver after the submission resolves.
@@ -412,6 +428,36 @@ pub fn mempool_submission_result(receiver: &str, label: &str, blocks_passed: Opt
             .with_label_values(&[receiver, label])
             .inc_by(blocks);
     }
+}
+
+/// Observe how long a block builder took to answer a settlement bundle.
+pub fn builder_response_time(builder: &str, elapsed: Duration) {
+    metrics::get()
+        .builder_submission_time
+        .with_label_values(&[builder])
+        .observe(elapsed.as_secs_f64());
+}
+
+/// Observe whether a block builder accepted the settlement bundle for `block`.
+pub fn builder_submission(
+    builder: &str,
+    block: u64,
+    result: &anyhow::Result<Option<EthBundleHash>>,
+) {
+    let label = match result {
+        Ok(response) => {
+            tracing::debug!(builder, block, ?response, "builder accepted the bundle");
+            "Success"
+        }
+        Err(err) => {
+            tracing::warn!(builder, block, ?err, "builder rejected the bundle");
+            "Rejected"
+        }
+    };
+    metrics::get()
+        .builder_submission
+        .with_label_values(&[builder, label])
+        .inc();
 }
 
 /// Observe that an invalid DTO was received.

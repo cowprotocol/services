@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{Mempools, competition::order::app_data::AppDataRetriever},
+        domain::{Mempools, competition::order::app_data::AppDataRetriever, mempools::Submitter},
         infra::{
             self,
             Api,
@@ -233,10 +233,16 @@ fn mempools(config: &infra::Config, eth: &Ethereum) -> Mempools {
                 .chain(config.submission_accounts.iter().cloned())
         })
         .collect();
-    let mempools: Vec<_> = config
-        .mempools
-        .iter()
-        .map(|mempool| infra::Mempool::new(mempool.to_owned(), accounts.clone()))
-        .collect();
-    Mempools::new(Arc::new(mempools), eth.clone())
+    let submitter: Arc<dyn Submitter> = match &config.receiver {
+        infra::config::Receiver::Mempools(mempools) => Arc::new(
+            mempools
+                .iter()
+                .map(|mempool| infra::Mempool::new(mempool.to_owned(), accounts.clone()))
+                .collect::<Vec<_>>(),
+        ),
+        infra::config::Receiver::Builders(builders) => {
+            Arc::new(infra::Builders::new(builders, accounts))
+        }
+    };
+    Mempools::new(submitter, eth.clone())
 }
