@@ -13,10 +13,13 @@ use {
             prices::NativePrices,
             provider::DbAuctionProvider,
         },
+        run::Liveness,
         run_loop::{
             AuctionLoop,
             AuctionProvider,
             CycleTrigger,
+            NextAuction,
+            Probes,
             RankingInfo,
             SolverCompetition,
             WinnerSelection,
@@ -240,7 +243,9 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
         );
-        let auction = provider.cut_auction(&tip).await.expect("auction cut");
+        let NextAuction::Auction(auction) = provider.cut_auction(&tip).await else {
+            panic!("auction cut");
+        };
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
         let competition =
             DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6), true);
@@ -270,6 +275,10 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         Box::new(DriverExecutor::new(vec![driver], windows.clone(), None)),
         Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
         25,
+        Probes {
+            liveness: Arc::new(Liveness::new(Duration::from_secs(300))),
+            startup: Default::default(),
+        },
     );
     auction_loop.run_cycle().await;
 
@@ -352,7 +361,10 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
     );
     assert!(
-        held_provider.cut_auction(&(tip + 25)).await.is_none(),
+        matches!(
+            held_provider.cut_auction(&(tip + 25)).await,
+            NextAuction::Empty
+        ),
         "in-flight order excluded from the cut"
     );
     // The dispatch task times the window out once the tip reaches the
@@ -381,11 +393,17 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .expect("window timed out before the timeout");
     assert_eq!(outcome, "timeout");
     assert!(
-        held_provider.cut_auction(&(expired - 1)).await.is_none(),
+        matches!(
+            held_provider.cut_auction(&(expired - 1)).await,
+            NextAuction::Empty
+        ),
         "order stays held while its transaction can still land"
     );
     assert!(
-        held_provider.cut_auction(&expired).await.is_some(),
+        matches!(
+            held_provider.cut_auction(&expired).await,
+            NextAuction::Auction(_)
+        ),
         "order returns once the transaction cannot land"
     );
     // The cycle reported the order's auction progress and the later cuts its

@@ -4,7 +4,7 @@ use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle},
         infra::{db, order_events, prices::NativePrices},
-        run_loop::AuctionProvider,
+        run_loop::{AuctionProvider, NextAuction},
     },
     async_trait::async_trait,
     chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
@@ -253,7 +253,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         Ok(())
     }
 
-    async fn cut_auction(&self, tip: &u64) -> Option<crate::domain::auction::Auction> {
+    async fn cut_auction(&self, tip: &u64) -> NextAuction<crate::domain::auction::Auction> {
         // An auction cut from a lagging indexer replays stale orders, so a
         // lag beyond the watermark skips the cycle. A failed read cuts
         // anyway: the same pool fails the cut itself one query later.
@@ -265,7 +265,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                     "the indexer lags beyond the watermark, skipping the cut"
                 );
                 metrics().lag_skipped_cuts.inc();
-                return None;
+                return NextAuction::Failed;
             }
             Ok(_) => {}
             Err(err) => tracing::warn!(?err, "indexer slot read failed"),
@@ -281,17 +281,20 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
             Err(err) => {
                 tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");
-                return None;
+                return NextAuction::Failed;
             }
         };
         let now = now_unix();
         // A pending sponsored order dies with its creation blockhash, so the
         // cut drops the dead ones.
         let block_height = self.block_height().await;
-        let orders = db::cut(&self.pool, now, block_height)
-            .await
-            .map_err(|err| tracing::warn!(?err, "failed to cut the auction"))
-            .ok()?;
+        let orders = match db::cut(&self.pool, now, block_height).await {
+            Ok(orders) => orders,
+            Err(err) => {
+                tracing::warn!(?err, "failed to cut the auction");
+                return NextAuction::Failed;
+            }
+        };
         if let Some(height) = block_height {
             self.record_dead_creations(now, height).await;
         }
@@ -311,7 +314,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         self.track_filtered_orders(OrderFilterReason::UnreceivableBuyTokenAccount, unreceivable);
         self.track_filtered_orders(OrderFilterReason::UnfundedSellTokenAccount, unfunded);
         if orders.is_empty() {
-            return None;
+            return NextAuction::Empty;
         }
         // A cut without prices would rank solutions on incomparable scores,
         // so a failed lookup skips the cycle instead.
@@ -324,7 +327,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(prices) => prices,
             Err(err) => {
                 tracing::warn!(?err, "native price lookup failed, skipping the cut");
-                return None;
+                return NextAuction::Failed;
             }
         };
         let mut auction = crate::domain::auction::Auction {
@@ -343,10 +346,10 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(id) => id,
             Err(err) => {
                 tracing::warn!(?err, "failed to store the auction, skipping the cut");
-                return None;
+                return NextAuction::Failed;
             }
         };
-        Some(auction)
+        NextAuction::Auction(auction)
     }
 }
 
@@ -410,8 +413,8 @@ struct Metrics {
     #[metric(labels("reason"))]
     filtered_orders: prometheus::IntGaugeVec,
     /// Auction cuts skipped because the indexer lags beyond the watermark.
-    /// The loop keeps spinning and stays live through a skip, so this
-    /// counter is the alerting signal for a stalled indexer.
+    /// A skip counts against `max-auction-age`. This counter is the alerting
+    /// signal for a stalled indexer.
     lag_skipped_cuts: prometheus::IntCounter,
 }
 

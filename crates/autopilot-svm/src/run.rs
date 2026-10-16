@@ -17,7 +17,7 @@ use {
             sponsor::Sponsor,
             trigger::SlotTrigger,
         },
-        run_loop::AuctionLoop,
+        run_loop::{AuctionLoop, Probes},
     },
     chain_types::solana::Pubkey,
     clap::Parser,
@@ -27,7 +27,7 @@ use {
     std::{
         net::SocketAddr,
         path::PathBuf,
-        sync::{Arc, RwLock},
+        sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
 };
@@ -36,29 +36,31 @@ use {
 /// windows a previous process left behind.
 const STARTUP_SWEEP_WAIT: Duration = Duration::from_secs(10);
 
-/// Fails the liveness probe when the auction loop stops completing cycles.
-struct Liveness {
+/// Fails the liveness probe when the auction loop makes no auction in
+/// `max_auction_age`.
+pub struct Liveness {
     max_auction_age: Duration,
-    last_cycle: RwLock<Instant>,
+    last_auction: RwLock<Instant>,
 }
 
 impl Liveness {
-    fn new(max_auction_age: Duration) -> Self {
+    pub fn new(max_auction_age: Duration) -> Self {
         Self {
             max_auction_age,
-            last_cycle: RwLock::new(Instant::now()),
+            last_auction: RwLock::new(Instant::now()),
         }
     }
 
-    fn record_cycle(&self) {
-        *self.last_cycle.write().unwrap() = Instant::now();
+    /// Records an auction, or a cut that found no order for one.
+    pub fn auction(&self) {
+        *self.last_auction.write().unwrap() = Instant::now();
     }
 }
 
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        self.last_cycle.read().unwrap().elapsed() <= self.max_auction_age
+        self.last_auction.read().unwrap().elapsed() <= self.max_auction_age
     }
 }
 
@@ -155,6 +157,8 @@ async fn run(config: Config) {
         config.contracts.wrapped_native_mint,
     );
     let forward_prices = !matches!(prices, NativePrices::Denominated);
+    let liveness = Arc::new(Liveness::new(config.max_auction_age));
+    let startup = Arc::new(Some(AtomicBool::new(false)));
     let auction_loop = AuctionLoop::new(
         Box::new(trigger),
         Box::new(DbAuctionProvider::new(
@@ -180,18 +184,18 @@ async fn run(config: Config) {
         Box::new(DriverExecutor::new(drivers, windows.clone(), sponsor)),
         Box::new(CompetitionObserver::new(pool, windows)),
         config.competition.submission_deadline_slots.get(),
+        Probes {
+            liveness: liveness.clone(),
+            startup: startup.clone(),
+        },
     );
-    let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let metrics = observe::metrics::serve_metrics(
-        liveness.clone(),
+        liveness,
         SocketAddr::from(([0, 0, 0, 0], config.metrics_port)),
         Default::default(),
-        Default::default(),
+        startup,
     );
-    // TODO: recorded even when the cycle failed, so a dead database stays
-    // live as long as the trigger fires. Distinguishing failed cycles is
-    // BE-200.
-    let cycles = auction_loop.run_forever(move || liveness.record_cycle());
+    let cycles = auction_loop.run_forever();
 
     // The metrics server and the listen session never end on their own, so an
     // end means the task panicked.
@@ -200,5 +204,14 @@ async fn run(config: Config) {
         _ = metrics => panic!("metrics server stopped"),
         _ = listen => panic!("settlement listen session stopped"),
         () = observe::shutdown::shutdown_signal() => tracing::info!("shutting down"),
+    }
+}
+
+#[cfg(test)]
+impl Liveness {
+    /// Makes the probe fail until the next auction.
+    pub(crate) fn expire(&self) {
+        *self.last_auction.write().unwrap() =
+            Instant::now() - self.max_auction_age - Duration::from_secs(1);
     }
 }

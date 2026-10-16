@@ -16,8 +16,17 @@
 //! the caller, the loop always runs as if it were the leader.
 
 use {
+    crate::run::Liveness,
     async_trait::async_trait,
-    std::{collections::HashSet, fmt::Debug, hash::Hash},
+    std::{
+        collections::HashSet,
+        fmt::Debug,
+        hash::Hash,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    },
     tracing::Instrument,
 };
 
@@ -83,8 +92,19 @@ pub trait AuctionProvider<C: Cycle>: Send + Sync {
     /// stop the cycle, the auction is then cut from slightly stale caches.
     async fn sync_to_tip(&self, tip: &C::Tip) -> anyhow::Result<()>;
 
-    /// Cuts the auction for the tip. None when there is nothing to solve.
-    async fn cut_auction(&self, tip: &C::Tip) -> Option<C::Auction>;
+    /// Cuts the auction for the tip.
+    async fn cut_auction(&self, tip: &C::Tip) -> NextAuction<C::Auction>;
+}
+
+/// The result of an auction cut.
+pub enum NextAuction<A> {
+    /// The auction to solve.
+    Auction(A),
+    /// The cut read the orders, and no order can go into the auction.
+    Empty,
+    /// The cut stopped before it could make an auction, for example because
+    /// a dependency failed or the order data is stale.
+    Failed,
 }
 
 /// Fans the auction out to all drivers and returns attributable solutions.
@@ -131,6 +151,12 @@ pub trait SettlementObserver<C: Cycle>: Send + Sync {
     fn on_competition_ended(&self, auction: &C::Auction, ranking: &C::Ranking);
 }
 
+/// The state that the metrics server gives to the Kubernetes probes.
+pub struct Probes {
+    pub liveness: Arc<Liveness>,
+    pub startup: Arc<Option<AtomicBool>>,
+}
+
 /// Chain generic auction loop. Owns the seams and the dedupe state, drives
 /// the phases in a fixed order.
 pub struct AuctionLoop<C: Cycle> {
@@ -144,9 +170,11 @@ pub struct AuctionLoop<C: Cycle> {
     submission_deadline_allowance: u64,
     prev_auction: Option<C::Auction>,
     prev_tip: Option<C::Tip>,
+    probes: Probes,
 }
 
 impl<C: Cycle> AuctionLoop<C> {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         trigger: Box<dyn CycleTrigger<C>>,
         provider: Box<dyn AuctionProvider<C>>,
@@ -155,6 +183,7 @@ impl<C: Cycle> AuctionLoop<C> {
         executor: Box<dyn SettlementExecutor<C>>,
         observer: Box<dyn SettlementObserver<C>>,
         submission_deadline_allowance: u64,
+        probes: Probes,
     ) -> Self {
         Self {
             trigger,
@@ -166,14 +195,14 @@ impl<C: Cycle> AuctionLoop<C> {
             submission_deadline_allowance,
             prev_auction: None,
             prev_tip: None,
+            probes,
         }
     }
 
-    /// Run cycles until the process ends, reporting each completed cycle.
-    pub async fn run_forever(mut self, mut cycle_completed: impl FnMut() + Send) -> ! {
+    /// Run cycles until the process ends.
+    pub async fn run_forever(mut self) -> ! {
         loop {
             self.run_cycle().await;
-            cycle_completed();
         }
     }
 
@@ -181,8 +210,14 @@ impl<C: Cycle> AuctionLoop<C> {
     pub async fn run_cycle(&mut self) {
         let tip = self.trigger.next_cycle().await;
 
-        if let Err(err) = self.provider.sync_to_tip(&tip).await {
-            tracing::warn!(?err, "failed to update auction");
+        match self.provider.sync_to_tip(&tip).await {
+            // The order caches are up to date, so the start is complete.
+            Ok(()) => {
+                if let Some(startup) = self.probes.startup.as_ref() {
+                    startup.store(true, Ordering::Release);
+                }
+            }
+            Err(err) => tracing::warn!(?err, "failed to update auction"),
         }
 
         let Some(auction) = self.next_auction(&tip).await else {
@@ -194,9 +229,22 @@ impl<C: Cycle> AuctionLoop<C> {
             .await;
     }
 
-    /// Cuts the next auction and dedupes against the previous cycle.
+    /// Cuts the next auction and dedupes against the previous cycle. A new
+    /// auction and an empty cut refresh the liveness probe. A failed cut and
+    /// a duplicate auction do not.
     async fn next_auction(&mut self, tip: &C::Tip) -> Option<C::Auction> {
-        let auction = self.provider.cut_auction(tip).await?;
+        let auction = match self.provider.cut_auction(tip).await {
+            // The liveness probe refreshes below, after the duplicate check,
+            // because a repeated auction does not prove progress.
+            NextAuction::Auction(auction) => auction,
+            // No order can go into the auction. The cut read the orders, so
+            // the loop works correctly.
+            NextAuction::Empty => {
+                self.probes.liveness.auction();
+                return None;
+            }
+            NextAuction::Failed => return None,
+        };
 
         // Only rerun the competition if the auction or tip changed.
         let previous_auction = self.prev_auction.replace(auction.clone());
@@ -205,6 +253,7 @@ impl<C: Cycle> AuctionLoop<C> {
             return None;
         }
 
+        self.probes.liveness.auction();
         Some(auction)
     }
 
@@ -249,5 +298,208 @@ impl<C: Cycle> AuctionLoop<C> {
             .await;
 
         self.observer.on_competition_ended(auction, &ranking);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        observe::metrics::LivenessChecking,
+        std::{collections::VecDeque, sync::Mutex, time::Duration},
+    };
+
+    struct TestCycle;
+
+    impl Cycle for TestCycle {
+        type Auction = TestAuction;
+        type OrderUid = u64;
+        type Ranking = NoRanking;
+        type Solution = ();
+        type Tip = u64;
+
+        fn submission_deadline(tip: &u64, allowance: u64) -> u64 {
+            tip + allowance
+        }
+    }
+
+    /// An auction with the uids of its orders.
+    #[derive(Clone, PartialEq)]
+    struct TestAuction(Vec<u64>);
+
+    impl AuctionInfo for TestAuction {
+        fn id(&self) -> i64 {
+            0
+        }
+    }
+
+    struct NoRanking;
+
+    impl RankingInfo<TestCycle> for NoRanking {
+        fn winner_count(&self) -> usize {
+            0
+        }
+
+        fn winning_order_uids(&self) -> HashSet<u64> {
+            HashSet::new()
+        }
+
+        fn considered_order_uids(&self) -> HashSet<u64> {
+            HashSet::new()
+        }
+    }
+
+    /// Gives the result of the sync and of the cut from a script, one entry
+    /// for each cycle.
+    struct ScriptedProvider(Mutex<VecDeque<(bool, NextAuction<TestAuction>)>>);
+
+    #[async_trait]
+    impl AuctionProvider<TestCycle> for ScriptedProvider {
+        async fn sync_to_tip(&self, _tip: &u64) -> anyhow::Result<()> {
+            let synced = self.0.lock().unwrap().front().expect("a scripted cycle").0;
+            anyhow::ensure!(synced, "scripted sync failure");
+            Ok(())
+        }
+
+        async fn cut_auction(&self, _tip: &u64) -> NextAuction<TestAuction> {
+            self.0
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("a scripted cycle")
+                .1
+        }
+    }
+
+    /// Fires every cycle at the same tip, and gets no solution, so a cycle
+    /// ends after the auction goes to the solvers.
+    struct Stub;
+
+    #[async_trait]
+    impl CycleTrigger<TestCycle> for Stub {
+        async fn next_cycle(&mut self) -> u64 {
+            1
+        }
+
+        fn current_tip(&self) -> u64 {
+            1
+        }
+    }
+
+    #[async_trait]
+    impl SolverCompetition<TestCycle> for Stub {
+        async fn solve(&self, _auction: &TestAuction) -> Vec<()> {
+            Vec::new()
+        }
+    }
+
+    impl WinnerSelection<TestCycle> for Stub {
+        fn arbitrate(&self, _solutions: Vec<()>, _auction: &TestAuction) -> NoRanking {
+            unreachable!("no solution to rank")
+        }
+    }
+
+    #[async_trait]
+    impl SettlementExecutor<TestCycle> for Stub {
+        async fn execute(&self, _: i64, _: &NoRanking, _: &u64, _: u64) {
+            unreachable!("no winner to settle")
+        }
+    }
+
+    #[async_trait]
+    impl SettlementObserver<TestCycle> for Stub {
+        fn on_orders_ready(&self, _auction: &TestAuction) {}
+
+        async fn persist_competition_ranking(
+            &self,
+            _: &TestAuction,
+            _: &u64,
+            _: &NoRanking,
+            _: u64,
+        ) -> anyhow::Result<()> {
+            unreachable!("no ranking to store")
+        }
+
+        fn on_orders_matched(&self, _: HashSet<u64>, _: HashSet<u64>) {
+            unreachable!("no ranking to report")
+        }
+
+        fn on_competition_ended(&self, _: &TestAuction, _: &NoRanking) {
+            unreachable!("no competition to report")
+        }
+    }
+
+    /// A loop that runs the scripted cycles. Its liveness probe fails until
+    /// the loop records an auction, and its startup probe fails until the
+    /// first successful sync.
+    fn scripted_loop(
+        cycles: impl IntoIterator<Item = (bool, NextAuction<TestAuction>)>,
+    ) -> (
+        AuctionLoop<TestCycle>,
+        Arc<Liveness>,
+        Arc<Option<AtomicBool>>,
+    ) {
+        let liveness = Arc::new(Liveness::new(Duration::from_secs(60)));
+        liveness.expire();
+        let startup = Arc::new(Some(AtomicBool::new(false)));
+        let auction_loop = AuctionLoop::new(
+            Box::new(Stub),
+            Box::new(ScriptedProvider(Mutex::new(cycles.into_iter().collect()))),
+            Box::new(Stub),
+            Box::new(Stub),
+            Box::new(Stub),
+            Box::new(Stub),
+            0,
+            Probes {
+                liveness: liveness.clone(),
+                startup: startup.clone(),
+            },
+        );
+        (auction_loop, liveness, startup)
+    }
+
+    #[tokio::test]
+    async fn a_new_auction_refreshes_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) =
+            scripted_loop([(true, NextAuction::Auction(TestAuction(vec![1])))]);
+        auction_loop.run_cycle().await;
+        assert!(liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn an_empty_cut_refreshes_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Empty)]);
+        auction_loop.run_cycle().await;
+        assert!(liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn a_failed_cut_does_not_refresh_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Failed)]);
+        auction_loop.run_cycle().await;
+        assert!(!liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_auction_does_not_refresh_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([
+            (true, NextAuction::Auction(TestAuction(vec![1]))),
+            (true, NextAuction::Auction(TestAuction(vec![1]))),
+        ]);
+        auction_loop.run_cycle().await;
+        liveness.expire();
+        auction_loop.run_cycle().await;
+        assert!(!liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn the_startup_probe_passes_after_the_first_successful_sync() {
+        let (mut auction_loop, _, startup) =
+            scripted_loop([(false, NextAuction::Failed), (true, NextAuction::Failed)]);
+        let started = || startup.as_ref().as_ref().unwrap().load(Ordering::Acquire);
+        auction_loop.run_cycle().await;
+        assert!(!started());
+        auction_loop.run_cycle().await;
+        assert!(started());
     }
 }

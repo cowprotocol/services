@@ -53,8 +53,8 @@ pub struct Config {
     /// Port the metrics and probes server binds to, on every interface.
     #[serde(default = "default_metrics_port")]
     pub metrics_port: u16,
-    /// If no auction cycle completed in this time the pod fails the liveness
-    /// check.
+    /// If no new or empty auction was cut in this time, the pod fails the
+    /// liveness check.
     #[serde(with = "humantime_serde", default = "default_max_auction_age")]
     pub max_auction_age: Duration,
     /// Minimum time between auction cycles. Zero runs a cycle every new slot.
