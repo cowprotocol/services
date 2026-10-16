@@ -11,7 +11,6 @@ use {
     futures::{FutureExt, StreamExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
-    thiserror::Error,
     tracing::Instrument,
 };
 
@@ -51,12 +50,8 @@ pub struct Mempools {
 }
 
 impl Mempools {
-    pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
-        if mempools.is_empty() {
-            Err(NoMempools)
-        } else {
-            Ok(Self { mempools, ethereum })
-        }
+    pub fn new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Self {
+        Self { mempools, ethereum }
     }
 
     /// Race the mempools concurrently; first success wins. Pending
@@ -568,10 +563,6 @@ impl SubmissionSuccess {
             .0
     }
 }
-
-#[derive(Debug, Error)]
-#[error("no mempools configured, cannot execute settlements")]
-pub struct NoMempools;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
