@@ -463,6 +463,7 @@ pub async fn run(config: Configuration) {
         app_data_validator,
         postgres_write.clone(),
         ipfs,
+        config.app_data_cache_size,
     ));
 
     let orderbook = Arc::new(Orderbook::new(
