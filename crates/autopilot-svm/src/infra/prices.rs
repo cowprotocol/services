@@ -8,8 +8,9 @@ use {
         solana::{NATIVE_SOL, Solana},
     },
     cow_solana_rpc::SolanaRPC,
-    futures::{StreamExt, stream},
+    futures::{FutureExt, StreamExt, stream},
     moka::sync::Cache,
+    request_sharing::{BoxRequestSharing, RequestSharing},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
@@ -68,11 +69,18 @@ fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
     Cache::builder().max_capacity(MAX_CACHE_SIZE).build()
 }
 
+/// A price source answered 429. The token stays uncached, so the next lookup
+/// asks again instead of serving it as unpriced.
+#[derive(Debug, thiserror::Error)]
+#[error("rate limited by the price source")]
+pub struct RateLimited;
+
 /// Native price lookups for auction tokens, cached per token. The configured
 /// estimators are asked in order: a token the first one does not price is
 /// asked from the next. A background task keeps the tokens of the latest
 /// lookup fresh, so a cut normally reads the cache instead of waiting on a
 /// source. Without sources every token prices at the native denominator.
+#[derive(Clone)]
 pub enum NativePrices {
     /// No sources configured: every token prices at the native denominator
     /// and nothing is fetched.
@@ -93,6 +101,9 @@ pub struct Inner {
     mints: Cache<Pubkey, (Instant, MintInfo)>,
     /// The tokens of the latest lookup, the set the refresher keeps fresh.
     maintained: Mutex<HashSet<Pubkey>>,
+    /// Single-token lookups in flight, so a burst of quotes on one uncached
+    /// token spends one source request instead of one each.
+    single_lookups: BoxRequestSharing<Pubkey, Result<Option<u64>, Arc<anyhow::Error>>>,
 }
 
 /// What pricing reads from a mint account.
@@ -196,6 +207,7 @@ impl NativePrices {
             prices: bounded(),
             mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
+            single_lookups: RequestSharing::labelled("native_price".to_owned()),
         });
         let refresher = Arc::clone(&inner);
         tokio::spawn(async move {
@@ -222,17 +234,46 @@ impl NativePrices {
                 .into_iter()
                 .map(|token| (token, Solana::NATIVE_PRICE_DENOMINATOR))
                 .collect()),
-            Self::Configured(inner) => inner.prices(tokens).await,
+            Self::Configured(inner) => {
+                inner.maintain(&tokens);
+                inner.lookup(tokens).await
+            }
         }
     }
 
-    /// A lookup pre-seeded for tests: the given prices never expire, nothing
-    /// is fetched, and no refresher runs.
+    /// The price of one token, see [`Self::prices`]. `None` for a token no
+    /// estimator prices. Concurrent lookups of one token share one fetch, and
+    /// the refresher keeps maintaining the latest cut's tokens, not this one.
+    pub async fn price(&self, token: Pubkey) -> Result<Option<u64>, Arc<anyhow::Error>> {
+        match self {
+            Self::Denominated => Ok(Some(Solana::NATIVE_PRICE_DENOMINATOR)),
+            Self::Configured(inner) => {
+                let fetcher = Arc::clone(inner);
+                inner
+                    .single_lookups
+                    .shared_or_else(token, move |&token| {
+                        async move {
+                            fetcher
+                                .lookup(HashSet::from([token]))
+                                .await
+                                .map(|mut prices| prices.remove(&token))
+                                .map_err(Arc::new)
+                        }
+                        .boxed()
+                    })
+                    .await
+            }
+        }
+    }
+
+    /// A lookup pre-seeded for tests: the given verdicts never expire, nothing
+    /// is fetched, and no refresher runs. `None` seeds a token no estimator
+    /// prices.
     #[cfg(test)]
-    pub(crate) fn seeded(entries: impl IntoIterator<Item = (Pubkey, u64)>) -> Self {
+    pub(crate) fn seeded(entries: impl IntoIterator<Item = (Pubkey, Option<u64>)>) -> Self {
         let prices = bounded();
         for (token, price) in entries {
-            prices.insert(token, (Instant::now(), Some(price)));
+            prices.insert(token, (Instant::now(), price));
         }
         Self::Configured(Arc::new(Inner {
             sources: Vec::new(),
@@ -242,6 +283,7 @@ impl NativePrices {
             prices,
             mints: bounded(),
             maintained: Mutex::new(HashSet::new()),
+            single_lookups: RequestSharing::labelled("native_price".to_owned()),
         }))
     }
 }
@@ -279,7 +321,16 @@ impl Inner {
         }
     }
 
-    async fn prices(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
+    fn maintain(&self, tokens: &HashSet<Pubkey>) {
+        let mut maintained = self.maintained.lock().expect("maintained set poisoned");
+        *maintained = tokens
+            .iter()
+            .filter(|token| !self.is_sol(token))
+            .copied()
+            .collect();
+    }
+
+    async fn lookup(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
         let now = Instant::now();
@@ -296,14 +347,6 @@ impl Inner {
                 }
                 _ => fetch.push(*token),
             }
-        }
-        {
-            // The refresher maintains what the latest lookup asked for.
-            let mut maintained = self.maintained.lock().expect("maintained set poisoned");
-            *maintained = tokens
-                .into_iter()
-                .filter(|token| !self.is_sol(token))
-                .collect();
         }
         if fetch.is_empty() {
             return Ok(result);
@@ -337,6 +380,7 @@ impl Inner {
         }
 
         let mut failures = 0;
+        let mut rate_limited = false;
         for source in &self.sources {
             if remaining.is_empty() {
                 break;
@@ -353,11 +397,15 @@ impl Inner {
                 }
                 Err(err) => {
                     failures += 1;
+                    rate_limited |= err.is::<RateLimited>();
                     tracing::warn!(source = source.name(), ?err, "price source failed");
                 }
             }
         }
         if failures == self.sources.len() && !self.sources.is_empty() {
+            if rate_limited {
+                return Err(RateLimited.into());
+            }
             return Err(anyhow!("every native price source failed"));
         }
         // Tokens no source priced are cached negatively so they are not
@@ -498,6 +546,9 @@ async fn coingecko(
         }
         let response = request.send().await.context("price request")?;
         let status = response.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(RateLimited.into());
+        }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             return Err(anyhow!("price request answered {status}: {body}"));
@@ -924,11 +975,54 @@ mod tests {
         assert_eq!(result.get(&listed), Some(&5_000_000_000));
     }
 
+    /// A quote for one token must not shrink the refresher's maintained set
+    /// to it.
+    #[tokio::test]
+    async fn single_lookups_leave_the_maintained_set_alone() {
+        let [cut_a, cut_b, quoted, unpriced] = std::array::from_fn(|_| Pubkey::new_unique());
+        let NativePrices::Configured(inner) = NativePrices::seeded([
+            (cut_a, Some(1)),
+            (cut_b, Some(2)),
+            (quoted, Some(3)),
+            (unpriced, None),
+        ]) else {
+            unreachable!("seeded lookups are configured");
+        };
+        let prices = NativePrices::Configured(Arc::clone(&inner));
+        prices.prices(HashSet::from([cut_a, cut_b])).await.unwrap();
+
+        assert_eq!(prices.price(quoted).await.unwrap(), Some(3));
+        assert_eq!(prices.price(unpriced).await.unwrap(), None);
+        assert_eq!(
+            *inner.maintained.lock().unwrap(),
+            HashSet::from([cut_a, cut_b])
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_single_lookups_share_a_fetch() {
+        let token = Pubkey::new_unique();
+        let (endpoint, requests) = coingecko_server(serde_json::json!({
+            token.to_string(): { "sol": 0.005 },
+        }))
+        .await;
+        let prices = NativePrices::new(
+            &coingecko_config(endpoint),
+            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+
+        let (first, second) = futures::join!(prices.price(token), prices.price(token));
+        assert_eq!(first.unwrap(), Some(5_000_000_000));
+        assert_eq!(second.unwrap(), Some(5_000_000_000));
+        assert_eq!(requests.load(Ordering::Relaxed), 1);
+    }
+
     /// The price cache evicts down to its cap, so a long-running autopilot
     /// cannot grow it with every mint it ever saw.
     #[tokio::test]
     async fn price_cache_stays_bounded() {
-        let entries = (0..=MAX_CACHE_SIZE).map(|_| (Pubkey::new_unique(), 1));
+        let entries = (0..=MAX_CACHE_SIZE).map(|_| (Pubkey::new_unique(), Some(1)));
         let NativePrices::Configured(inner) = NativePrices::seeded(entries) else {
             unreachable!("seeded lookups are configured");
         };
