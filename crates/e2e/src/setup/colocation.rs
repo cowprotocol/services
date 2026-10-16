@@ -129,7 +129,7 @@ pub fn start_driver(
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
 ) -> JoinHandle<()> {
-    start_driver_with_config_override(contracts, solvers, liquidity, None)
+    start_driver_with_config_override(contracts, solvers, liquidity, None, None)
 }
 
 pub fn start_driver_with_config_override(
@@ -137,7 +137,11 @@ pub fn start_driver_with_config_override(
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
     config_override: Option<&str>,
+    absolute_slippage: Option<u128>,
 ) -> JoinHandle<()> {
+    let absolute_slippage_line = absolute_slippage
+        .map(|wei| format!("absolute-slippage = \"{wei}\"\n"))
+        .unwrap_or_default();
     let base_tokens: HashSet<_> = solvers
         .iter()
         .flat_map(|solver| solver.base_tokens.iter())
@@ -171,7 +175,7 @@ pub fn start_driver_with_config_override(
 name = "{name}"
 endpoint = "{endpoint}"
 relative-slippage = "0.1"
-account = "{account}"
+{absolute_slippage_line}account = "{account}"
 merge-solutions = {merge_solutions}
 fast-path-enabled = true
 enable-metrics-bad-order-detection = true

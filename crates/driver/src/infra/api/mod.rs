@@ -63,6 +63,11 @@ impl Api {
             self.balance_cache.refresh_cooldown,
         );
 
+        // Shared native-price cache, written once per auction in the
+        // pre-processing step and read back when re-encoding fast-path
+        // solutions to bound absolute slippage.
+        let native_price_cache = domain::competition::NativePriceCache::new();
+
         let tokens = tokens::Fetcher::new(&self.eth);
         let fetcher = Arc::new(domain::competition::DataAggregator::new(
             self.eth.clone(),
@@ -70,6 +75,7 @@ impl Api {
             self.liquidity.clone(),
             tokens.clone(),
             balance_fetcher,
+            native_price_cache.clone(),
         ));
 
         let order_sorting_strategies =
@@ -132,6 +138,7 @@ impl Api {
                     fetcher.clone(),
                     order_sorting_strategies.clone(),
                     quote_cache.clone(),
+                    native_price_cache.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
