@@ -353,8 +353,8 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     true => mempool::RevertProtection::Disabled,
                     false => mempool::RevertProtection::Enabled,
                 },
-                max_additional_tip: mempool.max_additional_tip,
-                additional_tip_percentage: mempool.additional_tip_percentage,
+                max_additional_tip: config.submission.max_additional_tip,
+                additional_tip_percentage: config.submission.additional_tip_percentage,
             })
             .collect(),
         simulator: config.simulator,
