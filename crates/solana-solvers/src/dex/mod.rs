@@ -39,15 +39,12 @@ pub enum Side {
 }
 
 /// A quoted swap: the executed amounts plus the instructions that perform it,
-/// in execution order (setup, swap, cleanup). The address lookup tables travel
-/// alongside so the driver can build the v0 transaction the instructions
-/// assume.
+/// in execution order (setup, swap, cleanup).
 #[derive(Debug, Clone)]
 pub struct Swap {
     pub in_amount: u64,
     pub out_amount: u64,
     pub instructions: Vec<Instruction>,
-    pub address_lookup_tables: Vec<Pubkey>,
 }
 
 impl Swap {
@@ -108,7 +105,6 @@ mod tests {
             in_amount,
             out_amount,
             instructions: vec![],
-            address_lookup_tables: vec![],
         }
     }
 

@@ -29,10 +29,6 @@ pub struct Solution {
     /// Optional solver estimate of total settlement compute units.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cu_estimate: Option<u32>,
-    /// The address lookup tables the interactions assume, carried through so
-    /// the driver can build the v0 transaction around them.
-    #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]
-    pub address_lookup_tables: Vec<Pubkey>,
 }
 
 /// A fulfillment of one auction order.
@@ -84,9 +80,7 @@ pub enum Error {
 impl Solution {
     /// Wraps one quoted swap into a single-order solution.
     ///
-    /// The swap's instructions are carried verbatim as interactions, and
-    /// its address lookup tables travel along so the driver can build the
-    /// v0 transaction the instructions assume.
+    /// The swap's instructions are carried verbatim as interactions.
     pub fn new(
         id: u64,
         order_uid: OrderUid,
@@ -119,7 +113,6 @@ impl Solution {
                 .map(Instruction::from_sdk)
                 .collect(),
             cu_estimate: None,
-            address_lookup_tables: swap.address_lookup_tables,
         })
     }
 }
@@ -180,7 +173,6 @@ mod tests {
                 }],
                 data: vec![0xde, 0xad],
             }],
-            address_lookup_tables: vec![pubkey(7)],
         }
     }
 
@@ -196,7 +188,6 @@ mod tests {
         // Sell mint prices at the amount bought, buy mint at the amount sold.
         assert_eq!(solution.prices[&order.sell_mint], 2_000);
         assert_eq!(solution.prices[&order.buy_mint], 1_000);
-        assert_eq!(solution.address_lookup_tables, vec![pubkey(7)]);
 
         // The instruction is carried verbatim, flags included.
         let interaction = &solution.interactions[0];
@@ -259,7 +250,6 @@ mod tests {
                     }],
                     "instructionData": BASE64_STANDARD.encode([0xde, 0xad]),
                 }],
-                "addressLookupTables": [pubkey(7).to_string()],
             })
         );
     }
