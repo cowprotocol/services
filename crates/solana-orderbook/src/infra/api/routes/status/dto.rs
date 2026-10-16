@@ -1,6 +1,8 @@
 //! Wire shape of the order status endpoint.
 
 use {
+    crate::infra::db::SolutionRow,
+    bigdecimal::BigDecimal,
     database::solana::OrderEventLabel,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
@@ -8,9 +10,6 @@ use {
 };
 
 /// Auction progress of an order.
-///
-/// TODO: the `value` payloads stay empty until the autopilot persists
-/// competition results.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", content = "value")]
 pub enum Status {
@@ -57,11 +56,25 @@ pub struct SolutionInclusion {
 #[serde(rename_all = "camelCase")]
 pub struct ExecutedAmounts {
     #[serde_as(as = "DisplayFromStr")]
-    pub sell: u64,
+    pub sell: BigDecimal,
     #[serde_as(as = "DisplayFromStr")]
-    pub buy: u64,
+    pub buy: BigDecimal,
 }
 
+impl From<SolutionRow> for SolutionInclusion {
+    fn from(row: SolutionRow) -> Self {
+        Self {
+            solver: Pubkey::new_from_array(row.solver.0),
+            executed_amounts: row
+                .executed_sell
+                .zip(row.executed_buy)
+                .map(|(sell, buy)| ExecutedAmounts { sell, buy }),
+        }
+    }
+}
+
+/// The status the latest auction event implies. Solution-carrying statuses
+/// start empty.
 impl From<OrderEventLabel> for Status {
     fn from(label: OrderEventLabel) -> Self {
         match label {
@@ -97,7 +110,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(Status::Solved(vec![SolutionInclusion {
                 solver: Pubkey::new_from_array([0x22; 32]),
-                executed_amounts: Some(ExecutedAmounts { sell: 5, buy: 3 }),
+                executed_amounts: Some(ExecutedAmounts {
+                    sell: BigDecimal::from(5),
+                    buy: BigDecimal::from(3),
+                }),
             }]))
             .unwrap(),
             serde_json::json!({"type": "solved", "value": [{

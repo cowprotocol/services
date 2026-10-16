@@ -20,13 +20,24 @@ pub async fn order_status(
         tracing::error!(?err, "order status lookup failed");
         error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
     };
+    // Awaited only by the statuses that report solutions.
+    let solutions = async {
+        db::find_order_solutions(state.pool(), uid)
+            .await
+            .map(|rows| {
+                rows.into_iter()
+                    .map(dto::SolutionInclusion::from)
+                    .collect::<Vec<_>>()
+            })
+            .map_err(internal)
+    };
     // A trade outranks the event log so an executed order stays traded even
     // when a later event said otherwise.
     if db::order_has_trade(state.pool(), uid)
         .await
         .map_err(internal)?
     {
-        return Ok(Json(dto::Status::Traded(Vec::new())));
+        return Ok(Json(dto::Status::Traded(solutions.await?)));
     }
     let row = db::find_order_by_uid(state.pool(), uid)
         .await
@@ -46,7 +57,13 @@ pub async fn order_status(
         .await
         .map_err(internal)?
     {
-        return Ok(Json(dto::Status::from(label)));
+        let status = match dto::Status::from(label) {
+            dto::Status::Solved(_) => dto::Status::Solved(solutions.await?),
+            dto::Status::Executing(_) => dto::Status::Executing(solutions.await?),
+            dto::Status::Traded(_) => dto::Status::Traded(solutions.await?),
+            status => status,
+        };
+        return Ok(Json(status));
     }
     // Orders are created on-chain, an indexed order can predate its first
     // auction event.

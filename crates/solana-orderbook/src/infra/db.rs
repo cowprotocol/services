@@ -299,6 +299,49 @@ LIMIT 1
         .context("read solana.order_events")
 }
 
+/// One proposed solution of the competition an order's status reports, with
+/// the amounts it executes for the order when it includes the order.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct SolutionRow {
+    pub solver: ByteArray<32>,
+    pub executed_sell: Option<BigDecimal>,
+    pub executed_buy: Option<BigDecimal>,
+}
+
+/// The proposed solutions of the auction that settled the order's first
+/// trade, or of the latest auction in which a solution executed the order.
+/// Winners first, then by score. Empty when no competition knows the order.
+pub async fn find_order_solutions(
+    ex: impl PgExecutor<'_>,
+    uid: [u8; 32],
+) -> Result<Vec<SolutionRow>> {
+    const QUERY: &str = r#"
+WITH auction AS (
+    SELECT COALESCE(
+        (SELECT s.auction_id
+         FROM solana.trades t
+         JOIN solana.settlements s
+           ON s.tx_signature = t.tx_signature AND s.instruction_index = t.instruction_index
+         WHERE t.order_uid = $1
+         ORDER BY t.slot, t.instruction_index
+         LIMIT 1),
+        (SELECT max(auction_id) FROM solana.proposed_trade_executions WHERE order_uid = $1)
+    ) AS id
+)
+SELECT ps.solver, pte.executed_sell, pte.executed_buy
+FROM auction
+JOIN solana.proposed_solutions ps ON ps.auction_id = auction.id
+LEFT JOIN solana.proposed_trade_executions pte
+  ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid AND pte.order_uid = $1
+ORDER BY ps.is_winner DESC, ps.score DESC, ps.uid
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(uid))
+        .fetch_all(ex)
+        .await
+        .context("read solana.proposed_solutions by order")
+}
+
 /// A quote as the quote endpoint hands it out.
 #[derive(Clone, Debug)]
 pub struct Quote {
@@ -663,6 +706,112 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         assert_eq!(second[0].slot, Some(42));
         assert!(
             get_trades(&pool, Some(uid), None, 2, 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    /// The first trade's settlement picks the auction, else the latest
+    /// auction a solution executed the order in. Winners come first, a
+    /// solution without the order carries no amounts.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_order_solutions() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query(
+            "TRUNCATE solana.competition_auctions, solana.proposed_solutions, \
+             solana.proposed_trade_executions",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        for auction in [1i64, 2] {
+            sqlx::query(
+                "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, \
+                 order_uids, price_tokens, price_values) VALUES ($1, 1, 100, '{}', '{}', '{}')",
+            )
+            .bind(auction)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        // (auction, solution uid, solver, winner, score, executes the order)
+        for (auction, solution, solver, winner, score, executes) in [
+            (1i64, 0i64, 0xA1u8, true, 9i64, true),
+            (2, 0, 0xB1, false, 5, true),
+            (2, 1, 0xB2, true, 7, false),
+            (2, 2, 0xB3, true, 8, true),
+        ] {
+            sqlx::query(
+                "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+                 filtered_out, score) VALUES ($1, $2, $2, $3, $4, false, $5)",
+            )
+            .bind(auction)
+            .bind(solution)
+            .bind(ByteArray([solver; 32]))
+            .bind(winner)
+            .bind(score)
+            .execute(&pool)
+            .await
+            .unwrap();
+            if executes {
+                sqlx::query(
+                    "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, \
+                     order_uid, executed_sell, executed_buy) VALUES ($1, $2, $3, $4, $5)",
+                )
+                .bind(auction)
+                .bind(solution)
+                .bind(ByteArray(uid))
+                .bind(BigDecimal::from(score * 10))
+                .bind(BigDecimal::from(score * 20))
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        }
+        let view = |rows: Vec<SolutionRow>| {
+            rows.into_iter()
+                .map(|row| (row.solver.0[0], row.executed_buy.map(|buy| buy.to_string())))
+                .collect::<Vec<_>>()
+        };
+
+        let latest = find_order_solutions(&pool, uid).await.unwrap();
+        assert_eq!(
+            view(latest),
+            [
+                (0xB3, Some("160".to_owned())),
+                (0xB2, None),
+                (0xB1, Some("100".to_owned())),
+            ]
+        );
+
+        // A trade pins the auction that settled it.
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+             auction_id) VALUES (42, $1, 1, $2, 1)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray([0xA1; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
+             buy_amount, fee_amount, slot) VALUES ($1, 1, $2, 400, 200, 0, 42)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray(uid))
+        .execute(&pool)
+        .await
+        .unwrap();
+        let settled = find_order_solutions(&pool, uid).await.unwrap();
+        assert_eq!(view(settled), [(0xA1, Some("180".to_owned()))]);
+
+        assert!(
+            find_order_solutions(&pool, [0x99; 32])
                 .await
                 .unwrap()
                 .is_empty()
