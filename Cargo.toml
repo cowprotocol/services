@@ -131,8 +131,8 @@ solana-address-lookup-table-interface = "3"
 solana-client = "4"
 solana-commitment-config = "3"
 solana-compute-budget-interface = "3"
-solana-fee-structure = "3"
 solana-driver = { path = "crates/solana-driver" }
+solana-fee-structure = "3"
 solana-indexer = { path = "crates/solana-indexer" }
 solana-rpc-client = "4"
 solana-rpc-client-api = "4"
