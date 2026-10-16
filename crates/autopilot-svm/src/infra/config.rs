@@ -84,13 +84,20 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct NativePrices {
-    /// Price sources. The CoinGecko ones are asked first, then the driver
-    /// ones together for the tokens they did not price. Empty, the autopilot
-    /// prices every token at the native denominator, so scores compare raw
-    /// surplus. Pricing through a third party stays a deployment decision,
-    /// there is no default source.
+    /// Price sources by stage. A lookup asks a stage's sources at once, adds
+    /// the next stage while fewer sources are in flight than prices are
+    /// missing, and asks later stages only for the tokens still short of
+    /// `results_required` prices. Empty, the autopilot prices every token at
+    /// the native denominator, so scores compare raw surplus. Pricing
+    /// through a third party stays a deployment decision, there is no
+    /// default source.
     #[serde(default)]
-    pub estimators: Vec<NativePriceEstimator>,
+    pub estimators: Vec<Vec<NativePriceEstimator>>,
+    /// Prices a token needs before its lookup stops asking: the sources
+    /// still in flight are dropped and the later stages skipped. The best of
+    /// them wins.
+    #[serde(default = "default_results_required")]
+    pub results_required: NonZero<usize>,
     /// How long a fetched price serves auctions before it is refetched.
     #[serde(with = "humantime_serde", default = "default_prices_ttl")]
     pub ttl: Duration,
@@ -104,6 +111,10 @@ pub struct NativePrices {
 /// The default amount of wSOL used in native price requests.
 const fn default_driver_probe_lamports() -> u64 {
     10_000_000
+}
+
+const fn default_results_required() -> NonZero<usize> {
+    NonZero::new(2).expect("two is not zero")
 }
 
 /// One native price source.
@@ -291,11 +302,18 @@ mod tests {
         assert_eq!(config.max_indexer_lag_slots, 150);
         assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
         assert_eq!(config.native_prices.driver_probe_lamports, 10_000_000);
+        assert_eq!(config.native_prices.results_required.get(), 2);
+        let stages: Vec<&[NativePriceEstimator]> = config
+            .native_prices
+            .estimators
+            .iter()
+            .map(Vec::as_slice)
+            .collect();
         assert!(matches!(
-            &config.native_prices.estimators[..],
+            &stages[..],
             [
-                NativePriceEstimator::CoinGecko { endpoint, api_key },
-                NativePriceEstimator::Driver { name, .. },
+                [NativePriceEstimator::CoinGecko { endpoint, api_key }],
+                [NativePriceEstimator::Driver { name, .. }],
             ] if endpoint.as_str() == "https://api.coingecko.com/api/v3/simple/token_price"
                 && api_key.is_empty()
                 && name == "baseline"
@@ -312,30 +330,33 @@ mod tests {
         unsafe { std::env::set_var(var, "secret") };
         let prices: NativePrices = toml::de::from_str(&format!(
             r#"
-            [[estimators]]
-            type = "coin-gecko"
-            endpoint = "https://api.coingecko.com/api/v3/"
-            api-key = "%{var}"
+            estimators = [[
+                {{ type = "coin-gecko", endpoint = "https://api.coingecko.com/api/v3/", api-key = "%{var}" }},
+            ]]
             "#
         ))
         .unwrap();
         unsafe { std::env::remove_var(var) };
         assert!(matches!(
-            &prices.estimators[..],
+            &prices.estimators[0][..],
             [NativePriceEstimator::CoinGecko { api_key, .. }] if api_key == "secret"
         ));
     }
 
     #[test]
     fn coin_gecko_api_key_missing_from_the_environment_fails_the_load() {
-        let prices = toml::de::from_str::<NativePrices>(
+        let err = toml::de::from_str::<NativePrices>(
             r#"
-            [[estimators]]
-            type = "coin-gecko"
-            endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
-            api-key = "%TEST_SVM_COIN_GECKO_API_KEY_UNSET"
+            estimators = [[
+                { type = "coin-gecko", endpoint = "https://api.coingecko.com/api/v3/", api-key = "%TEST_SVM_COIN_GECKO_API_KEY_UNSET" },
+            ]]
             "#,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("TEST_SVM_COIN_GECKO_API_KEY_UNSET"),
+            "{err}"
         );
-        assert!(prices.is_err());
     }
 }

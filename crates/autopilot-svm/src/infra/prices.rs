@@ -8,7 +8,10 @@ use {
         solana::{NATIVE_SOL, Solana},
     },
     cow_solana_rpc::SolanaRPC,
-    futures::{StreamExt, future, stream},
+    futures::{
+        StreamExt,
+        stream::{self, FuturesUnordered},
+    },
     moka::sync::Cache,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -68,9 +71,9 @@ fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
     Cache::builder().max_capacity(MAX_CACHE_SIZE).build()
 }
 
-/// Native price lookups for auction tokens, cached per token. The CoinGecko
-/// sources are asked first, then the driver sources together for the tokens
-/// they did not price. A background task keeps the tokens of the latest
+/// Native price lookups for auction tokens, cached per token. The sources
+/// are asked by stage until a token has the required number of prices, and
+/// the best of them wins. A background task keeps the tokens of the latest
 /// lookup fresh, so a cut normally reads the cache instead of waiting on a
 /// source. Without sources every token prices at the native denominator.
 pub enum NativePrices {
@@ -81,7 +84,9 @@ pub enum NativePrices {
 }
 
 pub struct Inner {
-    sources: Vec<Source>,
+    stages: Vec<Vec<Source>>,
+    /// Prices a token needs before its lookup stops asking.
+    results_required: usize,
     rpc: SolanaRPC,
     wrapped_native: Pubkey,
     ttl: Duration,
@@ -159,7 +164,7 @@ impl NativePrices {
     /// runtime. Without configured sources the lookup prices every token at
     /// the denominator instead.
     pub fn new(config: &config::NativePrices, rpc: SolanaRPC, wrapped_native: Pubkey) -> Self {
-        if config.estimators.is_empty() {
+        if config.estimators.iter().all(Vec::is_empty) {
             tracing::warn!(
                 "no native price sources configured, pricing every token at the denominator"
             );
@@ -169,27 +174,28 @@ impl NativePrices {
             .timeout(SOURCE_TIMEOUT)
             .build()
             .expect("reqwest client");
-        let sources = config
+        let source = |estimator: &config::NativePriceEstimator| match estimator {
+            config::NativePriceEstimator::CoinGecko { endpoint, api_key } => Source::CoinGecko {
+                client: client.clone(),
+                endpoint: endpoint.clone(),
+                api_key: Some(api_key.clone()).filter(|key| !key.is_empty()),
+            },
+            config::NativePriceEstimator::Driver { name, url } => Source::Driver {
+                client: client.clone(),
+                name: name.clone(),
+                endpoint: url.clone(),
+                probe_amount: config.driver_probe_lamports,
+            },
+        };
+        let stages = config
             .estimators
             .iter()
-            .map(|estimator| match estimator {
-                config::NativePriceEstimator::CoinGecko { endpoint, api_key } => {
-                    Source::CoinGecko {
-                        client: client.clone(),
-                        endpoint: endpoint.clone(),
-                        api_key: Some(api_key.clone()).filter(|key| !key.is_empty()),
-                    }
-                }
-                config::NativePriceEstimator::Driver { name, url } => Source::Driver {
-                    client: client.clone(),
-                    name: name.clone(),
-                    endpoint: url.clone(),
-                    probe_amount: config.driver_probe_lamports,
-                },
-            })
+            .filter(|stage| !stage.is_empty())
+            .map(|stage| stage.iter().map(source).collect())
             .collect();
         let inner = Arc::new(Inner {
-            sources,
+            stages,
+            results_required: config.results_required.get(),
             rpc,
             wrapped_native,
             ttl: config.ttl,
@@ -235,7 +241,8 @@ impl NativePrices {
             prices.insert(token, (Instant::now(), Some(price)));
         }
         Self::Configured(Arc::new(Inner {
-            sources: Vec::new(),
+            stages: Vec::new(),
+            results_required: 1,
             rpc: SolanaRPC::new_mock_with_mocks(Default::default()),
             wrapped_native: Pubkey::default(),
             ttl: Duration::from_secs(u64::MAX),
@@ -318,45 +325,68 @@ impl Inner {
         Ok(result)
     }
 
-    /// Ask the sources stage by stage for the tokens none of the earlier
-    /// stages priced, and cache every verdict.
+    /// Ask the stages in turn for the tokens still short of the required
+    /// prices, and cache every verdict.
     async fn fetch_into_cache(&self, tokens: &[Pubkey]) -> Result<()> {
         let now = Instant::now();
         let mints = self.mints(tokens, now).await?;
         // A token whose mint did not resolve cannot be scaled, so it counts
         // as unpriced until its entry expires.
-        let (mut remaining, unpriceable): (Vec<_>, Vec<_>) = tokens
+        let (priceable, unpriceable): (Vec<_>, Vec<_>) = tokens
             .iter()
             .copied()
             .partition(|token| mints.contains_key(token));
         for token in unpriceable {
             self.prices.insert(token, (now, None));
         }
-        if remaining.is_empty() {
+        if priceable.is_empty() {
             return Ok(());
         }
 
+        // The best price of each token and how many sources priced it.
+        let mut found: HashMap<Pubkey, (u64, usize)> = HashMap::new();
+        let priced = |found: &HashMap<Pubkey, (u64, usize)>, token: &Pubkey| {
+            found.get(token).map_or(0, |(_, count)| *count)
+        };
+        let enough = |found: &HashMap<Pubkey, (u64, usize)>, token: &Pubkey| {
+            priced(found, token) >= self.results_required
+        };
         let mut failures = 0;
-        for stage in self.stages() {
-            if remaining.is_empty() {
+        let mut next_stage = 0;
+        while next_stage < self.stages.len() {
+            let asked: Vec<Pubkey> = priceable
+                .iter()
+                .filter(|token| !enough(&found, token))
+                .copied()
+                .collect();
+            if asked.is_empty() {
                 break;
             }
-            let answers = future::join_all(
-                stage
-                    .iter()
-                    .map(|source| source.fetch(&remaining, &mints, self.wrapped_native)),
-            )
-            .await;
-            let mut priced: HashMap<Pubkey, u64> = HashMap::new();
-            for (source, answer) in stage.iter().zip(answers) {
+            let missing = asked
+                .iter()
+                .map(|token| self.results_required - priced(&found, token))
+                .max()
+                .unwrap_or(0);
+            // Stages are added while fewer sources are in flight than prices
+            // are missing.
+            let (asked, mints) = (&asked, &mints);
+            let mut answers = FuturesUnordered::new();
+            while next_stage < self.stages.len() && answers.len() < missing {
+                answers.extend(self.stages[next_stage].iter().map(|source| async move {
+                    let answer = source.fetch(asked, mints, self.wrapped_native).await;
+                    (source, answer)
+                }));
+                next_stage += 1;
+            }
+            while let Some((source, answer)) = answers.next().await {
                 match answer {
                     Ok(prices) => {
                         for (token, price) in prices {
-                            // Several drivers can route one token. The best
-                            // route sells the probe into the most atoms, so
-                            // the lowest price wins.
-                            let best = priced.entry(token).or_insert(price);
+                            // The best route sells the probe into the most
+                            // atoms, so the lowest price wins.
+                            let (best, count) = found.entry(token).or_insert((price, 0));
                             *best = (*best).min(price);
+                            *count += 1;
                         }
                     }
                     Err(err) => {
@@ -364,44 +394,27 @@ impl Inner {
                         tracing::warn!(source = source.name(), ?err, "price source failed");
                     }
                 }
-            }
-            remaining.retain(|token| match priced.get(token) {
-                Some(price) => {
-                    self.prices.insert(*token, (now, Some(*price)));
-                    false
+                // Dropping the sources still in flight cancels their requests.
+                if asked.iter().all(|token| enough(&found, token)) {
+                    break;
                 }
-                None => true,
-            });
+            }
         }
-        if failures == self.sources.len() && !self.sources.is_empty() {
+        if failures > 0 && failures == self.stages.iter().map(Vec::len).sum::<usize>() {
             return Err(anyhow!("every native price source failed"));
         }
-        // Tokens no source priced are cached negatively so they are not
-        // refetched every cut, but only when every source answered: a failed
-        // source might know them, so its cycle retries instead.
-        if failures == 0 {
-            for token in remaining {
-                self.prices.insert(token, (now, None));
+        for token in priceable {
+            match found.get(&token) {
+                Some((price, _)) => self.prices.insert(token, (now, Some(*price))),
+                // Tokens no source priced are cached negatively so they are
+                // not refetched every cut, but only when every source
+                // answered: a failed source might know them, so its cycle
+                // retries instead.
+                None if failures == 0 => self.prices.insert(token, (now, None)),
+                None => {}
             }
         }
         Ok(())
-    }
-
-    /// The sources in asking order: each CoinGecko source alone, then every
-    /// driver source together. A listed token costs CoinGecko one batched
-    /// request, and a token one solver routes should not wait on the other
-    /// solvers' probes.
-    fn stages(&self) -> Vec<Vec<&Source>> {
-        let (listings, probes): (Vec<_>, Vec<_>) = self
-            .sources
-            .iter()
-            .partition(|source| matches!(source, Source::CoinGecko { .. }));
-        let mut stages: Vec<Vec<&Source>> =
-            listings.into_iter().map(|source| vec![source]).collect();
-        if !probes.is_empty() {
-            stages.push(probes);
-        }
-        stages
     }
 
     /// The [`MintInfo`] per mint, from the cache or the mint accounts on
@@ -668,18 +681,40 @@ mod tests {
             ExtensionType,
             mint_close_authority::MintCloseAuthority,
         },
-        std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
+        std::{
+            num::NonZero,
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            },
         },
     };
 
     fn coingecko_config(endpoint: Url) -> config::NativePrices {
+        native_prices(vec![vec![coingecko(endpoint)]], 2)
+    }
+
+    fn coingecko(endpoint: Url) -> config::NativePriceEstimator {
+        config::NativePriceEstimator::CoinGecko {
+            endpoint,
+            api_key: String::new(),
+        }
+    }
+
+    fn driver(name: &str, url: Url) -> config::NativePriceEstimator {
+        config::NativePriceEstimator::Driver {
+            name: name.to_owned(),
+            url,
+        }
+    }
+
+    fn native_prices(
+        stages: Vec<Vec<config::NativePriceEstimator>>,
+        results_required: usize,
+    ) -> config::NativePrices {
         config::NativePrices {
-            estimators: vec![config::NativePriceEstimator::CoinGecko {
-                endpoint,
-                api_key: String::new(),
-            }],
+            estimators: stages,
+            results_required: NonZero::new(results_required).unwrap(),
             ttl: Duration::from_secs(60),
             driver_probe_lamports: PROBE_LAMPORTS,
         }
@@ -795,11 +830,7 @@ mod tests {
     async fn prices_at_the_denominator_without_sources() {
         let token = Pubkey::new_unique();
         let prices = NativePrices::new(
-            &config::NativePrices {
-                estimators: Vec::new(),
-                ttl: Duration::from_secs(60),
-                driver_probe_lamports: PROBE_LAMPORTS,
-            },
+            &native_prices(Vec::new(), 2),
             SolanaRPC::new_mock_with_mocks(Mocks::default()),
             Pubkey::new_unique(),
         );
@@ -936,12 +967,8 @@ mod tests {
         .await;
         let prices = NativePrices::new(
             &config::NativePrices {
-                estimators: vec![config::NativePriceEstimator::CoinGecko {
-                    endpoint,
-                    api_key: String::new(),
-                }],
                 ttl: Duration::from_millis(600),
-                driver_probe_lamports: PROBE_LAMPORTS,
+                ..coingecko_config(endpoint)
             },
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
@@ -980,26 +1007,18 @@ mod tests {
     #[tokio::test]
     async fn falls_back_to_the_driver_source() {
         let token = Pubkey::new_unique();
-        let (coingecko, _) = coingecko_server(serde_json::json!({})).await;
+        let (coingecko_url, _) = coingecko_server(serde_json::json!({})).await;
         // The 0.1 SOL probe sells into 20 whole 6-decimals tokens, so one
         // token is worth 0.005 SOL.
-        let driver = driver_server(20_000_000).await;
-        let config = config::NativePrices {
-            estimators: vec![
-                config::NativePriceEstimator::CoinGecko {
-                    endpoint: coingecko,
-                    api_key: String::new(),
-                },
-                config::NativePriceEstimator::Driver {
-                    name: "baseline".to_owned(),
-                    url: driver,
-                },
-            ],
-            ttl: Duration::from_secs(60),
-            driver_probe_lamports: PROBE_LAMPORTS,
-        };
+        let baseline = driver_server(20_000_000).await;
         let prices = NativePrices::new(
-            &config,
+            &native_prices(
+                vec![
+                    vec![coingecko(coingecko_url)],
+                    vec![driver("baseline", baseline)],
+                ],
+                2,
+            ),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
@@ -1008,36 +1027,24 @@ mod tests {
         assert_eq!(result.get(&token), Some(&5_000_000_000));
     }
 
-    /// The driver sources are asked together, so a lookup takes one probe's
+    /// A stage's sources are asked together, so a lookup takes one probe's
     /// time rather than their sum, and the probe selling into the most atoms
     /// sets the price.
     #[tokio::test]
-    async fn driver_probes_run_together_and_the_best_route_wins() {
+    async fn a_stage_runs_at_once_and_the_best_route_wins() {
         let token = Pubkey::new_unique();
-        let (coingecko, _) = coingecko_server(serde_json::json!({})).await;
+        let (coingecko_url, _) = coingecko_server(serde_json::json!({})).await;
         let delay = Duration::from_millis(500);
         let worse = driver_server_delayed(10_000_000, delay).await;
         let better = driver_server_delayed(20_000_000, delay).await;
-        let config = config::NativePrices {
-            estimators: vec![
-                config::NativePriceEstimator::CoinGecko {
-                    endpoint: coingecko,
-                    api_key: String::new(),
-                },
-                config::NativePriceEstimator::Driver {
-                    name: "worse".to_owned(),
-                    url: worse,
-                },
-                config::NativePriceEstimator::Driver {
-                    name: "better".to_owned(),
-                    url: better,
-                },
-            ],
-            ttl: Duration::from_secs(60),
-            driver_probe_lamports: PROBE_LAMPORTS,
-        };
         let prices = NativePrices::new(
-            &config,
+            &native_prices(
+                vec![
+                    vec![coingecko(coingecko_url)],
+                    vec![driver("worse", worse), driver("better", better)],
+                ],
+                2,
+            ),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
@@ -1048,6 +1055,61 @@ mod tests {
             "the probes ran one after another"
         );
         // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
+        assert_eq!(result.get(&token), Some(&5_000_000_000));
+    }
+
+    /// With the required prices in, the rest of the stage is dropped: a
+    /// hanging driver does not hold the lookup, and the later stage is never
+    /// asked.
+    #[tokio::test]
+    async fn a_lookup_stops_at_the_required_prices() {
+        let token = Pubkey::new_unique();
+        let fast = driver_server(20_000_000).await;
+        let hanging = driver_server_delayed(10_000_000, Duration::from_secs(30)).await;
+        let (coingecko_url, requests) = coingecko_server(serde_json::json!({})).await;
+        let prices = NativePrices::new(
+            &native_prices(
+                vec![
+                    vec![driver("fast", fast), driver("hanging", hanging)],
+                    vec![coingecko(coingecko_url)],
+                ],
+                1,
+            ),
+            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+        let started = Instant::now();
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "the lookup waited"
+        );
+        assert_eq!(result.get(&token), Some(&5_000_000_000));
+        assert_eq!(requests.load(Ordering::Relaxed), 0);
+    }
+
+    /// A stage with fewer sources than the prices still missing starts
+    /// together with the next one.
+    #[tokio::test]
+    async fn stages_start_together_while_short_of_prices() {
+        let token = Pubkey::new_unique();
+        let delay = Duration::from_millis(500);
+        let worse = driver_server_delayed(10_000_000, delay).await;
+        let better = driver_server_delayed(20_000_000, delay).await;
+        let prices = NativePrices::new(
+            &native_prices(
+                vec![vec![driver("worse", worse)], vec![driver("better", better)]],
+                2,
+            ),
+            SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
+            Pubkey::new_unique(),
+        );
+        let started = Instant::now();
+        let result = prices.prices(HashSet::from([token])).await.unwrap();
+        assert!(
+            started.elapsed() < delay * 2,
+            "the stages ran one after another"
+        );
         assert_eq!(result.get(&token), Some(&5_000_000_000));
     }
 
@@ -1169,29 +1231,15 @@ mod tests {
             api_key: String::new(),
         };
         let prices = NativePrices::new(
-            &config::NativePrices {
-                estimators: vec![dead.clone()],
-                ttl: Duration::from_secs(60),
-                driver_probe_lamports: PROBE_LAMPORTS,
-            },
+            &native_prices(vec![vec![dead.clone()]], 2),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
         assert!(prices.prices(HashSet::from([token])).await.is_err());
 
-        let driver = driver_server(20_000_000).await;
+        let baseline = driver_server(20_000_000).await;
         let prices = NativePrices::new(
-            &config::NativePrices {
-                estimators: vec![
-                    dead,
-                    config::NativePriceEstimator::Driver {
-                        name: "baseline".to_owned(),
-                        url: driver,
-                    },
-                ],
-                ttl: Duration::from_secs(60),
-                driver_probe_lamports: PROBE_LAMPORTS,
-            },
+            &native_prices(vec![vec![dead], vec![driver("baseline", baseline)]], 2),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
