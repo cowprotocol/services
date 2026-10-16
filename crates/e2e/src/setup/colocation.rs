@@ -214,6 +214,7 @@ deadline-check = "{:?}"
 
 [liquidity]
 base-tokens = [{encoded_base_tokens}]
+refresh-cooldown = "0s"
 
 {liquidity}
 
