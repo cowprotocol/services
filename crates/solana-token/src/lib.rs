@@ -210,12 +210,12 @@ impl MintLookup<'_> {
     }
 }
 
-/// The rent-exempt minimum under `rent`, in lamports, of a new associated
-/// token account of the mint at `mint`, `None` when it is no mint of either
-/// token program. A Token-2022 one carries the immutable owner extension and
-/// the account extensions the mint's own extensions require.
-pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
-    let len = match TokenProgram::try_from(&mint.owner).ok()? {
+/// The data length of a new associated token account of the mint at `mint`,
+/// `None` when it is no mint of either token program. A Token-2022 one
+/// carries the immutable owner extension and the account extensions the
+/// mint's own extensions require.
+pub fn ata_len(mint: &Account) -> Option<usize> {
+    Some(match TokenProgram::try_from(&mint.owner).ok()? {
         // A classic mint is exactly 82 bytes; any other account of the
         // program is a token account or a multisig.
         TokenProgram::SplToken if mint.data.len() == Mint::LEN => TokenAccount::LEN,
@@ -224,8 +224,13 @@ pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
             let mint = StateWithExtensions::<Mint>::unpack(&mint.data).ok()?;
             token_2022_ata_len(&mint.get_extension_types().ok()?)
         }
-    };
-    Some(rent.minimum_balance(len))
+    })
+}
+
+/// The rent-exempt minimum under `rent`, in lamports, of a new associated
+/// token account of the mint at `mint`, see [`ata_len`].
+pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
+    Some(rent.minimum_balance(ata_len(mint)?))
 }
 
 /// The [`ata_rent`] of the largest associated token account a mint passing

@@ -6,7 +6,8 @@ use {
         Order,
         Side,
         auction::Id,
-        buy_token_accounts::BuyTokenAccountCache,
+        buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
+        fee::{Charge, ExecutionCost},
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
@@ -16,6 +17,7 @@ use {
     },
     crate::infra::{
         blockchain::{BundleSimulation, Solana},
+        config::FeeHandler,
         solver::Solver,
     },
     base64::{Engine, prelude::BASE64_STANDARD},
@@ -27,7 +29,7 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
-        collections::{HashMap, HashSet},
+        collections::HashMap,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -131,7 +133,7 @@ impl Competition {
             return Ok(Vec::new());
         }
         let solutions = self
-            .compute_solutions(&auction, &buy_token_accounts.missing)
+            .compute_solutions(&auction, Some(&buy_token_accounts))
             .await?;
         if solutions.is_empty() {
             return Ok(Vec::new());
@@ -302,22 +304,41 @@ impl Competition {
     }
 
     /// Send the auction to the solver engine and return its deduplicated
-    /// solutions without caching them.
+    /// solutions without caching them, cut by the execution costs when the
+    /// solver's fee handler is the driver.
     ///
-    /// `missing_buy_token_accounts` marks the orders whose payout account the
-    /// settlement creates, so the engine can price its rent in.
+    /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
+    /// its fill is reported as the engine found it, and nothing is flagged.
     pub async fn compute_solutions(
         &self,
         auction: &Auction,
-        missing_buy_token_accounts: &HashSet<OrderUid>,
+        buy_token_accounts: Option<&BuyTokenAccounts>,
     ) -> Result<Vec<Solution>, Error> {
+        let (charge, costs) = match (buy_token_accounts, self.solver.fee_handler()) {
+            (None, _) => (Charge::default(), None),
+            (Some(accounts), FeeHandler::Solver) => (
+                Charge::Engine {
+                    missing_buy_token_accounts: accounts.missing.keys().copied().collect(),
+                },
+                None,
+            ),
+            (Some(accounts), FeeHandler::Driver) => {
+                let costs = ExecutionCost {
+                    rent: &accounts.missing,
+                    native_prices: &auction.native_prices,
+                };
+                let network_fee = self.network_fee_ceiling().await?;
+                (
+                    Charge::Driver {
+                        cuts: costs.cuts(&auction.orders, network_fee),
+                    },
+                    Some(costs),
+                )
+            }
+        };
         let solutions = self
             .solver
-            .solve(
-                auction,
-                self.blockchain.program_id(),
-                missing_buy_token_accounts,
-            )
+            .solve(auction, self.blockchain.program_id(), &charge)
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and
@@ -334,28 +355,53 @@ impl Competition {
             );
         }
 
-        let solutions = match self.solver.solver_fee() {
-            None => solutions,
-            Some(fee) => {
-                let orders = orders_by_uid(&auction.orders);
-                solutions
-                    .into_iter()
-                    .filter_map(|mut solution| match fee.apply(&mut solution, &orders) {
-                        Ok(()) => Some(solution),
-                        Err(reason) => {
-                            tracing::warn!(
-                                solver = %self.solver.name(),
-                                solution_id = solution.id,
-                                %reason,
-                                "dropping solution the solver fee cannot be applied to"
-                            );
-                            None
-                        }
-                    })
-                    .collect()
-            }
+        let Some(costs) = costs else {
+            return Ok(solutions);
         };
-        Ok(solutions)
+        let orders = orders_by_uid(&auction.orders);
+        let mut charged = Vec::with_capacity(solutions.len());
+        for mut solution in solutions {
+            let network_fee = match self.network_fee(&solution).await {
+                Ok(network_fee) => network_fee,
+                Err(Error::PriorityFeeTooHigh(reason)) => {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        %reason,
+                        "dropping solution, its network fee is over budget"
+                    );
+                    continue;
+                }
+                Err(err) => return Err(err),
+            };
+            match costs.apply(&mut solution, &orders, network_fee) {
+                Ok(()) => charged.push(solution),
+                Err(reason) => tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution the execution costs cannot be cut from"
+                ),
+            }
+        }
+        Ok(charged)
+    }
+
+    /// The network fee the limit legs sent to the engine are tightened by,
+    /// before any route is known: the signature fee plus the priority fee at
+    /// the runtime's compute unit ceiling over the fees recently paid
+    /// cluster-wide, or the budget when that is over it. The fills are cut
+    /// by the fee of their own route, see [`Self::network_fee`].
+    async fn network_fee_ceiling(&self) -> Result<u64, Error> {
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&[])
+            .await
+            .map_err(Error::Rpc)?;
+        Ok(self.priority_fee.estimate(&fees, None).map_or_else(
+            |_| self.priority_fee.max_network_fee(),
+            |estimate| estimate.network_fee(),
+        ))
     }
 
     /// The network fee of settling `solution`, in lamports: the signature fee
@@ -488,7 +534,7 @@ impl Competition {
             "settling orders"
         );
 
-        let volume_fees = solver_volume_fees(&orders, &solution);
+        let fees = solver_fees(&orders, &solution);
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
@@ -572,11 +618,11 @@ impl Competition {
         .map_err(|err| Error::FailedToSubmit { err })?;
 
         // TODO: drop this log once protocol fees are implemented.
-        for fee in &volume_fees {
+        for fee in &fees {
             tracing::info!(
                 order_uid = %fee.order_uid,
                 mint = %fee.mint,
-                fee_from_volume = fee.amount,
+                fee = fee.amount,
                 "calculated solver fee"
             );
         }
@@ -720,7 +766,7 @@ fn failing_program(transaction: &VersionedTransaction, err: &TransactionError) -
         .copied()
 }
 
-struct VolumeFee {
+struct SolverFee {
     order_uid: OrderUid,
     mint: Pubkey,
     amount: u64,
@@ -730,12 +776,12 @@ fn orders_by_uid(orders: &[Order]) -> HashMap<OrderUid, &Order> {
     orders.iter().map(|order| (order.uid, order)).collect()
 }
 
-/// The nonzero volume-based solver fees the solution's fills carry: in the buy
-/// mint for a sell order and the sell mint for a buy order.
+/// The nonzero solver fees the solution's fills carry: in the buy mint for a
+/// sell order and the sell mint for a buy order.
 ///
 /// Not what the settlement retains: these come off the engine's quoted legs,
 /// and the route's real cost is only known once it lands.
-fn solver_volume_fees(orders: &[Order], solution: &Solution) -> Vec<VolumeFee> {
+fn solver_fees(orders: &[Order], solution: &Solution) -> Vec<SolverFee> {
     let orders = orders_by_uid(orders);
     solution
         .trades
@@ -747,7 +793,7 @@ fn solver_volume_fees(orders: &[Order], solution: &Solution) -> Vec<VolumeFee> {
                 Side::Sell => order.buy_token,
                 Side::Buy => order.sell_token,
             };
-            Some(VolumeFee {
+            Some(SolverFee {
                 order_uid: trade.order_uid,
                 mint,
                 amount: trade.solver_fee,

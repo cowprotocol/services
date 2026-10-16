@@ -4,7 +4,6 @@ use {
     crate::domain::{
         priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
         settlement::MaxNativeShortfall,
-        solver_fee::SolverFee,
     },
     configs::shared::LoggingConfig,
     serde::Deserialize,
@@ -145,19 +144,28 @@ pub struct Solver {
     /// test against. Absent means every auction.
     #[serde(default)]
     pub solve_every_nth_auction: Option<NonZero<u64>>,
-    /// Volume-based solver fee in basis points, `0..10_000`. Sell orders
-    /// deliver `(1 − fee)` of the fill's buy leg; buy orders pull `(1 + fee)`
-    /// of its sell leg. The difference stays in the buy-mint buffer PDA (sell
-    /// orders) or the solver's sell ATA (buy orders). Bids and quotes shrink
-    /// accordingly. Absent means no fee.
+    /// Who prices the execution costs into the fills, see [`FeeHandler`].
+    /// Absent means the driver.
     #[serde(default)]
-    pub solver_fee_bps: Option<SolverFee>,
+    pub fee_handler: FeeHandler,
     /// The largest share of a settlement's native SOL payouts, in basis points
     /// `0..10_000`, that the solver's own SOL covers when the swap delivers
     /// less SOL than the payouts. A larger shortfall reverts the settlement.
     /// Absent means none.
     #[serde(default)]
     pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
+}
+
+/// Who prices a settlement's execution costs, its network fee and the rent
+/// of the buy token accounts it creates, into the fills: the driver cuts
+/// them from every fill the engine reports, or the solver engine prices them
+/// in itself.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum FeeHandler {
+    #[default]
+    Driver,
+    Solver,
 }
 
 #[cfg(test)]
@@ -211,49 +219,35 @@ mod tests {
     }
 
     #[test]
-    fn solver_fee_bps_defaults_to_none() {
+    fn fee_handler_defaults_to_the_driver() {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
             signer = { keypair = "/path/to/keypair.json" }
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert!(solver.solver_fee_bps.is_none());
+        assert_eq!(solver.fee_handler, FeeHandler::Driver);
     }
 
     #[test]
-    fn solver_fee_bps_parses() {
+    fn fee_handler_parses() {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
             signer = { keypair = "/path/to/keypair.json" }
-            solver-fee-bps = 500
+            fee-handler = "solver"
         "#;
         let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert_eq!(
-            solver.solver_fee_bps,
-            Some(SolverFee::try_from(500).unwrap())
-        );
+        assert_eq!(solver.fee_handler, FeeHandler::Solver);
     }
 
     #[test]
-    fn solver_fee_bps_at_max_is_rejected() {
+    fn an_unknown_fee_handler_is_rejected() {
         let solver_config = r#"
             name = "baseline"
             endpoint = "http://localhost:8001"
             signer = { keypair = "/path/to/keypair.json" }
-            solver-fee-bps = 10000
-        "#;
-        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
-    }
-
-    #[test]
-    fn solver_fee_bps_out_of_u16_range_is_rejected() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { keypair = "/path/to/keypair.json" }
-            solver-fee-bps = 65536
+            fee-handler = "autopilot"
         "#;
         assert!(toml::de::from_str::<Solver>(solver_config).is_err());
     }

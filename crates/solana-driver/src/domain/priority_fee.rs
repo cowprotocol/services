@@ -112,6 +112,13 @@ impl PriorityFeePolicy {
         })
     }
 
+    /// The most a transaction's network fee comes to under this policy: the
+    /// budget plus the signature fee.
+    pub(crate) fn max_network_fee(&self) -> u64 {
+        self.max_priority_fee_lamports
+            .saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
+
     /// The configured percentile of the most recent slots' fees, raised to the
     /// floor. No fees at all give the floor.
     fn compute_unit_price(&self, fees: &[RpcPrioritizationFee]) -> u64 {

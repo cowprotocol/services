@@ -1,8 +1,8 @@
 //! The Solana blockchain adapter.
 //!
-//! Owns the RPC client, the settlement program id and the token program of
-//! each mint looked up so far. Mirrors the EVM driver's
-//! `infra/blockchain/mod.rs` (`struct Ethereum`).
+//! Owns the RPC client, the settlement program id and the facts of each
+//! mint looked up so far. Mirrors the EVM driver's `infra/blockchain/mod.rs`
+//! (`struct Ethereum`).
 
 mod accounts;
 mod token;
@@ -28,6 +28,7 @@ pub use {
         AccountsSnapshot,
         InvalidAddressLookupTableReason,
         InvalidMintReason,
+        MintInfo,
         TokenAccountState,
     },
     token::{
@@ -38,8 +39,8 @@ pub use {
     },
 };
 
-/// How many mints the token program cache holds.
-const TOKEN_PROGRAM_CACHE_CAPACITY: u64 = 10_000;
+/// How many mints the cache holds.
+const MINT_CACHE_CAPACITY: u64 = 10_000;
 
 /// A simulated transaction's outcome and the slot it ran against.
 pub struct TransactionSimulation {
@@ -63,9 +64,10 @@ pub struct Solana {
     /// every method, see `config::Rpc::bundle_endpoint`.
     bundle_rpc: SolanaRPC,
     program_id: Pubkey,
-    /// The token program of each mint looked up so far. Entries never expire:
-    /// a mint's owner changes only if the mint is closed and re-created.
-    token_programs: Cache<Pubkey, TokenProgram>,
+    /// The facts of each mint looked up so far. Entries never expire: a
+    /// mint's owner and extensions change only if the mint is closed and
+    /// re-created.
+    mints: Cache<Pubkey, MintInfo>,
 }
 
 impl Solana {
@@ -74,7 +76,7 @@ impl Solana {
             rpc,
             bundle_rpc,
             program_id,
-            token_programs: Cache::new(TOKEN_PROGRAM_CACHE_CAPACITY),
+            mints: Cache::new(MINT_CACHE_CAPACITY),
         }
     }
 
@@ -154,29 +156,42 @@ impl Solana {
         ))
     }
 
-    /// The token program of each of `mints`, or why the mint has none,
-    /// fetching only the mints missing from the cache. Only resolved programs
-    /// are cached: a mint that is missing or invalid is read again next time.
-    pub async fn token_programs(
+    /// The facts of each of `mints`, or why the mint has none, fetching only
+    /// the mints missing from the cache. Only resolved mints are cached: a
+    /// mint that is missing or invalid is read again next time.
+    pub async fn mints(
         &self,
         mints: impl IntoIterator<Item = Pubkey>,
-    ) -> Result<HashMap<Pubkey, Result<TokenProgram, InvalidMintReason>>, Error> {
-        let (mut programs, unknown): (HashMap<_, _>, Vec<_>) =
+    ) -> Result<HashMap<Pubkey, Result<MintInfo, InvalidMintReason>>, Error> {
+        let (mut infos, unknown): (HashMap<_, _>, Vec<_>) =
             mints
                 .into_iter()
-                .partition_map(|mint| match self.token_programs.get(&mint) {
-                    Some(program) => Either::Left((mint, Ok(program))),
+                .partition_map(|mint| match self.mints.get(&mint) {
+                    Some(info) => Either::Left((mint, Ok(info))),
                     None => Either::Right(mint),
                 });
         let accounts = self.accounts_snapshot(unknown.iter().copied()).await?;
         for mint in unknown {
-            let program = accounts.mint_token_program(&mint);
-            if let Ok(program) = program {
-                self.token_programs.insert(mint, program);
+            let info = accounts.mint_info(&mint);
+            if let Ok(info) = info {
+                self.mints.insert(mint, info);
             }
-            programs.insert(mint, program);
+            infos.insert(mint, info);
         }
-        Ok(programs)
+        Ok(infos)
+    }
+
+    /// The token program of each of `mints`, see [`Self::mints`].
+    pub async fn token_programs(
+        &self,
+        mints: impl IntoIterator<Item = Pubkey>,
+    ) -> Result<HashMap<Pubkey, Result<TokenProgram, InvalidMintReason>>, Error> {
+        Ok(self
+            .mints(mints)
+            .await?
+            .into_iter()
+            .map(|(mint, info)| (mint, info.map(|info| info.program)))
+            .collect())
     }
 }
 

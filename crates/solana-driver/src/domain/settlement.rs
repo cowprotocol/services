@@ -1,14 +1,7 @@
 //! Settlement encoding.
 
 use {
-    super::{
-        Order,
-        Side,
-        auction::Id,
-        order_uid::OrderUid,
-        solution::Solution,
-        solver_fee::BPS_DENOMINATOR,
-    },
+    super::{Order, Side, auction::Id, order_uid::OrderUid, solution::Solution},
     crate::infra::blockchain::{
         AccountsSnapshot,
         InvalidAddressLookupTableReason,
@@ -775,6 +768,8 @@ impl SettlementOrder {
         })
     }
 }
+
+const BPS_DENOMINATOR: u16 = 10_000;
 
 /// The largest share of the native SOL payouts, in basis points below 100%,
 /// that the payer's own SOL covers when the swap output falls short of them.
