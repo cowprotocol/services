@@ -1441,7 +1441,7 @@ mod tests {
     }
 
     #[test]
-    fn submission_rejects_invalid_receivers() {
+    fn submission_rejects_invalid_config() {
         for config in [
             // no receiver
             r#"gas-price-cap = "1""#,
@@ -1467,6 +1467,13 @@ mod tests {
             [public-mempool]
             urls = ["http://node"]
             name = "node"
+            "#,
+            // unknown submission field, still rejected next to the flattened
+            // receiver
+            r#"
+            gas-price-caps = "1"
+            [public-mempool]
+            urls = ["http://node"]
             "#,
         ] {
             assert!(
