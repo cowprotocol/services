@@ -223,26 +223,22 @@ mod tests {
     }
 
     #[test]
-    fn solver_fee_bps_parses() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { keypair = "/path/to/keypair.json" }
-            solver-fee-bps = 500
-        "#;
-        let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert_eq!(solver.solver_fee_bps, Margin::try_from(500).unwrap());
-    }
-
-    #[test]
-    fn solver_fee_bps_at_max_is_rejected() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { keypair = "/path/to/keypair.json" }
-            solver-fee-bps = 10000
-        "#;
-        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
+    fn solver_fee_bps_parses_below_100_percent() {
+        let solver = |bps: u16| {
+            toml::de::from_str::<Solver>(&format!(
+                r#"
+                name = "baseline"
+                endpoint = "http://localhost:8001"
+                signer = {{ keypair = "/path/to/keypair.json" }}
+                solver-fee-bps = {bps}
+                "#
+            ))
+        };
+        assert_eq!(
+            solver(500).unwrap().solver_fee_bps,
+            Margin::try_from(500).unwrap()
+        );
+        assert!(solver(10_000).is_err());
     }
 
     #[test]
@@ -252,37 +248,23 @@ mod tests {
     }
 
     #[test]
-    fn fee_handler_defaults_to_the_driver() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { keypair = "/path/to/keypair.json" }
-        "#;
-        let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert_eq!(solver.fee_handler, FeeHandler::Driver);
-    }
-
-    #[test]
-    fn fee_handler_parses() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { keypair = "/path/to/keypair.json" }
-            fee-handler = "solver"
-        "#;
-        let solver: Solver = toml::de::from_str(solver_config).unwrap();
-        assert_eq!(solver.fee_handler, FeeHandler::Solver);
-    }
-
-    #[test]
-    fn an_unknown_fee_handler_is_rejected() {
-        let solver_config = r#"
-            name = "baseline"
-            endpoint = "http://localhost:8001"
-            signer = { keypair = "/path/to/keypair.json" }
-            fee-handler = "autopilot"
-        "#;
-        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
+    fn fee_handler_parses_and_defaults_to_the_driver() {
+        let solver = |fee_handler: &str| {
+            toml::de::from_str::<Solver>(&format!(
+                r#"
+                name = "baseline"
+                endpoint = "http://localhost:8001"
+                signer = {{ keypair = "/path/to/keypair.json" }}
+                {fee_handler}
+                "#
+            ))
+        };
+        assert_eq!(solver("").unwrap().fee_handler, FeeHandler::Driver);
+        assert_eq!(
+            solver(r#"fee-handler = "solver""#).unwrap().fee_handler,
+            FeeHandler::Solver
+        );
+        assert!(solver(r#"fee-handler = "autopilot""#).is_err());
     }
 
     #[test]

@@ -353,13 +353,10 @@ mod tests {
     }
 
     #[test]
-    fn a_margin_of_100_percent_is_rejected() {
+    fn a_margin_is_below_100_percent_and_tightens_against_the_engine() {
         assert!(Margin::try_from(BPS_DENOMINATOR).is_err());
         assert!(Margin::try_from(BPS_DENOMINATOR - 1).is_ok());
-    }
 
-    #[test]
-    fn tighten_limit_rounds_against_the_engine() {
         let margin = margin(500);
         assert_eq!(margin.tighten_limit(Side::Sell, 1_000), 1_053);
         assert_eq!(margin.tighten_limit(Side::Buy, 1_000), 952);
@@ -372,27 +369,69 @@ mod tests {
         assert_eq!(Margin::default().tighten_limit(Side::Sell, 1_000), 1_000);
     }
 
-    /// Nothing to convert needs no price: an order whose token is unpriced is
-    /// still sent, at its signed limit, when only the margin applies.
+    /// 1000 lamports are 2000 buy atoms for a sell order and 500 sell atoms
+    /// for a buy order, rent adds to the fee, a lone lamport rounds up to an
+    /// atom, and a native SOL buy is cut in lamports with no price looked up.
     #[test]
-    fn a_zero_cost_needs_no_price() {
-        let (rent, prices) = (HashMap::new(), HashMap::new());
-        let orders = [order(1, Side::Sell, 1_000, 1_000)];
-        let cuts = cost(&rent, &prices).cuts(&orders, 0);
-        assert_eq!(cuts[&orders[0].uid], 0);
+    fn the_cut_is_the_rent_and_the_fee_in_the_limit_leg_token() {
+        let rent = HashMap::from([(OrderUid([3; 32]), 500)]);
+        let prices = prices();
+        let cost = cost(&rent, &prices);
+        let orders = [
+            order(1, Side::Sell, 1_000, 1_000),
+            order(2, Side::Buy, 1_000, 1_000),
+            order(3, Side::Sell, 1_000, 1_000),
+            Order {
+                buy_token: ENCODED_NATIVE_SOL_TRANSFER,
+                ..order(4, Side::Sell, 1_000, 1_000)
+            },
+        ];
+        let cuts = cost.cuts(&orders, 1_000);
+        assert_eq!(cuts[&orders[0].uid], 2_000);
+        assert_eq!(cuts[&orders[1].uid], 500);
+        assert_eq!(cuts[&orders[2].uid], 3_000);
+        assert_eq!(cuts[&orders[3].uid], 1_000);
+        assert_eq!(cost.cuts(&orders[1..2], 1)[&orders[1].uid], 1);
     }
 
-    /// 5% of the 3000 buy leg is 150, on top of the 2000 atom cut.
+    /// An order whose limit-leg token has no positive price gets no cut and
+    /// is not listed, unless there is nothing to convert. A cut past
+    /// `u64::MAX` saturates.
     #[test]
-    fn the_margin_comes_off_the_leg_before_the_cut() {
+    fn a_cut_needs_a_price_unless_there_is_nothing_to_convert() {
+        let rent = HashMap::new();
+        let unpriced = HashMap::from([(pubkey(0x44), 0)]);
+        let orders = [
+            order(1, Side::Sell, 1_000, 1_000),
+            order(2, Side::Buy, 1_000, 1_000),
+        ];
+        let cost = cost(&rent, &unpriced);
+        assert!(cost.cuts(&orders, 1_000).is_empty());
+        assert_eq!(
+            cost.cuts(&orders, 0),
+            HashMap::from([(orders[0].uid, 0), (orders[1].uid, 0)])
+        );
+
+        let tiny = HashMap::from([(pubkey(0x44), 1)]);
+        let cuts = self::cost(&rent, &tiny).cuts(&orders[..1], u64::MAX);
+        assert_eq!(cuts[&orders[0].uid], u64::MAX);
+    }
+
+    /// 5% of the 3000 buy leg is 150, on top of the 2000 atom cut. 5% of the
+    /// 1000 sell leg is 50, on top of the 500 atom cut. Nothing to take
+    /// leaves the fill as the engine reported it.
+    #[test]
+    fn the_margin_and_the_cut_come_off_the_limit_leg() {
         let (rent, prices) = (HashMap::new(), prices());
         let cost = ExecutionCost {
             margin: margin(500),
             ..cost(&rent, &prices)
         };
+
         let orders = [order(1, Side::Sell, 1_000, 500)];
         let mut sol = solution(vec![trade(1, 1_000, 3_000)]);
         cost.apply(&mut sol, &self::orders(&orders), 1_000).unwrap();
+        assert_eq!(sol.trades[0].executed_sell, 1_000);
         assert_eq!(sol.trades[0].executed_buy, 850);
         assert_eq!(sol.trades[0].solver_fee, 2_150);
 
@@ -400,133 +439,12 @@ mod tests {
         let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
         cost.apply(&mut sol, &self::orders(&orders), 1_000).unwrap();
         assert_eq!(sol.trades[0].executed_sell, 1_550);
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
         assert_eq!(sol.trades[0].solver_fee, 550);
-    }
 
-    /// A sell order's 1000 limit plus the 50 cut is 1050, which the 5% margin
-    /// raises to 1106. 5% of 1106 is 56, so the fill lands on the limit, and
-    /// one atom less under it.
-    #[test]
-    fn a_fill_at_the_tightened_limit_survives_the_margin_and_the_cut() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let cost = ExecutionCost {
-            margin: margin(500),
-            ..cost(&rent, &prices)
-        };
-        let orders = [order(1, Side::Sell, 1_000, 1_000)];
-        let cut = cost.cuts(&orders, 25)[&orders[0].uid];
-        assert_eq!(cost.margin.tighten_limit(Side::Sell, 1_000 + cut), 1_106);
-
-        cost.apply(
-            &mut solution(vec![trade(1, 1_000, 1_106)]),
-            &self::orders(&orders),
-            25,
-        )
-        .unwrap();
-        assert_eq!(
-            cost.apply(
-                &mut solution(vec![trade(1, 1_000, 1_105)]),
-                &self::orders(&orders),
-                25,
-            ),
-            Err(Rejected::LimitPrice(orders[0].uid))
-        );
-    }
-
-    #[test]
-    fn the_cut_is_in_the_limit_leg_token() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let cost = cost(&rent, &prices);
-        let orders = [
-            order(1, Side::Sell, 1_000, 1_000),
-            order(2, Side::Buy, 1_000, 1_000),
-        ];
-        let cuts = cost.cuts(&orders, 1_000);
-        assert_eq!(cuts[&orders[0].uid], 2_000);
-        assert_eq!(cuts[&orders[1].uid], 500);
-    }
-
-    #[test]
-    fn the_rent_adds_to_the_network_fee() {
-        let rent = HashMap::from([(OrderUid([1; 32]), 500)]);
-        let prices = prices();
-        let orders = [order(1, Side::Sell, 1_000, 1_000)];
-        let cuts = cost(&rent, &prices).cuts(&orders, 1_000);
-        assert_eq!(cuts[&orders[0].uid], 3_000);
-    }
-
-    #[test]
-    fn the_cut_rounds_up() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let orders = [order(1, Side::Buy, 1_000, 1_000)];
-        let cuts = cost(&rent, &prices).cuts(&orders, 1);
-        assert_eq!(cuts[&orders[0].uid], 1);
-    }
-
-    /// A lamport is an atom of native SOL, whether or not the auction prices
-    /// it.
-    #[test]
-    fn a_native_sol_buy_is_cut_in_lamports() {
-        let (rent, prices) = (HashMap::new(), HashMap::new());
-        let orders = [Order {
-            buy_token: ENCODED_NATIVE_SOL_TRANSFER,
-            ..order(1, Side::Sell, 1_000, 1_000)
-        }];
-        let cuts = cost(&rent, &prices).cuts(&orders, 1_000);
-        assert_eq!(cuts[&orders[0].uid], 1_000);
-    }
-
-    #[test]
-    fn an_order_without_a_price_has_no_cut() {
-        let rent = HashMap::new();
-        let unpriced = HashMap::from([(pubkey(0x44), 0)]);
-        let orders = [
-            order(1, Side::Sell, 1_000, 1_000),
-            order(2, Side::Buy, 1_000, 1_000),
-        ];
-        assert!(cost(&rent, &unpriced).cuts(&orders, 1_000).is_empty());
-    }
-
-    #[test]
-    fn a_cut_past_u64_saturates() {
-        let (rent, prices) = (HashMap::new(), HashMap::from([(pubkey(0x44), 1)]));
-        let orders = [order(1, Side::Sell, 1_000, 1_000)];
-        let cuts = cost(&rent, &prices).cuts(&orders, u64::MAX);
-        assert_eq!(cuts[&orders[0].uid], u64::MAX);
-    }
-
-    #[test]
-    fn a_sell_order_delivers_less() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let orders = [order(1, Side::Sell, 1_000, 1_000)];
-        let mut sol = solution(vec![trade(1, 1_000, 3_000)]);
-        cost(&rent, &prices)
-            .apply(&mut sol, &self::orders(&orders), 1_000)
-            .unwrap();
-        assert_eq!(sol.trades[0].executed_sell, 1_000);
-        assert_eq!(sol.trades[0].executed_buy, 1_000);
-        assert_eq!(sol.trades[0].solver_fee, 2_000);
-    }
-
-    #[test]
-    fn a_buy_order_pulls_more() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let orders = [order(1, Side::Buy, 2_000, 1_000)];
-        let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
-        cost(&rent, &prices)
-            .apply(&mut sol, &self::orders(&orders), 1_000)
-            .unwrap();
-        assert_eq!(sol.trades[0].executed_sell, 1_500);
-        assert_eq!(sol.trades[0].executed_buy, 1_000);
-        assert_eq!(sol.trades[0].solver_fee, 500);
-    }
-
-    #[test]
-    fn nothing_to_cut_leaves_the_fill_as_is() {
-        let (rent, prices) = (HashMap::new(), prices());
         let orders = [order(1, Side::Sell, 1_000, 1_000)];
         let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
-        cost(&rent, &prices)
+        self::cost(&rent, &prices)
             .apply(&mut sol, &self::orders(&orders), 0)
             .unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
@@ -548,17 +466,29 @@ mod tests {
         assert_eq!(sol.trades[1].solver_fee, 1_002);
     }
 
+    /// The limit leg sent to the engine, the signed limit moved by the cut
+    /// and the margin, is the exact boundary: a fill on it survives, one atom
+    /// past it is rejected.
     #[test]
-    fn a_fill_at_the_tightened_limit_survives_the_cut() {
+    fn the_tightened_limit_is_the_exact_boundary() {
         let rent = HashMap::from([(OrderUid([1; 32]), 123)]);
         let prices = prices();
-        let cost = cost(&rent, &prices);
+        let cost = ExecutionCost {
+            margin: margin(500),
+            ..cost(&rent, &prices)
+        };
         for side in [Side::Sell, Side::Buy] {
             let orders = [order(1, side, 1_000, 1_000)];
             let cut = cost.cuts(&orders, 1_000)[&orders[0].uid];
             let (at_limit, beyond) = match side {
-                Side::Sell => (trade(1, 1_000, 1_000 + cut), trade(1, 1_000, 999 + cut)),
-                Side::Buy => (trade(1, 1_000 - cut, 1_000), trade(1, 1_001 - cut, 1_000)),
+                Side::Sell => {
+                    let min_buy = cost.margin.tighten_limit(side, 1_000 + cut);
+                    (trade(1, 1_000, min_buy), trade(1, 1_000, min_buy - 1))
+                }
+                Side::Buy => {
+                    let max_sell = cost.margin.tighten_limit(side, 1_000 - cut);
+                    (trade(1, max_sell, 1_000), trade(1, max_sell + 1, 1_000))
+                }
             };
             cost.apply(&mut solution(vec![at_limit]), &self::orders(&orders), 1_000)
                 .unwrap();
@@ -569,66 +499,55 @@ mod tests {
         }
     }
 
+    /// Each failing trade names its reason, and the passing trade before it
+    /// is left as the engine reported it.
     #[test]
-    fn a_trade_for_no_order_is_rejected() {
+    fn a_bad_trade_rejects_the_whole_solution_untouched() {
         let (rent, prices) = (HashMap::new(), prices());
-        let mut sol = solution(vec![trade(9, 1_000, 3_000)]);
-        assert_eq!(
-            cost(&rent, &prices).apply(&mut sol, &HashMap::new(), 1_000),
-            Err(Rejected::UnknownOrder(OrderUid([9; 32])))
-        );
-    }
-
-    #[test]
-    fn a_trade_without_a_price_is_rejected() {
-        let (rent, prices) = (HashMap::new(), HashMap::new());
-        let orders = [order(1, Side::Sell, 1_000, 1_000)];
-        let mut sol = solution(vec![trade(1, 1_000, 3_000)]);
-        assert_eq!(
-            cost(&rent, &prices).apply(&mut sol, &self::orders(&orders), 1_000),
-            Err(Rejected::MissingPrice(orders[0].uid))
-        );
-    }
-
-    #[test]
-    fn a_cut_eating_the_whole_payout_is_rejected() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let orders = [order(1, Side::Sell, 1_000, 1)];
         let cost = cost(&rent, &prices);
-        for executed_buy in [2_000, 1_000] {
-            let mut sol = solution(vec![trade(1, 1_000, executed_buy)]);
+        let fine = order(1, Side::Sell, 1_000, 1_000);
+        let uid = |byte| OrderUid([byte; 32]);
+        let cases = [
+            (
+                order(8, Side::Sell, 1_000, 1_000),
+                trade(9, 1_000, 3_000),
+                Rejected::UnknownOrder(uid(9)),
+            ),
+            (
+                Order {
+                    buy_token: pubkey(0x45),
+                    ..order(2, Side::Sell, 1_000, 1_000)
+                },
+                trade(2, 1_000, 3_000),
+                Rejected::MissingPrice(uid(2)),
+            ),
+            (
+                order(3, Side::Sell, 1_000, 1),
+                trade(3, 1_000, 1_000),
+                Rejected::ZeroPayout(uid(3)),
+            ),
+            (
+                order(4, Side::Buy, u64::MAX, 1_000),
+                trade(4, u64::MAX, 1_000),
+                Rejected::Overflow(uid(4)),
+            ),
+            (
+                order(5, Side::Sell, 1_000, 1_000),
+                trade(5, 1_000, 1_500),
+                Rejected::LimitPrice(uid(5)),
+            ),
+        ];
+        for (order, bad, reason) in cases {
+            let orders = [fine.clone(), order];
+            let mut sol = solution(vec![trade(1, 1_000, 3_000), bad]);
             assert_eq!(
                 cost.apply(&mut sol, &self::orders(&orders), 1_000),
-                Err(Rejected::ZeroPayout(orders[0].uid))
+                Err(reason)
+            );
+            assert_eq!(
+                (sol.trades[0].executed_buy, sol.trades[0].solver_fee),
+                (3_000, 0)
             );
         }
-    }
-
-    #[test]
-    fn a_sell_leg_overflowing_u64_is_rejected() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let orders = [order(1, Side::Buy, u64::MAX, 1_000)];
-        let mut sol = solution(vec![trade(1, u64::MAX, 1_000)]);
-        assert_eq!(
-            cost(&rent, &prices).apply(&mut sol, &self::orders(&orders), 1_000),
-            Err(Rejected::Overflow(orders[0].uid))
-        );
-    }
-
-    /// The first trade passes on its own; the rejection leaves it untouched.
-    #[test]
-    fn one_bad_trade_rejects_the_whole_solution() {
-        let (rent, prices) = (HashMap::new(), prices());
-        let orders = [
-            order(1, Side::Sell, 1_000, 1_000),
-            order(2, Side::Sell, 1_000, 1_000),
-        ];
-        let mut sol = solution(vec![trade(1, 1_000, 3_000), trade(2, 1_000, 1_500)]);
-        assert_eq!(
-            cost(&rent, &prices).apply(&mut sol, &self::orders(&orders), 1_000),
-            Err(Rejected::LimitPrice(orders[1].uid))
-        );
-        assert_eq!(sol.trades[0].executed_buy, 3_000);
-        assert_eq!(sol.trades[0].solver_fee, 0);
     }
 }

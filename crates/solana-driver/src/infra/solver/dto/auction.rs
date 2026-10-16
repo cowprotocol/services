@@ -349,100 +349,38 @@ mod tests {
         );
     }
 
+    /// The wire order of `order` at a `cut` and a `margin` in bps, flagged
+    /// or not.
+    fn wire(order: &domain::Order, cut: u64, margin: u16, flagged: bool) -> Order {
+        let margin = Margin::try_from(margin).unwrap();
+        Order::new(order, pubkey(3), pubkey(0xaa), cut, margin, flagged)
+    }
+
+    fn legs(order: &Order) -> (u64, u64) {
+        (order.sell_amount, order.buy_amount)
+    }
+
+    /// A sell order's minimum buy rises by the cut, 1000 to 1050, and by the
+    /// 5% margin on top, to 1106. A buy order's maximum sell falls the same
+    /// way, to 950 and 904. A cut no fill can absorb leaves a sell order a
+    /// minimum buy of `u64::MAX` and a buy order nothing to sell. The signed
+    /// amounts go out untouched.
     #[test]
-    fn without_a_cut_both_legs_are_the_signed_amounts() {
-        let order = Order::new(
-            &domain_order(Side::Sell),
-            pubkey(3),
-            pubkey(0xaa),
-            0,
-            Margin::default(),
-            false,
-        );
-        assert_eq!((order.sell_amount, order.buy_amount), (1_000, 1_000));
+    fn the_cut_and_the_margin_tighten_the_limit_leg() {
+        let (sell, buy) = (domain_order(Side::Sell), domain_order(Side::Buy));
+        assert_eq!(legs(&wire(&sell, 0, 0, false)), (1_000, 1_000));
+        assert_eq!(legs(&wire(&sell, 50, 0, false)), (1_000, 1_050));
+        assert_eq!(legs(&wire(&sell, 50, 500, false)), (1_000, 1_106));
+        assert_eq!(legs(&wire(&sell, u64::MAX, 0, false)), (1_000, u64::MAX));
+        assert_eq!(legs(&wire(&buy, 50, 0, false)), (950, 1_000));
+        assert_eq!(legs(&wire(&buy, 50, 500, false)), (904, 1_000));
+        assert_eq!(legs(&wire(&buy, 1_001, 0, false)), (0, 1_000));
+
+        let sent = wire(&sell, 50, 500, false);
         assert_eq!(
-            (order.full_sell_amount, order.full_buy_amount),
+            (sent.full_sell_amount, sent.full_buy_amount),
             (1_000, 1_000)
         );
-    }
-
-    #[test]
-    fn the_cut_tightens_the_limit_leg() {
-        let sell = Order::new(
-            &domain_order(Side::Sell),
-            pubkey(3),
-            pubkey(0xaa),
-            50,
-            Margin::default(),
-            false,
-        );
-        assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_050));
-        assert_eq!(
-            (sell.full_sell_amount, sell.full_buy_amount),
-            (1_000, 1_000)
-        );
-
-        let buy = Order::new(
-            &domain_order(Side::Buy),
-            pubkey(3),
-            pubkey(0xaa),
-            50,
-            Margin::default(),
-            false,
-        );
-        assert_eq!((buy.sell_amount, buy.buy_amount), (950, 1_000));
-        assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
-    }
-
-    /// The 5% margin raises the sell order's cut minimum buy of 1050 to 1106
-    /// and lowers the buy order's cut maximum sell of 950 to 904.
-    #[test]
-    fn the_margin_tightens_the_cut_limit_leg() {
-        let margin = Margin::try_from(500).unwrap();
-        let sell = Order::new(
-            &domain_order(Side::Sell),
-            pubkey(3),
-            pubkey(0xaa),
-            50,
-            margin,
-            false,
-        );
-        assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_106));
-
-        let buy = Order::new(
-            &domain_order(Side::Buy),
-            pubkey(3),
-            pubkey(0xaa),
-            50,
-            margin,
-            false,
-        );
-        assert_eq!((buy.sell_amount, buy.buy_amount), (904, 1_000));
-    }
-
-    /// A cut no fill can absorb leaves a sell order a minimum buy of
-    /// `u64::MAX` and a buy order nothing to sell.
-    #[test]
-    fn a_cut_past_the_legs_saturates() {
-        let sell = Order::new(
-            &domain_order(Side::Sell),
-            pubkey(3),
-            pubkey(0xaa),
-            u64::MAX,
-            Margin::default(),
-            false,
-        );
-        assert_eq!(sell.buy_amount, u64::MAX);
-
-        let buy = Order::new(
-            &domain_order(Side::Buy),
-            pubkey(3),
-            pubkey(0xaa),
-            1_001,
-            Margin::default(),
-            false,
-        );
-        assert_eq!(buy.sell_amount, 0);
     }
 
     /// 400 of 1000 sold: 600 is left to sell, the 1000 buy limit scales to
@@ -456,7 +394,7 @@ mod tests {
             executed: 400,
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), 32, Margin::default(), false);
+        let order = wire(&sell, 32, 0, false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (600, 632, 600)
@@ -471,7 +409,7 @@ mod tests {
             side: Side::Buy,
             ..sell
         };
-        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), 32, Margin::default(), false);
+        let order = wire(&buy, 32, 0, false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (568, 600, 600)
@@ -484,29 +422,10 @@ mod tests {
 
     #[test]
     fn missing_buy_token_account_is_on_the_wire_only_when_flagged() {
-        let (taker, program_id) = (pubkey(3), pubkey(0xaa));
         let order = domain_order(Side::Sell);
-
-        let flagged = serde_json::to_value(Order::new(
-            &order,
-            taker,
-            program_id,
-            0,
-            Margin::default(),
-            true,
-        ))
-        .unwrap();
+        let flagged = serde_json::to_value(wire(&order, 0, 0, true)).unwrap();
         assert_eq!(flagged["missingBuyTokenAccount"], json!(true));
-
-        let unflagged = serde_json::to_value(Order::new(
-            &order,
-            taker,
-            program_id,
-            0,
-            Margin::default(),
-            false,
-        ))
-        .unwrap();
+        let unflagged = serde_json::to_value(wire(&order, 0, 0, false)).unwrap();
         assert!(unflagged.get("missingBuyTokenAccount").is_none());
     }
 
@@ -521,39 +440,35 @@ mod tests {
         }
     }
 
-    /// Charging the engine sends every order at its signed limit, flagging the
-    /// ones whose buy token account is missing.
+    /// Charging the engine sends every order at its signed limit, flagging
+    /// the ones whose buy token account is missing. Charging the driver sends
+    /// only the orders with a cut, each at its tightened limit and unflagged.
     #[test]
-    fn charging_the_engine_sends_the_signed_limits_and_the_flags() {
+    fn the_charge_decides_the_orders_sent_their_limits_and_their_flags() {
         let order = domain_order(Side::Sell);
-        let auction = domain_auction(vec![order.clone()]);
-        let charge = Charge::Engine {
-            missing_buy_token_accounts: [order.uid].into(),
-        };
-        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &charge);
-        assert_eq!(sent.orders.len(), 1);
-        assert_eq!(sent.orders[0].buy_amount, 1_000);
-        assert!(sent.orders[0].missing_buy_token_account);
-    }
-
-    /// Charging the driver sends only the orders with a cut, each at its
-    /// tightened limit and unflagged.
-    #[test]
-    fn charging_the_driver_sends_only_the_cut_orders_tightened() {
-        let cut = domain_order(Side::Sell);
         let unpriced = domain::Order {
             uid: OrderUid([9; 32]),
             ..domain_order(Side::Sell)
         };
-        let auction = domain_auction(vec![cut.clone(), unpriced]);
-        let charge = Charge::Driver {
-            cuts: [(cut.uid, 50)].into(),
-            margin: Margin::default(),
+        let auction = domain_auction(vec![order.clone(), unpriced]);
+
+        let engine = Charge::Engine {
+            missing_buy_token_accounts: [order.uid].into(),
         };
-        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &charge);
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine);
+        assert_eq!(sent.orders.len(), 2);
+        assert_eq!(sent.orders[0].buy_amount, 1_000);
+        assert!(sent.orders[0].missing_buy_token_account);
+        assert!(!sent.orders[1].missing_buy_token_account);
+
+        let driver = Charge::Driver {
+            cuts: [(order.uid, 50)].into(),
+            margin: Margin::try_from(500).unwrap(),
+        };
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &driver);
         assert_eq!(sent.orders.len(), 1);
-        assert_eq!(sent.orders[0].uid, cut.uid);
-        assert_eq!(sent.orders[0].buy_amount, 1_050);
+        assert_eq!(sent.orders[0].uid, order.uid);
+        assert_eq!(sent.orders[0].buy_amount, 1_106);
         assert!(!sent.orders[0].missing_buy_token_account);
     }
 
