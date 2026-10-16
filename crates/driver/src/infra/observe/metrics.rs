@@ -25,6 +25,15 @@ pub struct Metrics {
     /// atempted and the error detection.
     #[metric(labels("mempool", "result"))]
     pub mempool_submission_results_blocks_passed: prometheus::IntCounterVec,
+    /// The results of sending a settlement bundle to a single block builder.
+    #[metric(labels("mempool", "builder", "result"))]
+    pub builder_submission: prometheus::IntCounterVec,
+    /// Time it took a single block builder to answer a settlement bundle.
+    #[metric(
+        labels("mempool", "builder"),
+        buckets(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0)
+    )]
+    pub builder_submission_time: prometheus::HistogramVec,
     /// How many orders detected by specific solver and strategy.
     #[metric(labels("solver"))]
     pub bad_orders_detected: prometheus::IntCounterVec,

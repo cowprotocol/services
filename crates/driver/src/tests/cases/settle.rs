@@ -4,7 +4,7 @@ use {
         tests::{
             self,
             cases::{DEFAULT_SOLVER_FEE, EtherExt},
-            setup::{ab_order, ab_pool, ab_solution},
+            setup::{ab_order, ab_pool, ab_solution, builder::Builder},
         },
     },
     alloy::providers::Provider,
@@ -75,6 +75,122 @@ async fn private_rpc_with_high_risk_solution() {
 
     let id = test.solve().await.ok().id();
     // Public cannot be used and private RPC is not available
+    test.settle(id).await.err().kind("FailedToSubmit");
+}
+
+/// Checks that a settlement goes to the block builders as one bundle for each
+/// block up to the deadline and that an unreachable builder does not fail the
+/// submission.
+#[tokio::test]
+#[ignore]
+async fn submits_bundles_to_builders() {
+    let builder = Builder::bind().await;
+    let test = tests::setup()
+        .name("builder submission")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .mempools(vec![tests::setup::Mempool::Builders {
+            urls: vec![builder.url(), "http://non-existant:8545".to_string()],
+        }])
+        .done()
+        .await;
+    let requests = builder.serve(test.web3());
+
+    let id = test.solve().await.ok().id();
+    test.settle(id)
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
+    // One bundle for each block up to the deadline, 3 blocks away.
+    let blocks = requests.bundle_blocks();
+    assert_eq!(blocks, (blocks[0]..blocks[0] + 3).collect::<Vec<_>>());
+}
+
+/// Checks that only the builders get the settlement when they are configured:
+/// the private RPC next to them gets no request.
+#[tokio::test]
+#[ignore]
+async fn only_builders_get_the_settlement() {
+    let builder = Builder::bind().await;
+    let private_rpc = Builder::bind().await;
+    let test = tests::setup()
+        .name("only builders get the settlement")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .mempools(vec![
+            tests::setup::Mempool::Private {
+                url: Some(private_rpc.url()),
+                mines_reverting_txs: false,
+            },
+            tests::setup::Mempool::Builders {
+                urls: vec![builder.url()],
+            },
+        ])
+        .done()
+        .await;
+    builder.serve(test.web3());
+    let private_rpc = private_rpc.serve(test.web3());
+
+    let id = test.solve().await.ok().id();
+    test.settle(id)
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
+    assert!(private_rpc.is_empty());
+}
+
+/// Checks that no other mempool takes the settlement when no builder accepts
+/// it: there is no fallback.
+#[tokio::test]
+#[ignore]
+async fn no_fallback_when_builders_fail() {
+    let test = tests::setup()
+        .name("no fallback when builders fail")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .mempools(vec![
+            tests::setup::Mempool::Private {
+                url: None,
+                mines_reverting_txs: false,
+            },
+            tests::setup::Mempool::Builders {
+                urls: vec!["http://non-existant:8545".to_string()],
+            },
+        ])
+        .done()
+        .await;
+
+    let id = test.solve().await.ok().id();
+    test.settle(id).await.err().kind("FailedToSubmit");
+}
+
+/// Checks that the public mempool next to builders gets no settlement either.
+#[tokio::test]
+#[ignore]
+async fn builders_disable_public_mempool() {
+    let test = tests::setup()
+        .name("builders disable public mempool")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .mempools(vec![
+            tests::setup::Mempool::Default,
+            tests::setup::Mempool::Builders {
+                urls: vec!["http://non-existant:8545".to_string()],
+            },
+        ])
+        .done()
+        .await;
+
+    let id = test.solve().await.ok().id();
+    // Public is disabled and no builder is available
     test.settle(id).await.err().kind("FailedToSubmit");
 }
 

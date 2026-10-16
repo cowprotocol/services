@@ -58,6 +58,7 @@ use {
 };
 
 pub mod blockchain;
+pub mod builder;
 mod driver;
 pub mod fee;
 mod orderbook;
@@ -494,6 +495,8 @@ pub enum Mempool {
         url: Option<String>,
         mines_reverting_txs: bool,
     },
+    /// Sends the settlement to the block builders at these URLs as bundles.
+    Builders { urls: Vec<String> },
 }
 
 /// Create a builder for the setup process.

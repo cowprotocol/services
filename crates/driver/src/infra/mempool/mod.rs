@@ -1,3 +1,6 @@
+mod builders;
+
+pub use builders::Builder;
 use {
     crate::{
         boundary::{Web3, unbuffered_web3},
@@ -7,15 +10,17 @@ use {
     alloy::{
         consensus::Transaction,
         eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
+        network::{Ethereum, NetworkWallet, TxSigner},
         primitives::Address,
         providers::{Provider, ext::TxPoolApi},
         rpc::types::TransactionRequest,
         transports::TransportError,
     },
     anyhow::Context,
+    builders::Builders,
     dashmap::DashMap,
     eth_domain_types as eth,
-    std::sync::Arc,
+    std::{collections::HashMap, ops::RangeInclusive, sync::Arc},
     url::Url,
 };
 
@@ -33,6 +38,9 @@ pub struct Config {
     pub revert_protection: RevertProtection,
     pub max_additional_tip: eth::U256,
     pub additional_tip_percentage: f64,
+    /// Block builders to send the settlement to as bundles. When empty the
+    /// settlement goes to `url` instead.
+    pub builders: Vec<Builder>,
 }
 
 #[cfg(test)]
@@ -48,6 +56,7 @@ impl Config {
             additional_tip_percentage: 0.,
             revert_protection: infra::mempool::RevertProtection::Disabled,
             nonce_block_number: None,
+            builders: Default::default(),
             url,
         }
     }
@@ -67,6 +76,10 @@ pub enum RevertProtection {
 #[derive(Debug, Clone)]
 pub struct Mempool {
     transport: Web3,
+    /// Empty when the settlement goes to `config.url` instead.
+    builders: Builders,
+    /// Chain id of the transactions signed here for the builders.
+    chain_id: u64,
     config: Config,
     last_submissions: Arc<DashMap<Address, Submission>>,
 }
@@ -84,15 +97,34 @@ impl std::fmt::Display for Mempool {
 }
 
 impl Mempool {
-    pub fn new(config: Config, solver_accounts: Vec<Account>) -> Self {
+    pub fn new(config: Config, solver_accounts: Vec<Account>, chain_id: u64) -> Self {
         let transport = unbuffered_web3(&config.url);
         // Register the solver accounts into the wallet to submit txs on their
         // behalf
+        let mut accounts = HashMap::new();
         for account in solver_accounts {
+            accounts.insert(TxSigner::address(&account), account.clone());
             transport.wallet.register_signer(account);
         }
+        if !config.builders.is_empty() {
+            // Builders get txs signed here, which an address-only account
+            // leaves to the node.
+            let address_only: Vec<_> = accounts
+                .iter()
+                .filter(|(_, account)| matches!(account, Account::Address(_)))
+                .map(|(address, _)| address)
+                .collect();
+            assert!(
+                address_only.is_empty(),
+                "mempool {} submits to builders but accounts {address_only:?} cannot sign",
+                config.name
+            );
+        }
+        let builders = Builders::new(config.name.clone(), &config.builders, accounts);
         Self {
             transport,
+            builders,
+            chain_id,
             config,
             last_submissions: Default::default(),
         }
@@ -120,7 +152,8 @@ impl Mempool {
 
     /// Submits a transaction to the mempool. Returns optimistically as soon as
     /// the transaction is pending. `signer` is the address that signs and pays
-    /// for gas (may differ from the solver address in EIP-7702 mode).
+    /// for gas (may differ from the solver address in EIP-7702 mode). `blocks`
+    /// are the blocks the transaction may land in, which only builders use.
     pub async fn submit(
         &self,
         tx: eth::Tx,
@@ -128,6 +161,7 @@ impl Mempool {
         gas_limit: eth::Gas,
         signer: eth::Address,
         nonce: u64,
+        blocks: RangeInclusive<u64>,
     ) -> Result<eth::TxId, mempools::Error> {
         let max_fee_per_gas = gas_price.max_fee_per_gas;
         let max_priority_fee_per_gas = gas_price.max_priority_fee_per_gas;
@@ -144,16 +178,13 @@ impl Mempool {
             .value(tx.value.0)
             .access_list(tx.access_list.into());
 
-        let submission = self
-            .transport
-            .provider
-            .send_transaction(tx_request)
-            .await
-            .inspect_err(log_rpc_error_code)
-            .map_err(anyhow::Error::from);
+        let submission = match self.submits_to_builders() {
+            true => self.send_to_builders(tx_request, signer, blocks).await,
+            false => self.send_to_node(tx_request).await,
+        };
 
         match submission {
-            Ok(tx) => {
+            Ok(hash) => {
                 tracing::debug!(
                     ?nonce,
                     ?gas_price,
@@ -163,7 +194,7 @@ impl Mempool {
                 );
                 self.last_submissions
                     .insert(signer, Submission { nonce, gas_price });
-                Ok(eth::TxId(*tx.tx_hash()))
+                Ok(hash)
             }
             Err(err) => {
                 // log pending tx in case we failed to replace a pending tx
@@ -181,6 +212,35 @@ impl Mempool {
                 Err(mempools::Error::Other(err))
             }
         }
+    }
+
+    /// Sends the transaction to the node, which signs it with the registered
+    /// wallet and forwards it to its own mempool.
+    async fn send_to_node(&self, tx: TransactionRequest) -> anyhow::Result<eth::TxId> {
+        let pending = self
+            .transport
+            .provider
+            .send_transaction(tx)
+            .await
+            .inspect_err(log_rpc_error_code)?;
+        Ok(eth::TxId(*pending.tx_hash()))
+    }
+
+    /// Signs the transaction here and sends it to the builders as one bundle
+    /// for each of `blocks`, the window a mempool tx would stay valid for.
+    async fn send_to_builders(
+        &self,
+        mut tx: TransactionRequest,
+        signer: eth::Address,
+        blocks: RangeInclusive<u64>,
+    ) -> anyhow::Result<eth::TxId> {
+        // Without a chain id the signed tx silently falls back to mainnet.
+        tx.chain_id = Some(self.chain_id);
+        let envelope = NetworkWallet::<Ethereum>::sign_request(&self.transport.wallet, tx)
+            .await
+            .context("failed to sign the tx for the builders")?;
+        self.builders.send(&envelope, signer, blocks).await?;
+        Ok(eth::TxId(*envelope.tx_hash()))
     }
 
     /// Queries the mempool for a pending transaction of the given solver and
@@ -216,6 +276,12 @@ impl Mempool {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// Whether the settlement goes to block builders as bundles instead of
+    /// to the mempool of `config.url`.
+    pub fn submits_to_builders(&self) -> bool {
+        !self.builders.is_empty()
     }
 
     pub fn reverts_can_get_mined(&self) -> bool {
