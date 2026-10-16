@@ -206,6 +206,7 @@ enum Receiver {
     /// Nodes that forward settlement transactions to the public mempool.
     PublicMempool {
         /// The RPC URLs of the nodes. The driver submits to all of them.
+        #[serde(deserialize_with = "serde_ext::deserialize_nonempty_vec")]
         urls: Vec<Url>,
     },
     /// A private relay like MEV Blocker.
@@ -1450,6 +1451,11 @@ mod tests {
             urls = ["http://node"]
             [private-relay]
             url = "http://relay"
+            "#,
+            // a public mempool needs at least one URL
+            r#"
+            [public-mempool]
+            urls = []
             "#,
             // a private relay takes a single URL
             r#"
