@@ -2,6 +2,7 @@
 
 use {
     crate::domain::{
+        fee::Margin,
         priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
         settlement::MaxNativeShortfall,
     },
@@ -148,6 +149,14 @@ pub struct Solver {
     /// Absent means the driver.
     #[serde(default)]
     pub fee_handler: FeeHandler,
+    /// The share of every fill, in basis points `0..10_000`, the driver takes
+    /// on top of the execution costs when it prices them: a sell order
+    /// delivers `(1 − share)` of the fill's buy leg, a buy order pulls `(1 +
+    /// share)` of its sell leg. The engine reports the leg its route quotes,
+    /// and a route delivering less leaves the buffer short of the push,
+    /// reverting the settlement. Quotes shrink by it too. Absent means none.
+    #[serde(default)]
+    pub solver_fee_bps: Margin,
     /// The largest share of a settlement's native SOL payouts, in basis points
     /// `0..10_000`, that the solver's own SOL covers when the swap delivers
     /// less SOL than the payouts. A larger shortfall reverts the settlement.
@@ -210,6 +219,30 @@ mod tests {
             &solver.signer,
             cow_solana_signer::Config::Keypair(path) if path == Path::new("/path/to/keypair.json")
         ));
+        assert_eq!(solver.solver_fee_bps, Margin::default());
+    }
+
+    #[test]
+    fn solver_fee_bps_parses() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            solver-fee-bps = 500
+        "#;
+        let solver: Solver = toml::de::from_str(solver_config).unwrap();
+        assert_eq!(solver.solver_fee_bps, Margin::try_from(500).unwrap());
+    }
+
+    #[test]
+    fn solver_fee_bps_at_max_is_rejected() {
+        let solver_config = r#"
+            name = "baseline"
+            endpoint = "http://localhost:8001"
+            signer = { keypair = "/path/to/keypair.json" }
+            solver-fee-bps = 10000
+        "#;
+        assert!(toml::de::from_str::<Solver>(solver_config).is_err());
     }
 
     #[test]

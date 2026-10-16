@@ -49,6 +49,11 @@ signer = { keypair = "/path/to/keypair.json" }
 # from every fill the engine reports, "solver" leaves them to the engine.
 # Omit for the driver.
 # fee-handler = "driver"
+# The share of every fill, in basis points 0..10000, the driver takes on top
+# of the execution costs when it prices them: the engine reports the leg its
+# route quotes, and a route delivering less leaves the buffer short of the
+# push, reverting the settlement. Quotes shrink by it too. Omit for none.
+# solver-fee-bps = 10
 # The largest share of a settlement's native SOL payouts, in basis points
 # 0..10000, that the solver's own SOL covers when the swap delivers less SOL
 # than the payouts. A larger shortfall reverts the settlement. Omit to revert

@@ -16,7 +16,7 @@ use {
     },
     cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
     solana_driver::{
-        domain::priority_fee::PriorityFeePolicy,
+        domain::{fee::Margin, priority_fee::PriorityFeePolicy},
         infra::{
             api::Api,
             blockchain::{Solana, associated_token_address},
@@ -168,10 +168,16 @@ async fn spawn_recording_solver_engine(
 /// so the test can register a matching settlement signer. Its engine prices
 /// the execution costs in, so fills come back as the engine reports them.
 async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
-    solver_with(addr, FeeHandler::Solver).await
+    solver_with(addr, FeeHandler::Solver, 0).await
 }
 
-async fn solver_with(addr: SocketAddr, fee_handler: FeeHandler) -> (Solver, Pubkey) {
+/// A solver client charged by `fee_handler`, with the driver taking
+/// `solver_fee_bps` of every fill on top of the execution costs.
+async fn solver_with(
+    addr: SocketAddr,
+    fee_handler: FeeHandler,
+    solver_fee_bps: u16,
+) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
     let solver = Solver::new(&config::Solver {
@@ -180,6 +186,7 @@ async fn solver_with(addr: SocketAddr, fee_handler: FeeHandler) -> (Solver, Pubk
         signer: cow_solana_signer::Config::Keypair(keypair_path),
         solve_every_nth_auction: None,
         fee_handler,
+        solver_fee_bps: Margin::try_from(solver_fee_bps).unwrap(),
         max_native_shortfall_bps: None,
     })
     .await
@@ -202,6 +209,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         signer: cow_solana_signer::Config::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
         fee_handler: FeeHandler::Solver,
+        solver_fee_bps: Margin::default(),
         max_native_shortfall_bps: None,
     })
     .await
@@ -866,7 +874,7 @@ fn solve_request_priced_for_a_cut_of_100() -> serde_json::Value {
 #[tokio::test]
 async fn solve_cuts_the_execution_cost_from_the_fill() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Driver).await;
+    let (solver, _) = solver_with(engine, FeeHandler::Driver, 0).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
@@ -884,7 +892,7 @@ async fn solve_cuts_the_execution_cost_from_the_fill() {
 #[tokio::test]
 async fn solve_drops_the_fill_the_cut_pushes_under_the_limit() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "2000"), (2, "3000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Driver).await;
+    let (solver, _) = solver_with(engine, FeeHandler::Driver, 0).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
@@ -896,7 +904,7 @@ async fn solve_drops_the_fill_the_cut_pushes_under_the_limit() {
 #[tokio::test]
 async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Driver).await;
+    let (solver, _) = solver_with(engine, FeeHandler::Driver, 0).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve(addr).await;
@@ -904,12 +912,59 @@ async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
     assert!(requests.lock().unwrap().is_none());
 }
 
+/// On top of the 100 atom cut the driver takes 5% of the fill: the engine is
+/// asked for 2211, the cut 2100 limit raised by the margin, and its route
+/// paying 3000 is reported at 3000 less the 150 margin and the cut.
+#[tokio::test]
+async fn solve_takes_the_margin_off_the_fill_on_top_of_the_cut() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with(engine, FeeHandler::Driver, 500).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
+    let amounts = &body["solutions"][0]["orders"][uid()];
+    assert_eq!(amounts["executedSell"], "1000");
+    assert_eq!(amounts["executedBuy"], "2750");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2211");
+}
+
+/// A quote shrinks by the margin like a fill, but not by the execution
+/// costs: the orderbook nets those from the quote itself, so the engine's
+/// 2000 buy comes back as 1900 with the network fee beside it.
+#[tokio::test]
+async fn a_quote_carries_the_margin_but_not_the_costs() {
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, account) = solver_with(engine, FeeHandler::Driver, 500).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1000",
+            "buyAmount": "1900",
+            "solver": account.to_string(),
+            "networkFee": "19000",
+        })
+    );
+}
+
 /// A quote reports the fill as the engine found it, whoever charges the
 /// execution costs: the orderbook nets them from the quote itself.
 #[tokio::test]
 async fn a_quote_is_not_cut() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
-    let (solver, account) = solver_with(engine, FeeHandler::Driver).await;
+    let (solver, account) = solver_with(engine, FeeHandler::Driver, 0).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()

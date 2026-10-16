@@ -304,33 +304,41 @@ impl Competition {
     }
 
     /// Send the auction to the solver engine and return its deduplicated
-    /// solutions without caching them, cut by the execution costs when the
-    /// solver's fee handler is the driver.
+    /// solutions without caching them. When the solver's fee handler is the
+    /// driver, every fill is cut by the solver's margin, and a solve fill by
+    /// the execution costs on top.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
-    /// its fill is reported as the engine found it, and nothing is flagged.
+    /// its execution costs are reported, not cut, and nothing is flagged.
     pub async fn compute_solutions(
         &self,
         auction: &Auction,
         buy_token_accounts: Option<&BuyTokenAccounts>,
     ) -> Result<Vec<Solution>, Error> {
-        let (charge, costs) = match (buy_token_accounts, self.solver.fee_handler()) {
-            (None, _) => (Charge::default(), None),
-            (Some(accounts), FeeHandler::Solver) => (
+        let no_rent = HashMap::new();
+        let (charge, costs) = match self.solver.fee_handler() {
+            FeeHandler::Solver => (
                 Charge::Engine {
-                    missing_buy_token_accounts: accounts.missing.keys().copied().collect(),
+                    missing_buy_token_accounts: buy_token_accounts
+                        .map(|accounts| accounts.missing.keys().copied().collect())
+                        .unwrap_or_default(),
                 },
                 None,
             ),
-            (Some(accounts), FeeHandler::Driver) => {
+            FeeHandler::Driver => {
                 let costs = ExecutionCost {
-                    rent: &accounts.missing,
+                    rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
                     native_prices: &auction.native_prices,
+                    margin: self.solver.margin(),
                 };
-                let network_fee = self.network_fee_ceiling().await?;
+                let network_fee = match buy_token_accounts {
+                    Some(_) => self.network_fee_ceiling().await?,
+                    None => 0,
+                };
                 (
                     Charge::Driver {
                         cuts: costs.cuts(&auction.orders, network_fee),
+                        margin: costs.margin,
                     },
                     Some(costs),
                 )
@@ -361,18 +369,21 @@ impl Competition {
         let orders = orders_by_uid(&auction.orders);
         let mut charged = Vec::with_capacity(solutions.len());
         for mut solution in solutions {
-            let network_fee = match self.network_fee(&solution).await {
-                Ok(network_fee) => network_fee,
-                Err(Error::PriorityFeeTooHigh(reason)) => {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        %reason,
-                        "dropping solution, its network fee is over budget"
-                    );
-                    continue;
-                }
-                Err(err) => return Err(err),
+            let network_fee = match buy_token_accounts {
+                None => 0,
+                Some(_) => match self.network_fee(&solution).await {
+                    Ok(network_fee) => network_fee,
+                    Err(Error::PriorityFeeTooHigh(reason)) => {
+                        tracing::warn!(
+                            solver = %self.solver.name(),
+                            solution_id = solution.id,
+                            %reason,
+                            "dropping solution, its network fee is over budget"
+                        );
+                        continue;
+                    }
+                    Err(err) => return Err(err),
+                },
             };
             match costs.apply(&mut solution, &orders, network_fee) {
                 Ok(()) => charged.push(solution),
