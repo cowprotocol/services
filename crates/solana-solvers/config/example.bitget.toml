@@ -10,7 +10,7 @@ min-back-off = "1s"
 max-back-off = "8s"
 
 [dex]
-# Bitget swap API base URL, or a proxy route to it. Keep the trailing slash.
+# Bitget swap API base URL, or a proxy route to it.
 endpoint = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
 # Credentials from the Bitget developer portal. Requests are signed with the secret.
 api-key = "your-bitget-api-key"

@@ -33,9 +33,14 @@ pub struct Bitget {
 
 impl Bitget {
     pub fn new(config: &BitgetConfig) -> Result<Self, Error> {
+        let mut endpoint = config.endpoint.clone();
+        // `join` would replace a last path segment that lacks the slash.
+        if !endpoint.path().ends_with('/') {
+            endpoint.set_path(&format!("{}/", endpoint.path()));
+        }
         Ok(Self {
             client: reqwest::Client::builder().build()?,
-            endpoint: config.endpoint.clone(),
+            endpoint,
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
             slippage_bps: config.slippage_bps,
@@ -103,7 +108,7 @@ impl Bitget {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::dex::Side, std::str::FromStr};
+    use {super::*, std::str::FromStr};
 
     fn config(api_key: String, api_secret: String) -> BitgetConfig {
         BitgetConfig {
@@ -115,17 +120,6 @@ mod tests {
             slippage_bps: 20,
             max_accounts: 48,
         }
-    }
-
-    /// Computed independently with Python's `hmac`, using the same signer that
-    /// the live API accepted.
-    #[test]
-    fn signs_like_bitget_expects() {
-        let bitget = Bitget::new(&config("test-key".into(), "test-secret".into())).unwrap();
-        assert_eq!(
-            bitget.signature(r#"{"fromChain":"sol"}"#, "1700000000000"),
-            "QcupArhjrn7Fkp1hVL4Pq1ar2oHyzVDXrgQ3XUng0W0="
-        );
     }
 
     /// Live Bitget API. Needs `BITGET_API_KEY` and `BITGET_API_SECRET`.

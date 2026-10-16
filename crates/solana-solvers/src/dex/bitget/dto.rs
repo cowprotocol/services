@@ -63,29 +63,25 @@ impl SwapRequest {
 }
 
 /// Bitget's response wrapper: `status` 0 carries `data`, any other an
-/// `error_code`.
+/// [`error_code`](https://web3.bitget.com/en/docs/swap-order#error-code-list).
 #[derive(Deserialize)]
 pub struct Envelope {
     status: i64,
-    #[serde(default)]
     error_code: Option<i64>,
-    #[serde(default)]
     msg: Option<String>,
-    #[serde(default)]
     data: Option<serde_json::Value>,
 }
 
 impl Envelope {
     pub fn into_data(self, http_status: u16) -> Result<SwapResponse, Error> {
         if self.status != 0 {
-            return Err(match self.error_code {
+            let code = self.error_code.unwrap_or_default();
+            return Err(match code {
                 // No route, or a Bitget-side failure the next auction retries.
-                Some(80000 | 80001 | 80004 | 80005 | 80008..=80012 | 80014 | 80020) => {
-                    Error::NotFound
-                }
-                code => Error::Api {
+                80000 | 80001 | 80004 | 80005 | 80008..=80012 | 80014 | 80020 => Error::NotFound,
+                _ => Error::Api {
                     status: http_status,
-                    body: format!("error {code:?}: {}", self.msg.unwrap_or_default()),
+                    body: format!("error_code {code}: {}", self.msg.unwrap_or_default()),
                 },
             });
         }
@@ -139,22 +135,19 @@ impl SwapResponse {
             })
             .find(|(_, ata)| accounts().any(|account| account.pubkey == *ata))
             .ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
-        if output != order.buy_destination {
-            // Unchecked because the auction carries no decimals. Token-2022
-            // mints with a transfer fee or hook reject it, and
-            // simulation drops them.
-            #[allow(deprecated)]
-            let transfer = spl_token_2022_interface::instruction::transfer(
-                &token_program,
-                &output,
-                &order.buy_destination,
-                taker,
-                &[],
-                self.min_amount,
-            )
-            .expect("both token programs pass the program check");
-            instructions.push(transfer);
-        }
+        // Unchecked because the auction carries no decimals. Token-2022 mints
+        // with a transfer fee or hook reject it, and simulation drops them.
+        #[allow(deprecated)]
+        let transfer = spl_token_2022_interface::instruction::transfer(
+            &token_program,
+            &output,
+            &order.buy_destination,
+            taker,
+            &[],
+            self.min_amount,
+        )
+        .expect("both token programs pass the program check");
+        instructions.push(transfer);
         Ok(Swap {
             in_amount: order.sell_amount,
             out_amount: self.min_amount,
@@ -179,12 +172,14 @@ mod tests {
         }
     }
 
-    fn response(order: &Order, taker: &Pubkey, extra_signer: Option<Pubkey>) -> SwapResponse {
-        let output = get_associated_token_address_with_program_id(
-            taker,
-            &order.buy_mint,
-            &inline_spl_token::ID,
-        );
+    fn response(
+        order: &Order,
+        taker: &Pubkey,
+        token_program: &Pubkey,
+        extra_signer: Option<Pubkey>,
+    ) -> SwapResponse {
+        let output =
+            get_associated_token_address_with_program_id(taker, &order.buy_mint, token_program);
         let mut accounts = vec![
             serde_json::json!({"pubkey": taker.to_string(), "isSigner": true, "isWritable": true}),
             serde_json::json!({"pubkey": output.to_string(), "isSigner": false, "isWritable": true}),
@@ -207,26 +202,36 @@ mod tests {
     fn moves_the_minimum_output_into_the_buffer() {
         let taker = Pubkey::new_unique();
         let order = order();
-        let swap = response(&order, &taker, None)
-            .into_swap(&order, &taker)
-            .unwrap();
+        for program in [inline_spl_token::ID, spl_token_2022_interface::ID] {
+            let swap = response(&order, &taker, &program, None)
+                .into_swap(&order, &taker)
+                .unwrap();
 
-        assert_eq!((swap.in_amount, swap.out_amount), (1_000, 990));
-        assert_eq!(swap.address_lookup_tables.len(), 1);
-        // ComputeBudget dropped: the route, then the transfer.
-        assert_eq!(swap.instructions.len(), 2);
-        let transfer = &swap.instructions[1];
-        assert_eq!(transfer.program_id, inline_spl_token::ID);
-        assert_eq!(transfer.accounts[1].pubkey, order.buy_destination);
-        assert_eq!(transfer.accounts[2].pubkey, taker);
-        assert_eq!(transfer.data[1..], 990u64.to_le_bytes());
+            assert_eq!((swap.in_amount, swap.out_amount), (1_000, 990));
+            assert_eq!(swap.address_lookup_tables.len(), 1);
+            // ComputeBudget dropped: the route, then the transfer.
+            assert_eq!(swap.instructions.len(), 2);
+            let transfer = &swap.instructions[1];
+            assert_eq!(transfer.program_id, program);
+            let paid =
+                get_associated_token_address_with_program_id(&taker, &order.buy_mint, &program);
+            assert_eq!(transfer.accounts[0].pubkey, paid);
+            assert_eq!(transfer.accounts[1].pubkey, order.buy_destination);
+            assert_eq!(transfer.accounts[2].pubkey, taker);
+            assert_eq!(transfer.data[1..], 990u64.to_le_bytes());
+        }
     }
 
     #[test]
     fn rejects_a_route_needing_another_signer() {
         let taker = Pubkey::new_unique();
         let order = order();
-        let response = response(&order, &taker, Some(Pubkey::new_unique()));
+        let response = response(
+            &order,
+            &taker,
+            &inline_spl_token::ID,
+            Some(Pubkey::new_unique()),
+        );
         assert!(matches!(
             response.into_swap(&order, &taker),
             Err(Error::BadResponse(_))

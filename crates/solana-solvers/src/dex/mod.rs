@@ -14,8 +14,8 @@ pub struct Order {
     pub sell_mint: Pubkey,
     pub buy_mint: Pubkey,
     /// Where the swap sends its output: the settlement's buy-mint buffer,
-    /// resolved upstream (driver or autopilot). Passed to Jupiter as
-    /// `destinationTokenAccount`. `FinalizeSettle` then pushes to the user.
+    /// resolved upstream (driver or autopilot). `FinalizeSettle` then pushes
+    /// to the user.
     pub buy_destination: Pubkey,
     pub sell_amount: u64,
     pub buy_amount: u64,
@@ -80,10 +80,9 @@ pub enum Dex {
 impl Dex {
     /// Build the swap for `order` that the settlement signer `user` executes.
     ///
-    /// The route spends its input from the sell-mint ATA of the solver.
-    /// Jupiter has no source-account override. The sell funds must already be
-    /// in that ATA. The caller must make sure that the ATA exists before the
-    /// pull instructions of the swap run.
+    /// The route spends its input from the sell-mint ATA of the solver. The
+    /// sell funds must already be in that ATA. The caller must make sure that
+    /// the ATA exists before the pull instructions of the swap run.
     pub async fn swap(&self, order: &Order, user: &Pubkey) -> Result<Swap, Error> {
         match self {
             Dex::Jupiter(jupiter) => jupiter.swap(order, user).await,

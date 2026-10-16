@@ -89,8 +89,7 @@ pub struct JupiterConfig {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BitgetConfig {
-    /// Base URL of the Bitget swap API. `swap` is joined onto it, so it needs
-    /// the trailing slash.
+    /// Base URL of the Bitget swap API, or a proxy route to it.
     pub endpoint: Url,
 
     pub api_key: String,
