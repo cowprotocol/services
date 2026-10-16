@@ -55,7 +55,9 @@ pub struct RunLoopConfig {
     #[serde(default)]
     pub enable_leader_lock: bool,
 
-    /// Enable brotli compression of `/solve` request bodies sent to drivers.
+    /// Enable brotli compression of `/solve` request bodies. Only drivers
+    /// that set `supports-brotli` receive compressed bodies; all others keep
+    /// getting plain JSON.
     #[serde(default)]
     pub compress_solve_request: bool,
 
