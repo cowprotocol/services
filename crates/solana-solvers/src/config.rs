@@ -104,6 +104,21 @@ pub struct BitgetConfig {
     /// settlement around it in the 64 a transaction can lock.
     #[serde(default = "default_max_accounts")]
     pub max_accounts: u16,
+
+    #[serde(default)]
+    pub fee: Fee,
+}
+
+/// Bitget's fee on each route.
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Fee {
+    /// Bitget's smallest fee, 1 bp.
+    #[default]
+    Standard,
+    /// No fee. The route then also needs Bitget's signature, which the driver
+    /// collects through `/cosign` at settle time.
+    Exempt,
 }
 
 fn default_max_accounts() -> u16 {

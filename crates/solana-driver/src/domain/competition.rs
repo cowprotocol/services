@@ -503,6 +503,15 @@ impl Competition {
 
         self.simulate_settlement(&transaction).await?;
 
+        // Other signers sign the final message, so only now. A failure leaves
+        // the solution cached for a retry.
+        let transaction = if transaction.message.header().num_required_signatures > 1 {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            self.solver.cosign(&transaction, remaining).await?
+        } else {
+            transaction
+        };
+
         // A zero timeout still polls the send future once, which could
         // submit the transaction past the deadline, so handle it before the
         // solution is consumed and while a retry is still possible.

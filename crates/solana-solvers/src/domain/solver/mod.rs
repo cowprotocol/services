@@ -8,7 +8,7 @@ use {
     configs::rate_limit::Strategy,
     futures::{Stream, StreamExt, future, stream},
     rate_limit::RateLimiter,
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     std::{future::Future, num::NonZeroUsize},
     tracing::Instrument,
 };
@@ -40,6 +40,15 @@ pub struct Solver<Q> {
     quoter: Q,
     concurrent_requests: NonZeroUsize,
     rate_limiter: RateLimiter,
+}
+
+impl Solver<Dex> {
+    pub async fn cosign(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<VersionedTransaction, dex::Error> {
+        self.quoter.cosign(transaction).await
+    }
 }
 
 impl<Q: Quote + Sync> Solver<Q> {
