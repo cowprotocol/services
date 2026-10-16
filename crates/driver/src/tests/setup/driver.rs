@@ -265,6 +265,7 @@ async fn create_config_file(
 
            [submission]
            gas-price-cap = "1000000000000"
+           additional-tip-percentage = 0.0
            "#,
         blockchain.settlement.address(),
         blockchain.weth.address(),
@@ -281,7 +282,6 @@ async fn create_config_file(
                 file,
                 r#"[[submission.mempool]]
                     url = "{}"
-                    additional-tip-percentage = 0.0
                     "#,
                 blockchain.web3_url,
             )
@@ -293,7 +293,6 @@ async fn create_config_file(
                 file,
                 r#"[[submission.mempool]]
                     url = "{}"
-                    additional-tip-percentage = 0.0
                     mines-reverting-txs = {mines_reverting_txs}
                     "#,
                 url.clone().unwrap_or(blockchain.web3_url.clone()),
