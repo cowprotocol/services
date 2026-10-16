@@ -308,32 +308,29 @@ pub struct SolutionRow {
     pub executed_buy: Option<BigDecimal>,
 }
 
-/// The proposed solutions of the auction that settled the order's first
+/// The proposed solutions of the auction that settled the order's latest
 /// trade, or of the latest auction in which a solution executed the order.
-/// Winners first, then by score. Empty when no competition knows the order.
+/// Worst to best with the winner last, the order the EVM status endpoint
+/// lists them in. Empty when no competition knows the order.
 pub async fn find_order_solutions(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Vec<SolutionRow>> {
     const QUERY: &str = r#"
-WITH auction AS (
-    SELECT COALESCE(
-        (SELECT s.auction_id
-         FROM solana.trades t
-         JOIN solana.settlements s
-           ON s.tx_signature = t.tx_signature AND s.instruction_index = t.instruction_index
-         WHERE t.order_uid = $1
-         ORDER BY t.slot, t.instruction_index
-         LIMIT 1),
-        (SELECT max(auction_id) FROM solana.proposed_trade_executions WHERE order_uid = $1)
-    ) AS id
-)
 SELECT ps.solver, pte.executed_sell, pte.executed_buy
-FROM auction
-JOIN solana.proposed_solutions ps ON ps.auction_id = auction.id
+FROM solana.proposed_solutions ps
 LEFT JOIN solana.proposed_trade_executions pte
   ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid AND pte.order_uid = $1
-ORDER BY ps.is_winner DESC, ps.score DESC, ps.uid
+WHERE ps.auction_id = COALESCE(
+    (SELECT s.auction_id
+     FROM solana.trades t
+     JOIN solana.settlements s
+       ON s.tx_signature = t.tx_signature AND s.instruction_index = t.instruction_index
+     WHERE t.order_uid = $1
+     ORDER BY t.slot DESC, t.instruction_index DESC
+     LIMIT 1),
+    (SELECT max(auction_id) FROM solana.proposed_trade_executions WHERE order_uid = $1))
+ORDER BY ps.uid DESC
     "#;
     sqlx::query_as(QUERY)
         .bind(ByteArray(uid))
@@ -712,9 +709,9 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         );
     }
 
-    /// The first trade's settlement picks the auction, else the latest
-    /// auction a solution executed the order in. Winners come first, a
-    /// solution without the order carries no amounts.
+    /// The latest trade's settlement picks the auction, else the latest
+    /// auction a solution executed the order in. Solutions list worst to
+    /// best, a solution without the order carries no amounts.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_reads_order_solutions() {
@@ -741,9 +738,9 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         // (auction, solution uid, solver, winner, score, executes the order)
         for (auction, solution, solver, winner, score, executes) in [
             (1i64, 0i64, 0xA1u8, true, 9i64, true),
-            (2, 0, 0xB1, false, 5, true),
+            (2, 0, 0xB1, true, 8, true),
             (2, 1, 0xB2, true, 7, false),
-            (2, 2, 0xB3, true, 8, true),
+            (2, 2, 0xB3, false, 5, true),
         ] {
             sqlx::query(
                 "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
@@ -778,37 +775,44 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
                 .collect::<Vec<_>>()
         };
 
+        let second_auction = [
+            (0xB3, Some("100".to_owned())),
+            (0xB2, None),
+            (0xB1, Some("160".to_owned())),
+        ];
         let latest = find_order_solutions(&pool, uid).await.unwrap();
-        assert_eq!(
-            view(latest),
-            [
-                (0xB3, Some("160".to_owned())),
-                (0xB2, None),
-                (0xB1, Some("100".to_owned())),
-            ]
-        );
+        assert_eq!(view(latest), second_auction);
 
-        // A trade pins the auction that settled it.
-        sqlx::query(
-            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
-             auction_id) VALUES (42, $1, 1, $2, 1)",
-        )
-        .bind(ByteArray([9u8; 64]))
-        .bind(ByteArray([0xA1; 32]))
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
-             buy_amount, fee_amount, slot) VALUES ($1, 1, $2, 400, 200, 0, 42)",
-        )
-        .bind(ByteArray([9u8; 64]))
-        .bind(ByteArray(uid))
-        .execute(&pool)
-        .await
-        .unwrap();
-        let settled = find_order_solutions(&pool, uid).await.unwrap();
-        assert_eq!(view(settled), [(0xA1, Some("180".to_owned()))]);
+        // A trade pins the auction that settled it, the latest trade wins.
+        for (slot, auction, signature) in [(42i64, 1i64, 9u8), (43, 2, 8)] {
+            sqlx::query(
+                "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+                 auction_id) VALUES ($1, $2, 1, $3, $4)",
+            )
+            .bind(slot)
+            .bind(ByteArray([signature; 64]))
+            .bind(ByteArray([0xA1; 32]))
+            .bind(auction)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
+                 sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 1, $2, 400, 200, 0, $3)",
+            )
+            .bind(ByteArray([signature; 64]))
+            .bind(ByteArray(uid))
+            .bind(slot)
+            .execute(&pool)
+            .await
+            .unwrap();
+            let settled = find_order_solutions(&pool, uid).await.unwrap();
+            let expected = match auction {
+                1 => vec![(0xA1, Some("180".to_owned()))],
+                _ => second_auction.to_vec(),
+            };
+            assert_eq!(view(settled), expected);
+        }
 
         assert!(
             find_order_solutions(&pool, [0x99; 32])
