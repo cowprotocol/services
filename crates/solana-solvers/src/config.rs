@@ -11,7 +11,7 @@ use {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config<D> {
-    /// Orders quoted at once. Each quote is two sequential DEX requests.
+    /// Orders quoted at once.
     #[serde(default = "default_concurrent_requests")]
     pub concurrent_requests: NonZeroUsize,
 
@@ -89,13 +89,12 @@ pub struct JupiterConfig {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BitgetConfig {
-    /// Base URL of the Bitget swap API. `quote` and `swap` are joined onto it,
-    /// so it needs the trailing slash.
+    /// Base URL of the Bitget swap API. `swap` is joined onto it, so it needs
+    /// the trailing slash.
     pub endpoint: Url,
 
     pub api_key: String,
 
-    /// Signs every request.
     pub api_secret: String,
 
     /// Slippage tolerance in basis points. 50 = 0.5%.
@@ -172,7 +171,8 @@ bogus = true
 
     #[test]
     fn requires_bitget_credentials() {
-        // Deployments drop a line whose secret is unset.
+        // Deploy templating drops `key = ""` lines, so a missing secret must
+        // fail to parse.
         let toml = r#"
 [dex]
 endpoint = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
