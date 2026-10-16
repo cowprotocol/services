@@ -35,10 +35,11 @@ use {
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
-/// Target Solana slot duration in milliseconds, used to turn a submission
-/// deadline slot into a wall-clock confirmation timeout. This is mainnet's
-/// target; other clusters can drift.
-const SLOT_DURATION_MS: u64 = 400;
+/// Mainnet's target slot duration in milliseconds, used to turn a submission
+/// deadline slot into a wall-clock confirmation timeout. Real slots run at
+/// or above the target, so the timeout errs toward giving up before the
+/// deadline slot rather than after it.
+const SLOT_DURATION_MS: u64 = 250;
 /// The network's per-transaction byte ceiling,
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.
