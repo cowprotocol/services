@@ -7,11 +7,12 @@ use {
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo, TxId},
-    ethrpc::block_stream::into_stream,
+    ethrpc::block_stream::{BlockInfo, into_stream},
     futures::{FutureExt, StreamExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
-    std::sync::Arc,
+    std::{ops::ControlFlow, sync::Arc},
+    tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
 };
 
@@ -214,25 +215,116 @@ async fn submit(
         )
         .await?;
 
-    // Wait for the transaction to be mined, expired or failing.
+    let tx = &tx;
+    let result = wait_for_inclusion(
+        ethereum,
+        block_stream,
+        hash,
+        submission_block,
+        submission_deadline,
+        move |block| async move {
+            // A node can report a new block before its receipt index catches
+            // up, so re-simulating reverts on our own already-applied tx. Tell
+            // that apart from a real revert with two signals: our `Settlement`
+            // event in any block since submission (which `eth_getLogs` sees
+            // even while the receipt lags), and the signer's pending nonce
+            // (which still covers our tx while it sits in the mempool).
+            let (gas, mined, pending_nonce) = futures::join!(
+                ethereum.estimate_gas(tx.clone()),
+                ethereum.successful_settlement_block(hash, submission_block.0),
+                ethereum.pending_transaction_count(signer),
+            );
+
+            if let Ok(Some(included_in_block)) = mined {
+                // Found on-chain in [submission_block, head]. The
+                // receipt-by-hash lookup is just lagging, and
+                // scanning the whole range catches it even if
+                // the block stream coalesced past the block it mined
+                // in. Report success now rather than wait on the receipt and
+                // risk the deadline.
+                tracing::info!(
+                    ?hash,
+                    ?included_in_block,
+                    "settlement found on-chain via getLogs, treating as success"
+                );
+                return ControlFlow::Break(Ok(SubmissionSuccess {
+                    tx_hash: hash,
+                    submitted_at_block: submission_block,
+                    included_in_block,
+                }));
+            }
+
+            let resimulation_reverted = matches!(&gas, Err(err) if err.is_revert());
+            if requires_cancellation(resimulation_reverted, &pending_nonce, nonce) {
+                tracing::info!(
+                    settle_tx_hash = ?hash,
+                    err = ?gas.as_ref().err(),
+                    "tx started failing in mempool, cancelling"
+                );
+                let _ = cancel(mempool, final_gas_price, signer, nonce).await;
+                return ControlFlow::Break(Err(Error::SimulationRevert {
+                    submitted_at_block: submission_block,
+                    reverted_at_block: block,
+                }));
+            } else if let Err(err) = &pending_nonce {
+                tracing::warn!(
+                    ?hash,
+                    ?err,
+                    "couldn't fetch the pending nonce, not cancelling"
+                );
+            } else if resimulation_reverted {
+                tracing::debug!(
+                    ?hash,
+                    "detected false positive revert (already pending tx conflicted with our \
+                     simulation), waiting for next block"
+                );
+            } else if let Err(err) = &gas {
+                tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
+            }
+            ControlFlow::Continue(())
+        },
+    )
+    .await;
+
+    if let Err(Error::Expired { .. }) = result {
+        tracing::debug!(settle_tx_hash = ?hash, "exceeded submission deadline, cancelling");
+        let _ = cancel(mempool, final_gas_price, signer, nonce).await;
+    }
+    result
+}
+
+/// Waits until the settlement is mined, reverts or the submission deadline
+/// passes. `on_pending` runs in each block before the deadline that has the
+/// settlement still pending, and can stop the wait with a result.
+pub(crate) async fn wait_for_inclusion<F>(
+    ethereum: &Ethereum,
+    mut block_stream: WatchStream<BlockInfo>,
+    hash: TxId,
+    submission_block: BlockNo,
+    submission_deadline: BlockNo,
+    mut on_pending: impl FnMut(BlockNo) -> F,
+) -> Result<SubmissionSuccess, Error>
+where
+    F: Future<Output = ControlFlow<Result<SubmissionSuccess, Error>>>,
+{
+    let mined = |included_in_block| SubmissionSuccess {
+        tx_hash: hash,
+        submitted_at_block: submission_block,
+        included_in_block,
+    };
     let result = async {
         while let Some(block) = block_stream.next().await {
-            tracing::debug!(?hash, current_block = ?block.number, "checking if tx is confirmed");
-            let receipt = ethereum
+            let block = BlockNo(block.number);
+            tracing::debug!(?hash, current_block = ?block, "checking if tx is confirmed");
+            let status = ethereum
                 .transaction_status(&hash)
                 .await
                 .unwrap_or_else(|err| {
-                    tracing::warn!(?hash, ?err, "failed to get transaction status",);
+                    tracing::warn!(?hash, ?err, "failed to get transaction status");
                     TxStatus::Pending
                 });
-            match receipt {
-                TxStatus::Executed { block_number } => {
-                    return Ok(SubmissionSuccess {
-                        tx_hash: hash,
-                        submitted_at_block: submission_block,
-                        included_in_block: block_number,
-                    });
-                }
+            match status {
+                TxStatus::Executed { block_number } => return Ok(mined(block_number)),
                 TxStatus::Reverted { block_number } => {
                     return Err(Error::Revert {
                         tx_id: hash,
@@ -240,81 +332,24 @@ async fn submit(
                         reverted_at_block: block_number,
                     });
                 }
+                TxStatus::Pending if block >= submission_deadline => {
+                    // The receipt can lag behind the block, the settlement
+                    // event cannot.
+                    if let Ok(Some(included_in_block)) = ethereum
+                        .successful_settlement_block(hash, submission_block.0)
+                        .await
+                    {
+                        return Ok(mined(included_in_block));
+                    }
+                    return Err(Error::Expired {
+                        tx_id: hash,
+                        submitted_at_block: submission_block,
+                        submission_deadline,
+                    });
+                }
                 TxStatus::Pending => {
-                    // Check if the current block reached the submission
-                    // deadline block number
-                    if BlockNo(block.number) >= submission_deadline {
-                        tracing::debug!(
-                            submission_deadline = submission_deadline.0,
-                            current_block = block.number,
-                            settle_tx_hash = ?hash,
-                            "exceeded submission deadline, cancelling"
-                        );
-                        let _ = cancel(mempool, final_gas_price, signer, nonce).await;
-                        return Err(Error::Expired {
-                            tx_id: hash,
-                            submitted_at_block: submission_block,
-                            submission_deadline,
-                        });
-                    }
-                    // A node can report a new block before its receipt index
-                    // catches up, so re-simulating reverts on our own
-                    // already-applied tx. Tell that apart from a real revert
-                    // with two signals: our `Settlement` event in any block
-                    // since submission (which `eth_getLogs` sees even while the
-                    // receipt lags), and the signer's pending nonce (which
-                    // still covers our tx while it sits in the mempool).
-                    let (gas, mined, pending_nonce) = futures::join!(
-                        ethereum.estimate_gas(tx.clone()),
-                        ethereum.successful_settlement_block(hash, submission_block.0),
-                        ethereum.pending_transaction_count(signer),
-                    );
-
-                    if let Ok(Some(included_in_block)) = mined {
-                        // Found on-chain in [submission_block, head]. The
-                        // receipt-by-hash lookup is just lagging, and scanning
-                        // the whole range catches it even if the block stream
-                        // coalesced past the block it mined in. Report success
-                        // now rather than wait on the receipt and risk the
-                        // deadline.
-                        tracing::info!(
-                            ?hash,
-                            ?included_in_block,
-                            "settlement found on-chain via getLogs, treating as success"
-                        );
-                        return Ok(SubmissionSuccess {
-                            tx_hash: hash,
-                            submitted_at_block: submission_block,
-                            included_in_block,
-                        });
-                    }
-
-                    let resimulation_reverted = matches!(&gas, Err(err) if err.is_revert());
-                    if requires_cancellation(resimulation_reverted, &pending_nonce, nonce) {
-                        tracing::info!(
-                            settle_tx_hash = ?hash,
-                            err = ?gas.as_ref().err(),
-                            "tx started failing in mempool, cancelling"
-                        );
-                        let _ = cancel(mempool, final_gas_price, signer, nonce).await;
-                        return Err(Error::SimulationRevert {
-                            submitted_at_block: submission_block,
-                            reverted_at_block: block.number.into(),
-                        });
-                    } else if let Err(err) = &pending_nonce {
-                        tracing::warn!(
-                            ?hash,
-                            ?err,
-                            "couldn't fetch the pending nonce, not cancelling"
-                        );
-                    } else if resimulation_reverted {
-                        tracing::debug!(
-                            ?hash,
-                            "detected false positive revert (already pending tx conflicted with \
-                             our simulation), waiting for next block"
-                        );
-                    } else if let Err(err) = &gas {
-                        tracing::warn!(?hash, ?err, "couldn't re-simulate tx");
+                    if let ControlFlow::Break(result) = on_pending(block).await {
+                        return result;
                     }
                 }
             }
@@ -332,11 +367,7 @@ async fn submit(
                 ?block_number,
                 "Found confirmed transaction, ignoring error"
             );
-            return Ok(SubmissionSuccess {
-                tx_hash: hash,
-                included_in_block: block_number,
-                submitted_at_block: submission_block,
-            });
+            return Ok(mined(block_number));
         }
     }
     result
