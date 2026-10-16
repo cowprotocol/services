@@ -7,9 +7,49 @@ on:
   push:
     branches: [main]
 jobs:
+  # Self-hosted runners only run code whose commits pass the org signature check;
+  # everything else falls back to GitHub-hosted runners. Must itself stay GitHub-hosted.
+  select-runner:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      runner: ${{ steps.select.outputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name != 'push'
+        with:
+          repository: cowprotocol/commit-verifier
+          ref: 7bba2e5ebef23668cce2dcb90840729efc781035
+          persist-credentials: false
+      - id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET: ${{ github.event.pull_request.number || github.event.merge_group.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          runner=ubuntu-latest
+          if [ "$EVENT_NAME" = push ]; then
+            # Only reachable via the merge queue, which already verified the commits.
+            runner=cowprotocol-ubuntu-latest
+          elif ./verify_commits.sh "$TARGET"; then
+            # The script reads the PR's current commits, so make sure they are still the ones this run checks out.
+            if [ "$EVENT_NAME" = pull_request ] && [ "$(gh api "repos/$GITHUB_REPOSITORY/pulls/$TARGET" --jq .head.sha)" != "$HEAD_SHA" ]; then
+              echo "::warning::PR head moved during verification"
+            else
+              runner=cowprotocol-ubuntu-latest
+            fi
+          fi
+          echo "::notice::running on $runner"
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+
   lint:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,7 +81,8 @@ jobs:
       - run: just fmt-toml --check
 
   cargo-audit:
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,7 +93,8 @@ jobs:
       - run: cargo audit
 
   nitpicker:
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,7 +106,8 @@ jobs:
 
   doc-tests:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -80,7 +123,8 @@ jobs:
 
   unit-tests:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -105,7 +149,8 @@ jobs:
 
   test-db:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -136,7 +181,8 @@ jobs:
   # accidentally depending on the base series fails here.
   test-db-solana:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -168,7 +214,8 @@ jobs:
   test-local-node-shard:
     name: test-local-node (${{ matrix.shard }}/4)
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -206,8 +253,8 @@ jobs:
       - run: just test-e2e-local --partition count:${{ matrix.shard }}/4
 
   test-local-node:
-    needs: test-local-node-shard
-    runs-on: ubuntu-latest
+    needs: [select-runner, test-local-node-shard]
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - run: test "${{ needs.test-local-node-shard.result }}" = success
 
@@ -218,7 +265,8 @@ jobs:
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     strategy:
       fail-fast: false
       matrix:
@@ -259,7 +307,8 @@ jobs:
 
   test-driver:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -291,7 +340,8 @@ jobs:
 
   solidity-artifacts:
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -312,7 +362,8 @@ jobs:
 
   openapi:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -331,7 +382,8 @@ jobs:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step
     if: ${{ false }}
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -376,7 +428,8 @@ jobs:
 
   generated-contracts:
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -403,7 +456,8 @@ jobs:
           fi
 
   event-bus-changes:
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     outputs:
       changed: ${{ steps.check.outputs.changed }}
     steps:
@@ -426,10 +480,10 @@ jobs:
           fi
 
   event-bus-schemas:
-    needs: event-bus-changes
+    needs: [select-runner, event-bus-changes]
     if: needs.event-bus-changes.outputs.changed == 'true'
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    runs-on: ${{ needs.select-runner.outputs.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
