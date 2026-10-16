@@ -24,10 +24,10 @@ pub async fn order_status(
     let solutions = async {
         db::find_order_solutions(state.pool(), uid)
             .await
-            .map(|rows| {
+            .and_then(|rows| {
                 rows.into_iter()
-                    .map(dto::SolutionInclusion::from)
-                    .collect::<Vec<_>>()
+                    .map(dto::SolutionInclusion::try_from)
+                    .collect::<Result<Vec<_>, _>>()
             })
             .map_err(internal)
     };

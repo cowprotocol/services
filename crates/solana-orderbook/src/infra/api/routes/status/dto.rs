@@ -2,7 +2,8 @@
 
 use {
     crate::infra::db::SolutionRow,
-    bigdecimal::BigDecimal,
+    anyhow::Context,
+    bigdecimal::{BigDecimal, ToPrimitive},
     database::solana::OrderEventLabel,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
@@ -56,20 +57,34 @@ pub struct SolutionInclusion {
 #[serde(rename_all = "camelCase")]
 pub struct ExecutedAmounts {
     #[serde_as(as = "DisplayFromStr")]
-    pub sell: BigDecimal,
+    pub sell: u64,
     #[serde_as(as = "DisplayFromStr")]
-    pub buy: BigDecimal,
+    pub buy: u64,
 }
 
-impl From<SolutionRow> for SolutionInclusion {
-    fn from(row: SolutionRow) -> Self {
-        Self {
+impl TryFrom<SolutionRow> for SolutionInclusion {
+    type Error = anyhow::Error;
+
+    /// Fails on an amount past `u64::MAX`, which no token amount reaches.
+    fn try_from(row: SolutionRow) -> Result<Self, Self::Error> {
+        let amount = |amount: BigDecimal| {
+            amount
+                .to_u64()
+                .with_context(|| format!("executed amount {amount} exceeds u64"))
+        };
+        Ok(Self {
             solver: Pubkey::new_from_array(row.solver.0),
             executed_amounts: row
                 .executed_sell
                 .zip(row.executed_buy)
-                .map(|(sell, buy)| ExecutedAmounts { sell, buy }),
-        }
+                .map(|(sell, buy)| {
+                    anyhow::Ok(ExecutedAmounts {
+                        sell: amount(sell)?,
+                        buy: amount(buy)?,
+                    })
+                })
+                .transpose()?,
+        })
     }
 }
 
@@ -110,10 +125,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(Status::Solved(vec![SolutionInclusion {
                 solver: Pubkey::new_from_array([0x22; 32]),
-                executed_amounts: Some(ExecutedAmounts {
-                    sell: BigDecimal::from(5),
-                    buy: BigDecimal::from(3),
-                }),
+                executed_amounts: Some(ExecutedAmounts { sell: 5, buy: 3 }),
             }]))
             .unwrap(),
             serde_json::json!({"type": "solved", "value": [{
