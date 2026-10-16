@@ -19,8 +19,10 @@ use {
 /// builtin, up to this ceiling), so this is the conservative pick.
 const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
-/// The base fee of one signature, in lamports. The settlement carries the
-/// solver keypair's signature only.
+/// The base fee of one signature, in lamports: the cluster's
+/// `lamports_per_signature`, 5000 on every cluster. Precompile signature
+/// verifications count as signatures too, and the settlement has none, so
+/// it pays for the solver keypair's signature only.
 const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
 
 /// The slots `getRecentPrioritizationFees` serves.
@@ -136,7 +138,7 @@ fn percentile(sorted: &[u64], p: u8) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, solana_fee_structure::FeeStructure};
 
     fn fee(slot: u64, prioritization_fee: u64) -> RpcPrioritizationFee {
         RpcPrioritizationFee {
@@ -219,6 +221,15 @@ mod tests {
             ..policy
         };
         assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+    }
+
+    /// The constant follows the SDK's default fee structure.
+    #[test]
+    fn signature_fee_is_the_sdk_default() {
+        assert_eq!(
+            LAMPORTS_PER_SIGNATURE,
+            FeeStructure::default().lamports_per_signature
+        );
     }
 
     #[test]
