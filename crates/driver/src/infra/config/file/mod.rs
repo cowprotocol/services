@@ -210,7 +210,9 @@ enum Receiver {
     },
     /// A private relay like MEV Blocker.
     PrivateRelay {
-        /// The RPC URL of the relay.
+        /// The RPC URL of the relay. Only one URL, because a proxy in front of
+        /// the relays (e.g. our MEV Blocker proxy) handles the failover between
+        /// them, and the driver also fetches nonces through this URL.
         url: Url,
         /// Informs the submission logic whether a reverting transaction will
         /// actually be mined or just ignored. Set this to `false` only if the
