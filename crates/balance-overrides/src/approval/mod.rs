@@ -171,6 +171,22 @@ impl ApprovalStrategy {
         )
     }
 
+    /// The contract whose storage the strategy overrides.
+    pub(crate) fn target_contract(&self) -> Address {
+        match self {
+            Self::SolidityMappingOwnerToSpender {
+                target_contract, ..
+            }
+            | Self::SolidityMappingSpenderToOwner {
+                target_contract, ..
+            }
+            | Self::SoladyMapping { target_contract }
+            | Self::DirectSlot {
+                target_contract, ..
+            } => *target_contract,
+        }
+    }
+
     /// Builds the state override for `(owner, spender, amount)`.
     pub(crate) fn state_override(
         &self,
@@ -183,6 +199,34 @@ impl ApprovalStrategy {
             .with_state_diff(iter::once((slot, B256::new(amount.to_be_bytes::<32>()))));
         iter::once((target_contract, account_override)).collect()
     }
+}
+
+/// Moves strategies in the token's own storage ahead of those found in other
+/// contracts. A slot in another contract may back `allowance` only for some
+/// pairs, e.g. RSR reads the old RSR contract until a pair has crossed.
+fn prefer_own_storage(
+    mut strategies: Vec<ApprovalStrategy>,
+    token: Address,
+) -> Vec<ApprovalStrategy> {
+    strategies.sort_by_key(|strategy| strategy.target_contract() != token);
+    strategies
+}
+
+/// Cache key for a detected strategy. A mapping in the token's own storage is
+/// cached under `(token, None)` and reused for every pair. A slot in another
+/// contract is cached under `(token, Some((owner, spender)))` because it may
+/// hold the allowance only for that pair: RSR's `allowance` reads the old RSR
+/// contract for pairs that never approved, but not for crossed pairs, so the
+/// old contract's slot is only valid for the uncrossed pair it was verified
+/// with.
+fn cache_key(
+    token: Address,
+    owner: Address,
+    spender: Address,
+    strategy: &ApprovalStrategy,
+) -> OverrideDetectorCacheKey {
+    let any_pair = strategy.is_valid_for_all_pairs() && strategy.target_contract() == token;
+    (token, (!any_pair).then_some((owner, spender)))
 }
 
 // NOTE(jmg-duarte): ideally these would be new types, but this is simpler in
@@ -257,10 +301,7 @@ impl Detector {
         if matches!(&result, Ok(_) | Err(DetectionError::NotFound)) {
             tracing::debug!(?token, ?result, "caching auto-detected approval strategy");
             if let Ok(strategy) = result.as_ref() {
-                let cache_key = (
-                    token,
-                    (!strategy.is_valid_for_all_pairs()).then_some((owner, spender)),
-                );
+                let cache_key = cache_key(token, owner, spender, strategy);
                 self.cache.insert(cache_key, Some(strategy.clone()));
             } else {
                 self.cache.insert((token, Some((owner, spender))), None);
@@ -308,11 +349,14 @@ impl Detector {
             return Err(DetectionError::NotFound);
         }
 
-        let strategies = find_plausible_strategies_for_slots(
-            &storage_slots,
-            &owner,
-            &spender,
-            self.probing_depth.into(),
+        let strategies = prefer_own_storage(
+            find_plausible_strategies_for_slots(
+                &storage_slots,
+                &owner,
+                &spender,
+                self.probing_depth.into(),
+            ),
+            token,
         );
 
         for (i, strategy) in strategies
@@ -566,6 +610,61 @@ mod tests {
             .unwrap();
 
         assert_eq!(allowance_with_override, amount);
+    }
+
+    #[test]
+    fn prefer_own_storage_puts_token_slots_first() {
+        let token = Address::with_last_byte(1);
+        let foreign = ApprovalStrategy::SolidityMappingOwnerToSpender {
+            target_contract: Address::with_last_byte(2),
+            map_slot: U256::ZERO,
+        };
+        let own_first = ApprovalStrategy::DirectSlot {
+            target_contract: token,
+            slot: B256::with_last_byte(7),
+        };
+        let own_second = ApprovalStrategy::SoladyMapping {
+            target_contract: token,
+        };
+
+        let ordered = prefer_own_storage(
+            vec![foreign.clone(), own_first.clone(), own_second.clone()],
+            token,
+        );
+
+        assert_eq!(ordered, vec![own_first, own_second, foreign]);
+    }
+
+    #[test]
+    fn cache_key_reuses_only_own_storage_mappings_for_other_pairs() {
+        let token = Address::with_last_byte(1);
+        let owner = Address::with_last_byte(8);
+        let spender = Address::with_last_byte(9);
+        let own_mapping = ApprovalStrategy::SolidityMappingOwnerToSpender {
+            target_contract: token,
+            map_slot: U256::ZERO,
+        };
+        let foreign_mapping = ApprovalStrategy::SolidityMappingOwnerToSpender {
+            target_contract: Address::with_last_byte(2),
+            map_slot: U256::ZERO,
+        };
+        let own_direct = ApprovalStrategy::DirectSlot {
+            target_contract: token,
+            slot: B256::ZERO,
+        };
+
+        assert_eq!(
+            cache_key(token, owner, spender, &own_mapping),
+            (token, None)
+        );
+        assert_eq!(
+            cache_key(token, owner, spender, &foreign_mapping),
+            (token, Some((owner, spender)))
+        );
+        assert_eq!(
+            cache_key(token, owner, spender, &own_direct),
+            (token, Some((owner, spender)))
+        );
     }
 
     #[test]
