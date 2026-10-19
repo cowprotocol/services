@@ -23,7 +23,7 @@ use {
 };
 
 /// Handle `POST /quote`: solve a one-order auction and answer with the
-/// executed amounts.
+/// executed amounts and the network fee of settling them.
 pub(crate) async fn quote(
     state: axum::extract::State<State>,
     LoggingJson(request): LoggingJson<dto::QuoteRequest>,
@@ -37,13 +37,11 @@ pub(crate) async fn quote(
     let side = auction::Side::from(request.kind);
     let auction = quote_auction(&request, side);
 
-    let solutions = state
-        .competition()
+    let competition = state.competition();
+    let span = tracing::info_span!("/quote", solver = %competition.solver_name());
+    let solutions = competition
         .compute_solutions(&auction, &Default::default())
-        .instrument(tracing::info_span!(
-            "/quote",
-            solver = %state.competition().solver_name(),
-        ))
+        .instrument(span.clone())
         .await?;
 
     // A solution fills one order, so the best quote is the trade that gives the
@@ -51,19 +49,21 @@ pub(crate) async fn quote(
     // order.
     let quoted = solutions
         .iter()
-        .filter_map(|solution| Some((solution.solver, solution.trades.first()?)));
+        .filter_map(|solution| Some((solution, solution.trades.first()?)));
     let best = match side {
         auction::Side::Sell => quoted.max_by_key(|(_, trade)| trade.executed_buy),
         auction::Side::Buy => quoted.min_by_key(|(_, trade)| trade.executed_sell),
     };
-    let Some((solver, trade)) = best else {
+    let Some((solution, trade)) = best else {
         return Err(Kind::QuotingFailed.into());
     };
+    let network_fee = competition.network_fee(solution).instrument(span).await?;
 
     Ok(Json(dto::QuoteResponse {
         sell_amount: trade.executed_sell,
         buy_amount: trade.executed_buy,
-        solver,
+        solver: solution.solver,
+        network_fee,
     }))
 }
 

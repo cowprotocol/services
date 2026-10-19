@@ -4191,7 +4191,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 1.0.109",
+ "syn 2.0.118",
 ]
 
 [[package]]
@@ -4428,6 +4428,12 @@ dependencies = [
  "tracing",
  "url",
 ]
+
+[[package]]
+name = "dtoa"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
 
 [[package]]
 name = "dunce"
@@ -6607,6 +6613,7 @@ dependencies = [
  "opentelemetry_sdk",
  "pin-project-lite",
  "prometheus",
+ "prometheus-client",
  "prometheus-metric-storage",
  "scopeguard",
  "serde",
@@ -7322,6 +7329,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus-client"
+version = "0.25.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1784dc11a05f5a8f57c4a62915686be140f24f70301290b997e317241fa9ffc2"
+dependencies = [
+ "dtoa",
+ "itoa",
+ "parking_lot",
+ "prometheus-client-derive-encode",
+]
+
+[[package]]
+name = "prometheus-client-derive-encode"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01e34894696ff94f64a20c2c373a6440903e9c2789a303d68ec6e6f953f890e4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "prometheus-metric-storage"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7849,8 +7879,7 @@ dependencies = [
  "mockall",
  "number",
  "observe",
- "prometheus",
- "prometheus-metric-storage",
+ "prometheus-client",
  "rand 0.9.4",
  "rstest",
  "shared",
@@ -9364,6 +9393,7 @@ dependencies = [
  "serde_with",
  "solana-address-lookup-table-interface",
  "solana-compute-budget-interface",
+ "solana-fee-structure",
  "solana-sdk",
  "solana-system-interface 3.2.0",
  "solana-testlib",
@@ -12570,7 +12600,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

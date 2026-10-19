@@ -13,7 +13,6 @@ use {
             time::Remaining,
         },
         infra::{
-            self,
             blockchain::Ethereum,
             config::file::FeeHandler,
             persistence::{Persistence, S3},
@@ -202,9 +201,6 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
-    /// Defines at which block the liquidity needs to be fetched on /solve
-    /// requests.
-    pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
     /// Volume-based solver fee in basis points (0-10000). Injected as an
     /// additional `FeePolicy::Volume` on every auction order, reusing the
     /// protocol fee machinery to make competition bids and delivered prices
@@ -355,10 +351,6 @@ impl Solver {
 
     pub fn settle_queue_size(&self) -> usize {
         self.config.settle_queue_size
-    }
-
-    pub fn fetch_liquidity_at_block(&self) -> infra::liquidity::AtBlock {
-        self.config.fetch_liquidity_at_block.clone()
     }
 
     /// The volume-based fee policy injected for this solver, if configured.
@@ -657,7 +649,6 @@ mod tests {
             },
             settle_queue_size: 0,
             flashloans_enabled: false,
-            fetch_liquidity_at_block: infra::liquidity::AtBlock::Latest,
             solver_fee_bps: 0,
             submission_accounts: vec![],
             max_solutions_to_propose: NonZeroUsize::new(1).unwrap(),

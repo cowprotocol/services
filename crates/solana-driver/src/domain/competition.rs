@@ -10,7 +10,7 @@ use {
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
-        settlement::ResolveError,
+        settlement::{ResolveError, writable_accounts},
         slot::Slot,
         solution::Solution,
     },
@@ -160,7 +160,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -173,10 +173,11 @@ impl Competition {
                 // Compared with the slot of a later failing `/settle`
                 // simulation, this separates a lagging bundle endpoint from
                 // state that changed in between.
-                Ok(slot) => tracing::info!(
+                Ok((slot, units_consumed)) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
                     slot = %slot,
+                    ?units_consumed,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -201,6 +202,11 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
+            if let Ok((_, Some(units))) = verdict
+                && solution.cu_estimate.is_none()
+            {
+                solution.cu_estimate = Some(priority_fee::compute_unit_limit(units));
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -222,13 +228,13 @@ impl Competition {
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
     /// driver could not find out. A pass returns the slot the bundle
-    /// simulated against.
+    /// simulated against and the compute units the settlement consumed.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<Slot, Error> {
+    ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
@@ -298,7 +304,10 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(slot)
+        Ok((
+            slot,
+            results.last().and_then(|result| result.units_consumed),
+        ))
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -356,6 +365,29 @@ impl Competition {
             }
         };
         Ok(solutions)
+    }
+
+    /// The network fee of settling `solution`, in lamports: the signature fee
+    /// plus the priority fee over the accounts its interactions write, at its
+    /// compute unit estimate. Prices a quote the way `settle` prices its
+    /// transaction. A quote's settlement accounts are placeholders, so only
+    /// the interactions' accounts are read.
+    pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
+        let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&writable)
+            .await
+            .map_err(Error::Rpc)?;
+        let estimate = self.priority_fee.estimate(&fees, solution.cu_estimate)?;
+        let network_fee = estimate.network_fee();
+        tracing::debug!(
+            solution_id = solution.id,
+            compute_unit_price = estimate.compute_unit_price,
+            network_fee,
+            "network fee estimated"
+        );
+        Ok(network_fee)
     }
 
     /// Submit a previously proposed solution on chain.
