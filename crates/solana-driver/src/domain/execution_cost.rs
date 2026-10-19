@@ -123,6 +123,7 @@ impl ExecutionCost<'_> {
         };
         let fee_share = network_fee.div_ceil(trades.get());
         let mut rent_charged = HashSet::new();
+        let solution_id = solution.id;
         let trades = solution
             .trades
             .iter()
@@ -136,10 +137,18 @@ impl ExecutionCost<'_> {
                 } else {
                     0
                 };
-                let cut = self
-                    .cut(order, rent + u128::from(fee_share))
+                let lamports = rent + u128::from(fee_share);
+                let atoms = self
+                    .cut(order, lamports)
                     .ok_or(Rejected::MissingPrice(order.uid))?;
-                cut_trade(trade, order, cut)
+                tracing::debug!(
+                    solution_id,
+                    order = %order.uid,
+                    lamports,
+                    atoms,
+                    "cutting the execution cost from the fill"
+                );
+                cut_trade(trade, order, atoms)
             })
             .collect::<Result<Vec<_>, _>>()?;
         solution.trades = trades;
