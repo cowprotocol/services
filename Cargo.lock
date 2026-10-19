@@ -9390,6 +9390,7 @@ dependencies = [
  "serde_with",
  "solana-address-lookup-table-interface",
  "solana-compute-budget-interface",
+ "solana-fee-structure",
  "solana-sdk",
  "solana-system-interface 3.2.0",
  "solana-testlib",

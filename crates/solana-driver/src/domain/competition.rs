@@ -10,7 +10,7 @@ use {
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
-        settlement::ResolveError,
+        settlement::{ResolveError, writable_accounts},
         slot::Slot,
         solution::Solution,
     },
@@ -365,6 +365,29 @@ impl Competition {
             }
         };
         Ok(solutions)
+    }
+
+    /// The network fee of settling `solution`, in lamports: the signature fee
+    /// plus the priority fee over the accounts its interactions write, at its
+    /// compute unit estimate. Prices a quote the way `settle` prices its
+    /// transaction. A quote's settlement accounts are placeholders, so only
+    /// the interactions' accounts are read.
+    pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
+        let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&writable)
+            .await
+            .map_err(Error::Rpc)?;
+        let estimate = self.priority_fee.estimate(&fees, solution.cu_estimate)?;
+        let network_fee = estimate.network_fee();
+        tracing::debug!(
+            solution_id = solution.id,
+            compute_unit_price = estimate.compute_unit_price,
+            network_fee,
+            "network fee estimated"
+        );
+        Ok(network_fee)
     }
 
     /// Submit a previously proposed solution on chain.
