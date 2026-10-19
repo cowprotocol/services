@@ -145,10 +145,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
-                fetch_liquidity_at_block: match config.liquidity.fetch_at_block {
-                    file::AtBlock::Latest => liquidity::AtBlock::Latest,
-                    file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
-                },
                 solver_fee_bps: solver_config.solver_fee_bps,
                 submission_accounts: join_all(
                     solver_config
@@ -321,6 +317,15 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     api_key: config.api_key,
                     http_timeout: config.http_timeout,
                 }),
+            fetch_at_block: match config.liquidity.fetch_at_block {
+                file::AtBlock::Latest => liquidity::AtBlock::Latest,
+                file::AtBlock::Recent => liquidity::AtBlock::Recent {
+                    schedule_update: true,
+                },
+            },
+            refresh_cooldown: config.liquidity.refresh_cooldown,
+            max_recent_block_age: config.liquidity.max_recent_block_age,
+            max_auto_updated_pairs: config.liquidity.max_auto_updated_pairs,
         },
         liquidity_sources_notifier: config.liquidity_sources_notifier.map(|notifier| {
             notify::liquidity_sources::config::Config {
@@ -333,14 +338,18 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 }),
             }
         }),
+        gas_price_parameters: blockchain::gas::GasPriceParameters {
+            max_additional_tip: config.submission.max_additional_tip,
+            additional_tip_factor: config.submission.additional_tip_percentage,
+            max_fee_per_gas: config.submission.gas_price_cap,
+            min_priority_fee: config.submission.min_priority_fee,
+        },
         mempools: config
             .submission
             .mempools
             .iter()
             .enumerate()
             .map(|(index, mempool)| mempool::Config {
-                min_priority_fee: config.submission.min_priority_fee,
-                gas_price_cap: config.submission.gas_price_cap,
                 target_confirm_time: config.submission.target_confirm_time,
                 retry_interval: config.submission.retry_interval,
                 nonce_block_number: config.submission.nonce_block_number.map(Into::into),
@@ -353,8 +362,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     true => mempool::RevertProtection::Disabled,
                     false => mempool::RevertProtection::Enabled,
                 },
-                max_additional_tip: mempool.max_additional_tip,
-                additional_tip_percentage: mempool.additional_tip_percentage,
             })
             .collect(),
         simulator: config.simulator,

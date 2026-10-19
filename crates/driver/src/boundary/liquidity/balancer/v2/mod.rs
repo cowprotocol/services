@@ -19,9 +19,12 @@ use {
     eth_domain_types as eth,
     ethrpc::block_stream::CurrentBlockWatcher,
     event_indexing::block_retriever::BlockRetrieving,
-    liquidity_sources::balancer_v2::{
-        BalancerPoolFetcher,
-        pool_fetching::{BalancerContracts, BalancerFactoryInstance},
+    liquidity_sources::{
+        balancer_v2::{
+            BalancerPoolFetcher,
+            pool_fetching::{BalancerContracts, BalancerFactoryInstance},
+        },
+        recent_block_cache::CacheConfig,
     },
     shared::http_solver::model::TokenAmount,
     solver::{
@@ -74,6 +77,7 @@ pub fn collector(
     block_stream: CurrentBlockWatcher,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
+    cache_config: CacheConfig,
 ) -> Box<dyn LiquidityCollecting> {
     let eth = Arc::new(eth.with_metric_label("balancerV2".into()));
     let reinit_interval = config.reinit_interval;
@@ -83,7 +87,16 @@ pub fn collector(
         let block_stream = block_stream.clone();
         let block_retriever = block_retriever.clone();
         let config = config.clone();
-        async move { init_liquidity(&eth, &block_stream, block_retriever.clone(), &config).await }
+        async move {
+            init_liquidity(
+                &eth,
+                &block_stream,
+                block_retriever.clone(),
+                &config,
+                cache_config,
+            )
+            .await
+        }
     };
     const TEN_MINUTES: std::time::Duration = std::time::Duration::from_secs(10 * 60);
     Box::new(BackgroundInitLiquiditySource::new(
@@ -99,6 +112,7 @@ async fn init_liquidity(
     block_stream: &CurrentBlockWatcher,
     block_retriever: Arc<dyn BlockRetrieving>,
     config: &infra::liquidity::config::BalancerV2,
+    cache_config: CacheConfig,
 ) -> Result<impl LiquidityCollecting + use<>> {
     let web3 = eth.web3().clone();
     let contracts = BalancerContracts {
@@ -174,7 +188,7 @@ async fn init_liquidity(
             &config.graph_url,
             block_retriever.clone(),
             token_info_fetcher.clone(),
-            boundary::liquidity::cache_config(),
+            cache_config,
             block_stream.clone(),
             boundary::liquidity::http_client(),
             web3.clone(),

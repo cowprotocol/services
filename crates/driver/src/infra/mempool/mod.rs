@@ -21,8 +21,6 @@ use {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub min_priority_fee: eth::U256,
-    pub gas_price_cap: eth::U256,
     pub target_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
     /// Optional block number to use when fetching nonces. If None, uses the
@@ -31,26 +29,6 @@ pub struct Config {
     pub url: Url,
     pub name: String,
     pub revert_protection: RevertProtection,
-    pub max_additional_tip: eth::U256,
-    pub additional_tip_percentage: f64,
-}
-
-#[cfg(test)]
-impl Config {
-    pub fn test_config(url: Url) -> Self {
-        Self {
-            min_priority_fee: Default::default(),
-            gas_price_cap: eth::U256::from(1000000000000_u128),
-            target_confirm_time: Default::default(),
-            retry_interval: Default::default(),
-            name: "default_rpc".to_string(),
-            max_additional_tip: eth::U256::from(3000000000_u128),
-            additional_tip_percentage: 0.,
-            revert_protection: infra::mempool::RevertProtection::Disabled,
-            nonce_block_number: None,
-            url,
-        }
-    }
 }
 
 /// Don't submit transactions with high revert risk (i.e. transactions
