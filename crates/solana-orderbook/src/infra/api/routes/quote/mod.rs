@@ -7,6 +7,7 @@ use {
     crate::infra::{
         api::{Sponsoring, State, ValidationParameters, error, extract},
         db,
+        prices,
         quoter,
     },
     axum::{Json, http::StatusCode},
@@ -67,16 +68,33 @@ pub async fn quote(
             dto::Kind::Buy => quoter::Kind::Buy,
         },
     };
-    let (quoted, buy_token_ata_costs) = tokio::join!(
-        state.quoter().quote(&order),
+    let quote = async {
+        // Every driver failure answers as no liquidity, the EVM mapping for
+        // estimator errors.
+        state
+            .quoter()
+            .quote(&order)
+            .await
+            .map_err(|quoter::Error::NoQuotes| {
+                error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
+            })
+    };
+    // The autopilot leaves an order on a token no estimator prices out of
+    // every auction, so the quote fails before such an order is placed.
+    let prices = state.prices();
+    let price = |token| async move {
+        prices
+            .price(token)
+            .await
+            .map_err(|err| price_error(token, err))
+    };
+    // TODO(BE-366): net the execution cost out of the quote with these prices.
+    let (quoted, buy_token_ata_costs, _sell_price, _buy_price) = futures::try_join!(
+        quote,
         buy_account_rent(state.sponsoring(), &request, buy_program),
-    );
-    let buy_token_ata_costs = buy_token_ata_costs?;
-    // Every driver failure answers as no liquidity, the EVM mapping for
-    // estimator errors.
-    let quoted = quoted.map_err(|quoter::Error::NoQuotes| {
-        error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
-    })?;
+        price(request.sell_token),
+        price(request.buy_token),
+    )?;
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
     let expiration = now + state.quote_expiry();
@@ -129,6 +147,22 @@ pub async fn quote(
         verified: false,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// An unpriced or rate-limited token is no liquidity, anything else is the
+/// autopilot misbehaving.
+fn price_error(token: Pubkey, err: prices::Error) -> error::Reply {
+    match err {
+        prices::Error::NoLiquidity | prices::Error::RateLimited => error::reply(
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
+            format!("no native price for {token}"),
+        ),
+        prices::Error::Internal(err) => {
+            tracing::error!(?err, %token, "native price lookup failed");
+            error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+        }
+    }
 }
 
 /// Reject a mint the settlement program cannot move, and tell the buy mint's
