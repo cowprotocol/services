@@ -340,7 +340,7 @@ impl Competition {
                     native_prices: &auction.native_prices,
                 };
                 let network_fee = match buy_token_accounts {
-                    Some(_) => self.network_fee_ceiling().await?,
+                    Some(_) => self.network_fee_reserve().await?,
                     None => 0,
                 };
                 (
@@ -417,12 +417,14 @@ impl Competition {
         Ok(charged)
     }
 
-    /// The network fee the limit legs sent to the engine are tightened by,
-    /// before any route is known: the signature fee plus the priority fee at
-    /// the runtime's compute unit ceiling over the fees recently paid
-    /// cluster-wide, or the budget when that is over it. The fills are cut
-    /// by the fee of their own route, see [`Self::network_fee`].
-    async fn network_fee_ceiling(&self) -> Result<u64, Error> {
+    /// The network fee the limit legs sent to the engine are moved by, before
+    /// any route is known: the signature fee plus the priority fee at the
+    /// runtime's compute unit ceiling over the fees recently paid cluster-wide,
+    /// or the budget when that is over it. Cluster-wide fees floor what any
+    /// route's accounts pay, so the fill's own fee, see [`Self::network_fee`],
+    /// is at least this much, and a fill on the moved limit whose route pays
+    /// more is dropped.
+    async fn network_fee_reserve(&self) -> Result<u64, Error> {
         let fees = self
             .blockchain
             .recent_prioritization_fees(&[])
