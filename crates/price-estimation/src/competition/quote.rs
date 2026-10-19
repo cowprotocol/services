@@ -13,7 +13,6 @@ use {
         PriceEstimating,
         PriceEstimationError,
         Query,
-        QuoteVerificationMode,
         RankedEstimates,
         StreamingPriceEstimating,
     },
@@ -75,7 +74,7 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
             // Rank all estimates from best to worst so callers can inspect the
             // full ordering (e.g. the reference score of the winner).
             results.sort_by(|(_, a), (_, b)| {
-                compare_quote_result(&query, a, b, &context, self.verification_mode).reverse()
+                compare_quote_result(&query, a, b, &context).reverse()
             });
 
             let mut results = results.into_iter();
@@ -174,7 +173,6 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                             &result,
                             &Ok(best.clone()),
                             &context,
-                            self.verification_mode,
                         )
                         .is_gt()
                     });
@@ -197,7 +195,7 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                 let terminal = results
                     .into_iter()
                     .max_by(|(_, a), (_, b)| {
-                        compare_quote_result(&query, a, b, &context, self.verification_mode)
+                        compare_quote_result(&query, a, b, &context)
                     });
 
                 if let Some((name, result)) = terminal {
@@ -229,17 +227,17 @@ fn compare_quote_result(
     a: &PriceEstimateResult,
     b: &PriceEstimateResult,
     context: &RankingContext,
-    verification_mode: QuoteVerificationMode,
 ) -> Ordering {
-    let prefer_verified = !matches!(verification_mode, QuoteVerificationMode::Unverified);
     match (a, b) {
         (Ok(a), Ok(b)) => {
-            match (prefer_verified, a.verified, b.verified) {
-                // prefer verified over unverified quotes
-                (true, true, false) => Ordering::Greater,
-                (true, false, true) => Ordering::Less,
-                _ => compare_quote(query, a, b, context),
+            // Always prefer verified over unverified quotes
+            if a.verified && !b.verified {
+                return Ordering::Greater;
             }
+            if !a.verified && b.verified {
+                return Ordering::Less;
+            }
+            compare_quote(query, a, b, context)
         }
         (Ok(_), Err(_)) => Ordering::Greater,
         (Err(_), Ok(_)) => Ordering::Less,
@@ -397,7 +395,6 @@ mod tests {
             CompetitionPriceEstimating,
             Estimate,
             MockPriceEstimating,
-            QuoteVerificationMode,
             native::MockNativePriceEstimating,
         },
         alloy::{eips::eip1559::Eip1559Estimation, primitives::U256},
@@ -451,7 +448,6 @@ mod tests {
         kind: OrderKind,
         in_amount: u128,
         estimates: Vec<PriceEstimateResult>,
-        verification: QuoteVerificationMode,
     ) -> Result<Vec<Estimate>, PriceEstimationError> {
         fn estimator(estimate: PriceEstimateResult) -> Arc<dyn PriceEstimating> {
             let mut estimator = MockPriceEstimating::new();
@@ -471,8 +467,7 @@ mod tests {
                     .collect(),
             ],
             ranking.clone(),
-        )
-        .with_verification(verification);
+        );
 
         priority
             .estimates(Arc::new(Query {
@@ -506,7 +501,6 @@ mod tests {
                 // buy_token => effective receive 99_359.
                 price(107_999, 2_000),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await
         .unwrap();
@@ -528,7 +522,6 @@ mod tests {
                 // User effectively pays `100_002` `sell_token`.
                 price(92_002, 2_000),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await
         .unwrap();
@@ -556,7 +549,6 @@ mod tests {
                 // Would win on raw out_amount, but discarded because gas=0.
                 price(104_000, 0),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await
         .unwrap();
@@ -580,7 +572,6 @@ mod tests {
                 // Would win on raw out_amount, but discarded because gas=0.
                 price(99_000, 0),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await
         .unwrap();
@@ -602,7 +593,6 @@ mod tests {
                 error(PriceEstimationError::RateLimited),
                 error(PriceEstimationError::ProtocolInternal(anyhow::anyhow!("!"))),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await
         .unwrap_err();
@@ -621,7 +611,6 @@ mod tests {
                 price(1, 1_000_000),
                 error(PriceEstimationError::RateLimited),
             ],
-            QuoteVerificationMode::Unverified,
         )
         .await
         .unwrap();
@@ -643,7 +632,8 @@ mod tests {
             ..Default::default()
         });
 
-        // With Prefer: verified quote leads even though price is worse.
+        // Verified quotes are always preferred over unverified ones, regardless
+        // of price. This is unconditional behavior now (no config flag).
         let quotes = competition_results(
             PriceRanking::MaxOutAmount,
             OrderKind::Sell,
@@ -652,37 +642,14 @@ mod tests {
                 better_unverified_quote.clone(),
                 worse_verified_quote.clone(),
             ],
-            QuoteVerificationMode::Prefer,
         )
         .await
         .unwrap();
         assert_eq!(
             quotes,
             vec![
-                worse_verified_quote.clone().unwrap(),
-                better_unverified_quote.clone().unwrap(),
-            ]
-        );
-
-        // Without verification preference: better price leads regardless of
-        // verification status.
-        let quotes = competition_results(
-            PriceRanking::MaxOutAmount,
-            OrderKind::Sell,
-            1,
-            vec![
-                better_unverified_quote.clone(),
-                worse_verified_quote.clone(),
-            ],
-            QuoteVerificationMode::Unverified,
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            quotes,
-            vec![
-                better_unverified_quote.clone().unwrap(),
-                worse_verified_quote.clone().unwrap(),
+                worse_verified_quote.unwrap(),
+                better_unverified_quote.unwrap(),
             ]
         );
     }

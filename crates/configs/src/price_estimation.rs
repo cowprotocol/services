@@ -7,19 +7,6 @@ use {
     url::Url,
 };
 
-/// Controls which level of quote verification gets applied.
-#[derive(Copy, Clone, Debug, Default, serde::Deserialize)]
-#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
-#[serde(rename_all = "kebab-case")]
-pub enum QuoteVerificationMode {
-    /// Quotes do not get verified.
-    #[default]
-    Unverified,
-    /// Quotes get verified whenever possible and verified
-    /// quotes are preferred over unverified ones.
-    Prefer,
-}
-
 const fn default_quote_timeout() -> Duration {
     Duration::from_secs(5)
 }
@@ -55,10 +42,6 @@ pub struct PriceEstimation {
     /// buy tokens can be paid out of the settlement contract buffers.
     #[serde(default = "default_quote_inaccuracy_limit")]
     pub quote_inaccuracy_limit: BigDecimal,
-
-    /// How strict quote verification should be.
-    #[serde(default)]
-    pub quote_verification: QuoteVerificationMode,
 
     /// Default timeout for quote requests.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
@@ -134,7 +117,6 @@ impl Default for PriceEstimation {
             one_inch: Default::default(),
             coin_gecko: Default::default(),
             quote_inaccuracy_limit: default_quote_inaccuracy_limit(),
-            quote_verification: Default::default(),
             quote_timeout: default_quote_timeout(),
             max_quote_timeout: default_max_quote_timeout(),
             balance_overrides: Default::default(),
@@ -154,7 +136,6 @@ impl crate::test_util::TestDefault for PriceEstimation {
                 1_000_000_000_000_000_000u64,
             )),
             quote_timeout: Duration::from_secs(10),
-            quote_verification: QuoteVerificationMode::Prefer,
             ..Default::default()
         }
     }
@@ -317,10 +298,6 @@ mod tests {
         assert!(config.one_inch.is_none());
         assert!(config.coin_gecko.is_none());
         assert_eq!(config.quote_inaccuracy_limit, BigDecimal::from(1));
-        assert!(matches!(
-            config.quote_verification,
-            QuoteVerificationMode::Unverified
-        ));
         assert_eq!(config.quote_timeout, Duration::from_secs(5));
         assert_eq!(config.balance_overrides.probing_depth, 60);
         assert_eq!(config.balance_overrides.cache_size, 1000);
@@ -333,7 +310,6 @@ mod tests {
     fn deserialize_full() {
         let toml = r#"
         quote-inaccuracy-limit = "0.01"
-        quote-verification = "prefer"
         quote-timeout = "10s"
         max-quote-timeout = "20s"
         tokens-without-verification = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
@@ -391,10 +367,6 @@ mod tests {
         assert_eq!(buffered.debouncing_time, Duration::from_millis(500));
         assert_eq!(buffered.broadcast_channel_capacity, 100);
         assert_eq!(config.quote_inaccuracy_limit.to_string(), "0.01");
-        assert!(matches!(
-            config.quote_verification,
-            QuoteVerificationMode::Prefer
-        ));
         assert_eq!(config.quote_timeout, Duration::from_secs(10));
         assert_eq!(config.max_quote_timeout, Duration::from_secs(20));
         assert_eq!(config.balance_overrides.probing_depth, 30);
@@ -408,16 +380,11 @@ mod tests {
     fn roundtrip_serialization() {
         let config = PriceEstimation {
             quote_timeout: Duration::from_secs(10),
-            quote_verification: QuoteVerificationMode::Prefer,
             ..Default::default()
         };
         let serialized = toml::to_string_pretty(&config).unwrap();
         let deserialized: PriceEstimation = toml::from_str(&serialized).unwrap();
         assert_eq!(config.quote_timeout, deserialized.quote_timeout);
-        assert!(matches!(
-            deserialized.quote_verification,
-            QuoteVerificationMode::Prefer
-        ));
     }
 
     #[test]

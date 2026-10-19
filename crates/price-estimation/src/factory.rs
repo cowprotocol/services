@@ -396,10 +396,10 @@ impl<'a> PriceEstimatorFactory<'a> {
         gas: Arc<dyn GasPriceEstimating>,
     ) -> Result<Arc<CompetitionEstimator<Arc<dyn PriceEstimating>>>> {
         let estimators = self.get_estimators(solvers, |entry| &entry.verified)?;
-        Ok(Arc::new(
-            self.sanitized_competition(estimators, PriceRanking::BestBangForBuck { native, gas })
-                .with_verification(self.args.quote_verification),
-        ))
+        Ok(Arc::new(self.sanitized_competition(
+            estimators,
+            PriceRanking::BestBangForBuck { native, gas },
+        )))
     }
 
     /// Like [`Self::price_estimator`] but without quote verification: all
@@ -451,7 +451,6 @@ impl<'a> PriceEstimatorFactory<'a> {
 
         let competition_estimator =
             CompetitionEstimator::new(estimators, PriceRanking::MaxOutAmount)
-                .with_verification(self.args.quote_verification)
                 .with_early_return(results_required);
         Ok(Box::new(competition_estimator))
     }
