@@ -145,6 +145,16 @@ async fn run(config: Config) {
         None => None,
     };
 
+    let prices = NativePrices::new(
+        &config.native_prices,
+        SolanaRPC::new_with_timeout_and_commitment(
+            &config.rpc.endpoint,
+            config.rpc.request_timeout,
+            CommitmentConfig::confirmed(),
+        ),
+        config.contracts.wrapped_native_mint,
+    );
+    let forward_prices = !matches!(prices, NativePrices::Denominated);
     let auction_loop = AuctionLoop::new(
         Box::new(trigger),
         Box::new(DbAuctionProvider::new(
@@ -155,20 +165,13 @@ async fn run(config: Config) {
                 CommitmentConfig::confirmed(),
             ),
             config.max_indexer_lag_slots,
-            NativePrices::new(
-                &config.native_prices,
-                SolanaRPC::new_with_timeout_and_commitment(
-                    &config.rpc.endpoint,
-                    config.rpc.request_timeout,
-                    CommitmentConfig::confirmed(),
-                ),
-                config.contracts.wrapped_native_mint,
-            ),
+            prices,
             config.contracts.state_pda(),
         )),
         Box::new(DriverCompetition::new(
             drivers.clone(),
             config.competition.solve_deadline,
+            forward_prices,
         )),
         Box::new(SolanaArbitrator::new(
             config.competition.max_winners.get(),

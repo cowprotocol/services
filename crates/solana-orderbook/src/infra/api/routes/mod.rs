@@ -6,6 +6,7 @@ mod order;
 mod quote;
 mod status;
 mod trades;
+mod version;
 
 use solana_sdk::{account::Account, rent::Rent};
 pub use {
@@ -16,6 +17,7 @@ pub use {
     quote::quote,
     status::order_status,
     trades::trades,
+    version::version,
 };
 
 /// Whether `wallet` can take a native SOL payout of at least `buy_amount`. A

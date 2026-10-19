@@ -37,7 +37,7 @@ use {
         trade::Trade,
     },
     reqwest::{Client, StatusCode, Url},
-    sqlx::Connection,
+    sqlx::{Connection, Executor, Row},
     std::{ops::DerefMut, str::FromStr, time::Duration},
     tokio::task::JoinHandle,
 };
@@ -47,7 +47,7 @@ pub const ORDERS_ENDPOINT: &str = "/api/v1/orders";
 pub const QUOTING_ENDPOINT: &str = "/api/v1/quote";
 pub const ACCOUNT_ENDPOINT: &str = "/api/v1/account";
 pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
-pub const TRADES_ENDPOINT: &str = "/api/v1/trades";
+pub const TRADES_ENDPOINT: &str = "/api/v2/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const READY_ENDPOINT: &str = "/api/v1/ready";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
@@ -64,6 +64,10 @@ fn orders_for_tx_endpoint(tx_hash: &B256) -> String {
 fn orders_for_owner(owner: &Address, offset: u64, limit: u64) -> String {
     format!("{ACCOUNT_ENDPOINT}/{owner:?}/orders?offset={offset}&limit={limit}")
 }
+
+/// Default per-auction solve deadline used by [`Services`] when a test does
+/// not override [`Services::min_solve_deadline`].
+pub const DEFAULT_MIN_SOLVE_TIME: Duration = Duration::from_millis(200);
 
 pub struct ServicesBuilder {
     timeout: Duration,
@@ -93,6 +97,7 @@ impl ServicesBuilder {
             http: Client::builder().timeout(self.timeout).build().unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
             web3: onchain_components.web3(),
+            min_solve_deadline: DEFAULT_MIN_SOLVE_TIME,
         }
     }
 }
@@ -110,6 +115,12 @@ pub struct Services<'a> {
     http: Client,
     db: Db,
     web3: &'a Web3,
+    /// Per-auction `/solve` deadline enforced by the autopilot. Defaults to
+    /// [`DEFAULT_MIN_SOLVE_TIME`] (200 ms) but latency-sensitive tests (notably
+    /// forked tests whose RPC round trips dominate on CI, or anything crossing
+    /// an extra mocked HTTP service) can bump this before starting the
+    /// protocol.
+    pub min_solve_deadline: Duration,
 }
 
 impl<'a> Services<'a> {
@@ -122,6 +133,7 @@ impl<'a> Services<'a> {
                 .unwrap(),
             db: sqlx::PgPool::connect(LOCAL_DB_URL).await.unwrap(),
             web3: onchain_components.web3(),
+            min_solve_deadline: DEFAULT_MIN_SOLVE_TIME,
         }
     }
 
@@ -154,18 +166,13 @@ impl<'a> Services<'a> {
     }
 
     /// Start the autopilot service in a background task.
-    /// Optionally specify a solve deadline to use instead of the default 2s.
-    /// (note: specifying a larger solve deadline will impact test times as the
-    /// driver delays the submission of the solution until shortly before the
-    /// deadline in case the solution would start to revert at some point).
+    /// Uses [`Self::min_solve_deadline`] as the per-auction solve deadline.
     /// Allows to externally control the shutdown of autopilot.
     pub async fn start_autopilot_with_shutdown_controller(
         &self,
-        min_solve_time: Option<Duration>,
         config: configs::autopilot::Configuration,
         control: autopilot::shutdown_controller::ShutdownController,
     ) -> JoinHandle<()> {
-        let min_solve_time = min_solve_time.unwrap_or(Duration::from_secs(2));
         let ethflow_contracts = self
             .contracts
             .ethflows
@@ -184,7 +191,7 @@ impl<'a> Services<'a> {
                 ..config.ethflow
             },
             run_loop: RunLoopConfig {
-                min_solve_time,
+                min_solve_time: self.min_solve_deadline,
                 ..config.run_loop
             },
             ..config
@@ -197,17 +204,12 @@ impl<'a> Services<'a> {
     }
 
     /// Start the autopilot service in a background task.
-    /// Optionally specify a solve deadline to use instead of the default 2s.
-    /// (note: specifying a larger solve deadline will impact test times as the
-    /// driver delays the submission of the solution until shortly before the
-    /// deadline in case the solution would start to revert at some point)
+    /// Uses [`Self::min_solve_deadline`] as the per-auction solve deadline.
     pub async fn start_autopilot(
         &self,
-        solve_deadline: Option<Duration>,
         config: configs::autopilot::Configuration,
     ) -> JoinHandle<()> {
         self.start_autopilot_with_shutdown_controller(
-            solve_deadline,
             config,
             autopilot::shutdown_controller::ShutdownController::default(),
         )
@@ -304,18 +306,22 @@ impl<'a> Services<'a> {
             ..orderbook_config
         };
 
-        self.start_autopilot(None, autopilot_config).await;
-        self.start_api(orderbook_config).await;
+        tokio::join!(
+            self.start_autopilot(autopilot_config),
+            self.start_api(orderbook_config),
+        );
     }
 
     /// Starts a basic version of the protocol with a single external solver.
     /// Optionally starts a baseline solver and uses it for price estimation.
     pub async fn start_protocol_external_solver(
-        &self,
+        &mut self,
         solver: TestAccount,
         solver_endpoint: Option<Url>,
         run_baseline: bool,
     ) {
+        // configure mainnet's actual solve deadline
+        self.min_solve_deadline = Duration::from_secs(7);
         let external_solver_endpoint =
             solver_endpoint.unwrap_or("http://localhost:8000/".parse().unwrap());
 
@@ -413,9 +419,10 @@ impl<'a> Services<'a> {
             colocation::LiquidityProvider::UniswapV2,
         );
 
-        self.start_autopilot(Some(Duration::from_secs(11)), autopilot_config)
-            .await;
-        self.start_api(orderbook_config).await;
+        tokio::join!(
+            self.start_autopilot(autopilot_config),
+            self.start_api(orderbook_config),
+        );
     }
 
     async fn wait_for_api_to_come_up() {
@@ -529,7 +536,7 @@ impl<'a> Services<'a> {
     }
 
     pub async fn get_trades(&self, order: &OrderUid) -> Result<Vec<Trade>, StatusCode> {
-        let url = format!("{API_HOST}/api/v1/trades?orderUid={order}");
+        let url = format!("{API_HOST}/api/v2/trades?orderUid={order}");
         let response = self.http.get(url).send().await.unwrap();
 
         let status = response.status();
@@ -898,40 +905,11 @@ impl<'a> Services<'a> {
     }
 }
 
-pub async fn clear_database() {
-    tracing::info!("Clearing database.");
-
-    async fn truncate_tables() -> Result<(), sqlx::Error> {
-        let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL).await?;
-        let mut db = db.begin().await?;
-        database::clear_DANGER_(&mut db).await?;
-        db.commit().await
-    }
-
-    // This operation can fail when postgres detects a deadlock.
-    // It will terminate one of the deadlocking requests and if it decideds
-    // to terminate this request we need to retry it.
-    let mut attempt = 0;
-    loop {
-        match truncate_tables().await {
-            Ok(_) => return,
-            Err(err) => {
-                tracing::error!(?err, "failed to truncate tables");
-            }
-        }
-        attempt += 1;
-        if attempt >= 10 {
-            panic!("repeatedly failed to clear DB");
-        }
-    }
-}
-
-pub async fn ensure_e2e_readonly_user() {
-    use sqlx::{Executor, Row};
-
-    const PSQL_DUPLICATE_OBJECT_ERROR_CODE: &str = "42710";
-
-    tracing::info!("Ensuring read-only user exists");
+/// Opens a single transaction that first ensures the e2e read-only role
+/// exists and then clears the database. Runs the tx under an exclusive
+/// lock to avoid concurrent calls to this function causing deadlocks.
+pub async fn prepare_database_for_test() {
+    tracing::info!("Preparing database for test.");
     let mut db = sqlx::PgConnection::connect(LOCAL_DB_URL)
         .await
         .expect("Database connection error");
@@ -939,16 +917,43 @@ pub async fn ensure_e2e_readonly_user() {
         .begin()
         .await
         .expect("Database transaction creation error");
+
+    // Serialize concurrent setup attempts across processes to avoid deadlocks.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('e2e_test_setup')::bigint)")
+        .execute(db.deref_mut())
+        .await
+        .expect("failed to acquire advisory lock for readonly user setup");
+
+    ensure_readonly_role(&mut db).await;
+
+    database::clear_DANGER_(&mut db)
+        .await
+        .expect("failed to clear database");
+
+    db.commit().await.expect("Transaction commit error");
+}
+
+/// Ensures the `readonly` role exists in the database, creating it with the
+/// expected privileges if missing.
+async fn ensure_readonly_role(db: &mut sqlx::Transaction<'_, sqlx::Postgres>) {
+    let readonly_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'readonly')")
+            .fetch_one(&mut **db)
+            .await
+            .expect("failed to check for readonly role");
+    if readonly_exists {
+        tracing::info!("Read-only user exists");
+        return;
+    }
+
     let current_db: String = db
         .fetch_one("SELECT current_database();")
         .await
         .expect("Current database name fetching error")
         .get(0);
-
-    let res = db
-        .execute(
-            format!(
-                r#"
+    db.execute(
+        format!(
+            r#"
     CREATE ROLE readonly WITH LOGIN PASSWORD 'password';
     GRANT CONNECT ON DATABASE "{current_db}" TO readonly;
     GRANT USAGE ON SCHEMA public TO readonly;
@@ -957,29 +962,12 @@ pub async fn ensure_e2e_readonly_user() {
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO readonly;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO readonly;
     "#
-            )
-            .as_str(),
         )
-        .await;
-
-    match res {
-        Err(sqlx::Error::Database(e))
-            if e.code()
-                .is_some_and(|c| c == PSQL_DUPLICATE_OBJECT_ERROR_CODE) =>
-        {
-            // this is considered expected, if multiple tests are run against
-            // the same database
-            tracing::info!("Read-only user already exists! {:?}", e);
-        }
-        Err(e) => {
-            tracing::error!("Read-only user creation failed {:?}", e);
-            panic!("Read-only user creation failed {:?}", e);
-        }
-        Ok(_) => {
-            tracing::info!("Read only user created");
-            db.commit().await.expect("Transaction commit error");
-        }
-    }
+        .as_str(),
+    )
+    .await
+    .expect("Read-only user creation failed");
+    tracing::info!("Read-only user created");
 }
 
 pub type Db = sqlx::Pool<sqlx::Postgres>;

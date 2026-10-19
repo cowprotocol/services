@@ -31,13 +31,14 @@ xstocks = ["0x0000000000000000000000000000000000000002"]
 
 [submission]
 gas-price-cap = "1000000000000"
+# optional args
+max-additional-tip = "5000000000"
+additional-tip-percentage = 0.05
 
 [[submission.mempool]]
 url = "https://your.custom.rpc.endpoint"
 # optional args
 name = "custom_name"
-max-additional-tip = "5000000000"
-additional-tip-percentage = 0.05
 mines-reverting-txs = true
 
 [contracts]  # Optionally override the contract addresses, necessary on less popular blockchains

@@ -22,6 +22,20 @@ pub struct SolveRequest {
     /// Deadline for answering `/solve`.
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub orders: Vec<Order>,
+    /// Reference data per auction token, keyed by mint. Tokens without a
+    /// price are absent.
+    #[serde_as(as = "HashMap<DisplayFromStr, _>")]
+    pub tokens: HashMap<Pubkey, Token>,
+}
+
+/// What the autopilot knows about an auction token.
+#[serde_as]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// Lamports per 10^9 atoms of the token.
+    #[serde_as(as = "DisplayFromStr")]
+    pub price: u64,
 }
 
 /// One solvable order in the auction.
@@ -197,9 +211,19 @@ mod tests {
             id: 7,
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![Order::from(&order())],
+            tokens: HashMap::from([(
+                Pubkey([0x33; 32]),
+                Token {
+                    price: 1_500_000_000,
+                },
+            )]),
         };
         let json = serde_json::to_value(&request).unwrap();
         assert_eq!(json["deadline"], "2026-01-01T00:00:00Z");
+        assert_eq!(
+            json["tokens"],
+            serde_json::json!({"4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4": {"price": "1500000000"}})
+        );
         assert_eq!(
             json["orders"][0]["uid"],
             "0x1111111111111111111111111111111111111111111111111111111111111111"

@@ -126,6 +126,18 @@ struct SubmissionConfig {
     #[serde(default)]
     nonce_block_number: Option<BlockNumber>,
 
+    /// Maximum additional tip in Gwei that we are willing to give to
+    /// the validator above regular gas price estimation.
+    #[serde(default = "default_max_additional_tip")]
+    #[serde_as(as = "serde_ext::U256")]
+    max_additional_tip: eth::U256,
+
+    /// Additional tip in percentage of max_fee_per_gas we are giving to
+    /// validator above regular gas price estimation. Expects a
+    /// floating point value between 0 and 1.
+    #[serde(default = "default_additional_tip_percentage")]
+    additional_tip_percentage: f64,
+
     /// The mempools to submit settlement transactions to. Can be the public
     /// mempool of a node or the private MEVBlocker mempool.
     #[serde(rename = "mempool", default)]
@@ -158,16 +170,6 @@ struct Mempool {
     name: Option<String>,
     /// The RPC URL to use.
     url: Url,
-    /// Maximum additional tip in Gwei that we are willing to give to
-    /// the validator above regular gas price estimation.
-    #[serde(default = "default_max_additional_tip")]
-    #[serde_as(as = "serde_ext::U256")]
-    max_additional_tip: eth::U256,
-    /// Additional tip in percentage of max_fee_per_gas we are giving to
-    /// validator above regular gas price estimation. Expects a
-    /// floating point value between 0 and 1.
-    #[serde(default = "default_additional_tip_percentage")]
-    additional_tip_percentage: f64,
     /// Informs the submission logic whether a reverting transaction will
     /// actually be mined or just ignored. This is an advanced feature
     /// for private mempools so for most configured mempools you have to
@@ -485,7 +487,7 @@ struct ContractsConfig {
     deadline_check: Option<eth::Address>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
@@ -517,6 +519,47 @@ struct LiquidityConfig {
     /// requests.
     #[serde(default)]
     fetch_at_block: AtBlock,
+
+    /// Minimum time between two background refreshes of the cached pools.
+    /// Blocks arriving inside the window share one refresh, so a chain with
+    /// sub-second blocks does not refetch every cached pool once per block.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_liquidity_refresh_cooldown"
+    )]
+    refresh_cooldown: Duration,
+
+    /// How many blocks older than the last background refresh cached pools
+    /// may be to still be used by requests for recent liquidity, i.e. quotes
+    /// and /solve with `fetch-at-block = "recent"`. Older pools get evicted.
+    /// Pools kept up to date in the background never get that old, so this
+    /// mainly bounds how long pools that are only used for quoting stay
+    /// cached.
+    #[serde(default = "default_liquidity_max_recent_block_age")]
+    max_recent_block_age: u64,
+
+    /// How many of the most recently used token pairs get kept up to date in
+    /// the background. Should cover the number of pairs an auction requests;
+    /// pairs beyond that get refetched on every /solve request.
+    #[serde(default = "default_liquidity_max_auto_updated_pairs")]
+    max_auto_updated_pairs: NonZeroUsize,
+}
+
+impl Default for LiquidityConfig {
+    fn default() -> Self {
+        Self {
+            base_tokens: Default::default(),
+            uniswap_v2: Default::default(),
+            swapr: Default::default(),
+            uniswap_v3: Default::default(),
+            balancer_v2: Default::default(),
+            zeroex: Default::default(),
+            fetch_at_block: Default::default(),
+            refresh_cooldown: default_liquidity_refresh_cooldown(),
+            max_recent_block_age: default_liquidity_max_recent_block_age(),
+            max_auto_updated_pairs: default_liquidity_max_auto_updated_pairs(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1017,6 +1060,18 @@ fn default_app_data_cache_size() -> u64 {
     2000
 }
 
+fn default_liquidity_refresh_cooldown() -> Duration {
+    Duration::from_secs(2)
+}
+
+fn default_liquidity_max_recent_block_age() -> u64 {
+    4
+}
+
+fn default_liquidity_max_auto_updated_pairs() -> NonZeroUsize {
+    NonZeroUsize::new(2000).unwrap()
+}
+
 /// Which block should be used to fetch the liquidity.
 #[derive(Clone, Copy, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -1024,13 +1079,48 @@ enum AtBlock {
     /// Use the latest block received by the `CurrentBlockWatcher`.
     #[default]
     Latest,
-    /// Use the latest finalized block.
-    Finalized,
+    /// Use the state of the last background refresh of the liquidity caches,
+    /// which is at most `refresh-cooldown`. Avoids refetching all pools on
+    /// every /solve request on chains that produce several blocks between
+    /// two refreshes.
+    Recent,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn liquidity_cache_defaults() {
+        for config in [
+            LiquidityConfig::default(),
+            toml::from_str::<LiquidityConfig>("").unwrap(),
+        ] {
+            assert!(matches!(config.fetch_at_block, AtBlock::Latest));
+            assert_eq!(config.refresh_cooldown, Duration::from_secs(2));
+            assert_eq!(config.max_recent_block_age, 4);
+            assert_eq!(config.max_auto_updated_pairs.get(), 2000);
+        }
+
+        let config: LiquidityConfig = toml::from_str(
+            r#"
+            fetch-at-block = "recent"
+            refresh-cooldown = "500ms"
+            max-recent-block-age = 10
+            max-auto-updated-pairs = 2000
+        "#,
+        )
+        .unwrap();
+        assert!(matches!(config.fetch_at_block, AtBlock::Recent));
+        assert_eq!(config.refresh_cooldown, Duration::from_millis(500));
+        assert_eq!(config.max_recent_block_age, 10);
+        assert_eq!(config.max_auto_updated_pairs.get(), 2000);
+    }
+
+    #[test]
+    fn rejects_zero_max_auto_updated_pairs() {
+        assert!(toml::from_str::<LiquidityConfig>("max-auto-updated-pairs = 0").is_err());
+    }
 
     #[test]
     fn gas_estimator_alloy_defaults() {

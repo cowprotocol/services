@@ -9,6 +9,7 @@
 
 pub mod arguments;
 pub mod infra;
+mod metrics;
 pub mod refund_service;
 pub mod submitter;
 pub mod traits;
@@ -19,6 +20,7 @@ use {
     crate::arguments::Arguments,
     alloy::{providers::Provider, signers::local::PrivateKeySigner},
     clap::Parser,
+    metrics::LoopResult,
     observe::metrics::LivenessChecking,
     refund_service::RefundService,
     sqlx::postgres::PgPoolOptions,
@@ -45,6 +47,7 @@ pub async fn start(args: impl Iterator<Item = String>) {
     observe::heap_dump_handler::spawn_heap_dump_handler();
     tracing::info!("running refunder with validated arguments:\n{}", args);
     observe::metrics::setup_registry(Some("refunder".into()), None);
+    observe::client_metrics::setup_registry(Some("refunder".into()));
     run(args).await;
 }
 
@@ -108,11 +111,11 @@ pub async fn run(args: arguments::Arguments) {
         tracing::info!("Starting a new refunding loop");
         match refunder.try_to_refund_all_eligible_orders().await {
             Ok(_) => {
-                track_refunding_loop_result("success");
+                metrics::track_refunding_loop_result(LoopResult::Success);
                 *liveness.last_successful_loop.write().unwrap() = Instant::now()
             }
             Err(err) => {
-                track_refunding_loop_result("error");
+                metrics::track_refunding_loop_result(LoopResult::Error);
                 tracing::warn!("Error while refunding ethflow orders: {:?}", err)
             }
         }
@@ -130,20 +133,4 @@ impl LivenessChecking for Liveness {
         Instant::now().duration_since(*self.last_successful_loop.read().unwrap())
             < DELAY_FROM_LAST_LOOP_BEFORE_UNHEALTHY
     }
-}
-
-#[derive(prometheus_metric_storage::MetricStorage, Debug)]
-#[metric(subsystem = "main")]
-struct Metrics {
-    /// Tracks the result of every refunding loops.
-    #[metric(labels("result"))]
-    refunding_loops: prometheus::IntCounterVec,
-}
-
-fn track_refunding_loop_result(result: &str) {
-    Metrics::instance(observe::metrics::get_storage_registry())
-        .expect("unexpected error getting metrics instance")
-        .refunding_loops
-        .with_label_values(&[result])
-        .inc();
 }
