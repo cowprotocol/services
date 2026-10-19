@@ -88,11 +88,8 @@ pub struct Order {
     pub partially_fillable: bool,
     /// True when the order's buy token account does not exist on chain
     /// yet. The settlement creates it and the solver keypair pays its rent,
-    /// so the solution should price that rent in.
-    ///
-    /// TODO(token-2022): a token-2022 account rents more bytes, so once
-    /// those mints are supported this boolean becomes a `setupCostLamports`
-    /// number and engines stop having to know the rent math.
+    /// so the solution should price that rent in, at the rent of the buy
+    /// mint's token program.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_buy_token_account: bool,
 }
