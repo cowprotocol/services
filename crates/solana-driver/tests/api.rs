@@ -24,7 +24,7 @@ use {
             solver::Solver,
         },
     },
-    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
     solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
     spl_token_interface::native_mint,
     std::{
@@ -712,6 +712,62 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "PriorityFeeTooHigh");
+}
+
+/// Same fee and budget as above, but the `/solve` simulation reports the
+/// settlement's compute units, so the fee is priced at twice those units, not
+/// at the 1.4M ceiling, fits the budget, and the settle reaches the send.
+#[tokio::test]
+async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    mocks.insert(
+        SIMULATE_BUNDLE,
+        serde_json::json!({
+            "context": { "slot": 1 },
+            "value": { "transactionResults": [
+                { "err": null, "logs": [], "unitsConsumed": 100_000 },
+            ] },
+        }),
+    );
+    // A signature other than the transaction's own fails the send.
+    mocks.insert(
+        RpcRequest::SendTransaction,
+        serde_json::json!(Signature::default().to_string()),
+    );
+    let api = Api {
+        priority_fee: PriorityFeePolicy {
+            max_priority_fee_lamports: 13_999,
+            ..priority_fee()
+        },
+        ..api_with(vec![solver], mocks).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let body = call_solve(addr).await;
+    let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/settle"))
+        .json(&serde_json::json!({
+            "auctionId": 7,
+            "solutionId": solution_id,
+            "submissionDeadlineSlot": 1_000_000,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "FailedToSubmit");
 }
 
 #[tokio::test]
