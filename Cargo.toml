@@ -103,6 +103,7 @@ prettyplease = "0.2.37"
 price-estimation = { path = "crates/price-estimation" }
 proc-macro2 = "1.0.103"
 prometheus = "0.14"
+prometheus-client = "0.25"
 prometheus-metric-storage = "0.6"
 quote = "1.0.41"
 rand = "0.9.4"

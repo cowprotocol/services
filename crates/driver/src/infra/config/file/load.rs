@@ -6,7 +6,6 @@ use {
             blockchain,
             config::file,
             liquidity,
-            mempool,
             notify,
             solver::{self, Account, BadOrderDetection, SolutionMerging},
         },
@@ -338,30 +337,13 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 }),
             }
         }),
-        mempools: config
-            .submission
-            .mempools
-            .iter()
-            .enumerate()
-            .map(|(index, mempool)| mempool::Config {
-                min_priority_fee: config.submission.min_priority_fee,
-                gas_price_cap: config.submission.gas_price_cap,
-                target_confirm_time: config.submission.target_confirm_time,
-                retry_interval: config.submission.retry_interval,
-                nonce_block_number: config.submission.nonce_block_number.map(Into::into),
-                name: mempool
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("mempool_{index}")),
-                url: mempool.url.clone(),
-                revert_protection: match mempool.mines_reverting_txs {
-                    true => mempool::RevertProtection::Disabled,
-                    false => mempool::RevertProtection::Enabled,
-                },
-                max_additional_tip: mempool.max_additional_tip,
-                additional_tip_percentage: mempool.additional_tip_percentage,
-            })
-            .collect(),
+        gas_price_parameters: blockchain::gas::GasPriceParameters {
+            max_additional_tip: config.submission.max_additional_tip,
+            additional_tip_factor: config.submission.additional_tip_percentage,
+            max_fee_per_gas: config.submission.gas_price_cap,
+            min_priority_fee: config.submission.min_priority_fee,
+        },
+        mempools: config.submission.to_domain(),
         simulator: config.simulator,
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),

@@ -696,19 +696,6 @@ impl Solution {
         let token = token.as_erc20(self.weth);
         self.prices.get(&token).map(ToOwned::to_owned)
     }
-
-    /// Whether there is a reasonable risk of this solution reverting on chain.
-    pub fn revertable(&self) -> bool {
-        self.interactions
-            .iter()
-            .any(|interaction| !interaction.internalize())
-            || self.user_trades().any(|trade| {
-                matches!(
-                    trade.order().signature.scheme,
-                    order::signature::Scheme::Eip1271
-                )
-            })
-    }
 }
 
 /// Given two solutions returns the factors with

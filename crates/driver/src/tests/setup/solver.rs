@@ -501,9 +501,12 @@ impl Solver {
             },
             eth_domain_types::Gas(eth_domain_types::U256::from(45_000_000u64)),
             &Default::default(),
-            gas::adjustments(&[infra::mempool::Config::test_config(
-                config.blockchain.web3_url.parse().unwrap(),
-            )]),
+            gas::GasPriceParameters {
+                max_additional_tip: eth_domain_types::U256::from(3_000_000_000u64),
+                additional_tip_factor: 0.,
+                max_fee_per_gas: eth_domain_types::U256::from(1_000_000_000_000u64),
+                min_priority_fee: eth_domain_types::U256::ZERO,
+            },
         )
         .await;
 
