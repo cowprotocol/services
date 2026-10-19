@@ -110,7 +110,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         liquidity: liquidity(&config, &eth).await,
         liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
         simulator: simulator(&config, simulator_eth, &http_factory),
-        mempools: Mempools::try_new(
+        mempools: Mempools::new(
             config
                 .mempools
                 .iter()
@@ -129,8 +129,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                 })
                 .collect(),
             eth.clone(),
-        )
-        .unwrap(),
+        ),
         balance_cache: config.balance_cache,
         eth,
         addr: args.addr,

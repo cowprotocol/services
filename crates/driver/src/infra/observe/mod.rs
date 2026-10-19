@@ -389,10 +389,6 @@ pub fn mempool_log(
             ?settlement,
             "sending transaction via mempool succeeded",
         ),
-        Err(mempools::Error::Disabled) => tracing::debug!(
-            %mempool,
-            "mempool disabled, not sending transaction",
-        ),
         Err(err) => tracing::warn!(
             ?err,
             %mempool,
