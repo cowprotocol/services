@@ -311,12 +311,26 @@ impl Competition {
         auction: &Auction,
         missing_buy_token_accounts: &HashSet<OrderUid>,
     ) -> Result<Vec<Solution>, Error> {
+        let buy_mints = auction
+            .orders
+            .iter()
+            .filter(|order| !order.buys_native_sol())
+            .map(|order| order.buy_token);
+        let buy_programs = self
+            .blockchain
+            .token_programs(buy_mints)
+            .await
+            .map_err(Error::Rpc)?
+            .into_iter()
+            .filter_map(|(mint, info)| info.ok().map(|info| (mint, info)))
+            .collect();
         let solutions = self
             .solver
             .solve(
                 auction,
                 self.blockchain.program_id(),
                 missing_buy_token_accounts,
+                &buy_programs,
             )
             .await?;
 

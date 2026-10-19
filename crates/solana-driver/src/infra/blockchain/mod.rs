@@ -63,9 +63,9 @@ pub struct Solana {
     /// every method, see `config::Rpc::bundle_endpoint`.
     bundle_rpc: SolanaRPC,
     program_id: Pubkey,
-    /// The token program of each mint looked up so far. Entries never expire:
+    /// The token program and decimals of each mint. Entries never expire:
     /// a mint's owner changes only if the mint is closed and re-created.
-    token_programs: Cache<Pubkey, TokenProgram>,
+    token_programs: Cache<Pubkey, (TokenProgram, u8)>,
 }
 
 impl Solana {
@@ -161,6 +161,19 @@ impl Solana {
         &self,
         mints: impl IntoIterator<Item = Pubkey>,
     ) -> Result<HashMap<Pubkey, Result<TokenProgram, InvalidMintReason>>, Error> {
+        Ok(self
+            .mint_infos(mints)
+            .await?
+            .into_iter()
+            .map(|(mint, info)| (mint, info.map(|(program, _)| program)))
+            .collect())
+    }
+
+    /// Cached token program and decimals of each initialized mint.
+    pub async fn mint_infos(
+        &self,
+        mints: impl IntoIterator<Item = Pubkey>,
+    ) -> Result<HashMap<Pubkey, Result<(TokenProgram, u8), InvalidMintReason>>, Error> {
         let (mut programs, unknown): (HashMap<_, _>, Vec<_>) =
             mints
                 .into_iter()
@@ -170,7 +183,7 @@ impl Solana {
                 });
         let accounts = self.accounts_snapshot(unknown.iter().copied()).await?;
         for mint in unknown {
-            let program = accounts.mint_token_program(&mint);
+            let program = accounts.mint_info(&mint);
             if let Ok(program) = program {
                 self.token_programs.insert(mint, program);
             }

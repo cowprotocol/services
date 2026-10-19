@@ -59,8 +59,13 @@ impl Jupiter {
             Side::Buy => return Err(Error::OrderNotSupported),
         };
         let quote = self.quote(order, swap_mode).await?;
-        let in_amount = amount_field(&quote, "inAmount")?;
-        let out_amount = amount_field(&quote, "outAmount")?;
+        // Use the slippage bounds for both the input and output amounts.
+        let (in_field, out_field) = match swap_mode {
+            SwapMode::ExactIn => ("inAmount", "otherAmountThreshold"),
+            SwapMode::ExactOut => ("otherAmountThreshold", "outAmount"),
+        };
+        let in_amount = amount_field(&quote, in_field)?;
+        let out_amount = amount_field(&quote, out_field)?;
         self.swap_instructions(&quote, taker, &order.buy_destination)
             .await?
             .into_swap(in_amount, out_amount)
@@ -201,6 +206,58 @@ mod tests {
         let jupiter = Jupiter::new(&config(false)).unwrap();
         let result = jupiter.swap(&order(Side::Buy), &Pubkey::new_unique()).await;
         assert!(matches!(result, Err(Error::OrderNotSupported)));
+    }
+
+    #[tokio::test]
+    async fn exact_out_funds_the_maximum_input_and_respects_the_limit() {
+        use axum::{
+            Json,
+            Router,
+            routing::{get, post},
+        };
+
+        let app = Router::new()
+            .route(
+                &format!("/{QUOTE_PATH}"),
+                get(|| async {
+                    Json(serde_json::json!({
+                        "inAmount": "1000",
+                        "outAmount": "2000",
+                        "otherAmountThreshold": "1005",
+                    }))
+                }),
+            )
+            .route(
+                &format!("/{SWAP_INSTRUCTIONS_PATH}"),
+                post(|| async {
+                    Json(serde_json::json!({
+                        "swapInstruction": {
+                            "programId": Pubkey::default().to_string(),
+                            "accounts": [],
+                            "data": "",
+                        },
+                    }))
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut config = config(true);
+        config.endpoint = format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        config.api_key = None;
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let jupiter = Jupiter::new(&config).unwrap();
+        let mut buy = order(Side::Buy);
+        buy.sell_amount = 1005;
+        buy.buy_amount = 2000;
+        let swap = jupiter.swap(&buy, &Pubkey::new_unique()).await.unwrap();
+        server.abort();
+
+        assert_eq!(swap.in_amount, 1005);
+        assert_eq!(swap.out_amount, 2000);
+        assert!(swap.satisfies(&buy));
+        buy.sell_amount = 1004;
+        assert!(!swap.satisfies(&buy));
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
