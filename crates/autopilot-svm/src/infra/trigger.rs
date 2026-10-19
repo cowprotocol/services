@@ -8,9 +8,7 @@ use {
     tokio::sync::watch,
 };
 
-/// How often the poller asks the node for the current slot. Half of
-/// SIMD-0525's final 200ms target slot, so a new slot is typically observed
-/// within one poll of its arrival.
+/// Half of SIMD-0525's final 200ms slot, so a new slot is seen within one poll.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Yields each newly observed slot. A background task keeps the tip fresh
