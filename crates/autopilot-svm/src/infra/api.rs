@@ -157,14 +157,16 @@ mod tests {
         )]));
         NativePrices::new(
             &crate::infra::config::NativePrices {
-                estimators: vec![crate::infra::config::NativePriceEstimator::CoinGecko {
-                    endpoint: format!("http://{coingecko}/simple/token_price")
+                estimators: vec![vec![crate::infra::config::NativePriceEstimator::CoinGecko]],
+                results_required: std::num::NonZero::new(1).unwrap(),
+                ttl: std::time::Duration::from_secs(60),
+                driver_probe_lamports: 100_000_000,
+                coin_gecko: crate::infra::config::CoinGecko {
+                    url: format!("http://{coingecko}/simple/token_price")
                         .parse()
                         .unwrap(),
                     api_key: String::new(),
-                }],
-                ttl: std::time::Duration::from_secs(60),
-                driver_probe_lamports: 100_000_000,
+                },
             },
             rpc,
             Pubkey::new_unique(),

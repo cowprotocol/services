@@ -37,28 +37,31 @@ submission-deadline-slots = 25
 name = "baseline"
 url = "http://localhost:11088"
 
-# Native price lookups for auction tokens. Sources are asked in order: a
-# token the first one does not price is asked from the next.
+# Native price lookups for auction tokens. Sources are listed by stage: a
+# lookup asks a stage's sources at once, adds the next stage while fewer
+# sources are in flight than prices are missing, and asks later stages only
+# for the tokens still short of results-required prices.
 [native-prices]
 ttl = "30s"
+# Prices a token needs before its lookup stops asking. The best one wins.
+results-required = 2
 # Lamports a driver source sells per probe quote.
 driver-probe-lamports = 10000000
+# Entries read like the EVM autopilot's. A Driver is quoted through its
+# regular /quote route, its url includes the solver path like the [[drivers]]
+# entries, and its solver must answer sell orders: the probe sells a fixed
+# amount of wSOL.
+estimators = [
+  [{ type = "CoinGecko" }],
+  [{ type = "Driver", name = "baseline", url = "http://localhost:11088/baseline/" }],
+]
 
-# The CoinGecko key is optional: without one the public API and its rate
-# limits apply. A value like "%COIN_GECKO_API_KEY" reads the key from that
+# The CoinGecko source. Without a key the public API and its rate limits
+# apply. An api-key like "%COIN_GECKO_API_KEY" reads the key from that
 # environment variable and fails the load when it is unset.
-[[native-prices.estimators]]
-type = "coin-gecko"
-endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
+[native-prices.coin-gecko]
+url = "https://api.coingecko.com/api/v3/simple/token_price"
 # api-key = "%COIN_GECKO_API_KEY"
-
-# A solver driver quoted through its regular /quote route. The url includes
-# the solver path, like the [[drivers]] entries. The driver's solver must
-# answer sell orders, the probe sells a fixed amount of wSOL.
-[[native-prices.estimators]]
-type = "driver"
-name = "baseline"
-url = "http://localhost:11088/baseline/"
 
 [logging]
 filter = "info,autopilot_svm=debug"

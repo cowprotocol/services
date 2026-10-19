@@ -87,7 +87,8 @@ pub struct Quoting {
     /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_min_validity")]
     pub min_validity: Duration,
-    /// Furthest in the future a quoted order's `validTo` may lie.
+    /// Furthest in the future an order's `validTo` may lie, for quotes and
+    /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_max_validity")]
     pub max_validity: Duration,
     /// How long the quoted amounts are honored.
@@ -208,8 +209,8 @@ mod tests {
         assert_eq!(config.quoting.drivers[0].as_str(), "http://localhost:8000/");
         assert_eq!(config.quoting.autopilot.as_str(), "http://localhost:12088/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
-        assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
-        assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
+        assert_eq!(config.quoting.min_validity, Duration::from_secs(60));
+        assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
     }
 

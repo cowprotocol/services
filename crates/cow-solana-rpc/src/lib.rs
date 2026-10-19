@@ -343,6 +343,9 @@ impl SolanaRPC {
 pub struct RpcSimulateBundleTransactionResult {
     pub err: Option<UiTransactionError>,
     pub logs: Option<Vec<String>>,
+    /// Compute units the transaction consumed, `None` when the endpoint does
+    /// not report them.
+    pub units_consumed: Option<u64>,
 }
 
 /// One page of an address's transaction history.

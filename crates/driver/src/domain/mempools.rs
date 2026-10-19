@@ -11,7 +11,6 @@ use {
     futures::{FutureExt, StreamExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
-    thiserror::Error,
     tracing::Instrument,
 };
 
@@ -51,15 +50,11 @@ pub struct Mempools {
 }
 
 impl Mempools {
-    pub fn try_new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Result<Self, NoMempools> {
-        if mempools.is_empty() {
-            Err(NoMempools)
-        } else {
-            Ok(Self { mempools, ethereum })
-        }
+    pub fn new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Self {
+        Self { mempools, ethereum }
     }
 
-    /// Race the enabled mempools concurrently; first success wins. Pending
+    /// Race the mempools concurrently; first success wins. Pending
     /// submission futures are dropped at that point and every other mempool is
     /// recorded as `Superseded`. If every mempool fails, return one of the
     /// failure errors.
@@ -102,30 +97,6 @@ impl Mempools {
         Ok(res?.tx_hash)
     }
 
-    /// A mempool is disabled if all of the following are true:
-    /// * the settlement may revert (see [`EncodedSettlement::may_revert`])
-    /// * the pool has revert protection enabled (see
-    ///   [`Self::revert_protection`])
-    /// * reverts can get mined (see [`infra::Mempool::reverts_can_get_mined`])
-    fn is_disabled(&self, mempool: &infra::Mempool, settlement: &EncodedSettlement) -> bool {
-        settlement.may_revert
-            && matches!(self.revert_protection(), RevertProtection::Enabled)
-            && mempool.reverts_can_get_mined()
-    }
-
-    /// Defines if the mempools are configured in a way that guarantees that
-    /// settled solution will not revert.
-    pub fn revert_protection(&self) -> RevertProtection {
-        match self
-            .mempools
-            .iter()
-            .all(|mempool| mempool.reverts_can_get_mined())
-        {
-            true => RevertProtection::Disabled,
-            false => RevertProtection::Enabled,
-        }
-    }
-
     async fn submit(
         &self,
         mempool: &infra::mempool::Mempool,
@@ -133,10 +104,6 @@ impl Mempools {
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
     ) -> Result<SubmissionSuccess, Error> {
-        if self.is_disabled(mempool, settlement) {
-            return Err(Error::Disabled);
-        }
-
         let tx = prepare_submission(&settlement.internalized, mode);
         let signer = tx.from;
 
@@ -476,7 +443,6 @@ enum Outcome {
         reason: &'static str,
         blocks_passed: Option<u64>,
     },
-    Disabled,
 }
 
 impl Outcome {
@@ -485,13 +451,12 @@ impl Outcome {
             Outcome::Superseded => "Superseded",
             Outcome::Success { .. } => "Success",
             Outcome::Failed { reason, .. } => reason,
-            Outcome::Disabled => "Disabled",
         }
     }
 
     fn blocks_passed(self) -> Option<u64> {
         match self {
-            Outcome::Superseded | Outcome::Disabled => None,
+            Outcome::Superseded => None,
             Outcome::Success { blocks_passed } => Some(blocks_passed),
             Outcome::Failed { blocks_passed, .. } => blocks_passed,
         }
@@ -504,7 +469,6 @@ impl From<&Result<SubmissionSuccess, Error>> for Outcome {
             Ok(s) => Outcome::Success {
                 blocks_passed: s.blocks_passed(),
             },
-            Err(Error::Disabled) => Outcome::Disabled,
             Err(err @ (Error::Revert { .. } | Error::SimulationRevert { .. })) => Outcome::Failed {
                 reason: "Revert",
                 blocks_passed: err.blocks_passed(),
@@ -600,18 +564,6 @@ impl SubmissionSuccess {
     }
 }
 
-#[derive(Debug, Error)]
-#[error("no mempools configured, cannot execute settlements")]
-pub struct NoMempools;
-
-/// Defines if the mempools are configured in a way that guarantees that
-/// /settle'd solution will not revert.
-#[derive(Debug, Clone, Copy)]
-pub enum RevertProtection {
-    Enabled,
-    Disabled,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(
@@ -640,8 +592,6 @@ pub enum Error {
         submitted_at_block: BlockNo,
         submission_deadline: BlockNo,
     },
-    #[error("Strategy disabled for this tx")]
-    Disabled,
     #[error("Failed to submit: {0:?}")]
     Other(#[from] anyhow::Error),
 }
@@ -665,7 +615,7 @@ impl Error {
                 submission_deadline,
                 ..
             } => (*submitted_at_block, *submission_deadline),
-            Self::Disabled | Self::Other(_) => return None,
+            Self::Other(_) => return None,
         };
         Some(end.saturating_sub(start).0)
     }

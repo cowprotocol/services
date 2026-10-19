@@ -214,14 +214,15 @@ deadline-check = "{:?}"
 
 [liquidity]
 base-tokens = [{encoded_base_tokens}]
+refresh-cooldown = "0s"
 
 {liquidity}
 
 [submission]
 gas-price-cap = "1000000000000"
 
-[[submission.mempool]]
-url = "{NODE_HOST}"
+[submission.public-mempool]
+urls = ["{NODE_HOST}"]
 
 [balance-cache]
 refresh-cooldown = "0s"
