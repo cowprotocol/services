@@ -25,6 +25,16 @@ const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 /// it pays for the solver keypair's signature only.
 const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
 
+/// The compute unit limit for a transaction that consumed `units` in
+/// simulation. Usage can grow before the transaction lands and running out of
+/// units fails it, so the limit is twice the usage, up to the runtime's
+/// ceiling.
+pub(crate) fn compute_unit_limit(units: u64) -> u32 {
+    u32::try_from(units.saturating_mul(2))
+        .unwrap_or(u32::MAX)
+        .min(MAX_COMPUTE_UNIT_LIMIT)
+}
+
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
 
@@ -171,6 +181,13 @@ mod tests {
             ..policy
         };
         assert_eq!(policy.compute_unit_price(&fees), 30);
+    }
+
+    #[test]
+    fn compute_unit_limit_doubles_the_usage_up_to_the_ceiling() {
+        assert_eq!(compute_unit_limit(100_000), 200_000);
+        assert_eq!(compute_unit_limit(700_001), MAX_COMPUTE_UNIT_LIMIT);
+        assert_eq!(compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
     }
 
     #[test]

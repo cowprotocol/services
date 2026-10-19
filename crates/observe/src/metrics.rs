@@ -127,7 +127,9 @@ pub fn serve_metrics(
 
 // `/metrics` route exposing encoded prometheus data to monitoring system
 async fn handle_metrics() -> String {
-    encode(get_registry())
+    let mut text = encode(get_registry());
+    text.push_str(&crate::client_metrics::encode());
+    text
 }
 
 async fn handle_liveness_probe(
