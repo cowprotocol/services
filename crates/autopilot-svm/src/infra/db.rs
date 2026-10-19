@@ -30,6 +30,7 @@ pub struct OrderRow {
     pub order_pda: ByteArray<32>,
     pub app_data: ByteArray<32>,
     pub created_on_chain: bool,
+    pub executed: BigDecimal,
     pub creation: Option<Vec<u8>>,
 }
 
@@ -50,6 +51,10 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.order_pda, o.app_data,
        p.order_uid IS NOT NULL AS created_on_chain,
+       CASE o.kind
+           WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
+           ELSE COALESCE(p.amount_received, 0)
+       END AS executed,
        CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
@@ -130,19 +135,32 @@ pub struct LandedWindow {
     pub submitted_signature: ByteArray<64>,
 }
 
-/// The stored creation transactions of the given orders that do not exist on
-/// chain yet.
+/// A sponsored order's stored creation, for an order the indexer has not
+/// seen on chain yet.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct StoredCreation {
+    pub uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
+    /// The order account the creation opens.
+    pub order_pda: ByteArray<32>,
+    /// The owner-signed creation transaction, bincode-encoded.
+    pub transaction: Vec<u8>,
+}
+
+/// The stored creations of the given orders the indexer has not seen on
+/// chain yet, oldest first.
 pub async fn pending_creations(
     ex: impl PgExecutor<'_>,
     uids: &[Vec<u8>],
-) -> Result<Vec<(Vec<u8>, Vec<u8>)>> {
+) -> Result<Vec<StoredCreation>> {
     const QUERY: &str = r#"
-SELECT o.uid, o.presigned_transaction
+SELECT o.uid, o.owner, o.order_pda, o.presigned_transaction AS transaction
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 WHERE o.uid = ANY($1)
   AND o.presigned_transaction IS NOT NULL
   AND p.order_uid IS NULL
+ORDER BY o.creation_timestamp, o.uid
     "#;
     sqlx::query_as(QUERY)
         .bind(uids)
@@ -571,7 +589,9 @@ impl TryFrom<OrderRow> for Order {
             order_pda: Pubkey(row.order_pda.0),
             app_data: AppData(row.app_data.0),
             created_on_chain: row.created_on_chain,
+            executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
+            sell_balance: None,
         })
     }
 }
@@ -593,7 +613,7 @@ mod tests {
             skip_settlement_window,
             unrecorded_dead_creations,
         },
-        bigdecimal::BigDecimal,
+        bigdecimal::{BigDecimal, ToPrimitive},
         chain_types::solana::Pubkey,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
@@ -615,6 +635,7 @@ mod tests {
             order_pda: ByteArray([7; 32]),
             app_data: ByteArray([0; 32]),
             created_on_chain: true,
+            executed: BigDecimal::from(0u64),
             creation: None,
         }
     }
@@ -729,6 +750,10 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         // Dropped: buy side fully received.
         insert_order(&mut tx, 8, 2_000, true, database::solana::OrderKind::Buy).await;
         insert_pda(&mut tx, 8, false, 0, 2_000).await;
+        // Kept: buy side partially received; the sell counter must not leak
+        // into `executed`.
+        insert_order(&mut tx, 11, 2_000, true, database::solana::OrderKind::Buy).await;
+        insert_pda(&mut tx, 11, false, 300, 500).await;
         // A pending sponsored order whose creation dies at height 150: kept
         // while the chain is below that height or the height is unknown,
         // dropped after.
@@ -749,16 +774,21 @@ WHERE uid = $1
             orders.iter().map(|order| order.uid.0[0]).collect()
         };
         let orders = open_orders(&mut *tx, 1_000, Some(100)).await.unwrap();
+        let executed: Vec<u64> = orders
+            .iter()
+            .map(|order| order.executed.to_u64().unwrap())
+            .collect();
+        assert_eq!(executed, vec![0, 999, 0, 0, 500]);
         let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
-        assert_eq!(creations, vec![None, None, None, Some(vec![1])]);
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         // Boundary: still alive when the chain height equals the stored height.
         let orders = open_orders(&mut *tx, 1_000, Some(150)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6, 10]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
-        assert_eq!(uids(orders), vec![1, 5, 6]);
+        assert_eq!(uids(orders), vec![1, 5, 6, 11]);
     }
 
     /// A pending sponsored order counts once the chain passes its stored

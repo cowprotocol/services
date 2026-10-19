@@ -51,6 +51,8 @@ pub struct Config<'a> {
     pub quote: bool,
     /// For quotes: the quote id the driver passes on in the `/solve` request.
     pub quote_id: Option<i64>,
+    /// Whether the driver should flag this `/solve` request as fast-path.
+    pub fast_path: bool,
     pub fee_handler: FeeHandler,
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
@@ -499,9 +501,12 @@ impl Solver {
             },
             eth_domain_types::Gas(eth_domain_types::U256::from(45_000_000u64)),
             &Default::default(),
-            gas::adjustments(&[infra::mempool::Config::test_config(
-                config.blockchain.web3_url.parse().unwrap(),
-            )]),
+            gas::GasPriceParameters {
+                max_additional_tip: eth_domain_types::U256::from(3_000_000_000u64),
+                additional_tip_factor: 0.,
+                max_fee_per_gas: eth_domain_types::U256::from(1_000_000_000_000u64),
+                min_priority_fee: eth_domain_types::U256::ZERO,
+            },
         )
         .await;
 
@@ -529,6 +534,9 @@ impl Solver {
                     if config.quote {
                         expected["quoteId"] =
                             config.quote_id.expect("quotes carry a quote id").to_string().into();
+                    }
+                    if config.fast_path {
+                        expected["fastPath"] = true.into();
                     }
                     check_solve_request(req, expected);
                     let mut state = state.0.lock().unwrap();

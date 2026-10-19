@@ -234,14 +234,14 @@ paths:
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
-            state PDA (`WrongDelegate`), an intent without the on-chain flag
-            (`InvalidIntentFlags`), equal mints or wSOL sold for native SOL
+            state PDA (`WrongDelegate`), equal mints or wSOL sold for native SOL
             (`SameBuyAndSellToken`), a zero amount (`ZeroAmount`), a native
             SOL buy paying an account the System Program does not own, or
             whose payout can leave the wallet under its rent-exempt minimum,
             890880 lamports for an empty wallet (`InvalidNativeBuy`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
-            validity (`InsufficientValidTo`), a mint the settlement program
+            or above the maximum validity (`InsufficientValidTo`,
+            `ExcessiveValidTo`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:
@@ -277,9 +277,12 @@ paths:
             rent-exempt minimum, 890880 lamports for an empty wallet
             (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
-            (default two minutes) or further than the configured maximum
-            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
-            or a mint the settlement program cannot move (`UnsupportedToken`).
+            (default one minute) or further than the configured maximum
+            (default one year) (`InsufficientValidTo`, `ExcessiveValidTo`),
+            a mint the settlement program cannot move (`UnsupportedToken`),
+            or a buy token account that exists but cannot take the payout,
+            frozen, another mint's, or refusing plain credits
+            (`InvalidBuyTokenAccount`).
           content:
             application/json:
               schema:
@@ -290,6 +293,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/version:
+    get:
+      operationId: getApiVersion
+      summary: Get the API's current deployed version.
+      description: |
+        The build the API runs as `<ref>@<sha>`: the release tag or branch the
+        image was built from and its git commit (code:
+        https://github.com/cowprotocol/services).
+      responses:
+        "200":
+          description: Version
+          content:
+            text/plain: {}
 components:
   schemas:
     OrderUid:
@@ -524,7 +540,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         receiver:
-          description: The buy token account proceeds land in. Echoed back untouched.
+          description: >-
+            Optional recipient of the proceeds, in place of `from`. Either a
+            wallet, paid into its associated token account for the buy mint (or
+            directly, for native SOL), or a token account of the buy mint
+            itself. Echoed back untouched.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         kind:
@@ -593,6 +613,8 @@ components:
         - buyAmount
         - validTo
         - feeAmount
+        - networkFees
+        - buyTokenAtaCosts
         - kind
         - partiallyFillable
       properties:
@@ -617,6 +639,24 @@ components:
           nullable: true
         feeAmount:
           description: Always zero. No component charges a fee.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        networkFees:
+          description: >-
+            The settlement's network fee, in lamports. A placeholder until
+            the orderbook reports the driver's estimate for the quoted route:
+            the base fee of one signature plus the runtime's compute unit
+            ceiling at a fixed compute unit price.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyTokenAtaCosts:
+          description: >-
+            Rent, in lamports at the cluster's rent, of the buy token account
+            when the placement must create it; zero when the payout lands in
+            an existing one and for native SOL buys. An anonymous quote,
+            `from` zero without a `receiver`, names no account to read and is
+            priced as if it were missing. An upper bound when the account
+            cannot be read, without sponsoring included.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         kind:

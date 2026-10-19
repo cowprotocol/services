@@ -728,6 +728,13 @@ components:
             placed with a quote references the same quote id, so a solver can
             match the two.
           type: string
+        fastPath:
+          description: |
+            Set to `true` when this is a fast-path quote request, i.e. the order
+            placed with the winning quote will be settled out of competition.
+            Absent otherwise.
+          type: boolean
+          default: false
         tokens:
           description: |
             A map of token addresses to token information.

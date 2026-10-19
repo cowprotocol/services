@@ -312,10 +312,17 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
     // reverted and the regular auction picked the order up instead.
     let trade = services.get_trades(&uid).await.unwrap().pop().unwrap();
     let tx_hash = trade.tx_hash.expect("settled trade has a transaction");
-    let settled_in = settled_competition(&services, tx_hash).await.auction_id;
+    let competition = settled_competition(&services, tx_hash).await;
     assert_eq!(
-        settled_in, fast_path_auction,
-        "order settled under auction {settled_in} but the fast path staged {fast_path_auction}",
+        competition.auction_id, fast_path_auction,
+        "order settled under auction {} but the fast path staged {fast_path_auction}",
+        competition.auction_id,
+    );
+    assert!(competition.fast_path, "expected a fast-path auction");
+    assert_eq!(
+        crate::database::fast_path_quote_id_of_auction(services.db(), fast_path_auction).await,
+        Some(quote_id),
+        "fast-path auction {fast_path_auction} should map to quote {quote_id}",
     );
 
     // Signed at the quote, and the fast path settles at exactly the
@@ -917,7 +924,7 @@ async fn fast_path_settles_across_split_configs(web3: Web3) {
     let (autopilot_config, orderbook_config) =
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
 
-    services.start_autopilot(None, autopilot_config).await;
+    services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
@@ -1091,7 +1098,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     let (autopilot_config, orderbook_config) =
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
 
-    services.start_autopilot(None, autopilot_config).await;
+    services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
@@ -1372,7 +1379,7 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
     let (autopilot_config, orderbook_config) =
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
 
-    services.start_autopilot(None, autopilot_config).await;
+    services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
     let app_data = json!({

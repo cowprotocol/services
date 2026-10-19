@@ -8,11 +8,7 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::{
-        client_error::ErrorKind,
-        request::MAX_MULTIPLE_ACCOUNTS,
-        response::Response,
-    },
+    solana_rpc_client_api::{client_error::ErrorKind, request::MAX_MULTIPLE_ACCOUNTS},
     solana_sdk::{
         account::Account,
         hash::Hash,
@@ -28,7 +24,12 @@ pub use {
     solana_rpc_client_api::{
         client_error::Error,
         request::RpcRequest,
-        response::{RpcPrioritizationFee, RpcSimulateTransactionResult, UiTransactionError},
+        response::{
+            Response,
+            RpcPrioritizationFee,
+            RpcSimulateTransactionResult,
+            UiTransactionError,
+        },
     },
     solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
 };
@@ -87,6 +88,24 @@ impl SolanaRPC {
     pub fn new_mock_with_mocks_map(mocks: MocksMap) -> Self {
         Self {
             inner: RpcClient::new_mock_with_mocks_map("mock", mocks),
+        }
+    }
+
+    /// Creates a client that fails each request with its queued transaction
+    /// errors before answering from its queue of canned responses, for
+    /// tests.
+    #[cfg(feature = "test-util")]
+    pub fn new_mock_with_failures(
+        mocks: MocksMap,
+        failures: impl IntoIterator<Item = (RpcRequest, solana_sdk::transaction::TransactionError)>,
+    ) -> Self {
+        Self {
+            inner: RpcClient::new_sender(
+                mock::FailingSender::new(mocks, failures),
+                solana_rpc_client::rpc_client::RpcClientConfig::with_commitment(
+                    CommitmentConfig::default(),
+                ),
+            ),
         }
     }
 
@@ -220,16 +239,14 @@ impl SolanaRPC {
             .await
     }
 
-    /// Simulate a versioned transaction without sending it. Returns the
-    /// simulation result including logs and any error.
+    /// Simulate a versioned transaction without sending it. The value holds
+    /// the simulation result including logs and any error; the context carries
+    /// the slot it ran against.
     pub async fn simulate_transaction(
         &self,
         transaction: &VersionedTransaction,
-    ) -> Result<RpcSimulateTransactionResult, Error> {
-        self.inner
-            .simulate_transaction(transaction)
-            .await
-            .map(|response| response.value)
+    ) -> Result<Response<RpcSimulateTransactionResult>, Error> {
+        self.inner.simulate_transaction(transaction).await
     }
 
     /// The prioritization fee, in micro-lamports per compute unit, that
@@ -246,13 +263,14 @@ impl SolanaRPC {
     /// Simulate the transactions as one atomic bundle on the confirmed bank
     /// without sending them, signatures unverified and blockhashes replaced by
     /// the node's latest, so partially signed and stale transactions still
-    /// simulate. One result per executed transaction, in order, ending at
-    /// the first failure. A node without the Jito extension answers with an
+    /// simulate. The value holds one result per executed transaction, in
+    /// order, ending at the first failure; the context carries the slot it
+    /// simulated against. A node without the Jito extension answers with an
     /// error.
     pub async fn simulate_bundle(
         &self,
         transactions: &[VersionedTransaction],
-    ) -> Result<Vec<RpcSimulateBundleTransactionResult>, Error> {
+    ) -> Result<Response<Vec<RpcSimulateBundleTransactionResult>>, Error> {
         let encoded = transactions
             .iter()
             .map(|transaction| {
@@ -283,7 +301,10 @@ impl SolanaRPC {
             transaction_results: Vec<RpcSimulateBundleTransactionResult>,
         }
         let response: Response<Value> = self.inner.send(SIMULATE_BUNDLE, params).await?;
-        Ok(response.value.transaction_results)
+        Ok(Response {
+            context: response.context,
+            value: response.value.transaction_results,
+        })
     }
 
     /// Whether the blockhash is still usable for a new transaction at
@@ -306,6 +327,14 @@ impl SolanaRPC {
     ) -> Result<Signature, Error> {
         self.inner.send_and_confirm_transaction(transaction).await
     }
+
+    /// Send a versioned transaction without waiting for it to land.
+    pub async fn send_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, Error> {
+        self.inner.send_transaction(transaction).await
+    }
 }
 
 /// One transaction's execution inside a simulated bundle.
@@ -314,6 +343,9 @@ impl SolanaRPC {
 pub struct RpcSimulateBundleTransactionResult {
     pub err: Option<UiTransactionError>,
     pub logs: Option<Vec<String>>,
+    /// Compute units the transaction consumed, `None` when the endpoint does
+    /// not report them.
+    pub units_consumed: Option<u64>,
 }
 
 /// One page of an address's transaction history.
@@ -346,6 +378,70 @@ impl From<u64> for BlockHeight {
 impl From<BlockHeight> for u64 {
     fn from(height: BlockHeight) -> Self {
         height.0
+    }
+}
+
+#[cfg(feature = "test-util")]
+mod mock {
+    use {
+        super::*,
+        solana_rpc_client::{
+            mock_sender::MockSender,
+            rpc_sender::{RpcSender, RpcTransportStats},
+        },
+        solana_sdk::transaction::TransactionError,
+        std::{collections::VecDeque, sync::Mutex},
+    };
+
+    /// A mock sender that fails a request with its queued transaction errors
+    /// before answering it from the canned responses.
+    pub struct FailingSender {
+        inner: MockSender,
+        failures: Mutex<HashMap<RpcRequest, VecDeque<TransactionError>>>,
+    }
+
+    impl FailingSender {
+        pub fn new(
+            mocks: MocksMap,
+            failures: impl IntoIterator<Item = (RpcRequest, TransactionError)>,
+        ) -> Self {
+            let mut queued: HashMap<RpcRequest, VecDeque<TransactionError>> = HashMap::new();
+            for (request, err) in failures {
+                queued.entry(request).or_default().push_back(err);
+            }
+            Self {
+                inner: MockSender::new_with_mocks_map("mock", mocks),
+                failures: Mutex::new(queued),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl RpcSender for FailingSender {
+        async fn send(
+            &self,
+            request: RpcRequest,
+            params: serde_json::Value,
+        ) -> Result<serde_json::Value, Error> {
+            let failure = self
+                .failures
+                .lock()
+                .unwrap()
+                .get_mut(&request)
+                .and_then(VecDeque::pop_front);
+            match failure {
+                Some(err) => Err(err.into()),
+                None => self.inner.send(request, params).await,
+            }
+        }
+
+        fn get_transport_stats(&self) -> RpcTransportStats {
+            self.inner.get_transport_stats()
+        }
+
+        fn url(&self) -> String {
+            self.inner.url()
+        }
     }
 }
 

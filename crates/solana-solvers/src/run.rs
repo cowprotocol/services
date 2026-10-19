@@ -6,6 +6,7 @@ use {
         cli::{Args, Command},
         config,
         dex,
+        domain::solver::Solver,
     },
     clap::Parser,
     std::sync::Arc,
@@ -30,9 +31,14 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
             let config = config::load(&path).await;
             let jupiter = dex::jupiter::Jupiter::new(&config.dex)
                 .unwrap_or_else(|err| panic!("build jupiter dex: {err}"));
+            let solver = Solver::new(
+                dex::Dex::Jupiter(jupiter),
+                config.concurrent_requests,
+                config.rate_limiting(),
+            );
             let api = Api {
                 addr: args.addr,
-                dex: Arc::new(dex::Dex::Jupiter(jupiter)),
+                solver: Arc::new(solver),
             };
             let (listener, _addr) = api
                 .bind()

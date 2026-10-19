@@ -24,7 +24,7 @@ use {
             solver::Solver,
         },
     },
-    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
     solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
     spl_token_interface::native_mint,
     std::{
@@ -58,7 +58,6 @@ fn test_order_intent() -> OrderIntent {
         // Far future so the settle path's order-expiry check passes.
         valid_to: u32::MAX,
         flags: Flags {
-            created_on_chain: true,
             kind: OrderKind::Sell,
             partially_fillable: false,
         },
@@ -91,7 +90,7 @@ async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
     let blockchain = Solana::new(
         SolanaRPC::new_mock_with_mocks(mocks.clone()),
         SolanaRPC::new_mock_with_mocks(mocks),
-        cow_settlement_interface::id(),
+        program_id(),
     );
     blockchain
         .token_programs([pubkey(0x33), pubkey(0x44)])
@@ -175,6 +174,7 @@ async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubk
         signer: cow_solana_signer::Config::Keypair(keypair_path),
         solve_every_nth_auction: None,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
+        max_native_shortfall_bps: None,
     })
     .await
     .expect("solver construction should succeed");
@@ -196,13 +196,21 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         signer: cow_solana_signer::Config::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
         solver_fee_bps: None,
+        max_native_shortfall_bps: None,
     })
     .await
     .expect("solver construction should succeed")
 }
 
+/// The settlement program the tests run against: not the id the interface
+/// crate was compiled for, so a crate constant leaking into the encoding
+/// fails.
+fn program_id() -> Pubkey {
+    Pubkey::new_from_array([0x53; 32])
+}
+
 fn order_pda() -> Pubkey {
-    find_order_pda(&cow_settlement_interface::id(), &test_order_intent().uid()).0
+    find_order_pda(&program_id(), &test_order_intent().uid()).0
 }
 
 /// The autopilot's own literal `/solve` request JSON.
@@ -262,25 +270,40 @@ async fn call_solve(addr: SocketAddr) -> serde_json::Value {
 }
 
 async fn call_solve_with(addr: SocketAddr, request: serde_json::Value) -> serde_json::Value {
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/solve"))
-        .json(&request)
-        .send()
-        .await
-        .unwrap();
+    let response = post_solve(addr, &request).await;
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     response.json().await.unwrap()
 }
 
 /// Post a `/solve` and return the HTTP status, without asserting on it.
 async fn solve_status(addr: SocketAddr) -> reqwest::StatusCode {
-    reqwest::Client::new()
-        .post(format!("http://{addr}/mock/solve"))
-        .json(&solve_request())
-        .send()
-        .await
-        .unwrap()
-        .status()
+    post_solve(addr, &solve_request()).await.status()
+}
+
+/// The standard solve request with its order partially fillable, of the given
+/// kind, and `executed` already filled, plus the order's uid, which the flags
+/// change.
+fn partial_fill_request(kind: OrderKind, executed: &str) -> (String, serde_json::Value) {
+    let intent = OrderIntent {
+        flags: Flags {
+            kind,
+            partially_fillable: true,
+        },
+        ..test_order_intent()
+    };
+    let uid = format!("0x{}", const_hex::encode(intent.uid().to_bytes()));
+    let order_pda = find_order_pda(&program_id(), &intent.uid()).0;
+    let mut request = solve_request();
+    let order = &mut request["orders"][0];
+    order["uid"] = serde_json::json!(uid);
+    order["orderPda"] = serde_json::json!(order_pda.to_string());
+    order["kind"] = serde_json::json!(match kind {
+        OrderKind::Sell => "sell",
+        OrderKind::Buy => "buy",
+    });
+    order["partiallyFillable"] = serde_json::json!(true);
+    order["executed"] = serde_json::json!(executed);
+    (uid, request)
 }
 
 /// The solution ids in a `/solve` response body, in response order.
@@ -406,6 +429,83 @@ async fn solve_flags_a_missing_buy_token_account_to_the_engine() {
         request["orders"][0]["missingBuyTokenAccount"],
         serde_json::json!(true)
     );
+}
+
+#[tokio::test]
+async fn solve_forwards_native_prices_to_the_engine() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    request["tokens"] =
+        serde_json::json!({ (pubkey(0x33).to_string()): { "price": "1500000000" } });
+
+    call_solve_with(addr, request).await;
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(
+        request["tokens"],
+        serde_json::json!({ (pubkey(0x33).to_string()): { "referencePrice": "1500000000" } })
+    );
+}
+
+/// 400 of the order's 1000 already sold: the engine is asked for the 600
+/// left, with the buy limit scaled to 1200 and the signed amounts alongside,
+/// and a fill of the remainder comes back. A fill over the remainder is an
+/// invalid engine response.
+#[tokio::test]
+async fn solve_sends_a_partially_filled_order_as_its_remainder() {
+    let (uid, request) = partial_fill_request(OrderKind::Sell, "400");
+    let engine_fill = |executed: &str| {
+        serde_json::json!({ "solutions": [{
+            "id": 1,
+            "prices": {
+                (pubkey(0x33).to_string()): "2000",
+                (pubkey(0x44).to_string()): "1000",
+            },
+            "trades": [{ "orderUid": &uid, "executedAmount": executed }],
+            "interactions": [],
+        }]})
+    };
+
+    let (engine, requests) = spawn_recording_solver_engine(engine_fill("600")).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let body = call_solve_with(addr, request.clone()).await;
+    assert_eq!(response_ids(&body), vec![1]);
+    assert_eq!(body["solutions"][0]["orders"][&uid]["executedSell"], "600");
+    let sent = requests.lock().unwrap().take().unwrap();
+    let sent = &sent["orders"][0];
+    assert_eq!(sent["sellAmount"], "600");
+    assert_eq!(sent["buyAmount"], "1200");
+    assert_eq!(sent["amount"], "600");
+    assert_eq!(sent["fullSellAmount"], "1000");
+    assert_eq!(sent["fullBuyAmount"], "2000");
+    assert_eq!(sent["partiallyFillable"], true);
+
+    let (engine, _) = spawn_recording_solver_engine(engine_fill("601")).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let response = post_solve(addr, &request).await;
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "SolverFailed");
+}
+
+/// A buy order with 1999 of its 2000 received has 1 left to buy, and its
+/// 1000 sell limit scales to 0: the program only accepts a fill selling
+/// nothing, so no engine can fill it. The driver drops it and, with nothing
+/// left, never calls the engine.
+#[tokio::test]
+async fn solve_drops_an_order_with_nothing_left_to_fill() {
+    let (_, request) = partial_fill_request(OrderKind::Buy, "1999");
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve_with(addr, request).await;
+    assert!(response_ids(&body).is_empty());
+    assert!(requests.lock().unwrap().is_none());
 }
 
 /// An absent buy token account that is not the owner's associated token
@@ -612,6 +712,62 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "PriorityFeeTooHigh");
+}
+
+/// Same fee and budget as above, but the `/solve` simulation reports the
+/// settlement's compute units, so the fee is priced at twice those units, not
+/// at the 1.4M ceiling, fits the budget, and the settle reaches the send.
+#[tokio::test]
+async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    mocks.insert(
+        SIMULATE_BUNDLE,
+        serde_json::json!({
+            "context": { "slot": 1 },
+            "value": { "transactionResults": [
+                { "err": null, "logs": [], "unitsConsumed": 100_000 },
+            ] },
+        }),
+    );
+    // A signature other than the transaction's own fails the send.
+    mocks.insert(
+        RpcRequest::SendTransaction,
+        serde_json::json!(Signature::default().to_string()),
+    );
+    let api = Api {
+        priority_fee: PriorityFeePolicy {
+            max_priority_fee_lamports: 13_999,
+            ..priority_fee()
+        },
+        ..api_with(vec![solver], mocks).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let body = call_solve(addr).await;
+    let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/settle"))
+        .json(&serde_json::json!({
+            "auctionId": 7,
+            "solutionId": solution_id,
+            "submissionDeadlineSlot": 1_000_000,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "FailedToSubmit");
 }
 
 #[tokio::test]

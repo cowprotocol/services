@@ -1,6 +1,6 @@
 use {
     crate::infra::{
-        blockchain,
+        blockchain::{self, gas::GasPriceParameters},
         config::file::{AppDataFetching, GasEstimatorType, OrderPriorityStrategy},
         liquidity,
         mempool,
@@ -22,6 +22,7 @@ pub struct Config {
     pub liquidity_sources_notifier: Option<notify::liquidity_sources::Config>,
     pub simulator: configs::simulator::Config,
     pub gas_estimator: GasEstimatorType,
+    pub gas_price_parameters: GasPriceParameters,
     pub mempools: Vec<mempool::Config>,
     pub contracts: blockchain::contracts::Addresses,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,

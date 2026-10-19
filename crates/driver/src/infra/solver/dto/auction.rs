@@ -70,8 +70,16 @@ pub fn new(
     }
 
     solvers_dto::auction::Auction {
-        id: auction.auction_id().map(|id| id.0),
-        quote_id: auction.quote_id().map(|id| id.0),
+        id: match auction.auction_id() {
+            Some(id) => solvers_dto::auction::Id::Auction(id.0),
+            None => solvers_dto::auction::Id::Quote {
+                id: auction
+                    .quote_id()
+                    .expect("a quote request carries a quote id")
+                    .0,
+                fast_path: auction.fast_path(),
+            },
+        },
         orders: auction
             .orders()
             .iter()

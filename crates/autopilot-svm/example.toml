@@ -22,6 +22,9 @@ request-timeout = "10s"
 
 [contracts]
 wrapped-native-mint = "So11111111111111111111111111111111111111112"
+# The settlement program whose state PDA sell token accounts must approve.
+# Defaults to the official deployment the interface crate exports.
+# settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [competition]
 max-winners = 1
@@ -32,28 +35,31 @@ submission-deadline-slots = 25
 name = "baseline"
 url = "http://localhost:11088"
 
-# Native price lookups for auction tokens. Sources are asked in order: a
-# token the first one does not price is asked from the next.
+# Native price lookups for auction tokens. Sources are listed by stage: a
+# lookup asks a stage's sources at once, adds the next stage while fewer
+# sources are in flight than prices are missing, and asks later stages only
+# for the tokens still short of results-required prices.
 [native-prices]
 ttl = "30s"
-# Lamports a driver source buys per probe quote, a tenth of a SOL.
-driver-probe-lamports = 100000000
+# Prices a token needs before its lookup stops asking. The best one wins.
+results-required = 2
+# Lamports a driver source sells per probe quote.
+driver-probe-lamports = 10000000
+# Entries read like the EVM autopilot's. A Driver is quoted through its
+# regular /quote route, its url includes the solver path like the [[drivers]]
+# entries, and its solver must answer sell orders: the probe sells a fixed
+# amount of wSOL.
+estimators = [
+  [{ type = "CoinGecko" }],
+  [{ type = "Driver", name = "baseline", url = "http://localhost:11088/baseline/" }],
+]
 
-# The CoinGecko key is optional: without one the public API and its rate
-# limits apply. A value like "%COIN_GECKO_API_KEY" reads the key from that
+# The CoinGecko source. Without a key the public API and its rate limits
+# apply. An api-key like "%COIN_GECKO_API_KEY" reads the key from that
 # environment variable and fails the load when it is unset.
-[[native-prices.estimators]]
-type = "coin-gecko"
-endpoint = "https://api.coingecko.com/api/v3/simple/token_price"
+[native-prices.coin-gecko]
+url = "https://api.coingecko.com/api/v3/simple/token_price"
 # api-key = "%COIN_GECKO_API_KEY"
-
-# A solver driver quoted through its regular /quote route. The url includes
-# the solver path, like the [[drivers]] entries. The driver's solver must
-# answer buy orders, the probe buys a fixed amount of wSOL.
-[[native-prices.estimators]]
-type = "driver"
-name = "baseline"
-url = "http://localhost:11088/baseline/"
 
 [logging]
 filter = "info,autopilot_svm=debug"
@@ -65,3 +71,7 @@ filter = "info,autopilot_svm=debug"
 # Ed25519 key so the private key never reaches the autopilot.
 # funder = { keypair = "/path/to/funder-keypair.json" }
 # funder = { kms-key = "arn:aws:kms:eu-central-1:123456789012:key/11111111-2222-3333-4444-555555555555" }
+# Most creations sent per auction for pending sponsored orders that appear
+# only in losing solutions, at most one per owner. The funder pays for each,
+# and the order may never fill. Zero, the default, sends none.
+# max-displaced-creations = 10

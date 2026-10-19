@@ -32,7 +32,7 @@ use {
     std::collections::HashMap,
 };
 
-const BPS_DENOMINATOR: u16 = 10_000;
+pub(super) const BPS_DENOMINATOR: u16 = 10_000;
 
 /// A fee in basis points, below 100%.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
@@ -181,6 +181,8 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x67),
             app_data: [0x77; 32],
+            executed: 0,
+            sell_balance: None,
         }
     }
 

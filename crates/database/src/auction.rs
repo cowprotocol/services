@@ -69,12 +69,14 @@ pub struct Auction {
     /// token wei, mapped one-to-one with `order_uids`. `None` when penalties
     /// were disabled at auction creation.
     pub penalty_caps_native: Option<Vec<BigDecimal>>,
+    /// The quote a fast-path auction settled; `None` otherwise.
+    pub fast_path_quote_id: Option<i64>,
 }
 
 pub async fn save(ex: &mut PgConnection, auction: Auction) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
-INSERT INTO competition_auctions (id, block, deadline, order_uids, price_tokens, price_values, surplus_capturing_jit_order_owners, penalty_caps_native)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO competition_auctions (id, block, deadline, order_uids, price_tokens, price_values, surplus_capturing_jit_order_owners, penalty_caps_native, fast_path_quote_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     ;"#;
 
     sqlx::query(QUERY)
@@ -86,6 +88,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         .bind(auction.price_values)
         .bind(auction.surplus_capturing_jit_order_owners)
         .bind(auction.penalty_caps_native)
+        .bind(auction.fast_path_quote_id)
         .execute(ex)
         .await?;
 
@@ -285,6 +288,7 @@ mod tests {
                 BigDecimal::from(400_000_000_000_000_u64),
                 BigDecimal::from(0),
             ]),
+            fast_path_quote_id: Some(42),
         };
         save(&mut db, auction.clone()).await.unwrap();
         let auction_ = fetch(&mut db, id_).await.unwrap().unwrap();
@@ -344,6 +348,7 @@ mod tests {
                     price_values: prices.iter().map(|price| price.price.clone()).collect(),
                     surplus_capturing_jit_order_owners: vec![],
                     penalty_caps_native: None,
+                    fast_path_quote_id: None,
                 },
             )
             .await

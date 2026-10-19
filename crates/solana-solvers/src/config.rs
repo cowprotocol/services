@@ -1,12 +1,66 @@
 //! Solver-engine configuration.
 
-use {serde::Deserialize, std::path::Path, url::Url};
+use {
+    configs::rate_limit::Strategy,
+    serde::Deserialize,
+    std::{num::NonZeroUsize, path::Path, time::Duration},
+    url::Url,
+};
 
 /// Jupiter solver configuration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
+    /// Orders quoted at once. Each quote is two sequential Jupiter requests.
+    #[serde(default = "default_concurrent_requests")]
+    pub concurrent_requests: NonZeroUsize,
+
+    /// Multiplier on the pause after each consecutive rate-limited response.
+    #[serde(default = "default_back_off_growth_factor")]
+    pub back_off_growth_factor: f64,
+
+    /// Pause after the first rate-limited response.
+    #[serde(with = "humantime_serde", default = "default_min_back_off")]
+    pub min_back_off: Duration,
+
+    /// Longest pause the growth factor reaches.
+    #[serde(with = "humantime_serde", default = "default_max_back_off")]
+    pub max_back_off: Duration,
+
     pub dex: JupiterConfig,
+}
+
+impl Config {
+    /// The back-off applied to rate-limited Jupiter responses.
+    ///
+    /// # Panics
+    ///
+    /// Panics on inverted back-off bounds or a growth factor below one: a bad
+    /// config is a startup failure.
+    pub fn rate_limiting(&self) -> Strategy {
+        Strategy::try_new(
+            self.back_off_growth_factor,
+            self.min_back_off,
+            self.max_back_off,
+        )
+        .unwrap_or_else(|err| panic!("rate limiting config: {err}"))
+    }
+}
+
+fn default_concurrent_requests() -> NonZeroUsize {
+    NonZeroUsize::new(8).unwrap()
+}
+
+fn default_back_off_growth_factor() -> f64 {
+    2.0
+}
+
+fn default_min_back_off() -> Duration {
+    Duration::from_secs(1)
+}
+
+fn default_max_back_off() -> Duration {
+    Duration::from_secs(8)
 }
 
 /// The `[dex]` table for the Jupiter backend.
@@ -45,7 +99,7 @@ pub async fn load(path: &Path) -> Config {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, std::time::Duration};
 
     #[test]
     fn parses_example_config() {
@@ -55,6 +109,26 @@ mod tests {
         assert_eq!(config.dex.slippage_bps, 50);
         assert!(config.dex.api_key.is_some());
         assert!(!config.dex.enable_buy_orders);
+        assert_eq!(config.concurrent_requests.get(), 8);
+        let strategy = config.rate_limiting();
+        assert_eq!(strategy.back_off_growth_factor, 2.0);
+        assert_eq!(strategy.min_back_off, Duration::from_secs(1));
+        assert_eq!(strategy.max_back_off, Duration::from_secs(8));
+    }
+
+    #[test]
+    fn defaults_the_throttle() {
+        let toml = r#"
+[dex]
+endpoint = "https://api.jup.ag"
+slippage-bps = 50
+"#;
+        let config: Config = toml::from_str(toml).unwrap();
+        assert_eq!(config.concurrent_requests.get(), 8);
+        let strategy = config.rate_limiting();
+        assert_eq!(strategy.back_off_growth_factor, 2.0);
+        assert_eq!(strategy.min_back_off, Duration::from_secs(1));
+        assert_eq!(strategy.max_back_off, Duration::from_secs(8));
     }
 
     #[test]

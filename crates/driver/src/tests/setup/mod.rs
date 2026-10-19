@@ -485,23 +485,11 @@ fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
     (x + y - eth::U256::from(1)) / y
 }
 
-#[derive(Debug)]
-pub enum Mempool {
-    /// Uses the driver's main RPC URL
-    Default,
-    Private {
-        /// Uses ethrpc node if None
-        url: Option<String>,
-        mines_reverting_txs: bool,
-    },
-}
-
 /// Create a builder for the setup process.
 pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec![Mempool::Default],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
         allow_multiple_solve_requests: false,
         auction_id: 1,
@@ -538,9 +526,6 @@ pub struct Setup {
     balances_address: Option<eth::Address>,
     /// Ensure the Signatures contract is deployed on a specific address?
     signatures_address: Option<eth::Address>,
-    /// Mempools that should be used for solution submission in addition
-    /// to the main RPC URL.
-    mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
     /// List of jit orders returned by the solver
@@ -886,11 +871,6 @@ impl Setup {
         self
     }
 
-    pub fn mempools(mut self, mempools: Vec<Mempool>) -> Self {
-        self.mempools = mempools;
-        self
-    }
-
     pub fn rpc_args(mut self, rpc_args: Vec<String>) -> Self {
         self.rpc_args = rpc_args;
         self
@@ -1024,6 +1004,7 @@ impl Setup {
                 ),
                 quote: self.quote,
                 quote_id: self.quote.then_some(self.quote_id),
+                fast_path: self.quote && self.quote_fast_path,
                 fee_handler: solver.fee_handler,
                 private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
@@ -1041,7 +1022,6 @@ impl Setup {
             &driver::Config {
                 config_file,
                 enable_simulation: self.enable_simulation,
-                mempools: self.mempools,
                 order_priority_strategies: self.order_priority_strategies,
                 orderbook,
                 flashloans_enabled: self.flashloans_enabled,

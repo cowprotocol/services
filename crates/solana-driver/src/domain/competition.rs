@@ -11,9 +11,13 @@ use {
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
         settlement::ResolveError,
+        slot::Slot,
         solution::Solution,
     },
-    crate::infra::{blockchain::Solana, solver::Solver},
+    crate::infra::{
+        blockchain::{BundleSimulation, Solana},
+        solver::Solver,
+    },
     base64::{Engine, prelude::BASE64_STANDARD},
     itertools::Itertools,
     moka::sync::Cache,
@@ -116,11 +120,15 @@ impl Competition {
             .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
             .await
             .map_err(Error::BuyTokenAccounts)?;
-        auction
-            .orders
-            .retain(|order| !buy_token_accounts.unreceivable.contains(&order.uid));
+        auction.orders.retain(|order| {
+            if order.available().has_zero_leg() {
+                tracing::debug!(order = %order.uid, "dropping order, nothing fillable");
+                return false;
+            }
+            !buy_token_accounts.unreceivable.contains(&order.uid)
+        });
         if auction.orders.is_empty() {
-            tracing::info!("no receivable order left; skipping solving");
+            tracing::info!("no fillable order left; skipping solving");
             return Ok(Vec::new());
         }
         let solutions = self
@@ -153,7 +161,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -163,9 +171,14 @@ impl Competition {
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
             match &verdict {
-                Ok(()) => tracing::info!(
+                // Compared with the slot of a later failing `/settle`
+                // simulation, this separates a lagging bundle endpoint from
+                // state that changed in between.
+                Ok((slot, units_consumed)) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    slot = %slot,
+                    ?units_consumed,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -190,6 +203,11 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
+            if let Ok((_, Some(units))) = verdict
+                && solution.cu_estimate.is_none()
+            {
+                solution.cu_estimate = Some(priority_fee::compute_unit_limit(units));
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -210,13 +228,14 @@ impl Competition {
     /// creations of its orders not created on chain yet. Any failure would
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
-    /// driver could not find out.
+    /// driver could not find out. A pass returns the slot the bundle
+    /// simulated against and the compute units the settlement consumed.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<(), Error> {
+    ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
@@ -226,7 +245,8 @@ impl Competition {
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
-            .await?;
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
         bundle.push(resolved.unsigned()?);
@@ -251,7 +271,7 @@ impl Competition {
             "simulating settlement bundle"
         );
 
-        let results = self
+        let BundleSimulation { slot, results } = self
             .blockchain
             .simulate_bundle(&bundle)
             .await
@@ -267,6 +287,7 @@ impl Competition {
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
                     program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
                     logs = ?result.logs,
+                    slot = %slot,
                     "bundle simulation failed"
                 );
                 return Err(Error::SimulationFailed {
@@ -284,7 +305,10 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(())
+        Ok((
+            slot,
+            results.last().and_then(|result| result.units_consumed),
+        ))
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -464,7 +488,8 @@ impl Competition {
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
-            .await?;
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
 
         let (estimate, latest) =
             tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
@@ -645,11 +670,12 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            // Only the program logs and the message surface here, the error
-            // itself carries the failure and its program error to the settle
-            // task's log. The message leaves out the signature, so the log
-            // cannot be broadcast.
+            // Only the slot, the program logs and the message surface here,
+            // the error itself carries the failure and its program error to
+            // the settle task's log. The message leaves out the signature, so
+            // the log cannot be broadcast.
             tracing::warn!(
+                slot = %simulation.slot,
                 logs = ?simulation.logs,
                 message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
