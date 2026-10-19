@@ -14,7 +14,10 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
-    std::time::Duration,
+    std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    },
     tokio::net::TcpListener,
 };
 
@@ -60,11 +63,12 @@ async fn native_price(
     let budget = query.timeout_ms.map_or(Duration::MAX, |ms| {
         Duration::from_millis(ms).max(MIN_TIMEOUT)
     });
+    let start = Instant::now();
     // A lookup that failed or ran out of time answers like a token nobody
     // prices: the quote is refused either way.
     match tokio::time::timeout(budget, prices.price(mint))
         .await
-        .unwrap_or(Ok(None))
+        .unwrap_or_else(|elapsed| Err(Arc::new(anyhow::Error::from(elapsed))))
     {
         Ok(Some(price)) => Json(NativePrice { price }).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "No liquidity").into_response(),
@@ -72,7 +76,13 @@ async fn native_price(
             (StatusCode::TOO_MANY_REQUESTS, "Rate limited").into_response()
         }
         Err(err) => {
-            tracing::warn!(?err, %mint, "native price lookup failed");
+            tracing::warn!(
+                ?err,
+                %mint,
+                ?budget,
+                elapsed = ?start.elapsed(),
+                "native price lookup failed"
+            );
             (StatusCode::NOT_FOUND, "No liquidity").into_response()
         }
     }
