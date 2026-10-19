@@ -1,33 +1,18 @@
-//! The execution costs the driver charges the fills it reports.
+//! The execution costs the driver cuts from the fills it reports.
 //!
 //! A settlement costs its payer the network fee of its transaction and the
 //! rent of every buy token account it creates. A solver whose `fee-handler`
 //! is the driver has those lamports cut from every fill its engine reports,
 //! converted into the order's limit-leg token at the auction's native prices:
 //! a sell order delivers less buy token and a buy order pulls more sell token
-//! than the route achieved. The difference is retained in the settlement
-//! program's buy-mint buffer PDA (sell orders) or the solver's own sell ATA
-//! (buy orders). A sell order buying native SOL leaves it in the solver's own
-//! lamports: the settlement unwraps the whole swap output to the solver and
-//! moves only the payouts to the state PDA.
+//! than the route achieved. The difference stays where the solver fee's
+//! does, see [`super::solver_fee`].
 //!
-//! The cut is applied before the driver reports solutions, so the autopilot
-//! ranks the same post-cut figure the user receives. A solution whose trades
-//! cannot absorb the cut within the order's signed limit is dropped whole:
-//! its interactions were built for those trades, so dropping a single trade
-//! would leave them inconsistent.
-//!
-//! On top of the costs the driver takes a margin, `solver-fee-bps`, off every
-//! fill it prices, quotes included. An engine reports the leg its route
-//! quotes, and a route delivering less leaves the buffer short of the push,
-//! which reverts `FinalizeSettle`. The margin keeps the push under the quote
-//! by that share.
-//!
-//! As in the EVM driver, the cut is enforced at two points: the limit leg
-//! sent to the engine is tightened by the cut and the margin, so an engine
-//! that checks its fills against the limit only returns fills that survive
-//! them, and [`ExecutionCost::apply`] re-validates every fill so an engine
-//! that ignores the limit still cannot undercut the user.
+//! The cut is enforced at the solver fee's two points: the limit leg sent to
+//! the engine is moved by the cut before the fee tightens it, and
+//! [`ExecutionCost::apply`] re-validates every fill once the fee is taken. A
+//! solution whose trades cannot absorb the cut within the order's signed
+//! limit is dropped whole, like one that cannot absorb the fee.
 
 use {
     super::{
@@ -36,6 +21,7 @@ use {
         order_uid::OrderUid,
         settlement::respects_limit,
         solution::{Solution, Trade},
+        solver_fee::SolverFee,
     },
     cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     solana_sdk::pubkey::Pubkey,
@@ -48,55 +34,6 @@ use {
 /// Lamports per 10^9 atoms of native SOL: an atom is a lamport.
 const NATIVE_PRICE: u64 = 1_000_000_000;
 
-pub(super) const BPS_DENOMINATOR: u16 = 10_000;
-
-/// The share of every fill the driver takes on top of the execution costs,
-/// in basis points below 100%.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(try_from = "u16")]
-pub struct Margin(u16);
-
-#[derive(Debug, thiserror::Error)]
-#[error("solver fee must be below {} bps, got {0}", BPS_DENOMINATOR)]
-pub struct OutOfRange(u16);
-
-impl TryFrom<u16> for Margin {
-    type Error = OutOfRange;
-
-    fn try_from(bps: u16) -> Result<Self, Self::Error> {
-        // A margin of 100% or more leaves a sell order nothing to deliver and
-        // makes `tighten_limit` divide by zero.
-        (bps < BPS_DENOMINATOR)
-            .then_some(Self(bps))
-            .ok_or(OutOfRange(bps))
-    }
-}
-
-impl Margin {
-    /// The limit leg the engine has to beat for its fill to still respect
-    /// `limit` once the margin is taken: a sell order's minimum buy rises to
-    /// `limit / (1 - m)`, a buy order's maximum sell falls to `limit / (1 +
-    /// m)`. Rounds against the engine. A minimum buy past `u64::MAX`
-    /// saturates: no fill can meet it.
-    pub fn tighten_limit(self, side: Side, limit: u64) -> u64 {
-        let limit = u128::from(limit);
-        let base = u128::from(BPS_DENOMINATOR);
-        let bps = u128::from(self.0);
-        match side {
-            Side::Sell => u64::try_from((limit * base).div_ceil(base - bps)).unwrap_or(u64::MAX),
-            Side::Buy => u64::try_from(limit * base / (base + bps))
-                .expect("dividing by more than the multiplier never exceeds the input"),
-        }
-    }
-
-    /// The margin's share of one executed leg, rounded up against the trader.
-    fn of(self, leg: u64) -> u64 {
-        let scaled = u128::from(leg) * u128::from(self.0);
-        u64::try_from(scaled.div_ceil(u128::from(BPS_DENOMINATOR)))
-            .expect("a share below 100% of a u64 leg fits in u64")
-    }
-}
-
 /// Who prices the execution costs into the fills, and what the engine is
 /// sent accordingly.
 #[derive(Clone, Debug)]
@@ -106,12 +43,12 @@ pub enum Charge {
     Engine {
         missing_buy_token_accounts: HashSet<OrderUid>,
     },
-    /// The driver: the engine is sent each order's limit leg tightened by the
-    /// atoms the driver cuts from its fill, by uid, and by its margin. An
-    /// order without a cut is not sent.
+    /// The driver: the engine is sent each order's limit leg moved by the
+    /// atoms the driver cuts from its fill, by uid, and tightened by the
+    /// solver fee. An order without a cut is not sent.
     Driver {
         cuts: HashMap<OrderUid, u64>,
-        margin: Margin,
+        fee: Option<SolverFee>,
     },
 }
 
@@ -124,8 +61,7 @@ impl Default for Charge {
 }
 
 /// What a settlement of the auction's orders costs its payer beyond the
-/// network fee, the prices that turn lamports into order tokens, and the
-/// margin taken on top.
+/// network fee, and the prices that turn lamports into order tokens.
 #[derive(Clone, Copy, Debug)]
 pub struct ExecutionCost<'a> {
     /// The lamports the settlement pays to create each order's buy token
@@ -133,8 +69,6 @@ pub struct ExecutionCost<'a> {
     pub rent: &'a HashMap<OrderUid, u64>,
     /// Lamports per 10^9 atoms of each auction token.
     pub native_prices: &'a HashMap<Pubkey, u64>,
-    /// The share of every fill taken on top of the costs.
-    pub margin: Margin,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -172,11 +106,12 @@ impl ExecutionCost<'_> {
             .collect()
     }
 
-    /// Cuts every trade of `solution` by the margin's share of its leg, its
-    /// order's rent and its share of `network_fee`, the settlement's network
-    /// fee split evenly over the trades and rounded up. An order filled by
-    /// several trades pays its rent on the first. One failing trade rejects
-    /// the whole solution, left untouched.
+    /// Cuts every trade of `solution` by its order's rent and its share of
+    /// `network_fee`, the settlement's network fee split evenly over the
+    /// trades and rounded up. An order filled by several trades pays its
+    /// rent on the first. One failing trade rejects the whole solution, left
+    /// untouched. `Trade::solver_fee` carries the solver fee only, not the
+    /// cut.
     pub fn apply(
         &self,
         solution: &mut Solution,
@@ -204,7 +139,7 @@ impl ExecutionCost<'_> {
                 let cut = self
                     .cut(order, rent + u128::from(fee_share))
                     .ok_or(Rejected::MissingPrice(order.uid))?;
-                cut_trade(trade, order, self.margin, cut)
+                cut_trade(trade, order, cut)
             })
             .collect::<Result<Vec<_>, _>>()?;
         solution.trades = trades;
@@ -238,33 +173,29 @@ impl ExecutionCost<'_> {
     }
 }
 
-/// `trade` with the margin's share of its limit leg and `cut` taken off it:
-/// a sell order delivers that much less buy token, a buy order pulls that
-/// much more sell token.
-fn cut_trade(trade: &Trade, order: &Order, margin: Margin, cut: u64) -> Result<Trade, Rejected> {
+/// `trade` with `cut` taken off its limit leg: a sell order delivers that
+/// much less buy token, a buy order pulls that much more sell token. Nothing
+/// to cut leaves the trade as the engine reported it.
+fn cut_trade(trade: &Trade, order: &Order, cut: u64) -> Result<Trade, Rejected> {
     let mut trade = trade.clone();
-    let leg = match order.side {
-        Side::Sell => trade.executed_buy,
-        Side::Buy => trade.executed_sell,
-    };
-    let fee = margin
-        .of(leg)
-        .checked_add(cut)
-        .ok_or(Rejected::Overflow(trade.order_uid))?;
+    if cut == 0 {
+        return Ok(trade);
+    }
     match order.side {
         Side::Sell => {
-            trade.executed_buy = leg
-                .checked_sub(fee)
+            trade.executed_buy = trade
+                .executed_buy
+                .checked_sub(cut)
                 .filter(|delivered| *delivered > 0)
                 .ok_or(Rejected::ZeroPayout(trade.order_uid))?;
         }
         Side::Buy => {
-            trade.executed_sell = leg
-                .checked_add(fee)
+            trade.executed_sell = trade
+                .executed_sell
+                .checked_add(cut)
                 .ok_or(Rejected::Overflow(trade.order_uid))?;
         }
     }
-    trade.solver_fee = fee;
     if !respects_limit(order, trade.executed_sell, trade.executed_buy) {
         return Err(Rejected::LimitPrice(trade.order_uid));
     }
@@ -308,7 +239,7 @@ mod tests {
             order_uid: OrderUid([uid; 32]),
             executed_sell,
             executed_buy,
-            solver_fee: 0,
+            solver_fee: 7,
         }
     }
 
@@ -344,29 +275,7 @@ mod tests {
         ExecutionCost {
             rent,
             native_prices: prices,
-            margin: Margin::default(),
         }
-    }
-
-    fn margin(bps: u16) -> Margin {
-        Margin::try_from(bps).unwrap()
-    }
-
-    #[test]
-    fn a_margin_is_below_100_percent_and_tightens_against_the_engine() {
-        assert!(Margin::try_from(BPS_DENOMINATOR).is_err());
-        assert!(Margin::try_from(BPS_DENOMINATOR - 1).is_ok());
-
-        let margin = margin(500);
-        assert_eq!(margin.tighten_limit(Side::Sell, 1_000), 1_053);
-        assert_eq!(margin.tighten_limit(Side::Buy, 1_000), 952);
-        assert_eq!(margin.tighten_limit(Side::Sell, 0), 0);
-        assert_eq!(margin.tighten_limit(Side::Sell, u64::MAX), u64::MAX);
-        assert_eq!(
-            margin.tighten_limit(Side::Buy, u64::MAX),
-            u64::try_from(u128::from(u64::MAX) * 10_000 / 10_500).unwrap()
-        );
-        assert_eq!(Margin::default().tighten_limit(Side::Sell, 1_000), 1_000);
     }
 
     /// 1000 lamports are 2000 buy atoms for a sell order and 500 sell atoms
@@ -417,42 +326,36 @@ mod tests {
         assert_eq!(cuts[&orders[0].uid], u64::MAX);
     }
 
-    /// 5% of the 3000 buy leg is 150, on top of the 2000 atom cut. 5% of the
-    /// 1000 sell leg is 50, on top of the 500 atom cut. Nothing to take
-    /// leaves the fill as the engine reported it.
+    /// 1000 lamports come off the 3000 buy leg as 2000 atoms and go onto the
+    /// 1000 sell leg as 500. The trade's solver fee is left alone. Nothing to
+    /// cut leaves the fill as the engine reported it.
     #[test]
-    fn the_margin_and_the_cut_come_off_the_limit_leg() {
+    fn the_cut_comes_off_the_limit_leg() {
         let (rent, prices) = (HashMap::new(), prices());
-        let cost = ExecutionCost {
-            margin: margin(500),
-            ..cost(&rent, &prices)
-        };
+        let cost = cost(&rent, &prices);
 
         let orders = [order(1, Side::Sell, 1_000, 500)];
         let mut sol = solution(vec![trade(1, 1_000, 3_000)]);
         cost.apply(&mut sol, &self::orders(&orders), 1_000).unwrap();
         assert_eq!(sol.trades[0].executed_sell, 1_000);
-        assert_eq!(sol.trades[0].executed_buy, 850);
-        assert_eq!(sol.trades[0].solver_fee, 2_150);
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(sol.trades[0].solver_fee, 7);
 
         let orders = [order(1, Side::Buy, 2_000, 1_000)];
         let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
         cost.apply(&mut sol, &self::orders(&orders), 1_000).unwrap();
-        assert_eq!(sol.trades[0].executed_sell, 1_550);
+        assert_eq!(sol.trades[0].executed_sell, 1_500);
         assert_eq!(sol.trades[0].executed_buy, 1_000);
-        assert_eq!(sol.trades[0].solver_fee, 550);
 
         let orders = [order(1, Side::Sell, 1_000, 1_000)];
         let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
-        self::cost(&rent, &prices)
-            .apply(&mut sol, &self::orders(&orders), 0)
-            .unwrap();
+        cost.apply(&mut sol, &self::orders(&orders), 0).unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
-        assert_eq!(sol.trades[0].solver_fee, 0);
     }
 
     /// Two trades share the 1001 lamport fee as 501 lamports each, and only
-    /// the first trade of an order pays its rent.
+    /// the first trade of an order pays its rent: 1000 lamports are 2000
+    /// atoms off the first buy leg, 501 are 1002 off the second.
     #[test]
     fn the_network_fee_is_split_over_the_trades_and_the_rent_paid_once() {
         let rent = HashMap::from([(OrderUid([1; 32]), 499)]);
@@ -462,33 +365,24 @@ mod tests {
         cost(&rent, &prices)
             .apply(&mut sol, &self::orders(&orders), 1_001)
             .unwrap();
-        assert_eq!(sol.trades[0].solver_fee, 2_000);
-        assert_eq!(sol.trades[1].solver_fee, 1_002);
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(sol.trades[1].executed_buy, 1_998);
     }
 
-    /// The limit leg sent to the engine, the signed limit moved by the cut
-    /// and the margin, is the exact boundary: a fill on it survives, one atom
-    /// past it is rejected.
+    /// The limit leg sent to the engine, the signed limit moved by the cut,
+    /// is the exact boundary: a fill on it survives, one atom past it is
+    /// rejected.
     #[test]
-    fn the_tightened_limit_is_the_exact_boundary() {
+    fn the_moved_limit_is_the_exact_boundary() {
         let rent = HashMap::from([(OrderUid([1; 32]), 123)]);
         let prices = prices();
-        let cost = ExecutionCost {
-            margin: margin(500),
-            ..cost(&rent, &prices)
-        };
+        let cost = cost(&rent, &prices);
         for side in [Side::Sell, Side::Buy] {
             let orders = [order(1, side, 1_000, 1_000)];
             let cut = cost.cuts(&orders, 1_000)[&orders[0].uid];
             let (at_limit, beyond) = match side {
-                Side::Sell => {
-                    let min_buy = cost.margin.tighten_limit(side, 1_000 + cut);
-                    (trade(1, 1_000, min_buy), trade(1, 1_000, min_buy - 1))
-                }
-                Side::Buy => {
-                    let max_sell = cost.margin.tighten_limit(side, 1_000 - cut);
-                    (trade(1, max_sell, 1_000), trade(1, max_sell + 1, 1_000))
-                }
+                Side::Sell => (trade(1, 1_000, 1_000 + cut), trade(1, 1_000, 999 + cut)),
+                Side::Buy => (trade(1, 1_000 - cut, 1_000), trade(1, 1_001 - cut, 1_000)),
             };
             cost.apply(&mut solution(vec![at_limit]), &self::orders(&orders), 1_000)
                 .unwrap();
@@ -544,10 +438,7 @@ mod tests {
                 cost.apply(&mut sol, &self::orders(&orders), 1_000),
                 Err(reason)
             );
-            assert_eq!(
-                (sol.trades[0].executed_buy, sol.trades[0].solver_fee),
-                (3_000, 0)
-            );
+            assert_eq!(sol.trades[0].executed_buy, 3_000);
         }
     }
 }

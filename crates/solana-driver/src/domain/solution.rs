@@ -41,8 +41,7 @@ pub struct Trade {
     pub executed_sell: u64,
     /// Buy-token units executed.
     pub executed_buy: u64,
-    /// The execution costs cut from the fill, in the buy mint for a sell
-    /// order and the sell mint for a buy order. Zero when the engine prices
-    /// them in itself.
+    /// Solver fee units retained, in the buy mint for a sell order and the
+    /// sell mint for a buy order. Zero when the solver charges no fee.
     pub solver_fee: u64,
 }

@@ -8,8 +8,9 @@ use {
     crate::{
         domain::{
             self,
-            fee::{Charge, Margin},
+            execution_cost::Charge,
             settlement::MaxNativeShortfall,
+            solver_fee::SolverFee,
         },
         infra::{
             config::{self, FeeHandler},
@@ -33,7 +34,7 @@ pub struct Solver {
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
     fee_handler: FeeHandler,
-    margin: Margin,
+    solver_fee: Option<SolverFee>,
     max_native_shortfall: Option<MaxNativeShortfall>,
 }
 
@@ -63,10 +64,9 @@ impl Solver {
         self.fee_handler
     }
 
-    /// The share of every fill the driver takes on top of the execution
-    /// costs when it prices them.
-    pub fn margin(&self) -> Margin {
-        self.margin
+    /// The volume-based solver fee, `None` when no fee is configured.
+    pub fn solver_fee(&self) -> Option<SolverFee> {
+        self.solver_fee
     }
 
     /// The largest share of the native SOL payouts the solver's own SOL
@@ -94,7 +94,7 @@ impl Solver {
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
             fee_handler: config.fee_handler,
-            margin: config.solver_fee_bps,
+            solver_fee: config.solver_fee_bps,
             max_native_shortfall: config.max_native_shortfall_bps,
         })
     }
@@ -202,7 +202,7 @@ mod tests {
             signer: cow_solana_signer::Config::Keypair(keypair_path),
             solve_every_nth_auction: None,
             fee_handler: FeeHandler::default(),
-            solver_fee_bps: Margin::default(),
+            solver_fee_bps: None,
             max_native_shortfall_bps: None,
         })
         .await

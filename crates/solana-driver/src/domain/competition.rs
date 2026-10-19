@@ -7,7 +7,7 @@ use {
         Side,
         auction::Id,
         buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
-        fee::{Charge, ExecutionCost},
+        execution_cost::{Charge, ExecutionCost},
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
@@ -305,8 +305,8 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
-    /// driver, every fill is cut by the solver's margin, and a solve fill by
-    /// the execution costs on top.
+    /// driver, every fill is tightened by the solver fee, and a solve fill is
+    /// cut by the execution costs on top.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
     /// its execution costs are reported, not cut, and nothing is flagged.
@@ -329,7 +329,6 @@ impl Competition {
                 let costs = ExecutionCost {
                     rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
                     native_prices: &auction.native_prices,
-                    margin: self.solver.margin(),
                 };
                 let network_fee = match buy_token_accounts {
                     Some(_) => self.network_fee_ceiling().await?,
@@ -338,7 +337,7 @@ impl Competition {
                 (
                     Charge::Driver {
                         cuts: costs.cuts(&auction.orders, network_fee),
-                        margin: costs.margin,
+                        fee: self.solver.solver_fee(),
                     },
                     Some(costs),
                 )
@@ -369,6 +368,17 @@ impl Competition {
         let orders = orders_by_uid(&auction.orders);
         let mut charged = Vec::with_capacity(solutions.len());
         for mut solution in solutions {
+            if let Some(fee) = self.solver.solver_fee()
+                && let Err(reason) = fee.apply(&mut solution, &orders)
+            {
+                tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution the solver fee cannot be applied to"
+                );
+                continue;
+            }
             let network_fee = match buy_token_accounts {
                 None => 0,
                 Some(_) => match self.network_fee(&solution).await {
@@ -545,7 +555,7 @@ impl Competition {
             "settling orders"
         );
 
-        let fees = solver_fees(&orders, &solution);
+        let volume_fees = solver_volume_fees(&orders, &solution);
 
         let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
 
@@ -629,11 +639,11 @@ impl Competition {
         .map_err(|err| Error::FailedToSubmit { err })?;
 
         // TODO: drop this log once protocol fees are implemented.
-        for fee in &fees {
+        for fee in &volume_fees {
             tracing::info!(
                 order_uid = %fee.order_uid,
                 mint = %fee.mint,
-                fee = fee.amount,
+                fee_from_volume = fee.amount,
                 "calculated solver fee"
             );
         }
@@ -777,7 +787,7 @@ fn failing_program(transaction: &VersionedTransaction, err: &TransactionError) -
         .copied()
 }
 
-struct SolverFee {
+struct VolumeFee {
     order_uid: OrderUid,
     mint: Pubkey,
     amount: u64,
@@ -787,12 +797,12 @@ fn orders_by_uid(orders: &[Order]) -> HashMap<OrderUid, &Order> {
     orders.iter().map(|order| (order.uid, order)).collect()
 }
 
-/// The nonzero solver fees the solution's fills carry: in the buy mint for a
-/// sell order and the sell mint for a buy order.
+/// The nonzero volume-based solver fees the solution's fills carry: in the buy
+/// mint for a sell order and the sell mint for a buy order.
 ///
 /// Not what the settlement retains: these come off the engine's quoted legs,
 /// and the route's real cost is only known once it lands.
-fn solver_fees(orders: &[Order], solution: &Solution) -> Vec<SolverFee> {
+fn solver_volume_fees(orders: &[Order], solution: &Solution) -> Vec<VolumeFee> {
     let orders = orders_by_uid(orders);
     solution
         .trades
@@ -804,7 +814,7 @@ fn solver_fees(orders: &[Order], solution: &Solution) -> Vec<SolverFee> {
                 Side::Sell => order.buy_token,
                 Side::Buy => order.sell_token,
             };
-            Some(SolverFee {
+            Some(VolumeFee {
                 order_uid: trade.order_uid,
                 mint,
                 amount: trade.solver_fee,

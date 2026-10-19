@@ -16,7 +16,7 @@ use {
     },
     cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
     solana_driver::{
-        domain::{fee::Margin, priority_fee::PriorityFeePolicy},
+        domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
         infra::{
             api::Api,
             blockchain::{Solana, associated_token_address},
@@ -171,8 +171,12 @@ async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
     solver_with(addr, FeeHandler::Solver, 0).await
 }
 
-/// A solver client charged by `fee_handler`, with the driver taking
-/// `solver_fee_bps` of every fill on top of the execution costs.
+/// A solver client whose fills the driver cuts, by `solver_fee_bps` and the
+/// execution costs.
+async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
+    solver_with(addr, FeeHandler::Driver, solver_fee_bps).await
+}
+
 async fn solver_with(
     addr: SocketAddr,
     fee_handler: FeeHandler,
@@ -186,7 +190,7 @@ async fn solver_with(
         signer: cow_solana_signer::Config::Keypair(keypair_path),
         solve_every_nth_auction: None,
         fee_handler,
-        solver_fee_bps: Margin::try_from(solver_fee_bps).unwrap(),
+        solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
         max_native_shortfall_bps: None,
     })
     .await
@@ -209,7 +213,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         signer: cow_solana_signer::Config::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
         fee_handler: FeeHandler::Solver,
-        solver_fee_bps: Margin::default(),
+        solver_fee_bps: None,
         max_native_shortfall_bps: None,
     })
     .await
@@ -869,13 +873,13 @@ fn solve_request_priced_for_a_cut_of_100() -> serde_json::Value {
 }
 
 /// The auction order sells 1000 for at least 2000. The cut is 100 atoms and
-/// the margin 5%, so the engine is asked for 2211, the 2100 cut limit raised
-/// by the margin, with no account flagged, and its route paying 3000 is
-/// reported at 2750: 3000 less the 150 margin and the cut.
+/// the fee 500 bps, so the engine is asked for 2211, the 2100 moved limit
+/// tightened by the fee, with no account flagged, and its route paying 3000
+/// is reported at 2750: 3000 less the 150 fee and the cut.
 #[tokio::test]
-async fn solve_cuts_the_execution_cost_and_the_margin_from_the_fill() {
+async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Driver, 500).await;
+    let (solver, _) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
@@ -893,7 +897,7 @@ async fn solve_cuts_the_execution_cost_and_the_margin_from_the_fill() {
 #[tokio::test]
 async fn solve_drops_the_fill_the_cut_pushes_under_the_limit() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "2000"), (2, "3000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Driver, 0).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
@@ -905,7 +909,7 @@ async fn solve_drops_the_fill_the_cut_pushes_under_the_limit() {
 #[tokio::test]
 async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Driver, 0).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
     let addr = spawn_server(vec![solver]).await;
 
     let body = call_solve(addr).await;
@@ -913,13 +917,13 @@ async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
     assert!(requests.lock().unwrap().is_none());
 }
 
-/// A quote shrinks by the 5% margin like a fill, but not by the execution
-/// costs: the orderbook nets those from the quote itself, so the engine's
-/// 2000 buy comes back as 1900 with the network fee beside it.
+/// A quote shrinks by the fee like a fill, but not by the execution costs:
+/// the orderbook nets those from the quote itself, so the engine's 2000 buy
+/// comes back as 1900 with the network fee beside it.
 #[tokio::test]
-async fn a_quote_carries_the_margin_but_not_the_costs() {
+async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
-    let (solver, account) = solver_with(engine, FeeHandler::Driver, 500).await;
+    let (solver, account) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
     let response = reqwest::Client::new()
@@ -936,6 +940,34 @@ async fn a_quote_carries_the_margin_but_not_the_costs() {
         serde_json::json!({
             "sellAmount": "1000",
             "buyAmount": "1900",
+            "solver": account.to_string(),
+            "networkFee": "19000",
+        })
+    );
+}
+
+/// A buy quote pulls `1000 * 1.05 = 1050` sell units after a 500 bps fee; the
+/// quote order's unbounded sell limit does not overflow the check.
+#[tokio::test]
+async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
+    let engine = spawn_mock_solver_engine(quote_solution("2000")).await;
+    let (solver, account) = solver_with_fee(engine, 500).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("buy", "2000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "sellAmount": "1050",
+            "buyAmount": "2000",
             "solver": account.to_string(),
             "networkFee": "19000",
         })

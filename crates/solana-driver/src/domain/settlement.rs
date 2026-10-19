@@ -5,9 +5,9 @@ use {
         Order,
         Side,
         auction::Id,
-        fee::BPS_DENOMINATOR,
         order_uid::OrderUid,
         solution::Solution,
+        solver_fee::BPS_DENOMINATOR,
     },
     crate::infra::blockchain::{
         AccountsSnapshot,
