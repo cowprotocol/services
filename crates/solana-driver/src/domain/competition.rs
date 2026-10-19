@@ -35,11 +35,13 @@ use {
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
-/// Mainnet's target slot duration in milliseconds, used to turn a submission
-/// deadline slot into a wall-clock confirmation timeout. Real slots run at
-/// or above the target, so the timeout errs toward giving up before the
-/// deadline slot rather than after it.
-const SLOT_DURATION_MS: u64 = 250;
+/// SIMD-0525's final target slot duration in milliseconds, used to turn a
+/// submission deadline slot into a wall-clock confirmation timeout. The
+/// rollout lowers slots from 400ms in stages and real slots never run below
+/// the target, so the timeout errs toward giving up before the deadline slot
+/// rather than after it.
+/// <https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0525-reduce-slot-times.md>
+const SLOT_DURATION_MS: u64 = 200;
 /// The network's per-transaction byte ceiling,
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.

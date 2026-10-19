@@ -9,9 +9,9 @@ use {
 };
 
 /// How often the poller asks the node for the current slot. Half of
-/// mainnet's 250ms target slot, so a new slot is typically observed within
-/// one poll of its arrival.
-const POLL_INTERVAL: Duration = Duration::from_millis(125);
+/// SIMD-0525's final 200ms target slot, so a new slot is typically observed
+/// within one poll of its arrival.
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Yields each newly observed slot. A background task keeps the tip fresh
 /// through the whole cycle, so the tip read after ranking reflects the time
