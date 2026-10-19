@@ -100,11 +100,10 @@ impl SolanaRPC {
         Self,
         std::sync::Arc<std::sync::Mutex<Vec<VersionedTransaction>>>,
     ) {
-        let sender = mock::RecordingSender::new(mocks);
-        let sent = sender.sent();
+        let sent = std::sync::Arc::default();
         let client = Self {
             inner: RpcClient::new_sender(
-                sender,
+                mock::RecordingSender::new(mocks, std::sync::Arc::clone(&sent)),
                 solana_rpc_client::rpc_client::RpcClientConfig::with_commitment(
                     CommitmentConfig::default(),
                 ),
@@ -420,15 +419,11 @@ mod mock {
     }
 
     impl RecordingSender {
-        pub fn new(mocks: Mocks) -> Self {
+        pub fn new(mocks: Mocks, sent: std::sync::Arc<Mutex<Vec<VersionedTransaction>>>) -> Self {
             Self {
                 inner: MockSender::new_with_mocks("mock", mocks),
-                sent: Default::default(),
+                sent,
             }
-        }
-
-        pub fn sent(&self) -> std::sync::Arc<Mutex<Vec<VersionedTransaction>>> {
-            std::sync::Arc::clone(&self.sent)
         }
     }
 

@@ -116,7 +116,7 @@ pub enum Error {
     RateLimited,
     #[error("dex api error {status}: {body}")]
     Api { status: u16, body: String },
-    #[error("malformed swap response: {0}")]
+    #[error("malformed dex response: {0}")]
     BadResponse(String),
     #[error(transparent)]
     Http(#[from] reqwest::Error),
