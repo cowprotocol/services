@@ -7,20 +7,26 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    solana_orderbook::infra::{api::Api, db, quoter::Quoter},
+    solana_orderbook::infra::{api::Api, db, prices::NativePrices, quoter::Quoter},
     solana_sdk::signer::Signer,
+    spl_token_2022_interface::extension::{
+        BaseStateWithExtensionsMut,
+        ExtensionType,
+        transfer_fee::TransferFeeConfig,
+    },
     sqlx::PgPool,
     std::{net::SocketAddr, time::Duration},
     tokio_util::sync::CancellationToken,
 };
 
-fn mock_api() -> Api {
+async fn mock_api() -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         // A lazy pool at a dead endpoint keeps these tests database-free: a
         // quote insert degrades to an id-less answer, nothing else queries.
         pool: PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
         quoter: dead_quoter(),
+        prices: spawn_mock_autopilot(Some(1_000_000_000)).await,
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
         sponsoring: None,
@@ -44,13 +50,37 @@ async fn spawn_server() -> SocketAddr {
 async fn spawn_server_with(quoter: Quoter) -> SocketAddr {
     let api = Api {
         quoter,
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     // A token that is never cancelled keeps the server alive for the test.
     let shutdown = CancellationToken::new();
     tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
     addr
+}
+
+/// A tiny axum server that answers `/native_price/{mint}` with `price` for
+/// every mint, or 404 without one. It stands in for the autopilot.
+async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
+    let app = axum::Router::new().route(
+        "/native_price/{mint}",
+        axum::routing::get(move || async move {
+            match price {
+                Some(price) => (
+                    axum::http::StatusCode::OK,
+                    serde_json::json!({ "price": price.to_string() }).to_string(),
+                ),
+                None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    NativePrices::new(
+        format!("http://{addr}").parse().unwrap(),
+        Duration::from_secs(1),
+    )
 }
 
 /// A tiny axum server that answers `/quote` with a fixed response. It stands
@@ -83,7 +113,10 @@ async fn healthz_returns_200() {
 /// Spawn the API server on `pool` and return the status and the body of
 /// `GET /api/v1/ready`.
 async fn get_ready(pool: PgPool) -> (reqwest::StatusCode, String) {
-    let api = Api { pool, ..mock_api() };
+    let api = Api {
+        pool,
+        ..mock_api().await
+    };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
     tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
@@ -140,7 +173,7 @@ async fn version_reports_the_build() {
 
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
-    let api = mock_api();
+    let api = mock_api().await;
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
     let serve = api.serve(listener, shutdown_token.clone());
@@ -229,7 +262,7 @@ async fn quote_validation_rejects_bad_orders() {
             "InsufficientValidTo",
         ),
         (
-            quote_body(serde_json::json!({"validFor": 4 * 60 * 60})),
+            quote_body(serde_json::json!({"validFor": 2 * 365 * 24 * 60 * 60})),
             "ExcessiveValidTo",
         ),
         (same_tokens, "SameBuyAndSellToken"),
@@ -324,7 +357,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
             }),
-            ..mock_api()
+            ..mock_api().await
         };
         let (listener, addr) = api.bind().await.unwrap();
         let shutdown = CancellationToken::new();
@@ -338,13 +371,15 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
 }
 
 /// The full happy path: the driver's amounts come back in the EVM response
-/// shape with the request's own fields echoed.
+/// shape with the request's own fields echoed, net of the buy token account
+/// rent and the driver's network fee at the mock price of a lamport an atom.
 #[tokio::test]
 async fn quote_answers_in_the_evm_shape() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "3461207",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let addr = spawn_server_with(Quoter::new(
@@ -379,6 +414,11 @@ async fn quote_answers_in_the_evm_shape() {
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
+                "networkFees": "6400",
+                // Without sponsoring the buy token account is not read, so it
+                // counts as the costliest a settleable mint can need at the
+                // SDK's default rent.
+                "buyTokenAtaCosts": "2220240",
                 "kind": "sell",
                 "partiallyFillable": false,
             },
@@ -405,7 +445,7 @@ async fn quote_answers_in_the_evm_shape() {
 async fn quote_names_the_funder_when_sponsoring_is_on() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "10000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
     }))
     .await;
@@ -425,7 +465,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
         }),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -444,19 +484,89 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
     assert_eq!(json["funder"], serde_json::json!(funder.to_string()));
 }
 
+/// The lookups answer the mints, then the owner, its associated token
+/// account, the buy mint and the rent sysvar. The rent comes off the buy
+/// amount at the mock price of a lamport an atom.
+#[tokio::test]
+async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "10000000",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let free_fee_mint =
+        solana_testlib::token_2022_mint(&[ExtensionType::TransferFeeConfig], |mint| {
+            mint.init_extension::<TransferFeeConfig>(true).unwrap();
+        });
+    // The mainnet rent since SIMD-0437, under the SDK's default.
+    let rent = solana_sdk::account::create_account_for_test(
+        &solana_sdk::rent::Rent::with_lamports_per_byte(5080),
+    );
+    for (buy_mint, cost) in [
+        (mint_account(spl_token_interface::ID), 1_488_440_u64),
+        (mint_account(spl_token_2022_interface::ID), 1_513_840),
+        (free_fee_mint, 1_574_800),
+    ] {
+        let mints = accounts_response(&[
+            Some(mint_account(spl_token_interface::ID)),
+            Some(buy_mint.clone()),
+        ]);
+        let mocks = MocksMap::from_iter([
+            (RpcRequest::GetMultipleAccounts, mints),
+            (
+                RpcRequest::GetMultipleAccounts,
+                accounts_response(&[None, None, Some(buy_mint), Some(rent.clone())]),
+            ),
+        ]);
+        let api = Api {
+            quoter: Quoter::new(
+                vec![format!("http://{driver}/").parse().unwrap()],
+                Duration::from_secs(1),
+            ),
+            sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+                funder: solana_sdk::pubkey::Pubkey::new_unique(),
+                settlement_program: cow_settlement_interface::id(),
+                rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
+                max_priority_fee_lamports: 100_000,
+                mints: Default::default(),
+            }),
+            ..mock_api().await
+        };
+        let (listener, addr) = api.bind().await.unwrap();
+        let shutdown = CancellationToken::new();
+        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/quote"))
+            .json(&quote_body(serde_json::json!({"validFor": 1800})))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(json["quote"]["buyTokenAtaCosts"], cost.to_string());
+        assert_eq!(json["quote"]["buyAmount"], (10_000_000 - cost).to_string());
+    }
+}
+
 /// With several drivers configured, the best answer wins: the largest buy
-/// amount for a sell order.
+/// amount for a sell order once each driver's own network fee and the buy
+/// token account rent (2,220,240 lamports, a lamport an atom) come off it.
+/// The larger raw answer loses to the fee it reports, and a driver that
+/// reports no fee is charged none.
 #[tokio::test]
 async fn quote_picks_the_best_driver_answer() {
     let worse = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1500000",
+        "buyAmount": "5001000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "2000000",
     }))
     .await;
     let better = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "2000000",
+        "buyAmount": "5000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
     }))
     .await;
@@ -478,7 +588,68 @@ async fn quote_picks_the_best_driver_answer() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(json["quote"]["buyAmount"], "2000000");
+    assert_eq!(json["quote"]["buyAmount"], "2779760");
+    assert_eq!(json["quote"]["networkFees"], "0");
+}
+
+/// A buy order keeps its buy amount and pulls the execution cost through
+/// the sell amount instead.
+#[tokio::test]
+async fn quote_charges_a_buy_order_on_the_sell_side() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["kind"] = serde_json::json!("buy");
+    body["buyAmountAfterFee"] = serde_json::json!("1234567");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["kind"], "buy");
+    assert_eq!(json["quote"]["sellAmount"], "12226640");
+    assert_eq!(json["quote"]["buyAmount"], "1234567");
+    assert_eq!(json["quote"]["networkFees"], "6400");
+    assert_eq!(json["quote"]["buyTokenAtaCosts"], "2220240");
+}
+
+/// A fill the execution cost swallows is no quote.
+#[tokio::test]
+async fn quote_rejects_a_fill_the_cost_swallows() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1000",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (
+            reqwest::StatusCode::BAD_REQUEST,
+            "SellAmountDoesNotCoverFee"
+        )
+    );
 }
 
 /// A sponsoring deployment reads the quoted mints and refuses one the
@@ -535,6 +706,34 @@ async fn quote_checks_only_the_mints_it_can_read() {
     }
 }
 
+/// A token the autopilot cannot price answers no liquidity even when a
+/// driver quotes the pair: an order on it would never enter an auction.
+#[tokio::test]
+async fn quote_without_a_native_price_is_no_liquidity() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        prices: spawn_mock_autopilot(None).await,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
+    );
+}
+
 /// Every driver failure reads as no liquidity, mirroring the EVM mapping of
 /// estimator errors.
 #[tokio::test]
@@ -547,7 +746,8 @@ async fn quote_without_a_route_is_no_liquidity() {
     );
 }
 
-/// The answered quote lands in `solana.quotes` and its id comes back.
+/// The answered quote, net of the execution cost, lands in `solana.quotes`
+/// and its id comes back.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_quote_is_persisted() {
@@ -559,7 +759,7 @@ async fn solana_db_quote_is_persisted() {
     let solver = solana_sdk::pubkey::Pubkey::new_unique();
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "10000000",
         "solver": solver.to_string(),
     }))
     .await;
@@ -569,7 +769,7 @@ async fn solana_db_quote_is_persisted() {
             vec![format!("http://{driver}/").parse().unwrap()],
             Duration::from_secs(1),
         ),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -612,7 +812,7 @@ async fn solana_db_quote_is_persisted() {
     assert_eq!(row.1, sell.to_bytes());
     assert_eq!(row.2, buy.to_bytes());
     assert_eq!(row.3, "10000000");
-    assert_eq!(row.4, "1234567");
+    assert_eq!(row.4, "7779760");
     assert_eq!(row.5, "sell");
     assert_eq!(row.6, solver.to_bytes());
     // The stored expiry is the answered one, up to timestamptz rounding.
@@ -716,7 +916,7 @@ async fn spawn_sponsored_server_with(
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
         }),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -781,7 +981,7 @@ fn sponsored_intent(
         ),
         sell_amount: std::num::NonZeroU64::new(1_000).unwrap(),
         buy_amount: std::num::NonZeroU64::new(2_000).unwrap(),
-        valid_to: u32::MAX,
+        valid_to: u32::try_from(chrono::Utc::now().timestamp() + 3600).unwrap(),
         flags: cow_settlement_interface::data::intent::Flags {
             kind: cow_settlement_interface::data::intent::OrderKind::Sell,
             partially_fillable: false,
@@ -1100,7 +1300,7 @@ async fn create_order_rejects_invalid_submissions() {
     }
 
     // Intent-level rejections: the funder as owner, equal mints, and a
-    // validTo below the minimum validity.
+    // validTo outside the validity bounds.
     let mut funder_owned = sponsored_intent(owner.pubkey(), false);
     funder_owned.owner = funder;
     let mut same_token = sponsored_intent(owner.pubkey(), false);
@@ -1112,10 +1312,14 @@ async fn create_order_rejects_invalid_submissions() {
     );
     let mut expiring = sponsored_intent(owner.pubkey(), false);
     expiring.valid_to = u32::try_from(chrono::Utc::now().timestamp() + 30).unwrap();
+    let mut distant = sponsored_intent(owner.pubkey(), false);
+    distant.valid_to =
+        u32::try_from(chrono::Utc::now().timestamp() + 2 * 365 * 24 * 60 * 60).unwrap();
     for (intent, expected) in [
         (funder_owned, "InvalidTransaction"),
         (same_token, "SameBuyAndSellToken"),
         (expiring, "InsufficientValidTo"),
+        (distant, "ExcessiveValidTo"),
     ] {
         let destination = destination_creation(funder, owner.pubkey(), &intent);
         let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);

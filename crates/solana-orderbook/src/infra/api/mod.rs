@@ -1,7 +1,7 @@
 //! HTTP API server.
 
 use {
-    super::quoter::Quoter,
+    super::{prices::NativePrices, quoter::Quoter},
     axum::{
         Router,
         http,
@@ -42,6 +42,8 @@ pub struct Api {
     pub pool: PgPool,
     /// The driver that quotes orders.
     pub quoter: Quoter,
+    /// The autopilot's native prices, which gate quotes.
+    pub prices: NativePrices,
     /// Bounds on a quoted order's `validTo`.
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
@@ -50,8 +52,8 @@ pub struct Api {
     pub sponsoring: Option<Sponsoring>,
 }
 
-/// Bounds on a quoted order's `validTo`. The defaults are the EVM
-/// orderbook's.
+/// Bounds on an order's `validTo`, for quotes and sponsored placement
+/// alike. The defaults are the EVM orderbook's.
 #[derive(Clone, Copy, Debug)]
 pub struct ValidationParameters {
     /// Least far in the future the `validTo` may lie.
@@ -63,8 +65,8 @@ pub struct ValidationParameters {
 impl Default for ValidationParameters {
     fn default() -> Self {
         Self {
-            min_validity: std::time::Duration::from_secs(2 * 60),
-            max_validity: std::time::Duration::from_secs(2 * 60 * 60),
+            min_validity: std::time::Duration::from_secs(60),
+            max_validity: std::time::Duration::from_secs(365 * 24 * 60 * 60),
         }
     }
 }
@@ -98,6 +100,7 @@ impl Api {
         let state = State::new(
             self.pool,
             self.quoter,
+            self.prices,
             self.validation,
             self.quote_expiry,
             self.sponsoring,
@@ -161,6 +164,7 @@ impl State {
     fn new(
         pool: PgPool,
         quoter: Quoter,
+        prices: NativePrices,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
         sponsoring: Option<Sponsoring>,
@@ -168,6 +172,7 @@ impl State {
         Self(Arc::new(Inner {
             pool,
             quoter,
+            prices,
             validation,
             quote_expiry,
             sponsoring,
@@ -184,6 +189,11 @@ impl State {
     /// The driver that quotes orders.
     pub fn quoter(&self) -> &Quoter {
         &self.0.quoter
+    }
+
+    /// The autopilot's native prices, which gate quotes.
+    pub fn prices(&self) -> &NativePrices {
+        &self.0.prices
     }
 
     /// Bounds on a quoted order's `validTo`.
@@ -237,6 +247,8 @@ struct Inner {
     pool: PgPool,
     /// The driver that quotes orders.
     quoter: Quoter,
+    /// The autopilot's native prices, which gate quotes.
+    prices: NativePrices,
     /// Bounds on a quoted order's `validTo`.
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.

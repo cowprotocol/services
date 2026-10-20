@@ -283,6 +283,10 @@ pub struct Competition {
     fetcher: Arc<pre_processing::DataAggregator>,
     order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
     submitter_pool: SubmitterPool,
+    /// Reason each order got filtered for in the most recent auction. Used to
+    /// only log changes since most orders get filtered for the same reason
+    /// in every auction.
+    filtered_orders: Mutex<FilteredOrders>,
 }
 
 impl Competition {
@@ -323,6 +327,7 @@ impl Competition {
             fetcher,
             order_sorting_strategies,
             submitter_pool,
+            filtered_orders: Default::default(),
         })
     }
 
@@ -692,13 +697,15 @@ impl Competition {
             tasks.app_data.clone()
         );
 
-        let auction = Self::run_blocking_with_timer("update_orders", move || {
+        let (auction, filtered) = Self::run_blocking_with_timer("update_orders", move || {
             // Same as before with sort_orders, we use spawn_blocking() because
             // a lot of CPU bound computations are happening and we
             // want to avoid blocking the runtime.
             Self::update_orders(auction, balances, app_data)
         })
         .await;
+
+        self.update_filtered_orders(filtered);
         self.without_unsupported_orders(auction).await
     }
 
@@ -719,19 +726,20 @@ impl Competition {
     }
 
     /// Removes orders that cannot be filled due to missing funds of the owner
-    /// and updates the fetched app data.
+    /// and updates the fetched app data. Returns the updated auction and the
+    /// reason each removed order got filtered for.
     /// It allocates available funds from left to right so the orders should
     /// already be sorted by priority going in.
     fn update_orders(
         mut auction: Auction,
         balances: Arc<Balances>,
         app_data: Arc<HashMap<order::app_data::AppDataHash, Arc<app_data::ValidatedAppData>>>,
-    ) -> Auction {
+    ) -> (Auction, FilteredOrders) {
         // Clone balances since we only aggregate data once but each solver
         // needs to use and modify the data individually.
         let mut balances = balances.as_ref().clone();
 
-        let mut discarded_orders = BTreeMap::<OrderExcludedFromAuctionReason, Vec<Uid>>::new();
+        let mut filtered = FilteredOrders::default();
 
         // The auction that we receive from the `autopilot` assumes that there
         // is sufficient balance to completely cover all the orders. **This is
@@ -765,10 +773,10 @@ impl Competition {
             )) {
                 Some(balance) => balance,
                 None => {
-                    discarded_orders
-                        .entry(OrderExcludedFromAuctionReason::CouldNotFetchBalance)
-                        .or_default()
-                        .push(order.uid);
+                    filtered.insert(
+                        OrderExcludedFromAuctionReason::CouldNotFetchBalance,
+                        order.uid,
+                    );
                     return false;
                 }
             };
@@ -781,10 +789,10 @@ impl Competition {
                 _ => order::SellAmount::default(),
             };
             if allocated_balance.0.is_zero() {
-                discarded_orders
-                    .entry(OrderExcludedFromAuctionReason::InsufficientBalance)
-                    .or_default()
-                    .push(order.uid);
+                filtered.insert(
+                    OrderExcludedFromAuctionReason::InsufficientBalance,
+                    order.uid,
+                );
                 return false;
             }
 
@@ -810,10 +818,10 @@ impl Competition {
                 );
             }
             if order.available().is_zero() {
-                discarded_orders
-                    .entry(OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining)
-                    .or_default()
-                    .push(order.uid);
+                filtered.insert(
+                    OrderExcludedFromAuctionReason::OrderWithZeroAmountRemaining,
+                    order.uid,
+                );
                 return false;
             }
 
@@ -822,16 +830,23 @@ impl Competition {
             true
         });
 
-        let discarded_total = discarded_orders.values().map(Vec::len).sum::<usize>();
-        if discarded_total > 0 {
+        (auction, filtered)
+    }
+
+    /// Stores the orders filtered in the current auction and logs how they
+    /// differ from the previous auction.
+    fn update_filtered_orders(&self, current: FilteredOrders) {
+        let mut previous = self.filtered_orders.lock().unwrap();
+        let diff = current.diff(&previous);
+        if !diff.is_empty() {
             tracing::debug!(
-                total = discarded_total,
-                ?discarded_orders,
-                "filtered orders during solver specific prioritization logic"
+                total = current.len(),
+                now_filtered = ?diff.now_filtered,
+                no_longer_filtered = ?diff.no_longer_filtered,
+                "filtered orders during solver specific prioritization logic changed"
             );
         }
-
-        auction
+        *previous = current;
     }
 
     /// Runs a blocking function on a background thread, timing it using the
@@ -1030,6 +1045,63 @@ impl Competition {
         self.risk_detector
             .filter_unsupported_orders_in_auction(auction)
             .await
+    }
+}
+
+/// Orders that got filtered out of an auction grouped by the reason.
+#[derive(Default, Debug)]
+struct FilteredOrders(BTreeMap<OrderExcludedFromAuctionReason, HashSet<Uid>>);
+
+impl FilteredOrders {
+    fn insert(&mut self, reason: OrderExcludedFromAuctionReason, uid: Uid) {
+        self.0.entry(reason).or_default().insert(uid);
+    }
+
+    fn len(&self) -> usize {
+        self.0.values().map(HashSet::len).sum()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.values().all(HashSet::is_empty)
+    }
+
+    /// Computes which orders started and which stopped getting filtered
+    /// compared to `previous`.
+    fn diff(&self, previous: &Self) -> FilteredOrdersDiff {
+        FilteredOrdersDiff {
+            now_filtered: self.missing_from(previous),
+            no_longer_filtered: previous.missing_from(self),
+        }
+    }
+
+    /// Orders in `self` which are not in `other` for the same reason.
+    fn missing_from(&self, other: &Self) -> Self {
+        let missing = self
+            .0
+            .iter()
+            .map(|(reason, uids)| {
+                let missing = match other.0.get(reason) {
+                    Some(other) => uids.difference(other).copied().collect(),
+                    None => uids.clone(),
+                };
+                (*reason, missing)
+            })
+            .filter(|(_, uids)| !uids.is_empty())
+            .collect();
+        Self(missing)
+    }
+}
+
+/// Orders that started or stopped getting filtered for each reason between two
+/// auctions. An order whose reason changed shows up in both.
+struct FilteredOrdersDiff {
+    now_filtered: FilteredOrders,
+    no_longer_filtered: FilteredOrders,
+}
+
+impl FilteredOrdersDiff {
+    fn is_empty(&self) -> bool {
+        self.now_filtered.is_empty() && self.no_longer_filtered.is_empty()
     }
 }
 

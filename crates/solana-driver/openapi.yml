@@ -168,10 +168,19 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         solver:
           $ref: "#/components/schemas/Address"
+        networkFee:
+          description: >-
+            The network fee of settling the quoted route, in lamports: the
+            signature fee plus the priority fee the driver would pay at the
+            solution's compute unit estimate, or at the runtime's ceiling when
+            the engine sent none. The amounts are not reduced by it.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - sellAmount
         - buyAmount
         - solver
+        - networkFee
     Order:
       description: Order information like what is returned by the Orderbook apis.
       type: object
