@@ -265,7 +265,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                     "the indexer lags beyond the watermark, skipping the cut"
                 );
                 metrics().lag_skipped_cuts.inc();
-                return NextAuction::Failed;
+                return NextAuction::Stale;
             }
             Ok(_) => {}
             Err(err) => tracing::warn!(?err, "indexer slot read failed"),
@@ -422,8 +422,8 @@ struct Metrics {
     #[metric(labels("reason"))]
     filtered_orders: prometheus::IntGaugeVec,
     /// Auction cuts skipped because the indexer lags beyond the watermark.
-    /// A skip counts against `max-auction-age`. This counter is the alerting
-    /// signal for a stalled indexer.
+    /// The loop keeps spinning and stays live through a skip, so this
+    /// counter is the alerting signal for a stalled indexer.
     lag_skipped_cuts: prometheus::IntCounter,
 }
 

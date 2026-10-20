@@ -102,8 +102,11 @@ pub enum NextAuction<A> {
     Auction(A),
     /// The cut read the orders, and no order can go into the auction.
     Empty,
-    /// The cut stopped before it could make an auction, for example because
-    /// a dependency failed or the order data is stale.
+    /// The order data lags behind the tip, so the cut waits for it to catch
+    /// up.
+    Stale,
+    /// The cut stopped before it could make an auction because a read or a
+    /// write failed.
     Failed,
 }
 
@@ -230,16 +233,16 @@ impl<C: Cycle> AuctionLoop<C> {
     }
 
     /// Cuts the next auction and dedupes against the previous cycle. A new
-    /// auction and an empty cut refresh the liveness probe. A failed cut and
-    /// a duplicate auction do not.
+    /// auction, an empty cut, and a stale cut refresh the liveness probe. A
+    /// failed cut and a duplicate auction do not.
     async fn next_auction(&mut self, tip: &C::Tip) -> Option<C::Auction> {
         let auction = match self.provider.cut_auction(tip).await {
             // The liveness probe refreshes below, after the duplicate check,
             // because a repeated auction does not prove progress.
             NextAuction::Auction(auction) => auction,
-            // No order can go into the auction. The cut read the orders, so
-            // the loop works correctly.
-            NextAuction::Empty => {
+            // The loop works: no order can go into the auction, or the order
+            // data lags, which a restart of this process cannot fix.
+            NextAuction::Empty | NextAuction::Stale => {
                 self.probes.liveness.auction();
                 return None;
             }
@@ -469,6 +472,13 @@ mod tests {
     #[tokio::test]
     async fn an_empty_cut_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Empty)]);
+        auction_loop.run_cycle().await;
+        assert!(liveness.is_alive().await);
+    }
+
+    #[tokio::test]
+    async fn a_stale_cut_refreshes_the_liveness_probe() {
+        let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Stale)]);
         auction_loop.run_cycle().await;
         assert!(liveness.is_alive().await);
     }

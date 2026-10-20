@@ -57,8 +57,8 @@ pub struct Config {
     /// from it.
     #[serde(default = "default_api_address")]
     pub api_address: SocketAddr,
-    /// If no new or empty auction was cut in this time, the pod fails the
-    /// liveness check.
+    /// If no cut in this time made a new auction, found no order, or waited
+    /// for a lagging indexer, the pod fails the liveness check.
     #[serde(with = "humantime_serde", default = "default_max_auction_age")]
     pub max_auction_age: Duration,
     /// Minimum time between auction cycles. Zero runs a cycle every new slot.
