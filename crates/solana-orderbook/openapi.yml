@@ -239,8 +239,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "404":
           description: |
-            No indexed settlement with this signature, or its auction's
-            deadline slot has not passed yet.
+            No settlement with this signature attributed to a solution, or
+            its auction's deadline slot has not passed yet.
           content:
             application/json:
               schema:
@@ -648,7 +648,9 @@ components:
           type: integer
           format: int64
         transactionSignatures:
-          description: The transactions that settled the auction.
+          description: |
+            The transactions that settled the auction, attributed to a
+            solution.
           type: array
           items:
             $ref: "#/components/schemas/Signature"

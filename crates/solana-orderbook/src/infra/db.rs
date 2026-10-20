@@ -382,7 +382,7 @@ pub struct Competition {
     /// Worst to best, the winner last.
     pub solutions: Vec<CompetitionSolution>,
     pub trades: Vec<CompetitionTrade>,
-    /// The transactions that settled the auction.
+    /// The transactions that settled the auction, attributed to a solution.
     pub tx_signatures: Vec<ByteArray<64>>,
 }
 
@@ -420,7 +420,7 @@ ORDER BY pte.solution_uid, pte.order_uid
     const SIGNATURES: &str = r#"
 SELECT DISTINCT tx_signature
 FROM solana.settlements
-WHERE auction_id = $1
+WHERE auction_id = $1 AND solution_uid IS NOT NULL
 ORDER BY tx_signature
     "#;
     let auction: Option<CompetitionAuction> = sqlx::query_as(AUCTION)
@@ -455,14 +455,15 @@ ORDER BY tx_signature
 }
 
 /// The competition the transaction settled, under the visibility rule of
-/// [`find_competition_by_id`]. `None` when no indexed settlement carries the
-/// signature.
+/// [`find_competition_by_id`]. `None` when no settlement attributed to a
+/// solution carries the signature.
 pub async fn find_competition_by_tx_signature(
     pool: &PgPool,
     tx_signature: [u8; 64],
 ) -> Result<Option<Competition>> {
     let auction_id: Option<i64> = sqlx::query_scalar(
-        "SELECT auction_id FROM solana.settlements WHERE tx_signature = $1 LIMIT 1",
+        "SELECT auction_id FROM solana.settlements WHERE tx_signature = $1 AND solution_uid IS \
+         NOT NULL LIMIT 1",
     )
     .bind(ByteArray(tx_signature))
     .fetch_optional(pool)
@@ -947,13 +948,23 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         .execute(&pool)
         .await
         .unwrap();
-        // The winner's settlement, attributed to its solution.
+        // The winner's settlement, attributed to its solution, and one not
+        // attributed yet.
         sqlx::query(
             "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
              auction_id, solution_uid) VALUES (90, $1, 1, $2, 1, 0)",
         )
         .bind(ByteArray([9u8; 64]))
         .bind(ByteArray([0xA1; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+             auction_id) VALUES (91, $1, 1, $2, 1)",
+        )
+        .bind(ByteArray([7u8; 64]))
+        .bind(ByteArray([0xA2; 32]))
         .execute(&pool)
         .await
         .unwrap();
@@ -1015,18 +1026,21 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             ]
         );
 
-        // The settlement resolves its auction, an unknown signature nothing.
+        // The attributed settlement resolves its auction, an unattributed or
+        // unknown signature nothing.
         let by_signature = find_competition_by_tx_signature(&pool, [9u8; 64])
             .await
             .unwrap()
             .unwrap();
         assert_eq!(by_signature.auction.id, 1);
-        assert!(
-            find_competition_by_tx_signature(&pool, [8u8; 64])
-                .await
-                .unwrap()
-                .is_none()
-        );
+        for unresolved in [[7u8; 64], [8u8; 64]] {
+            assert!(
+                find_competition_by_tx_signature(&pool, unresolved)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
         // Auction 2 stays hidden until the indexer passes its deadline, so
         // auction 1 is the latest.
         assert!(find_competition_by_id(&pool, 2).await.unwrap().is_none());

@@ -20,7 +20,7 @@ pub struct Competition {
     pub auction_start_slot: i64,
     /// The slot by which the winners had to settle.
     pub auction_deadline_slot: i64,
-    /// The transactions that settled the auction.
+    /// The transactions that settled the auction, attributed to a solution.
     #[serde_as(as = "Vec<DisplayFromStr>")]
     pub transaction_signatures: Vec<Signature>,
     /// Per winning solver, the winners' total score with that solver's
