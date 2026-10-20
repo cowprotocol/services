@@ -35,8 +35,9 @@ const STREAM_RETRY: Duration = Duration::from_secs(5);
 /// Wait between replay passes.
 const REPLAY_INTERVAL: Duration = Duration::from_secs(60);
 
-/// How long after startup the indexer may see no new confirmed slot before
-/// the liveness probe fails. Slots confirm about every 400ms.
+/// How long after startup the Yellowstone slot filter may deliver no new
+/// confirmed slot before the liveness probe fails. It delivers every chain
+/// slot, about one per 400ms, with or without CoW transactions.
 const MAX_SLOT_AGE: Duration = Duration::from_secs(120);
 
 /// The Solana indexer command line arguments.
