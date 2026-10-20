@@ -61,6 +61,7 @@ pub struct OrderSimulator {
     pub simulator: Arc<dyn OrderSimulating>,
     pub timeout: Duration,
     /// Flashloan lenders whose orders a passing simulation may accept.
+    // TODO(jmg-duarte): checks must be fully migrated or the configuration should be reworked
     pub ignore_legacy_checks_for_lenders: HashSet<Address>,
 }
 
