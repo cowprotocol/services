@@ -291,8 +291,6 @@ async fn place(
         }
         return Err(Failure::internal(err, "sponsored order insert"));
     }
-    // Same field names as the EVM orderbook's `post_order`, so the order can be
-    // tied back to the quote request that produced it.
     let quote_id = quote.as_ref().map(|quote| quote.quote_id);
     let quote_solver = quote
         .as_ref()
@@ -579,8 +577,6 @@ async fn link_quote(
         OrderKind::Sell => quote.sell_amount.to_u64() == Some(order.sell_amount),
         OrderKind::Buy => quote.buy_amount.to_u64() == Some(order.buy_amount),
     };
-    // Named individually so the log says which predicate failed: "does not
-    // match" over five conjuncts is not a diagnosis.
     let sell_token_matches = quote.sell_token == order.sell_token;
     let buy_token_matches = quote.buy_token == order.buy_token;
     let kind_matches = quote.kind == order.kind;

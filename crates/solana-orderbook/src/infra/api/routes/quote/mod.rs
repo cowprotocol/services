@@ -116,8 +116,7 @@ pub async fn quote(
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
     let ranked = rank(quotes, kind, buy_token_ata_costs, price);
-    // Logged before the winner is taken, so a competition no quote survives
-    // is on the record too.
+    // Before taking the winner, so a competition without one is logged too.
     let competition = competition(&request, kind, amount, buy_token_ata_costs, &ranked);
     match serde_json::to_string(&competition) {
         Ok(json) => tracing::debug!(competition = %json, "computed quote"),
@@ -200,11 +199,8 @@ pub async fn quote(
     }))
 }
 
-/// Every quote paired with itself once its execution cost is taken out, best
-/// first: the largest netted buy for a sell order, the smallest netted sell
-/// for a buy order. A quote that cannot absorb its cost has no netted side and
-/// ranks last, so the first netted quote is the winner. `rent` is the buy token
-/// account's, `price` the native price of the token the cost comes out of.
+/// Every quote paired with its [`net`] self, best netted first. Quotes that
+/// cannot absorb their cost rank last, so the first netted one is the winner.
 fn rank(
     quotes: Vec<quoter::Quote>,
     kind: dto::Kind,
@@ -231,10 +227,7 @@ fn rank(
     ranked
 }
 
-/// The quote competition as the `computed quote` log line carries it: one
-/// JSON object under the EVM orderbook's message, so one parser reads both
-/// chains. Every driver that answered is kept, best first, so the losers stay
-/// on the record.
+/// The `computed quote` log line: every driver's answer, best first.
 #[derive(Serialize)]
 struct Competition<'a> {
     request: CompetitionRequest,
@@ -252,14 +245,12 @@ struct CompetitionRequest {
     #[serde_as(as = "DisplayFromStr")]
     amount: u64,
     kind: dto::Kind,
-    /// Rent of the buy token account, part of every quote's execution cost.
     #[serde_as(as = "DisplayFromStr")]
     buy_token_ata_costs: u64,
 }
 
-/// One driver's answer. `sell_amount` and `buy_amount` are what the trader
-/// would get, after the execution cost, and what the quotes are ranked by;
-/// `quoted_*` are what the driver returned.
+/// One driver's answer: `sell_amount` and `buy_amount` are after the execution
+/// cost, `quoted_*` as the driver returned them.
 #[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -731,7 +722,6 @@ mod tests {
         NonZero::new(native_price).unwrap()
     }
 
-    /// The winner of [`rank`].
     fn best(
         quotes: Vec<quoter::Quote>,
         kind: dto::Kind,
@@ -831,8 +821,6 @@ mod tests {
         );
     }
 
-    /// Every quote stays on the record, best netted first, and one that
-    /// cannot absorb its cost ranks last rather than disappearing.
     #[test]
     fn the_competition_keeps_every_quote_best_first() {
         let lamport_an_atom = price(PRICE_UNIT);
@@ -864,8 +852,7 @@ mod tests {
         );
     }
 
-    /// The log line is JSON a parser can read: base58 pubkeys and amounts as
-    /// strings, the API's own encoding rather than Rust's `Debug`.
+    /// Base58 pubkeys and amounts as strings, like the API.
     #[test]
     fn the_competition_serializes_for_the_log_line() {
         let ranked = rank(
