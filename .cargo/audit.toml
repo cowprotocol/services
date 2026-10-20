@@ -17,4 +17,11 @@ ignore = [
   # Pulled in exclusively through the `ark-ff-03` / `ark-ff-04` optional
   # features of `ruint`.
   "RUSTSEC-2024-0388",
+
+  # ----------------------------------------------------------------
+  # webpki-roots - distrusted emSign root (RUSTSEC-2026-0381).
+  # Flagged on webpki-roots 0.26.11, a semver trick crate that re-exports
+  # webpki-roots 1, pinned at the fixed 1.0.10. tokio-tungstenite 0.28 and
+  # 0.29 still name the 0.26 line.
+  "RUSTSEC-2026-0381",
 ]
