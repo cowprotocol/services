@@ -4,7 +4,7 @@
 
 use {
     crate::{
-        domain::{self, Side, order_uid::OrderUid, solver_fee::SolverFee},
+        domain::{self, Side, execution_cost::Charge, order_uid::OrderUid, solver_fee::SolverFee},
         infra::blockchain::associated_token_address,
     },
     cow_settlement_interface::{
@@ -16,7 +16,7 @@ use {
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
     spl_token_interface::native_mint,
-    std::collections::{HashMap, HashSet},
+    std::collections::HashMap,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -88,11 +88,8 @@ pub struct Order {
     pub partially_fillable: bool,
     /// True when the order's buy token account does not exist on chain
     /// yet. The settlement creates it and the solver keypair pays its rent,
-    /// so the solution should price that rent in.
-    ///
-    /// TODO(token-2022): a token-2022 account rents more bytes, so once
-    /// those mints are supported this boolean becomes a `setupCostLamports`
-    /// number and engines stop having to know the rent math.
+    /// so the solution should price that rent in, at the rent of the buy
+    /// mint's token program.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub missing_buy_token_account: bool,
 }
@@ -106,7 +103,10 @@ impl Order {
     }
 
     /// Build the wire order from a domain order, the taker and the settlement
-    /// program id.
+    /// program id. `cut` moves the limit leg by what the driver cuts from the
+    /// fill before `fee` tightens it: a sell order's minimum buy rises by it,
+    /// a buy order's maximum sell falls by it. A minimum buy past `u64::MAX`
+    /// saturates: no fill can meet it.
     ///
     /// The swap output must land in the buy-mint buffer PDA so that
     /// `FinalizeSettle` can push it to the user's buy token account. Solvers
@@ -122,14 +122,21 @@ impl Order {
         order: &domain::Order,
         taker: Pubkey,
         program_id: Pubkey,
+        cut: u64,
         fee: Option<SolverFee>,
         missing_buy_token_account: bool,
     ) -> Self {
         let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
         let available = order.available();
         let (sell_amount, buy_amount) = match order.side {
-            Side::Sell => (available.sell, tighten(Side::Sell, available.buy)),
-            Side::Buy => (tighten(Side::Buy, available.sell), available.buy),
+            Side::Sell => (
+                available.sell,
+                tighten(Side::Sell, available.buy.saturating_add(cut)),
+            ),
+            Side::Buy => (
+                tighten(Side::Buy, available.sell.saturating_sub(cut)),
+                available.buy,
+            ),
         };
         let (buy_mint, buy_destination) = if order.buys_native_sol() {
             (
@@ -167,15 +174,13 @@ impl Auction {
     ///
     /// The `taker` is the solver that signs the settlement transaction, and its
     /// wSOL ATA receives native SOL buys. `program_id` derives the buy-mint
-    /// buffer PDA that every other order swaps into. `fee` tightens every
-    /// order's limit leg. `missing_buy_token_accounts` marks the orders whose
-    /// payout account the settlement creates.
+    /// buffer PDA that every other order swaps into. `charge` decides each
+    /// order's limit leg and flag, see [`Charge`].
     pub fn new(
         auction: &domain::Auction,
         taker: Pubkey,
         program_id: Pubkey,
-        fee: Option<SolverFee>,
-        missing_buy_token_accounts: &HashSet<OrderUid>,
+        charge: &Charge,
     ) -> Self {
         Self {
             id: auction.id.map(|id| id.get()),
@@ -183,14 +188,21 @@ impl Auction {
             orders: auction
                 .orders
                 .iter()
-                .map(|order| {
-                    Order::new(
+                .filter_map(|order| {
+                    let (cut, fee, missing_buy_token_account) = match charge {
+                        Charge::Engine {
+                            missing_buy_token_accounts,
+                        } => (0, None, missing_buy_token_accounts.contains(&order.uid)),
+                        Charge::Driver { cuts, fee } => (*cuts.get(&order.uid)?, *fee, false),
+                    };
+                    Some(Order::new(
                         order,
                         taker,
                         program_id,
+                        cut,
                         fee,
-                        missing_buy_token_accounts.contains(&order.uid),
-                    )
+                        missing_buy_token_account,
+                    ))
                 })
                 .collect(),
             deadline: auction.deadline,
@@ -314,7 +326,7 @@ mod tests {
             sell_balance: Some(500),
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&order, pubkey(3), pubkey(0xaa), None, false);
+        let order = Order::new(&order, pubkey(3), pubkey(0xaa), 0, None, false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (500, 500, 500)
@@ -331,6 +343,7 @@ mod tests {
             &domain_order(Side::Sell),
             pubkey(3),
             pubkey(0xaa),
+            0,
             None,
             false,
         );
@@ -348,6 +361,7 @@ mod tests {
             &domain_order(Side::Sell),
             pubkey(3),
             pubkey(0xaa),
+            0,
             fee,
             false,
         );
@@ -361,6 +375,7 @@ mod tests {
             &domain_order(Side::Buy),
             pubkey(3),
             pubkey(0xaa),
+            0,
             fee,
             false,
         );
@@ -381,7 +396,7 @@ mod tests {
             executed: 400,
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), fee, false);
+        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), 0, fee, false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (600, 632, 600)
@@ -396,7 +411,7 @@ mod tests {
             side: Side::Buy,
             ..sell
         };
-        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), fee, false);
+        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), 0, fee, false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (571, 600, 600)
@@ -413,18 +428,87 @@ mod tests {
         let order = domain_order(Side::Sell);
 
         let flagged =
-            serde_json::to_value(Order::new(&order, taker, program_id, None, true)).unwrap();
+            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, true)).unwrap();
         assert_eq!(flagged["missingBuyTokenAccount"], json!(true));
 
         let unflagged =
-            serde_json::to_value(Order::new(&order, taker, program_id, None, false)).unwrap();
+            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, false)).unwrap();
         assert!(unflagged.get("missingBuyTokenAccount").is_none());
+    }
+
+    /// A sell order's minimum buy rises by the cut, 1000 to 1050, and the 5%
+    /// fee tightens that to 1106. A buy order's maximum sell falls the same
+    /// way, to 950 and 904. A cut no fill can absorb leaves a sell order a
+    /// minimum buy of `u64::MAX` and a buy order nothing to sell.
+    #[test]
+    fn the_cut_moves_the_limit_leg_before_the_fee_tightens_it() {
+        let fee = Some(SolverFee::try_from(500).unwrap());
+        let legs = |side, cut, fee| {
+            let order = Order::new(
+                &domain_order(side),
+                pubkey(3),
+                pubkey(0xaa),
+                cut,
+                fee,
+                false,
+            );
+            (order.sell_amount, order.buy_amount)
+        };
+        assert_eq!(legs(Side::Sell, 50, None), (1_000, 1_050));
+        assert_eq!(legs(Side::Sell, 50, fee), (1_000, 1_106));
+        assert_eq!(legs(Side::Sell, u64::MAX, None), (1_000, u64::MAX));
+        assert_eq!(legs(Side::Buy, 50, None), (950, 1_000));
+        assert_eq!(legs(Side::Buy, 50, fee), (904, 1_000));
+        assert_eq!(legs(Side::Buy, 1_001, None), (0, 1_000));
+    }
+
+    fn domain_auction(orders: Vec<domain::Order>) -> domain::Auction {
+        domain::Auction {
+            id: Some(domain::Id::new(1).unwrap()),
+            orders,
+            deadline_slot: domain::Slot(0),
+            deadline: chrono::Utc::now(),
+            creations: HashMap::new(),
+            native_prices: HashMap::new(),
+        }
+    }
+
+    /// Charging the engine sends every order at its signed limit, flagging
+    /// the ones whose buy token account is missing. Charging the driver sends
+    /// only the orders with a cut, each at its moved limit and unflagged.
+    #[test]
+    fn the_charge_decides_the_orders_sent_their_limits_and_their_flags() {
+        let order = domain_order(Side::Sell);
+        let unpriced = domain::Order {
+            uid: OrderUid([9; 32]),
+            ..domain_order(Side::Sell)
+        };
+        let auction = domain_auction(vec![order.clone(), unpriced]);
+
+        let engine = Charge::Engine {
+            missing_buy_token_accounts: [order.uid].into(),
+        };
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine);
+        assert_eq!(sent.orders.len(), 2);
+        assert_eq!(sent.orders[0].buy_amount, 1_000);
+        assert!(sent.orders[0].missing_buy_token_account);
+        assert!(!sent.orders[1].missing_buy_token_account);
+
+        let driver = Charge::Driver {
+            cuts: [(order.uid, 50)].into(),
+            fee: Some(SolverFee::try_from(500).unwrap()),
+        };
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &driver);
+        assert_eq!(sent.orders.len(), 1);
+        assert_eq!(sent.orders[0].uid, order.uid);
+        assert_eq!(sent.orders[0].buy_amount, 1_106);
+        assert!(!sent.orders[0].missing_buy_token_account);
     }
 
     #[test]
     fn a_token_buy_lands_in_the_buffer_pda() {
         let (taker, program_id) = (pubkey(3), pubkey(0xaa));
-        let order = Order::new(&domain_order(Side::Sell), taker, program_id, None, false);
+        let order = Order::new(&domain_order(Side::Sell), taker, program_id, 0, None, false);
         assert_eq!(order.buy_mint, pubkey(2));
         assert_eq!(
             order.buy_destination,
@@ -439,7 +523,7 @@ mod tests {
             buy_token: ENCODED_NATIVE_SOL_TRANSFER,
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&native_buy, taker, program_id, None, false);
+        let order = Order::new(&native_buy, taker, program_id, 0, None, false);
         assert_eq!(order.buy_mint, native_mint::ID);
         assert_eq!(
             order.buy_destination,

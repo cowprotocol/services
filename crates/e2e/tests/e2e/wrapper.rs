@@ -98,8 +98,8 @@ async fn forked_mainnet_wrapper_test(web3: Web3) {
         .await
         .unwrap();
 
-    // Start services
-    let services = Services::new(&onchain).await;
+    let mut services = Services::new(&onchain).await;
+    services.min_solve_deadline = std::time::Duration::from_secs(1);
     services.start_protocol(solver).await;
 
     onchain.mint_block().await;

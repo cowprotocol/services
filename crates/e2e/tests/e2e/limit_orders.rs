@@ -561,28 +561,25 @@ async fn two_limit_orders_multiple_winners_test(web3: Web3) {
 
     let config = Configuration::test_no_drivers();
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                drivers: vec![
-                    Solver::new(
-                        "solver1".to_string(),
-                        Url::from_str("http://localhost:11088/test_solver").unwrap(),
-                        Account::Address(solver_a.address()),
-                    ),
-                    Solver::test("solver2", solver_b.address()),
-                ],
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "solver1",
-                    "http://localhost:11088/test_solver",
-                )]),
-                run_loop: RunLoopConfig {
-                    max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
-                    ..config.run_loop
-                },
-                ..config
+        .start_autopilot(Configuration {
+            drivers: vec![
+                Solver::new(
+                    "solver1".to_string(),
+                    Url::from_str("http://localhost:11088/test_solver").unwrap(),
+                    Account::Address(solver_a.address()),
+                ),
+                Solver::test("solver2", solver_b.address()),
+            ],
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "solver1",
+                "http://localhost:11088/test_solver",
+            )]),
+            run_loop: RunLoopConfig {
+                max_winners_per_auction: std::num::NonZeroUsize::new(2).unwrap(),
+                ..config.run_loop
             },
-        )
+            ..config
+        })
         .await;
 
     // Wait for trade
@@ -745,16 +742,13 @@ async fn too_many_limit_orders_test(web3: Web3) {
     );
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("test_solver", solver_address)
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("test_solver", solver_address)
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -847,16 +841,13 @@ async fn limit_does_not_apply_to_in_market_orders_test(web3: Web3) {
     );
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("test_solver", solver_address)
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("test_solver", solver_address)
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -1002,7 +993,8 @@ async fn forked_mainnet_single_limit_order_test(web3: Web3) {
         .unwrap();
 
     // Place Orders
-    let services = Services::new(&onchain).await;
+    let mut services = Services::new(&onchain).await;
+    services.min_solve_deadline = std::time::Duration::from_secs(1);
     services.start_protocol(solver).await;
 
     onchain.mint_block().await;
@@ -1101,7 +1093,8 @@ async fn forked_gnosis_single_limit_order_test(web3: Web3) {
         .unwrap();
 
     // Place Orders
-    let services = Services::new(&onchain).await;
+    let mut services = Services::new(&onchain).await;
+    services.min_solve_deadline = std::time::Duration::from_secs(1);
     services.start_protocol(solver).await;
 
     let order = OrderCreation {

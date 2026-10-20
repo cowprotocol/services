@@ -17,12 +17,7 @@ use {
         liquidity::Liquidity,
         liquidity_collector::{LiquidityCollecting, LiquidityCollector},
     },
-    std::{
-        collections::HashSet,
-        num::{NonZeroU64, NonZeroUsize},
-        sync::Arc,
-        time::Duration,
-    },
+    std::{collections::HashSet, num::NonZeroUsize, sync::Arc, time::Duration},
 };
 
 pub mod balancer;
@@ -33,12 +28,12 @@ pub mod zeroex;
 /// The default pool caching configuration to use.
 fn cache_config() -> CacheConfig {
     CacheConfig {
-        number_of_blocks_to_cache: NonZeroU64::new(2).unwrap(),
         number_of_entries_to_auto_update: NonZeroUsize::new(1000).unwrap(),
         auto_update_ttl: Duration::from_mins(5),
         maximum_recent_block_age: 4,
+        refresh_cooldown: Duration::ZERO,
         max_retries: 5,
-        delay_between_retries: Duration::from_secs(1),
+        retry_cooldown: Duration::from_secs(1),
     }
 }
 
@@ -59,21 +54,25 @@ impl Fetcher {
     pub async fn try_new(eth: &Ethereum, config: &infra::liquidity::Config) -> Result<Self> {
         let block_stream = eth.current_block();
         let block_retriever = Arc::new(eth.web3().provider.clone());
+        let pool_cache_config = CacheConfig {
+            refresh_cooldown: config.refresh_cooldown,
+            maximum_recent_block_age: config.max_recent_block_age,
+            number_of_entries_to_auto_update: config.max_auto_updated_pairs,
+            ..cache_config()
+        };
 
-        let uni_v2: Vec<_> = future::try_join_all(
-            config
-                .uniswap_v2
-                .iter()
-                .map(|config| uniswap::v2::collector(eth, block_stream, config)),
-        )
-        .await?;
+        let uni_v2: Vec<_> =
+            future::try_join_all(config.uniswap_v2.iter().map(|config| {
+                uniswap::v2::collector(eth, block_stream, config, pool_cache_config)
+            }))
+            .await?;
 
         let swapr_routers = config.swapr.iter().map(|config| config.router).collect();
         let swapr: Vec<_> = future::try_join_all(
             config
                 .swapr
                 .iter()
-                .map(|config| swapr::collector(eth, block_stream, config)),
+                .map(|config| swapr::collector(eth, block_stream, config, pool_cache_config)),
         )
         .await?;
 
@@ -81,7 +80,13 @@ impl Fetcher {
             .balancer_v2
             .iter()
             .map(|config| {
-                balancer::v2::collector(eth, block_stream.clone(), block_retriever.clone(), config)
+                balancer::v2::collector(
+                    eth,
+                    block_stream.clone(),
+                    block_retriever.clone(),
+                    config,
+                    pool_cache_config,
+                )
             })
             .collect();
 
@@ -143,8 +148,9 @@ impl Fetcher {
             .collect();
 
         let block = match block {
-            infra::liquidity::AtBlock::Recent => recent_block_cache::Block::Recent,
-            infra::liquidity::AtBlock::Finalized => recent_block_cache::Block::Finalized,
+            infra::liquidity::AtBlock::Recent { schedule_update } => {
+                recent_block_cache::Block::Recent { schedule_update }
+            }
             infra::liquidity::AtBlock::Latest => {
                 let block_number = self.blocks.borrow().number;
                 recent_block_cache::Block::Number(block_number)
