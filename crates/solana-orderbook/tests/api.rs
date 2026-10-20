@@ -171,6 +171,30 @@ async fn version_reports_the_build() {
     );
 }
 
+/// The path parameters are checked before any database read, in the API's
+/// error shape.
+#[tokio::test]
+async fn solver_competition_rejects_malformed_path_parameters() {
+    let addr = spawn_server().await;
+    for (path, error_type) in [
+        ("/api/v2/solver_competition/abc", "InvalidAuctionId"),
+        ("/api/v2/solver_competition/-1", "InvalidAuctionId"),
+        (
+            "/api/v2/solver_competition/by_tx_hash/not-base58",
+            "InvalidTransactionSignature",
+        ),
+    ] {
+        let response = reqwest::get(format!("http://{addr}{path}")).await.unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{path}"
+        );
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["errorType"], error_type, "{path}");
+    }
+}
+
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
     let api = mock_api().await;

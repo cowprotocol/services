@@ -168,6 +168,102 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/{auction_id}:
+    get:
+      operationId: getSolverCompetitionByAuctionIdV2
+      description: |
+        The competition of one auction: the auction snapshot, every proposed
+        solution ranked, and the settlements. A competition is hidden until
+        the indexer passes the auction's deadline slot, so a winner still
+        settling cannot be front-run.
+      parameters:
+        - name: auction_id
+          in: path
+          required: true
+          description: The auction id the solvers were given.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: |
+            The auction id is not a non-negative integer
+            (`InvalidAuctionId`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: |
+            No competition for this auction id, or its deadline slot has not
+            passed yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/by_tx_hash/{tx_hash}:
+    get:
+      operationId: getSolverCompetitionByTxHashV2
+      description: |
+        The competition one settlement transaction executed. The path keeps
+        the EVM orderbook's name, the parameter is the transaction's
+        signature.
+      parameters:
+        - name: tx_hash
+          in: path
+          required: true
+          description: The signature of a settlement transaction.
+          schema:
+            $ref: "#/components/schemas/Signature"
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: |
+            The parameter is not a base58-encoded signature
+            (`InvalidTransactionSignature`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: |
+            No indexed settlement with this signature, or its auction's
+            deadline slot has not passed yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/latest:
+    get:
+      operationId: getSolverCompetitionLatestV2
+      description: |
+        The most recent competition whose deadline slot the indexer has
+        passed.
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "404":
+          description: No competition has passed its deadline slot yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/orders:
     post:
       operationId: createOrder
@@ -526,6 +622,145 @@ components:
           type: integer
           format: int64
           nullable: true
+    SolverCompetitionResponse:
+      description: |
+        The solutions every solver proposed for one auction. The `auctionId`
+        is the id the solvers were given.
+      type: object
+      required:
+        - auctionId
+        - auctionStartSlot
+        - auctionDeadlineSlot
+        - transactionSignatures
+        - referenceScores
+        - auction
+        - solutions
+      properties:
+        auctionId:
+          type: integer
+          format: int64
+        auctionStartSlot:
+          description: The slot the auction was cut at.
+          type: integer
+          format: int64
+        auctionDeadlineSlot:
+          description: The slot by which the winners had to settle.
+          type: integer
+          format: int64
+        transactionSignatures:
+          description: The transactions that settled the auction.
+          type: array
+          items:
+            $ref: "#/components/schemas/Signature"
+        referenceScores:
+          description: |
+            Per winning solver, keyed by its address: the winners' total
+            score with that solver's solutions removed, the rewards baseline
+            of [CIP-67](https://forum.cow.fi/t/cip-67-moving-from-batch-auction-to-the-fair-combinatorial-auction/2967).
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
+        auction:
+          $ref: "#/components/schemas/CompetitionAuction"
+        solutions:
+          description: Every proposed solution, worst to best, the winner last.
+          type: array
+          items:
+            $ref: "#/components/schemas/SolverSettlement"
+    CompetitionAuction:
+      description: The auction the solutions competed on.
+      type: object
+      required:
+        - orders
+        - prices
+      properties:
+        orders:
+          description: The orders in the auction.
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderUid"
+        prices:
+          description: |
+            The native price of every mint the auction trades, keyed by mint,
+            in lamports per 10^9 base units.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
+    SolverSettlement:
+      description: One proposed solution.
+      type: object
+      required:
+        - solverAddress
+        - score
+        - ranking
+        - orders
+        - isWinner
+        - filteredOut
+      properties:
+        solverAddress:
+          description: The solver that proposed the solution.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        score:
+          description: The solution's score.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        ranking:
+          description: |
+            The solution's position in the competition, 1 the best. Solutions
+            the fairness filter excluded rank after every ranked one.
+          type: integer
+          format: int64
+        referenceScore:
+          description: The solver's reference score, winners only.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+          nullable: true
+        txSignature:
+          description: |
+            The transaction that executed the solution, once the autopilot
+            attributes the landed settlement to it.
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+          nullable: true
+        orders:
+          description: The order executions the solution proposes.
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - sellAmount
+              - buyAmount
+              - sellToken
+              - buyToken
+            properties:
+              id:
+                $ref: "#/components/schemas/OrderUid"
+              sellAmount:
+                description: Sell tokens the solution takes from the order.
+                allOf:
+                  - $ref: "#/components/schemas/TokenAmount"
+              buyAmount:
+                description: Buy tokens the solution pays the order.
+                allOf:
+                  - $ref: "#/components/schemas/TokenAmount"
+              sellToken:
+                description: The mint of the token sold.
+                allOf:
+                  - $ref: "#/components/schemas/Pubkey"
+              buyToken:
+                description: The mint of the token bought.
+                allOf:
+                  - $ref: "#/components/schemas/Pubkey"
+        isWinner:
+          description: Whether the solution won the right to settle.
+          type: boolean
+        filteredOut:
+          description: |
+            Whether the fairness filter of [CIP-67](https://forum.cow.fi/t/cip-67-moving-from-batch-auction-to-the-fair-combinatorial-auction/2967)
+            excluded the solution from the ranking.
+          type: boolean
     QuoteRequest:
       description: |
         A quote request. Fields with no Solana meaning (`signingScheme`,
