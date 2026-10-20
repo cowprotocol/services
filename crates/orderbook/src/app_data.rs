@@ -8,6 +8,10 @@ use {
     moka::sync::Cache,
 };
 
+/// Approximate heap bytes a cache entry takes besides its document: the key
+/// and moka's bookkeeping, measured with moka 0.12.
+const CACHE_ENTRY_OVERHEAD: usize = 280;
+
 /// CoW Protocol API app-data registry.
 pub struct Registry {
     validator: app_data::Validator,
@@ -30,9 +34,16 @@ impl Registry {
             validator,
             database,
             ipfs,
+            // Each entry weighs its approximate heap size in bytes, and moka
+            // keeps the total within `cache_size`. A full cache admits a new
+            // document only if it is read more often than the least recently
+            // used entries it would evict (TinyLFU). An entry heavier than
+            // `cache_size` is never cached.
             cache: Cache::builder()
                 .max_capacity(cache_size)
-                .weigher(|_, document: &String| u32::try_from(document.len()).unwrap_or(u32::MAX))
+                .weigher(|_, document: &String| {
+                    u32::try_from(CACHE_ENTRY_OVERHEAD + document.len()).unwrap_or(u32::MAX)
+                })
                 .build(),
         }
     }

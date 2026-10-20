@@ -37,7 +37,7 @@ const fn default_app_data_size_limit() -> usize {
 }
 
 const fn default_app_data_cache_size() -> u64 {
-    32 * 1024 * 1024
+    32 * 1024 * 1024 // 32 MiB
 }
 
 const fn default_active_order_competition_threshold() -> u32 {
@@ -91,8 +91,8 @@ pub struct Configuration {
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
 
-    /// Maximum total size (in bytes) of the app-data documents cached in
-    /// memory.
+    /// Approximate maximum memory (in bytes) of the in-memory app-data cache,
+    /// per-entry overhead included.
     #[serde(default = "default_app_data_cache_size")]
     pub app_data_cache_size: u64,
 
