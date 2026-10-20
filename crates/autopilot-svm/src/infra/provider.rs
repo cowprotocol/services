@@ -317,7 +317,8 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             return NextAuction::Empty;
         }
         // A cut without prices would rank solutions on incomparable scores,
-        // so a failed lookup skips the cycle instead.
+        // so a failed lookup skips the cycle instead. It counts as an empty
+        // cut: only external sources fail it, and a restart cannot fix them.
         let tokens = orders
             .iter()
             .flat_map(|order| [order.sell_token, order.buy_token])
@@ -327,7 +328,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
             Ok(prices) => prices,
             Err(err) => {
                 tracing::warn!(?err, "native price lookup failed, skipping the cut");
-                return NextAuction::Failed;
+                return NextAuction::Empty;
             }
         };
         let (orders, unpriced) = priced_orders(orders, &prices);
