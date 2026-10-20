@@ -20,9 +20,10 @@ use {
         path::PathBuf,
         sync::{
             Arc,
+            Mutex,
             atomic::{AtomicBool, AtomicU64, Ordering},
         },
-        time::Duration,
+        time::{Duration, Instant},
     },
     tokio::{sync::mpsc, task::JoinHandle},
     yellowstone_grpc_client::GeyserGrpcClient,
@@ -33,6 +34,10 @@ const STREAM_RETRY: Duration = Duration::from_secs(5);
 
 /// Wait between replay passes.
 const REPLAY_INTERVAL: Duration = Duration::from_secs(60);
+
+/// How long after startup the indexer may see no new confirmed slot before
+/// the liveness probe fails. Slots confirm about every 400ms.
+const MAX_SLOT_AGE: Duration = Duration::from_secs(120);
 
 /// The Solana indexer command line arguments.
 #[derive(Debug, Parser)]
@@ -72,7 +77,8 @@ async fn run(config: Config, start_slot: Option<u64>) {
         .expect("database connection");
     // `/startup` reports ready only after the first catch-up.
     let startup = Arc::new(Some(AtomicBool::new(false)));
-    let mut metrics = serve_probes(startup.clone());
+    let latest_chain_slot = Arc::new(AtomicU64::default());
+    let mut metrics = serve_probes(startup.clone(), latest_chain_slot.clone());
     let persistence = Postgres::new(pool);
     // Confirmed commitment, matching the stream subscription.
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
@@ -92,8 +98,6 @@ async fn run(config: Config, start_slot: Option<u64>) {
         solflow_program,
     );
     let mut decoder_task = tokio::spawn(async move { decoder.run().await });
-
-    let latest_chain_slot = Arc::new(AtomicU64::default());
 
     let backfiller = Decoder::rpc_driven(&config, persistence.clone());
     let replayer = Decoder::rpc_driven(&config, persistence.clone());
@@ -161,24 +165,53 @@ async fn run(config: Config, start_slot: Option<u64>) {
 }
 
 /// Serve the metrics and probe routes on the metrics port.
-fn serve_probes(startup: Arc<Option<AtomicBool>>) -> JoinHandle<()> {
+fn serve_probes(
+    startup: Arc<Option<AtomicBool>>,
+    latest_chain_slot: Arc<AtomicU64>,
+) -> JoinHandle<()> {
     serve_metrics(
-        Arc::new(AlwaysAlive),
+        Arc::new(Liveness {
+            startup: startup.clone(),
+            latest_chain_slot,
+            last_seen: Mutex::new(None),
+        }),
         SocketAddr::from(([0, 0, 0, 0], DEFAULT_METRICS_PORT)),
         Default::default(),
         startup,
     )
 }
 
-/// The indexer stops the process on the faults that it cannot repair: a
-/// decoder error, a backfill that fails all its attempts, and a stopped
-/// metrics server. Thus a process that runs is alive.
-struct AlwaysAlive;
+/// Fails the liveness probe when no new confirmed slot arrives for
+/// `MAX_SLOT_AGE` after startup. The indexer stops the process on the faults
+/// it cannot repair, but the stream can stall without an error, and a
+/// restart resubscribes.
+struct Liveness {
+    startup: Arc<Option<AtomicBool>>,
+    latest_chain_slot: Arc<AtomicU64>,
+    /// The latest slot a probe saw, and when a probe first saw it.
+    last_seen: Mutex<Option<(u64, Instant)>>,
+}
 
 #[async_trait::async_trait]
-impl LivenessChecking for AlwaysAlive {
+impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        true
+        // The first backfill can outlast `MAX_SLOT_AGE`, so the clock starts
+        // at startup.
+        let started = (*self.startup)
+            .as_ref()
+            .is_none_or(|flag| flag.load(Ordering::Acquire));
+        if !started {
+            return true;
+        }
+        let slot = self.latest_chain_slot.load(Ordering::Relaxed);
+        let mut last_seen = self.last_seen.lock().unwrap();
+        match *last_seen {
+            Some((seen, at)) if seen == slot => at.elapsed() <= MAX_SLOT_AGE,
+            _ => {
+                *last_seen = Some((slot, Instant::now()));
+                true
+            }
+        }
     }
 }
 
@@ -222,5 +255,31 @@ mod tests {
         // Each reconnect calls it again, and the flag stays set.
         mark_started(&startup);
         assert!(ready());
+    }
+
+    #[tokio::test]
+    async fn liveness_fails_when_no_new_slot_arrives_after_startup() {
+        let startup = Arc::new(Some(AtomicBool::new(false)));
+        let latest_chain_slot = Arc::new(AtomicU64::default());
+        let liveness = Liveness {
+            startup: startup.clone(),
+            latest_chain_slot: latest_chain_slot.clone(),
+            last_seen: Mutex::new(None),
+        };
+        let expire = || {
+            if let Some((_, at)) = liveness.last_seen.lock().unwrap().as_mut() {
+                *at = Instant::now() - MAX_SLOT_AGE - Duration::from_secs(1);
+            }
+        };
+
+        // The first backfill sees no slot.
+        assert!(liveness.is_alive().await);
+        mark_started(&startup);
+        assert!(liveness.is_alive().await);
+        expire();
+        assert!(!liveness.is_alive().await);
+        // A new confirmed slot refreshes the probe.
+        latest_chain_slot.store(1, Ordering::Relaxed);
+        assert!(liveness.is_alive().await);
     }
 }
