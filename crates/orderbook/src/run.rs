@@ -401,8 +401,18 @@ pub async fn run(config: Configuration) {
         OrderSimulator {
             simulator,
             timeout: config.order_simulation_timeout,
+            ignore_legacy_checks_for_lenders: config
+                .order_simulation_ignore_legacy_checks_for_lenders
+                .clone(),
         }
     });
+    assert!(
+        validator_simulator.is_some()
+            || config
+                .order_simulation_ignore_legacy_checks_for_lenders
+                .is_empty(),
+        "order-simulation-ignore-legacy-checks-for-lenders requires simulation-node-url"
+    );
 
     let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
         .shared
