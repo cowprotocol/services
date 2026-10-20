@@ -44,9 +44,8 @@ pub enum Kind {
 /// What a driver quoted.
 #[derive(Clone, Debug)]
 pub struct Quote {
-    /// The driver that answered, by its endpoint.
+    /// The driver's endpoint.
     pub driver: String,
-    /// How long the driver took to answer.
     pub elapsed: Duration,
     pub sell_amount: u64,
     pub buy_amount: u64,
