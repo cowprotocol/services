@@ -627,6 +627,11 @@ async fn spawn_sponsored_server(
     .await
 }
 
+/// The mock blockhash probe answers "expired", and that probe is the first
+/// gate after the account checks, so an order rejected with this kind passed
+/// every check before it without the request reaching the database.
+const PASSED_ACCOUNT_CHECKS: &str = "BlockhashExpired";
+
 /// The mock RPC answers to the blockhash and height probes, and `accounts`
 /// to the order account lookup, a `getMultipleAccounts` response.
 fn sponsored_mocks(blockhash_valid: bool, accounts: serde_json::Value) -> Mocks {
@@ -1139,21 +1144,21 @@ async fn create_order_checks_the_native_buy_wallet() {
         (
             wallet(2_039_280, system),
             buy(1_000_000_000),
-            "BlockhashExpired",
+            PASSED_ACCOUNT_CHECKS,
         ),
         (None, buy(floor - 1), "InvalidNativeBuy"),
         (None, partial(1_000_000_000), "InvalidNativeBuy"),
         (
             wallet(1_000, system),
             buy(floor - 1_000),
-            "BlockhashExpired",
+            PASSED_ACCOUNT_CHECKS,
         ),
         (
             wallet(1_000, system),
             buy(floor - 1_001),
             "InvalidNativeBuy",
         ),
-        (wallet(floor, system), partial(1), "BlockhashExpired"),
+        (wallet(floor, system), partial(1), PASSED_ACCOUNT_CHECKS),
     ]
     .into_iter()
     .enumerate()
@@ -1177,90 +1182,96 @@ async fn create_order_checks_the_native_buy_wallet() {
     }
 }
 
-/// A bundle that does not create the buy token account needs one the
-/// settlement can pay out to as is, or the owner's associated token account
+/// Without the creation step in the bundle, the buy token account must
+/// already receive the buy mint, or be the owner's associated token account
 /// under the buy mint's token program, which the settlement creates when
-/// missing. A custom receiver's missing account needs the creation in the
-/// bundle. A passing order moves on to the blockhash check. The lookup
-/// answers the sell and buy mints, the Clock sysvar, then the buy token
-/// account when the bundle does not create it.
+/// missing. A custom receiver's missing account needs the creation step.
 #[tokio::test]
 async fn create_order_checks_an_uncreated_buy_token_account() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let receiver = solana_sdk::pubkey::Pubkey::new_unique();
-    let owned = sponsored_intent(owner.pubkey(), false);
-    let mint = buy_mint(&owned);
-    let mut received = sponsored_intent(owner.pubkey(), false);
-    received.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+
+    let paid_to_owner = sponsored_intent(owner.pubkey(), false);
+    let mint = buy_mint(&paid_to_owner);
+    let mut paid_to_receiver = sponsored_intent(owner.pubkey(), false);
+    paid_to_receiver.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
         cow_settlement_interface::data::intent::TokenAsset {
             mint,
             token_account: ata(receiver, mint),
         },
     );
-    let classic = solana_testlib::account_json(&mint_account(spl_token_interface::ID));
-    let token_2022 = solana_testlib::account_json(&mint_account(spl_token_2022_interface::ID));
-    let receiving = solana_testlib::token_account_json(&mint, &receiver);
-    let prefunded = solana_testlib::account_json(&solana_sdk::account::Account {
-        lamports: 890_880,
+    let create_receiver_account = destination_creation(funder, receiver, &paid_to_receiver);
+
+    let receiver_token_account = solana_testlib::token_account_json(&mint, &receiver);
+    let lamports_only = solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: solana_sdk::rent::Rent::default().minimum_balance(0),
         owner: solana_system_interface::program::ID,
         ..Default::default()
     });
-    let creation = destination_creation(funder, receiver, &received);
+    // The lookup reads the sell mint, the buy mint, the Clock sysvar, then
+    // the buy token account.
+    let lookup = |token_program, buy_account: Option<serde_json::Value>| {
+        let mint = solana_testlib::account_json(&mint_account(token_program));
+        solana_testlib::multiple_accounts_json([
+            mint.clone(),
+            mint,
+            serde_json::Value::Null,
+            buy_account.unwrap_or(serde_json::Value::Null),
+        ])
+    };
+    let spl_token = spl_token_interface::ID;
+    let token_2022 = spl_token_2022_interface::ID;
 
-    for (index, (intent, preparations, accounts, expected)) in [
+    for (name, intent, preparations, accounts, expected) in [
         (
-            &owned,
+            "owner's missing ATA: the settlement creates it",
+            &paid_to_owner,
             vec![],
-            vec![classic.clone(), classic.clone()],
-            "BlockhashExpired",
+            lookup(spl_token, None),
+            PASSED_ACCOUNT_CHECKS,
         ),
-        // The idempotent create allocates over a lamports-only system account.
         (
-            &owned,
+            "owner's ATA holding only lamports: the idempotent create allocates over it",
+            &paid_to_owner,
             vec![],
-            vec![
-                classic.clone(),
-                classic.clone(),
-                serde_json::Value::Null,
-                prefunded,
-            ],
-            "BlockhashExpired",
+            lookup(spl_token, Some(lamports_only)),
+            PASSED_ACCOUNT_CHECKS,
         ),
-        // The settlement would create the owner's Token-2022 account, not
-        // the SPL Token one the intent names.
         (
-            &owned,
+            "owner's SPL Token ATA on a Token-2022 mint: the settlement would create the \
+             Token-2022 one",
+            &paid_to_owner,
             vec![],
-            vec![token_2022.clone(), token_2022],
+            lookup(token_2022, None),
             "InvalidTransaction",
         ),
         (
-            &received,
+            "receiver's missing ATA without the creation step",
+            &paid_to_receiver,
             vec![],
-            vec![classic.clone(), classic.clone()],
+            lookup(spl_token, None),
             "InvalidTransaction",
         ),
         (
-            &received,
-            vec![creation],
-            vec![classic.clone(), classic.clone()],
-            "BlockhashExpired",
+            "receiver's missing ATA with the creation step",
+            &paid_to_receiver,
+            vec![create_receiver_account],
+            lookup(spl_token, None),
+            PASSED_ACCOUNT_CHECKS,
         ),
         (
-            &received,
+            "receiver's existing token account",
+            &paid_to_receiver,
             vec![],
-            vec![classic.clone(), classic, serde_json::Value::Null, receiving],
-            "BlockhashExpired",
+            lookup(spl_token, Some(receiver_token_account)),
+            PASSED_ACCOUNT_CHECKS,
         ),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    ] {
         let addr = spawn_sponsored_server_with(
             PgPool::connect_lazy("postgresql://").unwrap(),
             funder,
-            sponsored_mocks(false, solana_testlib::multiple_accounts_json(accounts)),
+            sponsored_mocks(false, accounts),
         )
         .await;
         let transaction = creation_tx(funder, &owner, intent, preparations, true);
@@ -1268,7 +1279,7 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
         assert_eq!(
             (status, kind.as_str()),
             (reqwest::StatusCode::BAD_REQUEST, expected),
-            "case {index}"
+            "{name}"
         );
     }
 }
