@@ -5,6 +5,7 @@ use {
         Api,
         api::Sponsoring,
         config,
+        db,
         observe as infra_observe,
         prices::NativePrices,
         quoter::Quoter,
@@ -58,7 +59,7 @@ struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+        db::ping(&self.pool).await.is_ok()
     }
 }
 

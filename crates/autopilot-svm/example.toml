@@ -4,8 +4,8 @@
 metrics-port = 9586
 # Serves /native_price/{mint} to the orderbook.
 api-address = "0.0.0.0:12088"
-# The pod fails the liveness probe when no auction cycle completed in this
-# time.
+# The pod fails the liveness probe when no cut in this time made a new
+# auction, found no order, or waited for a lagging indexer.
 max-auction-age = "5m"
 # Minimum time between auction cycles. Zero runs a cycle every new slot.
 min-auction-interval = "2s"

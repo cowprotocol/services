@@ -110,6 +110,50 @@ async fn healthz_returns_200() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 }
 
+/// Spawn the API server on `pool` and return the status and the body of
+/// `GET /api/v1/ready`.
+async fn get_ready(pool: PgPool) -> (reqwest::StatusCode, String) {
+    let api = Api {
+        pool,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let response = reqwest::Client::new()
+        .get(format!("http://{addr}/api/v1/ready"))
+        .send()
+        .await
+        .unwrap();
+    (response.status(), response.text().await.unwrap())
+}
+
+/// The readiness probe fails when the database does not answer.
+#[tokio::test]
+async fn ready_returns_500_without_a_database() {
+    // The pool tries a refused connection again until the acquire timeout.
+    // A short timeout keeps the test fast.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(Duration::from_millis(100))
+        .connect_lazy("postgresql://127.0.0.1:1/")
+        .unwrap();
+    let (status, body) = get_ready(pool).await;
+    assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        serde_json::json!({"errorType": "InternalServerError", "description": ""})
+    );
+}
+
+/// The readiness probe passes when the database answers.
+#[tokio::test]
+#[ignore = "needs a local database"]
+async fn solana_db_ready_returns_200() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let (status, _) = get_ready(pool).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+}
+
 /// The version route answers like the EVM orderbook's: the build's
 /// `<ref>@<sha>` as plain text.
 #[tokio::test]
