@@ -13,7 +13,7 @@ use {
     futures::{Stream, StreamExt, future, stream},
     rate_limit::RateLimiter,
     solana_sdk::pubkey::Pubkey,
-    std::{collections::HashMap, future::Future, num::NonZeroUsize},
+    std::{cmp::Ordering, collections::HashMap, future::Future, num::NonZeroUsize},
     tracing::Instrument,
 };
 
@@ -100,13 +100,12 @@ impl<Q: Quote + Sync> Solver<Q> {
     fn solution_stream<'a>(&'a self, auction: &'a Auction) -> impl Stream<Item = Solution> + 'a {
         // A group's index is its solution's id, unique within one response.
         stream::iter(self.groups(auction).into_iter().enumerate())
-            .map(|(id, (orders, limit_to_native))| {
+            .map(|(id, orders)| {
                 let span = tracing::info_span!(
                     "solve",
                     auction_id = ?auction.id,
                     group = id,
-                    orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>(),
-                    ?limit_to_native
+                    orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>()
                 );
                 self.solve_group(id as u64, orders, auction)
                     .instrument(span)
@@ -126,9 +125,9 @@ impl<Q: Quote + Sync> Solver<Q> {
     /// the most permissive first by [`limit_to_native`], then the groups
     /// whose sell mint has no price. Ties keep their order of first
     /// appearance, so one auction groups the same on every run. A group
-    /// whose buy mint has no price is left out when the auction prices
-    /// anything: the arbitrator cannot score its solution.
-    fn groups<'a>(&self, auction: &'a Auction) -> Vec<(Vec<&'a auction::Order>, Option<f64>)> {
+    /// whose buy mint has no price is left out: the arbitrator cannot score
+    /// its solution.
+    fn groups<'a>(&self, auction: &'a Auction) -> Vec<Vec<&'a auction::Order>> {
         let mut groups: Vec<Vec<&auction::Order>> = Vec::new();
         let mut group_by_pair = HashMap::new();
         for order in &auction.orders {
@@ -150,14 +149,13 @@ impl<Q: Quote + Sync> Solver<Q> {
             orders.truncate(self.max_batch_size.get());
             orders.truncate(summable_prefix(orders));
         }
-        let priced = auction.has_native_prices();
-        let mut groups: Vec<_> = groups
+        let mut ranked: Vec<_> = groups
             .into_iter()
             .filter_map(|orders| {
                 // Within a group the prices are shared, so its most
                 // permissive order, the first, stands for it.
                 let head = *orders.first()?;
-                if priced && auction.native_price(&head.buy_mint).is_none() {
+                if auction.native_price(&head.buy_mint).is_none() {
                     tracing::debug!(
                         orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>(),
                         "skipping group, its buy mint has no native price"
@@ -168,11 +166,15 @@ impl<Q: Quote + Sync> Solver<Q> {
             })
             .collect();
         // Stable, highest first, `None` last.
-        groups.sort_by(|(_, a), (_, b)| match (a, b) {
-            (Some(a), Some(b)) => b.total_cmp(a),
-            (a, b) => b.is_some().cmp(&a.is_some()),
-        });
-        groups
+        ranked.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(Ordering::Equal));
+        tracing::debug!(
+            ranking = ?ranked
+                .iter()
+                .map(|(orders, limit_to_native)| (orders[0].uid, limit_to_native))
+                .collect::<Vec<_>>(),
+            "groups by limit to native rate"
+        );
+        ranked.into_iter().map(|(orders, _)| orders).collect()
     }
 
     /// Quotes `orders`, orders of one side on one directed pair
@@ -365,18 +367,25 @@ mod tests {
         Pubkey::new_from_array([byte; 32])
     }
 
+    /// Every mint of `orders` priced at the denominator, as by an autopilot
+    /// without price sources.
     fn auction(orders: Vec<auction::Order>, deadline_in: Duration) -> Auction {
+        let prices: Vec<_> = orders
+            .iter()
+            .flat_map(|order| [order.sell_mint, order.buy_mint])
+            .map(|mint| (mint, 1_000_000_000))
+            .collect();
         Auction {
             id: Some(1),
             taker: pubkey(1),
             orders,
             deadline: chrono::Utc::now() + deadline_in,
-            tokens: HashMap::new(),
+            tokens: tokens(&prices),
         }
     }
 
     /// Native prices of 10^9 for the buy mint, `pubkey(2)`, and the given
-    /// ones.
+    /// ones, and none for any other mint.
     fn priced(mut auction: Auction, sell_prices: &[(Pubkey, u64)]) -> Auction {
         let prices = std::iter::once((pubkey(2), 1_000_000_000)).chain(sell_prices.iter().copied());
         auction.tokens = tokens(&prices.collect::<Vec<_>>());
@@ -816,7 +825,8 @@ mod tests {
         assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![4_000, 2_000]);
     }
 
-    /// A buy and a sell on one directed pair are quoted apart.
+    /// A buy and a sell on one directed pair are quoted apart. The sell,
+    /// accepting anything, ranks ahead of the buy's finite limit.
     #[tokio::test]
     async fn keeps_buys_and_sells_of_a_pair_apart() {
         let mut sell = sell(0x02);
@@ -831,8 +841,8 @@ mod tests {
 
         solutions.sort_by_key(|solution| solution.id);
         assert_eq!(ids(&solutions), vec![0, 1]);
-        assert_eq!(trades(&solutions[0]), vec![(OrderUid([1; 32]), 2_000)]);
-        assert_eq!(trades(&solutions[1]), vec![(OrderUid([2; 32]), 1_000)]);
+        assert_eq!(trades(&solutions[0]), vec![(OrderUid([2; 32]), 1_000)]);
+        assert_eq!(trades(&solutions[1]), vec![(OrderUid([1; 32]), 2_000)]);
     }
 
     /// With a batch size of one, only the most permissive sell order of a
@@ -940,10 +950,9 @@ mod tests {
         assert_eq!(trades(&solutions[0]), vec![(OrderUid([4; 32]), 1_000)]);
     }
 
-    /// Without native prices nothing can be ranked or skipped, so every
-    /// group is quoted in auction order.
+    /// Groups that rank the same are quoted in auction order.
     #[tokio::test]
-    async fn quotes_unpriced_groups_in_auction_order() {
+    async fn quotes_tied_groups_in_auction_order() {
         let auction = auction(
             vec![
                 sell_of(0x01, pubkey(0x20), 1_000, 0),
@@ -961,12 +970,7 @@ mod tests {
     fn tokens(prices: &[(Pubkey, u64)]) -> HashMap<Pubkey, auction::Token> {
         prices
             .iter()
-            .map(|&(mint, price)| {
-                let token = auction::Token {
-                    reference_price: Some(price),
-                };
-                (mint, token)
-            })
+            .map(|&(mint, reference_price)| (mint, auction::Token { reference_price }))
             .collect()
     }
 
