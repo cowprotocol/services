@@ -14,6 +14,7 @@ pub enum ChainId {
     Linea = 59144,
     Plasma = 9745,
     Ink = 57073,
+    Robinhood = 4663,
 }
 
 impl ChainId {
@@ -30,6 +31,7 @@ impl ChainId {
             59144 => Ok(Self::Linea),
             9745 => Ok(Self::Plasma),
             57073 => Ok(Self::Ink),
+            4663 => Ok(Self::Robinhood),
             _ => Err(UnsupportedChain),
         }
     }
@@ -48,6 +50,7 @@ impl ChainId {
             ChainId::Linea => "59144",
             ChainId::Plasma => "9745",
             ChainId::Ink => "57073",
+            ChainId::Robinhood => "4663",
         }
     }
 }
@@ -136,6 +139,14 @@ mod tests {
             serde_json::from_value::<ChainId>(9745.into()).unwrap(),
             ChainId::Plasma
         );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(57073.into()).unwrap(),
+            ChainId::Ink
+        );
+        assert_eq!(
+            serde_json::from_value::<ChainId>(4663.into()).unwrap(),
+            ChainId::Robinhood
+        );
     }
 
     #[test]
@@ -176,6 +187,14 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<ChainId>("9745").unwrap(),
             ChainId::Plasma
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("57073").unwrap(),
+            ChainId::Ink
+        );
+        assert_eq!(
+            serde_json::from_str::<ChainId>("4663").unwrap(),
+            ChainId::Robinhood
         );
     }
 
