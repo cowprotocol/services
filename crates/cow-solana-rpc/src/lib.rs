@@ -8,7 +8,7 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::{client_error::ErrorKind, request::MAX_MULTIPLE_ACCOUNTS},
+    solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
     solana_sdk::{
         account::Account,
         hash::Hash,
@@ -22,7 +22,7 @@ use {
 pub use {
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::{
-        client_error::Error,
+        client_error::{Error, ErrorKind},
         request::RpcRequest,
         response::{
             Response,
@@ -321,6 +321,10 @@ impl SolanaRPC {
     /// Each individual RPC request is capped at the client's request timeout,
     /// but the confirm loop has no overall timeout: it polls until the
     /// transaction confirms or its blockhash expires.
+    ///
+    /// An [`ErrorKind::TransactionError`] means the transaction landed at that
+    /// commitment and failed, so it cannot land again. A rejected preflight is
+    /// an [`ErrorKind::RpcError`] instead.
     pub async fn send_and_confirm_transaction(
         &self,
         transaction: &VersionedTransaction,

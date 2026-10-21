@@ -647,7 +647,7 @@ impl Competition {
             }
             Error::DeadlineExceeded
         })?
-        .map_err(|err| Error::FailedToSubmit { err })?;
+        .map_err(submission_error)?;
 
         // TODO: drop this log once protocol fees are implemented.
         for fee in &volume_fees {
@@ -872,10 +872,17 @@ pub(crate) enum Error {
     /// waiting on the lookup.
     #[error("buy token account lookup failed: {0}")]
     BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
+    /// Sending or confirming failed, and the transaction may still land.
     #[error("failed to submit or confirm settlement: {err}")]
     FailedToSubmit {
         #[source]
         err: cow_solana_rpc::Error,
+    },
+    /// The settlement landed and failed on chain, so it cannot land again.
+    #[error("settlement reverted: {err}")]
+    Reverted {
+        #[source]
+        err: TransactionError,
     },
     #[error("failed to submit or confirm an order creation: {0}")]
     FailedToCreate(#[source] cow_solana_rpc::Error),
@@ -990,6 +997,15 @@ fn account_count(transaction: &VersionedTransaction) -> usize {
     message.static_account_keys().len() + loaded
 }
 
+/// The error of a failed send or confirmation. Only a landed failure proves
+/// the transaction cannot land again.
+fn submission_error(err: cow_solana_rpc::Error) -> Error {
+    match err.kind() {
+        cow_solana_rpc::ErrorKind::TransactionError(err) => Error::Reverted { err: err.clone() },
+        _ => Error::FailedToSubmit { err },
+    }
+}
+
 /// Whether the error proves the settlement fails on chain, as opposed to the
 /// driver failing to find out. Only a proof drops a solution at solve time:
 /// an unverified solution costs at most one failed settlement, a wrongly
@@ -1019,6 +1035,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::Rpc(_) => "rpc_failed",
         Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
+        Error::Reverted { .. } => "reverted",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::SimulationTimedOut => "simulation_timed_out",
@@ -1059,5 +1076,21 @@ mod tests {
             }),
         };
         assert_eq!(account_count(&transaction), 9);
+    }
+
+    /// A landed failure reads as a revert, any other error leaves the
+    /// transaction's fate open.
+    #[test]
+    fn only_a_landed_failure_reads_as_reverted() {
+        let landed = cow_solana_rpc::Error::from(TransactionError::InstructionError(
+            5,
+            solana_sdk::instruction::InstructionError::Custom(3005),
+        ));
+        assert!(matches!(submission_error(landed), Error::Reverted { .. }));
+        let transport = cow_solana_rpc::Error::from(std::io::Error::other("connection reset"));
+        assert!(matches!(
+            submission_error(transport),
+            Error::FailedToSubmit { .. }
+        ));
     }
 }
