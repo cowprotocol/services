@@ -1,4 +1,5 @@
-//! DEX-adapter boundary: quote one order into an executable swap.
+//! DEX-adapter boundary: quote one order, then turn the quote into an
+//! executable swap.
 //!
 //! `Dex` dispatches to the configured engine.
 
@@ -38,6 +39,27 @@ pub enum Side {
     Sell,
 }
 
+/// A priced swap that cannot execute yet: the amounts, plus what the backend
+/// needs to build the swap. Requoting takes one request, building the swap a
+/// second one, so a caller that may requote builds only the swap it keeps.
+#[derive(Debug, Clone)]
+pub struct Quote {
+    pub in_amount: u64,
+    pub out_amount: u64,
+    /// Where the swap sends its output, the quoted order's
+    /// `buy_destination`.
+    pub destination: Pubkey,
+    /// The backend's own quote, passed back verbatim to build the swap.
+    pub(crate) raw: serde_json::Value,
+}
+
+impl Quote {
+    /// See [`clearing_rate`].
+    pub fn clearing_rate(&self, side: Side, orders: usize) -> Option<(u64, u64)> {
+        clearing_rate(self.in_amount, self.out_amount, side, orders)
+    }
+}
+
 /// A quoted swap: the executed amounts plus the instructions that perform it,
 /// in execution order (setup, swap, cleanup). The address lookup tables travel
 /// alongside so the driver can build the v0 transaction the instructions
@@ -61,25 +83,34 @@ impl Swap {
         shortfall(order, self.in_amount, self.out_amount)
     }
 
-    /// The `(in, out)` rate at which `orders` orders on `side`, filled
-    /// together by this swap, clear: the rate their clearing prices encode.
-    ///
-    /// The driver derives each trade's counterpart leg from those prices,
-    /// rounded down. For sells that is the payout, so the payouts add up to
-    /// at most the swap's output. For buys it is the amount pulled from the
-    /// user, which could add up to `orders - 1` short of the swap's input:
-    /// raising the input by that much makes the pulls cover it, at a cost
-    /// of under one base unit per order. One order clears at the swap's own
-    /// rate either way. `None` when the raised input overflows.
+    /// See [`clearing_rate`].
     pub fn clearing_rate(&self, side: Side, orders: usize) -> Option<(u64, u64)> {
-        let in_amount = match side {
-            Side::Sell => self.in_amount,
-            Side::Buy => self
-                .in_amount
-                .checked_add(u64::try_from(orders.saturating_sub(1)).ok()?)?,
-        };
-        Some((in_amount, self.out_amount))
+        clearing_rate(self.in_amount, self.out_amount, side, orders)
     }
+}
+
+/// The `(in, out)` rate at which `orders` orders on `side`, filled together
+/// by a swap of `in_amount` for `out_amount`, clear: the rate their clearing
+/// prices encode.
+///
+/// The driver derives each trade's counterpart leg from those prices,
+/// rounded down. For sells that is the payout, so the payouts add up to at
+/// most the swap's output. For buys it is the amount pulled from the user,
+/// which could add up to `orders - 1` short of the swap's input: raising the
+/// input by that much makes the pulls cover it, at a cost of under one base
+/// unit per order. One order clears at the swap's own rate either way.
+/// `None` when the raised input overflows.
+pub fn clearing_rate(
+    in_amount: u64,
+    out_amount: u64,
+    side: Side,
+    orders: usize,
+) -> Option<(u64, u64)> {
+    let in_amount = match side {
+        Side::Sell => in_amount,
+        Side::Buy => in_amount.checked_add(u64::try_from(orders.saturating_sub(1)).ok()?)?,
+    };
+    Some((in_amount, out_amount))
 }
 
 /// Whether trading `in_amount` for `out_amount` fills `order` at or better
@@ -107,15 +138,23 @@ pub enum Dex {
 }
 
 impl Dex {
-    /// Build the swap for `order` that the settlement signer `user` executes.
+    /// Price `order` without building its swap.
+    pub async fn quote(&self, order: &Order) -> Result<Quote, jupiter::Error> {
+        match self {
+            Dex::Jupiter(jupiter) => jupiter.quote(order).await,
+        }
+    }
+
+    /// Build the swap for `quote` that the settlement signer `user` executes,
+    /// at the quote's amounts.
     ///
     /// The route spends its input from the sell-mint ATA of the solver.
     /// Jupiter has no source-account override. The sell funds must already be
     /// in that ATA. The caller must make sure that the ATA exists before the
     /// pull instructions of the swap run.
-    pub async fn swap(&self, order: &Order, user: &Pubkey) -> Result<Swap, jupiter::Error> {
+    pub async fn swap(&self, quote: &Quote, user: &Pubkey) -> Result<Swap, jupiter::Error> {
         match self {
-            Dex::Jupiter(jupiter) => jupiter.swap(order, user).await,
+            Dex::Jupiter(jupiter) => jupiter.swap(quote, user).await,
         }
     }
 }
