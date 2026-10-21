@@ -20,7 +20,13 @@ use {
     },
     itertools::{Either, Itertools},
     moka::sync::Cache,
-    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
+    solana_sdk::{
+        clock::MAX_PROCESSING_AGE,
+        hash::Hash,
+        pubkey::Pubkey,
+        signature::Signature,
+        transaction::VersionedTransaction,
+    },
     std::collections::HashMap,
 };
 pub use {
@@ -85,10 +91,54 @@ impl Solana {
         self.program_id
     }
 
-    /// Fetch the latest confirmed blockhash and the last block height at
-    /// which it stays usable.
-    pub async fn latest_confirmed_blockhash(&self) -> Result<LatestBlockhash, Error> {
-        self.rpc.latest_confirmed_blockhash().await
+    /// A confirmed blockhash that expires at about `deadline_slot`, so a
+    /// transaction signed with it cannot land much past the deadline.
+    ///
+    /// A blockhash stays usable for `MAX_PROCESSING_AGE` blocks above its
+    /// own, so this is the hash of the block that many blocks below the
+    /// height the chain reaches at the deadline if no slot until then is
+    /// skipped. Each skipped slot moves the expiry one slot past the
+    /// deadline. A deadline at least one blockhash lifetime out, or a failed
+    /// search, yields the latest blockhash.
+    pub async fn blockhash_expiring_at(&self, deadline_slot: u64) -> Result<Hash, Error> {
+        let latest = self.rpc.latest_confirmed_blockhash().await?;
+        let lifetime = MAX_PROCESSING_AGE as u64;
+        let remaining = deadline_slot.saturating_sub(latest.slot);
+        if remaining >= lifetime {
+            return Ok(latest.blockhash);
+        }
+        match self.blockhash_below(&latest, lifetime - remaining).await {
+            Ok(Some(blockhash)) => Ok(blockhash),
+            found => {
+                tracing::warn!(
+                    ?found,
+                    deadline_slot,
+                    "no blockhash expiring at the deadline, signing with the latest"
+                );
+                Ok(latest.blockhash)
+            }
+        }
+    }
+
+    /// The hash of the block `age` blocks below the latest one, `None` when
+    /// the search finds no block at that height. Blocks sit at distinct
+    /// slots, so the `2 * age` slots below the latest hold it unless half of
+    /// them are skipped.
+    async fn blockhash_below(
+        &self,
+        latest: &LatestBlockhash,
+        age: u64,
+    ) -> Result<Option<Hash>, Error> {
+        let slots = self
+            .rpc
+            .blocks(latest.slot.saturating_sub(2 * age), latest.slot)
+            .await?;
+        let Some(slot) = block_below(&slots, latest.slot, age) else {
+            return Ok(None);
+        };
+        let (blockhash, height) = self.rpc.block(slot).await?;
+        let expiry = u64::from(height) + age + MAX_PROCESSING_AGE as u64;
+        Ok((expiry == u64::from(latest.last_valid_block_height)).then_some(blockhash))
     }
 
     /// The node's current slot at the client's commitment level.
@@ -195,13 +245,75 @@ impl Solana {
     }
 }
 
+/// The slot of the block `age` blocks below the one at `latest`, given the
+/// ascending slots of the blocks up to `latest`.
+fn block_below(slots: &[u64], latest: u64, age: u64) -> Option<u64> {
+    if slots.last() != Some(&latest) {
+        return None;
+    }
+    slots.iter().rev().nth(usize::try_from(age).ok()?).copied()
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::*,
         cow_solana_rpc::{Mocks, RpcRequest},
+        serde_json::json,
         solana_testlib::{mint_account_json, multiple_accounts_json},
     };
+
+    /// The latest block sits at slot 1000 and height 900, and slot 990 is
+    /// skipped. A deadline 25 slots out takes the block 125 blocks below,
+    /// at height 775 and slot 874, whose blockhash expires at height 925.
+    #[tokio::test]
+    async fn the_settlement_blockhash_expires_at_the_deadline() {
+        let (latest, below) = (Hash::new_unique(), Hash::new_unique());
+        let slots: Vec<u64> = (750..=1000).filter(|slot| *slot != 990).collect();
+        let solana = |block_height: u64| {
+            let mocks = Mocks::from([
+                (
+                    RpcRequest::GetLatestBlockhash,
+                    json!({
+                        "context": {"slot": 1000},
+                        "value": {"blockhash": latest.to_string(), "lastValidBlockHeight": 1050},
+                    }),
+                ),
+                (RpcRequest::GetBlocks, json!(slots)),
+                (
+                    RpcRequest::GetBlock,
+                    json!({
+                        "previousBlockhash": Hash::default().to_string(),
+                        "blockhash": below.to_string(),
+                        "parentSlot": 873,
+                        "blockHeight": block_height,
+                    }),
+                ),
+            ]);
+            Solana::new(
+                SolanaRPC::new_mock_with_mocks(mocks.clone()),
+                SolanaRPC::new_mock_with_mocks(mocks),
+                Pubkey::new_unique(),
+            )
+        };
+
+        assert_eq!(block_below(&slots, 1000, 125), Some(874));
+        assert_eq!(block_below(&slots, 999, 125), None);
+        assert_eq!(
+            solana(775).blockhash_expiring_at(1025).await.unwrap(),
+            below
+        );
+        // A block whose height disagrees with the latest one's.
+        assert_eq!(
+            solana(776).blockhash_expiring_at(1025).await.unwrap(),
+            latest
+        );
+        // A deadline a lifetime out is the latest blockhash's own expiry.
+        assert_eq!(
+            solana(775).blockhash_expiring_at(1150).await.unwrap(),
+            latest
+        );
+    }
 
     /// The mock answers the first fetch only, so the second lookup finds the
     /// mint only if the first one cached it.

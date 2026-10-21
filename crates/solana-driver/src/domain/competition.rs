@@ -467,8 +467,8 @@ impl Competition {
     /// send would destroy the solution without submitting; an abort mid-send
     /// would lose the returned signature. The task terminates on its own:
     /// each RPC request has the client's timeout, and the confirmation loop
-    /// exits at the latest when the blockhash expires (~150 slots), after
-    /// which the transaction can no longer land.
+    /// exits at the latest when the blockhash expires, around the submission
+    /// deadline, after which the transaction can no longer land.
     ///
     /// A successful return means the transaction reached the cluster at the
     /// RPC client's configured commitment level. This makes the Solana
@@ -582,19 +582,15 @@ impl Competition {
             .await?
             .with_max_native_shortfall(self.solver.max_native_shortfall());
 
-        let (estimate, latest) =
+        let (estimate, blockhash) =
             tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
                 self.blockchain
-                    .latest_confirmed_blockhash()
+                    .blockhash_expiring_at(submission_deadline_slot)
                     .await
                     .map_err(Error::Rpc)
             },)?;
         let transaction = resolved
-            .encode(
-                self.solver.signer(),
-                latest.blockhash,
-                estimate.compute_unit_price,
-            )
+            .encode(self.solver.signer(), blockhash, estimate.compute_unit_price)
             .await?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
