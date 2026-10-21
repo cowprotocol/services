@@ -1051,7 +1051,11 @@ fn error_label(error: &Error) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
+        serde_json::{Value, json},
+    };
 
     /// Addresses loaded from lookup tables count toward the account lock
     /// limit like static keys.
@@ -1078,18 +1082,50 @@ mod tests {
         assert_eq!(account_count(&transaction), 9);
     }
 
-    /// A landed failure reads as a revert, any other error leaves the
-    /// transaction's fate open.
-    #[test]
-    fn only_a_landed_failure_reads_as_reverted() {
-        let landed = cow_solana_rpc::Error::from(TransactionError::InstructionError(
+    /// A failed status from the cluster reads as a revert. A blockhash that
+    /// expires with no status leaves the transaction's fate open.
+    #[tokio::test]
+    async fn only_a_landed_failure_reads_as_reverted() {
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::from([1; 64])],
+            message: Default::default(),
+        };
+        let confirm = async |statuses: Value| {
+            let rpc = SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+                (
+                    RpcRequest::SendTransaction,
+                    json!(transaction.signatures[0].to_string()),
+                ),
+                (RpcRequest::GetSignatureStatuses, statuses),
+                (
+                    RpcRequest::IsBlockhashValid,
+                    json!({ "context": { "slot": 1 }, "value": false }),
+                ),
+            ]));
+            submission_error(
+                rpc.send_and_confirm_transaction(&transaction)
+                    .await
+                    .unwrap_err(),
+            )
+        };
+        let err = TransactionError::InstructionError(
             5,
             solana_sdk::instruction::InstructionError::Custom(3005),
-        ));
-        assert!(matches!(submission_error(landed), Error::Reverted { .. }));
-        let transport = cow_solana_rpc::Error::from(std::io::Error::other("connection reset"));
+        );
+        let landed = json!({
+            "context": { "slot": 1 },
+            "value": [{
+                "slot": 1,
+                "confirmations": null,
+                "status": { "Err": err },
+                "err": err,
+                "confirmationStatus": "finalized",
+            }],
+        });
+        assert!(matches!(confirm(landed).await, Error::Reverted { .. }));
+        let expired = json!({ "context": { "slot": 1 }, "value": [null] });
         assert!(matches!(
-            submission_error(transport),
+            confirm(expired).await,
             Error::FailedToSubmit { .. }
         ));
     }
