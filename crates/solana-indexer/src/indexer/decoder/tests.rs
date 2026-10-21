@@ -330,6 +330,42 @@ fn slot_status_update(slot: u64, status: SlotStatus) -> SubscribeUpdate {
 }
 
 /// Wrap a transaction fixture in the proto envelope the ingester reads.
+/// The geyser sender feeding a spawned pipeline, and the ingester and decoder
+/// tasks reading from it.
+type Pipeline = (
+    tokio::sync::mpsc::Sender<Result<SubscribeUpdate, yellowstone_grpc_proto::tonic::Status>>,
+    tokio::task::JoinHandle<Result<(), crate::indexer::ingester::Error>>,
+    tokio::task::JoinHandle<Result<(), crate::types::errors::PersistenceError>>,
+);
+
+/// An ingester and decoder over a live channel, so a test can interleave
+/// sends with database assertions. Dropping the sender ends the ingester with
+/// the stream and the decoder drains behind it, so joining both tasks is the
+/// guarantee that every write has landed.
+fn spawn_pipeline(
+    pool: &sqlx::PgPool,
+    rpc: SolanaRPC,
+    settlement: Pubkey,
+    solflow: Option<Pubkey>,
+) -> Pipeline {
+    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
+    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
+    let (sender, receiver) = tokio::sync::mpsc::channel(16);
+    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
+    let mut decoder = Decoder::new(
+        Postgres::new(pool.clone()),
+        rpc,
+        receiver,
+        settlement,
+        solflow,
+    );
+    (
+        geyser_tx,
+        tokio::spawn(async move { ingester.run().await }),
+        tokio::spawn(async move { decoder.run().await }),
+    )
+}
+
 fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate {
     SubscribeUpdate {
         update_oneof: Some(UpdateOneof::Transaction(SubscribeUpdateTransaction {
@@ -923,22 +959,12 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     let mut healthy = info;
     healthy.signature = signature(11).as_ref().to_vec();
 
-    // A live channel drives the ingester so the test can interleave sends
-    // with database assertions.
-    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
-    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
-
-    let (sender, receiver) = tokio::sync::mpsc::channel(16);
-    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
-    let mut decoder = Decoder::new(
-        Postgres::new(pool.clone()),
+    let (geyser_tx, ingester_task, decoder_task) = spawn_pipeline(
+        &pool,
         mock_rpc_with_signature_statuses(),
-        receiver,
         settlement,
         Some(solflow),
     );
-    let ingester_task = tokio::spawn(async move { ingester.run().await });
-    let decoder_task = tokio::spawn(async move { decoder.run().await });
 
     for update in [
         Ok(tx_update(42, reverted)),
@@ -1220,26 +1246,18 @@ async fn solana_db_stream_persists_v0_and_v1_settlements() {
             });
         }
 
-        let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(4);
-        let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
-        let (sender, receiver) = tokio::sync::mpsc::channel(4);
-        let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
-        let mut decoder = Decoder::new(
-            Postgres::new(pool.clone()),
+        let (geyser_tx, ingester_task, decoder_task) = spawn_pipeline(
+            &pool,
             SolanaRPC::new_mock_with_mocks(Mocks::default()),
-            receiver,
             pubkey(1),
             None,
         );
-        let ingester_task = tokio::spawn(async move { ingester.run().await });
-        let decoder_task = tokio::spawn(async move { decoder.run().await });
         for update in [
             tx_update(43, info),
             slot_status_update(43, SlotStatus::SlotConfirmed),
         ] {
             geyser_tx.send(Ok(update)).await.unwrap();
         }
-        // The stream end stops both tasks once every write has landed.
         drop(geyser_tx);
         assert!(ingester_task.await.unwrap().is_err());
         assert!(decoder_task.await.unwrap().is_ok());
