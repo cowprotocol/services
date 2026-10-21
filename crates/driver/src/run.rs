@@ -1,6 +1,6 @@
 use {
     crate::{
-        domain::{Mempools, competition::order::app_data::AppDataRetriever},
+        domain::{Mempools, TransactionReceiver, competition::order::app_data::AppDataRetriever},
         infra::{
             self,
             Api,
@@ -19,7 +19,7 @@ use {
     http_client::HttpClientFactory,
     shared::arguments::tracing_config,
     simulator::{self, Simulator},
-    std::{net::SocketAddr, time::Duration},
+    std::{net::SocketAddr, sync::Arc, time::Duration},
     tokio::sync::oneshot,
     url::Url,
 };
@@ -110,27 +110,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         liquidity: liquidity(&config, &eth).await,
         liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
         simulator: simulator(&config, simulator_eth, &http_factory),
-        mempools: Mempools::try_new(
-            config
-                .mempools
-                .iter()
-                .map(|mempool| {
-                    crate::infra::mempool::Mempool::new(
-                        mempool.to_owned(),
-                        config
-                            .solvers
-                            .iter()
-                            .flat_map(|config| {
-                                std::iter::once(config.account.clone())
-                                    .chain(config.submission_accounts.iter().cloned())
-                            })
-                            .collect(),
-                    )
-                })
-                .collect(),
-            eth.clone(),
-        )
-        .unwrap(),
+        submitter: submitter(&config, &eth),
         balance_cache: config.balance_cache,
         eth,
         addr: args.addr,
@@ -242,4 +222,21 @@ async fn get_chain_name(rpc: Url) -> &'static str {
         .and_then(|id| Chain::try_from(id).ok())
         .map(|chain| chain.name())
         .unwrap_or("unknown")
+}
+
+fn submitter(config: &infra::Config, eth: &Ethereum) -> Arc<dyn TransactionReceiver> {
+    let accounts: Vec<_> = config
+        .solvers
+        .iter()
+        .flat_map(|config| {
+            std::iter::once(config.account.clone())
+                .chain(config.submission_accounts.iter().cloned())
+        })
+        .collect();
+    let mempools: Vec<_> = config
+        .mempools
+        .iter()
+        .map(|mempool| infra::Mempool::new(mempool.to_owned(), accounts.clone()))
+        .collect();
+    Arc::new(Mempools::new(mempools, eth.clone()))
 }

@@ -16,6 +16,7 @@ use {
         rent::Rent,
         sysvar::clock,
     },
+    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_2022_interface::{
         extension::{
             BaseStateWithExtensions,
@@ -210,12 +211,12 @@ impl MintLookup<'_> {
     }
 }
 
-/// The rent-exempt minimum under `rent`, in lamports, of a new associated
-/// token account of the mint at `mint`, `None` when it is no mint of either
-/// token program. A Token-2022 one carries the immutable owner extension and
-/// the account extensions the mint's own extensions require.
-pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
-    let len = match TokenProgram::try_from(&mint.owner).ok()? {
+/// The data length of a new associated token account of the mint at `mint`,
+/// `None` when it is no mint of either token program. A Token-2022 one
+/// carries the immutable owner extension and the account extensions the
+/// mint's own extensions require.
+pub fn ata_len(mint: &Account) -> Option<usize> {
+    Some(match TokenProgram::try_from(&mint.owner).ok()? {
         // A classic mint is exactly 82 bytes; any other account of the
         // program is a token account or a multisig.
         TokenProgram::SplToken if mint.data.len() == Mint::LEN => TokenAccount::LEN,
@@ -224,8 +225,13 @@ pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
             let mint = StateWithExtensions::<Mint>::unpack(&mint.data).ok()?;
             token_2022_ata_len(&mint.get_extension_types().ok()?)
         }
-    };
-    Some(rent.minimum_balance(len))
+    })
+}
+
+/// The rent-exempt minimum under `rent`, in lamports, of a new associated
+/// token account of the mint at `mint`, see [`ata_len`].
+pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
+    Some(rent.minimum_balance(ata_len(mint)?))
 }
 
 /// The [`ata_rent`] of the largest associated token account a mint passing
@@ -257,6 +263,33 @@ pub fn receivable_token_account(account: &Account, mint: &Pubkey) -> bool {
                 && !memo_required(&state)
                 && !refuses_non_confidential_credits(&state)
         })
+}
+
+/// Whether the settlement's payout of `mint` lands in the token account at
+/// `account`, read from the chain as `found`: the account receives the mint,
+/// or the settlement creates it, which it does only at `owner`'s associated
+/// token address under `program` while the address is missing or holds a
+/// lamports-only system account, which the idempotent create allocates over.
+/// `program` is the token program the settlement moves the mint through,
+/// `None` when it has none.
+pub fn receivable_or_creatable(
+    found: Option<&Account>,
+    account: &Pubkey,
+    mint: &Pubkey,
+    owner: &Pubkey,
+    program: Option<TokenProgram>,
+) -> bool {
+    match found {
+        Some(found)
+            if found.owner != solana_system_interface::program::ID || !found.data.is_empty() =>
+        {
+            receivable_token_account(found, mint)
+        }
+        _ => program.is_some_and(|program| {
+            *account
+                == get_associated_token_address_with_program_id(owner, mint, &program.address())
+        }),
+    }
 }
 
 /// Whether the account's confidential transfer extension refuses credits to
@@ -651,5 +684,44 @@ mod tests {
         assert!(!receivable_token_account(&with_memos(true), &mint));
         assert!(receivable_token_account(&with_confidential(true), &mint));
         assert!(!receivable_token_account(&with_confidential(false), &mint));
+    }
+
+    /// The payout lands in an account receiving the mint wherever it sits,
+    /// and in the owner's associated token account under the mint's program
+    /// when that is missing or holds only lamports. It does not land in a
+    /// missing account elsewhere, in a system account with data, or at the
+    /// associated address under another program or without one.
+    #[test]
+    fn pays_out_to_receiving_or_creatable_accounts() {
+        let (mint, owner, elsewhere) = (
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        );
+        let ata = get_associated_token_address_with_program_id(
+            &owner,
+            &mint,
+            &spl_token_2022_interface::ID,
+        );
+        let receiving = token_2022_account(&mint, &[], |_| {});
+        let system = solana_system_interface::program::ID;
+        let lamports_only = Account::new(890_880, 0, &system);
+        let with_data = Account::new(890_880, 1, &system);
+        let program = Some(TokenProgram::Token2022);
+        let lands =
+            |found, account| receivable_or_creatable(found, account, &mint, &owner, program);
+        assert!(lands(Some(&receiving), &elsewhere));
+        assert!(lands(None, &ata));
+        assert!(lands(Some(&lamports_only), &ata));
+        assert!(!lands(None, &elsewhere));
+        assert!(!lands(Some(&with_data), &ata));
+        assert!(!receivable_or_creatable(
+            None,
+            &ata,
+            &mint,
+            &owner,
+            Some(TokenProgram::SplToken)
+        ));
+        assert!(!receivable_or_creatable(None, &ata, &mint, &owner, None));
     }
 }
