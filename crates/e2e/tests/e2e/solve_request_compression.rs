@@ -39,7 +39,7 @@ async fn local_node_driver_without_opt_in_receives_plain_solve_requests() {
 async fn opted_in_driver_receives_compressed_solve_requests(web3: Web3) {
     let received = settle_order_through_proxy(web3, true).await;
 
-    assert!(received.brotli() > 0, "{received:?}");
+    assert!(received.compressed() > 0, "{received:?}");
     assert_eq!(received.plain(), 0, "{received:?}");
 }
 
@@ -47,7 +47,7 @@ async fn driver_without_opt_in_receives_plain_solve_requests(web3: Web3) {
     let received = settle_order_through_proxy(web3, false).await;
 
     assert!(received.plain() > 0, "{received:?}");
-    assert_eq!(received.brotli(), 0, "{received:?}");
+    assert_eq!(received.compressed(), 0, "{received:?}");
 }
 
 /// Counts the `/solve` requests the driver received, by encoding. Only bodies
@@ -56,7 +56,7 @@ async fn driver_without_opt_in_receives_plain_solve_requests(web3: Web3) {
 #[derive(Debug, Default)]
 struct Received {
     plain: AtomicUsize,
-    brotli: AtomicUsize,
+    compressed: AtomicUsize,
     undecodable: AtomicUsize,
 }
 
@@ -66,9 +66,9 @@ impl Received {
         self.plain.load(Ordering::Acquire)
     }
 
-    fn brotli(&self) -> usize {
+    fn compressed(&self) -> usize {
         self.assert_all_decodable();
-        self.brotli.load(Ordering::Acquire)
+        self.compressed.load(Ordering::Acquire)
     }
 
     fn assert_all_decodable(&self) {
@@ -83,7 +83,7 @@ impl Received {
                 let json = brotli::BrotliDecompress(&mut &*body, &mut decompressed)
                     .ok()
                     .map(|_| decompressed);
-                (&self.brotli, json)
+                (&self.compressed, json)
             }
             Some(_) => (&self.undecodable, None),
         };
@@ -101,7 +101,7 @@ impl Received {
 
 /// Settles a single order with the autopilot talking to the driver through a
 /// proxy that records every `/solve` request, and returns what it recorded.
-async fn settle_order_through_proxy(web3: Web3, supports_brotli: bool) -> Arc<Received> {
+async fn settle_order_through_proxy(web3: Web3, supports_compression: bool) -> Arc<Received> {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -140,7 +140,7 @@ async fn settle_order_through_proxy(web3: Web3, supports_brotli: bool) -> Arc<Re
     let config = Configuration::test_no_drivers();
     let config = Configuration {
         drivers: vec![Solver {
-            supports_brotli,
+            supports_compression,
             ..Solver::new(
                 "test_solver".to_string(),
                 "http://localhost:11089/test_solver".parse().unwrap(),

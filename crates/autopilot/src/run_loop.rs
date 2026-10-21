@@ -588,7 +588,7 @@ impl RunLoop {
         let (request, delta_request) = tokio::join!(
             async {
                 let request = solve::Request::new(auction, &trusted_tokens, deadline).await;
-                let compress = full_body_needs_brotli(self.extensions());
+                let compress = full_body_needs_compression(self.extensions());
                 solve::EncodedRequests::new(request, compress).await
             },
             async {
@@ -620,7 +620,7 @@ impl RunLoop {
             } else {
                 &request
             };
-            let solve_request = requests.for_driver(driver.extensions.brotli);
+            let solve_request = requests.for_driver(driver.extensions.compression);
             self.solve(driver, solve_request)
         }))
         .await
@@ -678,7 +678,7 @@ impl RunLoop {
             .unwrap()
             .advance(Instant::now(), auction)?;
         let request = solve::Request::new_delta(&previous, auction, trusted_tokens, deadline).await;
-        let compress = delta_body_needs_brotli(self.extensions());
+        let compress = delta_body_needs_compression(self.extensions());
         Some(solve::EncodedRequests::new(request, compress).await)
     }
 
@@ -931,7 +931,8 @@ struct Metrics {
     /// to the drivers that opted into incremental auctions. Both are equal on
     /// checkpoint auctions and while no driver has opted in. The `encoding`
     /// label is `uncompressed` for the plain JSON and `br` for its brotli
-    /// compressed copy, which only exists while some driver accepts brotli.
+    /// compressed copy, which only exists while some driver accepts
+    /// compression.
     #[metric(
         labels("kind", "encoding"),
         buckets(
@@ -1094,20 +1095,21 @@ impl Metrics {
     }
 }
 
-/// Whether the full `/solve` body needs a brotli copy. Delta drivers receive
-/// the full body on checkpoint auctions, so any driver accepting brotli counts.
-fn full_body_needs_brotli<'a>(
+/// Whether the full `/solve` body needs a compressed copy. Delta drivers
+/// receive the full body on checkpoint auctions, so any driver accepting
+/// compression counts.
+fn full_body_needs_compression<'a>(
     mut drivers: impl Iterator<Item = &'a infra::SupportedExtensions>,
 ) -> bool {
-    drivers.any(|driver| driver.brotli)
+    drivers.any(|driver| driver.compression)
 }
 
-/// Whether the delta `/solve` body needs a brotli copy, i.e. some driver
-/// receiving it accepts brotli.
-fn delta_body_needs_brotli<'a>(
+/// Whether the delta `/solve` body needs a compressed copy, i.e. some driver
+/// receiving it accepts compression.
+fn delta_body_needs_compression<'a>(
     mut drivers: impl Iterator<Item = &'a infra::SupportedExtensions>,
 ) -> bool {
-    drivers.any(|driver| driver.auction_deltas && driver.brotli)
+    drivers.any(|driver| driver.auction_deltas && driver.compression)
 }
 
 /// Seconds from `from` to `to`, negative when `to` is the earlier instant.
@@ -1213,33 +1215,33 @@ mod tests {
         }
     }
 
-    fn extensions(auction_deltas: bool, brotli: bool) -> infra::SupportedExtensions {
+    fn extensions(auction_deltas: bool, compression: bool) -> infra::SupportedExtensions {
         infra::SupportedExtensions {
             auction_deltas,
-            brotli,
+            compression,
         }
     }
 
     #[test]
-    fn no_brotli_copy_without_opted_in_drivers() {
+    fn no_compressed_copy_without_opted_in_drivers() {
         let drivers = [extensions(false, false), extensions(true, false)];
-        assert!(!full_body_needs_brotli(drivers.iter()));
-        assert!(!delta_body_needs_brotli(drivers.iter()));
+        assert!(!full_body_needs_compression(drivers.iter()));
+        assert!(!delta_body_needs_compression(drivers.iter()));
     }
 
     #[test]
-    fn full_body_compressed_for_full_auction_brotli_driver() {
+    fn only_full_body_compressed_for_full_auction_driver() {
         let drivers = [extensions(false, true), extensions(true, false)];
-        assert!(full_body_needs_brotli(drivers.iter()));
-        assert!(!delta_body_needs_brotli(drivers.iter()));
+        assert!(full_body_needs_compression(drivers.iter()));
+        assert!(!delta_body_needs_compression(drivers.iter()));
     }
 
     #[test]
-    fn delta_brotli_driver_needs_both_bodies_compressed() {
+    fn delta_compression_driver_needs_both_bodies_compressed() {
         // The delta driver receives the full body on checkpoint auctions.
         let drivers = [extensions(true, true), extensions(false, false)];
-        assert!(full_body_needs_brotli(drivers.iter()));
-        assert!(delta_body_needs_brotli(drivers.iter()));
+        assert!(full_body_needs_compression(drivers.iter()));
+        assert!(delta_body_needs_compression(drivers.iter()));
     }
 
     #[test]

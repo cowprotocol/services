@@ -92,7 +92,7 @@ impl Request {
         }
     }
 
-    /// Returns a brotli compressed copy of this request, or `None` if
+    /// Returns a compressed copy of this request, or `None` if
     /// compression failed.
     async fn compressed(&self) -> Option<Self> {
         let _timer =
@@ -127,8 +127,8 @@ impl Request {
 #[derive(Clone, Debug)]
 pub struct EncodedRequests {
     plain: Request,
-    /// Brotli compressed copy of `plain`. Only built if some driver accepts
-    /// it and compression succeeded.
+    /// Compressed copy of `plain`. Only built if some driver accepts
+    /// compression and compression succeeded.
     compressed: Option<Request>,
 }
 
@@ -143,9 +143,9 @@ impl EncodedRequests {
     }
 
     /// The request to send to a driver: compressed if the driver accepts
-    /// brotli and a compressed copy exists, plain JSON otherwise.
-    pub fn for_driver(&self, accepts_brotli: bool) -> Request {
-        accepts_brotli
+    /// compression and a compressed copy exists, plain JSON otherwise.
+    pub fn for_driver(&self, accepts_compression: bool) -> Request {
+        accepts_compression
             .then_some(self.compressed.as_ref())
             .flatten()
             .unwrap_or(&self.plain)

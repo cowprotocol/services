@@ -185,11 +185,14 @@ impl RunLoop {
             Utc::now() + self.solve_deadline,
         )
         .await;
-        let compress = self.drivers.iter().any(|driver| driver.extensions.brotli);
+        let compress = self
+            .drivers
+            .iter()
+            .any(|driver| driver.extensions.compression);
         let requests = solve::EncodedRequests::new(request, compress).await;
 
         futures::future::join_all(self.drivers.iter().map(|driver| {
-            let request = requests.for_driver(driver.extensions.brotli);
+            let request = requests.for_driver(driver.extensions.compression);
             self.participate(Arc::clone(driver), request, auction.id)
         }))
         .await

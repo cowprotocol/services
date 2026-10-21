@@ -32,15 +32,15 @@ pub struct SupportedExtensions {
     /// Between checkpoints, receive only the difference to the previously
     /// sent auction instead of the full auction.
     pub auction_deltas: bool,
-    /// Receive brotli-compressed request bodies.
-    pub brotli: bool,
+    /// Receive compressed request bodies.
+    pub compression: bool,
 }
 
 impl From<&Solver> for SupportedExtensions {
     fn from(driver: &Solver) -> Self {
         Self {
             auction_deltas: driver.supports_auction_deltas,
-            brotli: driver.supports_brotli,
+            compression: driver.supports_compression,
         }
     }
 }
@@ -252,15 +252,15 @@ mod tests {
     fn extensions_are_taken_from_the_driver_config() {
         let extensions = SupportedExtensions::from(&Solver::test("solver", Address::ZERO));
         assert!(!extensions.auction_deltas);
-        assert!(!extensions.brotli);
+        assert!(!extensions.compression);
 
         let extensions = SupportedExtensions::from(&Solver {
             supports_auction_deltas: true,
-            supports_brotli: true,
+            supports_compression: true,
             ..Solver::test("solver", Address::ZERO)
         });
         assert!(extensions.auction_deltas);
-        assert!(extensions.brotli);
+        assert!(extensions.compression);
     }
 
     /// The `content-encoding` header and raw body of a `/solve` request.
@@ -302,9 +302,9 @@ mod tests {
         solve::EncodedRequests::new(plain, true).await
     }
 
-    /// Sends a `/solve` request to a driver that does or doesn't accept brotli
-    /// and returns what the driver received.
-    async fn send(brotli: bool) -> (Option<String>, Bytes) {
+    /// Sends a `/solve` request to a driver that does or doesn't accept
+    /// compression and returns what the driver received.
+    async fn send(compression: bool) -> (Option<String>, Bytes) {
         let (url, received) = mock_driver().await;
         let driver = Driver::try_new(
             url,
@@ -312,19 +312,21 @@ mod tests {
             Account::Address(Address::ZERO),
             SupportedExtensions {
                 auction_deltas: false,
-                brotli,
+                compression,
             },
         )
         .await
         .unwrap();
 
-        let request = solve_requests().await.for_driver(driver.extensions.brotli);
+        let request = solve_requests()
+            .await
+            .for_driver(driver.extensions.compression);
         driver.solve(request).await.unwrap();
         received.lock().unwrap().take().unwrap()
     }
 
     #[tokio::test]
-    async fn opted_in_driver_receives_brotli_body() {
+    async fn opted_in_driver_receives_compressed_body() {
         let (encoding, body) = send(true).await;
 
         assert_eq!(encoding.as_deref(), Some("br"));

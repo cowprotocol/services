@@ -23,10 +23,11 @@ pub struct Solver {
     /// `auction-delta-checkpoint-interval`.
     #[serde(default)]
     pub supports_auction_deltas: bool,
-    /// Whether the driver accepts brotli-compressed (`content-encoding: br`)
-    /// `/solve` request bodies. Drivers that don't opt in receive plain JSON.
+    /// Whether the driver accepts compressed `/solve` request bodies
+    /// (currently brotli, `content-encoding: br`). Drivers that don't opt in
+    /// receive plain JSON.
     #[serde(default)]
-    pub supports_brotli: bool,
+    pub supports_compression: bool,
 }
 
 impl Solver {
@@ -36,7 +37,7 @@ impl Solver {
             url,
             submission_account: account,
             supports_auction_deltas: false,
-            supports_brotli: false,
+            supports_compression: false,
         }
     }
 }
@@ -85,7 +86,7 @@ impl Solver {
             url: format!("http://localhost:11088/{name}").parse().unwrap(),
             submission_account: Account::Address(address),
             supports_auction_deltas: false,
-            supports_brotli: false,
+            supports_compression: false,
         }
     }
 }
@@ -144,18 +145,18 @@ mod test {
     }
 
     #[test]
-    fn brotli_is_opt_in() {
+    fn compression_is_opt_in() {
         let toml = r#"
         name = "name1"
         url = "http://localhost:8080"
         address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
         "#;
         let driver = toml::from_str::<Solver>(toml).unwrap();
-        assert!(!driver.supports_brotli);
+        assert!(!driver.supports_compression);
 
-        let toml = format!("{toml}\nsupports-brotli = true");
+        let toml = format!("{toml}\nsupports-compression = true");
         let driver = toml::from_str::<Solver>(&toml).unwrap();
-        assert!(driver.supports_brotli);
+        assert!(driver.supports_compression);
     }
 
     #[test]
