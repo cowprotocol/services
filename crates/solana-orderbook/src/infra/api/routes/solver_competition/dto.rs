@@ -18,7 +18,7 @@ pub struct Competition {
     pub auction_id: i64,
     /// The slot the auction was cut at.
     pub auction_start_slot: i64,
-    /// The slot by which the winners had to settle.
+    /// The slot by which the winners had to submit their settlements.
     pub auction_deadline_slot: i64,
     /// The transactions that settled the auction, attributed to a solution.
     #[serde_as(as = "Vec<DisplayFromStr>")]

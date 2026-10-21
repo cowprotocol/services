@@ -388,7 +388,7 @@ pub struct Competition {
 
 /// The competition of one auction. `None` for an unknown auction, and for
 /// one whose deadline slot the indexer has not passed: its winners may still
-/// be settling, and their solutions would hand a front-runner the trades.
+/// submit their settlements, and the solutions would show what they trade.
 pub async fn find_competition_by_id(pool: &PgPool, auction_id: i64) -> Result<Option<Competition>> {
     read_competition(pool, auction_id, true).await
 }

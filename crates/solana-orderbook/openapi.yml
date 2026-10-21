@@ -174,8 +174,9 @@ paths:
       description: |
         The competition of one auction: the auction snapshot, every proposed
         solution ranked, and the settlements. A competition is hidden until
-        the indexer passes the auction's deadline slot, so a winner still
-        settling cannot be front-run.
+        the indexer passes the auction's deadline slot, the last slot in
+        which the winners may submit their settlements. A transaction they
+        sent before it may still land afterwards.
       parameters:
         - name: auction_id
           in: path
@@ -644,7 +645,7 @@ components:
           type: integer
           format: int64
         auctionDeadlineSlot:
-          description: The slot by which the winners had to settle.
+          description: The slot by which the winners had to submit their settlements.
           type: integer
           format: int64
         transactionSignatures:
