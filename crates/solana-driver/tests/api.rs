@@ -699,8 +699,8 @@ async fn settle_rejects_a_passed_submission_deadline() {
 }
 
 /// The RPC reports a 10_000 micro-lamport fee and the engine sends no compute
-/// unit estimate, so the fee is computed at the 1.4M unit ceiling: 14_000
-/// lamports, one over the budget.
+/// unit estimate, so the fee is computed at the runtime's default for the two
+/// settlement instructions, 400k units: 4_000 lamports, one over the budget.
 #[tokio::test]
 async fn settle_refuses_a_priority_fee_over_budget() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
@@ -712,7 +712,7 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     );
     let api = Api {
         priority_fee: PriorityFeePolicy {
-            max_priority_fee_lamports: 13_999,
+            max_priority_fee_lamports: 3_999,
             ..priority_fee()
         },
         ..api_with(vec![solver], mocks).await
@@ -742,7 +742,7 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 
 /// Same fee and budget as above, but the `/solve` simulation reports the
 /// settlement's compute units, so the fee is priced at twice those units, not
-/// at the 1.4M ceiling, fits the budget, and the settle reaches the send.
+/// at the runtime's default, fits the budget, and the settle reaches the send.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
@@ -768,7 +768,7 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     );
     let api = Api {
         priority_fee: PriorityFeePolicy {
-            max_priority_fee_lamports: 13_999,
+            max_priority_fee_lamports: 3_999,
             ..priority_fee()
         },
         ..api_with(vec![solver], mocks).await
