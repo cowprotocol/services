@@ -1,4 +1,5 @@
-//! Solve loop: one batched solution per side and directed mint pair.
+//! Solve loop: the orders of each side and directed mint pair, quoted in
+//! batches.
 
 use {
     crate::{
@@ -69,19 +70,21 @@ impl<Q: Aggregator + Sync> Solver<Q> {
         }
     }
 
-    /// One solution per side and directed mint pair, quoted before the
-    /// deadline.
+    /// The solutions quoted before the deadline, one per batch of orders of
+    /// one side on one directed mint pair.
     ///
     /// The autopilot's arbitrator picks at most one winner per directed
-    /// pair, so the orders of a pair compete for one slot and are quoted as
-    /// one batch: the `max_batch_size` most permissive orders of one side, as
-    /// one swap over their total. If the swap's rate undercuts an order, the
-    /// least permissive one is dropped and the rest requoted, so a batch
-    /// clears, trims down to a single order, or yields nothing. Buys (when
-    /// disabled), orders the aggregator cannot route, and the orders of a
-    /// pair beyond `max_batch_size` yield no candidate; the rest of the
-    /// auction still proceeds. At most `concurrent_requests` quotes run at a
-    /// time, pausing after a rate-limited response.
+    /// pair, so a batch is how more than one of a pair's orders fill in one
+    /// auction. The orders of a side are quoted most permissive first, in
+    /// batches of up to `max_batch_size`, each as one swap over its total.
+    /// If the swap's rate undercuts an order, the least permissive one is
+    /// dropped and the rest requoted, so a batch clears, trims down to a
+    /// single order, or yields nothing. Every batch that clears is a
+    /// solution; which of a pair's batches wins is the arbitrator's call.
+    /// Buys (when disabled) and orders the aggregator cannot route yield no
+    /// candidate; the rest of the auction still proceeds. At most
+    /// `concurrent_requests` quotes run at a time, pausing after a
+    /// rate-limited response.
     ///
     /// TODO(BE-308): retry partially fillable orders at smaller amounts when
     /// the swap undercuts the limit, like the EVM engine's `Fills`. The
@@ -105,32 +108,34 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     }
 
     fn solution_stream<'a>(&'a self, auction: &'a Auction) -> impl Stream<Item = Solution> + 'a {
-        // A group's index is its solution's id, unique within one response.
-        stream::iter(self.groups(auction).into_iter().enumerate())
+        // A batch's index is its solution's id, unique within one response.
+        stream::iter(self.batches(auction).into_iter().enumerate())
             .map(|(id, orders)| {
                 let span = tracing::info_span!(
                     "solve",
                     auction_id = ?auction.id,
-                    group = id,
+                    batch = id,
                     orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>()
                 );
-                self.solve_group(id as u64, orders, auction)
+                self.solve_batch(id as u64, orders, auction)
                     .instrument(span)
             })
             .buffer_unordered(self.concurrent_requests.get())
             .filter_map(future::ready)
     }
 
-    /// The orders to quote as one batch, per side, directed mint pair and
-    /// swap destination, most permissive first and cut to `max_batch_size`
-    /// (fewer when their total would overflow). Groups keep first-appearance
-    /// order so one auction groups the same on every run; sells and buys stay
-    /// apart since one swap fixes either its input or its output.
-    fn groups<'a>(&self, auction: &'a Auction) -> Vec<Vec<&'a auction::Order>> {
-        let mut groups: Vec<Vec<&auction::Order>> = Vec::new();
-        let mut group_by_pair = HashMap::new();
+    /// The batches to quote: the orders of each side, directed mint pair and
+    /// swap destination, most permissive first, in runs of up to
+    /// `max_batch_size` whose quoted total fits a `u64`. Every pair's first
+    /// batch comes before any pair's second, so the deadline cuts the least
+    /// permissive orders first; pairs keep first-appearance order so one
+    /// auction batches the same on every run. Sells and buys stay apart
+    /// since one swap fixes either its input or its output.
+    fn batches<'a>(&self, auction: &'a Auction) -> Vec<Vec<&'a auction::Order>> {
+        let mut pairs: Vec<Vec<&auction::Order>> = Vec::new();
+        let mut pair_index = HashMap::new();
         for order in &auction.orders {
-            let group = *group_by_pair
+            let pair = *pair_index
                 .entry((
                     order.side,
                     order.sell_mint,
@@ -138,22 +143,31 @@ impl<Q: Aggregator + Sync> Solver<Q> {
                     order.buy_destination,
                 ))
                 .or_insert_with(|| {
-                    groups.push(Vec::new());
-                    groups.len() - 1
+                    pairs.push(Vec::new());
+                    pairs.len() - 1
                 });
-            groups[group].push(order);
+            pairs[pair].push(order);
         }
-        for orders in &mut groups {
-            orders.sort_by(|a, b| by_permissiveness(a, b));
-            orders.truncate(self.max_batch_size.get());
-            orders.truncate(summable_prefix(orders));
-        }
-        groups
+        let per_pair: Vec<Vec<Vec<&auction::Order>>> = pairs
+            .into_iter()
+            .map(|mut orders| {
+                orders.sort_by(|a, b| by_permissiveness(a, b));
+                split(&orders, self.max_batch_size)
+            })
+            .collect();
+        let ranks = per_pair.iter().map(Vec::len).max().unwrap_or(0);
+        (0..ranks)
+            .flat_map(|rank| {
+                per_pair
+                    .iter()
+                    .filter_map(move |batches| batches.get(rank).cloned())
+            })
+            .collect()
     }
 
-    /// The solution for one group, see [`Solver::solve`]. Rounds only price
+    /// The solution for one batch, see [`Solver::solve`]. Rounds only price
     /// the batch; the swap is built once it clears.
-    async fn solve_group(
+    async fn solve_batch(
         &self,
         id: u64,
         mut orders: Vec<&auction::Order>,
@@ -255,22 +269,32 @@ fn by_permissiveness(a: &auction::Order, b: &auction::Order) -> std::cmp::Orderi
         .then_with(|| a.uid.0.cmp(&b.uid.0))
 }
 
-/// How many leading `orders`, all of one side, quote an amount whose total
-/// fits in a `u64`, and so can be quoted as one swap.
-fn summable_prefix(orders: &[&auction::Order]) -> usize {
+/// Splits `orders`, all of one side and sorted most permissive first, into
+/// runs of up to `max_batch_size` whose quoted amounts sum within a `u64`,
+/// so each run can be quoted as one swap.
+fn split<'a>(
+    orders: &[&'a auction::Order],
+    max_batch_size: NonZeroUsize,
+) -> Vec<Vec<&'a auction::Order>> {
+    let mut batches: Vec<Vec<&'a auction::Order>> = Vec::new();
     let mut total: u64 = 0;
-    orders
-        .iter()
-        .take_while(
-            |order| match total.checked_add(order.to_dex_order().amount()) {
-                Some(sum) => {
-                    total = sum;
-                    true
-                }
-                None => false,
-            },
-        )
-        .count()
+    for &order in orders {
+        let amount = order.to_dex_order().amount();
+        let open = batches
+            .last_mut()
+            .filter(|batch| batch.len() < max_batch_size.get());
+        match open.zip(total.checked_add(amount)) {
+            Some((batch, sum)) => {
+                batch.push(order);
+                total = sum;
+            }
+            None => {
+                batches.push(vec![order]);
+                total = amount;
+            }
+        }
+    }
+    batches
 }
 
 /// The swap to quote for `orders`, orders of one side on one pair: their
@@ -595,11 +619,11 @@ mod tests {
         order
     }
 
-    /// Four sells on one pair, limits 1.5, 0, 1.8 and 1.0: the batch takes
-    /// the three most permissive, most permissive first, in one quote over
-    /// their total.
+    /// Four sells on one pair, limits 1.5, 0, 1.8 and 1.0, in batches of
+    /// three: the three most permissive as one quote over their total, most
+    /// permissive first, then the fourth on its own.
     #[tokio::test]
-    async fn batches_the_most_permissive_sell_orders_of_a_pair() {
+    async fn batches_a_pair_most_permissive_first() {
         let auction = auction(
             vec![
                 sell_with_limit(0x01, pubkey(0x10), 1_500),
@@ -609,11 +633,12 @@ mod tests {
             ],
             Duration::from_secs(60),
         );
-        let solver = batching(8, 3);
+        let solver = batching(1, 3);
 
-        let solutions = solver.solve(&auction).await;
+        let mut solutions = solver.solve(&auction).await;
 
-        assert_eq!(solutions.len(), 1);
+        solutions.sort_by_key(|solution| solution.id);
+        assert_eq!(ids(&solutions), vec![0, 1]);
         let batch = &solutions[0];
         assert_eq!(
             trades(batch),
@@ -625,7 +650,37 @@ mod tests {
         );
         assert_eq!(batch.prices[&pubkey(0x10)], 6_000);
         assert_eq!(batch.prices[&pubkey(2)], 3_000);
-        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![3_000]);
+        assert_eq!(trades(&solutions[1]), vec![(OrderUid([3; 32]), 1_000)]);
+        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![3_000, 1_000]);
+    }
+
+    /// Three sells on one pair and one on another, in batches of two: the
+    /// second pair's only batch is quoted before the first pair's second.
+    #[tokio::test]
+    async fn quotes_every_pairs_first_batch_before_any_second() {
+        let mut other_pair = order(0x04, dex::Side::Sell, pubkey(0x11));
+        other_pair.sell_amount = 500;
+        other_pair.amount = 500;
+        let auction = auction(
+            vec![sell(0x01), sell(0x02), sell(0x03), other_pair],
+            Duration::from_secs(60),
+        );
+        let solver = batching(1, 2);
+
+        let mut solutions = solver.solve(&auction).await;
+
+        solutions.sort_by_key(|solution| solution.id);
+        assert_eq!(ids(&solutions), vec![0, 1, 2]);
+        assert_eq!(
+            trades(&solutions[0]),
+            vec![(OrderUid([1; 32]), 1_000), (OrderUid([2; 32]), 1_000)]
+        );
+        assert_eq!(trades(&solutions[1]), vec![(OrderUid([4; 32]), 500)]);
+        assert_eq!(trades(&solutions[2]), vec![(OrderUid([3; 32]), 1_000)]);
+        assert_eq!(
+            *solver.quoter.amounts.lock().unwrap(),
+            vec![2_000, 500, 1_000]
+        );
     }
 
     /// Three orders of 1000 on the `IMPACT` mint, limits 0, 0 and 1.6: the
@@ -734,7 +789,7 @@ mod tests {
         assert!(solver.quoter.swaps.lock().unwrap().is_empty());
     }
 
-    /// One group per side, pair and swap destination, numbered in order of
+    /// One batch per side, pair and swap destination, numbered in order of
     /// first appearance.
     #[tokio::test]
     async fn quotes_one_batch_per_side_pair_and_destination() {
@@ -835,10 +890,10 @@ mod tests {
         assert_eq!(trades(&solutions[1]), vec![(OrderUid([2; 32]), 1_000)]);
     }
 
-    /// With a batch size of one, only the most permissive sell order of a
-    /// pair is quoted, since the pair has one winner slot either way.
+    /// With a batch size of one, every order of a pair is quoted on its own,
+    /// most permissive first.
     #[tokio::test]
-    async fn a_max_batch_size_of_one_quotes_the_most_permissive_order() {
+    async fn a_max_batch_size_of_one_quotes_every_order_on_its_own() {
         let auction = auction(
             vec![
                 sell_with_limit(0x01, pubkey(0x10), 1_500),
@@ -847,19 +902,25 @@ mod tests {
             ],
             Duration::from_secs(60),
         );
-        let solver = solver(8, Duration::ZERO);
+        let solver = solver(1, Duration::ZERO);
 
-        let solutions = solver.solve(&auction).await;
+        let mut solutions = solver.solve(&auction).await;
 
-        assert_eq!(solutions.len(), 1);
+        solutions.sort_by_key(|solution| solution.id);
+        assert_eq!(ids(&solutions), vec![0, 1, 2]);
         assert_eq!(trades(&solutions[0]), vec![(OrderUid([2; 32]), 1_000)]);
-        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![1_000]);
+        assert_eq!(trades(&solutions[1]), vec![(OrderUid([1; 32]), 1_000)]);
+        assert_eq!(trades(&solutions[2]), vec![(OrderUid([3; 32]), 1_000)]);
+        assert_eq!(
+            *solver.quoter.amounts.lock().unwrap(),
+            vec![1_000, 1_000, 1_000]
+        );
     }
 
-    /// Two sells of `u64::MAX` cannot be quoted together: the batch keeps
-    /// the prefix whose total fits.
+    /// Two sells of `u64::MAX` cannot be quoted together: the second starts
+    /// a new batch.
     #[tokio::test]
-    async fn the_batch_keeps_the_prefix_whose_total_fits() {
+    async fn an_order_overflowing_the_total_starts_a_new_batch() {
         let mut orders = vec![sell(0x01), sell(0x02)];
         for order in &mut orders {
             order.sell_amount = u64::MAX;
@@ -868,11 +929,16 @@ mod tests {
         let auction = auction(orders, Duration::from_secs(60));
         let solver = batching(1, 4);
 
-        let solutions = solver.solve(&auction).await;
+        let mut solutions = solver.solve(&auction).await;
 
-        assert_eq!(solutions.len(), 1);
+        solutions.sort_by_key(|solution| solution.id);
+        assert_eq!(ids(&solutions), vec![0, 1]);
         assert_eq!(trades(&solutions[0]), vec![(OrderUid([1; 32]), u64::MAX)]);
-        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![u64::MAX]);
+        assert_eq!(trades(&solutions[1]), vec![(OrderUid([2; 32]), u64::MAX)]);
+        assert_eq!(
+            *solver.quoter.amounts.lock().unwrap(),
+            vec![u64::MAX, u64::MAX]
+        );
     }
 
     #[test]

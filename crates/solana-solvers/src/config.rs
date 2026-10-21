@@ -28,8 +28,8 @@ pub struct Config {
     pub max_back_off: Duration,
 
     /// The most orders one batched solution fills: per side and directed
-    /// pair, the most permissive orders up to this many are quoted as one
-    /// batch and the rest are not quoted. 1 quotes one order per pair.
+    /// pair, orders are quoted most permissive first in batches of up to
+    /// this many, each its own solution. 1 quotes every order on its own.
     #[serde(default = "default_max_batch_size")]
     pub max_batch_size: NonZeroUsize,
 
