@@ -27,7 +27,7 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
-    std::collections::HashMap,
+    std::{collections::HashMap, time::Duration},
 };
 pub use {
     accounts::{
@@ -47,6 +47,10 @@ pub use {
 
 /// How many mints the cache holds.
 const MINT_CACHE_CAPACITY: u64 = 10_000;
+
+/// How often a wait on a slot reads the node's current slot. Shorter than a
+/// slot, so the wait ends within a slot of its target.
+const SLOT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// A simulated transaction's outcome and the slot it ran against.
 pub struct TransactionSimulation {
@@ -144,6 +148,22 @@ impl Solana {
     /// The node's current slot at the client's commitment level.
     pub async fn slot(&self) -> Result<u64, Error> {
         self.rpc.slot().await
+    }
+
+    /// Run `work` until the node reaches `slot`, `None` if the slot comes
+    /// first. `work` starts even when the slot has passed, and a failed slot
+    /// read counts as the slot not reached.
+    pub async fn until_slot<T>(&self, slot: u64, work: impl Future<Output = T>) -> Option<T> {
+        let reached = async {
+            while !self.slot().await.is_ok_and(|current| current >= slot) {
+                tokio::time::sleep(SLOT_POLL_INTERVAL).await;
+            }
+        };
+        tokio::select! {
+            biased;
+            done = work => Some(done),
+            () = reached => None,
+        }
     }
 
     /// The prioritization fees recently paid by transactions locking
@@ -258,8 +278,9 @@ fn block_below(slots: &[u64], latest: u64, age: u64) -> Option<u64> {
 mod tests {
     use {
         super::*,
-        cow_solana_rpc::{Mocks, RpcRequest},
+        cow_solana_rpc::{Mocks, MocksMap, RpcRequest},
         serde_json::json,
+        solana_sdk::transaction::TransactionError,
         solana_testlib::{mint_account_json, multiple_accounts_json},
     };
 
@@ -313,6 +334,32 @@ mod tests {
             solana(775).blockhash_expiring_at(1150).await.unwrap(),
             latest
         );
+    }
+
+    /// A failed slot read keeps the wait going, the node reaching the slot
+    /// ends it, and work that finishes first wins.
+    #[tokio::test]
+    async fn a_wait_ends_at_its_slot() {
+        let slots = MocksMap::from_iter([
+            (RpcRequest::GetSlot, json!(99)),
+            (RpcRequest::GetSlot, json!(100)),
+        ]);
+        let solana = Solana::new(
+            SolanaRPC::new_mock_with_failures(
+                slots.clone(),
+                [(RpcRequest::GetSlot, TransactionError::AccountInUse)],
+            ),
+            SolanaRPC::new_mock_with_mocks_map(slots),
+            Pubkey::new_unique(),
+        );
+        assert_eq!(
+            solana.until_slot(100, std::future::pending::<()>()).await,
+            None
+        );
+        // The wait read every queued slot, so the next read gets the mock's
+        // unqueued answer.
+        assert_eq!(solana.slot().await.unwrap(), 0);
+        assert_eq!(solana.until_slot(100, async { 7 }).await, Some(7));
     }
 
     /// The mock answers the first fetch only, so the second lookup finds the
