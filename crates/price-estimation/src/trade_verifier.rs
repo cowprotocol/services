@@ -781,15 +781,31 @@ impl SettleOutput {
 
     /// Adjusts the reported gas cost since the simulation measurement does not
     /// take into account the 21K units every tx has to pay and the cost for
-    /// the calldata. We are overcounting the calldata cost slightly since a
-    /// regular settlement would not include the 2 interactions measuring
-    /// the token balances.
+    /// the calldata.
     fn with_call_overhead(mut self, calldata: &[u8]) -> Self {
         // constants as defined in <https://ethereum.github.io/yellowpaper/paper.pdf>
         // refferred to as Gtransaction, Gtxdatazero, and Gtxdatanonzero
         const TX_BASE_COST: u64 = 21_000;
         const CALLDATA_COST_PER_ZERO_BYTE: u64 = 4;
         const CALLDATA_COST_PER_NONZERO_BYTE: u64 = 16;
+        // A regular settlement does not contain the 2 `storeBalance`
+        // interactions measuring the token balances, so their calldata must not
+        // be counted. Each one adds 288 bytes to the `settle()` calldata, 68 of
+        // them non-zero:
+        // - 32 bytes offset of the interaction (1 non-zero)
+        // - 32 bytes target, the solver address (20 non-zero)
+        // - 32 bytes value of 0
+        // - 32 bytes offset of the interaction's calldata (1 non-zero)
+        // - 32 bytes length of the interaction's calldata of 100 (1 non-zero)
+        // - 128 bytes calldata padded to 32 bytes: selector (4 non-zero), token
+        //   and owner (20 non-zero each), `countGas: true` (1 non-zero)
+        //
+        // That is 68 * 16 + 220 * 4 = 1968 gas each. The otherwise empty
+        // post-interactions also get a non-zero length (+12 gas). This is exact
+        // up to -12 gas per zero byte in the addresses and +12 gas for each of
+        // the few offsets in the rest of the calldata which might need an
+        // additional non-zero byte.
+        const BALANCE_TRACKING_CALLDATA_COST: u64 = 2 * 1968 + 12;
         let call_data_cost = calldata
             .iter()
             .map(|byte| {
@@ -799,7 +815,8 @@ impl SettleOutput {
                     CALLDATA_COST_PER_NONZERO_BYTE
                 }
             })
-            .sum::<u64>();
+            .sum::<u64>()
+            .saturating_sub(BALANCE_TRACKING_CALLDATA_COST);
         self.gas_used += U256::from(TX_BASE_COST.saturating_add(call_data_cost));
         self
     }
