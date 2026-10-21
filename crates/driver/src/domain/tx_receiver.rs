@@ -25,6 +25,13 @@ pub trait TxReceiver: Send + Sync + std::fmt::Debug {
     fn mines_reverting_txs(&self) -> bool;
 }
 
+/// Reads the next nonce of a submission account. Not part of [`TxReceiver`]
+/// because not every receiver can tell, e.g. block builders.
+#[async_trait::async_trait]
+pub trait NonceSource: Send + Sync {
+    async fn nonce(&self, signer: eth::Address) -> anyhow::Result<u64>;
+}
+
 /// A transaction signed by one of the submission accounts.
 #[derive(Debug, Clone)]
 pub struct SignedTx {

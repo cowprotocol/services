@@ -12,9 +12,9 @@ use {
     eth_domain_types as eth,
 };
 
-/// The accounts that sign settlement transactions. With a KMS account each
-/// signature is an AWS round trip (slow DNS made these slow before), so sign
-/// a tx once here and send the same bytes to every receiver.
+/// The accounts that sign settlement transactions, once per receiver and
+/// attempt. Kept out of the receivers: with a KMS account each signature is an
+/// AWS round trip (slow DNS made these slow before).
 #[derive(Debug, Clone)]
 pub struct Wallet {
     wallet: EthereumWallet,

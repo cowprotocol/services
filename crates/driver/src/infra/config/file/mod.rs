@@ -148,6 +148,7 @@ impl SubmissionConfig {
         let mempool = |name, url, revert_protection| infra::mempool::Config {
             target_confirm_time: self.target_confirm_time,
             retry_interval: self.retry_interval,
+            nonce_block_number: self.nonce_block_number.map(Into::into),
             name,
             url,
             revert_protection,
@@ -220,7 +221,7 @@ enum Receiver {
         /// originally intented, resulting in reduced MEV protection.
         ///
         /// Additionally, we run a relay proxy that handles the failover between
-        /// them.
+        /// them; the driver also fetches nonces through this URL.
         url: Url,
         /// Informs the submission logic whether a reverting transaction will
         /// actually be mined or just ignored. Set this to `false` only if the

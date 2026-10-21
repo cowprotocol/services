@@ -123,7 +123,6 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
                 eth.chain().id(),
             ),
             eth.clone(),
-            config.nonce_block_number,
         ),
         balance_cache: config.balance_cache,
         eth,

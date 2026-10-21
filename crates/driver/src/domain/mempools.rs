@@ -4,14 +4,11 @@ use {
         domain::{
             blockchain::TxStatus,
             competition::solution::settlement::EncodedSettlement,
-            tx_receiver::TxReceiver,
+            tx_receiver::{NonceSource, TxReceiver},
         },
         infra::{self, Ethereum, observe},
     },
-    alloy::{
-        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
-        primitives::Bytes,
-    },
+    alloy::{eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
@@ -56,22 +53,14 @@ pub struct Mempools<R = infra::Mempool> {
     mempools: Vec<R>,
     wallet: infra::Wallet,
     ethereum: Ethereum,
-    /// The block to read nonces at. `None` leaves the choice to the node.
-    nonce_block: Option<BlockNumberOrTag>,
 }
 
-impl<R: TxReceiver> Mempools<R> {
-    pub fn new(
-        tx_receivers: Vec<R>,
-        wallet: infra::Wallet,
-        ethereum: Ethereum,
-        nonce_block: Option<BlockNumberOrTag>,
-    ) -> Self {
+impl<R: TxReceiver + NonceSource> Mempools<R> {
+    pub fn new(tx_receivers: Vec<R>, wallet: infra::Wallet, ethereum: Ethereum) -> Self {
         Self {
             mempools: tx_receivers,
             wallet,
             ethereum,
-            nonce_block,
         }
     }
 
@@ -163,9 +152,8 @@ impl<R: TxReceiver> Mempools<R> {
 
         // Fetch the nonce for the signing account (not the solver in 7702
         // mode).
-        let nonce = self
-            .ethereum
-            .nonce(signer, self.nonce_block)
+        let nonce = mempool
+            .nonce(signer)
             .await
             .context("failed to fetch nonce")?;
 

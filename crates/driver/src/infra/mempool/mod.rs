@@ -1,11 +1,11 @@
 use {
     crate::{
         boundary::{Web3, unbuffered_web3},
-        domain::tx_receiver::{SignedTx, TxReceiver},
+        domain::tx_receiver::{NonceSource, SignedTx, TxReceiver},
     },
     alloy::{
         consensus::Transaction,
-        eips::eip1559::Eip1559Estimation,
+        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
         providers::{Provider, ext::TxPoolApi},
         transports::TransportError,
     },
@@ -20,6 +20,8 @@ use {
 pub struct Config {
     pub target_confirm_time: std::time::Duration,
     pub retry_interval: std::time::Duration,
+    /// The block to read nonces at. `None` leaves the choice to the node.
+    pub nonce_block_number: Option<BlockNumberOrTag>,
     pub url: Url,
     pub name: String,
     pub revert_protection: RevertProtection,
@@ -83,6 +85,25 @@ impl Mempool {
             .find(|(_signer, tx)| tx.nonce() == nonce)
             .map(|(_, tx)| tx);
         Ok(pending_tx)
+    }
+}
+
+/// Reads nonces through the mempool's own URL.
+#[async_trait::async_trait]
+impl NonceSource for Mempool {
+    async fn nonce(&self, signer: eth::Address) -> anyhow::Result<u64> {
+        let call = self.transport.provider.get_transaction_count(signer);
+        let nonce = match self.config.nonce_block_number {
+            Some(BlockNumberOrTag::Latest) => call.latest(),
+            Some(BlockNumberOrTag::Earliest) => call.earliest(),
+            Some(BlockNumberOrTag::Finalized) => call.finalized(),
+            Some(BlockNumberOrTag::Number(number)) => call.number(number),
+            Some(BlockNumberOrTag::Pending) => call.pending(),
+            Some(BlockNumberOrTag::Safe) => call.safe(),
+            None => call,
+        }
+        .await?;
+        Ok(nonce)
     }
 }
 
