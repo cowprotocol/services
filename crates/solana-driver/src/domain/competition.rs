@@ -11,7 +11,7 @@ use {
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
-        settlement::{ResolveError, writable_accounts},
+        settlement::{self, ResolveError, writable_accounts},
         slot::Slot,
         solution::Solution,
     },
@@ -1026,6 +1026,11 @@ fn error_label(error: &Error) -> &'static str {
         Error::PriorityFeeTooHigh(_) => "priority_fee_too_high",
         Error::TooManyAccounts { .. } => "too_many_accounts",
         Error::Resolve(_) => "resolve_failed",
+        // v1 compilation refuses more than 64 addresses, the account lock
+        // limit, before the bundle's count runs.
+        Error::Settlement(settlement::Error::InvalidMessage(
+            v1::MessageError::TooManyAddresses,
+        )) => "too_many_accounts",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
     }
@@ -1067,5 +1072,15 @@ mod tests {
             }),
         };
         assert_eq!(account_count(&creation), 9);
+    }
+
+    /// A settlement v1 compilation refuses for its address count fails the
+    /// lock limit the bundle check counts.
+    #[test]
+    fn labels_a_settlement_over_the_address_limit_as_too_many_accounts() {
+        let error = Error::Settlement(settlement::Error::InvalidMessage(
+            v1::MessageError::TooManyAddresses,
+        ));
+        assert_eq!(error_label(&error), "too_many_accounts");
     }
 }
