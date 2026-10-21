@@ -641,19 +641,18 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         maintenance.add_ethflow_indexing(onchain_order_indexer, refund_event_handler);
     }
 
-    let compress_solve_request = config.run_loop.compress_solve_request;
     let run_loop_config = run_loop::Config::from(config.run_loop);
 
     let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
-            let capabilities = infra::Capabilities::new(&driver, compress_solve_request);
+            let extensions = infra::SupportedExtensions::from(&driver);
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.submission_account,
-                capabilities,
+                extensions,
             )
             .await
             .map(Arc::new)
@@ -724,15 +723,14 @@ async fn shadow_mode(config: Configuration) -> ! {
         config.shadow.expect("missing shadow mode configuration"),
     );
 
-    let compress_solve_request = config.run_loop.compress_solve_request;
     let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
-            let capabilities = infra::Capabilities {
+            let extensions = infra::SupportedExtensions {
                 // the shadow autopilot always sends full auctions
                 auction_deltas: false,
-                ..infra::Capabilities::new(&driver, compress_solve_request)
+                ..infra::SupportedExtensions::from(&driver)
             };
             infra::Driver::try_new(
                 driver.url,
@@ -746,7 +744,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
-                capabilities,
+                extensions,
             )
             .await
             .map(Arc::new)

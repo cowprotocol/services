@@ -55,12 +55,6 @@ pub struct RunLoopConfig {
     #[serde(default)]
     pub enable_leader_lock: bool,
 
-    /// Enable brotli compression of `/solve` request bodies. Only drivers
-    /// that set `supports-brotli` receive compressed bodies; all others keep
-    /// getting plain JSON.
-    #[serde(default)]
-    pub compress_solve_request: bool,
-
     /// How often a full auction (checkpoint) is sent to drivers that opted
     /// into incremental auctions (`supports-auction-deltas`). The first
     /// auction that starts after this much time passed since the last
@@ -123,7 +117,6 @@ impl Default for RunLoopConfig {
             max_winners_per_auction: default_max_winners_per_auction(),
             max_solutions_per_solver: default_max_solutions_per_solver(),
             enable_leader_lock: false,
-            compress_solve_request: false,
             auction_delta_checkpoint_interval: default_auction_delta_checkpoint_interval(),
             submission_deadline: default_submission_deadline(),
             max_settlement_transaction_wait: default_max_settlement_transaction_wait(),

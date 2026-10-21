@@ -571,8 +571,8 @@ impl RunLoop {
         Ok(())
     }
 
-    fn capabilities(&self) -> impl Iterator<Item = &infra::Capabilities> {
-        self.drivers.iter().map(|driver| &driver.capabilities)
+    fn extensions(&self) -> impl Iterator<Item = &infra::SupportedExtensions> {
+        self.drivers.iter().map(|driver| &driver.extensions)
     }
 
     /// Builds the auction requests, if no drivers have opted-in to
@@ -581,13 +581,16 @@ impl RunLoop {
     async fn build_auction_requests(
         &self,
         auction: &Arc<domain::Auction>,
-    ) -> (solve::Request, solve::Request) {
+    ) -> (solve::EncodedRequests, solve::EncodedRequests) {
         let deadline = self.pick_solve_deadline();
         let trusted_tokens = self.trusted_tokens.all();
 
-        let with_brotli = full_body_needs_brotli(self.capabilities());
         let (request, delta_request) = tokio::join!(
-            solve::Request::new(auction, &trusted_tokens, deadline, with_brotli),
+            async {
+                let request = solve::Request::new(auction, &trusted_tokens, deadline).await;
+                let compress = full_body_needs_brotli(self.extensions());
+                solve::EncodedRequests::new(request, compress).await
+            },
             async {
                 self.build_delta_request(auction, &trusted_tokens, deadline)
                     .await
@@ -612,11 +615,12 @@ impl RunLoop {
         let (request, delta_request) = self.build_auction_requests(auction).await;
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
-            let solve_request = if driver.capabilities.auction_deltas {
-                delta_request.clone()
+            let requests = if driver.extensions.auction_deltas {
+                &delta_request
             } else {
-                request.clone()
+                &request
             };
+            let solve_request = requests.for_driver(driver.extensions.brotli);
             self.solve(driver, solve_request)
         }))
         .await
@@ -660,24 +664,22 @@ impl RunLoop {
         auction: &Arc<domain::Auction>,
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
-    ) -> Option<solve::Request> {
+    ) -> Option<solve::EncodedRequests> {
         if !self
             .drivers
             .iter()
-            .any(|driver| driver.capabilities.auction_deltas)
+            .any(|driver| driver.extensions.auction_deltas)
         {
             return None;
         }
-        let with_brotli = delta_body_needs_brotli(self.capabilities());
         let previous = self
             .delta_state
             .lock()
             .unwrap()
             .advance(Instant::now(), auction)?;
-        Some(
-            solve::Request::new_delta(&previous, auction, trusted_tokens, deadline, with_brotli)
-                .await,
-        )
+        let request = solve::Request::new_delta(&previous, auction, trusted_tokens, deadline).await;
+        let compress = delta_body_needs_brotli(self.extensions());
+        Some(solve::EncodedRequests::new(request, compress).await)
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and
@@ -1081,12 +1083,12 @@ impl Metrics {
         });
     }
 
-    fn solve_request_body_sizes(kind: &str, request: &solve::Request) {
+    fn solve_request_body_sizes(kind: &str, requests: &solve::EncodedRequests) {
         let metric = &Self::get().solve_request_body_size;
         metric
             .with_label_values(&[kind, "uncompressed"])
-            .observe(request.body_size() as f64);
-        if let Some(size) = request.brotli_body_size() {
+            .observe(requests.body_size() as f64);
+        if let Some(size) = requests.compressed_body_size() {
             metric.with_label_values(&[kind, "br"]).observe(size as f64);
         }
     }
@@ -1094,13 +1096,17 @@ impl Metrics {
 
 /// Whether the full `/solve` body needs a brotli copy. Delta drivers receive
 /// the full body on checkpoint auctions, so any driver accepting brotli counts.
-fn full_body_needs_brotli<'a>(mut drivers: impl Iterator<Item = &'a infra::Capabilities>) -> bool {
+fn full_body_needs_brotli<'a>(
+    mut drivers: impl Iterator<Item = &'a infra::SupportedExtensions>,
+) -> bool {
     drivers.any(|driver| driver.brotli)
 }
 
 /// Whether the delta `/solve` body needs a brotli copy, i.e. some driver
 /// receiving it accepts brotli.
-fn delta_body_needs_brotli<'a>(mut drivers: impl Iterator<Item = &'a infra::Capabilities>) -> bool {
+fn delta_body_needs_brotli<'a>(
+    mut drivers: impl Iterator<Item = &'a infra::SupportedExtensions>,
+) -> bool {
     drivers.any(|driver| driver.auction_deltas && driver.brotli)
 }
 
@@ -1207,8 +1213,8 @@ mod tests {
         }
     }
 
-    fn capabilities(auction_deltas: bool, brotli: bool) -> infra::Capabilities {
-        infra::Capabilities {
+    fn extensions(auction_deltas: bool, brotli: bool) -> infra::SupportedExtensions {
+        infra::SupportedExtensions {
             auction_deltas,
             brotli,
         }
@@ -1216,14 +1222,14 @@ mod tests {
 
     #[test]
     fn no_brotli_copy_without_opted_in_drivers() {
-        let drivers = [capabilities(false, false), capabilities(true, false)];
+        let drivers = [extensions(false, false), extensions(true, false)];
         assert!(!full_body_needs_brotli(drivers.iter()));
         assert!(!delta_body_needs_brotli(drivers.iter()));
     }
 
     #[test]
     fn full_body_compressed_for_full_auction_brotli_driver() {
-        let drivers = [capabilities(false, true), capabilities(true, false)];
+        let drivers = [extensions(false, true), extensions(true, false)];
         assert!(full_body_needs_brotli(drivers.iter()));
         assert!(!delta_body_needs_brotli(drivers.iter()));
     }
@@ -1231,7 +1237,7 @@ mod tests {
     #[test]
     fn delta_brotli_driver_needs_both_bodies_compressed() {
         // The delta driver receives the full body on checkpoint auctions.
-        let drivers = [capabilities(true, true), capabilities(false, false)];
+        let drivers = [extensions(true, true), extensions(false, false)];
         assert!(full_body_needs_brotli(drivers.iter()));
         assert!(delta_body_needs_brotli(drivers.iter()));
     }

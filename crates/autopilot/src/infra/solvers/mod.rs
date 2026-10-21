@@ -3,7 +3,7 @@ use {
     crate::util,
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
-    configs::autopilot::solver::Account,
+    configs::autopilot::solver::{Account, Solver},
     eth_domain_types as eth,
     observe::tracing::{distributed::headers::tracing_headers, lazy::Lazy},
     reqwest::{Client, RequestBuilder, StatusCode},
@@ -22,13 +22,13 @@ pub struct Driver {
     pub name: String,
     pub url: Url,
     pub submission_address: eth::Address,
-    pub capabilities: Capabilities,
+    pub extensions: SupportedExtensions,
     client: Client,
 }
 
 /// Optional `/solve` request features a driver opted into.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct Capabilities {
+pub struct SupportedExtensions {
     /// Between checkpoints, receive only the difference to the previously
     /// sent auction instead of the full auction.
     pub auction_deltas: bool,
@@ -36,13 +36,11 @@ pub struct Capabilities {
     pub brotli: bool,
 }
 
-impl Capabilities {
-    /// The capabilities a configured driver opted into. Brotli additionally
-    /// requires `compress_solve_request` to be enabled.
-    pub fn new(driver: &configs::autopilot::solver::Solver, compress_solve_request: bool) -> Self {
+impl From<&Solver> for SupportedExtensions {
+    fn from(driver: &Solver) -> Self {
         Self {
             auction_deltas: driver.supports_auction_deltas,
-            brotli: compress_solve_request && driver.supports_brotli,
+            brotli: driver.supports_brotli,
         }
     }
 }
@@ -61,7 +59,7 @@ impl Driver {
         url: Url,
         name: String,
         submission_account: Account,
-        capabilities: Capabilities,
+        extensions: SupportedExtensions,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -81,7 +79,7 @@ impl Driver {
             ?name,
             ?url,
             ?submission_address,
-            ?capabilities,
+            ?extensions,
             "creating solver"
         );
 
@@ -94,13 +92,12 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
-            capabilities,
+            extensions,
         })
     }
 
     pub async fn solve(&self, request: solve::Request) -> Result<solve::Response> {
-        self.request_response("solve", request.encoded(self.capabilities.brotli))
-            .await
+        self.request_response("solve", request).await
     }
 
     pub async fn reveal(&self, request: reveal::Request) -> Result<reveal::Response> {
@@ -245,7 +242,6 @@ mod tests {
         crate::domain,
         alloy::primitives::Address,
         axum::{body::Bytes, http::HeaderMap},
-        configs::autopilot::solver::Solver,
         std::{
             collections::HashSet,
             sync::{Arc, Mutex},
@@ -253,33 +249,18 @@ mod tests {
     };
 
     #[test]
-    fn brotli_needs_global_switch_and_driver_opt_in() {
-        let driver = |supports_brotli| Solver {
-            supports_brotli,
-            ..Solver::test("solver", Address::ZERO)
-        };
+    fn extensions_are_taken_from_the_driver_config() {
+        let extensions = SupportedExtensions::from(&Solver::test("solver", Address::ZERO));
+        assert!(!extensions.auction_deltas);
+        assert!(!extensions.brotli);
 
-        for (compress_solve_request, supports_brotli, expected) in [
-            (false, false, false),
-            (false, true, false),
-            (true, false, false),
-            (true, true, true),
-        ] {
-            let capabilities = Capabilities::new(&driver(supports_brotli), compress_solve_request);
-            assert_eq!(
-                capabilities.brotli, expected,
-                "compress_solve_request={compress_solve_request} supports_brotli={supports_brotli}"
-            );
-        }
-    }
-
-    #[test]
-    fn auction_deltas_are_taken_from_the_driver_config() {
-        let driver = Solver {
+        let extensions = SupportedExtensions::from(&Solver {
             supports_auction_deltas: true,
+            supports_brotli: true,
             ..Solver::test("solver", Address::ZERO)
-        };
-        assert!(Capabilities::new(&driver, false).auction_deltas);
+        });
+        assert!(extensions.auction_deltas);
+        assert!(extensions.brotli);
     }
 
     /// The `content-encoding` header and raw body of a `/solve` request.
@@ -309,7 +290,7 @@ mod tests {
         (url, received)
     }
 
-    async fn solve_request(with_brotli: bool) -> solve::Request {
+    async fn solve_requests() -> solve::EncodedRequests {
         let auction = domain::Auction {
             id: 1,
             block: 1,
@@ -317,18 +298,19 @@ mod tests {
             prices: Default::default(),
             surplus_capturing_jit_order_owners: vec![],
         };
-        solve::Request::new(&auction, &HashSet::new(), chrono::Utc::now(), with_brotli).await
+        let plain = solve::Request::new(&auction, &HashSet::new(), chrono::Utc::now()).await;
+        solve::EncodedRequests::new(plain, true).await
     }
 
-    /// Sends a `/solve` request built with a brotli copy to a driver with
-    /// the given capability and returns what the driver received.
+    /// Sends a `/solve` request to a driver that does or doesn't accept brotli
+    /// and returns what the driver received.
     async fn send(brotli: bool) -> (Option<String>, Bytes) {
         let (url, received) = mock_driver().await;
         let driver = Driver::try_new(
             url,
             "solver".to_owned(),
             Account::Address(Address::ZERO),
-            Capabilities {
+            SupportedExtensions {
                 auction_deltas: false,
                 brotli,
             },
@@ -336,7 +318,8 @@ mod tests {
         .await
         .unwrap();
 
-        driver.solve(solve_request(true).await).await.unwrap();
+        let request = solve_requests().await.for_driver(driver.extensions.brotli);
+        driver.solve(request).await.unwrap();
         received.lock().unwrap().take().unwrap()
     }
 

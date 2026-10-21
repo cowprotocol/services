@@ -2,7 +2,6 @@ use {
     configs::{
         autopilot::{
             Configuration,
-            run_loop::RunLoopConfig,
             solver::{Account, Solver},
         },
         test_util::TestDefault,
@@ -37,28 +36,15 @@ async fn local_node_driver_without_opt_in_receives_plain_solve_requests() {
     run_test(driver_without_opt_in_receives_plain_solve_requests).await;
 }
 
-#[tokio::test]
-#[ignore]
-async fn local_node_disabled_compression_overrides_driver_opt_in() {
-    run_test(disabled_compression_overrides_driver_opt_in).await;
-}
-
 async fn opted_in_driver_receives_compressed_solve_requests(web3: Web3) {
-    let received = settle_order_through_proxy(web3, true, true).await;
+    let received = settle_order_through_proxy(web3, true).await;
 
     assert!(received.brotli() > 0, "{received:?}");
     assert_eq!(received.plain(), 0, "{received:?}");
 }
 
 async fn driver_without_opt_in_receives_plain_solve_requests(web3: Web3) {
-    let received = settle_order_through_proxy(web3, true, false).await;
-
-    assert!(received.plain() > 0, "{received:?}");
-    assert_eq!(received.brotli(), 0, "{received:?}");
-}
-
-async fn disabled_compression_overrides_driver_opt_in(web3: Web3) {
-    let received = settle_order_through_proxy(web3, false, true).await;
+    let received = settle_order_through_proxy(web3, false).await;
 
     assert!(received.plain() > 0, "{received:?}");
     assert_eq!(received.brotli(), 0, "{received:?}");
@@ -115,11 +101,7 @@ impl Received {
 
 /// Settles a single order with the autopilot talking to the driver through a
 /// proxy that records every `/solve` request, and returns what it recorded.
-async fn settle_order_through_proxy(
-    web3: Web3,
-    compress_solve_request: bool,
-    supports_brotli: bool,
-) -> Arc<Received> {
+async fn settle_order_through_proxy(web3: Web3, supports_brotli: bool) -> Arc<Received> {
     let mut onchain = OnchainComponents::deploy(web3).await;
 
     let [solver] = onchain.make_solvers(1u64.eth()).await;
@@ -165,10 +147,6 @@ async fn settle_order_through_proxy(
                 Account::Address(solver.address()),
             )
         }],
-        run_loop: RunLoopConfig {
-            compress_solve_request,
-            ..config.run_loop
-        },
         ..config
     };
     services

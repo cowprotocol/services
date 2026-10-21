@@ -24,8 +24,7 @@ pub struct Solver {
     #[serde(default)]
     pub supports_auction_deltas: bool,
     /// Whether the driver accepts brotli-compressed (`content-encoding: br`)
-    /// `/solve` request bodies. Only takes effect while the run loop's
-    /// `compress-solve-request` is enabled.
+    /// `/solve` request bodies. Drivers that don't opt in receive plain JSON.
     #[serde(default)]
     pub supports_brotli: bool,
 }

@@ -189,8 +189,6 @@ fn with_middleware(app: axum::Router) -> axum::Router {
         // axum's default body limit is 2MB too low for solvers, 20MB is still too low
         // so instead of constantly guessing and updating, we disable the limit altogether
         .layer(axum::extract::DefaultBodyLimit::disable())
-        // Decodes compressed request bodies, so handlers that stream the raw
-        // body (like `/solve`) still see plain JSON.
         .layer(tower_http::decompression::RequestDecompressionLayer::new())
         .layer(
             tower::ServiceBuilder::new()

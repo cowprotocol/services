@@ -29,16 +29,13 @@ use {
 
 /// Cheaply clonable handle to an already JSON serialized
 /// request. The purpose of this is to make it ergonomic
-/// to serialize (and compress) a request once and reuse the
-/// resulting bytes in multiple HTTP requests.
+/// to serialize a request once and reuse the resulting
+/// string in multiple HTTP requests.
 #[derive(Clone, Debug)]
 pub struct Request {
     auction_id: i64,
-    /// The JSON body.
-    body: Bytes,
-    /// `body` compressed with brotli. Only present if it was asked for on
-    /// construction and compression succeeded.
-    brotli: Option<Bytes>,
+    body: bytes::Bytes,
+    content_encoding: Option<HeaderValue>,
     deadline: chrono::DateTime<chrono::Utc>,
 }
 
@@ -47,7 +44,6 @@ impl Request {
         auction: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
-        with_brotli: bool,
     ) -> Self {
         let helper = FullRequestHelper {
             id: auction.id,
@@ -56,7 +52,7 @@ impl Request {
             deadline,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
-        Self::from_body(RequestBody::Full(helper), with_brotli).await
+        Self::from_body(RequestBody::Full(helper)).await
     }
 
     /// Builds a request containing the delta to the previously sent auction.
@@ -65,7 +61,6 @@ impl Request {
         current: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
-        with_brotli: bool,
     ) -> Self {
         let helper = DeltaRequestHelper {
             id: current.id,
@@ -75,45 +70,48 @@ impl Request {
             surplus_capturing_jit_order_owners: current.surplus_capturing_jit_order_owners.to_vec(),
         };
 
-        Self::from_body(RequestBody::Delta(helper), with_brotli).await
+        Self::from_body(RequestBody::Delta(helper)).await
     }
 
-    async fn from_body(body: RequestBody, with_brotli: bool) -> Self {
+    async fn from_body(body: RequestBody) -> Self {
         let _timer =
             observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
         let (auction_id, deadline) = (body.id(), body.deadline());
 
-        let (body, brotli) = tokio::task::spawn_blocking(move || {
-            let serialized = serde_json::to_vec(&body).expect("auction is JSON serializable");
-            let brotli = with_brotli.then(|| compress(&serialized)).flatten();
-            (Bytes::from(serialized), brotli)
+        let body = tokio::task::spawn_blocking(move || {
+            Bytes::from(serde_json::to_vec(&body).expect("auction is JSON serializable"))
         })
         .await
         .expect("inner task should not panic as serialization should work for the given type");
 
         Self {
-            auction_id,
             body,
-            brotli,
+            auction_id,
+            content_encoding: None,
             deadline,
         }
     }
 
-    /// The request as sent to a driver: brotli-compressed if the driver
-    /// accepts it and a compressed body is available, plain JSON otherwise.
-    pub fn encoded(&self, brotli: bool) -> Encoded<'_> {
-        Encoded {
-            request: self,
-            compressed: self.brotli.as_ref().filter(|_| brotli),
-        }
+    /// Returns a brotli compressed copy of this request, or `None` if
+    /// compression failed.
+    async fn compressed(&self) -> Option<Self> {
+        let _timer =
+            observe::metrics::metrics().on_auction_overhead_start("autopilot", "compress_request");
+        let json = self.body.clone();
+
+        let body = tokio::task::spawn_blocking(move || compress(&json))
+            .await
+            .expect("inner task should not panic")?;
+
+        Some(Self {
+            body,
+            content_encoding: Some(HeaderValue::from_static("br")),
+            ..self.clone()
+        })
     }
 
     pub fn body_size(&self) -> usize {
         self.body.len()
-    }
-
-    pub fn brotli_body_size(&self) -> Option<usize> {
-        self.brotli.as_ref().map(Bytes::len)
     }
 
     pub fn time_until_deadline(&self) -> Duration {
@@ -121,6 +119,45 @@ impl Request {
             .signed_duration_since(Utc::now())
             .to_std()
             .unwrap_or(Duration::ZERO)
+    }
+}
+
+/// A [`Request`] in the encodings the drivers receiving it accept. Each
+/// encoding is built once and shared by all those drivers.
+#[derive(Clone, Debug)]
+pub struct EncodedRequests {
+    plain: Request,
+    /// Brotli compressed copy of `plain`. Only built if some driver accepts
+    /// it and compression succeeded.
+    compressed: Option<Request>,
+}
+
+impl EncodedRequests {
+    pub async fn new(plain: Request, compress: bool) -> Self {
+        let compressed = if compress {
+            plain.compressed().await
+        } else {
+            None
+        };
+        Self { plain, compressed }
+    }
+
+    /// The request to send to a driver: compressed if the driver accepts
+    /// brotli and a compressed copy exists, plain JSON otherwise.
+    pub fn for_driver(&self, accepts_brotli: bool) -> Request {
+        accepts_brotli
+            .then_some(self.compressed.as_ref())
+            .flatten()
+            .unwrap_or(&self.plain)
+            .clone()
+    }
+
+    pub fn body_size(&self) -> usize {
+        self.plain.body_size()
+    }
+
+    pub fn compressed_body_size(&self) -> Option<usize> {
+        self.compressed.as_ref().map(Request::body_size)
     }
 }
 
@@ -132,8 +169,7 @@ fn compress(json: &[u8]) -> Option<Bytes> {
     //
     // lgwin 22: LZ77 window = 2^22 - 16 ≈ 4 MB. How far back the
     // compressor looks for repeated patterns. The decompressor must
-    // allocate up to this much memory. Aligns with our current auction
-    // size (~3-4mb).
+    // allocate up to this much memory, regardless of the body size.
     //
     // 4096: internal I/O buffer for flushing to the output Vec.
     // Doesn't affect compression ratio. Tested 512 B to 256 KB with
@@ -200,41 +236,33 @@ fn tokens(auction: &domain::Auction, trusted_tokens: &HashSet<Address>) -> Vec<T
         .collect()
 }
 
-/// A [`Request`] in the encoding chosen for one particular driver.
-pub struct Encoded<'a> {
-    request: &'a Request,
-    /// The brotli body, if it is sent instead of the plain JSON.
-    compressed: Option<&'a Bytes>,
-}
-
-impl InjectIntoHttpRequest for Encoded<'_> {
+impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
-        let body = self.compressed.unwrap_or(&self.request.body).clone();
-        let body = futures::stream::iter([Ok::<_, Infallible>(body)]);
+        let body = futures::stream::iter([Ok::<_, Infallible>(self.body.clone())]);
         let request = request
             .body(reqwest::Body::wrap_stream(Measured::new(body)))
             // announce which auction this request is for in the
             // headers to help the driver detect duplicated
             // `/solve` requests before streaming the body
-            .header("X-Auction-Id", self.request.auction_id)
+            .header("X-Auction-Id", self.auction_id)
             // manually set the content type header for JSON since
             // we can't use `request.json(self)`
             .header(
                 reqwest::header::CONTENT_TYPE,
-                HeaderValue::from_static("application/json"),
+                reqwest::header::HeaderValue::from_static("application/json"),
             );
-        if self.compressed.is_some() {
-            request.header(
-                reqwest::header::CONTENT_ENCODING,
-                HeaderValue::from_static("br"),
-            )
+        if let Some(encoding) = &self.content_encoding {
+            request.header(reqwest::header::CONTENT_ENCODING, encoding)
         } else {
             request
         }
     }
 
     fn body_to_string(&self) -> Cow<'_, str> {
-        let string = str::from_utf8(self.request.body.as_ref()).unwrap();
+        if self.content_encoding.is_some() {
+            return Cow::Borrowed("<compressed>");
+        }
+        let string = str::from_utf8(self.body.as_ref()).unwrap();
         Cow::Borrowed(string)
     }
 }
@@ -522,8 +550,8 @@ mod tests {
     }
 
     /// The `content-encoding` header a driver receives for this request.
-    fn content_encoding(encoded: &Encoded<'_>) -> Option<String> {
-        let request = encoded
+    fn content_encoding(request: &Request) -> Option<String> {
+        let request = request
             .inject(reqwest::Client::new().post("http://localhost"))
             .build()
             .unwrap();
@@ -536,32 +564,29 @@ mod tests {
     #[tokio::test]
     async fn encoding_is_chosen_per_driver() {
         let auction = test_auction(1, vec![test_order(0x11, 0)]);
-        let request = Request::new(&auction, &HashSet::new(), test_deadline(), true).await;
+        let plain = Request::new(&auction, &HashSet::new(), test_deadline()).await;
+        let requests = EncodedRequests::new(plain.clone(), true).await;
 
-        let plain = request.encoded(false);
-        assert!(plain.compressed.is_none());
-        assert_eq!(content_encoding(&plain), None);
+        let request = requests.for_driver(false);
+        assert_eq!(content_encoding(&request), None);
+        assert_eq!(request.body, plain.body);
 
-        let compressed = request.encoded(true);
+        let request = requests.for_driver(true);
+        assert_eq!(content_encoding(&request), Some("br".to_owned()));
+        assert_eq!(request.body_to_string(), "<compressed>");
         let mut decompressed = Vec::new();
-        brotli::BrotliDecompress(
-            &mut compressed.compressed.unwrap().as_ref(),
-            &mut decompressed,
-        )
-        .unwrap();
-        assert_eq!(decompressed, request.body);
-        assert_eq!(content_encoding(&compressed), Some("br".to_owned()));
+        brotli::BrotliDecompress(&mut request.body.as_ref(), &mut decompressed).unwrap();
+        assert_eq!(decompressed, plain.body);
     }
 
     #[tokio::test]
-    async fn brotli_body_is_only_built_when_asked_for() {
+    async fn compressed_request_is_only_built_when_asked_for() {
         let auction = test_auction(1, vec![test_order(0x11, 0)]);
-        let request = Request::new(&auction, &HashSet::new(), test_deadline(), false).await;
+        let plain = Request::new(&auction, &HashSet::new(), test_deadline()).await;
+        let requests = EncodedRequests::new(plain, false).await;
 
-        assert_eq!(request.brotli_body_size(), None);
-        let encoded = request.encoded(true);
-        assert!(encoded.compressed.is_none());
-        assert_eq!(content_encoding(&encoded), None);
+        assert_eq!(requests.compressed_body_size(), None);
+        assert_eq!(content_encoding(&requests.for_driver(true)), None);
     }
 
     /// Uid with all 56 bytes set to `uid_byte`.
@@ -634,8 +659,8 @@ mod tests {
     #[tokio::test]
     async fn full_request_is_tagged() {
         let auction = test_auction(1, vec![test_order(0x11, 0)]);
-        let request = Request::new(&auction, &HashSet::new(), test_deadline(), false).await;
-        let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+        let request = Request::new(&auction, &HashSet::new(), test_deadline()).await;
+        let body: serde_json::Value = serde_json::from_str(&request.body_to_string()).unwrap();
 
         // The `kind` tag is the only addition compared to the body drivers
         // received before delta requests existed; every other field keeps its
@@ -657,9 +682,9 @@ mod tests {
         let previous = test_auction(1, vec![test_order(0x33, 0)]);
         let current = test_auction(2, vec![test_order(0x44, 0)]);
         let request =
-            Request::new_delta(&previous, &current, &HashSet::new(), test_deadline(), false).await;
+            Request::new_delta(&previous, &current, &HashSet::new(), test_deadline()).await;
 
-        let actual: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+        let actual: serde_json::Value = serde_json::from_str(&request.body_to_string()).unwrap();
         let expected = serde_json::json!({
             "kind": "delta",
             "id": "2",

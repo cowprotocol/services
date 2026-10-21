@@ -183,15 +183,15 @@ impl RunLoop {
             auction,
             &self.trusted_tokens.all(),
             Utc::now() + self.solve_deadline,
-            self.drivers.iter().any(|driver| driver.capabilities.brotli),
         )
         .await;
+        let compress = self.drivers.iter().any(|driver| driver.extensions.brotli);
+        let requests = solve::EncodedRequests::new(request, compress).await;
 
-        futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.participate(Arc::clone(driver), request.clone(), auction.id)),
-        )
+        futures::future::join_all(self.drivers.iter().map(|driver| {
+            let request = requests.for_driver(driver.extensions.brotli);
+            self.participate(Arc::clone(driver), request, auction.id)
+        }))
         .await
         .into_iter()
         .flatten()

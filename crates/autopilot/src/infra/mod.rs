@@ -8,5 +8,5 @@ pub mod solvers;
 pub use {
     blockchain::Ethereum,
     persistence::Persistence,
-    solvers::{Capabilities, Driver},
+    solvers::{Driver, SupportedExtensions},
 };
