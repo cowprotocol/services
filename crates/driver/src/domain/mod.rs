@@ -5,6 +5,7 @@ pub mod interaction;
 pub mod liquidity;
 pub mod mempools;
 pub mod quote;
+pub mod settlement_watcher;
 pub mod time;
 
 pub use {
