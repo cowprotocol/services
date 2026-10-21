@@ -265,7 +265,10 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         // lag beyond the watermark skips the cycle. A failed read skips it
         // too, the in-flight hold needs the watermark.
         let indexed = match db::last_indexed_slot(&self.pool).await {
-            Ok(indexed) if indexer_lags(*tip, indexed, self.max_indexer_lag) => {
+            Ok(Some(indexed)) if !indexer_lags(*tip, Some(indexed), self.max_indexer_lag) => {
+                indexed
+            }
+            Ok(indexed) => {
                 tracing::warn!(
                     tip,
                     ?indexed,
@@ -274,7 +277,6 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 metrics().lag_skipped_cuts.inc();
                 return NextAuction::Stale;
             }
-            Ok(indexed) => indexed,
             Err(err) => {
                 tracing::warn!(?err, "indexer slot read failed, skipping the cut");
                 return NextAuction::Failed;
@@ -289,7 +291,7 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         // between then releases an order the cut has not read yet, instead
         // of releasing one read with a stale `executed`.
         let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
-        let processed = indexed.map_or(tip_slot, |slot| slot.min(tip_slot));
+        let processed = indexed.min(tip_slot);
         let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, processed).await {
             Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
             Err(err) => {
