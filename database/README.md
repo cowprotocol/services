@@ -183,7 +183,6 @@ Stores timestamped events throughout an order's life cycle. This information is 
 
 Indexes:
 - order\_events\_by\_uid: btree(`order_uid`, `timestamp`)
-- order\_events\_by\_timestamp: btree(`timestamp`)
 
 ### order\_execution
 
