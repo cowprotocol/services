@@ -3,15 +3,14 @@ use {
     crate::{
         domain::{
             competition::solution::settlement::EncodedSettlement,
-            settlement_watcher::{SettlementEventHandler, SettlementWatcher, Submitted},
+            settlement_watcher::{self, SettlementEventHandler, SettlementWatcher, Submitted},
         },
         infra::{self, Ethereum, blockchain, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::Context,
     eth_domain_types::{self as eth, BlockNo, TxId},
-    ethrpc::block_stream::into_stream,
-    futures::{FutureExt, StreamExt, future::select_ok},
+    futures::{FutureExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
     std::ops::ControlFlow,
@@ -80,11 +79,8 @@ impl Mempools {
         let tx = prepare_submission(&settlement.internalized, mode);
         let signer = tx.from;
 
-        // Instantiate block stream and skip the current block before we submit
-        // the settlement. This way we only run iterations in blocks
-        // that can potentially include the settlement.
-        let mut block_stream = into_stream(self.ethereum.current_block().clone());
-        block_stream.next().await;
+        // Only run iterations in blocks that can include the settlement.
+        let block_stream = settlement_watcher::next_blocks(&self.ethereum).await;
 
         let current_block = self.ethereum.current_block().borrow().number;
         // The tx is simulated before submitting the solution to the
@@ -368,11 +364,7 @@ impl SettlementEventHandler for MempoolEvents<'_> {
     }
 
     async fn on_submission_expired(&self, submitted: &Submitted) -> Error {
-        tracing::debug!(
-            submission_deadline = submitted.submission_deadline.0,
-            settle_tx_hash = ?submitted.hash,
-            "exceeded submission deadline, cancelling"
-        );
+        tracing::debug!(tx = ?submitted.hash, "cancelling transaction");
         self.cancel().await;
         submitted.expired()
     }
@@ -396,15 +388,14 @@ impl SettlementEventHandler for MempoolEvents<'_> {
         block: BlockNo,
         err: &blockchain::Error,
     ) -> ControlFlow<Result<SubmissionSuccess, Error>> {
-        // The re-simulation can revert on a pending tx that conflicts with
-        // ours. The signer's pending nonce still covers our tx while it sits
-        // in the mempool, so only cancel once it left.
+        // The re-simulation can revert on our own pending tx re-applied, which
+        // the signer's pending nonce tells apart.
         let pending_nonce = self
             .mempools
             .ethereum
             .pending_transaction_count(self.signer)
             .await;
-        if requires_cancellation(true, &pending_nonce, self.nonce) {
+        if requires_cancellation(&pending_nonce, self.nonce) {
             tracing::info!(
                 settle_tx_hash = ?submitted.hash,
                 ?err,
@@ -621,19 +612,13 @@ impl Error {
     }
 }
 
-/// Whether a submitted settlement whose receipt is missing should be cancelled.
-/// We cancel only when the re-simulation reverts and the signer's pending nonce
-/// shows our tx is gone from the mempool (`pending_nonce <= submission_nonce`,
-/// so it was neither mined nor is it still queued). While the tx is still
-/// queued the revert is just our own pending tx re-applied, a false positive,
-/// so we keep waiting. A failed nonce lookup counts as "unknown" and never
-/// cancels.
-fn requires_cancellation<E>(
-    resimulation_reverted: bool,
-    pending_nonce: &Result<u64, E>,
-    submission_nonce: u64,
-) -> bool {
-    resimulation_reverted && matches!(pending_nonce, Ok(n) if *n <= submission_nonce)
+/// Whether a settlement whose re-simulation reverts should be cancelled. We
+/// cancel only when the signer's pending nonce shows our tx is not queued
+/// (`pending_nonce <= submission_nonce`). While the tx is still queued the
+/// revert is just our own pending tx re-applied, a false positive, so we keep
+/// waiting. A failed nonce lookup counts as "unknown" and never cancels.
+fn requires_cancellation<E>(pending_nonce: &Result<u64, E>, submission_nonce: u64) -> bool {
+    matches!(pending_nonce, Ok(n) if *n <= submission_nonce)
 }
 
 #[cfg(test)]
@@ -681,27 +666,19 @@ mod tests {
     const NONCE_LOOKUP_FAILED: Result<u64, ()> = Err(());
 
     #[test]
-    fn cancels_only_when_reverted_and_tx_left_the_mempool() {
-        // Reverted and the tx is no longer queued: a real revert, cancel.
-        assert!(requires_cancellation(true, &DROPPED, SUBMISSION_NONCE));
-        // Reverted but still queued: the revert is our own pending tx, so wait.
-        assert!(!requires_cancellation(
-            true,
-            &STILL_QUEUED,
-            SUBMISSION_NONCE
-        ));
-        // Re-simulation still succeeds: wait regardless of the nonce.
-        assert!(!requires_cancellation(false, &DROPPED, SUBMISSION_NONCE));
+    fn cancels_only_when_tx_left_the_mempool() {
+        // No longer queued: a real revert, cancel.
+        assert!(requires_cancellation(&DROPPED, SUBMISSION_NONCE));
+        // Still queued: the revert is our own pending tx, so wait.
+        assert!(!requires_cancellation(&STILL_QUEUED, SUBMISSION_NONCE));
     }
 
     #[test]
     fn failed_nonce_lookup_never_cancels() {
-        // An unknown pending nonce must never trigger a cancel, even on a
-        // revert. Otherwise a flaky nonce lookup reverts to the
-        // original bug: cancelling a tx that may have mined or is still
-        // queued.
+        // An unknown pending nonce must never trigger a cancel. Otherwise a
+        // flaky nonce lookup reverts to the original bug: cancelling a tx that
+        // may have mined or is still queued.
         assert!(!requires_cancellation(
-            true,
             &NONCE_LOOKUP_FAILED,
             SUBMISSION_NONCE
         ));
