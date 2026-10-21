@@ -1033,10 +1033,19 @@ fn error_label(error: &Error) -> &'static str {
 mod tests {
     use super::*;
 
-    /// Addresses loaded from lookup tables count toward the account lock
-    /// limit like static keys.
+    /// The bundle's v1 settlement counts its static keys; a v0 order creation
+    /// adds the addresses it loads from lookup tables.
     #[test]
-    fn counts_lookup_table_accounts() {
+    fn counts_static_and_lookup_table_accounts() {
+        let settlement = VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::V1(v1::Message {
+                account_keys: vec![Pubkey::new_unique(); 3],
+                ..Default::default()
+            }),
+        };
+        assert_eq!(account_count(&settlement), 3);
+
         let lookup = |writable_indexes, readonly_indexes| {
             solana_sdk::message::v0::MessageAddressTableLookup {
                 account_key: Pubkey::new_unique(),
@@ -1044,9 +1053,9 @@ mod tests {
                 readonly_indexes,
             }
         };
-        let transaction = VersionedTransaction {
+        let creation = VersionedTransaction {
             signatures: vec![],
-            message: solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+            message: VersionedMessage::V0(solana_sdk::message::v0::Message {
                 account_keys: vec![Pubkey::new_unique(); 3],
                 address_table_lookups: vec![
                     lookup(vec![0, 1], vec![2, 3, 4]),
@@ -1055,6 +1064,6 @@ mod tests {
                 ..Default::default()
             }),
         };
-        assert_eq!(account_count(&transaction), 9);
+        assert_eq!(account_count(&creation), 9);
     }
 }
