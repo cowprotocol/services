@@ -1329,7 +1329,8 @@ mod tests {
     }
 
     /// The settlement is v1: its instructions alone, with the compute budget
-    /// in the config, and room past v0's 1232-byte ceiling.
+    /// in the config, room past v0's 1232-byte ceiling, and wire bytes that
+    /// decode back to it.
     #[tokio::test]
     async fn a_settlement_encodes_as_v1_with_its_compute_budget_in_the_config() {
         let signer = Signer::Keypair(Keypair::new());
@@ -1357,6 +1358,11 @@ mod tests {
         let size = wire_size(&transaction);
         assert!((1233..=4096).contains(&size), "{size} bytes");
         assert!(transaction.verify_with_results().into_iter().all(|ok| ok));
+        let bytes = wincode::serialize(&transaction).unwrap();
+        assert_eq!(
+            wincode::deserialize::<VersionedTransaction>(&bytes).unwrap(),
+            transaction
+        );
     }
 
     /// v1 writes an instruction's account count as one byte, so 256 entries
