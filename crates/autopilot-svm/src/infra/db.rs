@@ -297,32 +297,44 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
 /// Close the auction's windows against the settlements the indexer recorded.
 /// A settlement carries no solution uid, so a window is matched through its
 /// solution's trade executions: the solver's settlement that traded one of
-/// them is the one that executed it. A window already closed as timed out
-/// upgrades to landed: the settlement executed, just late, and lateness stays
-/// visible as `end_slot` past `deadline_slot`.
+/// them is the one that executed it. The matched settlement row takes the
+/// window's solution uid. A window already closed as timed out upgrades to
+/// landed: the settlement executed, just late, and lateness stays visible as
+/// `end_slot` past `deadline_slot`.
 pub async fn close_landed_windows(
     ex: impl PgExecutor<'_>,
     auction_id: i64,
 ) -> Result<Vec<LandedWindow>> {
     const QUERY: &str = r#"
-UPDATE solana.settlement_executions e
-SET outcome = 'landed', end_timestamp = now(), end_slot = s.slot,
-    submitted_signature = s.tx_signature
-FROM solana.settlements s
-WHERE e.auction_id = $1
-  AND s.auction_id = e.auction_id
-  AND s.solver = e.solver
-  AND (e.outcome IS NULL OR e.outcome = 'timeout')
-  AND EXISTS (
-      SELECT 1
-      FROM solana.proposed_trade_executions pte
-      JOIN solana.trades t
-        ON t.tx_signature = s.tx_signature
-       AND t.instruction_index = s.instruction_index
-       AND t.order_uid = pte.order_uid
-      WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
-  )
-RETURNING e.solver, e.end_slot, e.submitted_signature
+WITH landed AS (
+    UPDATE solana.settlement_executions e
+    SET outcome = 'landed', end_timestamp = now(), end_slot = s.slot,
+        submitted_signature = s.tx_signature
+    FROM solana.settlements s
+    WHERE e.auction_id = $1
+      AND s.auction_id = e.auction_id
+      AND s.solver = e.solver
+      AND (e.outcome IS NULL OR e.outcome = 'timeout')
+      AND EXISTS (
+          SELECT 1
+          FROM solana.proposed_trade_executions pte
+          JOIN solana.trades t
+            ON t.tx_signature = s.tx_signature
+           AND t.instruction_index = s.instruction_index
+           AND t.order_uid = pte.order_uid
+          WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
+      )
+    RETURNING e.solver, e.solution_uid, e.end_slot, e.submitted_signature,
+              s.instruction_index
+),
+attributed AS (
+    UPDATE solana.settlements s
+    SET solution_uid = landed.solution_uid
+    FROM landed
+    WHERE s.tx_signature = landed.submitted_signature
+      AND s.instruction_index = landed.instruction_index
+)
+SELECT solver, end_slot, submitted_signature FROM landed
     "#;
     sqlx::query_as(QUERY)
         .bind(auction_id)
@@ -387,8 +399,8 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
 /// `reverted` window says the solution never went out or already failed on
 /// chain. A timed-out window keeps the hold, its transaction may land until
 /// the blockhash expires. Landing is checked per order through the
-/// settlement's trades: `settlements.solution_uid` is unattributed, and one
-/// solver may win several solutions of one auction.
+/// settlement's trades: `settlements.solution_uid` is written only when the
+/// window closes, and one solver may win several solutions of one auction.
 pub async fn in_flight_orders(
     ex: impl PgExecutor<'_>,
     tip_slot: i64,

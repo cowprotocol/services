@@ -768,7 +768,7 @@ impl Competition {
             tracing::warn!(
                 slot = %simulation.slot,
                 logs = ?simulation.logs,
-                message = %BASE64_STANDARD.encode(transaction.message.serialize()),
+                tx_message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
             );
             return Err(Error::SimulationFailed {
