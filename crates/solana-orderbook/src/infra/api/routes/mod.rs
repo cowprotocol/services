@@ -20,6 +20,7 @@ pub use {
     ready::ready,
     solver_competition::{
         solver_competition_by_id,
+        solver_competition_by_id_unfiltered,
         solver_competition_by_tx_hash,
         solver_competition_latest,
     },

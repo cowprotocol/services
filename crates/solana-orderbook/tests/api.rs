@@ -180,6 +180,10 @@ async fn solver_competition_rejects_malformed_path_parameters() {
         ("/api/v2/solver_competition/abc", "InvalidAuctionId"),
         ("/api/v2/solver_competition/-1", "InvalidAuctionId"),
         (
+            "/restricted/api/v2/solver_competition/abc",
+            "InvalidAuctionId",
+        ),
+        (
             "/api/v2/solver_competition/by_tx_hash/not-base58",
             "InvalidTransactionSignature",
         ),

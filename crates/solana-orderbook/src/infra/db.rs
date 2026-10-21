@@ -390,10 +390,27 @@ pub struct Competition {
 /// one whose deadline slot the indexer has not passed: its winners may still
 /// be settling, and their solutions would hand a front-runner the trades.
 pub async fn find_competition_by_id(pool: &PgPool, auction_id: i64) -> Result<Option<Competition>> {
+    read_competition(pool, auction_id, true).await
+}
+
+/// The competition of one auction, before its deadline too, for internal
+/// callers only.
+pub async fn find_competition_by_id_unfiltered(
+    pool: &PgPool,
+    auction_id: i64,
+) -> Result<Option<Competition>> {
+    read_competition(pool, auction_id, false).await
+}
+
+async fn read_competition(
+    pool: &PgPool,
+    auction_id: i64,
+    hide_before_deadline: bool,
+) -> Result<Option<Competition>> {
     const AUCTION: &str = r#"
 SELECT id, tip_slot, deadline_slot, order_uids, price_tokens, price_values
 FROM solana.competition_auctions
-WHERE id = $1 AND deadline_slot <= (SELECT slot FROM solana.indexer_state)
+WHERE id = $1 AND (NOT $2 OR deadline_slot <= (SELECT slot FROM solana.indexer_state))
     "#;
     // Solution uids count from 0 at the best, so `uid + 1` ranks them.
     const SOLUTIONS: &str = r#"
@@ -425,6 +442,7 @@ ORDER BY tx_signature
     "#;
     let auction: Option<CompetitionAuction> = sqlx::query_as(AUCTION)
         .bind(auction_id)
+        .bind(hide_before_deadline)
         .fetch_optional(pool)
         .await
         .context("read solana.competition_auctions")?;
@@ -1042,8 +1060,19 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             );
         }
         // Auction 2 stays hidden until the indexer passes its deadline, so
-        // auction 1 is the latest.
+        // auction 1 is the latest. The unfiltered read serves it already.
         assert!(find_competition_by_id(&pool, 2).await.unwrap().is_none());
+        let unfiltered = find_competition_by_id_unfiltered(&pool, 2)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unfiltered.auction.id, 2);
+        assert!(
+            find_competition_by_id_unfiltered(&pool, 3)
+                .await
+                .unwrap()
+                .is_none()
+        );
         let latest = find_latest_competition(&pool).await.unwrap().unwrap();
         assert_eq!(latest.auction.id, 1);
         sqlx::query("UPDATE solana.indexer_state SET slot = 200")

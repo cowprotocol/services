@@ -141,6 +141,10 @@ impl Api {
                 "/api/v2/solver_competition/{auction_id}",
                 get(routes::solver_competition_by_id),
             )
+            .route(
+                "/restricted/api/v2/solver_competition/{auction_id}",
+                get(routes::solver_competition_by_id_unfiltered),
+            )
             .route("/api/v1/orders", post(routes::create_order))
             .route("/api/v1/quote", post(routes::quote))
             .layer(cors)
