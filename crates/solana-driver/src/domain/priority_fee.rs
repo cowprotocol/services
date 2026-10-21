@@ -19,6 +19,12 @@ use {
 /// builtin, up to this ceiling), so this is the conservative pick.
 const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
+/// The base fee of one signature, in lamports: the cluster's
+/// `lamports_per_signature`, 5000 on every cluster. Precompile signature
+/// verifications count as signatures too, and the settlement has none, so
+/// it pays for the solver keypair's signature only.
+const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
+
 /// The compute unit limit for a transaction that consumed `units` in
 /// simulation. Usage can grow before the transaction lands and running out of
 /// units fails it, so the limit is twice the usage, up to the runtime's
@@ -70,6 +76,16 @@ pub(crate) struct Estimate {
     pub(crate) lamports: u128,
 }
 
+impl Estimate {
+    /// The network fee of the transaction paying this priority fee, in
+    /// lamports: the signature fee plus the priority fee.
+    pub(crate) fn network_fee(&self) -> u64 {
+        u64::try_from(self.lamports)
+            .unwrap_or(u64::MAX)
+            .saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[error(
     "priority fee of {lamports} lamports is over the {cap} lamport budget (network is too \
@@ -106,6 +122,13 @@ impl PriorityFeePolicy {
         })
     }
 
+    /// The most a transaction's network fee comes to under this policy: the
+    /// budget plus the signature fee.
+    pub(crate) fn max_network_fee(&self) -> u64 {
+        self.max_priority_fee_lamports
+            .saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
+
     /// The configured percentile of the most recent slots' fees, raised to the
     /// floor. No fees at all give the floor.
     fn compute_unit_price(&self, fees: &[RpcPrioritizationFee]) -> u64 {
@@ -132,7 +155,7 @@ fn percentile(sorted: &[u64], p: u8) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, solana_fee_structure::FeeStructure};
 
     fn fee(slot: u64, prioritization_fee: u64) -> RpcPrioritizationFee {
         RpcPrioritizationFee {
@@ -222,6 +245,15 @@ mod tests {
             ..policy
         };
         assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+    }
+
+    /// The constant follows the SDK's default fee structure.
+    #[test]
+    fn signature_fee_is_the_sdk_default() {
+        assert_eq!(
+            LAMPORTS_PER_SIGNATURE,
+            FeeStructure::default().lamports_per_signature
+        );
     }
 
     #[test]

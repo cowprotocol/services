@@ -20,11 +20,17 @@ use {
         infra::{
             api::Api,
             blockchain::{Solana, associated_token_address},
-            config,
+            config::{self, FeeHandler},
             solver::Solver,
         },
     },
-    solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction},
+    solana_sdk::{
+        program_pack::Pack,
+        pubkey::Pubkey,
+        rent::Rent,
+        signature::Signature,
+        transaction::VersionedTransaction,
+    },
     solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
     spl_token_interface::native_mint,
     std::{
@@ -160,12 +166,23 @@ async fn spawn_recording_solver_engine(
 }
 
 /// A solver client whose on-chain identity is a freshly generated keypair,
-/// so the test can register a matching settlement signer.
+/// so the test can register a matching settlement signer. Its engine prices
+/// the execution costs in, so fills come back as the engine reports them.
 async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
-    solver_with_fee(addr, 0).await
+    solver_with(addr, FeeHandler::Solver, 0).await
 }
 
+/// A solver client whose fills the driver cuts, by `solver_fee_bps` and the
+/// execution costs.
 async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
+    solver_with(addr, FeeHandler::Driver, solver_fee_bps).await
+}
+
+async fn solver_with(
+    addr: SocketAddr,
+    fee_handler: FeeHandler,
+    solver_fee_bps: u16,
+) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
     let solver = Solver::new(&config::Solver {
@@ -173,6 +190,7 @@ async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubk
         endpoint: format!("http://{addr}").parse().unwrap(),
         signer: cow_solana_signer::Config::Keypair(keypair_path),
         solve_every_nth_auction: None,
+        fee_handler,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
         max_native_shortfall_bps: None,
     })
@@ -195,6 +213,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         endpoint: "http://127.0.0.1:1".parse().unwrap(),
         signer: cow_solana_signer::Config::Keypair(keypair_file.path().to_path_buf()),
         solve_every_nth_auction: NonZero::new(stride),
+        fee_handler: FeeHandler::Solver,
         solver_fee_bps: None,
         max_native_shortfall_bps: None,
     })
@@ -836,6 +855,9 @@ fn quote_solution(executed_amount: &str) -> serde_json::Value {
     })
 }
 
+/// The mock RPC reports 10_000 micro-lamports per unit and the engine sends
+/// no compute estimate, so every quote here pays the 1.4M unit ceiling's
+/// 14_000 lamports plus the 5_000 signature fee.
 #[tokio::test]
 async fn quote_returns_the_executed_amounts() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
@@ -857,6 +879,7 @@ async fn quote_returns_the_executed_amounts() {
             "sellAmount": "1000",
             "buyAmount": "2000",
             "solver": account.to_string(),
+            "networkFee": "19000",
         })
     );
 }
@@ -882,36 +905,78 @@ async fn buy_quote_returns_the_executed_amounts() {
             "sellAmount": "1000",
             "buyAmount": "2000",
             "solver": account.to_string(),
+            "networkFee": "19000",
         })
     );
 }
 
-/// The auction order sells 1000 for at least 2000. A route paying 3000 is
-/// reported at 2850 after a 500 bps fee.
-#[tokio::test]
-async fn solve_reports_fee_adjusted_amounts() {
-    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with_fee(engine, 500).await;
-    let addr = spawn_server(vec![solver]).await;
-
-    let body = call_solve(addr).await;
-    let amounts = &body["solutions"][0]["orders"][uid()];
-    assert_eq!(amounts["executedSell"], "1000");
-    assert_eq!(amounts["executedBuy"], "2850");
+/// The lamports settling the standard solve request costs a driver that
+/// charges them: the rent of the order's missing 165-byte buy token account
+/// at the SDK's default rent, the mock RPC answering no rent sysvar, plus the
+/// 19_000 lamport network fee of the 1.4M unit ceiling at the mock's 10_000
+/// micro-lamports per unit.
+fn execution_cost() -> u64 {
+    Rent::default().minimum_balance(spl_token_interface::state::Account::LEN) + 19_000
 }
 
-/// A route paying exactly the 2000 limit undercuts it once the fee applies
-/// and is dropped before the autopilot sees it. The other solution survives.
+/// The standard solve request pricing the buy token so that the execution
+/// cost comes to exactly 100 of its atoms.
+fn solve_request_priced_for_a_cut_of_100() -> serde_json::Value {
+    let mut request = solve_request();
+    let price = execution_cost() * 10_000_000;
+    request["tokens"] =
+        serde_json::json!({ (pubkey(0x44).to_string()): { "price": price.to_string() } });
+    request
+}
+
+/// The auction order sells 1000 for at least 2000. The cut is 100 atoms and
+/// the fee 500 bps, so the engine is asked for 2211, the 2100 moved limit
+/// tightened by the fee, with no account flagged, and its route paying 3000
+/// is reported at 2750: 3000 less the 150 fee and the cut.
 #[tokio::test]
-async fn solve_drops_the_fill_the_fee_pushes_under_the_limit() {
-    let engine = spawn_mock_solver_engine(engine_response(&[(1, "2000"), (2, "3000")])).await;
+async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
     let (solver, _) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
-    let body = call_solve(addr).await;
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
+    let amounts = &body["solutions"][0]["orders"][uid()];
+    assert_eq!(amounts["executedSell"], "1000");
+    assert_eq!(amounts["executedBuy"], "2750");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2211");
+    assert!(request["orders"][0].get("missingBuyTokenAccount").is_none());
+}
+
+/// A route paying exactly the 2000 limit undercuts it once the cut applies
+/// and is dropped before the autopilot sees it. The other solution survives.
+#[tokio::test]
+async fn solve_drops_the_fill_the_cut_pushes_under_the_limit() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "2000"), (2, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
     assert_eq!(response_ids(&body), vec![2]);
 }
 
+/// Without a price for its buy token the order cannot be cut, so the engine
+/// is not asked at all.
+#[tokio::test]
+async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve(addr).await;
+    assert!(response_ids(&body).is_empty());
+    assert!(requests.lock().unwrap().is_none());
+}
+
+/// A quote shrinks by the fee like a fill, but not by the execution costs:
+/// the orderbook nets those from the quote itself, so the engine's 2000 buy
+/// comes back as 1900 with the network fee beside it.
 #[tokio::test]
 async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
@@ -933,6 +998,7 @@ async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
             "sellAmount": "1000",
             "buyAmount": "1900",
             "solver": account.to_string(),
+            "networkFee": "19000",
         })
     );
 }
@@ -960,6 +1026,7 @@ async fn buy_quote_reports_the_fee_adjusted_sell_amount() {
             "sellAmount": "1050",
             "buyAmount": "2000",
             "solver": account.to_string(),
+            "networkFee": "19000",
         })
     );
 }
@@ -1030,6 +1097,7 @@ async fn native_sol_buy_quote_is_priced_as_wsol() {
             "sellAmount": "1000",
             "buyAmount": "2000",
             "solver": account.to_string(),
+            "networkFee": "19000",
         })
     );
 }
@@ -1050,6 +1118,63 @@ async fn quote_without_a_solution_is_quoting_failed() {
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["kind"], "QuotingFailed");
+}
+
+/// The fee follows the engine's compute unit estimate: 10_000 micro-lamports
+/// over 200_000 units is 2_000 lamports, plus the 5_000 lamport signature fee.
+#[tokio::test]
+async fn quote_prices_the_network_fee_at_the_engines_compute_estimate() {
+    let mut solution = quote_solution("1000");
+    solution["solutions"][0]["cuEstimate"] = serde_json::json!(200_000);
+    let engine = spawn_mock_solver_engine(solution).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["networkFee"], "7000");
+}
+
+/// A route the driver would refuse to settle over the priority fee budget is
+/// not quoted either: at the mock RPC's 10_000 micro-lamports and the 1.4M
+/// unit ceiling the fee is 14_000 lamports, one over the budget.
+#[tokio::test]
+async fn quote_refuses_a_priority_fee_over_budget() {
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let api = Api {
+        priority_fee: PriorityFeePolicy {
+            max_priority_fee_lamports: 13_999,
+            ..priority_fee()
+        },
+        ..api_with(vec![solver], Mocks::new()).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "PriorityFeeTooHigh");
 }
 
 /// A quoted solution must not become settleable: quoting leaves the solution

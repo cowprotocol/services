@@ -7,6 +7,7 @@ use {
     crate::infra::{
         api::{Sponsoring, State, ValidationParameters, error, extract},
         db,
+        prices,
         quoter,
     },
     axum::{Json, http::StatusCode},
@@ -25,7 +26,7 @@ use {
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
-    std::{collections::HashMap, time::Duration},
+    std::{collections::HashMap, num::NonZero, time::Duration},
 };
 
 /// How long a quoted order stays valid when the request names no validity.
@@ -35,11 +36,8 @@ const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 /// once fee policies consume the link and the id becomes load-bearing.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// The network fee of one settlement, in lamports, a placeholder: the base
-/// fee of its one signature plus the runtime's compute unit ceiling at a
-/// fixed price of 1,000 micro-lamports per unit. TODO(BE-366): report the
-/// `networkFee` the driver's `/quote` answers for the quoted route instead.
-const NETWORK_FEES: u64 = 5_000 + (1_400_000 * 1_000_u64).div_ceil(1_000_000);
+/// The atoms a native price is quoted for: lamports per 10^9 atoms.
+const PRICE_UNIT: u128 = 1_000_000_000;
 
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
@@ -67,15 +65,46 @@ pub async fn quote(
             dto::Kind::Buy => quoter::Kind::Buy,
         },
     };
-    let (quoted, buy_token_ata_costs) = tokio::join!(
-        state.quoter().quote(&order),
+    let quotes = async {
+        // Every driver failure answers as no liquidity, the EVM mapping for
+        // estimator errors.
+        state
+            .quoter()
+            .quotes(&order)
+            .await
+            .map_err(|quoter::Error::NoQuotes| {
+                error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
+            })
+    };
+    // The autopilot leaves an order on a token no estimator prices out of
+    // every auction, so the quote fails before such an order is placed.
+    let prices = state.prices();
+    let price = |token| async move {
+        prices
+            .price(token)
+            .await
+            .map_err(|err| price_error(token, err))
+    };
+    let (quotes, buy_token_ata_costs, sell_price, buy_price) = futures::try_join!(
+        quotes,
         buy_account_rent(state.sponsoring(), &request, buy_program),
-    );
-    let buy_token_ata_costs = buy_token_ata_costs?;
-    // Every driver failure answers as no liquidity, the EVM mapping for
-    // estimator errors.
-    let quoted = quoted.map_err(|quoter::Error::NoQuotes| {
-        error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
+        price(request.sell_token),
+        price(request.buy_token),
+    )?;
+    // The cost comes out of the side the trader does not fix, the side the
+    // driver cuts at settlement.
+    let (token, price) = match kind {
+        dto::Kind::Sell => (request.buy_token, buy_price),
+        dto::Kind::Buy => (request.sell_token, sell_price),
+    };
+    let price =
+        NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
+    let quoted = best(quotes, kind, buy_token_ata_costs, price).ok_or_else(|| {
+        error::reply(
+            StatusCode::BAD_REQUEST,
+            "SellAmountDoesNotCoverFee",
+            "the quoted amount does not cover the execution cost",
+        )
     })?;
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
@@ -118,7 +147,7 @@ pub async fn quote(
             valid_to,
             app_data: request.app_data,
             fee_amount: 0,
-            network_fees: NETWORK_FEES,
+            network_fees: quoted.network_fee,
             buy_token_ata_costs,
             kind,
             partially_fillable: false,
@@ -129,6 +158,68 @@ pub async fn quote(
         verified: false,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
+}
+
+/// The best of `quotes` once each has its execution cost taken out: the
+/// largest buy for a sell order, the smallest sell for a buy order. `rent` is
+/// the buy token account's, `price` the native price of the token the cost
+/// comes out of. `None` when no quote can absorb its cost.
+fn best(
+    quotes: Vec<quoter::Quote>,
+    kind: dto::Kind,
+    rent: u64,
+    price: NonZero<u64>,
+) -> Option<quoter::Quote> {
+    let netted = quotes
+        .into_iter()
+        .filter_map(|quote| net(quote, kind, rent, price));
+    match kind {
+        dto::Kind::Sell => netted.max_by_key(|quote| quote.buy_amount),
+        dto::Kind::Buy => netted.min_by_key(|quote| quote.sell_amount),
+    }
+}
+
+/// `quote` with its execution cost, `rent` plus its own network fee, taken
+/// out of the side the trader does not fix: a sell order delivers less buy
+/// token, a buy order pulls more sell token. The lamports convert at `price`,
+/// rounded up against the trader. `None` when the amount cannot absorb it.
+fn net(
+    quote: quoter::Quote,
+    kind: dto::Kind,
+    rent: u64,
+    price: NonZero<u64>,
+) -> Option<quoter::Quote> {
+    let lamports = u128::from(rent) + u128::from(quote.network_fee);
+    let cut = u64::try_from((lamports * PRICE_UNIT).div_ceil(u128::from(price.get()))).ok()?;
+    Some(match kind {
+        dto::Kind::Sell => quoter::Quote {
+            buy_amount: quote
+                .buy_amount
+                .checked_sub(cut)
+                .filter(|delivered| *delivered > 0)?,
+            ..quote
+        },
+        dto::Kind::Buy => quoter::Quote {
+            sell_amount: quote.sell_amount.checked_add(cut)?,
+            ..quote
+        },
+    })
+}
+
+/// An unpriced or rate-limited token is no liquidity, anything else is the
+/// autopilot misbehaving.
+fn price_error(token: Pubkey, err: prices::Error) -> error::Reply {
+    match err {
+        prices::Error::NoLiquidity | prices::Error::RateLimited => error::reply(
+            StatusCode::NOT_FOUND,
+            "NoLiquidity",
+            format!("no native price for {token}"),
+        ),
+        prices::Error::Internal(err) => {
+            tracing::error!(?err, %token, "native price lookup failed");
+            error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+        }
+    }
 }
 
 /// Reject a mint the settlement program cannot move, and tell the buy mint's
@@ -456,6 +547,96 @@ mod tests {
             data: vec![0; data_len],
             ..Account::default()
         }
+    }
+
+    fn quote(sell_amount: u64, buy_amount: u64, network_fee: u64) -> quoter::Quote {
+        quoter::Quote {
+            sell_amount,
+            buy_amount,
+            solver: Pubkey::default(),
+            network_fee,
+        }
+    }
+
+    fn price(lamports_per_unit: u128) -> NonZero<u64> {
+        NonZero::new(u64::try_from(lamports_per_unit).unwrap()).unwrap()
+    }
+
+    fn legs(quote: &quoter::Quote) -> (u64, u64) {
+        (quote.sell_amount, quote.buy_amount)
+    }
+
+    /// 600 lamports of rent and a 400 lamport fee are 2000 atoms of a token
+    /// worth half a lamport an atom: off the buy leg of a sell order, onto
+    /// the sell leg of a buy order. Nothing to take leaves the quote as the
+    /// driver gave it.
+    #[test]
+    fn the_cost_comes_out_of_the_side_the_trader_does_not_fix() {
+        let price = price(PRICE_UNIT / 2);
+        let sell = net(quote(1_000, 5_000, 400), dto::Kind::Sell, 600, price).unwrap();
+        assert_eq!(legs(&sell), (1_000, 3_000));
+        let buy = net(quote(1_000, 5_000, 400), dto::Kind::Buy, 600, price).unwrap();
+        assert_eq!(legs(&buy), (3_000, 5_000));
+        let free = net(quote(1_000, 5_000, 0), dto::Kind::Sell, 0, price).unwrap();
+        assert_eq!(legs(&free), (1_000, 5_000));
+    }
+
+    /// At three lamports an atom, one lamport is a third of an atom and
+    /// costs a whole one, three lamports cost one, four cost two.
+    #[test]
+    fn the_cut_rounds_up_against_the_trader() {
+        let price = price(3 * PRICE_UNIT);
+        for (lamports, buy_amount) in [(1, 4_999), (3, 4_999), (4, 4_998)] {
+            let sell = net(quote(1_000, 5_000, lamports), dto::Kind::Sell, 0, price).unwrap();
+            assert_eq!(sell.buy_amount, buy_amount);
+            let buy = net(quote(1_000, 5_000, lamports), dto::Kind::Buy, 0, price).unwrap();
+            assert_eq!(buy.sell_amount, 1_000 + 5_000 - buy_amount);
+        }
+    }
+
+    /// A sell order delivering nothing after the cut, a buy order whose sell
+    /// leg overflows, and a cut past `u64::MAX` are all dropped.
+    #[test]
+    fn a_quote_that_cannot_absorb_its_cost_is_dropped() {
+        let lamport_an_atom = price(PRICE_UNIT);
+        let sell = |buy_amount, fee| {
+            net(
+                quote(1_000, buy_amount, fee),
+                dto::Kind::Sell,
+                0,
+                lamport_an_atom,
+            )
+        };
+        assert!(sell(500, 500).is_none());
+        assert_eq!(sell(501, 500).unwrap().buy_amount, 1);
+        assert!(net(quote(u64::MAX, 500, 1), dto::Kind::Buy, 0, lamport_an_atom).is_none());
+        assert!(net(quote(1_000, 5_000, u64::MAX), dto::Kind::Sell, 0, price(1)).is_none());
+    }
+
+    /// The raw-best quote loses to the one whose own network fee leaves the
+    /// trader more, and a quote that cannot absorb its cost never wins.
+    #[test]
+    fn the_best_quote_is_the_best_netted_one() {
+        let lamport_an_atom = price(PRICE_UNIT);
+        let quotes = vec![
+            quote(1_000, 5_000, 0),
+            quote(1_000, 5_100, 200),
+            quote(1_000, 10, 0),
+        ];
+        let sell = best(quotes, dto::Kind::Sell, 50, lamport_an_atom).unwrap();
+        assert_eq!((sell.buy_amount, sell.network_fee), (4_950, 0));
+        let quotes = vec![quote(1_000, 5_000, 0), quote(900, 5_000, 200)];
+        let buy = best(quotes, dto::Kind::Buy, 50, lamport_an_atom).unwrap();
+        assert_eq!((buy.sell_amount, buy.network_fee), (1_050, 0));
+        assert!(
+            best(
+                vec![quote(1_000, 10, 0)],
+                dto::Kind::Sell,
+                50,
+                lamport_an_atom
+            )
+            .is_none()
+        );
     }
 
     #[test]

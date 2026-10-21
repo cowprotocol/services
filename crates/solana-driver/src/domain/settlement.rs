@@ -369,18 +369,7 @@ impl ResolvedSettlement {
     /// The accounts the settlement transaction locks as writable, the fee
     /// payer first: the accounts whose recent prioritization fees price it.
     pub(crate) fn writable_accounts(&self) -> Result<Vec<Pubkey>, Error> {
-        let instructions = self.instructions()?;
-        let written = instructions.iter().flat_map(|instruction| {
-            instruction
-                .accounts
-                .iter()
-                .filter(|meta| meta.is_writable)
-                .map(|meta| meta.pubkey)
-        });
-        Ok(std::iter::once(self.payer)
-            .chain(written)
-            .unique()
-            .collect())
+        Ok(writable_accounts(self.payer, &self.instructions()?))
     }
 
     /// Compile the resolved settlement into the v0 message the payer signs,
@@ -423,6 +412,20 @@ impl ResolvedSettlement {
             message: VersionedMessage::V0(message),
         })
     }
+}
+
+/// The accounts a transaction of `instructions` paid by `payer` locks as
+/// writable, the payer first and each once: the accounts whose recent
+/// prioritization fees price the transaction.
+pub(crate) fn writable_accounts(payer: Pubkey, instructions: &[Instruction]) -> Vec<Pubkey> {
+    let written = instructions.iter().flat_map(|instruction| {
+        instruction
+            .accounts
+            .iter()
+            .filter(|meta| meta.is_writable)
+            .map(|meta| meta.pubkey)
+    });
+    std::iter::once(payer).chain(written).unique().collect()
 }
 
 /// `owner`'s associated token account for `mint`.
