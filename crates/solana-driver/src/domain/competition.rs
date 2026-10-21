@@ -535,7 +535,6 @@ impl Competition {
             .solutions
             .get(&key)
             .ok_or(Error::SolutionNotAvailable)?;
-        let cu_estimate = solution.cu_estimate;
 
         let current_slot = self.blockchain.slot().await.map_err(Error::Rpc)?;
         if current_slot >= submission_deadline_slot {
@@ -572,17 +571,20 @@ impl Competition {
             .await?
             .with_max_native_shortfall(self.solver.max_native_shortfall());
 
-        let (estimate, latest) =
-            tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
+        let compute_unit_limit = resolved.compute_unit_limit()?;
+        let (estimate, latest) = tokio::try_join!(
+            self.estimate_priority_fee(&resolved, compute_unit_limit),
+            async {
                 self.blockchain
                     .latest_confirmed_blockhash()
                     .await
                     .map_err(Error::Rpc)
-            },)?;
+            },
+        )?;
         let transaction = resolved
             .encode(self.solver.signer(), latest.blockhash, estimate)
             .await?;
-        observe_transaction(&transaction, cu_estimate);
+        observe_transaction(&transaction, compute_unit_limit);
         check_size(&transaction)?;
 
         self.simulate_settlement(&transaction).await?;
@@ -711,11 +713,11 @@ impl Competition {
     }
 
     /// The priority fee for the settlement transaction, from the fees recently
-    /// paid over the accounts it writes.
+    /// paid over the accounts it writes, at the limit it declares.
     async fn estimate_priority_fee(
         &self,
         resolved: &super::settlement::ResolvedSettlement,
-        cu_estimate: Option<u32>,
+        compute_unit_limit: u32,
     ) -> Result<priority_fee::Estimate, Error> {
         let writable = resolved.writable_accounts()?;
         let fees = self
@@ -723,7 +725,9 @@ impl Competition {
             .recent_prioritization_fees(&writable)
             .await
             .map_err(Error::Rpc)?;
-        let estimate = self.priority_fee.estimate(&fees, cu_estimate)?;
+        let estimate = self
+            .priority_fee
+            .estimate(&fees, Some(compute_unit_limit))?;
         metrics()
             .compute_unit_price
             .observe(estimate.compute_unit_price as f64);
@@ -917,8 +921,8 @@ struct Metrics {
     /// at 64.
     #[metric(buckets(16., 24., 32., 40., 48., 56., 64., 80.))]
     transaction_accounts: prometheus::Histogram,
-    /// Solver-estimated compute-unit limit for the settlement. The maximum is
-    /// 1.4M per transaction.
+    /// The compute unit limit the settlement declares. The maximum is 1.4M
+    /// per transaction.
     #[metric(buckets(
         100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
     ))]
@@ -934,7 +938,7 @@ fn metrics() -> &'static Metrics {
 
 /// Record the built transaction's footprint against the per-transaction bytes,
 /// account, and compute-unit ceilings.
-fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u32>) {
+fn observe_transaction(transaction: &VersionedTransaction, compute_unit_limit: u32) {
     let metrics = metrics();
     if let Some(bytes) = encoded_size(transaction) {
         metrics.transaction_bytes.observe(bytes as f64);
@@ -942,9 +946,7 @@ fn observe_transaction(transaction: &VersionedTransaction, cu_estimate: Option<u
     metrics
         .transaction_accounts
         .observe(account_count(transaction) as f64);
-    if let Some(cu) = cu_estimate {
-        metrics.compute_units.observe(f64::from(cu));
-    }
+    metrics.compute_units.observe(f64::from(compute_unit_limit));
 }
 
 /// The network's byte ceiling for the transaction's version: v1 for the

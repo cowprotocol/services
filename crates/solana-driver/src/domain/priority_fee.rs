@@ -13,10 +13,9 @@ use {
     std::cmp::Reverse,
 };
 
-/// The runtime's per-transaction compute unit ceiling, which prices a
-/// transaction that declares no limit. The runtime's own default for such a
-/// transaction is lower (200k units per non-builtin instruction and 3k per
-/// builtin, up to this ceiling), so this is the conservative pick.
+/// The runtime's per-transaction compute unit ceiling. It caps every limit
+/// and prices a quote whose engine sent no estimate: the quote has no
+/// settlement instructions to derive the runtime's default from.
 pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// The base fee of one signature, in lamports: the cluster's

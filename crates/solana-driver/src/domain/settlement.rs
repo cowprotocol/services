@@ -41,7 +41,7 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
-    solana_system_interface::instruction::transfer,
+    solana_system_interface::{instruction::transfer, program::ID as SYSTEM_PROGRAM_ID},
     spl_token_interface::native_mint,
     std::{
         collections::{HashMap, HashSet},
@@ -351,19 +351,23 @@ impl ResolvedSettlement {
         Ok(writable_accounts(self.payer, &self.instructions()?))
     }
 
+    /// The compute unit limit the settlement declares and prices its priority
+    /// fee at: the solution's, or else the runtime's default for a transaction
+    /// that declares none.
+    pub(crate) fn compute_unit_limit(&self) -> Result<u32, Error> {
+        Ok(match self.settlement.solution.cu_estimate {
+            Some(limit) => limit,
+            None => default_compute_unit_limit(&self.instructions()?),
+        })
+    }
+
     fn message(&self, blockhash: Hash, priority_fee: Estimate) -> Result<v1::Message, Error> {
         // v1 ignores compute budget instructions and defaults every unset
         // config value to zero, which leaves no compute units (SIMD-0385).
-        // Without a unit limit it is the ceiling the priority fee was priced
-        // at, and that fee is a lamport total rather than a unit price.
+        // The priority fee is a lamport total rather than a unit price.
         let config = v1::TransactionConfig {
             priority_fee: Some(priority_fee.lamports),
-            compute_unit_limit: Some(
-                self.settlement
-                    .solution
-                    .cu_estimate
-                    .unwrap_or(MAX_COMPUTE_UNIT_LIMIT),
-            ),
+            compute_unit_limit: Some(self.compute_unit_limit()?),
             loaded_accounts_data_size_limit: Some(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES),
             heap_size: None,
         };
@@ -405,6 +409,24 @@ impl ResolvedSettlement {
 /// v0's implicit loaded accounts data limit, which v1 has to request: its
 /// default of zero fails any transaction that loads an account.
 const MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES: u32 = 64 * 1024 * 1024;
+
+/// The runtime's default compute unit limit for a transaction that declares
+/// none, which v1 has to request: 200k units per instruction and 3k per
+/// builtin one, up to the ceiling. The system program is the only builtin a
+/// settlement calls.
+fn default_compute_unit_limit(instructions: &[Instruction]) -> u32 {
+    instructions
+        .iter()
+        .map(|instruction| {
+            if instruction.program_id == SYSTEM_PROGRAM_ID {
+                3_000
+            } else {
+                200_000
+            }
+        })
+        .sum::<u32>()
+        .min(MAX_COMPUTE_UNIT_LIMIT)
+}
 
 /// The accounts a transaction of `instructions` paid by `payer` locks as
 /// writable, the payer first and each once: the accounts whose recent
@@ -1358,18 +1380,53 @@ mod tests {
     }
 
     /// v1 has no runtime default limit, so a settlement without a solver
-    /// estimate declares the ceiling its priority fee was priced at.
-    #[test]
-    fn v1_without_a_solver_estimate_declares_the_compute_unit_ceiling() {
-        let mut resolved = sized_settlement(pubkey(0xbb), 0);
-        resolved.settlement.solution.cu_estimate = None;
+    /// estimate declares the default itself: 200k units per instruction and 3k
+    /// for the builtin system transfer that funds the native SOL payout.
+    #[tokio::test]
+    async fn v1_without_a_solver_estimate_declares_the_runtime_default() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = native_sol_order(&program_id, pubkey(0x68), pubkey(0x45));
+        let mut settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+        settlement.solution.cu_estimate = None;
+        let resolved = settlement
+            .resolve_accounts(
+                &blockchain(
+                    [mint_account_json(), mint_account_json()],
+                    [Value::Null, Value::Null],
+                ),
+                payer,
+            )
+            .await
+            .unwrap();
 
+        // [CreateAtaIdempotent, CreateAtaIdempotent, BeginSettle, Transfer
+        // (self), CloseAccount, Transfer (system), FinalizeSettle].
+        assert_eq!(resolved.compute_unit_limit().unwrap(), 1_203_000);
         let VersionedMessage::V1(message) = resolved.unsigned().unwrap().message else {
             panic!("expected a v1 settlement");
         };
+        assert_eq!(message.config.compute_unit_limit, Some(1_203_000));
+    }
+
+    /// The runtime default stops at the per-transaction ceiling.
+    #[test]
+    fn the_runtime_default_limit_stops_at_the_ceiling() {
+        let mut resolved = sized_settlement(pubkey(0xbb), 0);
+        resolved.settlement.solution.cu_estimate = None;
+        // [BeginSettle, 6 interactions, FinalizeSettle]: 1.6M before the cap.
+        for _ in 0..6 {
+            resolved
+                .settlement
+                .solution
+                .interactions
+                .push(Instruction::new_with_bytes(pubkey(0x99), &[], Vec::new()));
+        }
+
         assert_eq!(
-            message.config.compute_unit_limit,
-            Some(MAX_COMPUTE_UNIT_LIMIT)
+            resolved.compute_unit_limit().unwrap(),
+            MAX_COMPUTE_UNIT_LIMIT
         );
     }
 
