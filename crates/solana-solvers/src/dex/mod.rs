@@ -2,6 +2,7 @@
 //!
 //! `Dex` dispatches to the configured engine.
 
+pub mod bitget;
 pub mod jupiter;
 
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
@@ -72,6 +73,7 @@ impl Swap {
 /// The configured DEX backend.
 pub enum Dex {
     Jupiter(jupiter::Jupiter),
+    Bitget(bitget::Bitget),
 }
 
 impl Dex {
@@ -81,11 +83,30 @@ impl Dex {
     /// Jupiter has no source-account override. The sell funds must already be
     /// in that ATA. The caller must make sure that the ATA exists before the
     /// pull instructions of the swap run.
-    pub async fn swap(&self, order: &Order, user: &Pubkey) -> Result<Swap, jupiter::Error> {
+    pub async fn swap(&self, order: &Order, user: &Pubkey) -> Result<Swap, Error> {
         match self {
             Dex::Jupiter(jupiter) => jupiter.swap(order, user).await,
+            Dex::Bitget(bitget) => bitget.swap(order, user).await,
         }
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("failed to build the request")]
+    RequestBuildFailed,
+    #[error("no route for this order")]
+    NotFound,
+    #[error("order type is not supported")]
+    OrderNotSupported,
+    #[error("rate limited")]
+    RateLimited,
+    #[error("dex api error {status}: {body}")]
+    Api { status: u16, body: String },
+    #[error("malformed swap response: {0}")]
+    BadResponse(String),
+    #[error(transparent)]
+    Http(#[from] reqwest::Error),
 }
 
 #[cfg(test)]
