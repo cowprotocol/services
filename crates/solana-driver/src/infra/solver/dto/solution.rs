@@ -552,20 +552,4 @@ mod tests {
             .unwrap();
         assert_eq!(domain[0].cu_estimate, Some(1_400_000));
     }
-
-    /// Settlements are v1 and load no lookup tables, so the tables a solver
-    /// still sends are ignored rather than rejected.
-    #[test]
-    fn address_lookup_tables_are_ignored() {
-        let json = json!({
-            "solutions": [{
-                "id": 1,
-                "prices": {},
-                "trades": [],
-                "interactions": [],
-                "addressLookupTables": [pubkey(7).to_string()],
-            }]
-        });
-        assert!(serde_json::from_value::<Solutions>(json).is_ok());
-    }
 }

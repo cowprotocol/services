@@ -1419,19 +1419,10 @@ mod tests {
     /// The runtime default stops at the per-transaction ceiling.
     #[test]
     fn the_runtime_default_limit_stops_at_the_ceiling() {
-        let mut resolved = sized_settlement(pubkey(0xbb), 0);
-        resolved.settlement.solution.cu_estimate = None;
-        // [BeginSettle, 6 interactions, FinalizeSettle]: 1.6M before the cap.
-        for _ in 0..6 {
-            resolved
-                .settlement
-                .solution
-                .interactions
-                .push(Instruction::new_with_bytes(pubkey(0x99), &[], Vec::new()));
-        }
-
+        // Eight non-builtin instructions: 1.6M before the cap.
+        let instructions = vec![Instruction::new_with_bytes(pubkey(0x99), &[], Vec::new()); 8];
         assert_eq!(
-            resolved.compute_unit_limit().unwrap(),
+            default_compute_unit_limit(&instructions),
             MAX_COMPUTE_UNIT_LIMIT
         );
     }

@@ -949,24 +949,20 @@ fn observe_transaction(transaction: &VersionedTransaction, compute_unit_limit: u
     metrics.compute_units.observe(f64::from(compute_unit_limit));
 }
 
-/// The network's byte ceiling for the transaction's version: v1 for the
-/// settlement, v0 for the autopilot's order creations. An RPC node rejects a
-/// larger transaction before it simulates anything.
-fn max_transaction_bytes(transaction: &VersionedTransaction) -> u64 {
-    match transaction.message {
-        VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE as u64,
-        // `solana_packet::PACKET_DATA_SIZE` without the dependency.
-        VersionedMessage::Legacy(_) | VersionedMessage::V0(_) => 1232,
-    }
-}
-
 /// The transaction's wire size, `None` when it does not serialize.
 fn encoded_size(transaction: &VersionedTransaction) -> Option<u64> {
     wincode::serialized_size(transaction).ok()
 }
 
+/// Refuse a transaction over the network's byte ceiling for its version: v1
+/// for the settlement, v0 for the autopilot's order creations. An RPC node
+/// rejects a larger transaction before it simulates anything.
 fn check_size(transaction: &VersionedTransaction) -> Result<(), Error> {
-    let limit = max_transaction_bytes(transaction);
+    let limit = match transaction.message {
+        VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE as u64,
+        // `solana_packet::PACKET_DATA_SIZE` without the dependency.
+        VersionedMessage::Legacy(_) | VersionedMessage::V0(_) => 1232,
+    };
     match encoded_size(transaction) {
         Some(size) if size > limit => Err(Error::TransactionTooLarge { size, limit }),
         _ => Ok(()),
