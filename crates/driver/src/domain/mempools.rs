@@ -55,7 +55,7 @@ pub struct Mempools<R = infra::Mempool> {
     ethereum: Ethereum,
 }
 
-impl<R: TxReceiver + NonceSource> Mempools<R> {
+impl<R> Mempools<R> {
     pub fn new(tx_receivers: Vec<R>, wallet: infra::Wallet, ethereum: Ethereum) -> Self {
         Self {
             mempools: tx_receivers,
@@ -73,7 +73,10 @@ impl<R: TxReceiver + NonceSource> Mempools<R> {
         settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
-    ) -> Result<eth::TxId, Error> {
+    ) -> Result<eth::TxId, Error>
+    where
+        R: TxReceiver + NonceSource,
+    {
         let mut stats = vec![Outcome::Superseded; self.mempools.len()];
 
         let res = select_ok(
@@ -113,7 +116,10 @@ impl<R: TxReceiver + NonceSource> Mempools<R> {
         settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
-    ) -> Result<SubmissionSuccess, Error> {
+    ) -> Result<SubmissionSuccess, Error>
+    where
+        R: TxReceiver + NonceSource,
+    {
         let tx = prepare_submission(&settlement.internalized, mode);
         let signer = tx.from;
 
@@ -344,7 +350,10 @@ impl<R: TxReceiver + NonceSource> Mempools<R> {
         original_tx_gas_price: Eip1559Estimation,
         signer: eth::Address,
         nonce: u64,
-    ) -> Result<TxId, Error> {
+    ) -> Result<TxId, Error>
+    where
+        R: TxReceiver,
+    {
         let fallback_gas_price = original_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT);
         let replacement_gas_price = self
             .minimum_replacement_gas_price(mempool, signer, nonce)
@@ -394,7 +403,10 @@ impl<R: TxReceiver + NonceSource> Mempools<R> {
         mempool: &R,
         signer: eth::Address,
         next_nonce: u64,
-    ) -> Option<Eip1559Estimation> {
+    ) -> Option<Eip1559Estimation>
+    where
+        R: TxReceiver,
+    {
         mempool
             .pending_gas_price(signer, next_nonce)
             .await
@@ -405,7 +417,10 @@ impl<R: TxReceiver + NonceSource> Mempools<R> {
     ///
     /// When a winner exists, `Failed` outcomes are reclassified as `Superseded`
     /// since errors are typically race-condition false-positives.
-    fn update_metrics(&self, stats: &[Outcome]) {
+    fn update_metrics(&self, stats: &[Outcome])
+    where
+        R: TxReceiver,
+    {
         let winner_exists = stats.iter().any(|s| matches!(s, Outcome::Success { .. }));
         // Using `zip_eq` to catch regressions in tests (sizes always match in
         // practice).
