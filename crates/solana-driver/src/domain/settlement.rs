@@ -76,8 +76,9 @@ pub struct Settlement {
 /// payer's sell ATAs), the solver interactions, the funding of the native SOL
 /// buffer for native SOL buys, and `FinalizeSettle` (pushes buy tokens out of
 /// the buy-mint buffer PDAs and native SOL out of the native SOL buffer). It
-/// is a v1 transaction: no lookup tables, and its compute budget (the solver's
-/// optional unit limit and the driver's priority fee) in the message config.
+/// is a v1 transaction: no lookup tables, and its compute budget (the
+/// solution's optional unit limit and the driver's priority fee) in the
+/// message config.
 pub(crate) struct ResolvedSettlement {
     settlement: Settlement,
     /// The fee payer, who also signs `BeginSettle` as the solver.
@@ -347,26 +348,14 @@ impl ResolvedSettlement {
     /// The accounts the settlement transaction locks as writable, the fee
     /// payer first: the accounts whose recent prioritization fees price it.
     pub(crate) fn writable_accounts(&self) -> Result<Vec<Pubkey>, Error> {
-        let instructions = self.instructions()?;
-        let written = instructions.iter().flat_map(|instruction| {
-            instruction
-                .accounts
-                .iter()
-                .filter(|meta| meta.is_writable)
-                .map(|meta| meta.pubkey)
-        });
-        Ok(std::iter::once(self.payer)
-            .chain(written)
-            .unique()
-            .collect())
+        Ok(writable_accounts(self.payer, &self.instructions()?))
     }
 
     fn message(&self, blockhash: Hash, priority_fee: Estimate) -> Result<v1::Message, Error> {
         // v1 ignores compute budget instructions and defaults every unset
         // config value to zero, which leaves no compute units (SIMD-0385).
-        // Without a solver estimate the limit is the ceiling the priority fee
-        // was priced at, and that fee is a lamport total rather than a unit
-        // price.
+        // Without a unit limit it is the ceiling the priority fee was priced
+        // at, and that fee is a lamport total rather than a unit price.
         let config = v1::TransactionConfig {
             priority_fee: Some(priority_fee.lamports),
             compute_unit_limit: Some(
@@ -416,6 +405,20 @@ impl ResolvedSettlement {
 /// v0's implicit loaded accounts data limit, which v1 has to request: its
 /// default of zero fails any transaction that loads an account.
 const MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES: u32 = 64 * 1024 * 1024;
+
+/// The accounts a transaction of `instructions` paid by `payer` locks as
+/// writable, the payer first and each once: the accounts whose recent
+/// prioritization fees price the transaction.
+pub(crate) fn writable_accounts(payer: Pubkey, instructions: &[Instruction]) -> Vec<Pubkey> {
+    let written = instructions.iter().flat_map(|instruction| {
+        instruction
+            .accounts
+            .iter()
+            .filter(|meta| meta.is_writable)
+            .map(|meta| meta.pubkey)
+    });
+    std::iter::once(payer).chain(written).unique().collect()
+}
 
 /// `owner`'s associated token account for `mint`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

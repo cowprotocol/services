@@ -19,6 +19,22 @@ use {
 /// builtin, up to this ceiling), so this is the conservative pick.
 pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
+/// The base fee of one signature, in lamports: the cluster's
+/// `lamports_per_signature`, 5000 on every cluster. Precompile signature
+/// verifications count as signatures too, and the settlement has none, so
+/// it pays for the solver keypair's signature only.
+const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
+
+/// The compute unit limit for a transaction that consumed `units` in
+/// simulation. Usage can grow before the transaction lands and running out of
+/// units fails it, so the limit is twice the usage, up to the runtime's
+/// ceiling.
+pub(crate) fn compute_unit_limit(units: u64) -> u32 {
+    u32::try_from(units.saturating_mul(2))
+        .unwrap_or(u32::MAX)
+        .min(MAX_COMPUTE_UNIT_LIMIT)
+}
+
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
 
@@ -60,6 +76,14 @@ pub(crate) struct Estimate {
     pub(crate) lamports: u64,
 }
 
+impl Estimate {
+    /// The network fee of the transaction paying this priority fee, in
+    /// lamports: the signature fee plus the priority fee.
+    pub(crate) fn network_fee(&self) -> u64 {
+        self.lamports.saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[error(
     "priority fee of {lamports} lamports is over the {cap} lamport budget (network is too \
@@ -96,6 +120,13 @@ impl PriorityFeePolicy {
         }
     }
 
+    /// The most a transaction's network fee comes to under this policy: the
+    /// budget plus the signature fee.
+    pub(crate) fn max_network_fee(&self) -> u64 {
+        self.max_priority_fee_lamports
+            .saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
+
     /// The configured percentile of the most recent slots' fees, raised to the
     /// floor. No fees at all give the floor.
     fn compute_unit_price(&self, fees: &[RpcPrioritizationFee]) -> u64 {
@@ -122,7 +153,7 @@ fn percentile(sorted: &[u64], p: u8) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, solana_fee_structure::FeeStructure};
 
     fn fee(slot: u64, prioritization_fee: u64) -> RpcPrioritizationFee {
         RpcPrioritizationFee {
@@ -155,6 +186,13 @@ mod tests {
             ..policy
         };
         assert_eq!(policy.compute_unit_price(&fees), 30);
+    }
+
+    #[test]
+    fn compute_unit_limit_doubles_the_usage_up_to_the_ceiling() {
+        assert_eq!(compute_unit_limit(100_000), 200_000);
+        assert_eq!(compute_unit_limit(700_001), MAX_COMPUTE_UNIT_LIMIT);
+        assert_eq!(compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
     }
 
     #[test]
@@ -205,6 +243,15 @@ mod tests {
             ..policy
         };
         assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+    }
+
+    /// The constant follows the SDK's default fee structure.
+    #[test]
+    fn signature_fee_is_the_sdk_default() {
+        assert_eq!(
+            LAMPORTS_PER_SIGNATURE,
+            FeeStructure::default().lamports_per_signature
+        );
     }
 
     #[test]

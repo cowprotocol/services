@@ -6,14 +6,20 @@ use {
         Order,
         Side,
         auction::Id,
-        buy_token_accounts::BuyTokenAccountCache,
+        buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
+        execution_cost::{Charge, ExecutionCost},
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
-        settlement::ResolveError,
+        settlement::{ResolveError, writable_accounts},
+        slot::Slot,
         solution::Solution,
     },
-    crate::infra::{blockchain::Solana, solver::Solver},
+    crate::infra::{
+        blockchain::{BundleSimulation, Solana},
+        config::FeeHandler,
+        solver::Solver,
+    },
     base64::{Engine, prelude::BASE64_STANDARD},
     itertools::Itertools,
     moka::sync::Cache,
@@ -24,7 +30,7 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
-        collections::{HashMap, HashSet},
+        collections::HashMap,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -124,7 +130,7 @@ impl Competition {
             return Ok(Vec::new());
         }
         let solutions = self
-            .compute_solutions(&auction, &buy_token_accounts.missing)
+            .compute_solutions(&auction, Some(&buy_token_accounts))
             .await?;
         if solutions.is_empty() {
             return Ok(Vec::new());
@@ -153,7 +159,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -163,9 +169,14 @@ impl Competition {
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
             match &verdict {
-                Ok(()) => tracing::info!(
+                // Compared with the slot of a later failing `/settle`
+                // simulation, this separates a lagging bundle endpoint from
+                // state that changed in between.
+                Ok((slot, units_consumed)) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    slot = %slot,
+                    ?units_consumed,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -190,6 +201,11 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
+            if let Ok((_, Some(units))) = verdict
+                && solution.cu_estimate.is_none()
+            {
+                solution.cu_estimate = Some(priority_fee::compute_unit_limit(units));
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -210,13 +226,14 @@ impl Competition {
     /// creations of its orders not created on chain yet. Any failure would
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
-    /// driver could not find out.
+    /// driver could not find out. A pass returns the slot the bundle
+    /// simulated against and the compute units the settlement consumed.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<(), Error> {
+    ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
@@ -246,7 +263,7 @@ impl Competition {
             "simulating settlement bundle"
         );
 
-        let results = self
+        let BundleSimulation { slot, results } = self
             .blockchain
             .simulate_bundle(&bundle)
             .await
@@ -262,6 +279,7 @@ impl Competition {
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
                     program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
                     logs = ?result.logs,
+                    slot = %slot,
                     "bundle simulation failed"
                 );
                 return Err(Error::SimulationFailed {
@@ -279,26 +297,55 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(())
+        Ok((
+            slot,
+            results.last().and_then(|result| result.units_consumed),
+        ))
     }
 
     /// Send the auction to the solver engine and return its deduplicated
-    /// solutions without caching them.
+    /// solutions without caching them. When the solver's fee handler is the
+    /// driver, every fill is tightened by the solver fee, and a solve fill is
+    /// cut by the execution costs on top.
     ///
-    /// `missing_buy_token_accounts` marks the orders whose payout account the
-    /// settlement creates, so the engine can price its rent in.
+    /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
+    /// its execution costs are reported, not cut, and nothing is flagged.
     pub async fn compute_solutions(
         &self,
         auction: &Auction,
-        missing_buy_token_accounts: &HashSet<OrderUid>,
+        buy_token_accounts: Option<&BuyTokenAccounts>,
     ) -> Result<Vec<Solution>, Error> {
+        let no_rent = HashMap::new();
+        let (charge, costs) = match self.solver.fee_handler() {
+            FeeHandler::Solver => (
+                Charge::Engine {
+                    missing_buy_token_accounts: buy_token_accounts
+                        .map(|accounts| accounts.missing.keys().copied().collect())
+                        .unwrap_or_default(),
+                },
+                None,
+            ),
+            FeeHandler::Driver => {
+                let costs = ExecutionCost {
+                    rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
+                    native_prices: &auction.native_prices,
+                };
+                let network_fee = match buy_token_accounts {
+                    Some(_) => self.network_fee_reserve().await?,
+                    None => 0,
+                };
+                (
+                    Charge::Driver {
+                        cuts: costs.cuts(&auction.orders, network_fee),
+                        fee: self.solver.solver_fee(),
+                    },
+                    Some(costs),
+                )
+            }
+        };
         let solutions = self
             .solver
-            .solve(
-                auction,
-                self.blockchain.program_id(),
-                missing_buy_token_accounts,
-            )
+            .solve(auction, self.blockchain.program_id(), &charge)
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and
@@ -315,28 +362,92 @@ impl Competition {
             );
         }
 
-        let solutions = match self.solver.solver_fee() {
-            None => solutions,
-            Some(fee) => {
-                let orders = orders_by_uid(&auction.orders);
-                solutions
-                    .into_iter()
-                    .filter_map(|mut solution| match fee.apply(&mut solution, &orders) {
-                        Ok(()) => Some(solution),
-                        Err(reason) => {
-                            tracing::warn!(
-                                solver = %self.solver.name(),
-                                solution_id = solution.id,
-                                %reason,
-                                "dropping solution the solver fee cannot be applied to"
-                            );
-                            None
-                        }
-                    })
-                    .collect()
-            }
+        let Some(costs) = costs else {
+            return Ok(solutions);
         };
-        Ok(solutions)
+        let orders = orders_by_uid(&auction.orders);
+        let mut charged = Vec::with_capacity(solutions.len());
+        for mut solution in solutions {
+            if let Some(fee) = self.solver.solver_fee()
+                && let Err(reason) = fee.apply(&mut solution, &orders)
+            {
+                tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution the solver fee cannot be applied to"
+                );
+                continue;
+            }
+            let network_fee = match buy_token_accounts {
+                None => 0,
+                Some(_) => match self.network_fee(&solution).await {
+                    Ok(network_fee) => network_fee,
+                    Err(Error::PriorityFeeTooHigh(reason)) => {
+                        tracing::warn!(
+                            solver = %self.solver.name(),
+                            solution_id = solution.id,
+                            %reason,
+                            "dropping solution, its network fee is over budget"
+                        );
+                        continue;
+                    }
+                    Err(err) => return Err(err),
+                },
+            };
+            match costs.apply(&mut solution, &orders, network_fee) {
+                Ok(()) => charged.push(solution),
+                Err(reason) => tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution the execution costs cannot be cut from"
+                ),
+            }
+        }
+        Ok(charged)
+    }
+
+    /// The network fee the limit legs sent to the engine are moved by, before
+    /// any route is known: the signature fee plus the priority fee at the
+    /// runtime's compute unit ceiling over the fees recently paid cluster-wide,
+    /// or the budget when that is over it. Cluster-wide fees floor what any
+    /// route's accounts pay, so the fill's own fee, see [`Self::network_fee`],
+    /// is at least this much, and a fill on the moved limit whose route pays
+    /// more is dropped.
+    async fn network_fee_reserve(&self) -> Result<u64, Error> {
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&[])
+            .await
+            .map_err(Error::Rpc)?;
+        Ok(self.priority_fee.estimate(&fees, None).map_or_else(
+            |_| self.priority_fee.max_network_fee(),
+            |estimate| estimate.network_fee(),
+        ))
+    }
+
+    /// The network fee of settling `solution`, in lamports: the signature fee
+    /// plus the priority fee over the accounts its interactions write, at its
+    /// compute unit estimate. Prices a quote the way `settle` prices its
+    /// transaction. A quote's settlement accounts are placeholders, so only
+    /// the interactions' accounts are read.
+    pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
+        let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&writable)
+            .await
+            .map_err(Error::Rpc)?;
+        let estimate = self.priority_fee.estimate(&fees, solution.cu_estimate)?;
+        let network_fee = estimate.network_fee();
+        tracing::debug!(
+            solution_id = solution.id,
+            compute_unit_price = estimate.compute_unit_price,
+            network_fee,
+            "network fee estimated"
+        );
+        Ok(network_fee)
     }
 
     /// Submit a previously proposed solution on chain.
@@ -633,11 +744,12 @@ impl Competition {
             .await
             .map_err(Error::Rpc)?;
         if let Some(err) = &simulation.err {
-            // Only the program logs and the message surface here, the error
-            // itself carries the failure and its program error to the settle
-            // task's log. The message leaves out the signature, so the log
-            // cannot be broadcast.
+            // Only the slot, the program logs and the message surface here,
+            // the error itself carries the failure and its program error to
+            // the settle task's log. The message leaves out the signature, so
+            // the log cannot be broadcast.
             tracing::warn!(
+                slot = %simulation.slot,
                 logs = ?simulation.logs,
                 message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"

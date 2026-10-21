@@ -641,10 +641,10 @@ impl Blockchain {
         // gas used. The mint call above will result in the first call
         // to _update, and the onchain settlement will be the second.
         //
-        // This timeout ensures that when the settlement is executed at least
-        // one UNIX second has passed, so that conditional block always
+        // Advancing anvil's clock ensures that when the settlement is executed
+        // at least one UNIX second has passed, so that conditional block always
         // gets executed and the gas usage is deterministic.
-        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        web3.provider.anvil_increase_time(1).await.unwrap();
 
         Self {
             trader_secret_key: config.main_trader_secret_key,

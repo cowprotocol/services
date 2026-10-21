@@ -1,13 +1,19 @@
 //! Typed views of fetched on-chain accounts.
 //!
 //! Raw account state (owners, data bytes) stays behind the blockchain
-//! adapter. The domain receives mint token programs and classified
-//! token-account states, never raw `Account`s.
+//! adapter. The domain receives mint facts and classified token-account
+//! states, never raw `Account`s.
 
 use {
     cow_settlement_interface::token_program::TokenProgram,
-    solana_sdk::{account::Account, pubkey::Pubkey},
+    solana_sdk::{
+        account::{Account, from_account},
+        pubkey::Pubkey,
+        rent::Rent,
+        sysvar,
+    },
     solana_system_interface::program::ID as SYSTEM_PROGRAM_ID,
+    solana_token::ata_len,
     spl_token_2022_interface::{
         extension::StateWithExtensions,
         state::{Account as TokenAccount, AccountState, Mint},
@@ -33,10 +39,25 @@ impl AccountsSnapshot {
         self.accounts.contains_key(address)
     }
 
-    /// The token program of the mint at `mint`: the account's owner, when it is
-    /// one of the two token programs and the data reads as an initialized
-    /// mint.
-    pub fn mint_token_program(&self, mint: &Pubkey) -> Result<TokenProgram, InvalidMintReason> {
+    /// The lamports at `address`, zero when no account is there.
+    pub fn lamports(&self, address: &Pubkey) -> u64 {
+        self.accounts
+            .get(address)
+            .map_or(0, |account| account.lamports)
+    }
+
+    /// The rent sysvar, or the SDK's default when the snapshot does not hold
+    /// it.
+    pub fn rent(&self) -> Rent {
+        self.accounts
+            .get(&sysvar::rent::ID)
+            .and_then(from_account::<Rent, _>)
+            .unwrap_or_default()
+    }
+
+    /// The facts of the mint at `mint`, when the account's owner is one of
+    /// the two token programs and its data reads as an initialized mint.
+    pub fn mint_info(&self, mint: &Pubkey) -> Result<MintInfo, InvalidMintReason> {
         let account = self
             .accounts
             .get(mint)
@@ -45,7 +66,8 @@ impl AccountsSnapshot {
             TokenProgram::try_from(&account.owner).map_err(|_| InvalidMintReason::NotAMint)?;
         StateWithExtensions::<Mint>::unpack(&account.data)
             .map_err(|_| InvalidMintReason::NotAMint)?;
-        Ok(program)
+        let ata_len = ata_len(account).ok_or(InvalidMintReason::NotAMint)?;
+        Ok(MintInfo { program, ata_len })
     }
 
     /// Classify the state of the token account at `address` for a caller that
@@ -93,6 +115,16 @@ impl AccountsSnapshot {
             TokenAccountState::NeedsCreation
         )
     }
+}
+
+/// What the driver keeps of a mint: its token program and the size of its
+/// associated token accounts, which the mint's extensions fix at its
+/// creation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MintInfo {
+    pub program: TokenProgram,
+    /// The data length of a new associated token account of the mint.
+    pub ata_len: usize,
 }
 
 /// The observed state of a token account, for a caller that creates missing
@@ -343,21 +375,59 @@ mod tests {
         }
     }
 
+    /// A Token-2022 associated token account carries the immutable owner
+    /// extension, which the SPL Token one has no room for.
     #[test]
-    fn a_mint_reads_as_its_owners_token_program() {
+    fn a_mint_reads_as_its_owners_token_program_and_sizes_its_atas() {
         let (spl, token_2022) = (pubkey(0x11), pubkey(0x12));
         let snapshot = snapshot([
             (spl, mint_account()),
             (token_2022, token_2022_mint_account()),
         ]);
         assert_eq!(
-            snapshot.mint_token_program(&spl),
-            Ok(TokenProgram::SplToken)
+            snapshot.mint_info(&spl),
+            Ok(MintInfo {
+                program: TokenProgram::SplToken,
+                ata_len: TokenAccount::LEN,
+            })
         );
         assert_eq!(
-            snapshot.mint_token_program(&token_2022),
-            Ok(TokenProgram::Token2022)
+            snapshot.mint_info(&token_2022),
+            Ok(MintInfo {
+                program: TokenProgram::Token2022,
+                ata_len: ExtensionType::try_calculate_account_len::<TokenAccount>(&[
+                    ExtensionType::ImmutableOwner,
+                ])
+                .unwrap(),
+            })
         );
+    }
+
+    /// The rent sysvar is read when fetched and taken from the SDK otherwise.
+    #[test]
+    fn the_rent_is_the_fetched_sysvar_or_the_default() {
+        let rent = Rent {
+            lamports_per_byte: 1,
+            ..Rent::default()
+        };
+        let account = Account {
+            data: bincode::serialize(&rent).unwrap(),
+            ..Account::default()
+        };
+        assert_eq!(snapshot([(sysvar::rent::ID, account)]).rent(), rent);
+        assert_eq!(snapshot([]).rent(), Rent::default());
+    }
+
+    #[test]
+    fn lamports_are_zero_where_no_account_is() {
+        let address = pubkey(0x11);
+        let account = Account {
+            lamports: 7,
+            ..Account::default()
+        };
+        let snapshot = snapshot([(address, account)]);
+        assert_eq!(snapshot.lamports(&address), 7);
+        assert_eq!(snapshot.lamports(&pubkey(0x12)), 0);
     }
 
     /// A missing account is told apart from a token account or an account of
@@ -376,15 +446,15 @@ mod tests {
             ),
         ]);
         assert_eq!(
-            snapshot.mint_token_program(&pubkey(0x13)),
+            snapshot.mint_info(&pubkey(0x13)),
             Err(InvalidMintReason::AccountNotFound)
         );
         assert_eq!(
-            snapshot.mint_token_program(&token_account),
+            snapshot.mint_info(&token_account),
             Err(InvalidMintReason::NotAMint)
         );
         assert_eq!(
-            snapshot.mint_token_program(&foreign),
+            snapshot.mint_info(&foreign),
             Err(InvalidMintReason::NotAMint)
         );
     }

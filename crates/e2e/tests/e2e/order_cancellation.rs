@@ -70,19 +70,16 @@ async fn order_cancellation(web3: Web3) {
         colocation::LiquidityProvider::UniswapV2,
     );
     services
-        .start_autopilot(
-            None,
-            // Empty drivers to prevent settlement — this test places multiple
-            // orders and asserts exact auction counts, which would race with the
-            // solver settling them.
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test_no_drivers()
-            },
-        )
+        // Empty drivers to prevent settlement — this test places multiple
+        // orders and asserts exact auction counts, which would race with the
+        // solver settling them.
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test_no_drivers()
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {

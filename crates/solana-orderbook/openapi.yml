@@ -177,10 +177,13 @@ paths:
         unsigned fee payer), and every order field derives from its trailing
         `CreateOrder` instruction. In front of it the transaction carries the
         preparation steps, in this order: create the wSOL account, fund it,
-        sync it, and approve the settlement delegate, each omittable (the
-        wrap steps only for native SOL sells), followed by the mandatory buy
-        token account creation (idempotent, a no-op when the account already
-        exists). An order buying native SOL skips the creation, its payout
+        sync it, approve the settlement delegate, and create the buy token
+        account (idempotent, a no-op when the account already exists), each
+        omittable (the wrap steps only for native SOL sells). Without the
+        creation, the buy token account must already receive the buy mint or
+        be the owner's associated token account, which the settlement
+        creates when missing: a custom receiver's missing account needs the
+        creation. An order buying native SOL skips the creation, its payout
         goes to the wallet. The order competes in auctions until the
         transaction's blockhash expires (about a minute) or it settles.
       requestBody:
@@ -240,7 +243,8 @@ paths:
             whose payout can leave the wallet under its rent-exempt minimum,
             890880 lamports for an empty wallet (`InvalidNativeBuy`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
-            validity (`InsufficientValidTo`), a mint the settlement program
+            or above the maximum validity (`InsufficientValidTo`,
+            `ExcessiveValidTo`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:
@@ -253,7 +257,8 @@ paths:
       description: |
         What one order would trade for right now. Indicative: no component
         simulates the settlement, so `verified` is always false and the
-        amounts are not a commitment.
+        amounts are not a commitment. The amounts are net of the execution
+        cost, see `networkFees` and `buyTokenAtaCosts`.
       requestBody:
         required: true
         content:
@@ -276,19 +281,38 @@ paths:
             rent-exempt minimum, 890880 lamports for an empty wallet
             (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
-            (default two minutes) or further than the configured maximum
-            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
-            or a mint the settlement program cannot move (`UnsupportedToken`).
+            (default one minute) or further than the configured maximum
+            (default one year) (`InsufficientValidTo`, `ExcessiveValidTo`),
+            a mint the settlement program cannot move (`UnsupportedToken`),
+            a buy token account that exists but cannot take the payout,
+            frozen, another mint's, or refusing plain credits
+            (`InvalidBuyTokenAccount`), or no quoted amount covers the
+            execution cost (`SellAmountDoesNotCoverFee`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: No driver returned a route for the pair (`NoLiquidity`).
+          description: |
+            No driver returned a route for the pair, or a token has no native
+            price (`NoLiquidity`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v1/version:
+    get:
+      operationId: getApiVersion
+      summary: Get the API's current deployed version.
+      description: |
+        The build the API runs as `<ref>@<sha>`: the release tag or branch the
+        image was built from and its git commit (code:
+        https://github.com/cowprotocol/services).
+      responses:
+        "200":
+          description: Version
+          content:
+            text/plain: {}
 components:
   schemas:
     OrderUid:
@@ -523,7 +547,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         receiver:
-          description: The buy token account proceeds land in. Echoed back untouched.
+          description: >-
+            Optional recipient of the proceeds, in place of `from`. Either a
+            wallet, paid into its associated token account for the buy mint (or
+            directly, for native SOL), or a token account of the buy mint
+            itself. Echoed back untouched.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         kind:
@@ -592,6 +620,8 @@ components:
         - buyAmount
         - validTo
         - feeAmount
+        - networkFees
+        - buyTokenAtaCosts
         - kind
         - partiallyFillable
       properties:
@@ -616,6 +646,28 @@ components:
           nullable: true
         feeAmount:
           description: Always zero. No component charges a fee.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        networkFees:
+          description: >-
+            The network fee of settling the quoted route, in lamports, as the
+            winning driver reported it. Zero when the driver reports none.
+            Taken out of the quoted amounts together with `buyTokenAtaCosts`:
+            a sell order's `buyAmount` is lower by their worth in the buy
+            token, a buy order's `sellAmount` higher by their worth in the
+            sell token, at the autopilot's native prices, rounded against the
+            trader. Drivers are ranked on the amounts after the cut.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyTokenAtaCosts:
+          description: >-
+            Rent, in lamports at the cluster's rent, of the buy token account
+            when the settlement must create it; zero when the payout lands in
+            an existing one and for native SOL buys. An anonymous quote,
+            `from` zero without a `receiver`, names no account to read and is
+            priced as if it were missing. An upper bound when the account
+            cannot be read, without sponsoring included. Taken out of the
+            quoted amounts like `networkFees`.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         kind:

@@ -20,7 +20,7 @@ pub trait Quote {
         &self,
         order: &dex::Order,
         taker: &Pubkey,
-    ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send;
+    ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send;
 }
 
 impl Quote for Dex {
@@ -28,7 +28,7 @@ impl Quote for Dex {
         &self,
         order: &dex::Order,
         taker: &Pubkey,
-    ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
+    ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send {
         self.swap(order, taker)
     }
 }
@@ -101,16 +101,16 @@ impl<Q: Quote + Sync> Solver<Q> {
         let swap = self
             .rate_limiter
             .execute_with_back_off(self.quoter.quote(&dex_order, &auction.taker), |result| {
-                matches!(result, Err(dex::jupiter::Error::RateLimited))
+                matches!(result, Err(dex::Error::RateLimited))
             })
             .await
             // A quote dropped during a back-off counts as rate limited.
-            .unwrap_or(Err(dex::jupiter::Error::RateLimited))
+            .unwrap_or(Err(dex::Error::RateLimited))
             .inspect_err(|err| match err {
-                dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
+                dex::Error::NotFound | dex::Error::OrderNotSupported => {
                     tracing::debug!("no solution for swap")
                 }
-                dex::jupiter::Error::RateLimited => tracing::debug!("rate limited"),
+                dex::Error::RateLimited => tracing::debug!("rate limited"),
                 _ => tracing::warn!(%err, "quote failed"),
             })
             .ok()?;
@@ -211,7 +211,7 @@ mod tests {
             &self,
             order: &dex::Order,
             _taker: &Pubkey,
-        ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
+        ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send {
             let (side, sell_mint) = (order.side, order.sell_mint);
             // Nothing runs before the first poll: a quote still held back by
             // the back-off is not recorded.
@@ -220,12 +220,10 @@ mod tests {
                 let running = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                 self.max_in_flight.fetch_max(running, Ordering::SeqCst);
                 let result = match side {
-                    dex::Side::Buy => Err(dex::jupiter::Error::OrderNotSupported),
-                    dex::Side::Sell if sell_mint == pubkey(NO_ROUTE) => {
-                        Err(dex::jupiter::Error::NotFound)
-                    }
+                    dex::Side::Buy => Err(dex::Error::OrderNotSupported),
+                    dex::Side::Sell if sell_mint == pubkey(NO_ROUTE) => Err(dex::Error::NotFound),
                     dex::Side::Sell if sell_mint == pubkey(RATE_LIMITED) => {
-                        Err(dex::jupiter::Error::RateLimited)
+                        Err(dex::Error::RateLimited)
                     }
                     dex::Side::Sell => {
                         let delay = if sell_mint == pubkey(SLOW) {

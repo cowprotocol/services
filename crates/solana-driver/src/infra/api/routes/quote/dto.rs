@@ -24,7 +24,7 @@ pub struct QuoteRequest {
     pub deadline: chrono::DateTime<chrono::Utc>,
 }
 
-/// The quoted amounts.
+/// The quoted amounts and what settling them costs.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,4 +36,10 @@ pub struct QuoteResponse {
     /// The solver that produced the quote.
     #[serde_as(as = "DisplayFromStr")]
     pub solver: Pubkey,
+    /// The network fee of settling the quoted route, in lamports: the
+    /// signature fee plus the priority fee at the solution's compute unit
+    /// estimate, the runtime's ceiling when the engine sent none. The amounts
+    /// are not reduced by it.
+    #[serde_as(as = "DisplayFromStr")]
+    pub network_fee: u64,
 }
