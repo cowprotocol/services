@@ -344,6 +344,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             min_priority_fee: config.submission.min_priority_fee,
         },
         mempools: config.submission.to_domain(),
+        nonce_block_number: config.submission.nonce_block_number.map(Into::into),
         simulator: config.simulator,
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),

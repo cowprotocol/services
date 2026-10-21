@@ -6,6 +6,7 @@ pub mod liquidity;
 pub mod mempools;
 pub mod quote;
 pub mod time;
+pub mod tx_receiver;
 
 pub use {
     competition::Competition,

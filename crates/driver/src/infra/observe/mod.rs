@@ -4,7 +4,7 @@
 //! and update the metrics, if the event is worth measuring.
 
 use {
-    super::{Mempool, solver::Timeouts},
+    super::solver::Timeouts,
     crate::{
         boundary,
         domain::{
@@ -18,6 +18,7 @@ use {
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
             time::{Deadline, Remaining},
+            tx_receiver::TxReceiver,
         },
         infra::solver,
         util::http,
@@ -378,20 +379,20 @@ pub fn solver_response(
 /// visible in logs. Metrics are emitted separately from `update_metrics`
 /// once the race outcome is known.
 pub fn mempool_log(
-    mempool: &Mempool,
+    mempool: &impl TxReceiver,
     settlement: &EncodedSettlement,
     result: &Result<SubmissionSuccess, mempools::Error>,
 ) {
     match result {
         Ok(submission) => tracing::info!(
             txid = ?submission.tx_hash,
-            %mempool,
+            mempool = mempool.name(),
             ?settlement,
             "sending transaction via mempool succeeded",
         ),
         Err(err) => tracing::warn!(
             ?err,
-            %mempool,
+            mempool = mempool.name(),
             ?settlement,
             "sending transaction via mempool failed",
         ),
@@ -401,16 +402,20 @@ pub fn mempool_log(
 /// Emit per-mempool race counters with the final, reclassified label
 /// (`Success` / `Revert` / `Expired` / `Other` / `Superseded` / `Disabled`).
 /// Called once per mempool after the race resolves.
-pub fn mempool_submission_result(mempool: &Mempool, label: &str, blocks_passed: Option<u64>) {
-    let name = mempool.to_string();
+pub fn mempool_submission_result(
+    mempool: &impl TxReceiver,
+    label: &str,
+    blocks_passed: Option<u64>,
+) {
+    let name = mempool.name();
     metrics::get()
         .mempool_submission
-        .with_label_values(&[name.as_str(), label])
+        .with_label_values(&[name, label])
         .inc();
     if let Some(blocks) = blocks_passed {
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[name.as_str(), label])
+            .with_label_values(&[name, label])
             .inc_by(blocks);
     }
 }

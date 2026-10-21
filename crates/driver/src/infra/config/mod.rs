@@ -7,6 +7,7 @@ use {
         notify,
         solver,
     },
+    alloy::eips::BlockNumberOrTag,
     eth_domain_types as eth,
 };
 
@@ -24,6 +25,9 @@ pub struct Config {
     pub gas_estimator: GasEstimatorType,
     pub gas_price_parameters: GasPriceParameters,
     pub mempools: Vec<mempool::Config>,
+    /// The block to read a signer's nonce at. `None` leaves the choice to the
+    /// node.
+    pub nonce_block_number: Option<BlockNumberOrTag>,
     pub contracts: blockchain::contracts::Addresses,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub app_data_fetching: AppDataFetching,

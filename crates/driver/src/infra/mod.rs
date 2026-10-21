@@ -10,5 +10,13 @@ pub mod persistence;
 pub mod solver;
 pub mod time;
 pub mod tokens;
+pub mod wallet;
 
-pub use {self::solver::Solver, api::Api, blockchain::Ethereum, config::Config, mempool::Mempool};
+pub use {
+    self::solver::Solver,
+    api::Api,
+    blockchain::Ethereum,
+    config::Config,
+    mempool::Mempool,
+    wallet::Wallet,
+};

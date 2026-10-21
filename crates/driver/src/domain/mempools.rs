@@ -1,10 +1,17 @@
 use {
     super::competition::solution::GasFeeOverride,
     crate::{
-        domain::{blockchain::TxStatus, competition::solution::settlement::EncodedSettlement},
+        domain::{
+            blockchain::TxStatus,
+            competition::solution::settlement::EncodedSettlement,
+            tx_receiver::TxReceiver,
+        },
         infra::{self, Ethereum, observe},
     },
-    alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
+    alloy::{
+        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
+        primitives::Bytes,
+    },
     anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo, TxId},
     ethrpc::block_stream::into_stream,
@@ -42,16 +49,30 @@ pub enum SubmissionMode {
     },
 }
 
-/// The mempools used to execute settlements.
+/// The mempools used to execute settlements. All of one type, so their
+/// results are not mixed.
 #[derive(Debug, Clone)]
-pub struct Mempools {
-    mempools: Vec<infra::Mempool>,
+pub struct Mempools<R = infra::Mempool> {
+    mempools: Vec<R>,
+    wallet: infra::Wallet,
     ethereum: Ethereum,
+    /// The block to read nonces at. `None` leaves the choice to the node.
+    nonce_block: Option<BlockNumberOrTag>,
 }
 
-impl Mempools {
-    pub fn new(mempools: Vec<infra::Mempool>, ethereum: Ethereum) -> Self {
-        Self { mempools, ethereum }
+impl<R: TxReceiver> Mempools<R> {
+    pub fn new(
+        tx_receivers: Vec<R>,
+        wallet: infra::Wallet,
+        ethereum: Ethereum,
+        nonce_block: Option<BlockNumberOrTag>,
+    ) -> Self {
+        Self {
+            mempools: tx_receivers,
+            wallet,
+            ethereum,
+            nonce_block,
+        }
     }
 
     /// Race the mempools concurrently; first success wins. Pending
@@ -74,7 +95,7 @@ impl Mempools {
                     async move {
                         let result = self
                             .submit(mempool, settlement, submission_deadline, mode)
-                            .instrument(tracing::info_span!("mempool", kind = %mempool))
+                            .instrument(tracing::info_span!("mempool", kind = mempool.name()))
                             .await;
                         // Log inline so errors from mempools that later get
                         // superseded still surface;
@@ -99,7 +120,7 @@ impl Mempools {
 
     async fn submit(
         &self,
-        mempool: &infra::mempool::Mempool,
+        mempool: &R,
         settlement: &EncodedSettlement,
         submission_deadline: BlockNo,
         mode: &SubmissionMode,
@@ -118,7 +139,7 @@ impl Mempools {
         // competition, but a delay between that and the actual
         // execution can cause the simulation to be invalid which
         // doesn't make sense to submit to the mempool anymore.
-        if mempool.reverts_can_get_mined() {
+        if mempool.mines_reverting_txs() {
             if let Err(err) = self.ethereum.estimate_gas(tx.clone()).await {
                 if err.is_revert() {
                     tracing::info!(
@@ -142,7 +163,11 @@ impl Mempools {
 
         // Fetch the nonce for the signing account (not the solver in 7702
         // mode).
-        let nonce = mempool.get_nonce(signer).await?;
+        let nonce = self
+            .ethereum
+            .nonce(signer, self.nonce_block)
+            .await
+            .context("failed to fetch nonce")?;
 
         // estimate the gas price such that the tx should still be included
         // even if the gas price increases the maximum amount until the
@@ -184,15 +209,12 @@ impl Mempools {
             ?signer,
             "submitting settlement tx"
         );
-        let hash = mempool
-            .submit(
-                tx.clone(),
-                final_gas_price,
-                settlement.gas.limit,
-                signer,
-                nonce,
-            )
+        let signed = self
+            .wallet
+            .sign(&tx, nonce, final_gas_price, settlement.gas.limit)
             .await?;
+        mempool.send(&signed).await?;
+        let hash = signed.hash;
 
         // Wait for the transaction to be mined, expired or failing.
         let result = async {
@@ -330,7 +352,7 @@ impl Mempools {
     /// slightly higher gas price than the existing one.
     async fn cancel(
         &self,
-        mempool: &infra::mempool::Mempool,
+        mempool: &R,
         original_tx_gas_price: Eip1559Estimation,
         signer: eth::Address,
         nonce: u64,
@@ -363,55 +385,32 @@ impl Mempools {
             "submitting cancellation tx"
         );
 
-        mempool
-            .submit(
-                cancellation,
+        let cancellation = self
+            .wallet
+            .sign(
+                &cancellation,
+                nonce,
                 final_gas_price,
                 CANCELLATION_GAS_AMOUNT.into(),
-                signer,
-                nonce,
             )
-            .await
+            .await?;
+        mempool.send(&cancellation).await?;
+        Ok(cancellation.hash)
     }
 
-    /// Computes minimum price to replace the last tx that was submitted
-    /// with the given nonce. Returns `None` if no tx was submitted with
-    /// that nonce yet.
+    /// Computes minimum price to replace the tx still pending in the mempool
+    /// with the given nonce. Returns `None` if there is no such tx.
     #[tracing::instrument(skip_all)]
     async fn minimum_replacement_gas_price(
         &self,
-        mempool: &infra::Mempool,
+        mempool: &R,
         signer: eth::Address,
         next_nonce: u64,
     ) -> Option<Eip1559Estimation> {
-        if let Some(last_submission) = mempool.last_submission(signer) {
-            if last_submission.nonce == next_nonce {
-                Some(last_submission.gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
-            } else {
-                None
-            }
-        } else {
-            // If we don't have the last submission in-memory (i.e. first
-            // submission attempt after a restart) we try to inspect
-            // the nodes transaction mempool. This is only done as a
-            // backup since it can incur significant latency and
-            // is generally not very widely supported.
-            let pending_tx = mempool
-                .find_pending_tx_in_mempool(signer, next_nonce)
-                .await
-                .inspect_err(|err| tracing::debug!(?err, "could not inspect tx mempool"))
-                .ok()??;
-
-            let pending_tx_gas_price = Eip1559Estimation {
-                max_fee_per_gas: pending_tx.max_fee_per_gas(),
-                max_priority_fee_per_gas: pending_tx.max_priority_fee_per_gas().or_else(|| {
-                    tracing::error!(tx = ?pending_tx.inner.tx_hash(), "pending tx is not EIP 1559");
-                    None
-                })?,
-            };
-
-            Some(pending_tx_gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
-        }
+        mempool
+            .pending_gas_price(signer, next_nonce)
+            .await
+            .map(|gas_price| gas_price.scaled_by_pct(GAS_PRICE_BUMP_PCT))
     }
 
     /// Update per-mempool metrics based on submission outcomes.

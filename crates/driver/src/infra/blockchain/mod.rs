@@ -6,7 +6,7 @@ use {
     },
     account_balances::{BalanceSimulator, SimulationError},
     alloy::{
-        eips::eip1559::Eip1559Estimation,
+        eips::{BlockNumberOrTag, eip1559::Eip1559Estimation},
         network::TransactionBuilder,
         providers::Provider,
         rpc::types::{TransactionReceipt, TransactionRequest},
@@ -323,6 +323,27 @@ impl Ethereum {
             .find(|(_, log)| log.transaction_hash == Some(tx_hash.0))
             .and_then(|(_, log)| log.block_number)
             .map(eth::BlockNo))
+    }
+
+    /// The signer's transaction count at `block`, or at the node's default
+    /// block when `None`.
+    pub async fn nonce(
+        &self,
+        address: eth::Address,
+        block: Option<BlockNumberOrTag>,
+    ) -> Result<u64, Error> {
+        let call = self.web3.provider.get_transaction_count(address);
+        match block {
+            Some(BlockNumberOrTag::Latest) => call.latest(),
+            Some(BlockNumberOrTag::Earliest) => call.earliest(),
+            Some(BlockNumberOrTag::Finalized) => call.finalized(),
+            Some(BlockNumberOrTag::Number(number)) => call.number(number),
+            Some(BlockNumberOrTag::Pending) => call.pending(),
+            Some(BlockNumberOrTag::Safe) => call.safe(),
+            None => call,
+        }
+        .await
+        .map_err(Into::into)
     }
 
     /// The signer's transaction count including the mempool (the `pending`

@@ -113,22 +113,17 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         mempools: Mempools::new(
             config
                 .mempools
-                .iter()
-                .map(|mempool| {
-                    crate::infra::mempool::Mempool::new(
-                        mempool.to_owned(),
-                        config
-                            .solvers
-                            .iter()
-                            .flat_map(|config| {
-                                std::iter::once(config.account.clone())
-                                    .chain(config.submission_accounts.iter().cloned())
-                            })
-                            .collect(),
-                    )
-                })
+                .into_iter()
+                .map(infra::Mempool::new)
                 .collect(),
+            infra::Wallet::new(
+                config.solvers.into_iter().flat_map(|solver| {
+                    std::iter::once(solver.account).chain(solver.submission_accounts)
+                }),
+                eth.chain().id(),
+            ),
             eth.clone(),
+            config.nonce_block_number,
         ),
         balance_cache: config.balance_cache,
         eth,
