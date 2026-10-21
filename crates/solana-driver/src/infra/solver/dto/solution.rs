@@ -37,8 +37,8 @@ pub struct Solution {
     /// Uniform clearing prices by mint: the sell mint maps to the amount
     /// bought and the buy mint to the amount sold, so for every trade
     /// `executed_sell * price_sell == executed_buy * price_buy`. The engine
-    /// fills one order, or a batch of sell orders on one directed pair, with
-    /// one swap, so the pair is that swap's ratio.
+    /// fills one order, or a batch of orders of one side on one directed
+    /// pair, with one swap, so the pair is that swap's ratio.
     #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
     pub prices: HashMap<Pubkey, NonZero<u64>>,
     pub trades: Vec<Trade>,

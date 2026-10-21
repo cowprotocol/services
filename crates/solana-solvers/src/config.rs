@@ -27,8 +27,9 @@ pub struct Config {
     #[serde(with = "humantime_serde", default = "default_max_back_off")]
     pub max_back_off: Duration,
 
-    /// The most orders one batched solution fills. 1 disables batching: each
-    /// pair then quotes only its most permissive sell order.
+    /// The most orders one batched solution fills: per side and directed
+    /// pair, the most permissive orders up to this many are quoted as one
+    /// batch and the rest are not quoted. 1 quotes one order per pair.
     #[serde(default = "default_max_batch_size")]
     pub max_batch_size: NonZeroUsize,
 

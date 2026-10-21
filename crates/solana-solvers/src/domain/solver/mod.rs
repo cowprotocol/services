@@ -1,5 +1,4 @@
-//! Solve loop: quote the orders of each side and directed mint pair as one
-//! batch, trimmed down to the orders its swap clears.
+//! Solve loop: one batched solution per side and directed mint pair.
 
 use {
     crate::{
@@ -46,16 +45,12 @@ impl Aggregator for Dex {
     }
 }
 
-/// Quotes auction orders into solutions: the orders of each side and
-/// directed mint pair as one batch that trims down to the orders its swap
-/// clears. At most `concurrent_requests` quotes at a time, pausing after a
-/// rate-limited response, until the auction deadline.
+/// Quotes an auction's orders into solutions, as [`Solver::solve`] describes.
 pub struct Solver<Q> {
     quoter: Q,
     concurrent_requests: NonZeroUsize,
     rate_limiter: RateLimiter,
-    /// The most orders one batch starts from; 1 quotes only the most
-    /// permissive sell order of each pair.
+    /// See `Config::max_batch_size`.
     max_batch_size: NonZeroUsize,
 }
 
@@ -78,12 +73,15 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     /// deadline.
     ///
     /// The autopilot's arbitrator picks at most one winner per directed
-    /// pair, so the orders of a pair compete for one slot: those of one side
-    /// are quoted as one batch of the `max_batch_size` most permissive ones,
-    /// trimmed if the aggregate doesn't satisfy the limit and requoted until it
-    /// clears, possibly down to a single order. Buys (when disabled), orders
-    /// the aggregator cannot route, and swaps that undercut every order
-    /// yield no candidate. The rest of the auction still proceeds.
+    /// pair, so the orders of a pair compete for one slot and are quoted as
+    /// one batch: the `max_batch_size` most permissive orders of one side, as
+    /// one swap over their total. If the swap's rate undercuts an order, the
+    /// least permissive one is dropped and the rest requoted, so a batch
+    /// clears, trims down to a single order, or yields nothing. Buys (when
+    /// disabled), orders the aggregator cannot route, and the orders of a
+    /// pair beyond `max_batch_size` yield no candidate; the rest of the
+    /// auction still proceeds. At most `concurrent_requests` quotes run at a
+    /// time, pausing after a rate-limited response.
     ///
     /// TODO(BE-308): retry partially fillable orders at smaller amounts when
     /// the swap undercuts the limit, like the EVM engine's `Fills`. The
@@ -123,12 +121,11 @@ impl<Q: Aggregator + Sync> Solver<Q> {
             .filter_map(future::ready)
     }
 
-    /// The auction's orders in groups that each yield at most one solution,
-    /// in order of first appearance so one auction groups the same on every
-    /// run: per side, directed mint pair and swap destination, the
-    /// `max_batch_size` most permissive orders (fewer when their total would
-    /// overflow). Sells and buys on one pair stay apart: one swap fixes
-    /// either its input or its output.
+    /// The orders to quote as one batch, per side, directed mint pair and
+    /// swap destination, most permissive first and cut to `max_batch_size`
+    /// (fewer when their total would overflow). Groups keep first-appearance
+    /// order so one auction groups the same on every run; sells and buys stay
+    /// apart since one swap fixes either its input or its output.
     fn groups<'a>(&self, auction: &'a Auction) -> Vec<Vec<&'a auction::Order>> {
         let mut groups: Vec<Vec<&auction::Order>> = Vec::new();
         let mut group_by_pair = HashMap::new();
@@ -154,13 +151,8 @@ impl<Q: Aggregator + Sync> Solver<Q> {
         groups
     }
 
-    /// Quotes `orders`, orders of one side on one directed pair
-    /// as one swap over their total and fills each in full at the swap's
-    /// uniform price. If the joint order violates a limit, the least
-    /// permissive tail order is left out and the rest is quoted again. Every
-    /// round drops one order, so the batch ends cleared, down to a single
-    /// order, or empty. Rounds only price the batch, the swap is built once
-    /// it clears.
+    /// The solution for one group, see [`Solver::solve`]. Rounds only price
+    /// the batch; the swap is built once it clears.
     async fn solve_group(
         &self,
         id: u64,
@@ -169,7 +161,7 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     ) -> Option<Solution> {
         while !orders.is_empty() {
             let batch = batch_order(&orders)?;
-            let quote = self.limited(self.quoter.quote(&batch)).await?;
+            let quote = self.limited("quote", self.quoter.quote(&batch)).await?;
             // The limits are checked at the rate the solution's prices will
             // encode, which for a batch of buys is a little worse than the
             // swap's own.
@@ -179,7 +171,7 @@ impl<Q: Aggregator + Sync> Solver<Q> {
                 .all(|order| dex::satisfies(&order.to_dex_order(), in_amount, out_amount))
             {
                 let swap = self
-                    .limited(self.quoter.swap(&quote, &auction.taker))
+                    .limited("swap", self.quoter.swap(&quote, &auction.taker))
                     .await?;
                 return assemble(id, &orders, swap);
             }
@@ -199,10 +191,11 @@ impl<Q: Aggregator + Sync> Solver<Q> {
         None
     }
 
-    /// One aggregator request through the rate limiter. A request dropped
-    /// during a back-off counts as rate limited.
+    /// One aggregator request through the rate limiter, logged under `what`.
+    /// A request dropped during a back-off counts as rate limited.
     async fn limited<T>(
         &self,
+        what: &'static str,
         request: impl Future<Output = Result<T, dex::jupiter::Error>>,
     ) -> Option<T> {
         self.rate_limiter
@@ -213,10 +206,10 @@ impl<Q: Aggregator + Sync> Solver<Q> {
             .unwrap_or(Err(dex::jupiter::Error::RateLimited))
             .inspect_err(|err| match err {
                 dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
-                    tracing::debug!("no solution for swap")
+                    tracing::debug!(%err, "no {what}")
                 }
-                dex::jupiter::Error::RateLimited => tracing::debug!("rate limited"),
-                _ => tracing::warn!(%err, "quote failed"),
+                dex::jupiter::Error::RateLimited => tracing::debug!("{what} rate limited"),
+                _ => tracing::warn!(%err, "{what} failed"),
             })
             .ok()
     }
