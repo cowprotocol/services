@@ -154,13 +154,7 @@ impl Mempools {
             "submitting settlement tx"
         );
         let hash = mempool
-            .submit(
-                tx.clone(),
-                final_gas_price,
-                settlement.gas.limit,
-                signer,
-                nonce,
-            )
+            .submit(&tx, final_gas_price, settlement.gas.limit, signer, nonce)
             .await?;
 
         SettlementWatcher {
@@ -222,7 +216,7 @@ impl Mempools {
 
         mempool
             .submit(
-                cancellation,
+                &cancellation,
                 final_gas_price,
                 CANCELLATION_GAS_AMOUNT.into(),
                 signer,

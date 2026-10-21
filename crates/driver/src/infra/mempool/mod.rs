@@ -101,26 +101,14 @@ impl Mempool {
     /// for gas (may differ from the solver address in EIP-7702 mode).
     pub async fn submit(
         &self,
-        tx: eth::Tx,
+        tx: &eth::Tx,
         gas_price: Eip1559Estimation,
         gas_limit: eth::Gas,
         signer: eth::Address,
         nonce: u64,
     ) -> Result<eth::TxId, mempools::Error> {
-        let max_fee_per_gas = gas_price.max_fee_per_gas;
-        let max_priority_fee_per_gas = gas_price.max_priority_fee_per_gas;
         let gas_limit = gas_limit.0.try_into().map_err(anyhow::Error::from)?;
-
-        let tx_request = TransactionRequest::default()
-            .from(signer)
-            .to(tx.to)
-            .nonce(nonce)
-            .max_fee_per_gas(max_fee_per_gas)
-            .max_priority_fee_per_gas(max_priority_fee_per_gas)
-            .gas_limit(gas_limit)
-            .input(tx.input.into())
-            .value(tx.value.0)
-            .access_list(tx.access_list.into());
+        let tx_request = tx_request(tx, gas_price, gas_limit, signer, nonce);
 
         let submission = self
             .transport
@@ -202,6 +190,26 @@ impl Mempool {
             infra::mempool::RevertProtection::Disabled
         )
     }
+}
+
+/// Builds the EIP-1559 transaction request for `tx`.
+pub fn tx_request(
+    tx: &eth::Tx,
+    gas_price: Eip1559Estimation,
+    gas_limit: u64,
+    signer: eth::Address,
+    nonce: u64,
+) -> TransactionRequest {
+    TransactionRequest::default()
+        .from(signer)
+        .to(tx.to)
+        .nonce(nonce)
+        .max_fee_per_gas(gas_price.max_fee_per_gas)
+        .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas)
+        .gas_limit(gas_limit)
+        .input(tx.input.clone().into())
+        .value(tx.value.0)
+        .access_list(tx.access_list.clone().into())
 }
 
 /// Logs a hint for known JSON-RPC error codes. Codes in -32768..=-32000 mean

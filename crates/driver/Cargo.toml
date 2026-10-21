@@ -18,7 +18,7 @@ path = "src/main.rs"
 account-balances = { workspace = true }
 alloy = {
   workspace = true,
-  features = ["json-rpc", "provider-anvil-api", "provider-txpool-api", "rand", "rpc-types", "signer-aws", "sol-types"]
+  features = ["json-rpc", "provider-anvil-api", "provider-mev-api", "provider-txpool-api", "rand", "rpc-types", "signer-aws", "sol-types"]
 }
 app-data = { workspace = true }
 async-trait = { workspace = true }

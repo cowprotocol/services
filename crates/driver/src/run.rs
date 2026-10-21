@@ -233,10 +233,16 @@ fn submitter(config: &infra::Config, eth: &Ethereum) -> Arc<dyn TransactionRecei
                 .chain(config.submission_accounts.iter().cloned())
         })
         .collect();
-    let mempools: Vec<_> = config
-        .mempools
-        .iter()
-        .map(|mempool| infra::Mempool::new(mempool.to_owned(), accounts.clone()))
-        .collect();
-    Arc::new(Mempools::new(mempools, eth.clone()))
+    match &config.receiver {
+        infra::config::Receiver::Mempools(mempools) => {
+            let mempools = mempools
+                .iter()
+                .map(|mempool| infra::Mempool::new(mempool.to_owned(), accounts.clone()))
+                .collect();
+            Arc::new(Mempools::new(mempools, eth.clone()))
+        }
+        infra::config::Receiver::Builders(builders) => {
+            Arc::new(infra::Builders::new(builders, accounts, eth.clone()))
+        }
+    }
 }
