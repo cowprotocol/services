@@ -8,6 +8,9 @@ concurrent-requests = 8
 back-off-growth-factor = 2.0
 min-back-off = "1s"
 max-back-off = "8s"
+# The most orders one batched solution fills. 1 disables batching: each pair
+# then quotes only its most permissive sell order.
+max-batch-size = 4
 
 [dex]
 # Jupiter swap API base URL: api.jup.ag, or a Triton-hosted endpoint.
