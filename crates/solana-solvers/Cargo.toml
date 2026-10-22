@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "solana-solvers"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 axum = { workspace = true }
