@@ -27,7 +27,7 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
-    std::{collections::HashMap, convert::Infallible, time::Duration},
+    std::{collections::HashMap, time::Duration},
 };
 pub use {
     accounts::{
@@ -205,25 +205,26 @@ impl Solana {
     }
 
     /// Send a signed transaction and wait for confirmation, sending the same
-    /// bytes again every [`RESEND_INTERVAL`] meanwhile. The transaction cannot
-    /// land twice: the cluster processes a transaction at most once, and only
-    /// while its blockhash is valid.
+    /// bytes again every [`RESEND_INTERVAL`] until it lands. The copies skip
+    /// the preflight, so they go out only after the first send passed it. The
+    /// transaction cannot land twice: the cluster processes a transaction at
+    /// most once, and only while its blockhash is valid. The wait has no end of
+    /// its own, callers bound it.
+    ///
+    /// An `ErrorKind::TransactionError` means the transaction landed and
+    /// failed, so it cannot land again. A rejected preflight is an
+    /// `ErrorKind::RpcError` instead.
     pub async fn send_and_confirm_transaction(
         &self,
         transaction: &VersionedTransaction,
     ) -> Result<Signature, Error> {
-        tokio::select! {
-            biased;
-            confirmed = self.rpc.send_and_confirm_transaction(transaction) => confirmed,
-            never = self.resend(transaction) => match never {},
-        }
-    }
-
-    /// Send `transaction` again every [`RESEND_INTERVAL`] until cancelled. The
-    /// confirmation decides the outcome, so a failed copy is only logged.
-    async fn resend(&self, transaction: &VersionedTransaction) -> Infallible {
+        let signature = self.rpc.send_transaction_once(transaction).await?;
         loop {
             tokio::time::sleep(RESEND_INTERVAL).await;
+            if let Some(outcome) = self.rpc.signature_status(&signature).await? {
+                return outcome.map(|()| signature).map_err(Error::from);
+            }
+            // The status decides the outcome, so a failed copy is only logged.
             if let Err(err) = self.rpc.resend_transaction(transaction).await {
                 tracing::debug!(?err, "transaction resend failed");
             }
@@ -384,8 +385,8 @@ mod tests {
         assert_eq!(solana.until_slot(100, async { 7 }).await, Some(7));
     }
 
-    /// The cluster confirms the transaction at the third status poll, 1s in.
-    /// The copies sent at 400ms and 800ms take the second and third queued
+    /// The cluster confirms the transaction at the third status check, 1.2s
+    /// in. The copies sent at 400ms and 800ms take the second and third queued
     /// send answers, so the next send gets the mismatched fourth and fails.
     #[tokio::test(start_paused = true)]
     async fn an_unconfirmed_transaction_goes_out_again() {
@@ -395,7 +396,6 @@ mod tests {
         };
         let sent = json!(transaction.signatures[0].to_string());
         let pending = json!({ "context": { "slot": 1 }, "value": [null] });
-        let valid = json!({ "context": { "slot": 1 }, "value": true });
         let mocks = MocksMap::from_iter([
             (RpcRequest::SendTransaction, sent.clone()),
             (RpcRequest::SendTransaction, sent.clone()),
@@ -405,9 +405,7 @@ mod tests {
                 json!(Signature::from([2; 64]).to_string()),
             ),
             (RpcRequest::GetSignatureStatuses, pending.clone()),
-            (RpcRequest::IsBlockhashValid, valid.clone()),
             (RpcRequest::GetSignatureStatuses, pending),
-            (RpcRequest::IsBlockhashValid, valid),
             (
                 RpcRequest::GetSignatureStatuses,
                 json!({
