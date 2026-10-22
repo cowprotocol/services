@@ -8,7 +8,11 @@ use {
     itertools::Itertools,
     serde::Deserialize,
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
+    solana_rpc_client_api::{
+        config::RpcBlockConfig,
+        request::{MAX_MULTIPLE_ACCOUNTS, RpcError},
+        response::RpcBlockhash,
+    },
     solana_sdk::{
         account::Account,
         hash::Hash,
@@ -16,6 +20,7 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
+    solana_transaction_status_client_types::TransactionDetails,
     std::{collections::HashMap, time::Duration},
     url::Url,
 };
@@ -142,20 +147,48 @@ impl SolanaRPC {
         Ok(BlockHeight(self.inner.get_block_height().await?))
     }
 
-    /// The latest confirmed blockhash and the last block height at
-    /// which it stays usable.
+    /// The latest confirmed blockhash, the last block height at which it
+    /// stays usable, and the slot of its block.
     ///
     /// The method always fetches the blockhash at `confirmed`,
     /// regardless of the client's configured commitment level.
     pub async fn latest_confirmed_blockhash(&self) -> Result<LatestBlockhash, Error> {
-        let (blockhash, last_valid_block_height) = self
+        let response: Response<RpcBlockhash> = self
             .inner
-            .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+            .send(
+                RpcRequest::GetLatestBlockhash,
+                serde_json::json!([CommitmentConfig::confirmed()]),
+            )
             .await?;
         Ok(LatestBlockhash {
-            blockhash,
-            last_valid_block_height: BlockHeight(last_valid_block_height),
+            blockhash: parse_hash(&response.value.blockhash)?,
+            last_valid_block_height: BlockHeight(response.value.last_valid_block_height),
+            slot: response.context.slot,
         })
+    }
+
+    /// The slots of the confirmed blocks from `start` to `end`, both
+    /// included, in ascending order.
+    pub async fn blocks(&self, start: u64, end: u64) -> Result<Vec<u64>, Error> {
+        self.inner
+            .get_blocks_with_commitment(start, Some(end), CommitmentConfig::confirmed())
+            .await
+    }
+
+    /// The hash and height of the confirmed block at `slot`.
+    pub async fn block(&self, slot: u64) -> Result<(Hash, BlockHeight), Error> {
+        let config = RpcBlockConfig {
+            transaction_details: Some(TransactionDetails::None),
+            rewards: Some(false),
+            commitment: Some(CommitmentConfig::confirmed()),
+            max_supported_transaction_version: Some(0),
+            ..Default::default()
+        };
+        let block = self.inner.get_block_with_config(slot, config).await?;
+        let height = block
+            .block_height
+            .ok_or_else(|| ErrorKind::from(RpcError::ParseError("block height".to_string())))?;
+        Ok((parse_hash(&block.blockhash)?, BlockHeight(height)))
     }
 
     /// Whether each signature exists on the node's chain. The lookup falls
@@ -449,8 +482,8 @@ mod mock {
     }
 }
 
-/// The latest confirmed blockhash and the last block height at which
-/// it stays usable.
+/// The latest confirmed blockhash, the last block height at which it
+/// stays usable, and the slot of its block.
 #[derive(Debug)]
 pub struct LatestBlockhash {
     /// The blockhash to sign transactions with.
@@ -458,4 +491,11 @@ pub struct LatestBlockhash {
     /// The last block height at which transactions signed with this
     /// blockhash as `recent_blockhash` remain valid.
     pub last_valid_block_height: BlockHeight,
+    /// The slot of the block the blockhash belongs to.
+    pub slot: u64,
+}
+
+fn parse_hash(hash: &str) -> Result<Hash, Error> {
+    hash.parse()
+        .map_err(|_| ErrorKind::from(RpcError::ParseError("Hash".to_string())).into())
 }
