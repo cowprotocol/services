@@ -181,7 +181,6 @@ impl SolanaRPC {
             transaction_details: Some(TransactionDetails::None),
             rewards: Some(false),
             commitment: Some(CommitmentConfig::confirmed()),
-            max_supported_transaction_version: Some(0),
             ..Default::default()
         };
         let block = self.inner.get_block_with_config(slot, config).await?;
