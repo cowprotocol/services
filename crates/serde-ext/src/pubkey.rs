@@ -1,6 +1,6 @@
 use {
     serde::{Deserialize, Deserializer},
-    solana_sdk::pubkey::Pubkey,
+    solana_pubkey::Pubkey,
 };
 
 /// Deserializes a base58-encoded Solana public key from a string.

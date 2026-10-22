@@ -8646,8 +8646,9 @@ dependencies = [
  "alloy-primitives",
  "const-hex",
  "serde",
+ "serde-ext",
  "serde_with",
- "solana-sdk",
+ "solana-pubkey 4.2.0",
  "url",
 ]
 

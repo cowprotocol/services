@@ -34,7 +34,7 @@ humantime-serde = { workspace = true }
 observe = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
-serde-ext = { workspace = true }
+serde-ext = { workspace = true, features = ["solana"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-compute-budget-interface = { workspace = true }
