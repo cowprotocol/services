@@ -2,7 +2,7 @@ use {
     crate::{
         domain::{
             self,
-            Mempools,
+            TransactionReceiver,
             competition::{
                 order::app_data::AppDataRetriever,
                 risk_detector::{self, bad_orders},
@@ -37,7 +37,7 @@ pub struct Api {
     pub liquidity_sources_notifier: notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub eth: Ethereum,
-    pub mempools: Mempools,
+    pub submitter: Arc<dyn TransactionReceiver>,
     pub addr: SocketAddr,
     pub balance_cache: configs::balance_cache::BalanceCacheConfig,
     /// If this channel is specified, the bound address will be sent to it. This
@@ -127,7 +127,7 @@ impl Api {
                     self.liquidity.clone(),
                     self.liquidity_sources_notifier.clone(),
                     self.simulator.clone(),
-                    self.mempools.clone(),
+                    self.submitter.clone(),
                     Arc::new(bad_tokens),
                     fetcher.clone(),
                     order_sorting_strategies.clone(),

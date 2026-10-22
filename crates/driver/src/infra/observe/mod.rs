@@ -398,19 +398,18 @@ pub fn mempool_log(
     }
 }
 
-/// Emit per-mempool race counters with the final, reclassified label
+/// Emit per-receiver submission counters with the final, reclassified label
 /// (`Success` / `Revert` / `Expired` / `Other` / `Superseded` / `Disabled`).
-/// Called once per mempool after the race resolves.
-pub fn mempool_submission_result(mempool: &Mempool, label: &str, blocks_passed: Option<u64>) {
-    let name = mempool.to_string();
+/// Called once per receiver after the submission resolves.
+pub fn mempool_submission_result(receiver: &str, label: &str, blocks_passed: Option<u64>) {
     metrics::get()
         .mempool_submission
-        .with_label_values(&[name.as_str(), label])
+        .with_label_values(&[receiver, label])
         .inc();
     if let Some(blocks) = blocks_passed {
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[name.as_str(), label])
+            .with_label_values(&[receiver, label])
             .inc_by(blocks);
     }
 }
