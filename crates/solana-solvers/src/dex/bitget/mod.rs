@@ -2,24 +2,27 @@
 //!
 //! One signed `/swap` call per quote. Its response already carries the route,
 //! so building the swap takes no request. Buys are unsupported: `/swap` only
-//! quotes exact-in.
+//! quotes exact-in. Fee-exempt routes also need `/signBgwSolTx` at settle
+//! time.
 
 mod dto;
 
 use {
     super::{Error, Order, Quote, Side, Swap},
-    crate::config::BitgetConfig,
+    crate::config::{BitgetConfig, Fee},
     base64::prelude::*,
     hmac::{Hmac, Mac},
+    serde::{Serialize, de::DeserializeOwned},
     sha2::Sha256,
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     std::collections::BTreeMap,
 };
 
+/// The path prefix Bitget checks signatures against, whichever proxy
+/// `endpoint` points at.
+const SIGNED_PATH: &str = "/bgw-pro/swapx/pro/";
 const SWAP_PATH: &str = "swap";
-/// The path Bitget checks the signature against, whichever proxy `endpoint`
-/// points at.
-const SIGNED_SWAP_PATH: &str = "/bgw-pro/swapx/pro/swap";
+const COSIGN_PATH: &str = "signBgwSolTx";
 const PARTNER_CODE: &str = "cowswap";
 
 /// Adapter over Bitget's swap API.
@@ -30,6 +33,7 @@ pub struct Bitget {
     api_secret: String,
     slippage_bps: u16,
     max_accounts: u16,
+    fee: Fee,
 }
 
 impl Bitget {
@@ -41,6 +45,7 @@ impl Bitget {
             api_secret: config.api_secret.clone(),
             slippage_bps: config.slippage_bps,
             max_accounts: config.max_accounts,
+            fee: config.fee,
         })
     }
 
@@ -50,13 +55,40 @@ impl Bitget {
         if order.side == Side::Buy {
             return Err(Error::OrderNotSupported);
         }
+        let request =
+            dto::SwapRequest::new(order, taker, self.slippage_bps, self.max_accounts, self.fee);
+        self.post::<dto::SwapResponse>(SWAP_PATH, &request)
+            .await
+            .map(|response| response.into_quote(order))
+    }
+
+    /// Build the swap for `quote` from the route it kept.
+    pub async fn swap(&self, quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
+        dto::swap(quote, taker, self.fee)
+    }
+
+    /// Add Bitget's signature to a transaction carrying a fee-exempt route.
+    pub async fn cosign(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<VersionedTransaction, Error> {
+        self.post::<dto::CosignResponse>(COSIGN_PATH, &dto::CosignRequest::new(transaction))
+            .await?
+            .into_transaction()
+    }
+
+    async fn post<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        request: &impl Serialize,
+    ) -> Result<T, Error> {
         let url = self
             .endpoint
-            .join(SWAP_PATH)
+            .join(path)
             .map_err(|_| Error::RequestBuildFailed)?;
-        let request = dto::SwapRequest::new(order, taker, self.slippage_bps, self.max_accounts);
-        let body = serde_json::to_string(&request).map_err(|_| Error::RequestBuildFailed)?;
+        let body = serde_json::to_string(request).map_err(|_| Error::RequestBuildFailed)?;
         let timestamp = chrono::Utc::now().timestamp_millis().to_string();
+        let signature = self.signature(&format!("{SIGNED_PATH}{path}"), &body, &timestamp);
         let response = self
             .client
             .post(url)
@@ -64,7 +96,7 @@ impl Bitget {
             .header("Partner-Code", PARTNER_CODE)
             .header("x-api-key", &self.api_key)
             .header("x-api-timestamp", &timestamp)
-            .header("x-api-signature", self.signature(&body, &timestamp))
+            .header("x-api-signature", signature)
             .body(body)
             .send()
             .await?;
@@ -82,19 +114,13 @@ impl Bitget {
         serde_json::from_str::<dto::Envelope>(&body)
             .map_err(|err| Error::BadResponse(format!("response body: {err}")))?
             .into_data(status.as_u16())
-            .map(|response| response.into_quote(order))
-    }
-
-    /// Build the swap for `quote` from the route it kept.
-    pub async fn swap(&self, quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
-        dto::swap(quote, taker)
     }
 
     /// Base64 HMAC-SHA256, keyed by the secret, over the signed fields as JSON
     /// with sorted keys.
-    fn signature(&self, body: &str, timestamp: &str) -> String {
+    fn signature(&self, api_path: &str, body: &str, timestamp: &str) -> String {
         let content = serde_json::to_string(&BTreeMap::from([
-            ("apiPath", SIGNED_SWAP_PATH),
+            ("apiPath", api_path),
             ("body", body),
             ("x-api-key", self.api_key.as_str()),
             ("x-api-timestamp", timestamp),
@@ -109,31 +135,32 @@ impl Bitget {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::str::FromStr};
+    use {
+        super::*,
+        solana_sdk::{
+            hash::Hash,
+            message::{VersionedMessage, v1},
+            signature::Signature,
+        },
+        std::str::FromStr,
+    };
 
-    fn config(api_key: String, api_secret: String) -> BitgetConfig {
+    fn live_config() -> BitgetConfig {
         BitgetConfig {
             endpoint: "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
                 .parse()
                 .unwrap(),
-            api_key,
-            api_secret,
+            api_key: std::env::var("BITGET_API_KEY").unwrap(),
+            api_secret: std::env::var("BITGET_API_SECRET").unwrap(),
             slippage_bps: 20,
             max_accounts: 48,
+            fee: Fee::Standard,
         }
     }
 
-    /// Live Bitget API. Needs `BITGET_API_KEY` and `BITGET_API_SECRET`.
-    #[tokio::test]
-    #[ignore]
-    async fn bitget_live_sell() {
-        let bitget = Bitget::new(&config(
-            std::env::var("BITGET_API_KEY").unwrap(),
-            std::env::var("BITGET_API_SECRET").unwrap(),
-        ))
-        .unwrap();
-        // 1 USDC for wSOL, paid into the settlement's wSOL buffer.
-        let order = Order {
+    /// 1 USDC for wSOL, paid into the settlement's wSOL buffer.
+    fn usdc_for_wsol() -> Order {
+        Order {
             sell_mint: Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(),
             buy_mint: Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(),
             buy_destination: Pubkey::from_str("4BAJ8YzUCw2H7CXgmCZdMG2jFLaFdGjREhxRqXma73Cv")
@@ -141,7 +168,55 @@ mod tests {
             sell_amount: 1_000_000,
             buy_amount: 0,
             side: Side::Sell,
+        }
+    }
+
+    /// Live Bitget API. Needs `BITGET_API_KEY` and `BITGET_API_SECRET`.
+    #[tokio::test]
+    #[ignore]
+    async fn bitget_live_cosign() {
+        let bitget = Bitget::new(&BitgetConfig {
+            fee: Fee::Exempt,
+            ..live_config()
+        })
+        .unwrap();
+        let taker = Pubkey::new_unique();
+        let quote = bitget.quote(&usdc_for_wsol(), &taker).await.unwrap();
+        let swap = bitget.swap(&quote, &taker).await.unwrap();
+        // Configured like the driver's settlement message.
+        let config = v1::TransactionConfig {
+            priority_fee: Some(1_000),
+            compute_unit_limit: Some(400_000),
+            loaded_accounts_data_size_limit: Some(64 * 1024 * 1024),
+            heap_size: None,
         };
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile_with_config(
+                &taker,
+                &swap.instructions,
+                Hash::default(),
+                config,
+            )
+            .unwrap(),
+        );
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::default(); 2],
+            message,
+        };
+
+        let cosigned = bitget.cosign(&transaction).await.unwrap();
+
+        assert_eq!(cosigned.message, transaction.message);
+        // The taker's slot stays empty, Bitget's is signed.
+        assert_eq!(cosigned.verify_with_results(), [false, true]);
+    }
+
+    /// Live Bitget API. Needs `BITGET_API_KEY` and `BITGET_API_SECRET`.
+    #[tokio::test]
+    #[ignore]
+    async fn bitget_live_sell() {
+        let bitget = Bitget::new(&live_config()).unwrap();
+        let order = usdc_for_wsol();
         let taker = Pubkey::new_unique();
         let quote = bitget.quote(&order, &taker).await.unwrap();
         let swap = bitget.swap(&quote, &taker).await.unwrap();

@@ -20,3 +20,6 @@ api-secret = "your-bitget-api-secret"
 slippage-bps = 20
 # Most accounts Bitget's route may use, leaving room for the settlement.
 max-accounts = 48
+# Bitget's fee: "standard" (1 bp, the default) or "exempt" (none, but each
+# route then needs Bitget's co-signature, collected at settle time).
+# fee = "exempt"

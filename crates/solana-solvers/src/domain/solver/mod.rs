@@ -12,7 +12,7 @@ use {
     configs::rate_limit::Strategy,
     futures::{Stream, StreamExt, future, stream},
     rate_limit::RateLimiter,
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     std::{cmp::Ordering, collections::HashMap, future::Future, num::NonZeroUsize},
     tracing::Instrument,
 };
@@ -58,6 +58,15 @@ pub struct Solver<Q> {
     rate_limiter: RateLimiter,
     /// See `Config::max_batch_size`.
     max_batch_size: NonZeroUsize,
+}
+
+impl Solver<Dex> {
+    pub async fn cosign(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<VersionedTransaction, dex::Error> {
+        self.quoter.cosign(transaction).await
+    }
 }
 
 impl<Q: Aggregator + Sync> Solver<Q> {

@@ -1,19 +1,20 @@
-//! DTOs for Bitget's `/swap` request and response.
+//! DTOs for Bitget's `/swap` and `/signBgwSolTx` requests and responses.
 
 use {
-    crate::dex::{Error, Order, Quote, Swap, dto::ApiInstruction},
-    serde::{Deserialize, Serialize},
+    crate::{
+        config::Fee,
+        dex::{Error, Order, Quote, Swap, dto::ApiInstruction},
+    },
+    serde::{Deserialize, Serialize, de::DeserializeOwned},
     serde_with::{DisplayFromStr, serde_as},
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_2022_interface::inline_spl_token,
+    std::collections::HashSet,
 };
 
 /// Bitget's aggregator. Naming it lets `/swap` skip the `/quote` call.
 const MARKET: &str = "bgwaggregator";
-/// Bitget's smallest fee. Without a fee its route also needs Bitget's
-/// co-signature, and the settlement has a single signer.
-const FEE_RATE: f64 = 0.0001;
 
 /// Body of the `/swap` request for a sell order, amounts in atoms.
 #[serde_as]
@@ -43,7 +44,13 @@ pub struct SwapRequest {
 }
 
 impl SwapRequest {
-    pub fn new(order: &Order, taker: &Pubkey, slippage_bps: u16, max_accounts: u16) -> Self {
+    pub fn new(
+        order: &Order,
+        taker: &Pubkey,
+        slippage_bps: u16,
+        max_accounts: u16,
+        fee: Fee,
+    ) -> Self {
         Self {
             from_chain: "sol",
             from_contract: order.sell_mint,
@@ -55,7 +62,10 @@ impl SwapRequest {
             to_address: *taker,
             market: MARKET,
             slippage: f64::from(slippage_bps) / 100.0,
-            fee_rate: FEE_RATE,
+            fee_rate: match fee {
+                Fee::Standard => 0.0001,
+                Fee::Exempt => 0.0,
+            },
             request_mod: "rich",
             sol_max_accounts: max_accounts,
         }
@@ -73,7 +83,7 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    pub fn into_data(self, http_status: u16) -> Result<SwapResponse, Error> {
+    pub fn into_data<T: DeserializeOwned>(self, http_status: u16) -> Result<T, Error> {
         if self.status != 0 {
             let code = self.error_code.unwrap_or_default();
             return Err(match code {
@@ -86,7 +96,8 @@ impl Envelope {
             });
         }
         let data = self.data.ok_or(Error::NotFound)?;
-        serde_json::from_value(data).map_err(|err| Error::BadResponse(format!("swap data: {err}")))
+        serde_json::from_value(data)
+            .map_err(|err| Error::BadResponse(format!("response data: {err}")))
     }
 }
 
@@ -132,7 +143,8 @@ struct Quoted {
 /// Bitget pays the taker's buy-mint ATA, so a transfer of `minAmount` moves
 /// the output on to the quote's destination and positive slippage stays with
 /// the taker. ComputeBudget instructions are dropped: the driver sets its own.
-pub fn swap(quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
+/// An exempt route may also need Bitget's signature.
+pub fn swap(quote: &Quote, taker: &Pubkey, fee: Fee) -> Result<Swap, Error> {
     let Quoted { buy_mint, response } = Quoted::deserialize(&quote.raw)
         .map_err(|err| Error::BadResponse(format!("quote: {err}")))?;
     let mut instructions = Vec::with_capacity(response.instruction_lists.len() + 1);
@@ -147,10 +159,19 @@ pub fn swap(quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
             .iter()
             .flat_map(|instruction| &instruction.accounts)
     };
-    if accounts().any(|account| account.is_signer && account.pubkey != *taker) {
-        return Err(Error::BadResponse(
-            "route needs a signer besides the taker".into(),
-        ));
+    let cosigners: HashSet<_> = accounts()
+        .filter(|account| account.is_signer && account.pubkey != *taker)
+        .map(|account| account.pubkey)
+        .collect();
+    let allowed = match fee {
+        Fee::Standard => 0,
+        Fee::Exempt => 1,
+    };
+    if cosigners.len() > allowed {
+        return Err(Error::BadResponse(format!(
+            "route needs {} signers besides the taker",
+            cosigners.len()
+        )));
     }
     let (token_program, output) = [inline_spl_token::ID, spl_token_2022_interface::ID]
         .into_iter()
@@ -180,6 +201,39 @@ pub fn swap(quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
     })
 }
 
+/// Body of the `/signBgwSolTx` request: the transaction as base58 of its wire
+/// bytes.
+#[derive(Serialize)]
+pub struct CosignRequest {
+    chain: &'static str,
+    transaction: String,
+}
+
+impl CosignRequest {
+    pub fn new(transaction: &VersionedTransaction) -> Self {
+        let bytes = wincode::serialize(transaction).expect("a transaction serializes");
+        Self {
+            chain: "sol",
+            transaction: bs58::encode(bytes).into_string(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CosignResponse {
+    transaction: String,
+}
+
+impl CosignResponse {
+    pub fn into_transaction(self) -> Result<VersionedTransaction, Error> {
+        let bytes = bs58::decode(&self.transaction)
+            .into_vec()
+            .map_err(|err| Error::BadResponse(format!("co-signed transaction: {err}")))?;
+        wincode::deserialize(&bytes)
+            .map_err(|err| Error::BadResponse(format!("co-signed transaction: {err}")))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, crate::dex::Side};
@@ -199,7 +253,7 @@ mod tests {
         order: &Order,
         taker: &Pubkey,
         token_program: &Pubkey,
-        extra_signer: Option<Pubkey>,
+        extra_signers: &[Pubkey],
     ) -> SwapResponse {
         let output =
             get_associated_token_address_with_program_id(taker, &order.buy_mint, token_program);
@@ -207,7 +261,7 @@ mod tests {
             serde_json::json!({"pubkey": taker.to_string(), "isSigner": true, "isWritable": true}),
             serde_json::json!({"pubkey": output.to_string(), "isSigner": false, "isWritable": true}),
         ];
-        if let Some(signer) = extra_signer {
+        for signer in extra_signers {
             accounts.push(serde_json::json!({"pubkey": signer.to_string(), "isSigner": true, "isWritable": false}));
         }
         serde_json::from_value(serde_json::json!({
@@ -225,8 +279,8 @@ mod tests {
         let taker = Pubkey::new_unique();
         let order = order();
         for program in [inline_spl_token::ID, spl_token_2022_interface::ID] {
-            let quote = response(&order, &taker, &program, None).into_quote(&order);
-            let swap = swap(&quote, &taker).unwrap();
+            let quote = response(&order, &taker, &program, &[]).into_quote(&order);
+            let swap = swap(&quote, &taker, Fee::Standard).unwrap();
 
             assert_eq!((quote.in_amount, quote.out_amount), (1_000, 990));
             assert_eq!((swap.in_amount, swap.out_amount), (1_000, 990));
@@ -244,16 +298,23 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_route_needing_another_signer() {
+    fn only_a_fee_exempt_route_may_need_bitgets_signature() {
         let taker = Pubkey::new_unique();
         let order = order();
-        let quote = response(
-            &order,
-            &taker,
-            &inline_spl_token::ID,
-            Some(Pubkey::new_unique()),
-        )
-        .into_quote(&order);
-        assert!(matches!(swap(&quote, &taker), Err(Error::BadResponse(_))));
+        let quote = |signers: &[Pubkey]| {
+            response(&order, &taker, &inline_spl_token::ID, signers).into_quote(&order)
+        };
+        let cosigner = [Pubkey::new_unique()];
+        let two = [Pubkey::new_unique(), Pubkey::new_unique()];
+
+        assert!(matches!(
+            swap(&quote(&cosigner), &taker, Fee::Standard),
+            Err(Error::BadResponse(_))
+        ));
+        swap(&quote(&cosigner), &taker, Fee::Exempt).unwrap();
+        assert!(matches!(
+            swap(&quote(&two), &taker, Fee::Exempt),
+            Err(Error::BadResponse(_))
+        ));
     }
 }

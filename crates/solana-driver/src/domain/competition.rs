@@ -589,6 +589,17 @@ impl Competition {
             return Err(Error::DeadlineExceeded);
         }
 
+        // Other signers sign the final message, so only now. A failure leaves
+        // the solution cached for a retry.
+        let transaction = if transaction.message.header().num_required_signatures > 1 {
+            self.blockchain
+                .until_slot(submission_deadline_slot, self.solver.cosign(&transaction))
+                .await
+                .ok_or(Error::DeadlineExceeded)??
+        } else {
+            transaction
+        };
+
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
         // concurrent `/settle` for it then observes a missing entry and
