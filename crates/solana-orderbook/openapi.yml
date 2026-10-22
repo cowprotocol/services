@@ -355,7 +355,7 @@ paths:
         What one order would trade for right now. Indicative: no component
         simulates the settlement, so `verified` is always false and the
         amounts are not a commitment. The amounts are net of the execution
-        cost, see `networkFees` and `buyTokenAtaCosts`.
+        cost, see `costs`.
       requestBody:
         required: true
         content:
@@ -858,8 +858,7 @@ components:
         - buyAmount
         - validTo
         - feeAmount
-        - networkFees
-        - buyTokenAtaCosts
+        - costs
         - kind
         - partiallyFillable
       properties:
@@ -886,32 +885,56 @@ components:
           description: Always zero. No component charges a fee.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
-        networkFees:
-          description: >-
-            The network fee of settling the quoted route, in lamports, as the
-            winning driver reported it. Zero when the driver reports none.
-            Taken out of the quoted amounts together with `buyTokenAtaCosts`:
-            a sell order's `buyAmount` is lower by their worth in the buy
-            token, a buy order's `sellAmount` higher by their worth in the
-            sell token, at the autopilot's native prices, rounded against the
-            trader. Drivers are ranked on the amounts after the cut.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
-        buyTokenAtaCosts:
-          description: >-
-            Rent, in lamports at the cluster's rent, of the buy token account
-            when the settlement must create it; zero when the payout lands in
-            an existing one and for native SOL buys. An anonymous quote,
-            `from` zero without a `receiver`, names no account to read and is
-            priced as if it were missing. An upper bound when the account
-            cannot be read, without sponsoring included. Taken out of the
-            quoted amounts like `networkFees`.
-          allOf:
-            - $ref: "#/components/schemas/TokenAmount"
+        costs:
+          $ref: "#/components/schemas/Costs"
         kind:
           $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           type: boolean
+    Costs:
+      description: >-
+        The execution cost taken out of the quoted amounts, in the token it
+        comes out of: a sell order's `buyAmount` is lower by `total`, a buy
+        order's `sellAmount` higher. Each cost converts from lamports at the
+        autopilot's native price on its own, rounded up against the trader.
+        Drivers are ranked on the amounts after the cut.
+      type: object
+      required:
+        - token
+        - networkFees
+        - buyTokenAtaCosts
+        - protocolFee
+        - total
+      properties:
+        token:
+          description: >-
+            The buy token of a sell order, the sell token of a buy order.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        networkFees:
+          description: >-
+            The network fee of settling the quoted route, as the winning
+            driver reported it. Zero when the driver reports none.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyTokenAtaCosts:
+          description: >-
+            Rent, at the cluster's rent, of the buy token account when the
+            settlement must create it. Zero when the payout lands in an
+            existing one and for native SOL buys. An anonymous quote, `from`
+            zero without a `receiver`, names no account to read and is priced
+            as if it were missing. An upper bound when the account cannot be
+            read, without sponsoring included.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        protocolFee:
+          description: Always zero. No component charges a fee.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        total:
+          description: The sum of the costs above.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
     Error:
       description: A machine-readable error type and a human-readable description.
       type: object

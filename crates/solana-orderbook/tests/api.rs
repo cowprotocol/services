@@ -442,11 +442,17 @@ async fn quote_answers_in_the_evm_shape() {
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
-                "networkFees": "6400",
-                // Without sponsoring the buy token account is not read, so it
-                // counts as the costliest a settleable mint can need at the
-                // SDK's default rent.
-                "buyTokenAtaCosts": "2220240",
+                // In the buy token, at the mocked lamport an atom. Without
+                // sponsoring the buy token account is not read, so it counts
+                // as the costliest a settleable mint can need at the SDK's
+                // default rent.
+                "costs": {
+                    "token": body["buyToken"],
+                    "networkFees": "6400",
+                    "buyTokenAtaCosts": "2220240",
+                    "protocolFee": "0",
+                    "total": "2226640",
+                },
                 "kind": "sell",
                 "partiallyFillable": false,
             },
@@ -573,7 +579,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
             .unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         let json: serde_json::Value = response.json().await.unwrap();
-        assert_eq!(json["quote"]["buyTokenAtaCosts"], cost.to_string());
+        assert_eq!(json["quote"]["costs"]["buyTokenAtaCosts"], cost.to_string());
         assert_eq!(json["quote"]["buyAmount"], (10_000_000 - cost).to_string());
     }
 }
@@ -617,11 +623,11 @@ async fn quote_picks_the_best_driver_answer() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["buyAmount"], "2779760");
-    assert_eq!(json["quote"]["networkFees"], "0");
+    assert_eq!(json["quote"]["costs"]["networkFees"], "0");
 }
 
-/// A buy order keeps its buy amount and pulls the execution cost through
-/// the sell amount instead.
+/// A buy order keeps its buy amount and pulls the execution cost, priced in
+/// the sell token, through the sell amount instead.
 #[tokio::test]
 async fn quote_charges_a_buy_order_on_the_sell_side() {
     let driver = spawn_mock_driver(serde_json::json!({
@@ -652,8 +658,16 @@ async fn quote_charges_a_buy_order_on_the_sell_side() {
     assert_eq!(json["quote"]["kind"], "buy");
     assert_eq!(json["quote"]["sellAmount"], "12226640");
     assert_eq!(json["quote"]["buyAmount"], "1234567");
-    assert_eq!(json["quote"]["networkFees"], "6400");
-    assert_eq!(json["quote"]["buyTokenAtaCosts"], "2220240");
+    assert_eq!(
+        json["quote"]["costs"],
+        serde_json::json!({
+            "token": body["sellToken"],
+            "networkFees": "6400",
+            "buyTokenAtaCosts": "2220240",
+            "protocolFee": "0",
+            "total": "2226640",
+        })
+    );
 }
 
 /// A fill the execution cost swallows is no quote.
