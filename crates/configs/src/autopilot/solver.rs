@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     core::fmt,
     serde::{Deserialize, Deserializer, Serialize},
     std::fmt::{Display, Formatter},
@@ -93,7 +93,7 @@ impl Solver {
 
 #[cfg(test)]
 mod test {
-    use {super::*, alloy::primitives::address};
+    use {super::*, alloy_primitives::address};
 
     #[test]
     fn parse_driver_submission_account_address() {

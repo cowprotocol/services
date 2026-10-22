@@ -13,7 +13,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
@@ -237,7 +237,7 @@ mod tests {
             orderbook::order_validation::SameTokensPolicy,
             test_util::TestDefault,
         },
-        alloy::primitives::address,
+        alloy_primitives::address,
         std::time::Duration,
     };
 

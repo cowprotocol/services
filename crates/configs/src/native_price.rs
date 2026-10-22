@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     serde::Deserialize,
     std::{num::NonZeroUsize, time::Duration},
 };
