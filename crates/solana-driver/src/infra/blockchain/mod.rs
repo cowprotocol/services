@@ -52,8 +52,8 @@ const MINT_CACHE_CAPACITY: u64 = 10_000;
 /// slot, so the wait ends within a slot of its target.
 const SLOT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
-/// How often a transaction waiting for confirmation goes out again, about
-/// every other slot, so a dropped copy delays the landing by at most that.
+/// How often a transaction waiting for confirmation goes out again, about two
+/// mainnet slots, so a dropped copy delays the landing by at most that.
 const RESEND_INTERVAL: Duration = Duration::from_millis(400);
 
 /// A simulated transaction's outcome and the slot it ran against.

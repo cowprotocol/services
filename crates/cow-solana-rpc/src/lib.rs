@@ -350,7 +350,8 @@ impl SolanaRPC {
     }
 
     /// Send a versioned transaction and wait until it reaches the client's
-    /// configured commitment level.
+    /// configured commitment level. The node sends it once and keeps no copy
+    /// to rebroadcast, so the caller resends it.
     ///
     /// Each individual RPC request is capped at the client's request timeout,
     /// but the confirm loop has no overall timeout: it polls until the
@@ -359,7 +360,20 @@ impl SolanaRPC {
         &self,
         transaction: &VersionedTransaction,
     ) -> Result<Signature, Error> {
-        self.inner.send_and_confirm_transaction(transaction).await
+        let commitment = self.inner.commitment();
+        self.inner
+            .send_and_confirm_transaction_with_config(
+                transaction,
+                commitment,
+                RpcSendTransactionConfig {
+                    preflight_commitment: Some(commitment.commitment),
+                    // A node drops every resend of a transaction it holds to
+                    // rebroadcast.
+                    max_retries: Some(0),
+                    ..RpcSendTransactionConfig::default()
+                },
+            )
+            .await
     }
 
     /// Send a versioned transaction without waiting for it to land.
