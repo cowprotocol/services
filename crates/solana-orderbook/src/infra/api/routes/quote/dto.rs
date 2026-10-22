@@ -139,17 +139,35 @@ pub struct Quote {
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
-    /// The network fee of settling the quoted route, in lamports, as the
-    /// winning driver reported it, zero when it reported none. Taken out of
-    /// the amounts together with `buy_token_ata_costs`.
-    #[serde_as(as = "DisplayFromStr")]
-    pub network_fees: u64,
-    /// Rent, in lamports, of the buy token account when the settlement must
-    /// create it. Taken out of the amounts together with `network_fees`.
-    #[serde_as(as = "DisplayFromStr")]
-    pub buy_token_ata_costs: u64,
+    pub costs: Costs,
     pub kind: Kind,
     pub partially_fillable: bool,
+}
+
+/// The execution cost taken out of the quoted amounts, in the token it comes
+/// out of.
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Costs {
+    /// The buy token of a sell order, the sell token of a buy order. The
+    /// amounts below are in its atoms.
+    #[serde_as(as = "DisplayFromStr")]
+    pub token: Pubkey,
+    /// The network fee of settling the quoted route, as the winning driver
+    /// reported it, zero when it reported none.
+    #[serde_as(as = "DisplayFromStr")]
+    pub network_fees: u64,
+    /// Rent of the buy token account when the settlement must create it.
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_token_ata_costs: u64,
+    /// Always zero: no component charges a fee.
+    #[serde_as(as = "DisplayFromStr")]
+    pub protocol_fee: u64,
+    /// The sum: a sell order's `buy_amount` is lower by it, a buy order's
+    /// `sell_amount` higher.
+    #[serde_as(as = "DisplayFromStr")]
+    pub total: u64,
 }
 
 #[cfg(test)]

@@ -61,7 +61,7 @@ base64 = { workspace = true }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 solana-fee-structure = { workspace = true }
 solana-testlib = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [features]
 default = []
