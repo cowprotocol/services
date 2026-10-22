@@ -29,7 +29,8 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 #[clap(rename_all = "lowercase")]
 pub enum Command {
-    /// Wrap Jupiter's quote API into single-order solutions.
+    /// Wrap Jupiter's quote API into single-order and same-pair batch
+    /// solutions.
     Jupiter {
         #[clap(long, env)]
         config: PathBuf,

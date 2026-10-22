@@ -1,13 +1,14 @@
 //! Bitget swap-API adapter.
 //!
-//! One signed `/swap` call per sell order. Buys are unsupported: `/swap` only
+//! One signed `/swap` call per quote. Its response already carries the route,
+//! so building the swap takes no request. Buys are unsupported: `/swap` only
 //! quotes exact-in. Fee-exempt routes also need `/signBgwSolTx` at settle
 //! time.
 
 mod dto;
 
 use {
-    super::{Error, Order, Side, Swap},
+    super::{Error, Order, Quote, Side, Swap},
     crate::config::{BitgetConfig, Fee},
     base64::prelude::*,
     hmac::{Hmac, Mac},
@@ -37,14 +38,9 @@ pub struct Bitget {
 
 impl Bitget {
     pub fn new(config: &BitgetConfig) -> Result<Self, Error> {
-        let mut endpoint = config.endpoint.clone();
-        // `join` would replace a last path segment that lacks the slash.
-        if !endpoint.path().ends_with('/') {
-            endpoint.set_path(&format!("{}/", endpoint.path()));
-        }
         Ok(Self {
             client: reqwest::Client::builder().build()?,
-            endpoint,
+            endpoint: config.endpoint.clone(),
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
             slippage_bps: config.slippage_bps,
@@ -53,17 +49,22 @@ impl Bitget {
         })
     }
 
-    /// Quote `order` for the settlement signer `taker` and return the swap to
-    /// run inside the settlement transaction.
-    pub async fn swap(&self, order: &Order, taker: &Pubkey) -> Result<Swap, Error> {
+    /// Quote `order` for the settlement signer `taker`. `/swap` needs the
+    /// taker to build the route.
+    pub async fn quote(&self, order: &Order, taker: &Pubkey) -> Result<Quote, Error> {
         if order.side == Side::Buy {
             return Err(Error::OrderNotSupported);
         }
         let request =
             dto::SwapRequest::new(order, taker, self.slippage_bps, self.max_accounts, self.fee);
         self.post::<dto::SwapResponse>(SWAP_PATH, &request)
-            .await?
-            .into_swap(order, taker, self.fee)
+            .await
+            .map(|response| response.into_quote(order))
+    }
+
+    /// Build the swap for `quote` from the route it kept.
+    pub async fn swap(&self, quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
+        dto::swap(quote, taker, self.fee)
     }
 
     /// Add Bitget's signature to a transaction carrying a fee-exempt route.
@@ -138,7 +139,7 @@ mod tests {
         super::*,
         solana_sdk::{
             hash::Hash,
-            message::{VersionedMessage, v0},
+            message::{VersionedMessage, v1},
             signature::Signature,
         },
         std::str::FromStr,
@@ -180,9 +181,23 @@ mod tests {
         })
         .unwrap();
         let taker = Pubkey::new_unique();
-        let swap = bitget.swap(&usdc_for_wsol(), &taker).await.unwrap();
-        let message = VersionedMessage::V0(
-            v0::Message::try_compile(&taker, &swap.instructions, &[], Hash::default()).unwrap(),
+        let quote = bitget.quote(&usdc_for_wsol(), &taker).await.unwrap();
+        let swap = bitget.swap(&quote, &taker).await.unwrap();
+        // Configured like the driver's settlement message.
+        let config = v1::TransactionConfig {
+            priority_fee: Some(1_000),
+            compute_unit_limit: Some(400_000),
+            loaded_accounts_data_size_limit: Some(64 * 1024 * 1024),
+            heap_size: None,
+        };
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile_with_config(
+                &taker,
+                &swap.instructions,
+                Hash::default(),
+                config,
+            )
+            .unwrap(),
         );
         let transaction = VersionedTransaction {
             signatures: vec![Signature::default(); 2],
@@ -203,7 +218,8 @@ mod tests {
         let bitget = Bitget::new(&live_config()).unwrap();
         let order = usdc_for_wsol();
         let taker = Pubkey::new_unique();
-        let swap = bitget.swap(&order, &taker).await.unwrap();
+        let quote = bitget.quote(&order, &taker).await.unwrap();
+        let swap = bitget.swap(&quote, &taker).await.unwrap();
 
         assert_eq!(swap.in_amount, 1_000_000);
         assert!(swap.out_amount > 0);

@@ -62,7 +62,8 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Quote the auction's orders and return the single-order solutions.
+/// Quote the auction's orders and return one solution per side and directed
+/// mint pair, batched where the swap clears several orders.
 async fn solve(
     State(solver): State<Arc<Solver<Dex>>>,
     LoggingJson(auction): LoggingJson<Auction>,
@@ -104,7 +105,7 @@ mod tests {
         solana_sdk::{
             hash::Hash,
             instruction::{AccountMeta, Instruction},
-            message::{VersionedMessage, v0},
+            message::{VersionedMessage, v1},
             pubkey::Pubkey,
             signature::Signature,
             signer::{Signer as _, keypair::Keypair},
@@ -124,7 +125,7 @@ mod tests {
                 let bytes = bs58::decode(request["transaction"].as_str().unwrap())
                     .into_vec()
                     .unwrap();
-                let mut transaction: VersionedTransaction = bincode::deserialize(&bytes).unwrap();
+                let mut transaction: VersionedTransaction = wincode::deserialize(&bytes).unwrap();
                 let index = transaction
                     .message
                     .static_account_keys()
@@ -133,7 +134,7 @@ mod tests {
                     .unwrap();
                 transaction.signatures[index] =
                     authority.sign_message(&transaction.message.serialize());
-                let encoded = bs58::encode(bincode::serialize(&transaction).unwrap()).into_string();
+                let encoded = bs58::encode(wincode::serialize(&transaction).unwrap()).into_string();
                 Json(json!({"status": 0, "error_code": 0, "data": {"transaction": encoded}}))
             }),
         );
@@ -163,6 +164,7 @@ mod tests {
             Dex::Bitget(bitget),
             NonZeroUsize::new(1).unwrap(),
             Strategy::try_new(2.0, Duration::from_secs(1), Duration::from_secs(8)).unwrap(),
+            NonZeroUsize::new(1).unwrap(),
         );
         let api = Api {
             addr: "127.0.0.1:0".parse().unwrap(),
@@ -177,8 +179,8 @@ mod tests {
             &[],
             vec![AccountMeta::new_readonly(authority.pubkey(), true)],
         );
-        let message = VersionedMessage::V0(
-            v0::Message::try_compile(&taker.pubkey(), &[route], &[], Hash::new_unique()).unwrap(),
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile(&taker.pubkey(), &[route], Hash::new_unique()).unwrap(),
         );
         let transaction = VersionedTransaction {
             signatures: vec![
@@ -188,7 +190,7 @@ mod tests {
             message,
         };
 
-        let encoded = BASE64_STANDARD.encode(bincode::serialize(&transaction).unwrap());
+        let encoded = BASE64_STANDARD.encode(wincode::serialize(&transaction).unwrap());
         let response = reqwest::Client::new()
             .post(format!("http://{addr}/cosign"))
             .json(&json!({ "transaction": encoded }))
@@ -200,7 +202,7 @@ mod tests {
         let bytes = BASE64_STANDARD
             .decode(body["transaction"].as_str().unwrap())
             .unwrap();
-        let cosigned: VersionedTransaction = bincode::deserialize(&bytes).unwrap();
+        let cosigned: VersionedTransaction = wincode::deserialize(&bytes).unwrap();
         assert_eq!(cosigned.message, transaction.message);
         assert_eq!(cosigned.verify_with_results(), [true, true]);
     }

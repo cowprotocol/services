@@ -1,7 +1,6 @@
 use {
     super::{
-        Mempools,
-        mempools::SubmissionMode,
+        mempools::{SubmissionMode, TransactionReceiver},
         time::{self, Remaining},
     },
     crate::{
@@ -272,7 +271,7 @@ pub struct Competition {
     pub liquidity: infra::liquidity::Fetcher,
     pub liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
-    pub mempools: Mempools,
+    pub submitter: Arc<dyn TransactionReceiver>,
     /// Cached solutions with the most recent solutions at the front.
     pub settlements: Mutex<VecDeque<Settlement>>,
     /// Fast-path quote solutions cached at quote time, keyed per solver
@@ -297,7 +296,7 @@ impl Competition {
         liquidity: infra::liquidity::Fetcher,
         liquidity_sources_notifier: infra::notify::liquidity_sources::Notifier,
         simulator: Simulator,
-        mempools: Mempools,
+        submitter: Arc<dyn TransactionReceiver>,
         risk_detector: Arc<risk_detector::Detector>,
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
@@ -320,7 +319,7 @@ impl Competition {
             liquidity,
             liquidity_sources_notifier,
             simulator,
-            mempools,
+            submitter,
             settlements: Default::default(),
             quote_cache,
             risk_detector,
@@ -991,7 +990,7 @@ impl Competition {
         let mode = guard.submission_mode();
 
         let executed = self
-            .mempools
+            .submitter
             .execute(&encoded, submission_deadline, &mode)
             .await;
 

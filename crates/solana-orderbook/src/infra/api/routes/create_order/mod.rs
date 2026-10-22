@@ -4,17 +4,18 @@
 //!
 //! The funder countersigns as fee payer, so only the whitelisted
 //! preparation steps may precede the mandatory trailing `CreateOrder`: wrap
-//! SOL, delegate the sell account, create the buy token account. The
-//! buy-account creation is required even when the account exists (it is
-//! idempotent on chain): settlement pays out to it and never creates it,
-//! and the instruction proves receivability without a lookup or a race. A
-//! native SOL buy has no buy token account: its payout goes to the wallet
-//! and creates it when missing, so placement looks the wallet up instead.
+//! SOL, delegate the sell account, create the buy token account. Without
+//! the creation, placement looks the buy token account up: the settlement
+//! creates a missing one only at the owner's associated token address, as
+//! no other address reveals the wallet to create it for, so any other
+//! account must already receive the buy mint. A native SOL buy has no buy
+//! token account: its payout goes to the wallet and creates it when
+//! missing, so placement looks the wallet up instead.
 
 use {
     super::mint::{ensure_settleable, is_token_program, token_mints},
     crate::infra::{
-        api::{Sponsoring, State, error},
+        api::{Sponsoring, State, ValidationParameters, error},
         db,
     },
     axum::{Json, http::StatusCode},
@@ -36,11 +37,12 @@ use {
     serde_with::{base64::Base64, serde_as},
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
-        message::compiled_instruction::CompiledInstruction,
+        message::{VersionedMessage, compiled_instruction::CompiledInstruction},
         pubkey::Pubkey,
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::SystemInstruction,
+    solana_token::receivable_or_creatable,
     spl_token_interface::instruction::TokenInstruction,
 };
 
@@ -75,6 +77,7 @@ enum PlacementError {
     ZeroAmount,
     InvalidNativeBuy(&'static str),
     InsufficientValidTo,
+    ExcessiveValidTo,
     InvalidSignature,
     BlockhashExpired,
     DuplicatedOrder,
@@ -111,6 +114,10 @@ impl From<PlacementError> for error::Reply {
             PlacementError::InsufficientValidTo => (
                 "InsufficientValidTo",
                 "validTo lies closer than the minimum validity",
+            ),
+            PlacementError::ExcessiveValidTo => (
+                "ExcessiveValidTo",
+                "validTo lies further than the maximum validity",
             ),
             PlacementError::InvalidSignature => (
                 "InvalidSignature",
@@ -193,10 +200,9 @@ async fn place(
         .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
-    let (mut order, token_programs) =
-        validate(sponsoring, &transaction, state.validation().min_validity)?;
+    let (mut order, preparations) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
-    check_accounts(sponsoring, &order, &token_programs).await?;
+    check_accounts(sponsoring, &order, &preparations).await?;
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
@@ -250,16 +256,31 @@ async fn place(
     Ok((StatusCode::CREATED, Json(uid)))
 }
 
+/// What the preparation steps of a creation transaction name, for the
+/// caller to check against the chain.
+struct Preparations {
+    /// The `(mint, token program)` pairs the steps name.
+    token_programs: Vec<(Pubkey, Pubkey)>,
+    /// Whether the steps create the buy token account.
+    creates_buy_account: bool,
+}
+
 /// Check the transaction is exactly the sponsored-creation shape and derive
 /// the order from it. The expiry and transaction bytes are filled by the
-/// caller. Also returns the `(mint, token program)` pairs the preparation
-/// steps name, for the caller to check against the mints on chain.
+/// caller.
 fn validate(
     sponsoring: &Sponsoring,
     transaction: &VersionedTransaction,
-    min_validity: std::time::Duration,
-) -> Result<(db::SponsoredOrder, Vec<(Pubkey, Pubkey)>), PlacementError> {
+    validation: ValidationParameters,
+) -> Result<(db::SponsoredOrder, Preparations), PlacementError> {
     let message = &transaction.message;
+    // A v1 message carries its priority fee in its config, out of reach of
+    // the compute-budget pricing below, and the funder would pay it.
+    if matches!(message, VersionedMessage::V1(_)) {
+        return Err(PlacementError::InvalidTransaction(
+            "a creation transaction must be legacy or v0",
+        ));
+    }
     if message
         .address_table_lookups()
         .is_some_and(|lookups| !lookups.is_empty())
@@ -342,20 +363,23 @@ fn validate(
     if intent.sell.mint == buy_mint {
         return Err(PlacementError::SameBuyAndSellToken);
     }
-    let native_buy = matches!(intent.buy, Asset::Native(_));
     let order_pda = find_order_pda(&sponsoring.settlement_program, &uid).0;
     if *input.order_pda != order_pda {
         return Err(PlacementError::WrongOrderPda);
     }
-    let earliest =
-        chrono::Utc::now().timestamp() + i64::try_from(min_validity.as_secs()).unwrap_or(i64::MAX);
-    if i64::from(intent.valid_to) <= earliest {
+    let now = chrono::Utc::now().timestamp();
+    let bound = |validity: std::time::Duration| {
+        now.saturating_add(i64::try_from(validity.as_secs()).unwrap_or(i64::MAX))
+    };
+    if i64::from(intent.valid_to) < bound(validation.min_validity) {
         return Err(PlacementError::InsufficientValidTo);
+    }
+    if i64::from(intent.valid_to) > bound(validation.max_validity) {
+        return Err(PlacementError::ExcessiveValidTo);
     }
 
     // The preparation instructions may only follow the template: each step
-    // at most once, in template order. The buy-account creation is mandatory
-    // for a token buy, everything else is omittable.
+    // at most once, in template order, every step omittable.
     let state_pda =
         Pubkey::find_program_address(&STATE_PDA_SEEDS, &sponsoring.settlement_program).0;
     let mut last_step = 0;
@@ -370,11 +394,6 @@ fn validate(
         }
         last_step = step;
         token_programs.extend(token_program);
-    }
-    if !native_buy && last_step != CREATE_DESTINATION {
-        return Err(PlacementError::InvalidTransaction(
-            "the bundle must create the buy token account",
-        ));
     }
 
     // Every required signer except the funder must have signed: the funder's
@@ -393,28 +412,40 @@ fn validate(
         }
     }
 
-    Ok((build_order(intent, uid, order_pda), token_programs))
+    let preparations = Preparations {
+        token_programs,
+        creates_buy_account: last_step == CREATE_DESTINATION,
+    };
+    Ok((build_order(intent, uid, order_pda), preparations))
 }
 
 /// Reject an order on a mint the settlement program cannot move, a
-/// preparation step naming a token program that does not own its mint, and a
+/// preparation step naming a token program that does not own its mint, a
 /// native SOL buy paying an account the System Program does not own or
-/// leaving its wallet under the rent-exempt minimum. Lamports paid to a
-/// program or a sysvar revert the settlement, and a program-owned account
-/// strands them. The payout creates a missing wallet.
+/// leaving its wallet under the rent-exempt minimum, and a token buy whose
+/// bundle does not create a buy token account the settlement can neither pay
+/// out to nor create. Lamports paid to a program or a sysvar revert the
+/// settlement, and a program-owned account strands them. The payout creates
+/// a missing wallet.
 async fn check_accounts(
     sponsoring: &Sponsoring,
     order: &db::SponsoredOrder,
-    token_programs: &[(Pubkey, Pubkey)],
+    preparations: &Preparations,
 ) -> Result<(), Failure> {
-    let [sell, buy, buy_account] = [order.sell_token, order.buy_token, order.buy_token_account]
-        .map(|key| Pubkey::new_from_array(key.0));
+    let [sell, buy, buy_account, owner] = [
+        order.sell_token,
+        order.buy_token,
+        order.buy_token_account,
+        order.owner,
+    ]
+    .map(|key| Pubkey::new_from_array(key.0));
     let wallet = (buy == ENCODED_NATIVE_SOL_TRANSFER).then_some(buy_account);
+    let uncreated = (wallet.is_none() && !preparations.creates_buy_account).then_some(buy_account);
     let mints: Vec<Pubkey> = token_mints(sell, buy).collect();
     let lookup = sponsoring.mints.lookup(mints.iter().copied());
     let accounts = sponsoring
         .rpc
-        .multiple_accounts(lookup.unread().chain(wallet))
+        .multiple_accounts(lookup.unread().chain(wallet).chain(uncreated))
         .await
         .map_err(|err| Failure::internal(err, "order account lookup"))?;
     let verdicts = lookup.resolve(&accounts);
@@ -441,9 +472,23 @@ async fn check_accounts(
         )
         .into());
     }
+    if let Some(account) = uncreated
+        && !receivable_or_creatable(
+            accounts.get(&account),
+            &account,
+            &buy,
+            &owner,
+            verdicts.get(&buy).copied().and_then(Result::ok),
+        )
+    {
+        return Err(PlacementError::InvalidTransaction(
+            "the buy token account cannot receive the payout and the bundle does not create it",
+        )
+        .into());
+    }
     // The parser matched every preparation step to the sell or buy mint, both
     // read above, so each pair has a verdict.
-    let owned = token_programs.iter().all(|(mint, program)| {
+    let owned = preparations.token_programs.iter().all(|(mint, program)| {
         verdicts
             .get(mint)
             .is_some_and(|verdict| verdict.is_ok_and(|owner| owner.address() == *program))

@@ -3,7 +3,7 @@
 use {
     serde::Deserialize,
     solana_sdk::{
-        message::{VersionedMessage, v0},
+        message::VersionedMessage,
         pubkey::Pubkey,
         signature::Signature,
         signer::{Signer as _, keypair::Keypair},
@@ -72,8 +72,7 @@ impl Signer {
 
     /// Sign the message's fee payer slot, which must be the signer's key. The
     /// slots of any other required signers stay empty for them to fill.
-    pub async fn sign(&self, message: v0::Message) -> Result<VersionedTransaction, Error> {
-        let message = VersionedMessage::V0(message);
+    pub async fn sign(&self, message: VersionedMessage) -> Result<VersionedTransaction, Error> {
         let pubkey = self.pubkey();
         let required = usize::from(message.header().num_required_signatures);
         if required == 0 || message.static_account_keys().first() != Some(&pubkey) {
@@ -177,12 +176,34 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, solana_sdk::hash::Hash, solana_testlib::temp_keypair, std::path::Path};
+    use {
+        super::*,
+        solana_sdk::{
+            hash::Hash,
+            message::{v0, v1},
+        },
+        solana_testlib::temp_keypair,
+        std::{path::Path, slice},
+    };
 
-    fn message(payer: &Pubkey) -> v0::Message {
+    /// The same transfer as a v0 and a v1 message.
+    fn messages(payer: &Pubkey) -> [VersionedMessage; 2] {
         let instruction =
             solana_system_interface::instruction::transfer(payer, &Pubkey::new_unique(), 1);
-        v0::Message::try_compile(payer, &[instruction], &[], Hash::new_unique()).unwrap()
+        [
+            VersionedMessage::V0(
+                v0::Message::try_compile(
+                    payer,
+                    slice::from_ref(&instruction),
+                    &[],
+                    Hash::new_unique(),
+                )
+                .unwrap(),
+            ),
+            VersionedMessage::V1(
+                v1::Message::try_compile(payer, &[instruction], Hash::new_unique()).unwrap(),
+            ),
+        ]
     }
 
     /// Each backend parses from its own key. Naming both is a parse error.
@@ -218,25 +239,26 @@ mod tests {
         ));
     }
 
-    /// The keypair backend assembles a transaction whose signature verifies
-    /// against the serialized message.
+    /// The keypair backend assembles a v0 or v1 transaction whose signature
+    /// verifies against the serialized message.
     #[tokio::test]
     async fn keypair_signs_a_verifiable_transaction() {
         let signer = Signer::Keypair(Keypair::new());
-        let message = message(&signer.pubkey());
-        let transaction = signer.sign(message).await.unwrap();
-        let serialized = transaction.message.serialize();
-        assert!(
-            transaction.signatures[0].verify(signer.pubkey().as_ref(), &serialized),
-            "the fee payer slot must carry a valid signature"
-        );
+        for message in messages(&signer.pubkey()) {
+            let transaction = signer.sign(message).await.unwrap();
+            let serialized = transaction.message.serialize();
+            assert!(
+                transaction.signatures[0].verify(signer.pubkey().as_ref(), &serialized),
+                "the fee payer slot must carry a valid signature"
+            );
+        }
     }
 
     /// A message whose signer is not the signer's key is refused.
     #[tokio::test]
     async fn refuses_a_message_without_the_signer() {
         let signer = Signer::Keypair(Keypair::new());
-        let message = message(&Pubkey::new_unique());
+        let [message, _] = messages(&Pubkey::new_unique());
         assert!(matches!(
             signer.sign(message).await,
             Err(Error::NotASigner { .. })
@@ -253,9 +275,9 @@ mod tests {
             &Pubkey::new_unique(),
             1,
         );
-        let message =
-            v0::Message::try_compile(&signer.pubkey(), &[instruction], &[], Hash::new_unique())
-                .unwrap();
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile(&signer.pubkey(), &[instruction], Hash::new_unique()).unwrap(),
+        );
         let transaction = signer.sign(message).await.unwrap();
         assert_eq!(transaction.signatures.len(), 2);
         assert!(

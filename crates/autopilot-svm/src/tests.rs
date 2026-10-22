@@ -13,10 +13,13 @@ use {
             prices::NativePrices,
             provider::DbAuctionProvider,
         },
+        run::Liveness,
         run_loop::{
             AuctionLoop,
             AuctionProvider,
             CycleTrigger,
+            NextAuction,
+            Probes,
             RankingInfo,
             SolverCompetition,
             WinnerSelection,
@@ -156,15 +159,15 @@ fn mock_rpc() -> SolanaRPC {
 
 /// Native prices for the seeded order's pair, at the denominator so scores
 /// stay raw surplus.
-fn test_prices() -> [(solana_sdk::pubkey::Pubkey, u64); 2] {
+fn test_prices() -> [(solana_sdk::pubkey::Pubkey, Option<u64>); 2] {
     [
         (
             solana_sdk::pubkey::Pubkey::new_from_array([0xAA; 32]),
-            1_000_000_000,
+            Some(1_000_000_000),
         ),
         (
             solana_sdk::pubkey::Pubkey::new_from_array([0xAB; 32]),
-            1_000_000_000,
+            Some(1_000_000_000),
         ),
     ]
 }
@@ -240,7 +243,9 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
         );
-        let auction = provider.cut_auction(&tip).await.expect("auction cut");
+        let NextAuction::Auction(auction) = provider.cut_auction(&tip).await else {
+            panic!("auction cut");
+        };
         assert_eq!(auction.orders.len(), 1, "open order in the auction");
         let competition =
             DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6), true);
@@ -270,6 +275,10 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         Box::new(DriverExecutor::new(vec![driver], windows.clone(), None)),
         Box::new(CompetitionObserver::new(pool.clone(), windows.clone())),
         25,
+        Probes {
+            liveness: Arc::new(Liveness::new(Duration::from_secs(300))),
+            startup: Default::default(),
+        },
     );
     auction_loop.run_cycle().await;
 
@@ -338,12 +347,11 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             .await
             .unwrap();
     assert_eq!(window_uid, 0);
-    // The dispatched order is held out of the next cut until its settlement
-    // transaction cannot land any more: the deadline plus the blockhash
-    // lifetime. The hold comes from the persisted competition alone, so a
-    // fresh provider also stands in for a restart. The lag gate stays out of
-    // the way, the watermark is still at the dispatch tip.
-    let expired = tip + 25 + solana_sdk::clock::MAX_PROCESSING_AGE as u64 + 1;
+    // The dispatched order is held out of the next cut until the indexer has
+    // processed its deadline slot. The hold comes from the persisted
+    // competition alone, so a fresh provider also stands in for a restart.
+    // The lag gate stays out of the way, the watermark is still at the
+    // dispatch tip.
     let held_provider = DbAuctionProvider::new(
         pool.clone(),
         mock_rpc(),
@@ -352,12 +360,15 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
     );
     assert!(
-        held_provider.cut_auction(&(tip + 25)).await.is_none(),
+        matches!(
+            held_provider.cut_auction(&(tip + 25)).await,
+            NextAuction::Empty
+        ),
         "in-flight order excluded from the cut"
     );
     // The dispatch task times the window out once the tip reaches the
-    // deadline and the indexer has processed it. The hold outlasts it by the
-    // blockhash lifetime.
+    // deadline and the indexer has processed it. The same watermark releases
+    // the hold.
     sqlx::query("UPDATE solana.indexer_state SET slot = $1")
         .bind(i64::try_from(tip + 25).unwrap())
         .execute(&pool)
@@ -381,12 +392,11 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .expect("window timed out before the timeout");
     assert_eq!(outcome, "timeout");
     assert!(
-        held_provider.cut_auction(&(expired - 1)).await.is_none(),
-        "order stays held while its transaction can still land"
-    );
-    assert!(
-        held_provider.cut_auction(&expired).await.is_some(),
-        "order returns once the transaction cannot land"
+        matches!(
+            held_provider.cut_auction(&(tip + 25)).await,
+            NextAuction::Auction(_)
+        ),
+        "order returns once the indexer has processed its deadline"
     );
     // The cycle reported the order's auction progress and the later cuts its
     // hold-out. The writes are detached, so they can land after the cuts
