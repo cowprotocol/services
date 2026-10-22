@@ -599,6 +599,7 @@ fn full_order_with_quote_into_model_order(
         sender: onchain_user,
         placement_error: onchain_placement_error,
     });
+    let at_least_partially_filled = !order.sum_buy.is_zero() || !order.sum_sell.is_zero();
 
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
@@ -646,7 +647,8 @@ fn full_order_with_quote_into_model_order(
             .context("valid_from is not u32")?,
         fast_path: order.fast_path,
         quote: quote
-            .map(|q| order_quote_into_model(q, status))
+            .filter(|_| at_least_partially_filled)
+            .map(order_quote_into_model)
             .transpose()?,
     };
     let data = OrderData {
@@ -1180,22 +1182,6 @@ mod tests {
             call_data: vec![byte; byte as _],
         };
 
-        let fee_parameters = FeeParameters {
-            sell_token_price: 2.5,
-            gas_amount: 0.01,
-            gas_price: 0.003,
-        };
-        let quote = Quote {
-            id: Some(5),
-            sell_amount: alloy::primitives::U256::from(1),
-            buy_amount: alloy::primitives::U256::from(2),
-            fee_amount: fee_parameters.fee(),
-            data: QuoteData {
-                fee_parameters,
-                ..Default::default()
-            },
-        };
-
         let uid = OrderUid([0x42; 56]);
         let order = Order {
             data: OrderData {
@@ -1204,7 +1190,6 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid,
-                quote: Some(quote.try_to_model_order_quote().unwrap()),
                 status: OrderStatus::Expired,
                 ..Default::default()
             },
@@ -1218,10 +1203,6 @@ mod tests {
         db.insert_order(&order, None).await.unwrap();
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
-        assert_eq!(
-            single_order.metadata.quote,
-            Some(quote.try_to_model_order_quote().unwrap())
-        );
         assert_eq!(single_order, order);
     }
 
@@ -1279,13 +1260,78 @@ mod tests {
         };
 
         db.insert_order(&order, None).await.unwrap();
+        insert_partial_fill(&db, &uid).await;
 
         let single_order = db.single_order(&uid).await.unwrap().unwrap();
-
         assert_eq!(
             single_order.metadata.quote,
             Some(quote.try_to_model_order_quote().unwrap())
         );
-        assert_eq!(single_order, order);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_quote_only_populated_after_fill() {
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+
+        let fee_parameters = FeeParameters {
+            sell_token_price: 2.5,
+            gas_amount: 0.01,
+            gas_price: 0.003,
+        };
+        let quote = Quote {
+            id: Some(5),
+            sell_amount: alloy::primitives::U256::from(1),
+            buy_amount: alloy::primitives::U256::from(2),
+            fee_amount: fee_parameters.fee(),
+            data: QuoteData {
+                fee_parameters,
+                ..Default::default()
+            },
+        };
+
+        let uid = OrderUid([0x42; 56]);
+        let order = Order {
+            metadata: OrderMetadata {
+                uid,
+                quote: Some(quote.try_to_model_order_quote().unwrap()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&order, None).await.unwrap();
+
+        let single_order = db.single_order(&uid).await.unwrap().unwrap();
+        assert_eq!(single_order.metadata.quote, None);
+
+        insert_partial_fill(&db, &uid).await;
+        let single_order = db.single_order(&uid).await.unwrap().unwrap();
+        assert_eq!(
+            single_order.metadata.quote,
+            Some(quote.try_to_model_order_quote().unwrap())
+        );
+
+        // The metadata is loaded from the DB but must not be exposed via the
+        // API.
+        let stored_quote = single_order.metadata.quote.as_ref().unwrap();
+        assert!(!stored_quote.metadata.is_null());
+        let json = serde_json::to_value(&single_order).unwrap();
+        assert!(!json["quote"].as_object().unwrap().contains_key("metadata"));
+    }
+
+    async fn insert_partial_fill(db: &Postgres, uid: &OrderUid) {
+        let mut ex = db.pool.acquire().await.unwrap();
+        database::events::insert_trade(
+            &mut ex,
+            &database::events::EventIndex::default(),
+            &database::events::Trade {
+                order_uid: ByteArray(uid.0),
+                sell_amount_including_fee: BigDecimal::from(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
     }
 }

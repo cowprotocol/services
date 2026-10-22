@@ -1027,6 +1027,9 @@ pub struct OrderQuote {
     pub fee_amount: U256,
     pub solver: Address,
     pub verified: bool,
+    /// Persisted alongside the order but never exposed via the API so solvers
+    /// can't copy the quote's execution plan.
+    #[serde(skip)]
     pub metadata: serde_json::Value,
 }
 
