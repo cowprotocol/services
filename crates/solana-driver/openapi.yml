@@ -406,9 +406,10 @@ components:
         - description
     ErrorKind:
       description: |-
-        The kind of error. Every kind but `DeadlineExceeded` and
-        `FailedToSubmit` precedes the send, so no transaction reached the
-        network.
+        The kind of error. Every kind but `DeadlineExceeded`,
+        `FailedToSubmit` and `SettlementReverted` precedes the send, so no
+        transaction reached the network. `SettlementReverted` means the
+        transaction landed and failed, so it cannot land again.
       type: string
       enum:
         - InvalidAuctionId
@@ -417,6 +418,7 @@ components:
         - DeadlineExceeded
         - TooManyPendingSettlements
         - FailedToSubmit
+        - SettlementReverted
         - InvalidCreation
         - FailedToCreate
         - QuoteSameTokens
