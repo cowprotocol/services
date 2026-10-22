@@ -638,7 +638,7 @@ impl Competition {
                 }
                 Error::DeadlineExceeded
             })?
-            .map_err(|err| Error::FailedToSubmit { err })?;
+            .map_err(submission_error)?;
 
         // TODO: drop this log once protocol fees are implemented.
         for fee in &volume_fees {
@@ -861,10 +861,17 @@ pub(crate) enum Error {
     /// waiting on the lookup.
     #[error("buy token account lookup failed: {0}")]
     BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
+    /// Sending or confirming failed, and the transaction may still land.
     #[error("failed to submit or confirm settlement: {err}")]
     FailedToSubmit {
         #[source]
         err: cow_solana_rpc::Error,
+    },
+    /// The settlement landed and failed on chain, so it cannot land again.
+    #[error("settlement reverted: {err}")]
+    Reverted {
+        #[source]
+        err: TransactionError,
     },
     #[error("failed to submit or confirm an order creation: {0}")]
     FailedToCreate(#[source] cow_solana_rpc::Error),
@@ -979,6 +986,15 @@ fn account_count(transaction: &VersionedTransaction) -> usize {
     message.static_account_keys().len() + loaded
 }
 
+/// The error of a failed send or confirmation. Only a landed failure proves
+/// the transaction cannot land again.
+fn submission_error(err: cow_solana_rpc::Error) -> Error {
+    match err.kind() {
+        cow_solana_rpc::ErrorKind::TransactionError(err) => Error::Reverted { err: err.clone() },
+        _ => Error::FailedToSubmit { err },
+    }
+}
+
 /// Whether the error proves the settlement fails on chain, as opposed to the
 /// driver failing to find out. Only a proof drops a solution at solve time:
 /// an unverified solution costs at most one failed settlement, a wrongly
@@ -1008,6 +1024,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::Rpc(_) => "rpc_failed",
         Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
+        Error::Reverted { .. } => "reverted",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::SimulationTimedOut => "simulation_timed_out",
@@ -1023,7 +1040,11 @@ fn error_label(error: &Error) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
+        serde_json::{Value, json},
+    };
 
     /// Addresses loaded from lookup tables count toward the account lock
     /// limit like static keys.
@@ -1048,5 +1069,53 @@ mod tests {
             }),
         };
         assert_eq!(account_count(&transaction), 9);
+    }
+
+    /// A failed status from the cluster reads as a revert. A blockhash that
+    /// expires with no status leaves the transaction's fate open.
+    #[tokio::test]
+    async fn only_a_landed_failure_reads_as_reverted() {
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::from([1; 64])],
+            message: Default::default(),
+        };
+        let confirm = async |statuses: Value| {
+            let rpc = SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+                (
+                    RpcRequest::SendTransaction,
+                    json!(transaction.signatures[0].to_string()),
+                ),
+                (RpcRequest::GetSignatureStatuses, statuses),
+                (
+                    RpcRequest::IsBlockhashValid,
+                    json!({ "context": { "slot": 1 }, "value": false }),
+                ),
+            ]));
+            submission_error(
+                rpc.send_and_confirm_transaction(&transaction)
+                    .await
+                    .unwrap_err(),
+            )
+        };
+        let err = TransactionError::InstructionError(
+            5,
+            solana_sdk::instruction::InstructionError::Custom(3005),
+        );
+        let landed = json!({
+            "context": { "slot": 1 },
+            "value": [{
+                "slot": 1,
+                "confirmations": null,
+                "status": { "Err": err },
+                "err": err,
+                "confirmationStatus": "finalized",
+            }],
+        });
+        assert!(matches!(confirm(landed).await, Error::Reverted { .. }));
+        let expired = json!({ "context": { "slot": 1 }, "value": [null] });
+        assert!(matches!(
+            confirm(expired).await,
+            Error::FailedToSubmit { .. }
+        ));
     }
 }
