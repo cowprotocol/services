@@ -58,6 +58,7 @@ enum Kind {
     DeadlineExceeded,
     TooManyPendingSettlements,
     FailedToSubmit,
+    SettlementReverted,
     InvalidCreation,
     FailedToCreate,
     QuoteSameTokens,
@@ -69,29 +70,43 @@ enum Kind {
 }
 
 impl Error {
+    /// The kind the driver answered with. `None` for a transport failure or a
+    /// body this mirror does not parse.
+    fn kind(&self) -> Option<Kind> {
+        let Error::Status { body, .. } = self else {
+            return None;
+        };
+        serde_json::from_str::<ErrorBody>(body)
+            .ok()
+            .map(|body| body.kind)
+    }
+
     /// Whether a failed `/settle` provably never sent the settlement
     /// transaction, so the orders can re-enter auctions immediately. Every
     /// listed kind rejects before the send. `DeadlineExceeded` stays out: the
     /// driver also answers it when the confirmation wait expired with the
     /// transaction already on the wire. Transport failures reveal nothing.
     pub fn settlement_provably_unsent(&self) -> bool {
-        let Error::Status { body, .. } = self else {
-            return false;
-        };
-        let Ok(body) = serde_json::from_str::<ErrorBody>(body) else {
-            return false;
-        };
         matches!(
-            body.kind,
-            Kind::InvalidAuctionId
-                | Kind::SolutionNotAvailable
-                | Kind::TooManyPendingSettlements
-                | Kind::InvalidCreation
-                | Kind::FailedToCreate
-                | Kind::SimulationFailed
-                | Kind::TransactionTooLarge
-                | Kind::PriorityFeeTooHigh
+            self.kind(),
+            Some(
+                Kind::InvalidAuctionId
+                    | Kind::SolutionNotAvailable
+                    | Kind::TooManyPendingSettlements
+                    | Kind::InvalidCreation
+                    | Kind::FailedToCreate
+                    | Kind::SimulationFailed
+                    | Kind::TransactionTooLarge
+                    | Kind::PriorityFeeTooHigh
+            )
         )
+    }
+
+    /// Whether a failed `/settle` reports that the settlement transaction
+    /// landed and failed on chain. It cannot land again, so the orders can
+    /// re-enter auctions immediately.
+    pub fn settlement_reverted(&self) -> bool {
+        matches!(self.kind(), Some(Kind::SettlementReverted))
     }
 }
 
@@ -159,6 +174,10 @@ mod tests {
         // The driver answers this both before and after the send.
         assert!(!status("DeadlineExceeded").settlement_provably_unsent());
         assert!(!status("FailedToSubmit").settlement_provably_unsent());
+        assert!(!status("FailedToSubmit").settlement_reverted());
+        // Sent and failed on chain, so it cannot land again.
+        assert!(!status("SettlementReverted").settlement_provably_unsent());
+        assert!(status("SettlementReverted").settlement_reverted());
         // A kind newer than this mirror must read as ambiguous.
         assert!(!status("SomeFutureKind").settlement_provably_unsent());
         let garbage = Error::Status {

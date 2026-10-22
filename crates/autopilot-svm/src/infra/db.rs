@@ -236,6 +236,34 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
     Ok(())
 }
 
+/// Close a window whose settlement landed and failed on chain, as the driver
+/// reported: the transaction cannot land again. A timed-out window closes
+/// too, since the deadline sweep can run before the driver answers. The end
+/// slot is the tip at the report.
+pub async fn revert_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+    slot: i64,
+) -> Result<()> {
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions
+SET outcome = 'reverted', end_timestamp = now(), end_slot = $4
+WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
+  AND (outcome IS NULL OR outcome = 'timeout')
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .bind(slot)
+        .execute(ex)
+        .await
+        .context("revert settlement execution window")?;
+    Ok(())
+}
+
 /// Record a winner skipped before dispatch as a window already closed as
 /// rejected. No transaction went out, so its orders are not in flight.
 pub async fn skip_settlement_window(
@@ -366,11 +394,12 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
 
 /// Orders inside a winning solution whose settlement may still land by its
 /// deadline: the indexer has not processed the deadline slot, no settlement
-/// of the auction traded the order, and no `rejected` window says the
-/// solution never went out. `processed_slot` is the slot the indexer has
-/// processed up to. Landing is checked per order through the settlement's
-/// trades: `settlements.solution_uid` is written only when the window
-/// closes, and one solver may win several solutions of one auction.
+/// of the auction traded the order, and no `rejected` or `reverted` window
+/// says the solution never went out or already failed on chain.
+/// `processed_slot` is the slot the indexer has processed up to. Landing is
+/// checked per order through the settlement's trades:
+/// `settlements.solution_uid` is written only when the window closes, and
+/// one solver may win several solutions of one auction.
 pub async fn in_flight_orders(
     ex: impl PgExecutor<'_>,
     processed_slot: i64,
@@ -391,7 +420,8 @@ WHERE ca.deadline_slot > $1
   )
   AND NOT EXISTS (
       SELECT 1 FROM solana.settlement_executions se
-      WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid AND se.outcome = 'rejected'
+      WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid
+        AND se.outcome IN ('rejected', 'reverted')
   )
     "#;
     sqlx::query_scalar(QUERY)
@@ -618,6 +648,7 @@ mod tests {
             in_flight_orders,
             last_indexed_slot,
             open_orders,
+            revert_settlement_window,
             skip_settlement_window,
             unrecorded_dead_creations,
         },
@@ -871,10 +902,12 @@ VALUES ($1, now(), $2)
     }
 
     /// Held: an order of a winning solution until the indexer has processed
-    /// its deadline slot. Released: after that, once a settlement of the
-    /// auction trades the order, or once the driver rejects its solution
-    /// before sending. A solver's second winning solution keeps its hold when
-    /// the first one lands. Orders of non-winning solutions are never held.
+    /// its deadline slot, a timed-out window included. Released: after that,
+    /// once a settlement of the auction trades the order, or once the driver
+    /// rejects its solution before sending or reports it reverted, a report
+    /// after the deadline sweep included. A solver's second winning solution
+    /// keeps its hold when the first one lands. Orders of non-winning
+    /// solutions are never held.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_in_flight_orders_follow_the_winning_settlement() {
@@ -962,6 +995,24 @@ VALUES ($1, now(), $2)
             .await
             .unwrap();
         assert_eq!(held(&mut tx, 50).await, vec![1, 3]);
+        sqlx::query(
+            "UPDATE solana.settlement_executions SET outcome = 'timeout', end_slot = 100, \
+             end_timestamp = now() WHERE auction_id = 77",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(held(&mut tx, 99).await, vec![1, 3]);
+        revert_settlement_window(&mut *tx, 77, Pubkey(winner.0), 0, 101)
+            .await
+            .unwrap();
+        assert_eq!(held(&mut tx, 99).await, vec![3]);
+        sqlx::query(
+            "UPDATE solana.settlement_executions SET outcome = 'timeout' WHERE auction_id = 77",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
 
         // The solver's settlement trades order 1 only: order 3, its other
         // winning solution, stays held until its own trade lands.
