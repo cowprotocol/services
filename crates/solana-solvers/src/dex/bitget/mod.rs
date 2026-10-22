@@ -1,12 +1,13 @@
 //! Bitget swap-API adapter.
 //!
-//! One signed `/swap` call per sell order. Buys are unsupported: `/swap` only
+//! One signed `/swap` call per quote. Its response already carries the route,
+//! so building the swap takes no request. Buys are unsupported: `/swap` only
 //! quotes exact-in.
 
 mod dto;
 
 use {
-    super::{Error, Order, Side, Swap},
+    super::{Error, Order, Quote, Side, Swap},
     crate::config::BitgetConfig,
     base64::prelude::*,
     hmac::{Hmac, Mac},
@@ -43,9 +44,9 @@ impl Bitget {
         })
     }
 
-    /// Quote `order` for the settlement signer `taker` and return the swap to
-    /// run inside the settlement transaction.
-    pub async fn swap(&self, order: &Order, taker: &Pubkey) -> Result<Swap, Error> {
+    /// Quote `order` for the settlement signer `taker`. `/swap` needs the
+    /// taker to build the route.
+    pub async fn quote(&self, order: &Order, taker: &Pubkey) -> Result<Quote, Error> {
         if order.side == Side::Buy {
             return Err(Error::OrderNotSupported);
         }
@@ -80,8 +81,13 @@ impl Bitget {
         }
         serde_json::from_str::<dto::Envelope>(&body)
             .map_err(|err| Error::BadResponse(format!("response body: {err}")))?
-            .into_data(status.as_u16())?
-            .into_swap(order, taker)
+            .into_data(status.as_u16())
+            .map(|response| response.into_quote(order))
+    }
+
+    /// Build the swap for `quote` from the route it kept.
+    pub async fn swap(&self, quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
+        dto::swap(quote, taker)
     }
 
     /// Base64 HMAC-SHA256, keyed by the secret, over the signed fields as JSON
@@ -137,7 +143,8 @@ mod tests {
             side: Side::Sell,
         };
         let taker = Pubkey::new_unique();
-        let swap = bitget.swap(&order, &taker).await.unwrap();
+        let quote = bitget.quote(&order, &taker).await.unwrap();
+        let swap = bitget.swap(&quote, &taker).await.unwrap();
 
         assert_eq!(swap.in_amount, 1_000_000);
         assert!(swap.out_amount > 0);

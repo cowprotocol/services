@@ -5,6 +5,7 @@ mod mint;
 mod order;
 mod quote;
 mod ready;
+mod solver_competition;
 mod status;
 mod trades;
 mod version;
@@ -17,6 +18,12 @@ pub use {
     order::order,
     quote::quote,
     ready::ready,
+    solver_competition::{
+        solver_competition_by_id,
+        solver_competition_by_id_unfiltered,
+        solver_competition_by_tx_hash,
+        solver_competition_latest,
+    },
     status::order_status,
     trades::trades,
     version::version,

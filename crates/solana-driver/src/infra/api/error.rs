@@ -19,6 +19,7 @@ pub(crate) enum Kind {
     DeadlineExceeded,
     TooManyPendingSettlements,
     FailedToSubmit,
+    SettlementReverted,
     InvalidCreation,
     FailedToCreate,
     QuoteSameTokens,
@@ -52,6 +53,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::DeadlineExceeded => "The submission deadline has passed",
             Kind::TooManyPendingSettlements => "Too many settlements are pending",
             Kind::FailedToSubmit => "Failed to submit the settlement transaction",
+            Kind::SettlementReverted => "The settlement transaction failed on chain",
             Kind::InvalidCreation => "A creation transaction does not decode",
             Kind::FailedToCreate => "Failed to submit an order creation transaction",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
@@ -84,6 +86,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::Rpc(_) => Kind::Unknown,
             competition::Error::BuyTokenAccounts(_) => Kind::Unknown,
             competition::Error::FailedToSubmit { .. } => Kind::FailedToSubmit,
+            competition::Error::Reverted { .. } => Kind::SettlementReverted,
             competition::Error::FailedToCreate(_) => Kind::FailedToCreate,
             competition::Error::SimulationFailed { .. } => Kind::SimulationFailed,
             competition::Error::TransactionTooLarge { .. } => Kind::TransactionTooLarge,
@@ -109,14 +112,14 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 | settlement::Error::LimitPriceViolated(_)
                 | settlement::Error::OrderPdaMismatch(..)
                 | settlement::Error::OrderIntentMismatch(..)
-                | settlement::Error::ZeroAmount(_) => Kind::SolverFailed,
+                | settlement::Error::ZeroAmount(_)
+                // The solver's interactions set the message's shape.
+                | settlement::Error::InvalidMessage(_) => Kind::SolverFailed,
                 // The order expired between solve and settle: not solver
                 // fault.
                 settlement::Error::OrderExpired(_) => Kind::DeadlineExceeded,
             },
             competition::Error::Resolve(error) => match error {
-                // The solver supplied the lookup table keys.
-                settlement::ResolveError::InvalidAddressLookupTable { .. } => Kind::SolverFailed,
                 // RPC failures, unexpected setup accounts and mint lookups are
                 // outside solver control. Map them to Unknown.
                 settlement::ResolveError::Rpc(_)
