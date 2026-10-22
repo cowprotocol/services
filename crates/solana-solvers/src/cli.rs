@@ -35,5 +35,10 @@ pub enum Command {
         #[clap(long, env)]
         config: PathBuf,
     },
+    /// Wrap Bitget's swap API into single-order solutions.
+    Bitget {
+        #[clap(long, env)]
+        config: PathBuf,
+    },
     // TODO: add a baseline engine subcommand.
 }

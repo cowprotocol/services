@@ -11,12 +11,16 @@ use {
     solana_sdk::{
         account::{Account, from_account},
         clock::Clock,
+        program_pack::Pack,
         pubkey::Pubkey,
+        rent::Rent,
         sysvar::clock,
     },
+    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_2022_interface::{
         extension::{
             BaseStateWithExtensions,
+            ExtensionType,
             StateWithExtensions,
             confidential_transfer::ConfidentialTransferAccount,
             default_account_state::DefaultAccountState,
@@ -207,6 +211,47 @@ impl MintLookup<'_> {
     }
 }
 
+/// The data length of a new associated token account of the mint at `mint`,
+/// `None` when it is no mint of either token program. A Token-2022 one
+/// carries the immutable owner extension and the account extensions the
+/// mint's own extensions require.
+pub fn ata_len(mint: &Account) -> Option<usize> {
+    Some(match TokenProgram::try_from(&mint.owner).ok()? {
+        // A classic mint is exactly 82 bytes; any other account of the
+        // program is a token account or a multisig.
+        TokenProgram::SplToken if mint.data.len() == Mint::LEN => TokenAccount::LEN,
+        TokenProgram::SplToken => return None,
+        TokenProgram::Token2022 => {
+            let mint = StateWithExtensions::<Mint>::unpack(&mint.data).ok()?;
+            token_2022_ata_len(&mint.get_extension_types().ok()?)
+        }
+    })
+}
+
+/// The rent-exempt minimum under `rent`, in lamports, of a new associated
+/// token account of the mint at `mint`, see [`ata_len`].
+pub fn ata_rent(rent: &Rent, mint: &Account) -> Option<u64> {
+    Some(rent.minimum_balance(ata_len(mint)?))
+}
+
+/// The [`ata_rent`] of the largest associated token account a mint passing
+/// [`mint_verdict`] can need: under a Token-2022 mint whose fee schedule takes
+/// nothing, whose hook names no program and whose pause switch is off.
+pub fn max_ata_rent(rent: &Rent) -> u64 {
+    rent.minimum_balance(token_2022_ata_len(&[
+        ExtensionType::TransferFeeConfig,
+        ExtensionType::TransferHook,
+        ExtensionType::Pausable,
+    ]))
+}
+
+fn token_2022_ata_len(mint_extensions: &[ExtensionType]) -> usize {
+    let mut extensions = ExtensionType::get_required_init_account_extensions(mint_extensions);
+    extensions.push(ExtensionType::ImmutableOwner);
+    ExtensionType::try_calculate_account_len::<TokenAccount>(&extensions)
+        .expect("account extensions have fixed lengths")
+}
+
 /// Whether the settlement's plain `Transfer` of `mint` lands in the token
 /// account at `account`: initialized, unfrozen, holding `mint`, and not set
 /// to refuse transfers without a memo or outside confidential balances.
@@ -218,6 +263,33 @@ pub fn receivable_token_account(account: &Account, mint: &Pubkey) -> bool {
                 && !memo_required(&state)
                 && !refuses_non_confidential_credits(&state)
         })
+}
+
+/// Whether the settlement's payout of `mint` lands in the token account at
+/// `account`, read from the chain as `found`: the account receives the mint,
+/// or the settlement creates it, which it does only at `owner`'s associated
+/// token address under `program` while the address is missing or holds a
+/// lamports-only system account, which the idempotent create allocates over.
+/// `program` is the token program the settlement moves the mint through,
+/// `None` when it has none.
+pub fn receivable_or_creatable(
+    found: Option<&Account>,
+    account: &Pubkey,
+    mint: &Pubkey,
+    owner: &Pubkey,
+    program: Option<TokenProgram>,
+) -> bool {
+    match found {
+        Some(found)
+            if found.owner != solana_system_interface::program::ID || !found.data.is_empty() =>
+        {
+            receivable_token_account(found, mint)
+        }
+        _ => program.is_some_and(|program| {
+            *account
+                == get_associated_token_address_with_program_id(owner, mint, &program.address())
+        }),
+    }
 }
 
 /// Whether the account's confidential transfer extension refuses credits to
@@ -236,8 +308,8 @@ mod tests {
         solana_testlib::{classic_mint, token_2022_account, token_2022_mint},
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
-            ExtensionType,
             StateWithExtensionsMut,
+            confidential_transfer::ConfidentialTransferMint,
             memo_transfer::MemoTransfer,
             mint_close_authority::MintCloseAuthority,
             permanent_delegate::PermanentDelegate,
@@ -501,6 +573,79 @@ mod tests {
         );
     }
 
+    /// A rent of one lamport per byte, so a rent-exempt minimum reads as the
+    /// account's length plus the 128-byte storage overhead.
+    fn rent_per_byte() -> Rent {
+        Rent::with_lamports_per_byte(1)
+    }
+
+    /// A classic associated token account takes 165 bytes, a Token-2022 one
+    /// 170 with its immutable owner extension, plus the account extensions
+    /// the mint's own extensions add even when they leave the transfer whole.
+    #[test]
+    fn ata_rent_grows_with_the_account_extensions_the_mint_adds() {
+        let rent = &rent_per_byte();
+        assert_eq!(ata_rent(rent, &classic_mint(6)), Some(128 + 165));
+        assert_eq!(
+            ata_rent(&Rent::default(), &classic_mint(6)),
+            Some(2_039_280)
+        );
+        assert_eq!(
+            ata_rent(rent, &token_2022_mint(&[], |_| {})),
+            Some(128 + 170)
+        );
+        assert_eq!(
+            ata_rent(rent, &fee_mint(no_fee(0), no_fee(0))),
+            Some(128 + 182)
+        );
+        let largest = token_2022_mint(
+            &[
+                ExtensionType::TransferFeeConfig,
+                ExtensionType::TransferHook,
+                ExtensionType::Pausable,
+            ],
+            |mint| {
+                mint.init_extension::<TransferFeeConfig>(true).unwrap();
+                mint.init_extension::<TransferHook>(true).unwrap();
+                mint.init_extension::<PausableConfig>(true).unwrap();
+            },
+        );
+        assert_eq!(
+            mint_verdict(Some(&largest), None),
+            Ok(TokenProgram::Token2022)
+        );
+        assert_eq!(ata_rent(rent, &largest), Some(max_ata_rent(rent)));
+        assert_eq!(max_ata_rent(rent), 128 + 191);
+        assert_eq!(
+            ata_rent(
+                rent,
+                &token_2022_account(&Pubkey::new_unique(), &[], |_| {})
+            ),
+            None
+        );
+        let classic_account = Account {
+            owner: TokenProgram::SplToken.address(),
+            data: vec![0; TokenAccount::LEN],
+            ..Account::default()
+        };
+        assert_eq!(ata_rent(rent, &classic_account), None);
+    }
+
+    /// A confidential transfer mint asks nothing of its accounts at creation —
+    /// the confidential extension is configured on each account afterwards —
+    /// so the rent stays the plain Token-2022 one.
+    #[test]
+    fn confidential_mints_keep_the_plain_token_2022_rent() {
+        let mint = token_2022_mint(&[ExtensionType::ConfidentialTransferMint], |mint| {
+            mint.init_extension::<ConfidentialTransferMint>(true)
+                .unwrap();
+        });
+        assert_eq!(mint_verdict(Some(&mint), None), Ok(TokenProgram::Token2022));
+        let rent = &rent_per_byte();
+        assert_eq!(ata_rent(rent, &mint), Some(128 + 170));
+        assert!(ata_rent(rent, &mint) <= Some(max_ata_rent(rent)));
+    }
+
     /// A Token-2022 account receives the payout unless it holds another mint,
     /// requires memos on incoming transfers, or refuses credits outside its
     /// confidential balance.
@@ -539,5 +684,44 @@ mod tests {
         assert!(!receivable_token_account(&with_memos(true), &mint));
         assert!(receivable_token_account(&with_confidential(true), &mint));
         assert!(!receivable_token_account(&with_confidential(false), &mint));
+    }
+
+    /// The payout lands in an account receiving the mint wherever it sits,
+    /// and in the owner's associated token account under the mint's program
+    /// when that is missing or holds only lamports. It does not land in a
+    /// missing account elsewhere, in a system account with data, or at the
+    /// associated address under another program or without one.
+    #[test]
+    fn pays_out_to_receiving_or_creatable_accounts() {
+        let (mint, owner, elsewhere) = (
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+            Pubkey::new_unique(),
+        );
+        let ata = get_associated_token_address_with_program_id(
+            &owner,
+            &mint,
+            &spl_token_2022_interface::ID,
+        );
+        let receiving = token_2022_account(&mint, &[], |_| {});
+        let system = solana_system_interface::program::ID;
+        let lamports_only = Account::new(890_880, 0, &system);
+        let with_data = Account::new(890_880, 1, &system);
+        let program = Some(TokenProgram::Token2022);
+        let lands =
+            |found, account| receivable_or_creatable(found, account, &mint, &owner, program);
+        assert!(lands(Some(&receiving), &elsewhere));
+        assert!(lands(None, &ata));
+        assert!(lands(Some(&lamports_only), &ata));
+        assert!(!lands(None, &elsewhere));
+        assert!(!lands(Some(&with_data), &ata));
+        assert!(!receivable_or_creatable(
+            None,
+            &ata,
+            &mint,
+            &owner,
+            Some(TokenProgram::SplToken)
+        ));
+        assert!(!receivable_or_creatable(None, &ata, &mint, &owner, None));
     }
 }

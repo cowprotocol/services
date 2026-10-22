@@ -241,7 +241,6 @@ impl Settlement {
             internalized: encode_one(Internalization::Enable)?,
             uninternalized: encode_one(Internalization::Disable)?,
             gas: self.gas,
-            may_revert: self.solution.revertable(),
             gas_fee_override: self.solution.gas_fee_override(),
         })
     }
@@ -281,8 +280,7 @@ impl Settlement {
         let log_err = |trade: &Trade, err: error::Math, kind: &str| -> eth::TokenAmount {
             // This should never happen, returning 0 is better than panicking,
             // but we should still alert.
-            let msg = format!("could not compute {kind}");
-            tracing::error!(?trade, prices=?self.solution.prices, ?err, msg);
+            tracing::error!(?trade, prices = ?self.solution.prices, ?err, "could not compute {kind}");
             0.into()
         };
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();
@@ -349,9 +347,6 @@ pub struct EncodedSettlement {
     /// Gas parameters (limit used for mempool submission, estimate for
     /// observability).
     pub gas: Gas,
-    /// Effectively indicates whether the settlement interacts with
-    /// AMMs which can revert when arbitrage bots snipe good liquidity.
-    pub may_revert: bool,
     /// Solver-provided override for the gas fee at submission time.
     pub gas_fee_override: Option<super::GasFeeOverride>,
 }

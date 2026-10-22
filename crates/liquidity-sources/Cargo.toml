@@ -46,6 +46,7 @@ mockall = { workspace = true }
 regex = { workspace = true }
 testlib = { workspace = true }
 token-info = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util"] }
 
 [features]
 test-util = ["dep:mockall"]

@@ -37,7 +37,7 @@ use {
         cmp,
         collections::{BTreeMap, HashMap, HashSet, hash_map::Entry},
         hash::Hash,
-        num::{NonZeroU64, NonZeroUsize},
+        num::NonZeroUsize,
         sync::{Arc, Mutex},
         time::Duration,
     },
@@ -69,17 +69,37 @@ pub enum Block {
     /// The most recent state. This is on a best effort basis so that for
     /// example a cache can still return results that are slightly out of
     /// date.
-    Recent,
+    Recent {
+        /// Whether the requested entries should be kept up to date in the
+        /// background so that repeated requests for them keep returning
+        /// fresh state without fetching on the request path.
+        schedule_update: bool,
+    },
     Number(u64),
-    Finalized,
+}
+
+impl Block {
+    /// Whether entries requested at this block get kept up to date by the
+    /// background task.
+    fn schedules_update(self) -> bool {
+        matches!(
+            self,
+            // If a block number was specified the caller actually cared about the most accurate
+            // data for these keys. In that case we want to be nice and remember the key for future
+            // background updates of the cached liquidity.
+            Block::Number(_)
+                | Block::Recent {
+                    schedule_update: true
+                }
+        )
+    }
 }
 
 impl From<Block> for BlockId {
     fn from(value: Block) -> Self {
         match value {
-            Block::Recent => BlockId::latest(),
+            Block::Recent { .. } => BlockId::latest(),
             Block::Number(n) => BlockId::number(n),
-            Block::Finalized => BlockId::finalized(),
         }
     }
 }
@@ -103,10 +123,9 @@ where
     F: CacheFetching<K, V>,
 {
     mutexed: Mutex<Mutexed<K, V>>,
-    number_of_blocks_to_cache: NonZeroU64,
     fetcher: Arc<F>,
     maximum_retries: u32,
-    delay_between_retries: Duration,
+    retry_cooldown: Duration,
     metrics: &'static Metrics,
     metrics_label: &'static str,
     requests: BoxRequestSharing<(K, Block), Option<Vec<V>>>,
@@ -114,23 +133,29 @@ where
 
 #[derive(Clone, Copy, Debug)]
 pub struct CacheConfig {
-    pub number_of_blocks_to_cache: NonZeroU64,
     pub number_of_entries_to_auto_update: NonZeroUsize,
     pub auto_update_ttl: Duration,
+    /// How many blocks older than the last background update a cached entry
+    /// may be to still be returned for recent requests. Older entries get
+    /// evicted by the background update.
     pub maximum_recent_block_age: u64,
+    /// Time between two background updates of the recently used entries.
+    /// Blocks arriving within that time share a single update.
+    pub refresh_cooldown: Duration,
     pub max_retries: u32,
-    pub delay_between_retries: Duration,
+    /// Time to wait before retrying a failed fetch.
+    pub retry_cooldown: Duration,
 }
 
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            number_of_blocks_to_cache: NonZeroU64::new(1).unwrap(),
             number_of_entries_to_auto_update: NonZeroUsize::new(1).unwrap(),
             auto_update_ttl: Duration::from_secs(1),
             maximum_recent_block_age: Default::default(),
+            refresh_cooldown: Default::default(),
             max_retries: Default::default(),
-            delay_between_retries: Default::default(),
+            retry_cooldown: Default::default(),
         }
     }
 }
@@ -151,17 +176,13 @@ where
     V: Clone + Send + Sync + 'static,
     F: CacheFetching<K, V>,
 {
-    /// number_of_blocks_to_cache: Previous blocks stay cached until the block
-    /// is this much older than the current block. If there is a request for
-    /// a block that is already too old then the result stays cached until
-    /// the automatic updating runs the next time.
-    ///
     /// number_of_entries_to_auto_update: The number of most recently used
     /// entries to keep track of and auto update when the current block
     /// changes.
     ///
     /// maximum_recent_block_age: When a recent block is requested, this is the
-    /// maximum a cached block can have to be considered.
+    /// maximum age a cached block can have to be considered. Older entries
+    /// get evicted when the automatic updating runs the next time.
     pub fn new(
         config: CacheConfig,
         fetcher: F,
@@ -176,10 +197,9 @@ where
                 block,
                 config.maximum_recent_block_age,
             )),
-            number_of_blocks_to_cache: config.number_of_blocks_to_cache,
             fetcher: Arc::new(fetcher),
             maximum_retries: config.max_retries,
-            delay_between_retries: config.delay_between_retries,
+            retry_cooldown: config.retry_cooldown,
             metrics: Metrics::instance(observe::metrics::get_storage_registry()).unwrap(),
             metrics_label,
             requests: BoxRequestSharing::labelled("liquidity_fetching".into()),
@@ -188,6 +208,7 @@ where
         Self::spawn_gc_task(
             Arc::downgrade(&inner),
             block_stream,
+            config.refresh_cooldown,
             metrics_label.to_string(),
         );
 
@@ -201,10 +222,18 @@ where
     fn spawn_gc_task(
         inner: std::sync::Weak<Inner<K, V, F>>,
         block_stream: CurrentBlockWatcher,
+        refresh_cooldown: Duration,
         label: String,
     ) {
         tokio::task::spawn(async move {
             let mut stream = ethrpc::block_stream::into_stream(block_stream);
+            // `interval` panics on a zero period.
+            let mut cooldown =
+                tokio::time::interval(refresh_cooldown.max(Duration::from_millis(1)));
+            cooldown.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // The first tick completes immediately; consume it so the first
+            // update is followed by a cooldown too.
+            cooldown.tick().await;
             while let Some(block) = stream.next().await {
                 let Some(inner) = inner.upgrade() else {
                     tracing::debug!("cache no longer in use; terminate GC task");
@@ -217,6 +246,13 @@ where
                 {
                     tracing::warn!(?err, "failed to update cache");
                 }
+                // The stream only yields the newest block once we continue, so
+                // blocks arriving during the cooldown collapse into a single
+                // update instead of refreshing every entry once per block. The
+                // cooldown runs from tick to tick, so the update itself counts
+                // towards it and on average there is at most one update per
+                // cooldown.
+                cooldown.tick().await;
             }
         });
     }
@@ -242,7 +278,9 @@ where
 
         let mut mutexed = self.mutexed.lock().unwrap();
         mutexed.insert(new_block, keys, found_values);
-        let oldest_to_keep = new_block.saturating_sub(self.number_of_blocks_to_cache.get() - 1);
+        // Entries older than that are no longer returned for recent requests,
+        // so there is no point in keeping them around.
+        let oldest_to_keep = new_block.saturating_sub(mutexed.maximum_recent_block_age);
         mutexed.remove_cached_blocks_older_than(oldest_to_keep);
         mutexed.last_update_block = new_block;
 
@@ -267,7 +305,7 @@ where
     // request up to N times while sleeping in between.
     async fn fetch_inner(&self, key: K, block: Block) -> Result<Vec<V>> {
         let retries = self.maximum_retries;
-        let delay = self.delay_between_retries;
+        let delay = self.retry_cooldown;
         let fetcher = self.fetcher.clone();
         let shared = self.requests.shared_or_else((key, block), |entry| {
             let (key, block) = entry.clone();
@@ -288,8 +326,8 @@ where
     }
 
     async fn fetch(&self, keys: impl IntoIterator<Item = K>, block: Block) -> Result<Vec<V>> {
-        let block = match block {
-            Block::Recent | Block::Finalized => None,
+        let block_number = match block {
+            Block::Recent { .. } => None,
             Block::Number(number) => Some(number),
         };
 
@@ -326,7 +364,7 @@ where
             return Ok(cache_hits);
         }
 
-        let cache_miss_block = block.unwrap_or(last_update_block);
+        let cache_miss_block = block_number.unwrap_or(last_update_block);
         let cache_misses: Vec<_> = cache_misses.into_iter().collect();
         // Splits fetches into chunks because we can get over 1400 requests when
         // the cache is empty which tend to time out if we don't chunk
@@ -341,12 +379,7 @@ where
 
             let mut mutexed = self.mutexed.lock().unwrap();
             mutexed.insert(cache_miss_block, chunk.iter().cloned(), fetched);
-            if block.is_some() {
-                // Only if a block number was specified the caller actually
-                // cared about the most accurate data for these
-                // keys. Only in that case we want to be nice and
-                // remember the key for future background updates of the cached
-                // liquidity.
+            if block.schedules_update() {
                 for key in found_keys {
                     mutexed.recently_used.cache_set(key, ());
                 }
@@ -395,18 +428,26 @@ where
         }
     }
 
-    fn get(&mut self, key: K, block: Option<u64>) -> Option<&[V]> {
-        let allow_background_udpates = block.is_some();
-        let block = block.or_else(|| {
-            self.cached_most_recently_at_block
+    /// Returns the values cached for `key` at the requested block. Without a
+    /// specific block number the most recently cached values are returned as
+    /// long as they are not too old compared to the last background update.
+    fn get(&mut self, key: K, block: Block) -> Option<&[V]> {
+        let cached_at = match block {
+            Block::Number(number) => number,
+            Block::Recent { .. } => self
+                .cached_most_recently_at_block
                 .get(&key)
                 .copied()
-                .filter(|&block| {
-                    self.last_update_block.saturating_sub(block) <= self.maximum_recent_block_age
-                })
-        })?;
-        let result = self.entries.get(&(block, key.clone())).map(Vec::as_slice);
-        if allow_background_udpates && result.is_some_and(|values| !values.is_empty()) {
+                .filter(|&cached_at| {
+                    self.last_update_block.saturating_sub(cached_at)
+                        <= self.maximum_recent_block_age
+                })?,
+        };
+        let result = self
+            .entries
+            .get(&(cached_at, key.clone()))
+            .map(Vec::as_slice);
+        if block.schedules_update() && result.is_some_and(|values| !values.is_empty()) {
             self.recently_used.cache_set(key, ());
         }
         result
@@ -541,6 +582,11 @@ mod tests {
         keys.into_iter().map(TestKey)
     }
 
+    /// Recent state without scheduling the entries for background updates.
+    const RECENT: Block = Block::Recent {
+        schedule_update: false,
+    };
+
     #[tokio::test]
     async fn marks_recently_used() {
         let fetcher = FakeCacheFetcher::new(vec![
@@ -585,7 +631,7 @@ mod tests {
 
         // Don't cache this because we didn't request the liquidity on a
         // specific block.
-        cache.fetch(test_keys(1..2), Block::Recent).await.unwrap();
+        cache.fetch(test_keys(1..2), RECENT).await.unwrap();
         assert_keys_recently_used(&[0]);
 
         // Don't cache this because there is no liquidity for this block
@@ -641,7 +687,7 @@ mod tests {
             .unwrap();
         assert_eq!(result.len(), 2);
 
-        let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
+        let result = cache.fetch(test_keys(0..4), RECENT).await.unwrap();
         // We can fetch data for keys with `Recent` but we don't schedule them
         // for auto updates.
         assert_eq!(result.len(), 4);
@@ -657,7 +703,7 @@ mod tests {
         cache.update_cache_at_block(block_number).await.unwrap();
         values.lock().unwrap().clear();
 
-        let result = cache.fetch(test_keys(0..4), Block::Recent).await.unwrap();
+        let result = cache.fetch(test_keys(0..4), RECENT).await.unwrap();
         assert_eq!(result.len(), 4);
         // These keys were scheduled for background updates and show the new
         // value.
@@ -697,7 +743,7 @@ mod tests {
         *values.lock().unwrap() = vec![value0.clone(), value1.clone()];
         // cache miss gets cached
         cache
-            .fetch(test_keys(0..2), Block::Recent)
+            .fetch(test_keys(0..2), RECENT)
             .now_or_never()
             .unwrap()
             .unwrap();
@@ -705,7 +751,7 @@ mod tests {
         *values.lock().unwrap() = vec![value2.clone()];
         // key 1 is cache hit, key 2 is miss
         let result = cache
-            .fetch(test_keys(1..3), Block::Recent)
+            .fetch(test_keys(1..3), RECENT)
             .now_or_never()
             .unwrap()
             .unwrap();
@@ -716,7 +762,7 @@ mod tests {
         // Make sure everything is still properly cached.
         values.lock().unwrap().clear();
         let result = cache
-            .fetch(test_keys(0..3), Block::Recent)
+            .fetch(test_keys(0..3), RECENT)
             .now_or_never()
             .unwrap()
             .unwrap();
@@ -769,7 +815,7 @@ mod tests {
         values.lock().unwrap().clear();
         // cache hit at block 6
         let result = cache
-            .fetch(test_keys(0..1), Block::Recent)
+            .fetch(test_keys(0..1), RECENT)
             .now_or_never()
             .unwrap()
             .unwrap();
@@ -787,7 +833,7 @@ mod tests {
 
         // We still get the cache hit from block 6.
         let result = cache
-            .fetch(test_keys(0..1), Block::Recent)
+            .fetch(test_keys(0..1), RECENT)
             .now_or_never()
             .unwrap()
             .unwrap();
@@ -805,7 +851,7 @@ mod tests {
         let (block_sender, block_stream) = tokio::sync::watch::channel(block(10));
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_blocks_to_cache: NonZeroU64::new(2).unwrap(),
+                maximum_recent_block_age: 1,
                 number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
                 ..Default::default()
             },
@@ -828,7 +874,7 @@ mod tests {
         // Fetch updated liquidity for 2 of the initial 10 keys
         cache.update_cache_at_block(11).await.unwrap();
         // Fetch 2 new keys which are NOT scheduled for background updates
-        cache.fetch(test_keys(10..12), Block::Recent).await.unwrap();
+        cache.fetch(test_keys(10..12), RECENT).await.unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 12);
 
         block_sender.send(block(12)).unwrap();
@@ -839,7 +885,7 @@ mod tests {
         block_sender.send(block(13)).unwrap();
         // Update 2 blocks in background but now it's time to evict the 2
         // additional keys we fetched with `Block::Recent` because we
-        // are only allowed to keep state that is up to 2 blocks old.
+        // are only allowed to keep state that is up to 1 block old.
         cache.update_cache_at_block(13).await.unwrap();
         assert_eq!(cache.mutexed.lock().unwrap().entries.len(), 2);
     }
@@ -854,7 +900,6 @@ mod tests {
         });
         let cache = RecentBlockCache::new(
             CacheConfig {
-                number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
                 maximum_recent_block_age: 2,
                 ..Default::default()
             },
@@ -872,8 +917,15 @@ mod tests {
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert!(cache.mutexed.lock().unwrap().get(key, Some(7)).is_some());
-        assert!(cache.mutexed.lock().unwrap().get(key, None).is_none());
+        assert!(
+            cache
+                .mutexed
+                .lock()
+                .unwrap()
+                .get(key, Block::Number(7))
+                .is_some()
+        );
+        assert!(cache.mutexed.lock().unwrap().get(key, RECENT).is_none());
 
         // cache at block 8
         cache
@@ -881,8 +933,208 @@ mod tests {
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert!(cache.mutexed.lock().unwrap().get(key, Some(7)).is_some());
-        assert!(cache.mutexed.lock().unwrap().get(key, Some(8)).is_some());
-        assert!(cache.mutexed.lock().unwrap().get(key, None).is_some());
+        assert!(
+            cache
+                .mutexed
+                .lock()
+                .unwrap()
+                .get(key, Block::Number(7))
+                .is_some()
+        );
+        assert!(
+            cache
+                .mutexed
+                .lock()
+                .unwrap()
+                .get(key, Block::Number(8))
+                .is_some()
+        );
+        assert!(cache.mutexed.lock().unwrap().get(key, RECENT).is_some());
+    }
+
+    #[tokio::test]
+    async fn recent_with_schedule_update_tracks_entries() {
+        let fetcher = FakeCacheFetcher::default();
+        let values = fetcher.0.clone();
+        let block_stream = mock_single_block(BlockInfo {
+            number: 10,
+            ..Default::default()
+        });
+        let cache = RecentBlockCache::new(
+            CacheConfig {
+                number_of_entries_to_auto_update: NonZeroUsize::new(2).unwrap(),
+                ..Default::default()
+            },
+            fetcher,
+            block_stream,
+            "",
+        )
+        .unwrap()
+        .inner;
+        let tracked_keys = || {
+            let mut keys = cache
+                .mutexed
+                .lock()
+                .unwrap()
+                .keys_of_recently_used_entries()
+                .collect::<Vec<_>>();
+            keys.sort();
+            keys
+        };
+
+        *values.lock().unwrap() = vec![TestValue::new(0, "a"), TestValue::new(1, "a")];
+        // `Recent` caches the entry but doesn't schedule it for updates.
+        let result = cache
+            .fetch(
+                test_keys(0..1),
+                Block::Recent {
+                    schedule_update: false,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(result, vec![TestValue::new(0, "a")]);
+        assert!(tracked_keys().is_empty());
+
+        // The cache hit (key 0) and the cache miss (key 1) both get scheduled.
+        let result = cache
+            .fetch(
+                test_keys(0..2),
+                Block::Recent {
+                    schedule_update: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(tracked_keys(), vec![TestKey(0), TestKey(1)]);
+
+        // The background update refreshes both without any request.
+        *values.lock().unwrap() = vec![TestValue::new(0, "b"), TestValue::new(1, "b")];
+        cache.update_cache_at_block(11).await.unwrap();
+        values.lock().unwrap().clear();
+        let result = cache
+            .fetch(
+                test_keys(0..2),
+                Block::Recent {
+                    schedule_update: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&TestValue::new(0, "b")));
+        assert!(result.contains(&TestValue::new(1, "b")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn refresh_cooldown_collapses_blocks_into_one_update() {
+        let fetcher = FakeCacheFetcher::new(vec![TestValue::new(0, "")]);
+        let block = |number| BlockInfo {
+            number,
+            ..Default::default()
+        };
+        let (block_sender, block_stream) = tokio::sync::watch::channel(block(10));
+        let cache = RecentBlockCache::new(
+            CacheConfig {
+                refresh_cooldown: Duration::from_secs(10),
+                ..Default::default()
+            },
+            fetcher,
+            block_stream,
+            "",
+        )
+        .unwrap()
+        .inner;
+        let last_update_block = || cache.mutexed.lock().unwrap().last_update_block;
+        let cached_blocks = || {
+            cache
+                .mutexed
+                .lock()
+                .unwrap()
+                .entries
+                .keys()
+                .map(|(block, _)| *block)
+                .collect::<Vec<_>>()
+        };
+
+        // Schedule the key for background updates.
+        cache
+            .fetch(test_keys(0..1), Block::Number(10))
+            .await
+            .unwrap();
+        // Let the GC task process the initial block and start its cooldown.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(last_update_block(), 10);
+
+        // Blocks arriving during the cooldown don't trigger updates.
+        for number in 11..=13 {
+            block_sender.send(block(number)).unwrap();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        assert_eq!(last_update_block(), 10);
+        assert_eq!(cached_blocks(), vec![10]);
+
+        // Once the cooldown is over only the newest block gets processed.
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        assert_eq!(last_update_block(), 13);
+        assert_eq!(cached_blocks(), vec![13]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn refresh_cooldown_includes_update_duration() {
+        struct SlowFetcher(Duration);
+
+        #[async_trait::async_trait]
+        impl CacheFetching<TestKey, TestValue> for SlowFetcher {
+            async fn fetch_values(
+                &self,
+                keys: HashSet<TestKey>,
+                _: Block,
+            ) -> Result<Vec<TestValue>> {
+                tokio::time::sleep(self.0).await;
+                Ok(keys
+                    .into_iter()
+                    .map(|key| TestValue::new(key.0, ""))
+                    .collect())
+            }
+        }
+
+        let block = |number| BlockInfo {
+            number,
+            ..Default::default()
+        };
+        let (block_sender, block_stream) = tokio::sync::watch::channel(block(10));
+        let cache = RecentBlockCache::new(
+            CacheConfig {
+                refresh_cooldown: Duration::from_secs(10),
+                ..Default::default()
+            },
+            SlowFetcher(Duration::from_secs(4)),
+            block_stream,
+            "",
+        )
+        .unwrap()
+        .inner;
+        let last_update_block = || cache.mutexed.lock().unwrap().last_update_block;
+
+        // Schedule the key for background updates. Meanwhile the GC task
+        // processes the initial block (no entries yet) and starts its cooldown
+        // at t=0.
+        cache
+            .fetch(test_keys(0..1), Block::Number(10))
+            .await
+            .unwrap();
+
+        // t=4: the next update starts at t=10 and takes until t=14.
+        block_sender.send(block(11)).unwrap();
+        tokio::time::sleep(Duration::from_secs(12)).await;
+        assert_eq!(last_update_block(), 11);
+
+        // t=16: the cooldown started at t=10, so the next update starts at
+        // t=20 and finishes at t=24 instead of waiting until t=24 to start.
+        block_sender.send(block(12)).unwrap();
+        tokio::time::sleep(Duration::from_secs(9)).await;
+        assert_eq!(last_update_block(), 12);
     }
 }

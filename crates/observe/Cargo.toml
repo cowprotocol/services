@@ -22,6 +22,7 @@ opentelemetry-otlp = { workspace = true, features = ["grpc-tonic"] }
 opentelemetry_sdk = { workspace = true }
 pin-project-lite = { workspace = true }
 prometheus = { workspace = true }
+prometheus-client = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 scopeguard = { workspace = true }
 serde = { workspace = true }
