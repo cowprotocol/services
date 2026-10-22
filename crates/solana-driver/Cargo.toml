@@ -17,6 +17,7 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+async-trait = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
