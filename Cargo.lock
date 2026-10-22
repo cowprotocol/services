@@ -10318,6 +10318,7 @@ dependencies = [
  "rate-limit",
  "reqwest 0.13.4",
  "serde",
+ "serde-ext",
  "serde_json",
  "serde_with",
  "sha2 0.10.9",

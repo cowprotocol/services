@@ -90,6 +90,7 @@ pub struct JupiterConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BitgetConfig {
     /// Base URL of the Bitget swap API, or a proxy route to it.
+    #[serde(deserialize_with = "serde_ext::deserialize_url_with_trailing_slash")]
     pub endpoint: Url,
 
     pub api_key: String,

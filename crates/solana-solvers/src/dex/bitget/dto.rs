@@ -90,8 +90,8 @@ impl Envelope {
     }
 }
 
-/// The parts of a rich-mode `/swap` response we need. `minAmount` is the
-/// output after Bitget's fee, which its program enforces on chain.
+/// The parts of a rich-mode `/swap` response we need. Bitget's program checks
+/// `minAmount` against what the receiver gets after its fee.
 #[serde_as]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,6 +99,7 @@ pub struct SwapResponse {
     #[serde_as(as = "DisplayFromStr")]
     min_amount: u64,
     instruction_lists: Vec<ApiInstruction>,
+    #[serde(default)]
     #[serde_as(as = "Vec<DisplayFromStr>")]
     address_lookup_table_account: Vec<Pubkey>,
 }

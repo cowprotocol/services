@@ -33,14 +33,9 @@ pub struct Bitget {
 
 impl Bitget {
     pub fn new(config: &BitgetConfig) -> Result<Self, Error> {
-        let mut endpoint = config.endpoint.clone();
-        // `join` would replace a last path segment that lacks the slash.
-        if !endpoint.path().ends_with('/') {
-            endpoint.set_path(&format!("{}/", endpoint.path()));
-        }
         Ok(Self {
             client: reqwest::Client::builder().build()?,
-            endpoint,
+            endpoint: config.endpoint.clone(),
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
             slippage_bps: config.slippage_bps,
