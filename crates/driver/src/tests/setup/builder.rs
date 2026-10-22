@@ -22,7 +22,7 @@ impl Builder {
     /// the test is set up, so the builder starts serving later.
     pub async fn bind() -> Self {
         Self {
-            listener: TcpListener::bind("0.0.0.0:0").await.unwrap(),
+            listener: TcpListener::bind("127.0.0.1:0").await.unwrap(),
         }
     }
 

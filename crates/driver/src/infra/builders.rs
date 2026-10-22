@@ -16,16 +16,13 @@ use {
     },
     alloy::{
         consensus::TxEnvelope,
-        eips::eip2718::Encodable2718,
+        eips::{BlockNumberOrTag, eip2718::Encodable2718},
         network::{EthereumWallet, NetworkTransactionBuilder, TxSigner},
         primitives::Bytes,
-        providers::{Provider, ext::sign_flashbots_payload},
+        providers::ext::sign_flashbots_payload,
         rpc::{
             json_rpc::{Id, Request, Response},
-            types::{
-                TransactionRequest,
-                mev::{EthBundleHash, EthSendBundle},
-            },
+            types::{TransactionRequest, mev::EthSendBundle},
         },
     },
     anyhow::{Context, anyhow},
@@ -34,7 +31,7 @@ use {
     futures::{StreamExt, future::join_all},
     std::{
         collections::HashMap,
-        ops::RangeInclusive,
+        ops::{ControlFlow, RangeInclusive},
         time::{Duration, Instant},
     },
     tokio_stream::wrappers::WatchStream,
@@ -65,6 +62,8 @@ pub struct Builders {
     /// the `X-Flashbots-Signature` header of its bundles, the identity that
     /// builders like BuilderNet pay refunds to.
     accounts: HashMap<eth::Address, Account>,
+    /// The block to fetch the nonce at. `None` is alloy's default.
+    nonce_block_number: Option<BlockNumberOrTag>,
 }
 
 /// One block builder that takes bundles over `eth_sendBundle`.
@@ -83,8 +82,43 @@ struct SignedRequest {
     signature: String,
 }
 
+/// How far a bundle got with one builder.
+#[derive(Debug)]
+pub enum Delivery {
+    /// The builder took the bundle. Holds the result, usually the bundle hash.
+    Accepted(serde_json::Value),
+    /// The builder answered, but not with a success.
+    Rejected(anyhow::Error),
+    /// No answer in time. The builder may still hold the bundle.
+    TimedOut,
+    /// The request never reached the builder.
+    Unreachable(anyhow::Error),
+}
+
+impl Delivery {
+    /// Whether the builder may still include the bundle.
+    pub fn may_hold(&self) -> bool {
+        matches!(self, Self::Accepted(_) | Self::TimedOut)
+    }
+
+    pub fn metric_label(&self) -> &'static str {
+        match self {
+            Self::Accepted(_) => "Success",
+            Self::Rejected(_) => "Rejected",
+            Self::TimedOut => "Timeout",
+            Self::Unreachable(_) => "Unreachable",
+        }
+    }
+}
+
 impl Builders {
-    pub fn new(configs: &[Config], solver_accounts: Vec<Account>, ethereum: Ethereum) -> Self {
+    pub fn new(
+        configs: &[Config],
+        nonce_block_number: Option<BlockNumberOrTag>,
+        solver_accounts: Vec<Account>,
+        ethereum: Ethereum,
+        client: reqwest::Client,
+    ) -> Self {
         let mut accounts = HashMap::new();
         for account in solver_accounts {
             let address = TxSigner::address(&account);
@@ -96,7 +130,6 @@ impl Builders {
             );
             accounts.insert(address, account);
         }
-        let client = reqwest::Client::new();
         let builders = configs
             .iter()
             .map(|config| Builder {
@@ -109,6 +142,7 @@ impl Builders {
             builders,
             ethereum,
             accounts,
+            nonce_block_number,
         }
     }
 
@@ -127,14 +161,7 @@ impl Builders {
         let block_stream = submission::next_blocks(ethereum).await;
 
         let (nonce, current_gas_price) = futures::try_join!(
-            async {
-                ethereum
-                    .web3()
-                    .provider
-                    .get_transaction_count(signer)
-                    .await
-                    .context("failed to fetch nonce")
-            },
+            mempool::get_nonce(&ethereum.web3().provider, signer, self.nonce_block_number),
             async {
                 ethereum
                     .gas_price()
@@ -148,9 +175,9 @@ impl Builders {
         // A mempool tx stays valid until the deadline. A bundle names a single
         // block, so builders get one bundle for each block in this range.
         let blocks = submission_block.0 + 1..=submission_deadline.0;
-        if !blocks.is_empty() {
+        if blocks.is_empty() {
             return Err(anyhow!("no block left before the deadline").into());
-        };
+        }
 
         tracing::debug!(
             ?submission_block,
@@ -240,8 +267,8 @@ impl Builders {
     }
 
     /// Signs the transaction and sends it to every builder, as one bundle for
-    /// each block in `blocks`. Succeeds as long as one builder accepted a
-    /// bundle.
+    /// each block in `blocks`. Succeeds as long as one builder may hold a
+    /// bundle, so that the tx can still land.
     async fn submit(
         &self,
         tx: TransactionRequest,
@@ -280,12 +307,13 @@ impl Builders {
             let request = sign_request(raw, block, account)
                 .await
                 .inspect_err(|err| tracing::warn!(block, ?err, "failed to sign the bundle"))?;
-            let accepted =
+            let deliveries =
                 join_all(self.builders.iter().map(|builder| builder.send(&request))).await;
-            Ok(accepted.contains(&true))
+            Ok(deliveries.iter().any(Delivery::may_hold))
         }))
         .await;
-        // A bundle went out, so the tx can land even if other blocks failed.
+        // A builder may hold a bundle, so the tx can still land even if the
+        // other bundles failed.
         if results.iter().any(|result| matches!(result, Ok(true))) {
             return Ok(());
         }
@@ -340,19 +368,19 @@ async fn sign_request(raw: &Bytes, block: u64, account: &Account) -> anyhow::Res
 }
 
 impl Builder {
-    /// Sends one bundle and reports whether the builder accepted it.
-    async fn send(&self, request: &SignedRequest) -> bool {
+    /// Sends one bundle and reports how far it got.
+    async fn send(&self, request: &SignedRequest) -> Delivery {
         let start = Instant::now();
-        let result = tokio::time::timeout(REQUEST_TIMEOUT, self.post(request))
-            .await
-            .context("builder timed out")
-            .and_then(|result| result);
+        let delivery = match tokio::time::timeout(REQUEST_TIMEOUT, self.post(request)).await {
+            Ok(delivery) => delivery,
+            Err(_) => Delivery::TimedOut,
+        };
         observe::builder_response_time(&self.name, start.elapsed());
-        observe::builder_submission(&self.name, request.block, &result);
-        result.is_ok()
+        observe::builder_submission(&self.name, request.block, &delivery);
+        delivery
     }
 
-    async fn post(&self, request: &SignedRequest) -> anyhow::Result<Option<EthBundleHash>> {
+    async fn post(&self, request: &SignedRequest) -> Delivery {
         let response = self
             .client
             .post(self.url.clone())
@@ -360,14 +388,26 @@ impl Builder {
             .header("X-Flashbots-Signature", &request.signature)
             .body(request.body.clone())
             .send()
-            .await?;
+            .await;
+        let response = match response {
+            Ok(response) => response,
+            Err(err) if err.is_timeout() => return Delivery::TimedOut,
+            Err(err) => return Delivery::Unreachable(err.into()),
+        };
         let status = response.status();
-        let body = response.text().await?;
-        let response: Response<Option<EthBundleHash>> = serde_json::from_str(&body)
-            .with_context(|| format!("unexpected response, status {status}: {body}"))?;
-        response
-            .payload
-            .try_into_success()
-            .map_err(|err| anyhow!("{err}"))
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(err) => return Delivery::Rejected(err.into()),
+        };
+        // Any success counts, whatever the shape of the result.
+        let response: Result<Response<serde_json::Value>, _> = serde_json::from_str(&body);
+        match response.map(|response| response.payload.try_into_success()) {
+            Ok(Ok(result)) => Delivery::Accepted(result),
+            Ok(Err(err)) => Delivery::Rejected(anyhow!("{err}")),
+            Err(err) => Delivery::Rejected(
+                anyhow::Error::from(err)
+                    .context(format!("unexpected response, status {status}: {body}")),
+            ),
+        }
     }
 }

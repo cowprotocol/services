@@ -110,7 +110,7 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
         liquidity: liquidity(&config, &eth).await,
         liquidity_sources_notifier: liquidity_sources_notifier(&config, &eth),
         simulator: simulator(&config, simulator_eth, &http_factory),
-        submitter: submitter(&config, &eth),
+        submitter: submitter(&config, &eth, &http_factory),
         balance_cache: config.balance_cache,
         eth,
         addr: args.addr,
@@ -224,7 +224,11 @@ async fn get_chain_name(rpc: Url) -> &'static str {
         .unwrap_or("unknown")
 }
 
-fn submitter(config: &infra::Config, eth: &Ethereum) -> Arc<dyn TransactionReceiver> {
+fn submitter(
+    config: &infra::Config,
+    eth: &Ethereum,
+    http_factory: &HttpClientFactory,
+) -> Arc<dyn TransactionReceiver> {
     let accounts: Vec<_> = config
         .solvers
         .iter()
@@ -241,8 +245,15 @@ fn submitter(config: &infra::Config, eth: &Ethereum) -> Arc<dyn TransactionRecei
                 .collect();
             Arc::new(Mempools::new(mempools, eth.clone()))
         }
-        infra::config::Receiver::Builders(builders) => {
-            Arc::new(infra::Builders::new(builders, accounts, eth.clone()))
-        }
+        infra::config::Receiver::Builders {
+            builders,
+            nonce_block_number,
+        } => Arc::new(infra::Builders::new(
+            builders,
+            *nonce_block_number,
+            accounts,
+            eth.clone(),
+            http_factory.create(),
+        )),
     }
 }

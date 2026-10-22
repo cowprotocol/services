@@ -19,10 +19,9 @@ use {
             quote::{self, Quote},
             time::{Deadline, Remaining},
         },
-        infra::solver,
+        infra::{builders::Delivery, solver},
         util::http,
     },
-    alloy::rpc::types::mev::EthBundleHash,
     eth_domain_types as eth,
     ethrpc::block_stream::BlockInfo,
     observe::tracing::lazy::Lazy,
@@ -438,25 +437,21 @@ pub fn builder_response_time(builder: &str, elapsed: Duration) {
         .observe(elapsed.as_secs_f64());
 }
 
-/// Observe whether a block builder accepted the settlement bundle for `block`.
-pub fn builder_submission(
-    builder: &str,
-    block: u64,
-    result: &anyhow::Result<Option<EthBundleHash>>,
-) {
-    let label = match result {
-        Ok(response) => {
-            tracing::debug!(builder, block, ?response, "builder accepted the bundle");
-            "Success"
+/// Observe how far the settlement bundle for `block` got with a block builder.
+pub fn builder_submission(builder: &str, block: u64, delivery: &Delivery) {
+    match delivery {
+        Delivery::Accepted(result) => {
+            tracing::debug!(builder, block, %result, "builder accepted the bundle")
         }
-        Err(err) => {
-            tracing::warn!(builder, block, ?err, "builder rejected the bundle");
-            "Rejected"
+        Delivery::Rejected(err) => {
+            tracing::warn!(builder, block, ?err, "builder rejected the bundle")
         }
-    };
+        Delivery::TimedOut => tracing::warn!(builder, block, "builder did not answer in time"),
+        Delivery::Unreachable(err) => tracing::warn!(builder, block, ?err, "builder unreachable"),
+    }
     metrics::get()
         .builder_submission
-        .with_label_values(&[builder, label])
+        .with_label_values(&[builder, delivery.metric_label()])
         .inc();
 }
 
