@@ -184,3 +184,6 @@ clippy.cast_possible_wrap = "deny"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tokio_unstable)"] }
+
+[profile.dev]
+debug = "line-tables-only"
