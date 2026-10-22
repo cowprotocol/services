@@ -44,6 +44,10 @@ pub const SIMULATE_BUNDLE: RpcRequest = RpcRequest::Custom {
     method: "simulateBundle",
 };
 
+/// The newest transaction version requested back from the node, which fails
+/// a request that would encode a newer one. The driver settles with v1.
+const MAX_SUPPORTED_TRANSACTION_VERSION: u8 = 1;
+
 pub struct SolanaRPC {
     inner: RpcClient,
 }
@@ -183,7 +187,7 @@ impl SolanaRPC {
             commitment: Some(CommitmentConfig::confirmed()),
             // Agave checks no version without transaction details, but a
             // provider that does would fail every block holding a newer one.
-            max_supported_transaction_version: Some(1),
+            max_supported_transaction_version: Some(MAX_SUPPORTED_TRANSACTION_VERSION),
             ..Default::default()
         };
         let block = self.inner.get_block_with_config(slot, config).await?;
@@ -268,7 +272,7 @@ impl SolanaRPC {
                         solana_transaction_status_client_types::UiTransactionEncoding::Base64,
                     ),
                     commitment: Some(CommitmentConfig::confirmed()),
-                    max_supported_transaction_version: Some(1),
+                    max_supported_transaction_version: Some(MAX_SUPPORTED_TRANSACTION_VERSION),
                 },
             )
             .await
