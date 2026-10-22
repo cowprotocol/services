@@ -4,13 +4,16 @@
 use {
     crate::{
         dex::{self, Dex},
-        dto::{auction, auction::Auction, solution::Solution},
+        dto::{
+            auction::{self, Auction},
+            solution::Solution,
+        },
     },
     configs::rate_limit::Strategy,
     futures::{Stream, StreamExt, future, stream},
     rate_limit::RateLimiter,
     solana_sdk::pubkey::Pubkey,
-    std::{collections::HashMap, future::Future, num::NonZeroUsize},
+    std::{cmp::Ordering, collections::HashMap, future::Future, num::NonZeroUsize},
     tracing::Instrument,
 };
 
@@ -126,11 +129,16 @@ impl<Q: Aggregator + Sync> Solver<Q> {
 
     /// The batches to quote: the orders of each side, directed mint pair and
     /// swap destination, most permissive first, in runs of up to
-    /// `max_batch_size` whose quoted total fits a `u64`. Every pair's first
-    /// batch comes before any pair's second, so the deadline cuts the least
-    /// permissive orders first; pairs keep first-appearance order so one
-    /// auction batches the same on every run. Sells and buys stay apart
-    /// since one swap fixes either its input or its output.
+    /// `max_batch_size` whose quoted total fits a `u64`. Sells and buys stay
+    /// apart since one swap fixes either its input or its output.
+    ///
+    /// The order decides who is left out when the deadline or the rate
+    /// limit cuts quoting short. Every pair's first batch comes before any
+    /// pair's second, and pairs go by their most permissive order's
+    /// [`limit_to_native`], highest first, then the pairs whose sell mint
+    /// has no price. Ties keep their order of first appearance, so one
+    /// auction batches the same on every run. A pair whose buy mint has no
+    /// price is left out: the arbitrator cannot score its solution.
     fn batches<'a>(&self, auction: &'a Auction) -> Vec<Vec<&'a auction::Order>> {
         let mut pairs: Vec<Vec<&auction::Order>> = Vec::new();
         let mut pair_index = HashMap::new();
@@ -148,12 +156,35 @@ impl<Q: Aggregator + Sync> Solver<Q> {
                 });
             pairs[pair].push(order);
         }
-        let per_pair: Vec<Vec<Vec<&auction::Order>>> = pairs
+        let mut ranked: Vec<_> = pairs
             .into_iter()
-            .map(|mut orders| {
+            .filter_map(|mut orders| {
                 orders.sort_by(|a, b| by_permissiveness(a, b));
-                split(&orders, self.max_batch_size)
+                // Within a pair the prices are shared, so its most
+                // permissive order, the first, stands for it.
+                let head = *orders.first()?;
+                if auction.native_price(&head.buy_mint).is_none() {
+                    tracing::debug!(
+                        orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>(),
+                        "skipping pair, its buy mint has no native price"
+                    );
+                    return None;
+                }
+                Some((orders, limit_to_native(head, auction)))
             })
+            .collect();
+        // Stable, highest first, `None` last.
+        ranked.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(Ordering::Equal));
+        tracing::debug!(
+            ranking = ?ranked
+                .iter()
+                .map(|(orders, limit_to_native)| (orders[0].uid, limit_to_native))
+                .collect::<Vec<_>>(),
+            "pairs by limit to native rate"
+        );
+        let per_pair: Vec<Vec<Vec<&auction::Order>>> = ranked
+            .into_iter()
+            .map(|(orders, _)| split(&orders, self.max_batch_size))
             .collect();
         let ranks = per_pair.iter().map(Vec::len).max().unwrap_or(0);
         (0..ranks)
@@ -269,6 +300,24 @@ fn by_permissiveness(a: &auction::Order, b: &auction::Order) -> std::cmp::Orderi
         .then_with(|| a.uid.0.cmp(&b.uid.0))
 }
 
+/// How far `order`'s limit sits inside the native exchange rate: the
+/// native value it gives up over the native value its limit accepts,
+/// `sell × p_sell / (buy × p_buy)`, for sells and buys alike. Above 1 the
+/// native rate clears the limit, and the higher it is the more room there
+/// is for price impact. Size-independent like the EVM driver's
+/// `ExternalPrice` ordering, and on one pair it ranks like
+/// [`by_permissiveness`]. `None` when a mint has no price; an order
+/// accepting nothing is infinitely permissive.
+fn limit_to_native(order: &auction::Order, auction: &Auction) -> Option<f64> {
+    let given = order.sell_amount as f64 * auction.native_price(&order.sell_mint)? as f64;
+    let accepted = order.buy_amount as f64 * auction.native_price(&order.buy_mint)? as f64;
+    Some(match (given > 0., accepted > 0.) {
+        (_, true) => given / accepted,
+        (true, false) => f64::INFINITY,
+        (false, false) => 0.,
+    })
+}
+
 /// Splits `orders`, all of one side and sorted most permissive first, into
 /// runs of up to `max_batch_size` whose quoted amounts sum within a `u64`,
 /// so each run can be quoted as one swap.
@@ -351,13 +400,37 @@ mod tests {
         Pubkey::new_from_array([byte; 32])
     }
 
+    /// Every mint of `orders` priced at the denominator, as by an autopilot
+    /// without price sources.
     fn auction(orders: Vec<auction::Order>, deadline_in: Duration) -> Auction {
+        let prices: Vec<_> = orders
+            .iter()
+            .flat_map(|order| [order.sell_mint, order.buy_mint])
+            .map(|mint| (mint, 1_000_000_000))
+            .collect();
         Auction {
             id: Some(1),
             taker: pubkey(1),
             orders,
             deadline: chrono::Utc::now() + deadline_in,
+            tokens: tokens(&prices),
         }
+    }
+
+    /// Native prices of 10^9 for the buy mint, `pubkey(2)`, and the given
+    /// ones, and none for any other mint.
+    fn priced(mut auction: Auction, sell_prices: &[(Pubkey, u64)]) -> Auction {
+        let prices = std::iter::once((pubkey(2), 1_000_000_000)).chain(sell_prices.iter().copied());
+        auction.tokens = tokens(&prices.collect::<Vec<_>>());
+        auction
+    }
+
+    fn sell_of(uid: u8, sell_mint: Pubkey, sell_amount: u64, buy_amount: u64) -> auction::Order {
+        let mut order = order(uid, dex::Side::Sell, sell_mint);
+        order.sell_amount = sell_amount;
+        order.amount = sell_amount;
+        order.buy_amount = buy_amount;
+        order
     }
 
     fn order(uid: u8, side: dex::Side, sell_mint: Pubkey) -> auction::Order {
@@ -869,7 +942,8 @@ mod tests {
         assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![4_000, 2_000]);
     }
 
-    /// A buy and a sell on one directed pair are quoted apart.
+    /// A buy and a sell on one directed pair are quoted apart. The sell,
+    /// accepting anything, ranks ahead of the buy's finite limit.
     #[tokio::test]
     async fn keeps_buys_and_sells_of_a_pair_apart() {
         let mut sell = sell(0x02);
@@ -884,8 +958,8 @@ mod tests {
 
         solutions.sort_by_key(|solution| solution.id);
         assert_eq!(ids(&solutions), vec![0, 1]);
-        assert_eq!(trades(&solutions[0]), vec![(OrderUid([1; 32]), 2_000)]);
-        assert_eq!(trades(&solutions[1]), vec![(OrderUid([2; 32]), 1_000)]);
+        assert_eq!(trades(&solutions[0]), vec![(OrderUid([2; 32]), 1_000)]);
+        assert_eq!(trades(&solutions[1]), vec![(OrderUid([1; 32]), 2_000)]);
     }
 
     /// With a batch size of one, every order of a pair is quoted on its own,
@@ -960,5 +1034,130 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0x02, 0x03, 0x04, 0x05, 0x01]
         );
+    }
+
+    /// Sell mints at twice the buy mint's native price, so the native rate
+    /// is 2. A small order whose limit asks 1.5 goes before a large one
+    /// asking 1.67, size does not matter; a limit of 4 the native rate
+    /// misses comes after both; a sell mint without a price goes last; a
+    /// buy mint without a price is never quoted. One quote at a time, so the
+    /// quoted amounts show the order.
+    #[tokio::test]
+    async fn quotes_the_most_permissive_pairs_first() {
+        let mut unpriced_buy = sell_of(0x05, pubkey(0x20), 9_000, 0);
+        unpriced_buy.buy_mint = pubkey(0x30);
+        let auction = priced(
+            auction(
+                vec![
+                    sell_of(0x01, pubkey(0x22), 5_000, 20_000),
+                    sell_of(0x02, pubkey(0x21), 3_000, 5_000),
+                    unpriced_buy,
+                    sell_of(0x03, pubkey(0x23), 7_000, 0),
+                    sell_of(0x04, pubkey(0x20), 1_000, 1_500),
+                ],
+                Duration::from_secs(60),
+            ),
+            &[
+                (pubkey(0x20), 2_000_000_000),
+                (pubkey(0x21), 2_000_000_000),
+                (pubkey(0x22), 2_000_000_000),
+            ],
+        );
+        let solver = batching(1, 4);
+
+        let mut solutions = solver.solve(&auction).await;
+
+        assert_eq!(
+            *solver.quoter.amounts.lock().unwrap(),
+            vec![1_000, 3_000, 5_000, 7_000]
+        );
+        // The solution ids follow the quoting order; the out-of-market
+        // pair yields none.
+        solutions.sort_by_key(|solution| solution.id);
+        assert_eq!(ids(&solutions), vec![0, 1, 3]);
+        assert_eq!(trades(&solutions[0]), vec![(OrderUid([4; 32]), 1_000)]);
+    }
+
+    /// Pairs that rank the same are quoted in auction order.
+    #[tokio::test]
+    async fn quotes_tied_pairs_in_auction_order() {
+        let auction = auction(
+            vec![
+                sell_of(0x01, pubkey(0x20), 1_000, 0),
+                sell_of(0x02, pubkey(0x21), 3_000, 0),
+            ],
+            Duration::from_secs(60),
+        );
+        let solver = batching(1, 4);
+
+        solver.solve(&auction).await;
+
+        assert_eq!(*solver.quoter.amounts.lock().unwrap(), vec![1_000, 3_000]);
+    }
+
+    fn tokens(prices: &[(Pubkey, u64)]) -> HashMap<Pubkey, auction::Token> {
+        prices
+            .iter()
+            .map(|&(mint, reference_price)| (mint, auction::Token { reference_price }))
+            .collect()
+    }
+
+    fn priced_with(prices: &[(Pubkey, u64)]) -> Auction {
+        let mut auction = auction(vec![], Duration::from_secs(60));
+        auction.tokens = tokens(prices);
+        auction
+    }
+
+    /// A buy willing to sell 1000 at 2 for 1000 at 1 sits at 2, a sell
+    /// giving up 1000 at 1 for at least 250 at 1 at 4: the sell ranks first,
+    /// whatever the side.
+    #[test]
+    fn limit_to_native_ranks_sells_and_buys_alike() {
+        let mut buy = order(0x01, dex::Side::Buy, pubkey(0x20));
+        buy.sell_amount = 1_000;
+        buy.buy_amount = 1_000;
+        let sell = sell_of(0x02, pubkey(0x21), 1_000, 250);
+        let auction = priced_with(&[(pubkey(0x20), 2), (pubkey(0x21), 1), (pubkey(2), 1)]);
+
+        assert_eq!(limit_to_native(&buy, &auction), Some(2.));
+        assert_eq!(limit_to_native(&sell, &auction), Some(4.));
+    }
+
+    #[test]
+    fn limit_to_native_handles_open_and_empty_legs() {
+        let auction = priced_with(&[(pubkey(0x20), 2), (pubkey(2), 1)]);
+        let market = sell_of(0x01, pubkey(0x20), 1_000, 0);
+        let empty = sell_of(0x02, pubkey(0x20), 0, 0);
+        let mut open_buy = order(0x03, dex::Side::Buy, pubkey(0x20));
+        open_buy.sell_amount = u64::MAX;
+        open_buy.buy_amount = 1_000;
+
+        assert_eq!(limit_to_native(&market, &auction), Some(f64::INFINITY));
+        assert_eq!(limit_to_native(&empty, &auction), Some(0.));
+        assert!(limit_to_native(&open_buy, &auction).unwrap() > 1e15);
+    }
+
+    #[test]
+    fn limit_to_native_needs_both_prices() {
+        let order = sell_of(0x01, pubkey(0x20), 1_000, 0);
+
+        assert_eq!(
+            limit_to_native(&order, &priced_with(&[(pubkey(2), 1)])),
+            None
+        );
+        assert_eq!(
+            limit_to_native(&order, &priced_with(&[(pubkey(0x20), 2)])),
+            None
+        );
+    }
+
+    /// A zero price on the buy mint counts as none, so the pair is skipped
+    /// rather than ranked.
+    #[test]
+    fn skips_a_pair_whose_buy_mint_prices_at_zero() {
+        let mut auction = priced_with(&[(pubkey(0x20), 2), (pubkey(2), 0)]);
+        auction.orders = vec![sell_of(0x01, pubkey(0x20), 1_000, 0)];
+
+        assert!(batching(1, 4).batches(&auction).is_empty());
     }
 }
