@@ -525,8 +525,7 @@ impl Competition {
     /// Deferred work:
     /// - admission semaphore(1),
     /// - pre-submission simulation,
-    /// - ALT caching,
-    /// - re-sending / retry loop.
+    /// - ALT caching.
     async fn process_settle_request(
         self: &Arc<Self>,
         auction_id: Id,

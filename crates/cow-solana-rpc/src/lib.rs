@@ -10,7 +10,7 @@ use {
     solana_rpc_client::nonblocking::rpc_client::RpcClient,
     solana_rpc_client_api::{
         client_error::ErrorKind,
-        config::RpcBlockConfig,
+        config::{RpcBlockConfig, RpcSendTransactionConfig},
         request::{MAX_MULTIPLE_ACCOUNTS, RpcError},
         response::RpcBlockhash,
     },
@@ -368,6 +368,25 @@ impl SolanaRPC {
         transaction: &VersionedTransaction,
     ) -> Result<Signature, Error> {
         self.inner.send_transaction(transaction).await
+    }
+
+    /// Send a transaction again, without the preflight simulation and
+    /// without the node's own rebroadcasts. A copy of a transaction the
+    /// cluster already processed is dropped.
+    pub async fn resend_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, Error> {
+        self.inner
+            .send_transaction_with_config(
+                transaction,
+                RpcSendTransactionConfig {
+                    skip_preflight: true,
+                    max_retries: Some(0),
+                    ..RpcSendTransactionConfig::default()
+                },
+            )
+            .await
     }
 }
 

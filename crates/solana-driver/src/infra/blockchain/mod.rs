@@ -27,7 +27,7 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
-    std::{collections::HashMap, time::Duration},
+    std::{collections::HashMap, convert::Infallible, time::Duration},
 };
 pub use {
     accounts::{
@@ -51,6 +51,10 @@ const MINT_CACHE_CAPACITY: u64 = 10_000;
 /// How often a wait on a slot reads the node's current slot. Shorter than a
 /// slot, so the wait ends within a slot of its target.
 const SLOT_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// How often a transaction waiting for confirmation goes out again, about
+/// every other slot, so a dropped copy delays the landing by at most that.
+const RESEND_INTERVAL: Duration = Duration::from_millis(400);
 
 /// A simulated transaction's outcome and the slot it ran against.
 pub struct TransactionSimulation {
@@ -200,12 +204,30 @@ impl Solana {
         })
     }
 
-    /// Send a signed transaction and wait for confirmation.
+    /// Send a signed transaction and wait for confirmation, sending the same
+    /// bytes again every [`RESEND_INTERVAL`] meanwhile. The transaction cannot
+    /// land twice: the cluster processes a transaction at most once, and only
+    /// while its blockhash is valid.
     pub async fn send_and_confirm_transaction(
         &self,
         transaction: &VersionedTransaction,
     ) -> Result<Signature, Error> {
-        self.rpc.send_and_confirm_transaction(transaction).await
+        tokio::select! {
+            biased;
+            confirmed = self.rpc.send_and_confirm_transaction(transaction) => confirmed,
+            never = self.resend(transaction) => match never {},
+        }
+    }
+
+    /// Send `transaction` again every [`RESEND_INTERVAL`] until cancelled. The
+    /// confirmation decides the outcome, so a failed copy is only logged.
+    async fn resend(&self, transaction: &VersionedTransaction) -> Infallible {
+        loop {
+            tokio::time::sleep(RESEND_INTERVAL).await;
+            if let Err(err) = self.rpc.resend_transaction(transaction).await {
+                tracing::debug!(?err, "transaction resend failed");
+            }
+        }
     }
 
     /// Whether each signature is known to the cluster, within the node's
@@ -360,6 +382,64 @@ mod tests {
         // unqueued answer.
         assert_eq!(solana.slot().await.unwrap(), 0);
         assert_eq!(solana.until_slot(100, async { 7 }).await, Some(7));
+    }
+
+    /// The cluster confirms the transaction at the third status poll, 1s in.
+    /// The copies sent at 400ms and 800ms take the second and third queued
+    /// send answers, so the next send gets the mismatched fourth and fails.
+    #[tokio::test(start_paused = true)]
+    async fn an_unconfirmed_transaction_goes_out_again() {
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::from([1; 64])],
+            message: Default::default(),
+        };
+        let sent = json!(transaction.signatures[0].to_string());
+        let pending = json!({ "context": { "slot": 1 }, "value": [null] });
+        let valid = json!({ "context": { "slot": 1 }, "value": true });
+        let mocks = MocksMap::from_iter([
+            (RpcRequest::SendTransaction, sent.clone()),
+            (RpcRequest::SendTransaction, sent.clone()),
+            (RpcRequest::SendTransaction, sent),
+            (
+                RpcRequest::SendTransaction,
+                json!(Signature::from([2; 64]).to_string()),
+            ),
+            (RpcRequest::GetSignatureStatuses, pending.clone()),
+            (RpcRequest::IsBlockhashValid, valid.clone()),
+            (RpcRequest::GetSignatureStatuses, pending),
+            (RpcRequest::IsBlockhashValid, valid),
+            (
+                RpcRequest::GetSignatureStatuses,
+                json!({
+                    "context": { "slot": 1 },
+                    "value": [{
+                        "slot": 1,
+                        "confirmations": null,
+                        "status": { "Ok": null },
+                        "err": null,
+                        "confirmationStatus": "confirmed",
+                    }],
+                }),
+            ),
+        ]);
+        let solana = Solana::new(
+            SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
+            SolanaRPC::new_mock_with_mocks_map(mocks),
+            Pubkey::new_unique(),
+        );
+        assert_eq!(
+            solana
+                .send_and_confirm_transaction(&transaction)
+                .await
+                .unwrap(),
+            transaction.signatures[0]
+        );
+        assert!(
+            solana
+                .send_and_confirm_transaction(&transaction)
+                .await
+                .is_err()
+        );
     }
 
     /// The mock answers the first fetch only, so the second lookup finds the
