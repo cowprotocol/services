@@ -143,8 +143,8 @@ struct SubmissionConfig {
 }
 
 impl SubmissionConfig {
-    /// One mempool for each receiver URL, named after the URL host.
-    fn to_domain(&self) -> Vec<infra::mempool::Config> {
+    /// One receiver for each URL, named after the URL host.
+    fn to_domain(&self) -> infra::config::Receiver {
         let mempool = |name, url, revert_protection| infra::mempool::Config {
             target_confirm_time: self.target_confirm_time,
             retry_interval: self.retry_interval,
@@ -154,10 +154,11 @@ impl SubmissionConfig {
             revert_protection,
         };
         match &self.receiver {
-            Receiver::PublicMempool { urls } => urls
-                .iter()
-                .map(|url| mempool(host(url), url.clone(), RevertProtection::Disabled))
-                .collect(),
+            Receiver::PublicMempool { urls } => infra::config::Receiver::Mempools(
+                urls.iter()
+                    .map(|url| mempool(host(url), url.clone(), RevertProtection::Disabled))
+                    .collect(),
+            ),
             Receiver::PrivateRelay {
                 url,
                 mines_reverting_txs,
@@ -166,8 +167,20 @@ impl SubmissionConfig {
                     true => RevertProtection::Disabled,
                     false => RevertProtection::Enabled,
                 };
-                vec![mempool(host(url), url.clone(), revert_protection)]
+                infra::config::Receiver::Mempools(vec![mempool(
+                    host(url),
+                    url.clone(),
+                    revert_protection,
+                )])
             }
+            Receiver::Builders { urls } => infra::config::Receiver::Builders(
+                urls.iter()
+                    .map(|url| infra::builders::Config {
+                        name: host(url),
+                        url: url.clone(),
+                    })
+                    .collect(),
+            ),
         }
     }
 }
@@ -195,7 +208,8 @@ impl From<BlockNumber> for BlockNumberOrTag {
     }
 }
 
-/// Set as `[submission.public-mempool]` or `[submission.private-relay]`.
+/// Set as `[submission.public-mempool]`, `[submission.private-relay]` or
+/// `[submission.builders]`.
 #[derive(Debug, Deserialize)]
 #[serde(
     rename_all = "kebab-case",
@@ -228,6 +242,17 @@ enum Receiver {
         /// relay is known to drop reverting transactions.
         #[serde(default = "default_mines_reverting_txs")]
         mines_reverting_txs: bool,
+    },
+    /// Block builders that take the settlement as `eth_sendBundle` bundles,
+    /// one for every block until the submission deadline. The driver signs
+    /// the settlement and the `X-Flashbots-Signature` header with the
+    /// settlement account.
+    Builders {
+        /// The RPC URLs of the builders. A builder only confirms that it
+        /// received a bundle. The driver keeps waiting for the settlement as
+        /// long as one builder did, and reports success once it is mined.
+        #[serde(deserialize_with = "serde_ext::deserialize_nonempty_vec")]
+        urls: Vec<Url>,
     },
 }
 
@@ -1537,6 +1562,23 @@ mod tests {
     }
 
     #[test]
+    fn submission_builders() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            [builders]
+            urls = ["https://rpc.titanbuilder.xyz", "https://rpc.buildernet.org"]
+        "#,
+        )
+        .unwrap();
+
+        let infra::config::Receiver::Builders(builders) = config.to_domain() else {
+            panic!("expected builders");
+        };
+        let hosts: Vec<_> = builders.iter().map(|builder| &builder.name).collect();
+        assert_eq!(hosts, ["rpc.titanbuilder.xyz", "rpc.buildernet.org"]);
+    }
+
+    #[test]
     fn submission_rejects_invalid_config() {
         for config in [
             // no receiver
@@ -1557,6 +1599,11 @@ mod tests {
             r#"
             [private-relay]
             urls = ["http://relay"]
+            "#,
+            // builders need at least one URL
+            r#"
+            [builders]
+            urls = []
             "#,
             // unknown receiver field
             r#"

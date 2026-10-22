@@ -1,13 +1,16 @@
 use {
     super::competition::solution::GasFeeOverride,
     crate::{
-        domain::{blockchain::TxStatus, competition::solution::settlement::EncodedSettlement},
+        domain::{
+            blockchain::TxStatus,
+            competition::solution::settlement::EncodedSettlement,
+            submission,
+        },
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo, TxId},
-    ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
@@ -76,11 +79,8 @@ impl Mempools {
         let tx = prepare_submission(&settlement.internalized, mode);
         let signer = tx.from;
 
-        // Instantiate block stream and skip the current block before we submit
-        // the settlement. This way we only run iterations in blocks
-        // that can potentially include the settlement.
-        let mut block_stream = into_stream(self.ethereum.current_block().clone());
-        block_stream.next().await;
+        // Only run iterations in blocks that can include the settlement.
+        let mut block_stream = submission::next_blocks(&self.ethereum).await;
 
         let current_block = self.ethereum.current_block().borrow().number;
         // The tx is simulated before submitting the solution to the

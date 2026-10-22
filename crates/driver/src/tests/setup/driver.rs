@@ -17,6 +17,7 @@ pub struct Config {
     /// temporary file will be created with reasonable values.
     pub config_file: Option<PathBuf>,
     pub enable_simulation: bool,
+    pub builders: Vec<String>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub orderbook: Orderbook,
     pub flashloans_enabled: bool,
@@ -275,13 +276,21 @@ async fn create_config_file(
     )
     .unwrap();
 
-    write!(
-        file,
-        r#"[submission.public-mempool]
-           urls = ["{}"]
-           "#,
-        blockchain.web3_url,
-    )
+    match config.builders.as_slice() {
+        [] => write!(
+            file,
+            r#"[submission.public-mempool]
+               urls = ["{}"]
+               "#,
+            blockchain.web3_url,
+        ),
+        urls => write!(
+            file,
+            r#"[submission.builders]
+               urls = {urls:?}
+               "#,
+        ),
+    }
     .unwrap();
 
     for strategy in &config.order_priority_strategies {
