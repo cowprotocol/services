@@ -30,15 +30,14 @@ use {
     },
     anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo},
-    futures::{
-        StreamExt,
-        future::{join_all, try_join_all},
-    },
+    ethrpc::block_stream::BlockInfo,
+    futures::{StreamExt, future::join_all},
     std::{
         collections::HashMap,
         ops::RangeInclusive,
         time::{Duration, Instant},
     },
+    tokio_stream::wrappers::WatchStream,
     tracing::Instrument,
     url::Url,
 };
@@ -113,6 +112,133 @@ impl Builders {
         }
     }
 
+    /// Sends the settlement as one bundle for each block until the deadline,
+    /// then waits until it is mined or the deadline passes. Builders drop
+    /// reverting bundles, so there is nothing to simulate first.
+    async fn send_bundles(
+        &self,
+        settlement: &EncodedSettlement,
+        submission_deadline: BlockNo,
+        mode: &SubmissionMode,
+    ) -> Result<SubmissionSuccess, mempools::Error> {
+        let ethereum = &self.ethereum;
+        let tx = mempools::prepare_submission(&settlement.internalized, mode);
+        let signer = tx.from;
+        let block_stream = submission::next_blocks(ethereum).await;
+
+        let (nonce, current_gas_price) = futures::try_join!(
+            async {
+                ethereum
+                    .web3()
+                    .provider
+                    .get_transaction_count(signer)
+                    .await
+                    .context("failed to fetch nonce")
+            },
+            async {
+                ethereum
+                    .gas_price()
+                    .await
+                    .context("failed to compute current gas price")
+            },
+        )?;
+        let gas_price =
+            mempools::apply_gas_fee_override(current_gas_price, settlement.gas_fee_override, None);
+        let submission_block: BlockNo = ethereum.current_block().borrow().number.into();
+        // A mempool tx stays valid until the deadline. A bundle names a single
+        // block, so builders get one bundle for each block in this range.
+        let blocks = submission_block.0 + 1..=submission_deadline.0;
+        if !blocks.is_empty() {
+            return Err(anyhow!("no block left before the deadline").into());
+        };
+
+        tracing::debug!(
+            ?submission_block,
+            ?submission_deadline,
+            ?gas_price,
+            ?signer,
+            "sending settlement bundles"
+        );
+        let gas_limit = settlement
+            .gas
+            .limit
+            .0
+            .try_into()
+            .map_err(anyhow::Error::from)?;
+        let mut tx_request = mempool::tx_request(tx, gas_price, gas_limit, signer, nonce);
+        // Without a chain id the signed tx silently falls back to mainnet.
+        tx_request.chain_id = Some(ethereum.chain().id());
+        let hash = self.submit(tx_request, signer, blocks).await?;
+
+        self.wait_until_mined(block_stream, hash, submission_block, submission_deadline)
+            .await
+    }
+
+    /// Watches each new block until the settlement is mined or the deadline
+    /// passes. The stream must start before the bundles go out, so that no
+    /// block is missed.
+    async fn wait_until_mined(
+        &self,
+        mut block_stream: WatchStream<BlockInfo>,
+        hash: eth::TxId,
+        submission_block: BlockNo,
+        submission_deadline: BlockNo,
+    ) -> Result<SubmissionSuccess, mempools::Error> {
+        // Builders drop bundles that revert, so the settlement either lands in
+        // one of the blocks or expires with the last bundle.
+        while let Some(block) = block_stream.next().await {
+            let block = BlockNo(block.number);
+            let status = self
+                .ethereum
+                .transaction_status(&hash)
+                .await
+                .unwrap_or_else(|err| {
+                    tracing::warn!(?hash, ?err, "failed to get transaction status");
+                    TxStatus::Pending
+                });
+            match status {
+                TxStatus::Executed { block_number } => {
+                    return Ok(SubmissionSuccess {
+                        tx_hash: hash,
+                        submitted_at_block: submission_block,
+                        included_in_block: block_number,
+                    });
+                }
+                TxStatus::Reverted { block_number } => {
+                    return Err(mempools::Error::Revert {
+                        tx_id: hash,
+                        submitted_at_block: submission_block,
+                        reverted_at_block: block_number,
+                    });
+                }
+                TxStatus::Pending if block >= submission_deadline => {
+                    // The receipt can lag behind the block, the settlement
+                    // event cannot.
+                    if let Ok(Some(included_in_block)) = self
+                        .ethereum
+                        .successful_settlement_block(hash, submission_block.0)
+                        .await
+                    {
+                        return Ok(SubmissionSuccess {
+                            tx_hash: hash,
+                            submitted_at_block: submission_block,
+                            included_in_block,
+                        });
+                    }
+                    return Err(mempools::Error::Expired {
+                        tx_id: hash,
+                        submitted_at_block: submission_block,
+                        submission_deadline,
+                    });
+                }
+                TxStatus::Pending => {}
+            }
+        }
+        Err(mempools::Error::Other(anyhow!(
+            "Block stream finished unexpectedly"
+        )))
+    }
+
     /// Signs the transaction and sends it to every builder, as one bundle for
     /// each block in `blocks`. Succeeds as long as one builder accepted a
     /// bundle.
@@ -140,26 +266,33 @@ impl Builders {
         account: &Account,
         blocks: RangeInclusive<u64>,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!(!blocks.is_empty(), "no block left before the deadline");
         // `eth_sendBundle` takes the bytes `eth_sendRawTransaction` takes: the
         // EIP-2718 envelope (`type || rlp(fields)`) of the signed EIP-1559 tx,
         // not the RLP-wrapped form that block bodies use.
-        let raw = Bytes::from(tx.encoded_2718());
+        let raw = &Bytes::from(tx.encoded_2718());
 
         // One bundle for each block, all with the same tx. Once one lands, the
         // others become invalid because of the nonce. A bundle that reverts is
         // dropped, and the bundle for the next block tries again.
-        let signed = try_join_all(blocks.map(|block| sign_request(&raw, block, account))).await?;
-        // Wait for every builder (each request has a timeout), so the
-        // bundles for the later blocks are not cancelled.
-        let accepted = join_all(
-            signed
-                .iter()
-                .flat_map(|request| self.builders.iter().map(|builder| builder.send(request))),
-        )
+        // Wait for every block and builder (each request has a timeout), so
+        // the bundles for the later blocks are not cancelled.
+        let results = join_all(blocks.map(|block| async move {
+            let request = sign_request(raw, block, account)
+                .await
+                .inspect_err(|err| tracing::warn!(block, ?err, "failed to sign the bundle"))?;
+            let accepted =
+                join_all(self.builders.iter().map(|builder| builder.send(&request))).await;
+            Ok(accepted.contains(&true))
+        }))
         .await;
-        anyhow::ensure!(accepted.contains(&true), "no builder accepted the bundles");
-        Ok(())
+        // A bundle went out, so the tx can land even if other blocks failed.
+        if results.iter().any(|result| matches!(result, Ok(true))) {
+            return Ok(());
+        }
+        match results.into_iter().find_map(Result::err) {
+            Some(err) => Err(err),
+            None => Err(anyhow!("no builder accepted the bundles")),
+        }
     }
 }
 
@@ -183,111 +316,6 @@ impl TransactionReceiver for Builders {
             outcome.blocks_passed(),
         );
         Ok(result?.tx_hash)
-    }
-}
-
-impl Builders {
-    /// Sends the settlement as one bundle for each block until the deadline,
-    /// then waits until it is mined or the deadline passes. Builders drop
-    /// reverting bundles, so there is nothing to simulate first.
-    async fn send_bundles(
-        &self,
-        settlement: &EncodedSettlement,
-        submission_deadline: BlockNo,
-        mode: &SubmissionMode,
-    ) -> Result<SubmissionSuccess, mempools::Error> {
-        let ethereum = &self.ethereum;
-        let tx = mempools::prepare_submission(&settlement.internalized, mode);
-        let signer = tx.from;
-        let mut block_stream = submission::next_blocks(ethereum).await;
-
-        let (nonce, current_gas_price) = futures::try_join!(
-            async {
-                ethereum
-                    .web3()
-                    .provider
-                    .get_transaction_count(signer)
-                    .await
-                    .context("failed to fetch nonce")
-            },
-            async {
-                ethereum
-                    .gas_price()
-                    .await
-                    .context("failed to compute current gas price")
-            },
-        )?;
-        let gas_price =
-            mempools::apply_gas_fee_override(current_gas_price, settlement.gas_fee_override, None);
-        let submission_block: BlockNo = ethereum.current_block().borrow().number.into();
-        // A mempool tx stays valid until the deadline. A bundle names a single
-        // block, so builders get one bundle for each block in this range.
-        let blocks = submission_block.0 + 1..=submission_deadline.0;
-
-        tracing::debug!(
-            ?submission_block,
-            ?submission_deadline,
-            ?gas_price,
-            ?signer,
-            "sending settlement bundles"
-        );
-        let gas_limit = settlement
-            .gas
-            .limit
-            .0
-            .try_into()
-            .map_err(anyhow::Error::from)?;
-        let mut tx_request = mempool::tx_request(tx, gas_price, gas_limit, signer, nonce);
-        // Without a chain id the signed tx silently falls back to mainnet.
-        tx_request.chain_id = Some(ethereum.chain().id());
-        let hash = self.submit(tx_request, signer, blocks).await?;
-
-        let mined = |included_in_block| SubmissionSuccess {
-            tx_hash: hash,
-            submitted_at_block: submission_block,
-            included_in_block,
-        };
-        // Builders drop bundles that revert, so the settlement either lands in
-        // one of the blocks or expires with the last bundle.
-        while let Some(block) = block_stream.next().await {
-            let block = BlockNo(block.number);
-            let status = ethereum
-                .transaction_status(&hash)
-                .await
-                .unwrap_or_else(|err| {
-                    tracing::warn!(?hash, ?err, "failed to get transaction status");
-                    TxStatus::Pending
-                });
-            match status {
-                TxStatus::Executed { block_number } => return Ok(mined(block_number)),
-                TxStatus::Reverted { block_number } => {
-                    return Err(mempools::Error::Revert {
-                        tx_id: hash,
-                        submitted_at_block: submission_block,
-                        reverted_at_block: block_number,
-                    });
-                }
-                TxStatus::Pending if block >= submission_deadline => {
-                    // The receipt can lag behind the block, the settlement
-                    // event cannot.
-                    if let Ok(Some(included_in_block)) = ethereum
-                        .successful_settlement_block(hash, submission_block.0)
-                        .await
-                    {
-                        return Ok(mined(included_in_block));
-                    }
-                    return Err(mempools::Error::Expired {
-                        tx_id: hash,
-                        submitted_at_block: submission_block,
-                        submission_deadline,
-                    });
-                }
-                TxStatus::Pending => {}
-            }
-        }
-        Err(mempools::Error::Other(anyhow!(
-            "Block stream finished unexpectedly"
-        )))
     }
 }
 

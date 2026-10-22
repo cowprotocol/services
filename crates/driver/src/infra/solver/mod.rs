@@ -137,15 +137,11 @@ impl TxSigner<Signature> for Account {
     }
 }
 
-impl Account {
-    /// Sign a hash using the underlying signer. Needed for EIP-7702
-    /// authorization signing which requires `Signer::sign_hash` rather than
-    /// `TxSigner::sign_transaction`.
-    pub async fn sign_hash(
-        &self,
-        hash: &alloy::primitives::B256,
-    ) -> alloy::signers::Result<Signature> {
-        use alloy::signers::Signer;
+/// Signs hashes with the underlying signer: EIP-7702 authorizations and the
+/// `X-Flashbots-Signature` header of builder requests.
+#[async_trait::async_trait]
+impl alloy::signers::Signer for Account {
+    async fn sign_hash(&self, hash: &alloy::primitives::B256) -> alloy::signers::Result<Signature> {
         match self {
             Account::PrivateKey(signer) => signer.sign_hash(hash).await,
             Account::Kms(signer) => signer.sign_hash(hash).await,
@@ -153,14 +149,6 @@ impl Account {
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
         }
-    }
-}
-
-/// Lets an account sign the `X-Flashbots-Signature` header of builder requests.
-#[async_trait::async_trait]
-impl alloy::signers::Signer for Account {
-    async fn sign_hash(&self, hash: &alloy::primitives::B256) -> alloy::signers::Result<Signature> {
-        Account::sign_hash(self, hash).await
     }
 
     fn address(&self) -> Address {
