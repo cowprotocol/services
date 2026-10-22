@@ -5,6 +5,11 @@ authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers 
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[[bin]]
+name = "refunder"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
