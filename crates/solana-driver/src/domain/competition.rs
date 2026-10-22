@@ -11,7 +11,7 @@ use {
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
-        settlement::{ResolveError, writable_accounts},
+        settlement::{self, ResolveError, writable_accounts},
         slot::Slot,
         solution::Solution,
     },
@@ -24,6 +24,7 @@ use {
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
+        message::{VersionedMessage, v1},
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -37,10 +38,6 @@ use {
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
-/// The network's per-transaction byte ceiling,
-/// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
-/// rejects a larger transaction before it simulates anything.
-const MAX_TRANSACTION_BYTES: u64 = 1232;
 /// The runtime's per-transaction account lock limit, counting static keys and
 /// lookup-table loaded addresses. The SDK's `MAX_TX_ACCOUNT_LOCKS` (128)
 /// applies only under the `increase_tx_account_lock_limit` feature, inactive
@@ -247,13 +244,7 @@ impl Competition {
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
         bundle.push(resolved.unsigned()?);
-        if let Some(size) = bundle
-            .iter()
-            .filter_map(encoded_size)
-            .find(|size| *size > MAX_TRANSACTION_BYTES)
-        {
-            return Err(Error::TransactionTooLarge { size });
-        }
+        bundle.iter().try_for_each(check_size)?;
         if let Some(accounts) = bundle
             .iter()
             .map(account_count)
@@ -524,8 +515,7 @@ impl Competition {
     ///
     /// Deferred work:
     /// - admission semaphore(1),
-    /// - pre-submission simulation,
-    /// - ALT caching.
+    /// - pre-submission simulation.
     async fn process_settle_request(
         self: &Arc<Self>,
         auction_id: Id,
@@ -541,7 +531,6 @@ impl Competition {
             .solutions
             .get(&key)
             .ok_or(Error::SolutionNotAvailable)?;
-        let cu_estimate = solution.cu_estimate;
 
         let current_slot = self.blockchain.slot().await.map_err(Error::Rpc)?;
         if current_slot >= submission_deadline_slot {
@@ -575,21 +564,21 @@ impl Competition {
             .await?
             .with_max_native_shortfall(self.solver.max_native_shortfall());
 
-        let (estimate, blockhash) =
-            tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
+        let compute_unit_limit = resolved.compute_unit_limit()?;
+        let (estimate, blockhash) = tokio::try_join!(
+            self.estimate_priority_fee(&resolved, compute_unit_limit),
+            async {
                 self.blockchain
                     .blockhash_expiring_at(submission_deadline_slot)
                     .await
                     .map_err(Error::Rpc)
-            },)?;
+            },
+        )?;
         let transaction = resolved
-            .encode(self.solver.signer(), blockhash, estimate.compute_unit_price)
+            .encode(self.solver.signer(), blockhash, estimate)
             .await?;
-        if let Some(size) = observe_transaction(&transaction, cu_estimate)
-            && size > MAX_TRANSACTION_BYTES
-        {
-            return Err(Error::TransactionTooLarge { size });
-        }
+        observe_transaction(&transaction, compute_unit_limit);
+        check_size(&transaction)?;
 
         self.simulate_settlement(&transaction).await?;
 
@@ -615,7 +604,7 @@ impl Competition {
         // the send. A confirmation that never returns must still leave it in
         // the logs.
         if let Some(signature) = transaction.signatures.first() {
-            tracing::info!(%signature, "submitting settlement");
+            tracing::info!(%signature, version = ?transaction.version(), "submitting settlement");
         }
 
         // TODO: a provably unsent transaction (connect failure at send time)
@@ -716,11 +705,11 @@ impl Competition {
     }
 
     /// The priority fee for the settlement transaction, from the fees recently
-    /// paid over the accounts it writes.
+    /// paid over the accounts it writes, at the limit it declares.
     async fn estimate_priority_fee(
         &self,
         resolved: &super::settlement::ResolvedSettlement,
-        cu_estimate: Option<u32>,
+        compute_unit_limit: u32,
     ) -> Result<priority_fee::Estimate, Error> {
         let writable = resolved.writable_accounts()?;
         let fees = self
@@ -728,7 +717,9 @@ impl Competition {
             .recent_prioritization_fees(&writable)
             .await
             .map_err(Error::Rpc)?;
-        let estimate = self.priority_fee.estimate(&fees, cu_estimate)?;
+        let estimate = self
+            .priority_fee
+            .estimate(&fees, Some(compute_unit_limit))?;
         metrics()
             .compute_unit_price
             .observe(estimate.compute_unit_price as f64);
@@ -889,10 +880,10 @@ pub(crate) enum Error {
     /// without naming a failure, so the settlement went unexecuted.
     #[error("bundle simulation executed {executed} of {legs} transactions without an error")]
     IncompleteSimulation { executed: usize, legs: usize },
-    /// An encoded transaction exceeds the network's per-transaction ceiling.
+    /// An encoded transaction exceeds the network's ceiling for its version.
     /// Nothing was sent.
-    #[error("transaction is {size} bytes, over the {MAX_TRANSACTION_BYTES} limit")]
-    TransactionTooLarge { size: u64 },
+    #[error("transaction is {size} bytes, over the {limit} limit")]
+    TransactionTooLarge { size: u64, limit: u64 },
     /// The transaction's priority fee is over the configured budget. Nothing
     /// was sent.
     #[error(transparent)]
@@ -922,15 +913,15 @@ struct Metrics {
     #[metric(labels("outcome", "solver"))]
     solve_simulations: prometheus::IntCounterVec,
     /// Serialized settlement transaction size in bytes. The network rejects a
-    /// transaction over 1232 bytes.
-    #[metric(buckets(600., 800., 1000., 1100., 1200., 1232., 1400., 1600.))]
+    /// v1 transaction over 4096 bytes.
+    #[metric(buckets(1000., 1500., 2000., 2500., 3000., 3500., 4096.))]
     transaction_bytes: prometheus::Histogram,
-    /// Settlement transaction account count, static keys plus lookup-table
-    /// loaded. The runtime caps a transaction at 64.
+    /// Settlement transaction account count. The runtime caps a transaction
+    /// at 64.
     #[metric(buckets(16., 24., 32., 40., 48., 56., 64., 80.))]
     transaction_accounts: prometheus::Histogram,
-    /// Solver-estimated compute-unit limit for the settlement. The maximum is
-    /// 1.4M per transaction.
+    /// The compute unit limit the settlement declares. The maximum is 1.4M
+    /// per transaction.
     #[metric(buckets(
         100_000., 200_000., 400_000., 800_000., 1_000_000., 1_200_000., 1_400_000.
     ))]
@@ -945,28 +936,36 @@ fn metrics() -> &'static Metrics {
 }
 
 /// Record the built transaction's footprint against the per-transaction bytes,
-/// account, and compute-unit ceilings, and hand back the wire size it measured.
-fn observe_transaction(
-    transaction: &VersionedTransaction,
-    cu_estimate: Option<u32>,
-) -> Option<u64> {
+/// account, and compute-unit ceilings.
+fn observe_transaction(transaction: &VersionedTransaction, compute_unit_limit: u32) {
     let metrics = metrics();
-    let bytes = encoded_size(transaction);
-    if let Some(bytes) = bytes {
+    if let Some(bytes) = encoded_size(transaction) {
         metrics.transaction_bytes.observe(bytes as f64);
     }
     metrics
         .transaction_accounts
         .observe(account_count(transaction) as f64);
-    if let Some(cu) = cu_estimate {
-        metrics.compute_units.observe(f64::from(cu));
-    }
-    bytes
+    metrics.compute_units.observe(f64::from(compute_unit_limit));
 }
 
 /// The transaction's wire size, `None` when it does not serialize.
 fn encoded_size(transaction: &VersionedTransaction) -> Option<u64> {
-    bincode::serialized_size(transaction).ok()
+    wincode::serialized_size(transaction).ok()
+}
+
+/// Refuse a transaction over the network's byte ceiling for its version: v1
+/// for the settlement, v0 for the autopilot's order creations. An RPC node
+/// rejects a larger transaction before it simulates anything.
+fn check_size(transaction: &VersionedTransaction) -> Result<(), Error> {
+    let limit = match transaction.message {
+        VersionedMessage::V1(_) => v1::MAX_TRANSACTION_SIZE as u64,
+        // `solana_packet::PACKET_DATA_SIZE` without the dependency.
+        VersionedMessage::Legacy(_) | VersionedMessage::V0(_) => 1232,
+    };
+    match encoded_size(transaction) {
+        Some(size) if size > limit => Err(Error::TransactionTooLarge { size, limit }),
+        _ => Ok(()),
+    }
 }
 
 /// Total accounts a transaction resolves to: its static keys plus every
@@ -1032,6 +1031,11 @@ fn error_label(error: &Error) -> &'static str {
         Error::PriorityFeeTooHigh(_) => "priority_fee_too_high",
         Error::TooManyAccounts { .. } => "too_many_accounts",
         Error::Resolve(_) => "resolve_failed",
+        // v1 compilation refuses more than 64 addresses, the account lock
+        // limit, before the bundle's count runs.
+        Error::Settlement(settlement::Error::InvalidMessage(
+            v1::MessageError::TooManyAddresses,
+        )) => "too_many_accounts",
         Error::Settlement(_) => "invalid_settlement",
         Error::TaskPanicked => "panicked",
     }
@@ -1045,10 +1049,19 @@ mod tests {
         serde_json::json,
     };
 
-    /// Addresses loaded from lookup tables count toward the account lock
-    /// limit like static keys.
+    /// The bundle's v1 settlement counts its static keys; a v0 order creation
+    /// adds the addresses it loads from lookup tables.
     #[test]
-    fn counts_lookup_table_accounts() {
+    fn counts_static_and_lookup_table_accounts() {
+        let settlement = VersionedTransaction {
+            signatures: vec![],
+            message: VersionedMessage::V1(v1::Message {
+                account_keys: vec![Pubkey::new_unique(); 3],
+                ..Default::default()
+            }),
+        };
+        assert_eq!(account_count(&settlement), 3);
+
         let lookup = |writable_indexes, readonly_indexes| {
             solana_sdk::message::v0::MessageAddressTableLookup {
                 account_key: Pubkey::new_unique(),
@@ -1056,9 +1069,9 @@ mod tests {
                 readonly_indexes,
             }
         };
-        let transaction = VersionedTransaction {
+        let creation = VersionedTransaction {
             signatures: vec![],
-            message: solana_sdk::message::VersionedMessage::V0(solana_sdk::message::v0::Message {
+            message: VersionedMessage::V0(solana_sdk::message::v0::Message {
                 account_keys: vec![Pubkey::new_unique(); 3],
                 address_table_lookups: vec![
                     lookup(vec![0, 1], vec![2, 3, 4]),
@@ -1067,7 +1080,17 @@ mod tests {
                 ..Default::default()
             }),
         };
-        assert_eq!(account_count(&transaction), 9);
+        assert_eq!(account_count(&creation), 9);
+    }
+
+    /// A settlement v1 compilation refuses for its address count fails the
+    /// lock limit the bundle check counts.
+    #[test]
+    fn labels_a_settlement_over_the_address_limit_as_too_many_accounts() {
+        let error = Error::Settlement(settlement::Error::InvalidMessage(
+            v1::MessageError::TooManyAddresses,
+        ));
+        assert_eq!(error_label(&error), "too_many_accounts");
     }
 
     /// A failed status from the cluster reads as a revert. A send the node

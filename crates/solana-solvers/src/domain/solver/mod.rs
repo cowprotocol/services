@@ -513,7 +513,6 @@ mod tests {
                 in_amount: quote.in_amount,
                 out_amount: quote.out_amount,
                 instructions: vec![],
-                address_lookup_tables: vec![],
             };
             async move { Ok(swap) }
         }

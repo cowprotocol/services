@@ -259,7 +259,6 @@ mod tests {
             prices: HashMap::from([(pubkey(0x33), nz(2_000)), (pubkey(0x44), nz(1_000))]),
             trades,
             interactions: vec![],
-            address_lookup_tables: vec![],
             cu_estimate: None,
         }
     }
