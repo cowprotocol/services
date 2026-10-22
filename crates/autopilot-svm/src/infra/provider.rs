@@ -262,10 +262,13 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
 
     async fn cut_auction(&self, tip: &u64) -> NextAuction<crate::domain::auction::Auction> {
         // An auction cut from a lagging indexer replays stale orders, so a
-        // lag beyond the watermark skips the cycle. A failed read cuts
-        // anyway: the same pool fails the cut itself one query later.
-        match db::last_indexed_slot(&self.pool).await {
-            Ok(indexed) if indexer_lags(*tip, indexed, self.max_indexer_lag) => {
+        // lag beyond the watermark skips the cycle. A failed read skips it
+        // too, the in-flight hold needs the watermark.
+        let indexed = match db::last_indexed_slot(&self.pool).await {
+            Ok(Some(indexed)) if !indexer_lags(*tip, Some(indexed), self.max_indexer_lag) => {
+                indexed
+            }
+            Ok(indexed) => {
                 tracing::warn!(
                     tip,
                     ?indexed,
@@ -274,17 +277,22 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 metrics().lag_skipped_cuts.inc();
                 return NextAuction::Stale;
             }
-            Ok(_) => {}
-            Err(err) => tracing::warn!(?err, "indexer slot read failed"),
-        }
-        // An order with a settlement in flight stays out until the
-        // settlement cannot land any more: a second winner could
-        // double-settle it. A failed read skips the cut rather than cutting
-        // without the hold. The hold is read before the orders: a trade the
-        // indexer commits in between then releases an order the cut has not
-        // read yet, instead of releasing one read with a stale `executed`.
+            Err(err) => {
+                tracing::warn!(?err, "indexer slot read failed, skipping the cut");
+                return NextAuction::Failed;
+            }
+        };
+        // An order with a settlement in flight stays out until the indexer
+        // has processed the settlement's deadline slot, so a second winner
+        // does not settle it against a stale fill. A settlement landing past
+        // its deadline cannot overfill, the program caps each order's fill.
+        // A failed read skips the cut rather than cutting without the hold.
+        // The hold is read before the orders: a trade the indexer commits in
+        // between then releases an order the cut has not read yet, instead
+        // of releasing one read with a stale `executed`.
         let tip_slot = i64::try_from(*tip).unwrap_or(i64::MAX);
-        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, tip_slot).await {
+        let processed = indexed.min(tip_slot);
+        let held: HashSet<IntentHash> = match db::in_flight_orders(&self.pool, processed).await {
             Ok(uids) => uids.into_iter().map(|uid| IntentHash(uid.0)).collect(),
             Err(err) => {
                 tracing::warn!(?err, "in-flight order lookup failed, skipping the cut");

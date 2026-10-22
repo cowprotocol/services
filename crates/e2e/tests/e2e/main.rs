@@ -42,6 +42,7 @@ mod quoting;
 mod refunder;
 mod replace_order;
 mod smart_contract_orders;
+mod solve_request_compression;
 mod solver_competition;
 mod state_override;
 mod submission;
