@@ -525,8 +525,7 @@ impl Competition {
     /// Deferred work:
     /// - admission semaphore(1),
     /// - pre-submission simulation,
-    /// - ALT caching,
-    /// - re-sending / retry loop.
+    /// - ALT caching.
     async fn process_settle_request(
         self: &Arc<Self>,
         auction_id: Id,
@@ -1043,7 +1042,7 @@ mod tests {
     use {
         super::*,
         cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
-        serde_json::{Value, json},
+        serde_json::json,
     };
 
     /// Addresses loaded from lookup tables count toward the account lock
@@ -1071,31 +1070,13 @@ mod tests {
         assert_eq!(account_count(&transaction), 9);
     }
 
-    /// A failed status from the cluster reads as a revert. A blockhash that
-    /// expires with no status leaves the transaction's fate open.
-    #[tokio::test]
+    /// A failed status from the cluster reads as a revert. A send the node
+    /// rejects leaves the transaction's fate open.
+    #[tokio::test(start_paused = true)]
     async fn only_a_landed_failure_reads_as_reverted() {
         let transaction = VersionedTransaction {
             signatures: vec![Signature::from([1; 64])],
             message: Default::default(),
-        };
-        let confirm = async |statuses: Value| {
-            let rpc = SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
-                (
-                    RpcRequest::SendTransaction,
-                    json!(transaction.signatures[0].to_string()),
-                ),
-                (RpcRequest::GetSignatureStatuses, statuses),
-                (
-                    RpcRequest::IsBlockhashValid,
-                    json!({ "context": { "slot": 1 }, "value": false }),
-                ),
-            ]));
-            submission_error(
-                rpc.send_and_confirm_transaction(&transaction)
-                    .await
-                    .unwrap_err(),
-            )
         };
         let err = TransactionError::InstructionError(
             5,
@@ -1111,10 +1092,30 @@ mod tests {
                 "confirmationStatus": "finalized",
             }],
         });
-        assert!(matches!(confirm(landed).await, Error::Reverted { .. }));
-        let expired = json!({ "context": { "slot": 1 }, "value": [null] });
+        let confirm = async |sent: Signature| {
+            let mocks = MocksMap::from_iter([
+                (RpcRequest::SendTransaction, json!(sent.to_string())),
+                (RpcRequest::GetSignatureStatuses, landed.clone()),
+            ]);
+            let solana = Solana::new(
+                SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
+                SolanaRPC::new_mock_with_mocks_map(mocks),
+                Pubkey::new_unique(),
+            );
+            submission_error(
+                solana
+                    .send_and_confirm_transaction(&transaction)
+                    .await
+                    .unwrap_err(),
+            )
+        };
         assert!(matches!(
-            confirm(expired).await,
+            confirm(transaction.signatures[0]).await,
+            Error::Reverted { .. }
+        ));
+        // The node answers with another signature, which the client rejects.
+        assert!(matches!(
+            confirm(Signature::from([2; 64])).await,
             Error::FailedToSubmit { .. }
         ));
     }
