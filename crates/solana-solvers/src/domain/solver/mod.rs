@@ -23,20 +23,20 @@ pub trait Aggregator {
     fn quote(
         &self,
         order: &dex::Order,
-    ) -> impl Future<Output = Result<dex::Quote, dex::jupiter::Error>> + Send;
+    ) -> impl Future<Output = Result<dex::Quote, dex::Error>> + Send;
 
     fn swap(
         &self,
         quote: &dex::Quote,
         taker: &Pubkey,
-    ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send;
+    ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send;
 }
 
 impl Aggregator for Dex {
     fn quote(
         &self,
         order: &dex::Order,
-    ) -> impl Future<Output = Result<dex::Quote, dex::jupiter::Error>> + Send {
+    ) -> impl Future<Output = Result<dex::Quote, dex::Error>> + Send {
         Dex::quote(self, order)
     }
 
@@ -44,7 +44,7 @@ impl Aggregator for Dex {
         &self,
         quote: &dex::Quote,
         taker: &Pubkey,
-    ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
+    ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send {
         Dex::swap(self, quote, taker)
     }
 }
@@ -241,19 +241,19 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     async fn limited<T>(
         &self,
         what: &'static str,
-        request: impl Future<Output = Result<T, dex::jupiter::Error>>,
+        request: impl Future<Output = Result<T, dex::Error>>,
     ) -> Option<T> {
         self.rate_limiter
             .execute_with_back_off(request, |result| {
-                matches!(result, Err(dex::jupiter::Error::RateLimited))
+                matches!(result, Err(dex::Error::RateLimited))
             })
             .await
-            .unwrap_or(Err(dex::jupiter::Error::RateLimited))
+            .unwrap_or(Err(dex::Error::RateLimited))
             .inspect_err(|err| match err {
-                dex::jupiter::Error::NotFound | dex::jupiter::Error::OrderNotSupported => {
+                dex::Error::NotFound | dex::Error::OrderNotSupported => {
                     tracing::debug!(%err, "no {what}")
                 }
-                dex::jupiter::Error::RateLimited => tracing::debug!("{what} rate limited"),
+                dex::Error::RateLimited => tracing::debug!("{what} rate limited"),
                 _ => tracing::warn!(%err, "{what} failed"),
             })
             .ok()
@@ -507,7 +507,7 @@ mod tests {
             &self,
             quote: &dex::Quote,
             _taker: &Pubkey,
-        ) -> impl Future<Output = Result<dex::Swap, dex::jupiter::Error>> + Send {
+        ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send {
             self.swaps.lock().unwrap().push(quote.in_amount);
             let swap = dex::Swap {
                 in_amount: quote.in_amount,
@@ -521,7 +521,7 @@ mod tests {
         fn quote(
             &self,
             order: &dex::Order,
-        ) -> impl Future<Output = Result<dex::Quote, dex::jupiter::Error>> + Send {
+        ) -> impl Future<Output = Result<dex::Quote, dex::Error>> + Send {
             let (side, sell_mint, amount) = (order.side, order.sell_mint, order.amount());
             // Nothing runs before the first poll: a quote still held back by
             // the back-off is not recorded.
@@ -534,12 +534,10 @@ mod tests {
                     dex::Side::Buy if sell_mint == pubkey(ROUTES_BUYS) => {
                         Ok(quote_of(amount / 2, amount))
                     }
-                    dex::Side::Buy => Err(dex::jupiter::Error::OrderNotSupported),
-                    dex::Side::Sell if sell_mint == pubkey(NO_ROUTE) => {
-                        Err(dex::jupiter::Error::NotFound)
-                    }
+                    dex::Side::Buy => Err(dex::Error::OrderNotSupported),
+                    dex::Side::Sell if sell_mint == pubkey(NO_ROUTE) => Err(dex::Error::NotFound),
                     dex::Side::Sell if sell_mint == pubkey(RATE_LIMITED) => {
-                        Err(dex::jupiter::Error::RateLimited)
+                        Err(dex::Error::RateLimited)
                     }
                     dex::Side::Sell => {
                         let delay = if sell_mint == pubkey(SLOW) {

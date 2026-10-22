@@ -6,16 +6,18 @@ use {
         Order,
         Side,
         auction::Id,
-        buy_token_accounts::BuyTokenAccountCache,
+        buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
+        execution_cost::{Charge, ExecutionCost},
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
-        settlement::ResolveError,
+        settlement::{ResolveError, writable_accounts},
         slot::Slot,
         solution::Solution,
     },
     crate::infra::{
         blockchain::{BundleSimulation, Solana},
+        config::FeeHandler,
         solver::Solver,
     },
     base64::{Engine, prelude::BASE64_STANDARD},
@@ -27,7 +29,7 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     std::{
-        collections::{HashMap, HashSet},
+        collections::HashMap,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -35,10 +37,6 @@ use {
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
-/// Target Solana slot duration in milliseconds, used to turn a submission
-/// deadline slot into a wall-clock confirmation timeout. This is mainnet's
-/// target; other clusters can drift.
-const SLOT_DURATION_MS: u64 = 400;
 /// The network's per-transaction byte ceiling,
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.
@@ -131,7 +129,7 @@ impl Competition {
             return Ok(Vec::new());
         }
         let solutions = self
-            .compute_solutions(&auction, &buy_token_accounts.missing)
+            .compute_solutions(&auction, Some(&buy_token_accounts))
             .await?;
         if solutions.is_empty() {
             return Ok(Vec::new());
@@ -160,7 +158,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -173,10 +171,11 @@ impl Competition {
                 // Compared with the slot of a later failing `/settle`
                 // simulation, this separates a lagging bundle endpoint from
                 // state that changed in between.
-                Ok(slot) => tracing::info!(
+                Ok((slot, units_consumed)) => tracing::info!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
                     slot = %slot,
+                    ?units_consumed,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -201,6 +200,11 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
+            if let Ok((_, Some(units))) = verdict
+                && solution.cu_estimate.is_none()
+            {
+                solution.cu_estimate = Some(priority_fee::compute_unit_limit(units));
+            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -222,13 +226,13 @@ impl Competition {
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
     /// driver could not find out. A pass returns the slot the bundle
-    /// simulated against.
+    /// simulated against and the compute units the settlement consumed.
     async fn simulate_solution(
         &self,
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
-    ) -> Result<Slot, Error> {
+    ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
@@ -298,26 +302,55 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok(slot)
+        Ok((
+            slot,
+            results.last().and_then(|result| result.units_consumed),
+        ))
     }
 
     /// Send the auction to the solver engine and return its deduplicated
-    /// solutions without caching them.
+    /// solutions without caching them. When the solver's fee handler is the
+    /// driver, every fill is tightened by the solver fee, and a solve fill is
+    /// cut by the execution costs on top.
     ///
-    /// `missing_buy_token_accounts` marks the orders whose payout account the
-    /// settlement creates, so the engine can price its rent in.
+    /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
+    /// its execution costs are reported, not cut, and nothing is flagged.
     pub async fn compute_solutions(
         &self,
         auction: &Auction,
-        missing_buy_token_accounts: &HashSet<OrderUid>,
+        buy_token_accounts: Option<&BuyTokenAccounts>,
     ) -> Result<Vec<Solution>, Error> {
+        let no_rent = HashMap::new();
+        let (charge, costs) = match self.solver.fee_handler() {
+            FeeHandler::Solver => (
+                Charge::Engine {
+                    missing_buy_token_accounts: buy_token_accounts
+                        .map(|accounts| accounts.missing.keys().copied().collect())
+                        .unwrap_or_default(),
+                },
+                None,
+            ),
+            FeeHandler::Driver => {
+                let costs = ExecutionCost {
+                    rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
+                    native_prices: &auction.native_prices,
+                };
+                let network_fee = match buy_token_accounts {
+                    Some(_) => self.network_fee_reserve().await?,
+                    None => 0,
+                };
+                (
+                    Charge::Driver {
+                        cuts: costs.cuts(&auction.orders, network_fee),
+                        fee: self.solver.solver_fee(),
+                    },
+                    Some(costs),
+                )
+            }
+        };
         let solutions = self
             .solver
-            .solve(
-                auction,
-                self.blockchain.program_id(),
-                missing_buy_token_accounts,
-            )
+            .solve(auction, self.blockchain.program_id(), &charge)
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and
@@ -334,28 +367,92 @@ impl Competition {
             );
         }
 
-        let solutions = match self.solver.solver_fee() {
-            None => solutions,
-            Some(fee) => {
-                let orders = orders_by_uid(&auction.orders);
-                solutions
-                    .into_iter()
-                    .filter_map(|mut solution| match fee.apply(&mut solution, &orders) {
-                        Ok(()) => Some(solution),
-                        Err(reason) => {
-                            tracing::warn!(
-                                solver = %self.solver.name(),
-                                solution_id = solution.id,
-                                %reason,
-                                "dropping solution the solver fee cannot be applied to"
-                            );
-                            None
-                        }
-                    })
-                    .collect()
-            }
+        let Some(costs) = costs else {
+            return Ok(solutions);
         };
-        Ok(solutions)
+        let orders = orders_by_uid(&auction.orders);
+        let mut charged = Vec::with_capacity(solutions.len());
+        for mut solution in solutions {
+            if let Some(fee) = self.solver.solver_fee()
+                && let Err(reason) = fee.apply(&mut solution, &orders)
+            {
+                tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution the solver fee cannot be applied to"
+                );
+                continue;
+            }
+            let network_fee = match buy_token_accounts {
+                None => 0,
+                Some(_) => match self.network_fee(&solution).await {
+                    Ok(network_fee) => network_fee,
+                    Err(Error::PriorityFeeTooHigh(reason)) => {
+                        tracing::warn!(
+                            solver = %self.solver.name(),
+                            solution_id = solution.id,
+                            %reason,
+                            "dropping solution, its network fee is over budget"
+                        );
+                        continue;
+                    }
+                    Err(err) => return Err(err),
+                },
+            };
+            match costs.apply(&mut solution, &orders, network_fee) {
+                Ok(()) => charged.push(solution),
+                Err(reason) => tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution the execution costs cannot be cut from"
+                ),
+            }
+        }
+        Ok(charged)
+    }
+
+    /// The network fee the limit legs sent to the engine are moved by, before
+    /// any route is known: the signature fee plus the priority fee at the
+    /// runtime's compute unit ceiling over the fees recently paid cluster-wide,
+    /// or the budget when that is over it. Cluster-wide fees floor what any
+    /// route's accounts pay, so the fill's own fee, see [`Self::network_fee`],
+    /// is at least this much, and a fill on the moved limit whose route pays
+    /// more is dropped.
+    async fn network_fee_reserve(&self) -> Result<u64, Error> {
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&[])
+            .await
+            .map_err(Error::Rpc)?;
+        Ok(self.priority_fee.estimate(&fees, None).map_or_else(
+            |_| self.priority_fee.max_network_fee(),
+            |estimate| estimate.network_fee(),
+        ))
+    }
+
+    /// The network fee of settling `solution`, in lamports: the signature fee
+    /// plus the priority fee over the accounts its interactions write, at its
+    /// compute unit estimate. Prices a quote the way `settle` prices its
+    /// transaction. A quote's settlement accounts are placeholders, so only
+    /// the interactions' accounts are read.
+    pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
+        let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
+        let fees = self
+            .blockchain
+            .recent_prioritization_fees(&writable)
+            .await
+            .map_err(Error::Rpc)?;
+        let estimate = self.priority_fee.estimate(&fees, solution.cu_estimate)?;
+        let network_fee = estimate.network_fee();
+        tracing::debug!(
+            solution_id = solution.id,
+            compute_unit_price = estimate.compute_unit_price,
+            network_fee,
+            "network fee estimated"
+        );
+        Ok(network_fee)
     }
 
     /// Submit a previously proposed solution on chain.
@@ -365,9 +462,10 @@ impl Competition {
     /// to run to completion. An abort between consuming the solution and the
     /// send would destroy the solution without submitting; an abort mid-send
     /// would lose the returned signature. The task terminates on its own:
-    /// each RPC request has the client's timeout, and the confirmation loop
-    /// exits at the latest when the blockhash expires (~150 slots), after
-    /// which the transaction can no longer land.
+    /// each RPC request has the client's timeout, and every wait ends once
+    /// the node reaches the submission deadline slot. The settlement's
+    /// blockhash expires around that slot, after which the transaction
+    /// cannot land.
     ///
     /// A successful return means the transaction reached the cluster at the
     /// RPC client's configured commitment level. This makes the Solana
@@ -450,10 +548,6 @@ impl Competition {
         if current_slot >= submission_deadline_slot {
             return Err(Error::DeadlineExceeded);
         }
-        let deadline = Instant::now()
-            + Duration::from_millis(
-                (submission_deadline_slot - current_slot).saturating_mul(SLOT_DURATION_MS),
-            );
 
         // TODO: admission semaphore(1).
 
@@ -473,27 +567,24 @@ impl Competition {
         // solution must not cost the funder any fees. They get the full
         // remaining window: the settlement cannot run without them, so
         // reserving time for it would only waste attempts, and the
-        // zero-timeout guard below aborts retryably when nothing remains.
-        self.land_creations(&creations, deadline).await?;
+        // deadline check below aborts retryably when nothing remains.
+        self.land_creations(&creations, submission_deadline_slot)
+            .await?;
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
             .with_max_native_shortfall(self.solver.max_native_shortfall());
 
-        let (estimate, latest) =
+        let (estimate, blockhash) =
             tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
                 self.blockchain
-                    .latest_confirmed_blockhash()
+                    .blockhash_expiring_at(submission_deadline_slot)
                     .await
                     .map_err(Error::Rpc)
             },)?;
         let transaction = resolved
-            .encode(
-                self.solver.signer(),
-                latest.blockhash,
-                estimate.compute_unit_price,
-            )
+            .encode(self.solver.signer(), blockhash, estimate.compute_unit_price)
             .await?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
@@ -503,11 +594,10 @@ impl Competition {
 
         self.simulate_settlement(&transaction).await?;
 
-        // A zero timeout still polls the send future once, which could
-        // submit the transaction past the deadline, so handle it before the
-        // solution is consumed and while a retry is still possible.
-        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
-        if confirm_timeout.is_zero() {
+        // `until_slot` starts the send even past the deadline, so a passed
+        // deadline is caught here, before the solution is consumed and while
+        // a retry is still possible.
+        if self.blockchain.slot().await.map_err(Error::Rpc)? >= submission_deadline_slot {
             return Err(Error::DeadlineExceeded);
         }
 
@@ -532,21 +622,23 @@ impl Competition {
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
-        let signature = tokio::time::timeout(
-            confirm_timeout,
-            self.blockchain.send_and_confirm_transaction(&transaction),
-        )
-        .await
-        .map_err(|_| {
-            if let Some(signature) = transaction.signatures.first() {
-                tracing::warn!(
-                    %signature,
-                    "confirmation timed out, the transaction may still land"
-                );
-            }
-            Error::DeadlineExceeded
-        })?
-        .map_err(|err| Error::FailedToSubmit { err })?;
+        let signature = self
+            .blockchain
+            .until_slot(
+                submission_deadline_slot,
+                self.blockchain.send_and_confirm_transaction(&transaction),
+            )
+            .await
+            .ok_or_else(|| {
+                if let Some(signature) = transaction.signatures.first() {
+                    tracing::warn!(
+                        %signature,
+                        "confirmation timed out, the transaction may still land"
+                    );
+                }
+                Error::DeadlineExceeded
+            })?
+            .map_err(|err| Error::FailedToSubmit { err })?;
 
         // TODO: drop this log once protocol fees are implemented.
         for fee in &volume_fees {
@@ -561,41 +653,39 @@ impl Competition {
         Ok(signature)
     }
 
-    /// Land the sponsored creation transactions before `deadline`. The
-    /// settlement needs them confirmed first: `BeginSettle` reads the order
-    /// PDAs, and the simulation runs against confirmed state. The
-    /// transactions are independent, so they land concurrently. A send
-    /// failure whose signature the cluster already knows means an earlier
-    /// attempt landed the creation, which is success. A creation that landed
-    /// but failed on chain also counts as known: the settlement then fails
-    /// at the simulation over the missing order PDA.
+    /// Land the sponsored creation transactions before the node reaches
+    /// `deadline_slot`. The settlement needs them confirmed first:
+    /// `BeginSettle` reads the order PDAs, and the simulation runs against
+    /// confirmed state. The transactions are independent, so they land
+    /// concurrently. A send failure whose signature the cluster already knows
+    /// means an earlier attempt landed the creation, which is success. A
+    /// creation that landed but failed on chain also counts as known: the
+    /// settlement then fails at the simulation over the missing order PDA.
     async fn land_creations(
         &self,
         creations: &[VersionedTransaction],
-        deadline: Instant,
+        deadline_slot: u64,
     ) -> Result<(), Error> {
         if creations.is_empty() {
             return Ok(());
         }
-        let timeout = deadline.saturating_duration_since(Instant::now());
-        if timeout.is_zero() {
-            return Err(Error::DeadlineExceeded);
-        }
         futures::future::try_join_all(creations.iter().map(|creation| async move {
-            let sent = tokio::time::timeout(
-                timeout,
-                self.blockchain.send_and_confirm_transaction(creation),
-            )
-            .await
-            .map_err(|_| {
-                if let Some(signature) = creation.signatures.first() {
-                    tracing::warn!(
-                        %signature,
-                        "creation confirmation timed out, the transaction may still land"
-                    );
-                }
-                Error::DeadlineExceeded
-            })?;
+            let sent = self
+                .blockchain
+                .until_slot(
+                    deadline_slot,
+                    self.blockchain.send_and_confirm_transaction(creation),
+                )
+                .await
+                .ok_or_else(|| {
+                    if let Some(signature) = creation.signatures.first() {
+                        tracing::warn!(
+                            %signature,
+                            "creation confirmation timed out, the transaction may still land"
+                        );
+                    }
+                    Error::DeadlineExceeded
+                })?;
             match sent {
                 Ok(signature) => {
                     tracing::info!(%signature, "order creation submitted");
@@ -667,7 +757,7 @@ impl Competition {
             tracing::warn!(
                 slot = %simulation.slot,
                 logs = ?simulation.logs,
-                message = %BASE64_STANDARD.encode(transaction.message.serialize()),
+                tx_message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
             );
             return Err(Error::SimulationFailed {

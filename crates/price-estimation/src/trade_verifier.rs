@@ -155,21 +155,26 @@ impl TradeVerifier {
 
         let summary = self.execute_and_analyze(swap, query, verification).await?;
 
-        tracing::debug!(
-            tokens_lost = ?summary.tokens_lost,
-            gas_diff = ?trade.gas_estimate().unwrap_or_default().abs_diff(summary.gas_used.saturating_to()),
-            time = ?start.elapsed(),
-            promised_out_amount = ?out_amount,
-            verified_out_amount = ?summary.out_amount,
-            promised_gas = trade.gas_estimate(),
-            verified_gas = ?summary.gas_used,
-            out_diff = ?(I512::from(out_amount) - summary.out_amount).abs(),
-            ?query,
-            ?verification,
-            "verified quote",
-        );
+        let result = ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary);
 
-        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
+        if let Err(err) = &result {
+            tracing::debug!(
+                ?err,
+                tokens_lost = ?summary.tokens_lost,
+                gas_diff = ?trade.gas_estimate().unwrap_or_default().abs_diff(summary.gas_used.saturating_to()),
+                time = ?start.elapsed(),
+                promised_out_amount = ?out_amount,
+                verified_out_amount = ?summary.out_amount,
+                promised_gas = trade.gas_estimate(),
+                verified_gas = ?summary.gas_used,
+                out_diff = ?(I512::from(out_amount) - summary.out_amount).abs(),
+                ?query,
+                ?verification,
+                "quote failed verification",
+            );
+        };
+
+        result
     }
 
     /// Passes the prepared `settle_call` to the simulation machinery which

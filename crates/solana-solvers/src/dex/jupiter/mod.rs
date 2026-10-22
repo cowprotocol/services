@@ -6,7 +6,7 @@
 mod dto;
 
 use {
-    super::{Order, Quote, Side, Swap},
+    super::{Error, Order, Quote, Side, Swap},
     crate::config::JupiterConfig,
     solana_sdk::pubkey::Pubkey,
 };
@@ -156,24 +156,6 @@ fn amount_field(quote: &serde_json::Value, field: &str) -> Result<u64, Error> {
         .and_then(serde_json::Value::as_str)
         .and_then(|amount| amount.parse().ok())
         .ok_or_else(|| Error::BadResponse(format!("missing or non-numeric {field}")))
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("failed to build the request")]
-    RequestBuildFailed,
-    #[error("no route for this order")]
-    NotFound,
-    #[error("order type is not supported")]
-    OrderNotSupported,
-    #[error("rate limited")]
-    RateLimited,
-    #[error("jupiter api error {status}: {body}")]
-    Api { status: u16, body: String },
-    #[error("malformed swap response: {0}")]
-    BadResponse(String),
-    #[error(transparent)]
-    Http(#[from] reqwest::Error),
 }
 
 #[cfg(test)]

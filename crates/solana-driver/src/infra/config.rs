@@ -145,6 +145,10 @@ pub struct Solver {
     /// test against. Absent means every auction.
     #[serde(default)]
     pub solve_every_nth_auction: Option<NonZero<u64>>,
+    /// Who prices the execution costs into the fills, see [`FeeHandler`].
+    /// Absent means the driver.
+    #[serde(default)]
+    pub fee_handler: FeeHandler,
     /// Volume-based solver fee in basis points, `0..10_000`. Sell orders
     /// deliver `(1 − fee)` of the fill's buy leg; buy orders pull `(1 + fee)`
     /// of its sell leg. The difference stays in the buy-mint buffer PDA (sell
@@ -158,6 +162,18 @@ pub struct Solver {
     /// Absent means none.
     #[serde(default)]
     pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
+}
+
+/// Who prices a settlement's execution costs, its network fee and the rent
+/// of the buy token accounts it creates, into the fills: the driver cuts
+/// them from every fill the engine reports, or the solver engine prices them
+/// in itself.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum FeeHandler {
+    #[default]
+    Driver,
+    Solver,
 }
 
 #[cfg(test)]
@@ -208,6 +224,26 @@ mod tests {
     fn chain_defaults_to_interface_program_id() {
         let chain: Chain = toml::de::from_str("").unwrap();
         assert_eq!(chain.settlement_program_id, cow_settlement_interface::ID);
+    }
+
+    #[test]
+    fn fee_handler_parses_and_defaults_to_the_driver() {
+        let solver = |fee_handler: &str| {
+            toml::de::from_str::<Solver>(&format!(
+                r#"
+                name = "baseline"
+                endpoint = "http://localhost:8001"
+                signer = {{ keypair = "/path/to/keypair.json" }}
+                {fee_handler}
+                "#
+            ))
+        };
+        assert_eq!(solver("").unwrap().fee_handler, FeeHandler::Driver);
+        assert_eq!(
+            solver(r#"fee-handler = "solver""#).unwrap().fee_handler,
+            FeeHandler::Solver
+        );
+        assert!(solver(r#"fee-handler = "autopilot""#).is_err());
     }
 
     #[test]

@@ -6,7 +6,6 @@ use {
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
     database::{byte_array::ByteArray, solana::OrderEventLabel},
-    solana_sdk::clock::MAX_PROCESSING_AGE,
     sqlx::{PgExecutor, Postgres, QueryBuilder},
 };
 
@@ -269,32 +268,44 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
 /// Close the auction's windows against the settlements the indexer recorded.
 /// A settlement carries no solution uid, so a window is matched through its
 /// solution's trade executions: the solver's settlement that traded one of
-/// them is the one that executed it. A window already closed as timed out
-/// upgrades to landed: the settlement executed, just late, and lateness stays
-/// visible as `end_slot` past `deadline_slot`.
+/// them is the one that executed it. The matched settlement row takes the
+/// window's solution uid. A window already closed as timed out upgrades to
+/// landed: the settlement executed, just late, and lateness stays visible as
+/// `end_slot` past `deadline_slot`.
 pub async fn close_landed_windows(
     ex: impl PgExecutor<'_>,
     auction_id: i64,
 ) -> Result<Vec<LandedWindow>> {
     const QUERY: &str = r#"
-UPDATE solana.settlement_executions e
-SET outcome = 'landed', end_timestamp = now(), end_slot = s.slot,
-    submitted_signature = s.tx_signature
-FROM solana.settlements s
-WHERE e.auction_id = $1
-  AND s.auction_id = e.auction_id
-  AND s.solver = e.solver
-  AND (e.outcome IS NULL OR e.outcome = 'timeout')
-  AND EXISTS (
-      SELECT 1
-      FROM solana.proposed_trade_executions pte
-      JOIN solana.trades t
-        ON t.tx_signature = s.tx_signature
-       AND t.instruction_index = s.instruction_index
-       AND t.order_uid = pte.order_uid
-      WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
-  )
-RETURNING e.solver, e.end_slot, e.submitted_signature
+WITH landed AS (
+    UPDATE solana.settlement_executions e
+    SET outcome = 'landed', end_timestamp = now(), end_slot = s.slot,
+        submitted_signature = s.tx_signature
+    FROM solana.settlements s
+    WHERE e.auction_id = $1
+      AND s.auction_id = e.auction_id
+      AND s.solver = e.solver
+      AND (e.outcome IS NULL OR e.outcome = 'timeout')
+      AND EXISTS (
+          SELECT 1
+          FROM solana.proposed_trade_executions pte
+          JOIN solana.trades t
+            ON t.tx_signature = s.tx_signature
+           AND t.instruction_index = s.instruction_index
+           AND t.order_uid = pte.order_uid
+          WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
+      )
+    RETURNING e.solver, e.solution_uid, e.end_slot, e.submitted_signature,
+              s.instruction_index
+),
+attributed AS (
+    UPDATE solana.settlements s
+    SET solution_uid = landed.solution_uid
+    FROM landed
+    WHERE s.tx_signature = landed.submitted_signature
+      AND s.instruction_index = landed.instruction_index
+)
+SELECT solver, end_slot, submitted_signature FROM landed
     "#;
     sqlx::query_as(QUERY)
         .bind(auction_id)
@@ -353,16 +364,16 @@ pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>
         .context("read open settlement execution windows")
 }
 
-/// Orders inside a winning solution whose settlement transaction may still
-/// land: a blockhash lifetime past the deadline slot has not run out, no
-/// settlement of the auction traded the order yet, and no `rejected` window
-/// says the solution never went out. A timed-out window keeps the hold,
-/// its transaction may land until the blockhash expires. Landing is checked
-/// per order through the settlement's trades: `settlements.solution_uid` is
-/// unattributed, and one solver may win several solutions of one auction.
+/// Orders inside a winning solution whose settlement may still land by its
+/// deadline: the indexer has not processed the deadline slot, no settlement
+/// of the auction traded the order, and no `rejected` window says the
+/// solution never went out. `processed_slot` is the slot the indexer has
+/// processed up to. Landing is checked per order through the settlement's
+/// trades: `settlements.solution_uid` is written only when the window
+/// closes, and one solver may win several solutions of one auction.
 pub async fn in_flight_orders(
     ex: impl PgExecutor<'_>,
-    tip_slot: i64,
+    processed_slot: i64,
 ) -> Result<Vec<ByteArray<32>>> {
     const QUERY: &str = r#"
 SELECT DISTINCT pte.order_uid
@@ -370,7 +381,7 @@ FROM solana.competition_auctions ca
 JOIN solana.proposed_solutions ps ON ps.auction_id = ca.id AND ps.is_winner
 JOIN solana.proposed_trade_executions pte
   ON pte.auction_id = ca.id AND pte.solution_uid = ps.uid
-WHERE ca.deadline_slot >= $1
+WHERE ca.deadline_slot > $1
   AND NOT EXISTS (
       SELECT 1
       FROM solana.settlements s
@@ -383,11 +394,8 @@ WHERE ca.deadline_slot >= $1
       WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid AND se.outcome = 'rejected'
   )
     "#;
-    // The oldest deadline whose transaction can still land at the tip.
-    let lifetime = i64::try_from(MAX_PROCESSING_AGE).expect("blockhash lifetime fits i64");
-    let landable_deadline = tip_slot.saturating_sub(lifetime);
     sqlx::query_scalar(QUERY)
-        .bind(landable_deadline)
+        .bind(processed_slot)
         .fetch_all(ex)
         .await
         .context("read in-flight orders")
@@ -862,12 +870,11 @@ VALUES ($1, now(), $2)
         assert!(dead(&mut tx, 151).await.is_empty());
     }
 
-    /// Held: an order of a winning solution through its deadline slot plus
-    /// the blockhash lifetime, a timed-out window included. Released: after
-    /// that, once a settlement of the auction trades the order, or once the
-    /// driver rejects its solution before sending. A solver's second winning
-    /// solution keeps its hold when the first one lands. Orders of
-    /// non-winning solutions are never held.
+    /// Held: an order of a winning solution until the indexer has processed
+    /// its deadline slot. Released: after that, once a settlement of the
+    /// auction trades the order, or once the driver rejects its solution
+    /// before sending. A solver's second winning solution keeps its hold when
+    /// the first one lands. Orders of non-winning solutions are never held.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_in_flight_orders_follow_the_winning_settlement() {
@@ -919,8 +926,8 @@ VALUES ($1, now(), $2)
             .await
             .unwrap();
         }
-        async fn held(tx: &mut PgTransaction<'_>, tip: i64) -> Vec<u8> {
-            let mut held: Vec<u8> = in_flight_orders(&mut **tx, tip)
+        async fn held(tx: &mut PgTransaction<'_>, processed: i64) -> Vec<u8> {
+            let mut held: Vec<u8> = in_flight_orders(&mut **tx, processed)
                 .await
                 .unwrap()
                 .iter()
@@ -930,9 +937,8 @@ VALUES ($1, now(), $2)
             held
         }
 
-        assert_eq!(held(&mut tx, 100).await, vec![1, 3]);
-        assert_eq!(held(&mut tx, 250).await, vec![1, 3]);
-        assert_eq!(held(&mut tx, 251).await, Vec::<u8>::new());
+        assert_eq!(held(&mut tx, 99).await, vec![1, 3]);
+        assert_eq!(held(&mut tx, 100).await, Vec::<u8>::new());
 
         sqlx::query(
             "INSERT INTO solana.settlement_executions (auction_id, solver, solution_uid, \
@@ -956,14 +962,6 @@ VALUES ($1, now(), $2)
             .await
             .unwrap();
         assert_eq!(held(&mut tx, 50).await, vec![1, 3]);
-        sqlx::query(
-            "UPDATE solana.settlement_executions SET outcome = 'timeout', end_slot = 100, \
-             end_timestamp = now() WHERE auction_id = 77",
-        )
-        .execute(&mut *tx)
-        .await
-        .unwrap();
-        assert_eq!(held(&mut tx, 150).await, vec![1, 3]);
 
         // The solver's settlement trades order 1 only: order 3, its other
         // winning solution, stays held until its own trade lands.
