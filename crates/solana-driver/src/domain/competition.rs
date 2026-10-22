@@ -37,10 +37,6 @@ use {
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
-/// Target Solana slot duration in milliseconds, used to turn a submission
-/// deadline slot into a wall-clock confirmation timeout. This is mainnet's
-/// target; other clusters can drift.
-const SLOT_DURATION_MS: u64 = 400;
 /// The network's per-transaction byte ceiling,
 /// `solana_packet::PACKET_DATA_SIZE` without the dependency. An RPC node
 /// rejects a larger transaction before it simulates anything.
@@ -466,9 +462,10 @@ impl Competition {
     /// to run to completion. An abort between consuming the solution and the
     /// send would destroy the solution without submitting; an abort mid-send
     /// would lose the returned signature. The task terminates on its own:
-    /// each RPC request has the client's timeout, and the confirmation loop
-    /// exits at the latest when the blockhash expires (~150 slots), after
-    /// which the transaction can no longer land.
+    /// each RPC request has the client's timeout, and every wait ends once
+    /// the node reaches the submission deadline slot. The settlement's
+    /// blockhash expires around that slot, after which the transaction
+    /// cannot land.
     ///
     /// A successful return means the transaction reached the cluster at the
     /// RPC client's configured commitment level. This makes the Solana
@@ -551,10 +548,6 @@ impl Competition {
         if current_slot >= submission_deadline_slot {
             return Err(Error::DeadlineExceeded);
         }
-        let deadline = Instant::now()
-            + Duration::from_millis(
-                (submission_deadline_slot - current_slot).saturating_mul(SLOT_DURATION_MS),
-            );
 
         // TODO: admission semaphore(1).
 
@@ -574,27 +567,24 @@ impl Competition {
         // solution must not cost the funder any fees. They get the full
         // remaining window: the settlement cannot run without them, so
         // reserving time for it would only waste attempts, and the
-        // zero-timeout guard below aborts retryably when nothing remains.
-        self.land_creations(&creations, deadline).await?;
+        // deadline check below aborts retryably when nothing remains.
+        self.land_creations(&creations, submission_deadline_slot)
+            .await?;
 
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
             .with_max_native_shortfall(self.solver.max_native_shortfall());
 
-        let (estimate, latest) =
+        let (estimate, blockhash) =
             tokio::try_join!(self.estimate_priority_fee(&resolved, cu_estimate), async {
                 self.blockchain
-                    .latest_confirmed_blockhash()
+                    .blockhash_expiring_at(submission_deadline_slot)
                     .await
                     .map_err(Error::Rpc)
             },)?;
         let transaction = resolved
-            .encode(
-                self.solver.signer(),
-                latest.blockhash,
-                estimate.compute_unit_price,
-            )
+            .encode(self.solver.signer(), blockhash, estimate.compute_unit_price)
             .await?;
         if let Some(size) = observe_transaction(&transaction, cu_estimate)
             && size > MAX_TRANSACTION_BYTES
@@ -604,11 +594,10 @@ impl Competition {
 
         self.simulate_settlement(&transaction).await?;
 
-        // A zero timeout still polls the send future once, which could
-        // submit the transaction past the deadline, so handle it before the
-        // solution is consumed and while a retry is still possible.
-        let confirm_timeout = deadline.saturating_duration_since(Instant::now());
-        if confirm_timeout.is_zero() {
+        // `until_slot` starts the send even past the deadline, so a passed
+        // deadline is caught here, before the solution is consumed and while
+        // a retry is still possible.
+        if self.blockchain.slot().await.map_err(Error::Rpc)? >= submission_deadline_slot {
             return Err(Error::DeadlineExceeded);
         }
 
@@ -633,21 +622,23 @@ impl Competition {
         // TODO: a provably unsent transaction (connect failure at send time)
         // loses the solution here; restore the cache entry on that class. Needs
         // the send/confirm split in cow-solana-rpc (planned follow-up PR).
-        let signature = tokio::time::timeout(
-            confirm_timeout,
-            self.blockchain.send_and_confirm_transaction(&transaction),
-        )
-        .await
-        .map_err(|_| {
-            if let Some(signature) = transaction.signatures.first() {
-                tracing::warn!(
-                    %signature,
-                    "confirmation timed out, the transaction may still land"
-                );
-            }
-            Error::DeadlineExceeded
-        })?
-        .map_err(|err| Error::FailedToSubmit { err })?;
+        let signature = self
+            .blockchain
+            .until_slot(
+                submission_deadline_slot,
+                self.blockchain.send_and_confirm_transaction(&transaction),
+            )
+            .await
+            .ok_or_else(|| {
+                if let Some(signature) = transaction.signatures.first() {
+                    tracing::warn!(
+                        %signature,
+                        "confirmation timed out, the transaction may still land"
+                    );
+                }
+                Error::DeadlineExceeded
+            })?
+            .map_err(submission_error)?;
 
         // TODO: drop this log once protocol fees are implemented.
         for fee in &volume_fees {
@@ -662,41 +653,39 @@ impl Competition {
         Ok(signature)
     }
 
-    /// Land the sponsored creation transactions before `deadline`. The
-    /// settlement needs them confirmed first: `BeginSettle` reads the order
-    /// PDAs, and the simulation runs against confirmed state. The
-    /// transactions are independent, so they land concurrently. A send
-    /// failure whose signature the cluster already knows means an earlier
-    /// attempt landed the creation, which is success. A creation that landed
-    /// but failed on chain also counts as known: the settlement then fails
-    /// at the simulation over the missing order PDA.
+    /// Land the sponsored creation transactions before the node reaches
+    /// `deadline_slot`. The settlement needs them confirmed first:
+    /// `BeginSettle` reads the order PDAs, and the simulation runs against
+    /// confirmed state. The transactions are independent, so they land
+    /// concurrently. A send failure whose signature the cluster already knows
+    /// means an earlier attempt landed the creation, which is success. A
+    /// creation that landed but failed on chain also counts as known: the
+    /// settlement then fails at the simulation over the missing order PDA.
     async fn land_creations(
         &self,
         creations: &[VersionedTransaction],
-        deadline: Instant,
+        deadline_slot: u64,
     ) -> Result<(), Error> {
         if creations.is_empty() {
             return Ok(());
         }
-        let timeout = deadline.saturating_duration_since(Instant::now());
-        if timeout.is_zero() {
-            return Err(Error::DeadlineExceeded);
-        }
         futures::future::try_join_all(creations.iter().map(|creation| async move {
-            let sent = tokio::time::timeout(
-                timeout,
-                self.blockchain.send_and_confirm_transaction(creation),
-            )
-            .await
-            .map_err(|_| {
-                if let Some(signature) = creation.signatures.first() {
-                    tracing::warn!(
-                        %signature,
-                        "creation confirmation timed out, the transaction may still land"
-                    );
-                }
-                Error::DeadlineExceeded
-            })?;
+            let sent = self
+                .blockchain
+                .until_slot(
+                    deadline_slot,
+                    self.blockchain.send_and_confirm_transaction(creation),
+                )
+                .await
+                .ok_or_else(|| {
+                    if let Some(signature) = creation.signatures.first() {
+                        tracing::warn!(
+                            %signature,
+                            "creation confirmation timed out, the transaction may still land"
+                        );
+                    }
+                    Error::DeadlineExceeded
+                })?;
             match sent {
                 Ok(signature) => {
                     tracing::info!(%signature, "order creation submitted");
@@ -768,7 +757,7 @@ impl Competition {
             tracing::warn!(
                 slot = %simulation.slot,
                 logs = ?simulation.logs,
-                message = %BASE64_STANDARD.encode(transaction.message.serialize()),
+                tx_message = %BASE64_STANDARD.encode(transaction.message.serialize()),
                 "settlement simulation failed"
             );
             return Err(Error::SimulationFailed {
@@ -872,10 +861,17 @@ pub(crate) enum Error {
     /// waiting on the lookup.
     #[error("buy token account lookup failed: {0}")]
     BuyTokenAccounts(#[source] Arc<cow_solana_rpc::Error>),
+    /// Sending or confirming failed, and the transaction may still land.
     #[error("failed to submit or confirm settlement: {err}")]
     FailedToSubmit {
         #[source]
         err: cow_solana_rpc::Error,
+    },
+    /// The settlement landed and failed on chain, so it cannot land again.
+    #[error("settlement reverted: {err}")]
+    Reverted {
+        #[source]
+        err: TransactionError,
     },
     #[error("failed to submit or confirm an order creation: {0}")]
     FailedToCreate(#[source] cow_solana_rpc::Error),
@@ -990,6 +986,15 @@ fn account_count(transaction: &VersionedTransaction) -> usize {
     message.static_account_keys().len() + loaded
 }
 
+/// The error of a failed send or confirmation. Only a landed failure proves
+/// the transaction cannot land again.
+fn submission_error(err: cow_solana_rpc::Error) -> Error {
+    match err.kind() {
+        cow_solana_rpc::ErrorKind::TransactionError(err) => Error::Reverted { err: err.clone() },
+        _ => Error::FailedToSubmit { err },
+    }
+}
+
 /// Whether the error proves the settlement fails on chain, as opposed to the
 /// driver failing to find out. Only a proof drops a solution at solve time:
 /// an unverified solution costs at most one failed settlement, a wrongly
@@ -1019,6 +1024,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::Rpc(_) => "rpc_failed",
         Error::BuyTokenAccounts(_) => "rpc_failed",
         Error::FailedToSubmit { .. } => "submit_failed",
+        Error::Reverted { .. } => "reverted",
         Error::FailedToCreate(_) => "creation_failed",
         Error::SimulationFailed { .. } => "simulation_failed",
         Error::SimulationTimedOut => "simulation_timed_out",
@@ -1034,7 +1040,11 @@ fn error_label(error: &Error) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
+        serde_json::{Value, json},
+    };
 
     /// Addresses loaded from lookup tables count toward the account lock
     /// limit like static keys.
@@ -1059,5 +1069,53 @@ mod tests {
             }),
         };
         assert_eq!(account_count(&transaction), 9);
+    }
+
+    /// A failed status from the cluster reads as a revert. A blockhash that
+    /// expires with no status leaves the transaction's fate open.
+    #[tokio::test]
+    async fn only_a_landed_failure_reads_as_reverted() {
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::from([1; 64])],
+            message: Default::default(),
+        };
+        let confirm = async |statuses: Value| {
+            let rpc = SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+                (
+                    RpcRequest::SendTransaction,
+                    json!(transaction.signatures[0].to_string()),
+                ),
+                (RpcRequest::GetSignatureStatuses, statuses),
+                (
+                    RpcRequest::IsBlockhashValid,
+                    json!({ "context": { "slot": 1 }, "value": false }),
+                ),
+            ]));
+            submission_error(
+                rpc.send_and_confirm_transaction(&transaction)
+                    .await
+                    .unwrap_err(),
+            )
+        };
+        let err = TransactionError::InstructionError(
+            5,
+            solana_sdk::instruction::InstructionError::Custom(3005),
+        );
+        let landed = json!({
+            "context": { "slot": 1 },
+            "value": [{
+                "slot": 1,
+                "confirmations": null,
+                "status": { "Err": err },
+                "err": err,
+                "confirmationStatus": "finalized",
+            }],
+        });
+        assert!(matches!(confirm(landed).await, Error::Reverted { .. }));
+        let expired = json!({ "context": { "slot": 1 }, "value": [null] });
+        assert!(matches!(
+            confirm(expired).await,
+            Error::FailedToSubmit { .. }
+        ));
     }
 }

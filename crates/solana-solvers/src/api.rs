@@ -55,7 +55,8 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Quote the auction's orders and return the single-order solutions.
+/// Quote the auction's orders and return one solution per side and directed
+/// mint pair, batched where the swap clears several orders.
 async fn solve(
     State(solver): State<Arc<Solver<Dex>>>,
     LoggingJson(auction): LoggingJson<Auction>,

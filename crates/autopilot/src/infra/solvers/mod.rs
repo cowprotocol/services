@@ -3,7 +3,7 @@ use {
     crate::util,
     alloy::signers::{Signer, aws::AwsSigner},
     anyhow::{Context, Result, anyhow},
-    configs::autopilot::solver::Account,
+    configs::autopilot::solver::{Account, Solver},
     eth_domain_types as eth,
     observe::tracing::{distributed::headers::tracing_headers, lazy::Lazy},
     reqwest::{Client, RequestBuilder, StatusCode},
@@ -22,8 +22,27 @@ pub struct Driver {
     pub name: String,
     pub url: Url,
     pub submission_address: eth::Address,
-    pub supports_auction_deltas: bool,
+    pub extensions: SupportedExtensions,
     client: Client,
+}
+
+/// Optional `/solve` request features a driver opted into.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SupportedExtensions {
+    /// Between checkpoints, receive only the difference to the previously
+    /// sent auction instead of the full auction.
+    pub auction_deltas: bool,
+    /// Receive compressed request bodies.
+    pub compression: bool,
+}
+
+impl From<&Solver> for SupportedExtensions {
+    fn from(driver: &Solver) -> Self {
+        Self {
+            auction_deltas: driver.supports_auction_deltas,
+            compression: driver.supports_compression,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -40,7 +59,7 @@ impl Driver {
         url: Url,
         name: String,
         submission_account: Account,
-        supports_auction_deltas: bool,
+        extensions: SupportedExtensions,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -60,7 +79,7 @@ impl Driver {
             ?name,
             ?url,
             ?submission_address,
-            supports_auction_deltas,
+            ?extensions,
             "creating solver"
         );
 
@@ -73,7 +92,7 @@ impl Driver {
                 .build()
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
-            supports_auction_deltas,
+            extensions,
         })
     }
 
@@ -213,5 +232,116 @@ where
     fn body_to_string(&self) -> Cow<'_, str> {
         let serialized = serde_json::to_string(&self).expect("type should be JSON serializable");
         Cow::Owned(serialized)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::domain,
+        alloy::primitives::Address,
+        axum::{body::Bytes, http::HeaderMap},
+        std::{
+            collections::HashSet,
+            sync::{Arc, Mutex},
+        },
+    };
+
+    #[test]
+    fn extensions_are_taken_from_the_driver_config() {
+        let extensions = SupportedExtensions::from(&Solver::test("solver", Address::ZERO));
+        assert!(!extensions.auction_deltas);
+        assert!(!extensions.compression);
+
+        let extensions = SupportedExtensions::from(&Solver {
+            supports_auction_deltas: true,
+            supports_compression: true,
+            ..Solver::test("solver", Address::ZERO)
+        });
+        assert!(extensions.auction_deltas);
+        assert!(extensions.compression);
+    }
+
+    /// The `content-encoding` header and raw body of a `/solve` request.
+    type Received = Arc<Mutex<Option<(Option<String>, Bytes)>>>;
+
+    /// Serves `/solve` on a local port, recording the request it receives.
+    async fn mock_driver() -> (Url, Received) {
+        let received = Received::default();
+        let app = axum::Router::new().route(
+            "/solve",
+            axum::routing::post({
+                let received = Arc::clone(&received);
+                move |headers: HeaderMap, body: Bytes| async move {
+                    let encoding = headers
+                        .get(reqwest::header::CONTENT_ENCODING)
+                        .map(|value| value.to_str().unwrap().to_owned());
+                    *received.lock().unwrap() = Some((encoding, body));
+                    r#"{"solutions": []}"#
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (url, received)
+    }
+
+    async fn solve_requests() -> solve::EncodedRequests {
+        let auction = domain::Auction {
+            id: 1,
+            block: 1,
+            orders: vec![],
+            prices: Default::default(),
+            surplus_capturing_jit_order_owners: vec![],
+        };
+        let plain = solve::Request::new(&auction, &HashSet::new(), chrono::Utc::now()).await;
+        solve::EncodedRequests::new(plain, true).await
+    }
+
+    /// Sends a `/solve` request to a driver that does or doesn't accept
+    /// compression and returns what the driver received.
+    async fn send(compression: bool) -> (Option<String>, Bytes) {
+        let (url, received) = mock_driver().await;
+        let driver = Driver::try_new(
+            url,
+            "solver".to_owned(),
+            Account::Address(Address::ZERO),
+            SupportedExtensions {
+                auction_deltas: false,
+                compression,
+            },
+        )
+        .await
+        .unwrap();
+
+        let request = solve_requests()
+            .await
+            .for_driver(driver.extensions.compression);
+        driver.solve(request).await.unwrap();
+        received.lock().unwrap().take().unwrap()
+    }
+
+    #[tokio::test]
+    async fn opted_in_driver_receives_compressed_body() {
+        let (encoding, body) = send(true).await;
+
+        assert_eq!(encoding.as_deref(), Some("br"));
+        let mut decompressed = Vec::new();
+        brotli::BrotliDecompress(&mut body.as_ref(), &mut decompressed).unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&decompressed).unwrap();
+        assert_eq!(json["kind"], "full");
+    }
+
+    #[tokio::test]
+    async fn other_drivers_receive_plain_json() {
+        let (encoding, body) = send(false).await;
+
+        assert_eq!(encoding, None);
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["kind"], "full");
     }
 }
