@@ -181,6 +181,9 @@ impl SolanaRPC {
             transaction_details: Some(TransactionDetails::None),
             rewards: Some(false),
             commitment: Some(CommitmentConfig::confirmed()),
+            // Agave checks no version without transaction details, but a
+            // provider that does would fail every block holding a newer one.
+            max_supported_transaction_version: Some(1),
             ..Default::default()
         };
         let block = self.inner.get_block_with_config(slot, config).await?;
