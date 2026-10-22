@@ -173,16 +173,14 @@ impl SubmissionConfig {
                     revert_protection,
                 )])
             }
-            Receiver::Builders { urls } => infra::config::Receiver::Builders {
-                builders: urls
-                    .iter()
+            Receiver::Builders { urls } => infra::config::Receiver::Builders(
+                urls.iter()
                     .map(|url| infra::builders::Config {
                         name: host(url),
                         url: url.clone(),
                     })
                     .collect(),
-                nonce_block_number: self.nonce_block_number.map(Into::into),
-            },
+            ),
         }
     }
 }
@@ -250,8 +248,9 @@ enum Receiver {
     /// the settlement and the `X-Flashbots-Signature` header with the
     /// settlement account.
     Builders {
-        /// The RPC URLs of the builders. The submission succeeds as long as
-        /// one of them accepts the bundles.
+        /// The RPC URLs of the builders. A builder only confirms that it
+        /// received a bundle. The driver keeps waiting for the settlement as
+        /// long as one builder did, and reports success once it is mined.
         #[serde(deserialize_with = "serde_ext::deserialize_nonempty_vec")]
         urls: Vec<Url>,
     },
@@ -1566,23 +1565,17 @@ mod tests {
     fn submission_builders() {
         let config: SubmissionConfig = toml::from_str(
             r#"
-            nonce-block-number = "pending"
             [builders]
             urls = ["https://rpc.titanbuilder.xyz", "https://rpc.buildernet.org"]
         "#,
         )
         .unwrap();
 
-        let infra::config::Receiver::Builders {
-            builders,
-            nonce_block_number,
-        } = config.to_domain()
-        else {
+        let infra::config::Receiver::Builders(builders) = config.to_domain() else {
             panic!("expected builders");
         };
         let hosts: Vec<_> = builders.iter().map(|builder| &builder.name).collect();
         assert_eq!(hosts, ["rpc.titanbuilder.xyz", "rpc.buildernet.org"]);
-        assert_eq!(nonce_block_number, Some(BlockNumberOrTag::Pending));
     }
 
     #[test]

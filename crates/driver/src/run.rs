@@ -245,12 +245,8 @@ fn submitter(
                 .collect();
             Arc::new(Mempools::new(mempools, eth.clone()))
         }
-        infra::config::Receiver::Builders {
+        infra::config::Receiver::Builders(builders) => Arc::new(infra::Builders::new(
             builders,
-            nonce_block_number,
-        } => Arc::new(infra::Builders::new(
-            builders,
-            *nonce_block_number,
             accounts,
             eth.clone(),
             http_factory.create(),

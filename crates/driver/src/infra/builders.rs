@@ -31,7 +31,7 @@ use {
     futures::{StreamExt, future::join_all},
     std::{
         collections::HashMap,
-        ops::{ControlFlow, RangeInclusive},
+        ops::RangeInclusive,
         time::{Duration, Instant},
     },
     tokio_stream::wrappers::WatchStream,
@@ -62,8 +62,6 @@ pub struct Builders {
     /// the `X-Flashbots-Signature` header of its bundles, the identity that
     /// builders like BuilderNet pay refunds to.
     accounts: HashMap<eth::Address, Account>,
-    /// The block to fetch the nonce at. `None` is alloy's default.
-    nonce_block_number: Option<BlockNumberOrTag>,
 }
 
 /// One block builder that takes bundles over `eth_sendBundle`.
@@ -89,7 +87,7 @@ pub enum Delivery {
     Accepted(serde_json::Value),
     /// The builder answered, but not with a success.
     Rejected(anyhow::Error),
-    /// No answer in time. The builder may still hold the bundle.
+    /// No usable answer in time. The builder may still hold the bundle.
     TimedOut,
     /// The request never reached the builder.
     Unreachable(anyhow::Error),
@@ -114,7 +112,6 @@ impl Delivery {
 impl Builders {
     pub fn new(
         configs: &[Config],
-        nonce_block_number: Option<BlockNumberOrTag>,
         solver_accounts: Vec<Account>,
         ethereum: Ethereum,
         client: reqwest::Client,
@@ -142,7 +139,6 @@ impl Builders {
             builders,
             ethereum,
             accounts,
-            nonce_block_number,
         }
     }
 
@@ -160,8 +156,14 @@ impl Builders {
         let signer = tx.from;
         let block_stream = submission::next_blocks(ethereum).await;
 
+        // The bundles never show up in the node's mempool, so `pending` would
+        // be no different from `latest`.
         let (nonce, current_gas_price) = futures::try_join!(
-            mempool::get_nonce(&ethereum.web3().provider, signer, self.nonce_block_number),
+            mempool::get_nonce(
+                &ethereum.web3().provider,
+                signer,
+                Some(BlockNumberOrTag::Latest)
+            ),
             async {
                 ethereum
                     .gas_price()
@@ -232,6 +234,9 @@ impl Builders {
                     });
                 }
                 TxStatus::Reverted { block_number } => {
+                    // Reverts shouldn't be possible under the current builder
+                    // configuration, as builders are expected to drop reverting
+                    // transactions instead of mining them
                     return Err(mempools::Error::Revert {
                         tx_id: hash,
                         submitted_at_block: submission_block,
@@ -336,7 +341,7 @@ impl TransactionReceiver for Builders {
             .send_bundles(settlement, submission_deadline, mode)
             .instrument(tracing::info_span!("builders"))
             .await;
-        observe::builders_log(settlement, &result);
+        observe::builders_submission_result(settlement, &result);
         let outcome = Outcome::from(&result);
         observe::mempool_submission_result(
             "builders",
@@ -376,7 +381,7 @@ impl Builder {
             Err(_) => Delivery::TimedOut,
         };
         observe::builder_response_time(&self.name, start.elapsed());
-        observe::builder_submission(&self.name, request.block, &delivery);
+        observe::bundle_submission(&self.name, request.block, &delivery);
         delivery
     }
 
@@ -397,7 +402,7 @@ impl Builder {
         let status = response.status();
         let body = match response.text().await {
             Ok(body) => body,
-            Err(err) => return Delivery::Rejected(err.into()),
+            Err(_) => return Delivery::TimedOut,
         };
         // Any success counts, whatever the shape of the result.
         let response: Result<Response<serde_json::Value>, _> = serde_json::from_str(&body);

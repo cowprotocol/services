@@ -8,7 +8,6 @@ use {
         notify,
         solver,
     },
-    alloy::eips::BlockNumberOrTag,
     eth_domain_types as eth,
 };
 
@@ -40,9 +39,5 @@ pub enum Receiver {
     /// Nodes or a private relay, as plain transactions.
     Mempools(Vec<mempool::Config>),
     /// Block builders, as bundles.
-    Builders {
-        builders: Vec<builders::Config>,
-        /// The block to fetch the nonce at. `None` is alloy's default.
-        nonce_block_number: Option<BlockNumberOrTag>,
-    },
+    Builders(Vec<builders::Config>),
 }

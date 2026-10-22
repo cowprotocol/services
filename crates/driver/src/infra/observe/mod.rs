@@ -399,7 +399,7 @@ pub fn mempool_log(
 }
 
 /// Log the submission of a settlement to the block builders.
-pub fn builders_log(
+pub fn builders_submission_result(
     settlement: &EncodedSettlement,
     result: &Result<SubmissionSuccess, mempools::Error>,
 ) {
@@ -438,7 +438,7 @@ pub fn builder_response_time(builder: &str, elapsed: Duration) {
 }
 
 /// Observe how far the settlement bundle for `block` got with a block builder.
-pub fn builder_submission(builder: &str, block: u64, delivery: &Delivery) {
+pub fn bundle_submission(builder: &str, block: u64, delivery: &Delivery) {
     match delivery {
         Delivery::Accepted(result) => {
             tracing::debug!(builder, block, %result, "builder accepted the bundle")
