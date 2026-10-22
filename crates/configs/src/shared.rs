@@ -1,6 +1,6 @@
 use {
     crate::fee_factor::FeeFactor,
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::ensure,
     serde::{Deserialize, Deserializer, Serialize, de::Unexpected},
     std::{collections::HashSet, str::FromStr, time::Duration},
