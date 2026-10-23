@@ -327,6 +327,9 @@ impl Inner {
                 .copied()
                 .collect()
         };
+        metrics()
+            .native_price_cache_size
+            .set(i64::try_from(self.prices.entry_count()).unwrap_or(i64::MAX));
         if expiring.is_empty() {
             return;
         }
@@ -347,6 +350,7 @@ impl Inner {
     async fn lookup(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
+        let mut hits = 0;
         let now = Instant::now();
         for token in &tokens {
             if self.is_sol(token) {
@@ -355,6 +359,7 @@ impl Inner {
             }
             match self.prices.get(token) {
                 Some((fetched, price)) if now.duration_since(fetched) < self.ttl => {
+                    hits += 1;
                     if let Some(price) = price {
                         result.insert(*token, price);
                     }
@@ -362,6 +367,11 @@ impl Inner {
                 _ => fetch.push(*token),
             }
         }
+        let access = &metrics().native_price_cache_access;
+        access.with_label_values(&["hits"]).inc_by(hits);
+        access
+            .with_label_values(&["misses"])
+            .inc_by(fetch.len() as u64);
         if fetch.is_empty() {
             return Ok(result);
         }
@@ -424,7 +434,9 @@ impl Inner {
             let mut answers = FuturesUnordered::new();
             while next_stage < self.stages.len() && answers.len() < missing {
                 answers.extend(self.stages[next_stage].iter().map(|source| async move {
+                    let start = Instant::now();
                     let answer = source.fetch(asked, mints, self.wrapped_native).await;
+                    observe_source(source.name(), asked.len(), &answer, start.elapsed());
                     (source, answer)
                 }));
                 next_stage += 1;
@@ -711,6 +723,54 @@ async fn driver(
             (price > 0).then_some((token, price))
         })
         .collect())
+}
+
+/// Records one source request: a result per asked token and the request's
+/// duration. Requests cancelled once enough prices arrived record nothing.
+fn observe_source(
+    source: &str,
+    asked: usize,
+    answer: &Result<HashMap<Pubkey, u64>>,
+    elapsed: Duration,
+) {
+    let metrics = metrics();
+    let results = |result: &str, tokens: usize| {
+        metrics
+            .price_estimates
+            .with_label_values(&[source, result])
+            .inc_by(tokens as u64);
+    };
+    match answer {
+        Ok(prices) => {
+            results("success", prices.len());
+            results("no_liquidity", asked.saturating_sub(prices.len()));
+        }
+        Err(err) if err.is::<RateLimited>() => results("rate_limited", asked),
+        Err(_) => results("estimator_internal_error", asked),
+    }
+    metrics
+        .price_estimation_times
+        .with_label_values(&[source])
+        .observe(elapsed.as_secs_f64());
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Cached price lookups by result, `hits` or `misses`.
+    #[metric(labels("result"))]
+    native_price_cache_access: prometheus::IntCounterVec,
+    /// Tokens in the price cache, priced or not.
+    native_price_cache_size: prometheus::IntGauge,
+    /// Tokens asked of each price source, by result.
+    #[metric(labels("estimator_type", "result"))]
+    price_estimates: prometheus::IntCounterVec,
+    /// Duration of each source request.
+    #[metric(labels("estimator_type"))]
+    price_estimation_times: prometheus::HistogramVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
 /// A whole-token price in SOL converted to the scaled atom price:
