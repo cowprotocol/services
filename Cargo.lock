@@ -9698,6 +9698,8 @@ dependencies = [
  "futures",
  "humantime-serde",
  "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "rustls",
  "serde",
  "serde-ext",
