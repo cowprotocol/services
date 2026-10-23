@@ -904,6 +904,7 @@ mod tests {
             Validator::new(8192),
             database.clone(),
             None,
+            1024,
         ));
         let orderbook = Orderbook {
             database,

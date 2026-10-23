@@ -13,10 +13,7 @@ pub async fn get_app_data_handler(
     State(state): State<Arc<AppState>>,
     Path(contract_app_data): Path<AppDataHash>,
 ) -> Response {
-    let result = state
-        .database_read
-        .get_full_app_data(&contract_app_data)
-        .await;
+    let result = state.app_data.get_full_app_data(&contract_app_data).await;
     match result {
         Ok(Some(response)) => (
             StatusCode::OK,
