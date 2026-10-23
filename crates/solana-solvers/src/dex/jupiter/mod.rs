@@ -139,9 +139,11 @@ impl Jupiter {
         }
         match status {
             reqwest::StatusCode::TOO_MANY_REQUESTS => Err(Error::RateLimited),
-            // Jupiter returns 400 with an error body when it can't route the order.
+            // Jupiter returns 400 with an error body when it can't route the
+            // order.
             reqwest::StatusCode::BAD_REQUEST => Err(Error::NotFound),
-            // Auth or server errors: carry the status and body so the cause shows.
+            // Auth or server errors: carry the status and body so the cause
+            // shows.
             _ => Err(Error::Api {
                 status: status.as_u16(),
                 body,

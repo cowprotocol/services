@@ -363,7 +363,8 @@ fn emit_quote_requested_event(
         },
         from: request.from.to_string(),
         // Deliberate second parse: `appCode` lives at the document root, not in
-        // the already-parsed `ProtocolAppData`. Cheap given the 8KB app-data cap.
+        // the already-parsed `ProtocolAppData`. Cheap given the 8KB app-data
+        // cap.
         app_code: ::app_data::app_code(document.as_bytes()),
         sell_token_symbol,
         buy_token_symbol,

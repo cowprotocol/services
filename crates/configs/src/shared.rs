@@ -238,7 +238,8 @@ where
         |_| {
             serde::de::Error::invalid_value(
                 Unexpected::Str(&raw_level),
-                // Since exp must be 'static, this string is copied from ParseLevelError::Display
+                // Since exp must be 'static, this string is copied from
+                // ParseLevelError::Display
                 &"error parsing level: expected one of \"error\", \"warn\", \"info\", \"debug\", \
                   \"trace\", or a number 1-5",
             )
@@ -312,7 +313,8 @@ where
     tracing::Level::from_str(&raw_level).map_err(|_| {
         serde::de::Error::invalid_value(
             Unexpected::Str(&raw_level),
-            // Since exp must be 'static, this string is copied from ParseLevelError::Display
+            // Since exp must be 'static, this string is copied from
+            // ParseLevelError::Display
             &"error parsing level: expected one of \"error\", \"warn\", \"info\", \"debug\", \
               \"trace\", or a number 1-5",
         )

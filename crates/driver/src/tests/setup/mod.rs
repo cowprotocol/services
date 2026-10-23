@@ -122,7 +122,8 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
 
-    // Currently used for limit orders to represent the surplus_fee calculated by the solver.
+    // Currently used for limit orders to represent the surplus_fee calculated
+    // by the solver.
     pub solver_fee: Option<eth::U256>,
 
     /// Set a value to be used to divide the order buy or sell amount before
@@ -944,7 +945,8 @@ impl Setup {
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            // This PK is publicly known - don't send any funds to its account onchain!!!
+            // This PK is publicly known - don't send any funds to its account
+            // onchain!!!
             main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
                 "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
             ))

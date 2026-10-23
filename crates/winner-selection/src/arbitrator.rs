@@ -333,8 +333,8 @@ fn compute_order_score<C: ChainTypes>(
     };
 
     let score_native = match order.side {
-        // `surplus` of sell orders is already in buy tokens so we simply convert it to the
-        // native token
+        // `surplus` of sell orders is already in buy tokens so we simply
+        // convert it to the native token
         Side::Sell => C::value_in_native(*native_price_buy, surplus_in_surplus_token),
         Side::Buy => {
             // `surplus` of buy orders is in sell tokens. We start with

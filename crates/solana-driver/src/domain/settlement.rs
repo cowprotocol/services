@@ -1770,7 +1770,8 @@ mod tests {
         let settlement = test_settlement(
             &[order_a, order_b],
             &[
-                // Order A: two trades. Sell: 400 + 600 = 1000. Buy: 800 + 1200 = 2000.
+                // Order A: two trades. Sell: 400 + 600 = 1000. Buy: 800 + 1200
+                // = 2000.
                 trade(uid_a, 400, 800),
                 trade(uid_a, 600, 1_200),
                 // Order B: one trade. Sell: 500. Buy: 1000.
