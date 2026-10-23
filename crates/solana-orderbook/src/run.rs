@@ -106,6 +106,7 @@ pub async fn run(args: Args) {
                 &rpc.endpoint,
                 rpc.request_timeout,
                 CommitmentConfig::confirmed(),
+                "sponsoring",
             ),
             max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
             mints: solana_token::MintVerdicts::default(),
