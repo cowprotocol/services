@@ -137,8 +137,10 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     /// pair's second, and pairs go by their most permissive order's
     /// [`limit_to_native`], highest first, then the pairs whose sell mint
     /// has no price. Ties keep their order of first appearance, so one
-    /// auction batches the same on every run. A pair whose buy mint has no
-    /// price is left out: the arbitrator cannot score its solution.
+    /// auction batches the same on every run. In a competition, a pair whose
+    /// buy mint has no price is left out: the arbitrator cannot score its
+    /// solution. Quotes carry no prices and are never scored, so their pairs
+    /// stay.
     fn batches<'a>(&self, auction: &'a Auction) -> Vec<Vec<&'a auction::Order>> {
         let mut pairs: Vec<Vec<&auction::Order>> = Vec::new();
         let mut pair_index = HashMap::new();
@@ -163,7 +165,7 @@ impl<Q: Aggregator + Sync> Solver<Q> {
                 // Within a pair the prices are shared, so its most
                 // permissive order, the first, stands for it.
                 let head = *orders.first()?;
-                if auction.native_price(&head.buy_mint).is_none() {
+                if auction.id.is_some() && auction.native_price(&head.buy_mint).is_none() {
                     tracing::debug!(
                         orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>(),
                         "skipping pair, its buy mint has no native price"
@@ -1158,5 +1160,16 @@ mod tests {
         auction.orders = vec![sell_of(0x01, pubkey(0x20), 1_000, 0)];
 
         assert!(batching(1, 4).batches(&auction).is_empty());
+    }
+
+    #[tokio::test]
+    async fn quotes_a_pair_without_native_prices_in_a_quote() {
+        let mut auction = auction(vec![sell(0x01)], Duration::from_secs(60));
+        auction.id = None;
+        auction.tokens.clear();
+
+        let solutions = solver(8, Duration::ZERO).solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
     }
 }
