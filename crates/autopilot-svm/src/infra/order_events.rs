@@ -31,6 +31,7 @@ pub async fn store(
     uids: impl IntoIterator<Item = IntentHash>,
     label: OrderEventLabel,
 ) -> Result<()> {
+    let _timer = super::db::query_timer("store_order_events");
     let uids: Vec<Vec<u8>> = uids.into_iter().map(|uid| uid.0.to_vec()).collect();
     if uids.is_empty() {
         return Ok(());
