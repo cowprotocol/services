@@ -336,6 +336,9 @@ impl Inner {
         if let Err(err) = self.fetch_into_cache(&expiring).await {
             tracing::warn!(?err, "native price refresh failed");
         }
+        metrics()
+            .native_price_cache_background_updates
+            .inc_by(expiring.len() as u64);
     }
 
     fn maintain(&self, tokens: &HashSet<Pubkey>) {
@@ -405,6 +408,8 @@ impl Inner {
 
         // The best price of each token and how many sources priced it.
         let mut found: HashMap<Pubkey, (u64, usize)> = HashMap::new();
+        // The source that quoted each token's best price.
+        let mut winners: HashMap<Pubkey, &str> = HashMap::new();
         let priced = |found: &HashMap<Pubkey, (u64, usize)>, token: &Pubkey| {
             found.get(token).map_or(0, |(_, count)| *count)
         };
@@ -448,7 +453,10 @@ impl Inner {
                             // The best route sells the probe into the most
                             // atoms, so the lowest price wins.
                             let (best, count) = found.entry(token).or_insert((price, 0));
-                            *best = (*best).min(price);
+                            if *count == 0 || price < *best {
+                                *best = price;
+                                winners.insert(token, source.name());
+                            }
                             *count += 1;
                         }
                     }
@@ -463,6 +471,12 @@ impl Inner {
                     break;
                 }
             }
+        }
+        for source in winners.values() {
+            metrics()
+                .competition_price_estimator_queries_won
+                .with_label_values(&[source, "buy"])
+                .inc();
         }
         if failures > 0 && failures == self.stages.iter().map(Vec::len).sum::<usize>() {
             if rate_limited {
@@ -725,8 +739,8 @@ async fn driver(
         .collect())
 }
 
-/// Records one source request: a result per asked token and the request's
-/// duration. Requests cancelled once enough prices arrived record nothing.
+/// Records one source request: a result and the request's duration per asked
+/// token. Requests cancelled once enough prices arrived record nothing.
 fn observe_source(
     source: &str,
     asked: usize,
@@ -748,10 +762,10 @@ fn observe_source(
         Err(err) if err.is::<RateLimited>() => results("rate_limited", asked),
         Err(_) => results("estimator_internal_error", asked),
     }
-    metrics
-        .price_estimation_times
-        .with_label_values(&[source])
-        .observe(elapsed.as_secs_f64());
+    let times = metrics.price_estimation_times.with_label_values(&[source]);
+    for _ in 0..asked {
+        times.observe(elapsed.as_secs_f64());
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -764,9 +778,14 @@ struct Metrics {
     /// Tokens asked of each price source, by result.
     #[metric(labels("estimator_type", "result"))]
     price_estimates: prometheus::IntCounterVec,
-    /// Duration of each source request.
+    /// Duration of each source request, once per asked token.
     #[metric(labels("estimator_type"))]
     price_estimation_times: prometheus::HistogramVec,
+    /// Tokens refetched by the background refresh.
+    native_price_cache_background_updates: prometheus::IntCounter,
+    /// Tokens each source quoted the best price for.
+    #[metric(labels("estimator_type", "order_kind"))]
+    competition_price_estimator_queries_won: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {
@@ -1245,13 +1264,20 @@ mod tests {
                 Some(coingecko_url),
                 vec![
                     vec![COINGECKO],
-                    vec![driver("worse", worse), driver("better", better)],
+                    vec![driver("worse-route", worse), driver("better-route", better)],
                 ],
                 2,
             ),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
+        let wins = |source: &str| {
+            metrics()
+                .competition_price_estimator_queries_won
+                .with_label_values(&[source, "buy"])
+                .get()
+        };
+        let (better_wins, worse_wins) = (wins("better-route"), wins("worse-route"));
         let started = Instant::now();
         let result = prices.prices(HashSet::from([token])).await.unwrap();
         assert!(
@@ -1260,6 +1286,8 @@ mod tests {
         );
         // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
         assert_eq!(result.get(&token), Some(&5_000_000_000));
+        assert_eq!(wins("better-route"), better_wins + 1);
+        assert_eq!(wins("worse-route"), worse_wins);
     }
 
     /// With the required prices in, the rest of the stage is dropped: a
