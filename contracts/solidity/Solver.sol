@@ -158,7 +158,7 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
             // subsequent reads (warm access). It can happen that this `_balanceOf()` call
             // warms storage that would normally be cold in a real settlement. To know how
             // much the settlement in this simulation saved due to the already warmed
-            // storage we measue `_balanceOf()` twice and take the difference as the
+            // storage we measure `_balanceOf()` twice and take the difference as the
             // `coldAccessSurcharge`.
             // This will later be removed from the `_simulationOverhead` - effectively
             // adding it back to the measurement of `settle()`.
