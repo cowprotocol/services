@@ -22,11 +22,11 @@ const fn default_statement_timeout() -> Duration {
 }
 
 const fn default_connection_release_timeout() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_millis(50)
 }
 
 const fn default_client_connection_check_interval() -> Duration {
-    Duration::from_secs(1)
+    Duration::from_millis(500)
 }
 
 const fn default_insert_batch_size() -> NonZeroUsize {
@@ -74,7 +74,7 @@ pub struct DatabasePoolConfig {
     /// How long a connection returned to the pool may take to finish the work
     /// still pending on it, e.g. a query whose request got cancelled.
     /// Connections that take longer get closed instead of reused, which makes
-    /// the server abort the pending query. Defaults to 1 second.
+    /// the server abort the pending query. Defaults to 50 milliseconds.
     #[serde(
         default = "default_connection_release_timeout",
         with = "humantime_serde"
@@ -83,7 +83,7 @@ pub struct DatabasePoolConfig {
 
     /// How often the server checks whether the client of a running query is
     /// still connected, so it can abort queries whose connection got closed.
-    /// `0` disables the checks. Defaults to 1 second.
+    /// `0` disables the checks. Defaults to 500 milliseconds.
     #[serde(
         default = "default_client_connection_check_interval",
         with = "humantime_serde"

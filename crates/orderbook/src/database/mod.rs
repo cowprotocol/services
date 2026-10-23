@@ -51,8 +51,8 @@ impl Default for Config {
             // Match SQLx default pool size
             max_pool_size: DB_MAX_CONNECTIONS_DEFAULT.get(),
             statement_timeout: Duration::from_secs(30),
-            connection_release_timeout: Duration::from_secs(1),
-            client_connection_check_interval: Duration::from_secs(1),
+            connection_release_timeout: Duration::from_millis(50),
+            client_connection_check_interval: Duration::from_millis(500),
         }
     }
 }
