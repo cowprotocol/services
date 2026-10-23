@@ -18,6 +18,7 @@ use {
         api::{Sponsoring, State, ValidationParameters, error},
         db,
     },
+    app_data::AppDataHash,
     axum::{Json, http::StatusCode},
     bigdecimal::ToPrimitive,
     cow_settlement_interface::{
@@ -60,6 +61,13 @@ pub struct Params {
     /// The id the quote endpoint answered for this order, if any.
     #[serde(default)]
     pub quote_id: Option<i64>,
+    /// The order's app data: the document the intent's `app_data` is the
+    /// keccak256 hash of, stored with the order, or that hash.
+    #[serde(default)]
+    pub app_data: Option<String>,
+    /// The hash the client computed for the `appData` document.
+    #[serde(default)]
+    pub app_data_hash: Option<AppDataHash>,
 }
 
 /// Rejections of a sponsored order placement. The names follow the EVM
@@ -137,8 +145,7 @@ impl From<PlacementError> for error::Reply {
 /// error with the step that failed.
 enum Failure {
     Refused(PlacementError),
-    /// A refusal the mint check shared with quoting already shaped into its
-    /// reply.
+    /// A refusal a check shared with quoting already shaped into its reply.
     Replied(error::Reply),
     Internal {
         err: Box<dyn std::fmt::Debug + Send>,
@@ -202,6 +209,16 @@ async fn place(
         })?;
     let (mut order, preparations) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
+    // The intent signed the hash, so whatever the request names must agree
+    // with it. A hash alone stores nothing: its document may be registered on
+    // its own, or never.
+    let document = super::app_data::document(
+        params.app_data.as_deref(),
+        params.app_data_hash,
+        Some(AppDataHash(order.app_data.0)),
+        state.app_data_size_limit(),
+    )
+    .map_err(|err| Failure::Replied(err.into()))?;
     check_accounts(sponsoring, &order, &preparations).await?;
 
     // The countersign re-checks freshness, so the stored expiry only has to
@@ -242,7 +259,9 @@ async fn place(
     };
 
     let uid = const_hex::encode_prefixed(order.uid.0);
-    if let Err(err) = db::insert_sponsored_order(state.pool(), &order, quote.as_ref()).await {
+    if let Err(err) =
+        db::insert_sponsored_order(state.pool(), &order, quote.as_ref(), document).await
+    {
         let duplicate = err
             .downcast_ref::<sqlx::Error>()
             .and_then(|err| err.as_database_error())

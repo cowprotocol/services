@@ -30,6 +30,7 @@ async fn mock_api() -> Api {
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
         sponsoring: None,
+        app_data_size_limit: 8192,
     }
 }
 
@@ -419,7 +420,8 @@ async fn quote_answers_in_the_evm_shape() {
     let valid_to = chrono::Utc::now().timestamp() + 600;
     let mut body = quote_body(serde_json::json!({"validTo": valid_to}));
     body["receiver"] = serde_json::json!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-    body["appData"] = serde_json::json!(format!("0x{}", "11".repeat(32)));
+    body["appData"] = serde_json::json!("{}");
+    body["appDataHash"] = serde_json::json!(EMPTY_APP_DATA_HASH);
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/quote"))
@@ -441,6 +443,7 @@ async fn quote_answers_in_the_evm_shape() {
                 "buyAmount": "1234567",
                 "validTo": valid_to,
                 "appData": body["appData"],
+                "appDataHash": body["appDataHash"],
                 "feeAmount": "0",
                 // In the buy token, at the mocked lamport an atom. Without
                 // sponsoring the buy token account is not read, so it counts
@@ -786,6 +789,54 @@ async fn quote_without_a_route_is_no_liquidity() {
         (status, kind.as_str()),
         (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
     );
+}
+
+/// The keccak256 of `{}`, the hash the EVM orderbook names the empty document
+/// by.
+const EMPTY_APP_DATA_HASH: &str =
+    "0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d";
+
+/// A quote checks a full app data document the way a placement does, and
+/// echoes a hash unchecked: the checks pass on to the (dead) driver.
+#[tokio::test]
+async fn quote_checks_a_full_app_data_document() {
+    let addr = spawn_server().await;
+    let other = format!("0x{}", "11".repeat(32));
+    for (app_data, app_data_hash, expected) in [
+        ("{}", None, (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")),
+        (
+            "{}",
+            Some(EMPTY_APP_DATA_HASH),
+            (reqwest::StatusCode::NOT_FOUND, "NoLiquidity"),
+        ),
+        (
+            EMPTY_APP_DATA_HASH,
+            None,
+            (reqwest::StatusCode::NOT_FOUND, "NoLiquidity"),
+        ),
+        (
+            "{}",
+            Some(other.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, "AppDataHashMismatch"),
+        ),
+        (
+            "[]",
+            None,
+            (reqwest::StatusCode::BAD_REQUEST, "InvalidAppData"),
+        ),
+    ] {
+        let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+        body["appData"] = serde_json::json!(app_data);
+        if let Some(app_data_hash) = app_data_hash {
+            body["appDataHash"] = serde_json::json!(app_data_hash);
+        }
+        let (status, kind) = post_quote(addr, body).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            expected,
+            "{app_data} {app_data_hash:?}"
+        );
+    }
 }
 
 /// The answered quote, net of the execution cost, lands in `solana.quotes`
@@ -1328,9 +1379,20 @@ fn lighthouse_memory_creation_tx(
 }
 
 async fn post_order(addr: SocketAddr, transaction: String) -> (reqwest::StatusCode, String) {
+    post_order_body(
+        addr,
+        serde_json::json!({ "partiallySignedTx": transaction }),
+    )
+    .await
+}
+
+async fn post_order_body(
+    addr: SocketAddr,
+    body: serde_json::Value,
+) -> (reqwest::StatusCode, String) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
-        .json(&serde_json::json!({ "partiallySignedTx": transaction }))
+        .json(&body)
         .send()
         .await
         .unwrap();
@@ -1455,6 +1517,82 @@ async fn create_order_rejects_invalid_submissions() {
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "BlockhashExpired")
     );
+}
+
+/// A placement's app data must agree with the intent, which signed the hash:
+/// a document hashing to it passes on to the account checks, with or without
+/// its hash alongside, and so does the hash alone, while a document or hash
+/// that disagrees is refused, as is a document that is not a JSON object.
+#[tokio::test]
+async fn create_order_checks_the_app_data() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let document = r#"{"appCode":"test"}"#;
+    let hash = app_data::hash_full_app_data(document.as_bytes());
+    let hash_hex = const_hex::encode_prefixed(hash);
+    let other_hex = format!("0x{}", "11".repeat(32));
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    intent.app_data = hash;
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let body = |app_data: Option<&str>, app_data_hash: Option<&str>| {
+        let mut body = serde_json::json!({ "partiallySignedTx": transaction });
+        if let Some(app_data) = app_data {
+            body["appData"] = serde_json::json!(app_data);
+        }
+        if let Some(app_data_hash) = app_data_hash {
+            body["appDataHash"] = serde_json::json!(app_data_hash);
+        }
+        body
+    };
+
+    // Refusals answer before any chain probe.
+    let addr = spawn_sponsored_server(
+        PgPool::connect_lazy("postgresql://").unwrap(),
+        funder,
+        false,
+    )
+    .await;
+    for (app_data, app_data_hash, expected) in [
+        (Some(r#"{"appCode":"other"}"#), None, "AppDataHashMismatch"),
+        (
+            Some(document),
+            Some(other_hex.as_str()),
+            "AppDataHashMismatch",
+        ),
+        (Some(other_hex.as_str()), None, "AppDataHashMismatch"),
+        (None, Some(other_hex.as_str()), "AppDataHashMismatch"),
+        (Some("[]"), None, "InvalidAppData"),
+    ] {
+        let (status, kind) = post_order_body(addr, body(app_data, app_data_hash)).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected),
+            "{app_data:?} {app_data_hash:?}"
+        );
+    }
+
+    // The mock answers each probe once, so every passing placement gets a
+    // fresh server.
+    for (app_data, app_data_hash) in [
+        (Some(document), None),
+        (Some(document), Some(hash_hex.as_str())),
+        (Some(hash_hex.as_str()), None),
+        (None, Some(hash_hex.as_str())),
+    ] {
+        let addr = spawn_sponsored_server(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            false,
+        )
+        .await;
+        let (status, kind) = post_order_body(addr, body(app_data, app_data_hash)).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, PASSED_ACCOUNT_CHECKS),
+            "{app_data:?} {app_data_hash:?}"
+        );
+    }
 }
 
 /// A native SOL buy pays a wallet the System Program owns and leaves it
@@ -2155,6 +2293,54 @@ async fn solana_db_create_order_accepts_a_native_buy() {
     assert_eq!(buy_token_account, owner.pubkey().to_bytes());
 }
 
+/// The document a placement carries is stored with the order: the order
+/// reports it as `fullAppData`, and the app data endpoint serves it by hash.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_stores_the_app_data() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.app_data CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let document = r#"{"appCode":"CoW Swap","metadata":{"quote":{"slippageBips":50}}}"#;
+    let hash = app_data::hash_full_app_data(document.as_bytes());
+    let hash_hex = const_hex::encode_prefixed(hash);
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    intent.app_data = hash;
+    let destination = destination_creation(funder, owner.pubkey(), &intent);
+    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({
+            "partiallySignedTx": transaction,
+            "appData": document,
+            "appDataHash": hash_hex,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uid: String = response.json().await.unwrap();
+
+    let order = get_order(addr, &uid).await;
+    assert_eq!(order["appData"], hash_hex);
+    assert_eq!(order["fullAppData"], document);
+    let response = reqwest::get(format!("http://{addr}/api/v1/app_data/{hash_hex}"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let registered: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(registered, serde_json::json!({ "fullAppData": document }));
+}
+
 async fn get_order(addr: SocketAddr, uid: &str) -> serde_json::Value {
     let response = reqwest::get(format!("http://{addr}/api/v1/orders/{uid}"))
         .await
@@ -2203,7 +2389,7 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
         presigned_transaction: vec![0xC0; 128],
         last_valid_block_height: 100,
     };
-    db::insert_sponsored_order(&pool, &order, None)
+    db::insert_sponsored_order(&pool, &order, None, None)
         .await
         .unwrap();
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
@@ -2247,4 +2433,108 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
             .unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0]["status"], "expired");
+}
+
+/// Spawn the API server over `pool`, without sponsoring.
+async fn spawn_server_on(pool: PgPool) -> SocketAddr {
+    let api = Api {
+        pool,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    addr
+}
+
+async fn put_app_data(
+    addr: SocketAddr,
+    path: &str,
+    document: &str,
+) -> (reqwest::StatusCode, serde_json::Value) {
+    let response = reqwest::Client::new()
+        .put(format!("http://{addr}{path}"))
+        .json(&serde_json::json!({ "fullAppData": document }))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response.json().await.unwrap())
+}
+
+/// The app data endpoints validate before touching the database: a document
+/// that is not a JSON object or over the size limit, a hash the document
+/// does not hash to, and a malformed hash are refused without a live pool.
+#[tokio::test]
+async fn app_data_rejects_invalid_uploads() {
+    let addr = spawn_server().await;
+    let oversized = format!(r#"{{"a":"{}"}}"#, "x".repeat(8192));
+    let other = format!("/api/v1/app_data/0x{}", "11".repeat(32));
+    for (path, document, expected) in [
+        ("/api/v1/app_data", "not json", "AppDataInvalid"),
+        ("/api/v1/app_data", "[]", "AppDataInvalid"),
+        ("/api/v1/app_data", oversized.as_str(), "AppDataInvalid"),
+        (other.as_str(), "{}", "AppDataHashMismatch"),
+        ("/api/v1/app_data/0x11", "{}", "InvalidAppDataHash"),
+    ] {
+        let (status, json) = put_app_data(addr, path, document).await;
+        assert_eq!(
+            (status, json["errorType"].as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, Some(expected)),
+            "{path} {document}"
+        );
+    }
+    let response = reqwest::get(format!("http://{addr}/api/v1/app_data/zz"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["errorType"], "InvalidAppDataHash");
+}
+
+/// A new document answers `201` with its hash, the same document again
+/// `200`, with or without the hash in the path, and the document reads back
+/// by its hash.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_app_data_round_trips() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query("TRUNCATE solana.app_data")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let addr = spawn_server_on(pool).await;
+    let document = r#"{"appCode":"CoW Swap","metadata":{}}"#;
+    let hash = const_hex::encode_prefixed(app_data::hash_full_app_data(document.as_bytes()));
+    let by_hash = format!("/api/v1/app_data/{hash}");
+
+    let (status, json) = put_app_data(addr, "/api/v1/app_data", document).await;
+    assert_eq!(
+        (status, &json),
+        (reqwest::StatusCode::CREATED, &serde_json::json!(hash))
+    );
+    let (status, json) = put_app_data(addr, "/api/v1/app_data", document).await;
+    assert_eq!(
+        (status, &json),
+        (reqwest::StatusCode::OK, &serde_json::json!(hash))
+    );
+    let (status, json) = put_app_data(addr, &by_hash, document).await;
+    assert_eq!(
+        (status, &json),
+        (reqwest::StatusCode::OK, &serde_json::json!(hash))
+    );
+
+    let response = reqwest::get(format!("http://{addr}{by_hash}"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json, serde_json::json!({ "fullAppData": document }));
+    let response = reqwest::get(format!(
+        "http://{addr}/api/v1/app_data/0x{}",
+        "22".repeat(32)
+    ))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
 }

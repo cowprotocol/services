@@ -53,6 +53,12 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
+    super::app_data::document(
+        request.app_data.as_deref(),
+        request.app_data_hash,
+        None,
+        state.app_data_size_limit(),
+    )?;
     let buy_program = check_mints(state.sponsoring(), &request).await?;
 
     let (kind, amount) = request.side.kind_and_amount();
@@ -147,6 +153,7 @@ pub async fn quote(
             buy_amount: quoted.buy_amount,
             valid_to,
             app_data: request.app_data,
+            app_data_hash: request.app_data_hash,
             fee_amount: 0,
             costs: dto::Costs {
                 token,
@@ -536,6 +543,7 @@ mod tests {
             },
             validity: None,
             app_data: None,
+            app_data_hash: None,
         }
     }
 

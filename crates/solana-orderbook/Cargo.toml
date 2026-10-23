@@ -18,6 +18,7 @@ test = false
 
 [dependencies]
 anyhow = { workspace = true }
+app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
