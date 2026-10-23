@@ -171,6 +171,12 @@ struct QuoteResponse {
     buy_amount: u64,
 }
 
+/// The kind of a driver error reply.
+#[derive(Debug, Deserialize)]
+struct ErrorBody {
+    kind: String,
+}
+
 impl NativePrices {
     /// Builds the lookup and spawns its refresher. Must run inside a tokio
     /// runtime. Without configured sources the lookup prices every token at
@@ -327,12 +333,18 @@ impl Inner {
                 .copied()
                 .collect()
         };
+        metrics()
+            .native_price_cache_size
+            .set(i64::try_from(self.prices.entry_count()).unwrap_or(i64::MAX));
         if expiring.is_empty() {
             return;
         }
         if let Err(err) = self.fetch_into_cache(&expiring).await {
             tracing::warn!(?err, "native price refresh failed");
         }
+        metrics()
+            .native_price_cache_background_updates
+            .inc_by(expiring.len() as u64);
     }
 
     fn maintain(&self, tokens: &HashSet<Pubkey>) {
@@ -347,6 +359,7 @@ impl Inner {
     async fn lookup(&self, tokens: HashSet<Pubkey>) -> Result<HashMap<Pubkey, u64>> {
         let mut result = HashMap::new();
         let mut fetch = Vec::new();
+        let mut hits = 0;
         let now = Instant::now();
         for token in &tokens {
             if self.is_sol(token) {
@@ -355,6 +368,7 @@ impl Inner {
             }
             match self.prices.get(token) {
                 Some((fetched, price)) if now.duration_since(fetched) < self.ttl => {
+                    hits += 1;
                     if let Some(price) = price {
                         result.insert(*token, price);
                     }
@@ -362,6 +376,11 @@ impl Inner {
                 _ => fetch.push(*token),
             }
         }
+        let access = &metrics().native_price_cache_access;
+        access.with_label_values(&["hits"]).inc_by(hits);
+        access
+            .with_label_values(&["misses"])
+            .inc_by(fetch.len() as u64);
         if fetch.is_empty() {
             return Ok(result);
         }
@@ -395,6 +414,8 @@ impl Inner {
 
         // The best price of each token and how many sources priced it.
         let mut found: HashMap<Pubkey, (u64, usize)> = HashMap::new();
+        // The source that quoted each token's best price.
+        let mut winners: HashMap<Pubkey, &str> = HashMap::new();
         let priced = |found: &HashMap<Pubkey, (u64, usize)>, token: &Pubkey| {
             found.get(token).map_or(0, |(_, count)| *count)
         };
@@ -424,8 +445,10 @@ impl Inner {
             let mut answers = FuturesUnordered::new();
             while next_stage < self.stages.len() && answers.len() < missing {
                 answers.extend(self.stages[next_stage].iter().map(|source| async move {
-                    let answer = source.fetch(asked, mints, self.wrapped_native).await;
-                    (source, answer)
+                    (
+                        source,
+                        source.fetch(asked, mints, self.wrapped_native).await,
+                    )
                 }));
                 next_stage += 1;
             }
@@ -436,7 +459,10 @@ impl Inner {
                             // The best route sells the probe into the most
                             // atoms, so the lowest price wins.
                             let (best, count) = found.entry(token).or_insert((price, 0));
-                            *best = (*best).min(price);
+                            if *count == 0 || price < *best {
+                                *best = price;
+                                winners.insert(token, source.name());
+                            }
                             *count += 1;
                         }
                     }
@@ -451,6 +477,12 @@ impl Inner {
                     break;
                 }
             }
+        }
+        for source in winners.values() {
+            metrics()
+                .competition_price_estimator_queries_won
+                .with_label_values(&[source, "buy"])
+                .inc();
         }
         if failures > 0 && failures == self.stages.iter().map(Vec::len).sum::<usize>() {
             if rate_limited {
@@ -535,9 +567,10 @@ impl Source {
         }
     }
 
-    /// The scaled prices of the tokens this source can price. Tokens it
-    /// cannot price are absent, a transport or protocol failure fails the
-    /// whole source.
+    /// The scaled prices of the tokens this source can price, recording one
+    /// `price_estimates` result and duration per token. Tokens it cannot
+    /// price are absent, a transport or protocol failure fails the whole
+    /// source.
     async fn fetch(
         &self,
         tokens: &[Pubkey],
@@ -549,13 +582,28 @@ impl Source {
                 client,
                 endpoint,
                 api_key,
-            } => coingecko(client, endpoint, api_key.as_deref(), tokens, mints).await,
+            } => {
+                let start = Instant::now();
+                let answer = coingecko(client, endpoint, api_key.as_deref(), tokens, mints).await;
+                observe_source(self.name(), tokens.len(), &answer, start.elapsed());
+                answer
+            }
             Self::Driver {
                 client,
+                name,
                 endpoint,
                 probe_amount,
-                ..
-            } => driver(client, endpoint, tokens, wrapped_native, *probe_amount).await,
+            } => {
+                driver(
+                    name,
+                    client,
+                    endpoint,
+                    tokens,
+                    wrapped_native,
+                    *probe_amount,
+                )
+                .await
+            }
         }
     }
 }
@@ -654,10 +702,11 @@ fn current_multiplier(config: &ScaledUiAmountConfig, unix_timestamp: i64) -> f64
 
 /// Sell a fixed amount of wSOL for each token on the driver. The probe is
 /// denominated in the native token so its economic size is the same for every
-/// token, whatever one whole unit of it is worth. A driver rejection prices
-/// nothing for that token (no route is a routine answer), a transport failure
-/// fails the source.
+/// token, whatever one whole unit of it is worth. A token whose quote fails
+/// is unpriced, every quote failing fails the source. Each quote records its
+/// own `price_estimates` result and duration.
 async fn driver(
+    name: &str,
     client: &reqwest::Client,
     endpoint: &Url,
     tokens: &[Pubkey],
@@ -668,25 +717,16 @@ async fn driver(
     let quotes: Vec<_> = stream::iter(tokens.iter().copied().map(|token| {
         let url = url.clone();
         async move {
-            let request = QuoteRequest {
-                sell_token: wrapped_native,
-                buy_token: token,
-                amount: probe_amount,
-                kind: "sell",
-                deadline: chrono::Utc::now() + DRIVER_TIMEOUT,
+            let start = Instant::now();
+            let quote = quote(client, url, token, wrapped_native, probe_amount).await;
+            let price = quote.as_ref().ok().and_then(implied_price);
+            let result = match (&quote, price) {
+                (Err(result), _) => *result,
+                (Ok(_), Some(_)) => "success",
+                (Ok(_), None) => "estimator_internal_error",
             };
-            let response = client
-                .post(url)
-                .json(&request)
-                .timeout(DRIVER_TIMEOUT)
-                .send()
-                .await
-                .ok()?;
-            if !response.status().is_success() {
-                return None;
-            }
-            let quote: QuoteResponse = response.json().await.ok()?;
-            Some((token, quote))
+            observe(name, result, 1, start.elapsed());
+            quote.is_ok().then_some((token, price))
         }
     }))
     .buffer_unordered(DRIVER_CONCURRENCY)
@@ -700,17 +740,120 @@ async fn driver(
     Ok(quotes
         .into_iter()
         .flatten()
-        .filter_map(|(token, quote)| {
-            // `sell_amount` is in lamports, `buy_amount` in token atoms, and
-            // the stored price is lamports per atom scaled by 10^9.
-            let price = (u128::from(quote.sell_amount) * 1_000_000_000)
-                .checked_div(u128::from(quote.buy_amount))?;
-            // A price outside the scaled range counts as unpriced: clamping
-            // would let it outrank every real one.
-            let price = u64::try_from(price).ok()?;
-            (price > 0).then_some((token, price))
-        })
+        .filter_map(|(token, price)| Some((token, price?)))
         .collect())
+}
+
+/// Ask the driver to sell the probe into `token`. An error is the
+/// `price_estimates` result the failure counts as: `QuotingFailed` means no
+/// route, 429 rate limiting, anything else a driver fault.
+async fn quote(
+    client: &reqwest::Client,
+    url: Url,
+    token: Pubkey,
+    wrapped_native: Pubkey,
+    probe_amount: u64,
+) -> Result<QuoteResponse, &'static str> {
+    let request = QuoteRequest {
+        sell_token: wrapped_native,
+        buy_token: token,
+        amount: probe_amount,
+        kind: "sell",
+        deadline: chrono::Utc::now() + DRIVER_TIMEOUT,
+    };
+    let response = client
+        .post(url)
+        .json(&request)
+        .timeout(DRIVER_TIMEOUT)
+        .send()
+        .await
+        .map_err(|_| "estimator_internal_error")?;
+    let status = response.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err("rate_limited");
+    }
+    if !status.is_success() {
+        return Err(match response.json::<ErrorBody>().await {
+            Ok(error) if error.kind == "QuotingFailed" => "no_liquidity",
+            _ => "estimator_internal_error",
+        });
+    }
+    response
+        .json()
+        .await
+        .map_err(|_| "estimator_internal_error")
+}
+
+/// The price a quote implies: lamports per token atom scaled by 10^9.
+/// `None` outside the scaled range: clamping would let it outrank every real
+/// one.
+fn implied_price(quote: &QuoteResponse) -> Option<u64> {
+    // `sell_amount` is in lamports, `buy_amount` in token atoms.
+    let price = (u128::from(quote.sell_amount) * u128::from(Solana::NATIVE_PRICE_DENOMINATOR))
+        .checked_div(u128::from(quote.buy_amount))?;
+    u64::try_from(price).ok().filter(|price| *price > 0)
+}
+
+/// Records one source request: a result and the request's duration per asked
+/// token. Requests cancelled once enough prices arrived record nothing.
+fn observe_source(
+    source: &str,
+    asked: usize,
+    answer: &Result<HashMap<Pubkey, u64>>,
+    elapsed: Duration,
+) {
+    match answer {
+        Ok(prices) => {
+            observe(source, "success", prices.len(), elapsed);
+            observe(
+                source,
+                "no_liquidity",
+                asked.saturating_sub(prices.len()),
+                elapsed,
+            );
+        }
+        Err(err) if err.is::<RateLimited>() => observe(source, "rate_limited", asked, elapsed),
+        Err(_) => observe(source, "estimator_internal_error", asked, elapsed),
+    }
+}
+
+/// Records `tokens` estimates of `source` that ended in `result` after
+/// `elapsed`.
+fn observe(source: &str, result: &str, tokens: usize, elapsed: Duration) {
+    let metrics = metrics();
+    metrics
+        .price_estimates
+        .with_label_values(&[source, result])
+        .inc_by(tokens as u64);
+    let times = metrics.price_estimation_times.with_label_values(&[source]);
+    for _ in 0..tokens {
+        times.observe(elapsed.as_secs_f64());
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Cached price lookups by result, `hits` or `misses`.
+    #[metric(labels("result"))]
+    native_price_cache_access: prometheus::IntCounterVec,
+    /// Tokens in the price cache, priced or not.
+    native_price_cache_size: prometheus::IntGauge,
+    /// Tokens asked of each price source, by result.
+    #[metric(labels("estimator_type", "result"))]
+    price_estimates: prometheus::IntCounterVec,
+    /// Duration of each token's estimate. A CoinGecko batch prices its
+    /// tokens at once, so they share its duration.
+    #[metric(labels("estimator_type"))]
+    price_estimation_times: prometheus::HistogramVec,
+    /// Tokens refetched by the background refresh.
+    native_price_cache_background_updates: prometheus::IntCounter,
+    /// Tokens each source quoted the best price for.
+    #[metric(labels("estimator_type", "order_kind"))]
+    competition_price_estimator_queries_won: prometheus::IntCounterVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
 /// A whole-token price in SOL converted to the scaled atom price:
@@ -733,6 +876,7 @@ fn scale(price: f64, decimals: u8) -> Option<u64> {
 mod tests {
     use {
         super::*,
+        axum::http::StatusCode,
         cow_solana_rpc::{Mocks, MocksMap, RpcRequest},
         spl_token_2022_interface::extension::{
             BaseStateWithExtensionsMut,
@@ -1185,13 +1329,20 @@ mod tests {
                 Some(coingecko_url),
                 vec![
                     vec![COINGECKO],
-                    vec![driver("worse", worse), driver("better", better)],
+                    vec![driver("worse-route", worse), driver("better-route", better)],
                 ],
                 2,
             ),
             SolanaRPC::new_mock_with_mocks(mint_mocks(1)),
             Pubkey::new_unique(),
         );
+        let wins = |source: &str| {
+            metrics()
+                .competition_price_estimator_queries_won
+                .with_label_values(&[source, "buy"])
+                .get()
+        };
+        let (better_wins, worse_wins) = (wins("better-route"), wins("worse-route"));
         let started = Instant::now();
         let result = prices.prices(HashSet::from([token])).await.unwrap();
         assert!(
@@ -1200,6 +1351,8 @@ mod tests {
         );
         // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
         assert_eq!(result.get(&token), Some(&5_000_000_000));
+        assert_eq!(wins("better-route"), better_wins + 1);
+        assert_eq!(wins("worse-route"), worse_wins);
     }
 
     /// With the required prices in, the rest of the stage is dropped: a
@@ -1365,6 +1518,72 @@ mod tests {
         };
         assert_eq!(current_multiplier(&config, 99), 1.0);
         assert_eq!(current_multiplier(&config, 100), 2.0);
+    }
+
+    /// Each probe records one result and one duration: a priced quote, no
+    /// route, a driver fault and rate limiting each count apart.
+    #[tokio::test]
+    async fn driver_probes_count_their_own_results() {
+        let [priced, no_route, fault, limited] = std::array::from_fn(|_| Pubkey::new_unique());
+        let errors = HashMap::from([
+            (
+                no_route.to_string(),
+                (StatusCode::BAD_REQUEST, "QuotingFailed"),
+            ),
+            (fault.to_string(), (StatusCode::BAD_REQUEST, "SolverFailed")),
+            (limited.to_string(), (StatusCode::TOO_MANY_REQUESTS, "")),
+        ]);
+        let app = axum::Router::new().route(
+            "/quote",
+            axum::routing::post(move |axum::Json(request): axum::Json<serde_json::Value>| {
+                let error = errors.get(request["buyToken"].as_str().unwrap()).copied();
+                async move {
+                    match error {
+                        Some((status, kind)) => {
+                            (status, axum::Json(serde_json::json!({ "kind": kind })))
+                        }
+                        None => (
+                            StatusCode::OK,
+                            axum::Json(serde_json::json!({
+                                "sellAmount": request["amount"],
+                                "buyAmount": "20000000",
+                            })),
+                        ),
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let url = format!("http://{addr}/").parse().unwrap();
+        let prices = NativePrices::new(
+            &native_prices(None, vec![vec![driver("mixed-answers", url)]], 1),
+            SolanaRPC::new_mock_with_mocks(mint_mocks(4)),
+            Pubkey::new_unique(),
+        );
+        let result = prices
+            .prices(HashSet::from([priced, no_route, fault, limited]))
+            .await
+            .unwrap();
+        assert_eq!(result.keys().collect::<Vec<_>>(), vec![&priced]);
+        for outcome in [
+            "success",
+            "no_liquidity",
+            "estimator_internal_error",
+            "rate_limited",
+        ] {
+            let count = metrics()
+                .price_estimates
+                .with_label_values(&["mixed-answers", outcome])
+                .get();
+            assert_eq!(count, 1, "{outcome}");
+        }
+        let durations = metrics()
+            .price_estimation_times
+            .with_label_values(&["mixed-answers"])
+            .get_sample_count();
+        assert_eq!(durations, 4);
     }
 
     /// With every estimator down the lookup fails, with one of them down it
