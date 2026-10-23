@@ -38,19 +38,23 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn try_new(eth: &Ethereum, solution: &competition::Solution) -> Result<Self, Error> {
+    async fn try_new(eth: &Ethereum, solution: &competition::Solution) -> Result<Self, Error> {
         let clearing_prices = Self::compute_clearing_prices(solution)?;
+        let approvals = solution
+            .approvals(eth, solution::settlement::Internalization::Disable)
+            .await?;
+        let interactions = solution
+            .interactions()
+            .iter()
+            .map(|i| encode::interaction(i, eth.contracts().settlement().address()))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             clearing_prices,
             pre_interactions: solution.pre_interactions().to_vec(),
-            interactions: solution
-                .interactions()
-                .iter()
-                .map(|i| encode::interaction(i, eth.contracts().settlement().address()))
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .flatten()
+            interactions: approvals
+                .map(|approval| solution::encoding::approve(&approval.0))
+                .chain(interactions)
                 .collect(),
             solver: solution.solver().address(),
             gas: solution.gas(),
@@ -181,7 +185,7 @@ impl Order {
             .into_iter()
             .find(|solution| !solution.is_empty(auction.surplus_capturing_jit_order_owners()))
             .ok_or(QuotingFailed::NoSolutions)?;
-        let quote = Quote::try_new(eth, &solution)?;
+        let quote = Quote::try_new(eth, &solution).await?;
 
         if self.enable_fast_path {
             // For some cases (e.g. RWA trades) the true execution path can't be
@@ -357,7 +361,6 @@ mod encode {
     use {
         crate::domain::{self, competition::solution},
         alloy::primitives::Address,
-        eth_domain_types::allowance::{Approval, Required},
         num::rational::Ratio,
     };
 
@@ -366,7 +369,7 @@ mod encode {
     pub(super) fn interaction(
         interaction: &solution::Interaction,
         settlement: &Address,
-    ) -> Result<Vec<domain::Interaction>, solution::encoding::Error> {
+    ) -> Result<domain::Interaction, solution::encoding::Error> {
         let slippage = solution::slippage::Parameters {
             relative: Ratio::new_raw(DEFAULT_QUOTE_SLIPPAGE_BPS.into(), 10_000.into()),
             max: None,
@@ -374,7 +377,7 @@ mod encode {
             prices: Default::default(),
         };
 
-        let encoded = match interaction {
+        Ok(match interaction {
             solution::Interaction::Custom(interaction) => domain::Interaction {
                 value: interaction.value,
                 target: *interaction.target,
@@ -383,31 +386,7 @@ mod encode {
             solution::Interaction::Liquidity(liquidity) => {
                 solution::encoding::liquidity_interaction(liquidity, &slippage, settlement)?
             }
-        };
-
-        Ok(interaction
-            .allowances()
-            .iter()
-            .flat_map(|Required(allowance)| {
-                let approval = Approval(*allowance);
-                // When encoding approvals for quotes, reset the allowance
-                // instead of just setting it. This is required
-                // as some tokens only allow you to approve a
-                // non-0 value if the allowance was 0 to begin
-                // with, such as Tether USD.
-                //
-                // Alternatively, we could check existing allowances and only
-                // encode the approvals if needed, but this
-                // would only result in small gas optimizations
-                // which is mostly inconsequential for quotes and not
-                // worth the performance hit.
-                vec![
-                    solution::encoding::approve(&approval.revoke().0),
-                    solution::encoding::approve(&approval.max().0),
-                ]
-            })
-            .chain(std::iter::once(encoded))
-            .collect())
+        })
     }
 }
 
