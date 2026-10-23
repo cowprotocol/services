@@ -48,7 +48,7 @@ impl<C: ChainTypes> Arbitrator<C> {
             .into_iter()
             .map(|s| s.with_rank(RankType::FilteredOut))
             .collect();
-        let mut ranked = self.mark_winners(partitioned.kept);
+        let mut ranked = self.mark_winners(partitioned.kept, context);
 
         ranked.sort_by_key(|solution| (Reverse(solution.is_winner()), Reverse(solution.score())));
 
@@ -119,8 +119,9 @@ impl<C: ChainTypes> Arbitrator<C> {
     fn mark_winners(
         &self,
         solutions: Vec<Solution<Scored<C::Amount>, C>>,
+        context: &AuctionContext<C>,
     ) -> Vec<Solution<Ranked<C::Amount>, C>> {
-        let winner_indices = self.pick_winners(solutions.iter());
+        let winner_indices = self.pick_winners(solutions.iter(), context);
 
         solutions
             .into_iter()
@@ -181,6 +182,7 @@ impl<C: ChainTypes> Arbitrator<C> {
     fn pick_winners<'a, T: 'a>(
         &self,
         solutions: impl Iterator<Item = &'a Solution<T, C>>,
+        context: &AuctionContext<C>,
     ) -> HashSet<usize> {
         // Winners are selected one by one, starting from the best solution,
         // until `max_winners` are selected. A solution can only
@@ -188,6 +190,12 @@ impl<C: ChainTypes> Arbitrator<C> {
         // orders have been covered by any previously selected winning solution.
         // In other words this enforces a uniform **directional** clearing
         // price.
+        //
+        // Only orders that contribute to the score are considered. JIT
+        // liquidity orders (e.g. from non surplus-capturing owners) are the
+        // solver's own liquidity and are equivalent to using an AMM via an
+        // interaction, so they must not block other solutions on their token
+        // pair. This mirrors the fairness filtering which ignores them too.
         let mut already_swapped_token_pairs = HashSet::new();
         let mut winners = HashSet::default();
 
@@ -199,6 +207,7 @@ impl<C: ChainTypes> Arbitrator<C> {
             let swapped_token_pairs: HashSet<DirectedTokenPair<C>> = solution
                 .orders()
                 .iter()
+                .filter(|order| context.contributes_to_score(&order.uid))
                 .map(|order| DirectedTokenPair {
                     sell: C::canonical_token(order.sell_token, self.wrapped_native),
                     buy: C::canonical_token(order.buy_token, self.wrapped_native),
@@ -219,6 +228,7 @@ impl<C: ChainTypes> Arbitrator<C> {
     pub fn compute_reference_scores(
         &self,
         ranking: &Ranking<C>,
+        context: &AuctionContext<C>,
     ) -> HashMap<C::AccountId, C::Amount> {
         let mut reference_scores = HashMap::default();
 
@@ -242,7 +252,8 @@ impl<C: ChainTypes> Arbitrator<C> {
                 .filter(|s| s.solver() != solver)
                 .collect();
 
-            let winner_indices = self.pick_winners(solutions_without_solver.iter().copied());
+            let winner_indices =
+                self.pick_winners(solutions_without_solver.iter().copied(), context);
 
             let score = solutions_without_solver
                 .iter()

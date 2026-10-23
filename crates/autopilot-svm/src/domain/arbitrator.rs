@@ -70,7 +70,7 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
         for winner in inner.winners() {
             tracing::info!(solver = %winner.solver(), solution = winner.id(), "winner");
         }
-        let reference_scores = self.inner.compute_reference_scores(&inner);
+        let reference_scores = self.inner.compute_reference_scores(&inner, &context);
         Ranking {
             inner,
             drivers,
