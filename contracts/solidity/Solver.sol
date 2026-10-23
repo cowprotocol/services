@@ -154,13 +154,18 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         uint256 firstReadGas = gasStart - gasleft();
         _queriedBalances.push(balance);
         if (countGas) {
-            // Reading the balance warms the storage it accesses. A real settlement pays
-            // for that cold access the first time it touches the same storage (e.g. when
-            // paying out the bought tokens), so that part of the read must not be
-            // discounted. Reading the balance a second time costs the same except for
-            // the cold access, which isolates exactly that surcharge. This relies on the
-            // settlement accessing that storage, which it does since it transfers the
-            // tracked token to or from `owner`.
+            // When storage gets read the first time (cold access) it costs more than on
+            // subsequent reads (warm access). It can happen that this `_balanceOf()` call
+            // warms storage that would normally be cold in a real settlement. To know how
+            // much the settlement in this simulation saved due to the already warmed
+            // storage we measue `_balanceOf()` twice and take the difference as the
+            // `coldAccessSurcharge`.
+            // This will later be removed from the `_simulationOverhead` - effectively
+            // adding it back to the measurement of `settle()`.
+            // Depending on when in the `settle()` life cycle we execute `storeBalance()`
+            // the settlement might already have warmed the relevant storage. In that
+            // case `coldAccessSurcharge` would actually end up being 0 and no additional
+            // adjustments will be made to the settlements gas measurement.
             uint256 secondReadStart = gasleft();
             _balanceOf(token, owner);
             uint256 coldAccessSurcharge = firstReadGas - (secondReadStart - gasleft());
