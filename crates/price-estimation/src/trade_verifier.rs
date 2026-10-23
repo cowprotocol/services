@@ -766,9 +766,11 @@ impl SettleOutput {
         }
 
         let out_amount = match kind {
-            // for sell orders we track the buy_token amount which increases during the settlement
+            // for sell orders we track the buy_token amount which increases
+            // during the settlement
             OrderKind::Sell => trader_balance_after - trader_balance_before,
-            // for buy orders we track the sell_token amount which decreases during the settlement
+            // for buy orders we track the sell_token amount which decreases
+            // during the settlement
             OrderKind::Buy => trader_balance_before - trader_balance_after,
         };
 

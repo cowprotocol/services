@@ -27,6 +27,9 @@ max-priority-fee-lamports = 1000000
 
 [http]
 bind-address = "0.0.0.0:8080"
+# Port the metrics and probes server binds to, on every interface. Optional;
+# the value below is the default.
+metrics-port = 9586
 
 [logging]
 filter = "info,solana_driver=debug"

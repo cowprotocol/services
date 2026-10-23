@@ -185,9 +185,9 @@ pub fn order_quote_into_model(
     status: model::order::OrderStatus,
 ) -> Result<OrderQuote> {
     let metadata = match status {
-        // We don't want to make the quote's execution plan public as long as an order
-        // is still fillable. Otherwise solvers can just try to copy the execution
-        // plan which could lead to undesirable behavior of quoters.
+        // We don't want to make the quote's execution plan public as long as an
+        // order is still fillable. Otherwise solvers can just try to copy the
+        // execution plan which could lead to undesirable behavior of quoters.
         OrderStatus::Open | OrderStatus::PresignaturePending => Default::default(),
         _ => quote.metadata.clone(),
     };

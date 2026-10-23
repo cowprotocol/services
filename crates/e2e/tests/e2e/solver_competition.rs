@@ -282,8 +282,8 @@ async fn wrong_solution_submission_address(web3: Web3) {
     services
         .start_autopilot(Configuration {
             drivers: vec![
-                // Solver 1 has a wrong submission address, meaning that the solutions should
-                // be discarded from solver1
+                // Solver 1 has a wrong submission address, meaning that the
+                // solutions should be discarded from solver1
                 Solver::new(
                     "solver1".to_string(),
                     Url::from_str("http://localhost:11088/test_solver").unwrap(),

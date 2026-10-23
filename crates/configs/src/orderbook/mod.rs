@@ -13,7 +13,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
@@ -213,8 +213,8 @@ pub mod test_util {
                 active_order_competition_threshold: default_active_order_competition_threshold(),
                 unsupported_tokens: Default::default(),
                 eip1271_skip_creation_validation: Default::default(),
-                // NOTE: NativePriceConfig needs to be moved to the config crate and then it can
-                // have the test_default trait impl
+                // NOTE: NativePriceConfig needs to be moved to the config crate
+                // and then it can have the test_default trait impl
                 native_price_estimation: NativePriceConfig::test_default(),
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
@@ -237,7 +237,7 @@ mod tests {
             orderbook::order_validation::SameTokensPolicy,
             test_util::TestDefault,
         },
-        alloy::primitives::address,
+        alloy_primitives::address,
         std::time::Duration,
     };
 

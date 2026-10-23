@@ -563,13 +563,14 @@ async fn get_quote(
         kind: order_data.kind,
         signing_scheme: quote_signing_scheme,
         hook_gas: 0,
-        // Verified quotes always have prices that are at most as good as unverified quotes but can
-        // be lower.
-        // If the best quote we can find or compute on the fly for this order suggests a worse
-        // price than the order was created with it will cause a `QuoteNotFound` or other error.
-        // Orders indexed with errors are not eligible for automatic refunding.
-        // Because we want to be generous with refunding EthFlow orders we therefore don't request a
-        // verified quote here on purpose.
+        // Verified quotes always have prices that are at most as good as
+        // unverified quotes but can be lower.
+        // If the best quote we can find or compute on the fly for this order
+        // suggests a worse price than the order was created with it will cause
+        // a `QuoteNotFound` or other error. Orders indexed with errors are not
+        // eligible for automatic refunding. Because we want to be generous with
+        // refunding EthFlow orders we therefore don't request a verified quote
+        // here on purpose.
         verification: Default::default(),
         fast_path: false,
     };

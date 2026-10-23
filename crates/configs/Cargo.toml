@@ -4,26 +4,28 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-alloy = { workspace = true, features = ["signer-aws"] }
+alloy-primitives = { workspace = true, features = ["map", "serde"] }
 anyhow = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, features = ["serde"] }
 humantime-serde = { workspace = true }
-s3 = { workspace = true }
+s3 = { workspace = true, optional = true }
 serde = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["fs"] }
 toml = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
+configs = { path = ".", features = ["s3"] }
 rate-limit = { workspace = true, features = ["test-util"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
+s3 = ["dep:s3"]
 test-util = ["dep:tempfile", "rate-limit/test-util"]
 
 [lints]

@@ -76,9 +76,11 @@ where
         Ok(data) => Ok(data),
         // We failed to parse the body into the expected data, try to get an
         // as accurate error as possible:
-        // 1. If the API returned a well-formed error that we can parse, then use that
-        // 2. Otherwise, if it returned a 2xx status code, then this means that we are unable to
-        //    parse a successful response, so return a JSON error
+        // 1. If the API returned a well-formed error that we can parse, then
+        //    use that
+        // 2. Otherwise, if it returned a 2xx status code, then this means that
+        //    we are unable to parse a successful response, so return a JSON
+        //    error
         // 3. Otherwise, return an HTTP status error with the raw body string.
         Err(err) => Err(serde_json::from_str(&body)
             .map(RoundtripError::Api)

@@ -99,7 +99,7 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
-    let quoted = best(quotes, kind, buy_token_ata_costs, price).ok_or_else(|| {
+    let (quoted, costs) = best(quotes, kind, buy_token_ata_costs, price).ok_or_else(|| {
         error::reply(
             StatusCode::BAD_REQUEST,
             "SellAmountDoesNotCoverFee",
@@ -147,8 +147,13 @@ pub async fn quote(
             valid_to,
             app_data: request.app_data,
             fee_amount: 0,
-            network_fees: quoted.network_fee,
-            buy_token_ata_costs,
+            costs: dto::Costs {
+                token,
+                network_fees: costs.network_fees,
+                buy_token_ata_costs: costs.buy_token_ata_costs,
+                protocol_fee: 0,
+                total: costs.total,
+            },
             kind,
             partially_fillable: false,
         },
@@ -161,49 +166,76 @@ pub async fn quote(
 }
 
 /// The best of `quotes` once each has its execution cost taken out: the
-/// largest buy for a sell order, the smallest sell for a buy order. `rent` is
-/// the buy token account's, `price` the native price of the token the cost
-/// comes out of. `None` when no quote can absorb its cost.
+/// largest buy for a sell order, the smallest sell for a buy order. Returned
+/// with the cost it absorbed. `rent` is the buy token account's, `price` the
+/// native price of the token the cost comes out of. `None` when no quote can
+/// absorb its cost.
 fn best(
     quotes: Vec<quoter::Quote>,
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
-) -> Option<quoter::Quote> {
+) -> Option<(quoter::Quote, Costs)> {
     let netted = quotes
         .into_iter()
         .filter_map(|quote| net(quote, kind, rent, price));
     match kind {
-        dto::Kind::Sell => netted.max_by_key(|quote| quote.buy_amount),
-        dto::Kind::Buy => netted.min_by_key(|quote| quote.sell_amount),
+        dto::Kind::Sell => netted.max_by_key(|(quote, _)| quote.buy_amount),
+        dto::Kind::Buy => netted.min_by_key(|(quote, _)| quote.sell_amount),
     }
+}
+
+/// A quote's execution cost in the token it comes out of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Costs {
+    network_fees: u64,
+    buy_token_ata_costs: u64,
+    /// The sum, what the quote is cut by.
+    total: u64,
 }
 
 /// `quote` with its execution cost, `rent` plus its own network fee, taken
 /// out of the side the trader does not fix: a sell order delivers less buy
-/// token, a buy order pulls more sell token. The lamports convert at `price`,
-/// rounded up against the trader. `None` when the amount cannot absorb it.
+/// token, a buy order pulls more sell token. Each cost converts at `price` on
+/// its own, rounded up against the trader. `None` when the amount cannot
+/// absorb the cost.
 fn net(
     quote: quoter::Quote,
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
-) -> Option<quoter::Quote> {
-    let lamports = u128::from(rent) + u128::from(quote.network_fee);
-    let cut = u64::try_from((lamports * PRICE_UNIT).div_ceil(u128::from(price.get()))).ok()?;
-    Some(match kind {
+) -> Option<(quoter::Quote, Costs)> {
+    let network_fees = in_token(quote.network_fee, price)?;
+    let buy_token_ata_costs = in_token(rent, price)?;
+    let total = network_fees.checked_add(buy_token_ata_costs)?;
+    let quote = match kind {
         dto::Kind::Sell => quoter::Quote {
             buy_amount: quote
                 .buy_amount
-                .checked_sub(cut)
+                .checked_sub(total)
                 .filter(|delivered| *delivered > 0)?,
             ..quote
         },
         dto::Kind::Buy => quoter::Quote {
-            sell_amount: quote.sell_amount.checked_add(cut)?,
+            sell_amount: quote.sell_amount.checked_add(total)?,
             ..quote
         },
-    })
+    };
+    Some((
+        quote,
+        Costs {
+            network_fees,
+            buy_token_ata_costs,
+            total,
+        },
+    ))
+}
+
+/// What `lamports` are worth in the token priced at `price`, rounded up.
+/// `None` past `u64::MAX`.
+fn in_token(lamports: u64, price: NonZero<u64>) -> Option<u64> {
+    let atoms = (u128::from(lamports) * PRICE_UNIT).div_ceil(u128::from(price.get()));
+    u64::try_from(atoms).ok()
 }
 
 /// An unpriced or rate-limited token is no liquidity, anything else is the
@@ -573,25 +605,36 @@ mod tests {
     #[test]
     fn the_cost_comes_out_of_the_side_the_trader_does_not_fix() {
         let price = price(PRICE_UNIT / 2);
-        let sell = net(quote(1_000, 5_000, 400), dto::Kind::Sell, 600, price).unwrap();
+        let (sell, costs) = net(quote(1_000, 5_000, 400), dto::Kind::Sell, 600, price).unwrap();
         assert_eq!(legs(&sell), (1_000, 3_000));
-        let buy = net(quote(1_000, 5_000, 400), dto::Kind::Buy, 600, price).unwrap();
+        assert_eq!(
+            costs,
+            Costs {
+                network_fees: 800,
+                buy_token_ata_costs: 1_200,
+                total: 2_000,
+            }
+        );
+        let (buy, _) = net(quote(1_000, 5_000, 400), dto::Kind::Buy, 600, price).unwrap();
         assert_eq!(legs(&buy), (3_000, 5_000));
-        let free = net(quote(1_000, 5_000, 0), dto::Kind::Sell, 0, price).unwrap();
+        let (free, _) = net(quote(1_000, 5_000, 0), dto::Kind::Sell, 0, price).unwrap();
         assert_eq!(legs(&free), (1_000, 5_000));
     }
 
     /// At three lamports an atom, one lamport is a third of an atom and
-    /// costs a whole one, three lamports cost one, four cost two.
+    /// costs a whole one, three lamports cost one, four cost two. The rent
+    /// and the fee round up on their own, so a lamport of each costs two.
     #[test]
     fn the_cut_rounds_up_against_the_trader() {
         let price = price(3 * PRICE_UNIT);
         for (lamports, buy_amount) in [(1, 4_999), (3, 4_999), (4, 4_998)] {
-            let sell = net(quote(1_000, 5_000, lamports), dto::Kind::Sell, 0, price).unwrap();
+            let (sell, _) = net(quote(1_000, 5_000, lamports), dto::Kind::Sell, 0, price).unwrap();
             assert_eq!(sell.buy_amount, buy_amount);
-            let buy = net(quote(1_000, 5_000, lamports), dto::Kind::Buy, 0, price).unwrap();
+            let (buy, _) = net(quote(1_000, 5_000, lamports), dto::Kind::Buy, 0, price).unwrap();
             assert_eq!(buy.sell_amount, 1_000 + 5_000 - buy_amount);
         }
+        let (sell, costs) = net(quote(1_000, 5_000, 1), dto::Kind::Sell, 1, price).unwrap();
+        assert_eq!((sell.buy_amount, costs.total), (4_998, 2));
     }
 
     /// A sell order delivering nothing after the cut, a buy order whose sell
@@ -608,7 +651,7 @@ mod tests {
             )
         };
         assert!(sell(500, 500).is_none());
-        assert_eq!(sell(501, 500).unwrap().buy_amount, 1);
+        assert_eq!(sell(501, 500).unwrap().0.buy_amount, 1);
         assert!(net(quote(u64::MAX, 500, 1), dto::Kind::Buy, 0, lamport_an_atom).is_none());
         assert!(net(quote(1_000, 5_000, u64::MAX), dto::Kind::Sell, 0, price(1)).is_none());
     }
@@ -623,10 +666,10 @@ mod tests {
             quote(1_000, 5_100, 200),
             quote(1_000, 10, 0),
         ];
-        let sell = best(quotes, dto::Kind::Sell, 50, lamport_an_atom).unwrap();
+        let (sell, _) = best(quotes, dto::Kind::Sell, 50, lamport_an_atom).unwrap();
         assert_eq!((sell.buy_amount, sell.network_fee), (4_950, 0));
         let quotes = vec![quote(1_000, 5_000, 0), quote(900, 5_000, 200)];
-        let buy = best(quotes, dto::Kind::Buy, 50, lamport_an_atom).unwrap();
+        let (buy, _) = best(quotes, dto::Kind::Buy, 50, lamport_an_atom).unwrap();
         assert_eq!((buy.sell_amount, buy.network_fee), (1_050, 0));
         assert!(
             best(

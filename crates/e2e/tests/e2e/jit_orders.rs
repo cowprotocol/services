@@ -164,8 +164,8 @@ async fn single_limit_order_test(web3: Web3) {
         trades: vec![
             solvers_dto::solution::Trade::Jit(solvers_dto::solution::JitTrade {
                 order: jit_order,
-                // Making it 9 + 1 so we cover the edge case of fill-or-kill solution mismatches
-                // when observing settlements https://github.com/cowprotocol/services/pull/3440
+                // Making it 9 + 1 so we cover the edge case of fill-or-kill
+                // solution mismatches when observing settlements https://github.com/cowprotocol/services/pull/3440
                 executed_amount: 9u64.eth(),
                 fee: Some(1u64.eth()),
             }),

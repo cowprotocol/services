@@ -58,6 +58,7 @@ use {
 };
 
 pub mod blockchain;
+pub mod builder;
 mod driver;
 pub mod fee;
 mod orderbook;
@@ -121,7 +122,8 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
 
-    // Currently used for limit orders to represent the surplus_fee calculated by the solver.
+    // Currently used for limit orders to represent the surplus_fee calculated
+    // by the solver.
     pub solver_fee: Option<eth::U256>,
 
     /// Set a value to be used to divide the order buy or sell amount before
@@ -491,6 +493,7 @@ pub fn setup() -> Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
+        builders: Default::default(),
         allow_multiple_solve_requests: false,
         auction_id: 1,
         quote_id: QUOTE_ID,
@@ -528,6 +531,9 @@ pub struct Setup {
     signatures_address: Option<eth::Address>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
+    /// Block builders to send the settlement to instead of the public mempool
+    /// of the test node.
+    builders: Vec<String>,
     /// List of jit orders returned by the solver
     jit_orders: Vec<JitOrder>,
     /// List of surplus capturing JIT-order owners
@@ -871,6 +877,11 @@ impl Setup {
         self
     }
 
+    pub fn builders(mut self, urls: Vec<String>) -> Self {
+        self.builders = urls;
+        self
+    }
+
     pub fn rpc_args(mut self, rpc_args: Vec<String>) -> Self {
         self.rpc_args = rpc_args;
         self
@@ -934,7 +945,8 @@ impl Setup {
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            // This PK is publicly known - don't send any funds to its account onchain!!!
+            // This PK is publicly known - don't send any funds to its account
+            // onchain!!!
             main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
                 "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
             ))
@@ -1022,6 +1034,7 @@ impl Setup {
             &driver::Config {
                 config_file,
                 enable_simulation: self.enable_simulation,
+                builders: self.builders,
                 order_priority_strategies: self.order_priority_strategies,
                 orderbook,
                 flashloans_enabled: self.flashloans_enabled,

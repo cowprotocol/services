@@ -497,7 +497,8 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
-            // Gas fee overrides are per-solution; no meaningful way to merge them.
+            // Gas fee overrides are per-solution; no meaningful way to merge
+            // them.
             gas_fee_override: None,
             flashloans,
             wrappers: self.wrappers.clone(),

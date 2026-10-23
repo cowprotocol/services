@@ -280,8 +280,7 @@ impl Settlement {
         let log_err = |trade: &Trade, err: error::Math, kind: &str| -> eth::TokenAmount {
             // This should never happen, returning 0 is better than panicking,
             // but we should still alert.
-            let msg = format!("could not compute {kind}");
-            tracing::error!(?trade, prices=?self.solution.prices, ?err, msg);
+            tracing::error!(?trade, prices = ?self.solution.prices, ?err, "could not compute {kind}");
             0.into()
         };
         let mut acc: HashMap<order::Uid, competition::Amounts> = HashMap::new();

@@ -4,8 +4,21 @@ use {
     crate::infra::{Api, blockchain, config, observe as infra_observe, solver},
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
-    std::{path::PathBuf, sync::Arc, time::Duration},
+    observe::metrics::LivenessChecking,
+    std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration},
 };
+
+/// The driver only answers requests, with no background work that can stall,
+/// and the API's `/healthz` is the pod's probe. The metrics server wants a
+/// liveness all the same.
+struct Liveness;
+
+#[async_trait::async_trait]
+impl LivenessChecking for Liveness {
+    async fn is_alive(&self) -> bool {
+        true
+    }
+}
 
 /// The Solana driver command line arguments.
 #[derive(Debug, Parser)]
@@ -62,10 +75,17 @@ pub async fn run(args: Args) {
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());
+    let metrics = observe::metrics::serve_metrics(
+        Arc::new(Liveness),
+        SocketAddr::from(([0, 0, 0, 0], config.http.metrics_port)),
+        Default::default(),
+        Default::default(),
+    );
 
     futures::pin_mut!(serve);
     tokio::select! {
         result = &mut serve => panic!("serve task exited: {result:?}"),
+        _ = metrics => panic!("metrics server stopped"),
         _ = observe::shutdown::shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
             shutdown_token.cancel();

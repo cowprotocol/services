@@ -14,8 +14,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "solana-driver"
 path = "src/main.rs"
+test = false
 
 [dependencies]
+async-trait = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
@@ -36,11 +38,9 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
-serde-ext = { workspace = true }
+serde-ext = { workspace = true, features = ["solana"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
-solana-address-lookup-table-interface = { workspace = true, features = ["bincode", "bytemuck"] }
-solana-compute-budget-interface = { workspace = true }
 solana-sdk = { workspace = true }
 solana-system-interface = { workspace = true, features = ["bincode"] }
 solana-token = { workspace = true }
@@ -56,13 +56,14 @@ tower = { workspace = true }
 tower-http = { workspace = true, features = ["decompression-br", "trace"] }
 tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
+wincode = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 solana-fee-structure = { workspace = true }
 solana-testlib = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [features]
 default = []

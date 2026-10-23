@@ -343,7 +343,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             max_fee_per_gas: config.submission.gas_price_cap,
             min_priority_fee: config.submission.min_priority_fee,
         },
-        mempools: config.submission.to_domain(),
+        receiver: config.submission.to_domain(),
         simulator: config.simulator,
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),

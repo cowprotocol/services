@@ -1,4 +1,4 @@
-use {alloy::primitives::Address, serde::Deserialize};
+use {alloy_primitives::Address, serde::Deserialize};
 
 /// Configuration for eth-flow order indexing and processing.
 #[derive(Debug, Clone, Default, Deserialize)]
