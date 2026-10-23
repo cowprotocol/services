@@ -1,0 +1,56 @@
+# Protocol fee rules. Rules are tried top to bottom; the first `when` that is
+# true wins, so put specific rules above general ones.
+
+[lists]
+stablecoins = [
+  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
+  "0xdAC17F958D2ee523a2206206994597C13D831ec7", # USDT
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F", # DAI
+]
+eth_lsts = [
+  "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", # WETH
+  "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84", # stETH
+  "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0", # wstETH
+]
+jit_makers = ["0x1111111111111111111111111111111111111111"]
+treasury = ["0x2222222222222222222222222222222222222222"]
+
+[[rule]]
+name = "Exempt JIT makers"
+when = 'order.owner in jit_makers'
+fee  = 'no_fee()'
+
+[[rule]]
+name = "Treasury and ops wallets"
+when = 'order.owner in treasury'
+fee  = 'no_fee()'
+
+[[rule]]
+name = "Smart-wallet launch month"
+when = 'order.signingScheme == "eip1271" && now < timestamp("2026-12-01T00:00:00Z")'
+fee  = 'no_fee()'
+
+[[rule]]
+name = "Smart-wallet sells"
+when = 'order.signingScheme == "eip1271" && order.kind == "sell"'
+fee  = 'volume(size_usd >= 1e6 ? 5 : 10)'
+
+[[rule]]
+name = "Partial fills"
+when = 'order.partiallyFillable'
+fee  = '[surplus(30, 1), volume(2)]'
+
+[[rule]]
+name = "Correlated pairs"
+when = 'order.sellToken in eth_lsts && order.buyToken in eth_lsts'
+fee  = 'volume(1)'
+
+[[rule]]
+name = "Stablecoin swaps"
+when = 'order.sellToken in stablecoins && order.buyToken in stablecoins'
+fee  = 'volume(10)'
+
+[[rule]]
+name = "Default"
+when = 'true'
+fee  = 'surplus(50, 1)'
