@@ -115,6 +115,7 @@ fn priority_fee() -> PriorityFeePolicy {
         recent_slots: 150,
         min_compute_unit_price: 0,
         max_priority_fee_lamports: u64::MAX,
+        compute_unit_limit_headroom_percent: 20,
     }
 }
 
@@ -750,8 +751,9 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 }
 
 /// Same fee and budget as above, but the `/solve` simulation reports the
-/// settlement's compute units, so the fee is priced at twice those units, not
-/// at the runtime's default, fits the budget, and the settle reaches the send.
+/// settlement's compute units, so the fee is priced at those plus the 20%
+/// headroom, 120_000, not at the runtime's default, fits the budget, and the
+/// settle reaches the send.
 /// The solver's 500_000 unit default, which would be over the budget, prices
 /// only the cut and never reaches the declared limit.
 #[tokio::test]
@@ -984,10 +986,10 @@ async fn solve_cuts_at_the_solvers_default_compute_units_without_a_simulation() 
     assert_eq!(request["orders"][0]["buyAmount"], "2995");
 }
 
-/// The simulation reports 100_000 units, so the settlement declares 200_000
-/// and the cut is priced at them: 995 atoms, as above, with no default
-/// configured. The limit sent to the engine still moves by the ceiling's
-/// 1000, since no route exists yet.
+/// The simulation reports 100_000 units, so the settlement declares 120_000
+/// and the cut is priced at them: 1_200 lamports of priority fee, 994 atoms,
+/// with no default configured. The limit sent to the engine still moves by
+/// the ceiling's 1000, since no route exists yet.
 #[tokio::test]
 async fn solve_cuts_at_the_simulated_compute_units() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
@@ -1009,7 +1011,7 @@ async fn solve_cuts_at_the_simulated_compute_units() {
     let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
-    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2005");
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2006");
 
     let request = requests.lock().unwrap().take().unwrap();
     assert_eq!(request["orders"][0]["buyAmount"], "3000");

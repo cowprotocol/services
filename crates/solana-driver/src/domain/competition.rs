@@ -217,7 +217,7 @@ impl Competition {
             if let Ok((_, Some(units))) = verdict
                 && solution.cu_estimate.is_none()
             {
-                solution.cu_estimate = Some(priority_fee::compute_unit_limit(units));
+                solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
             if let Some(fees) = fees {
                 let network_fee = match self.network_fee_at(&fees?, &solution) {
