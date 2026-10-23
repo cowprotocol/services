@@ -176,7 +176,7 @@ pub struct Solver {
     /// `1..=1_400_000`; absent means the runtime's 1.4M ceiling. The
     /// settlement's own limit is unaffected.
     #[serde(default)]
-    pub default_compute_unit_estimate: Option<ComputeUnitEstimate>,
+    pub default_compute_unit_estimate: ComputeUnitEstimate,
 }
 
 /// Who prices a settlement's execution costs, its network fee and the rent
@@ -322,12 +322,15 @@ mod tests {
                 "#
             ))
         };
-        assert_eq!(solver("").unwrap().default_compute_unit_estimate, None);
+        assert_eq!(
+            u32::from(solver("").unwrap().default_compute_unit_estimate),
+            1_400_000
+        );
         assert_eq!(
             solver("default-compute-unit-estimate = 600000")
                 .unwrap()
                 .default_compute_unit_estimate,
-            Some(ComputeUnitEstimate::try_from(600_000).unwrap())
+            ComputeUnitEstimate::try_from(600_000).unwrap()
         );
         assert!(solver("default-compute-unit-estimate = 0").is_err());
         assert!(solver("default-compute-unit-estimate = 1400001").is_err());

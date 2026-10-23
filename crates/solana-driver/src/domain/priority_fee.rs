@@ -14,14 +14,21 @@ use {
 };
 
 /// The runtime's per-transaction compute unit ceiling. It caps every limit
-/// and prices a solution whose units neither the engine, a simulation nor
-/// the solver's default supplied.
+/// and is the [`ComputeUnitEstimate`] a solver prices at unless configured.
 pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
-/// The compute units a solution is priced at, `1..=MAX_COMPUTE_UNIT_LIMIT`.
+/// The compute units a solution is priced at when neither the engine nor a
+/// simulation measured them, `1..=MAX_COMPUTE_UNIT_LIMIT`; the ceiling by
+/// default.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(try_from = "u32")]
 pub struct ComputeUnitEstimate(u32);
+
+impl Default for ComputeUnitEstimate {
+    fn default() -> Self {
+        Self(MAX_COMPUTE_UNIT_LIMIT)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error(
@@ -125,17 +132,16 @@ pub(crate) struct OverBudget {
 impl PriorityFeePolicy {
     /// The priority fee for a transaction given the fees recently paid over its
     /// writable accounts and its compute unit limit, or the fee it would pay
-    /// when that is over the budget. An undeclared limit is priced at the
-    /// runtime's ceiling.
+    /// when that is over the budget.
     pub(crate) fn estimate(
         &self,
         fees: &[RpcPrioritizationFee],
-        compute_unit_limit: Option<u32>,
+        compute_unit_limit: u32,
     ) -> Result<Estimate, OverBudget> {
         let compute_unit_price = self.compute_unit_price(fees);
-        let limit = compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
         // Micro-lamports per unit times units, rounded up to whole lamports.
-        let lamports = (u128::from(compute_unit_price) * u128::from(limit)).div_ceil(1_000_000);
+        let lamports =
+            (u128::from(compute_unit_price) * u128::from(compute_unit_limit)).div_ceil(1_000_000);
         match u64::try_from(lamports) {
             Ok(lamports) if lamports <= self.max_priority_fee_lamports => Ok(Estimate {
                 compute_unit_price,
@@ -238,19 +244,10 @@ mod tests {
     /// micro-lamport over 1 unit is 0.000001: both round up.
     #[test]
     fn lamports_round_up() {
-        let estimate = policy(50)
-            .estimate(&[fee(1, 1_500)], Some(200_001))
-            .unwrap();
+        let estimate = policy(50).estimate(&[fee(1, 1_500)], 200_001).unwrap();
         assert_eq!(estimate.lamports, 301);
-        let estimate = policy(50).estimate(&[fee(1, 1)], Some(1)).unwrap();
+        let estimate = policy(50).estimate(&[fee(1, 1)], 1).unwrap();
         assert_eq!(estimate.lamports, 1);
-    }
-
-    /// An undeclared limit is priced at the 1.4M ceiling.
-    #[test]
-    fn undeclared_limit_is_priced_at_the_ceiling() {
-        let estimate = policy(50).estimate(&[fee(1, 1_000)], None).unwrap();
-        assert_eq!(estimate.lamports, 1_400);
     }
 
     #[test]
@@ -260,7 +257,7 @@ mod tests {
             ..policy(50)
         };
         assert_eq!(
-            policy.estimate(&[fee(1, 1_500)], Some(200_000)),
+            policy.estimate(&[fee(1, 1_500)], 200_000),
             Err(OverBudget {
                 lamports: 300,
                 cap: 299
@@ -270,7 +267,7 @@ mod tests {
             max_priority_fee_lamports: 300,
             ..policy
         };
-        assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+        assert!(policy.estimate(&[fee(1, 1_500)], 200_000).is_ok());
     }
 
     /// The constant follows the SDK's default fee structure.

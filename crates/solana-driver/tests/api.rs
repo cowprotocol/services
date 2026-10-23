@@ -198,7 +198,9 @@ async fn solver_with(
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
         max_native_shortfall_bps: None,
         default_compute_unit_estimate: compute_unit_estimate
-            .map(|units| ComputeUnitEstimate::try_from(units).unwrap()),
+            .map_or_else(ComputeUnitEstimate::default, |units| {
+                ComputeUnitEstimate::try_from(units).unwrap()
+            }),
     })
     .await
     .expect("solver construction should succeed");
@@ -222,7 +224,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         fee_handler: FeeHandler::Solver,
         solver_fee_bps: None,
         max_native_shortfall_bps: None,
-        default_compute_unit_estimate: None,
+        default_compute_unit_estimate: ComputeUnitEstimate::default(),
     })
     .await
     .expect("solver construction should succeed")

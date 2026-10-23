@@ -414,12 +414,11 @@ impl Competition {
 
     /// The network fee the limit legs sent to the engine are moved by, before
     /// any route is known: the signature fee plus the priority fee at the
-    /// solver's default compute unit estimate, or else the runtime's ceiling,
-    /// over the fees recently paid cluster-wide, or the budget when that is
-    /// over it. Cluster-wide fees floor what any route's accounts pay, so a
-    /// fill priced at the same units, see [`Self::network_fee`], pays at
-    /// least this much, and a fill on the moved limit whose route pays more
-    /// is dropped.
+    /// solver's default compute unit estimate over the fees recently paid
+    /// cluster-wide, or the budget when that is over it. Cluster-wide fees
+    /// floor what any route's accounts pay, so a fill priced at the same
+    /// units, see [`Self::network_fee`], pays at least this much, and a
+    /// fill on the moved limit whose route pays more is dropped.
     async fn network_fee_reserve(&self) -> Result<u64, Error> {
         let fees = self
             .blockchain
@@ -470,7 +469,7 @@ impl Competition {
             fees,
             solution
                 .cu_estimate
-                .or(self.solver.default_compute_unit_estimate()),
+                .unwrap_or(self.solver.default_compute_unit_estimate()),
         )?;
         let network_fee = estimate.network_fee();
         tracing::debug!(
@@ -753,9 +752,7 @@ impl Competition {
             .recent_prioritization_fees(&writable)
             .await
             .map_err(Error::Rpc)?;
-        let estimate = self
-            .priority_fee
-            .estimate(&fees, Some(compute_unit_limit))?;
+        let estimate = self.priority_fee.estimate(&fees, compute_unit_limit)?;
         metrics()
             .compute_unit_price
             .observe(estimate.compute_unit_price as f64);
