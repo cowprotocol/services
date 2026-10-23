@@ -44,10 +44,12 @@ impl ContractErrorExt for ContractError {
         // be decoded, though the usage of `Option` erases the existing
         // nuances of the failure
         match self {
-            // When the revert data is empty (e.g. you perform a call to a missing function)
-            // alloy's decode breaks, because even though there is revert data, it is empty
-            // so alloy's decode method fails leading your (the caller) to think there wasn't one
-            // Thus, to properly check for any kind of revert, just look at the revert data
+            // When the revert data is empty (e.g. you perform a call to a
+            // missing function) alloy's decode breaks, because even though
+            // there is revert data, it is empty so alloy's decode method fails
+            // leading your (the caller) to think there wasn't one
+            // Thus, to properly check for any kind of revert, just look at the
+            // revert data
             ContractError::TransportError(RpcError::ErrorResp(err)) => {
                 // Due to the mismatch between error APIs and best-effort
                 // approximation this log line is left here as a

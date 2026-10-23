@@ -93,7 +93,8 @@ impl Trade {
             .ok_or(Error::Math(Math::Overflow))?;
 
         let score = match self.side {
-            // `surplus` of sell orders is already in buy tokens so we simply convert it to ETH
+            // `surplus` of sell orders is already in buy tokens so we simply
+            // convert it to ETH
             Side::Sell => native_price_buy.in_eth(eth::TokenAmount(surplus_in_surplus_token)),
             Side::Buy => {
                 // `surplus` of buy orders is in sell tokens. We start with

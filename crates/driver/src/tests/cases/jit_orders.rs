@@ -27,7 +27,8 @@ struct Amounts {
 struct Execution {
     // The executed net-amounts (including network fee) reported by the solver
     solver: Amounts,
-    // The executed net-amounts (including network and protocol) reported by the driver
+    // The executed net-amounts (including network and protocol) reported by the
+    // driver
     driver: Amounts,
 }
 
@@ -132,8 +133,8 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
             side: Side::Buy,
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
-            // protocol
+            // 20 ETH surplus in sell token (after network fee), half of which
+            // is kept by the protocol
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -152,8 +153,9 @@ async fn surplus_protocol_fee_jit_order_from_surplus_capturing_owner_not_capped(
                     side: Side::Buy,
                 },
             },
-            // Surplus is 40 ETH worth of sell tokens, converted to buy tokens using the order's
-            // limit price (50 / 60 = 80%) this leaves us with a score of 32 ETH.
+            // Surplus is 40 ETH worth of sell tokens, converted to buy tokens
+            // using the order's limit price (50 / 60 = 80%) this leaves us with
+            // a score of 32 ETH.
             expected_score: 32.ether().into_wei(),
         },
     };
@@ -171,8 +173,8 @@ async fn surplus_protocol_fee_jit_order_not_capped() {
             side: Side::Buy,
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
-            // protocol
+            // 20 ETH surplus in sell token (after network fee), half of which
+            // is kept by the protocol
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -191,8 +193,9 @@ async fn surplus_protocol_fee_jit_order_not_capped() {
                     side: Side::Buy,
                 },
             },
-            // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-            // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
+            // Surplus is 20 ETH worth of sell tokens, converted to buy tokens
+            // using the order's limit price (40 / 50 = 80%) this leaves us with
+            // a score of 16 ETH.
             expected_score: 16.ether().into_wei(),
         },
     };

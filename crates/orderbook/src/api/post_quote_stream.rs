@@ -20,7 +20,8 @@ pub async fn post_quote_stream_handler(
 ) -> Response {
     let stream = match state.quotes.calculate_quote_stream(&request).await {
         Ok(stream) => stream,
-        // Validation or prelude failure: return same HTTP error as POST /api/v1/quote.
+        // Validation or prelude failure: return same HTTP error as POST
+        // /api/v1/quote.
         Err(err) => return err.into_response(),
     };
 
