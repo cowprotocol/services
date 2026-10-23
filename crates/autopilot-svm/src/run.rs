@@ -141,7 +141,7 @@ async fn run(config: Config) {
                     &config.rpc.endpoint,
                     config.rpc.request_timeout,
                     CommitmentConfig::confirmed(),
-                    "sponsor",
+                    "sponsoring",
                 ),
                 pool.clone(),
                 sponsoring.max_displaced_creations,
