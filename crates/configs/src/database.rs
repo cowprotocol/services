@@ -21,6 +21,14 @@ const fn default_statement_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
+const fn default_connection_release_timeout() -> Duration {
+    Duration::from_secs(1)
+}
+
+const fn default_client_connection_check_interval() -> Duration {
+    Duration::from_secs(1)
+}
+
 const fn default_insert_batch_size() -> NonZeroUsize {
     NonZeroUsize::new(500).expect("value should be greater than 0")
 }
@@ -62,6 +70,25 @@ pub struct DatabasePoolConfig {
     /// Timeout for database read queries. Defaults to 30 seconds.
     #[serde(default = "default_statement_timeout", with = "humantime_serde")]
     pub statement_timeout: Duration,
+
+    /// How long a connection returned to the pool may take to finish the work
+    /// still pending on it, e.g. a query whose request got cancelled.
+    /// Connections that take longer get closed instead of reused, which makes
+    /// the server abort the pending query. Defaults to 1 second.
+    #[serde(
+        default = "default_connection_release_timeout",
+        with = "humantime_serde"
+    )]
+    pub connection_release_timeout: Duration,
+
+    /// How often the server checks whether the client of a running query is
+    /// still connected, so it can abort queries whose connection got closed.
+    /// `0` disables the checks. Defaults to 1 second.
+    #[serde(
+        default = "default_client_connection_check_interval",
+        with = "humantime_serde"
+    )]
+    pub client_connection_check_interval: Duration,
 }
 
 impl Default for DatabasePoolConfig {
@@ -72,6 +99,8 @@ impl Default for DatabasePoolConfig {
             max_connections: default_db_max_connections(),
             insert_batch_size: default_insert_batch_size(),
             statement_timeout: default_statement_timeout(),
+            connection_release_timeout: default_connection_release_timeout(),
+            client_connection_check_interval: default_client_connection_check_interval(),
         }
     }
 }
@@ -84,6 +113,14 @@ impl Debug for DatabasePoolConfig {
             .field("max_connections", &self.max_connections)
             .field("insert_batch_size", &self.insert_batch_size)
             .field("statement_timeout", &self.statement_timeout)
+            .field(
+                "connection_release_timeout",
+                &self.connection_release_timeout,
+            )
+            .field(
+                "client_connection_check_interval",
+                &self.client_connection_check_interval,
+            )
             .finish()
     }
 }
