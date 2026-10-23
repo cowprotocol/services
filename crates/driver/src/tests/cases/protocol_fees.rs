@@ -127,8 +127,9 @@ async fn triple_surplus_protocol_fee_buy_order_not_capped() {
             // The protocol fees are applied one by one to the orders, altering
             // the order pricing For this example:
             // -> First fee policy:
-            //  20 ETH surplus (50 ETH - 30 ETH), surplus policy: 50 %, fee 10
-            // ETH -> Second fee policy:
+            //  20 ETH surplus (50 ETH - 30 ETH), surplus policy: 50 %,
+            //  fee 10 ETH
+            // -> Second fee policy:
             // New sell amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
             // New surplus: 10 ETH, fee 5 ETH
             // -> Third fee policy:
@@ -176,8 +177,9 @@ async fn triple_surplus_protocol_fee_sell_order_not_capped() {
             // The protocol fees are applied one by one to the orders, altering
             // the order pricing For this example:
             // -> First fee policy:
-            //  20 ETH surplus (60 ETH - 40 ETH), surplus policy: 50 %, fee 10
-            // ETH -> Second fee policy:
+            //  20 ETH surplus (60 ETH - 40 ETH), surplus policy: 50 %,
+            //  fee 10 ETH
+            // -> Second fee policy:
             // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
             // -> Third fee policy:
             // New buy amount in the Order: 50 ETH + 5 ETH (fee) = 55 ETH
@@ -219,8 +221,8 @@ async fn surplus_and_volume_protocol_fee_buy_order_not_capped() {
         execution: Execution {
             // -> First fee policy:
             // 25% of the solver proposed sell volume is kept by the protocol
-            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) =
-            // 40 ) Fee = 50 ETH (limit price) - 40 ETH => 10 ETH
+            // solver executes at adjusted limit price ( 50 / (1 + 0.25) = 40 )
+            // Fee = 50 ETH (limit price) - 40 ETH => 10 ETH
             // -> Second fee policy:
             // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
             // New surplus: 10 ETH, fee 5 ETH
