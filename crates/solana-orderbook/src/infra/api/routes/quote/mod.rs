@@ -11,6 +11,7 @@ use {
         quoter,
     },
     axum::{Json, http::StatusCode},
+    chain_types::{ChainTypes, solana::Solana},
     chrono::Utc,
     cow_settlement_interface::{
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
@@ -35,9 +36,6 @@ const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 /// TODO: fail the quote on a store error instead, like the EVM orderbook,
 /// once fee policies consume the link and the id becomes load-bearing.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// The atoms a native price is quoted for: lamports per 10^9 atoms.
-const PRICE_UNIT: u128 = 1_000_000_000;
 
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
@@ -235,7 +233,8 @@ fn net(
 /// What `lamports` are worth in the token priced at `price`, rounded up.
 /// `None` past `u64::MAX`.
 fn in_token(lamports: u64, price: NonZero<u64>) -> Option<u64> {
-    let atoms = (u128::from(lamports) * PRICE_UNIT).div_ceil(u128::from(price.get()));
+    let atoms = (u128::from(lamports) * u128::from(Solana::NATIVE_PRICE_DENOMINATOR))
+        .div_ceil(u128::from(price.get()));
     u64::try_from(atoms).ok()
 }
 
@@ -592,8 +591,8 @@ mod tests {
         }
     }
 
-    fn price(lamports_per_unit: u128) -> NonZero<u64> {
-        NonZero::new(u64::try_from(lamports_per_unit).unwrap()).unwrap()
+    fn price(native_price: u64) -> NonZero<u64> {
+        NonZero::new(native_price).unwrap()
     }
 
     fn legs(quote: &quoter::Quote) -> (u64, u64) {
@@ -606,7 +605,7 @@ mod tests {
     /// driver gave it.
     #[test]
     fn the_cost_comes_out_of_the_side_the_trader_does_not_fix() {
-        let price = price(PRICE_UNIT / 2);
+        let price = price(Solana::NATIVE_PRICE_DENOMINATOR / 2);
         let (sell, costs) = net(quote(1_000, 5_000, 400), dto::Kind::Sell, 600, price).unwrap();
         assert_eq!(legs(&sell), (1_000, 3_000));
         assert_eq!(
@@ -628,7 +627,7 @@ mod tests {
     /// and the fee round up on their own, so a lamport of each costs two.
     #[test]
     fn the_cut_rounds_up_against_the_trader() {
-        let price = price(3 * PRICE_UNIT);
+        let price = price(3 * Solana::NATIVE_PRICE_DENOMINATOR);
         for (lamports, buy_amount) in [(1, 4_999), (3, 4_999), (4, 4_998)] {
             let (sell, _) = net(quote(1_000, 5_000, lamports), dto::Kind::Sell, 0, price).unwrap();
             assert_eq!(sell.buy_amount, buy_amount);
@@ -643,7 +642,7 @@ mod tests {
     /// leg overflows, and a cut past `u64::MAX` are all dropped.
     #[test]
     fn a_quote_that_cannot_absorb_its_cost_is_dropped() {
-        let lamport_an_atom = price(PRICE_UNIT);
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
         let sell = |buy_amount, fee| {
             net(
                 quote(1_000, buy_amount, fee),
@@ -662,7 +661,7 @@ mod tests {
     /// trader more, and a quote that cannot absorb its cost never wins.
     #[test]
     fn the_best_quote_is_the_best_netted_one() {
-        let lamport_an_atom = price(PRICE_UNIT);
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
         let quotes = vec![
             quote(1_000, 5_000, 0),
             quote(1_000, 5_100, 200),
