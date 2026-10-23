@@ -171,6 +171,34 @@ async fn version_reports_the_build() {
     );
 }
 
+/// The path parameters are checked before any database read, in the API's
+/// error shape.
+#[tokio::test]
+async fn solver_competition_rejects_malformed_path_parameters() {
+    let addr = spawn_server().await;
+    for (path, error_type) in [
+        ("/api/v2/solver_competition/abc", "InvalidAuctionId"),
+        ("/api/v2/solver_competition/-1", "InvalidAuctionId"),
+        (
+            "/restricted/api/v2/solver_competition/abc",
+            "InvalidAuctionId",
+        ),
+        (
+            "/api/v2/solver_competition/by_tx_hash/not-base58",
+            "InvalidTransactionSignature",
+        ),
+    ] {
+        let response = reqwest::get(format!("http://{addr}{path}")).await.unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{path}"
+        );
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["errorType"], error_type, "{path}");
+    }
+}
+
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
     let api = mock_api().await;
@@ -414,11 +442,17 @@ async fn quote_answers_in_the_evm_shape() {
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
-                "networkFees": "6400",
-                // Without sponsoring the buy token account is not read, so it
-                // counts as the costliest a settleable mint can need at the
-                // SDK's default rent.
-                "buyTokenAtaCosts": "2220240",
+                // In the buy token, at the mocked lamport an atom. Without
+                // sponsoring the buy token account is not read, so it counts
+                // as the costliest a settleable mint can need at the SDK's
+                // default rent.
+                "costs": {
+                    "token": body["buyToken"],
+                    "networkFees": "6400",
+                    "buyTokenAtaCosts": "2220240",
+                    "protocolFee": "0",
+                    "total": "2226640",
+                },
                 "kind": "sell",
                 "partiallyFillable": false,
             },
@@ -545,7 +579,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
             .unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         let json: serde_json::Value = response.json().await.unwrap();
-        assert_eq!(json["quote"]["buyTokenAtaCosts"], cost.to_string());
+        assert_eq!(json["quote"]["costs"]["buyTokenAtaCosts"], cost.to_string());
         assert_eq!(json["quote"]["buyAmount"], (10_000_000 - cost).to_string());
     }
 }
@@ -589,11 +623,11 @@ async fn quote_picks_the_best_driver_answer() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["buyAmount"], "2779760");
-    assert_eq!(json["quote"]["networkFees"], "0");
+    assert_eq!(json["quote"]["costs"]["networkFees"], "0");
 }
 
-/// A buy order keeps its buy amount and pulls the execution cost through
-/// the sell amount instead.
+/// A buy order keeps its buy amount and pulls the execution cost, priced in
+/// the sell token, through the sell amount instead.
 #[tokio::test]
 async fn quote_charges_a_buy_order_on_the_sell_side() {
     let driver = spawn_mock_driver(serde_json::json!({
@@ -624,8 +658,16 @@ async fn quote_charges_a_buy_order_on_the_sell_side() {
     assert_eq!(json["quote"]["kind"], "buy");
     assert_eq!(json["quote"]["sellAmount"], "12226640");
     assert_eq!(json["quote"]["buyAmount"], "1234567");
-    assert_eq!(json["quote"]["networkFees"], "6400");
-    assert_eq!(json["quote"]["buyTokenAtaCosts"], "2220240");
+    assert_eq!(
+        json["quote"]["costs"],
+        serde_json::json!({
+            "token": body["sellToken"],
+            "networkFees": "6400",
+            "buyTokenAtaCosts": "2220240",
+            "protocolFee": "0",
+            "total": "2226640",
+        })
+    );
 }
 
 /// A fill the execution cost swallows is no quote.
@@ -1211,6 +1253,46 @@ fn overpriced_creation_tx(
     )
 }
 
+/// The sponsored creation as a v1 message: its 5 SOL priority fee sits in the
+/// message config, where no compute-budget instruction shows it.
+fn v1_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    use solana_sdk::message::{VersionedMessage, v1};
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let instructions = [
+        destination_creation(funder, owner.pubkey(), &intent),
+        create_order(funder, owner.pubkey(), &intent),
+    ];
+    let message = VersionedMessage::V1(
+        v1::Message::try_compile_with_config(
+            &funder,
+            &instructions,
+            solana_sdk::hash::Hash::new_unique(),
+            v1::TransactionConfig::empty().with_priority_fee(5_000_000_000),
+        )
+        .unwrap(),
+    );
+    let serialized = message.serialize();
+    let signers = usize::from(message.header().num_required_signatures);
+    let signatures = message.static_account_keys()[..signers]
+        .iter()
+        .map(|key| {
+            if *key == owner.pubkey() {
+                owner.sign_message(&serialized)
+            } else {
+                solana_sdk::signature::Signature::default()
+            }
+        })
+        .collect();
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message,
+    };
+    base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
+}
+
 /// A Lighthouse instruction over one account, the shape Phantom injects.
 fn lighthouse(
     discriminator: u8,
@@ -1291,6 +1373,8 @@ async fn create_order_rejects_invalid_submissions() {
         ),
         // The funder pays the priority fee, so an outsized price is refused.
         (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
+        // Nor can a v1 message hide one in its config.
+        (v1_creation_tx(funder, &owner), "InvalidTransaction"),
         // A lighthouse assertion is fine, anything outside that range is not.
         (
             lighthouse_memory_creation_tx(funder, &owner),

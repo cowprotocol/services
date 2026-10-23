@@ -122,8 +122,8 @@ impl Ethereum {
                 .provider
                 .get_transaction_receipt(hash.0)
                 .map_err(Error::Alloy),
-            // Use unbuffered transport for the Debug API since not all providers support
-            // batched debug calls.
+            // Use unbuffered transport for the Debug API since not all
+            // providers support batched debug calls.
             fetch_debug_trace(&self.unbuffered_web3.provider, hash)
         )?;
 

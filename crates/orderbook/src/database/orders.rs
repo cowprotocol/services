@@ -346,8 +346,8 @@ impl OrderStoring for Postgres {
 
         let (orders, jit_orders) = try_join!(
             database::orders::many_full_orders_with_quotes(&mut ex_orders, &uids),
-            // JIT orders are fetched without quotes as they are created by solvers at settlement
-            // time
+            // JIT orders are fetched without quotes as they are created by
+            // solvers at settlement time
             database::jit_orders::get_many_by_uid(&mut ex_jit_orders, &uids)
         )?;
         Ok(orders

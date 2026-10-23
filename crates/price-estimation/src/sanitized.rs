@@ -207,8 +207,8 @@ mod tests {
         let native_token = Address::with_last_byte(42);
 
         let queries = [
-            // This is the common case (Tokens are supported, distinct and not ETH).
-            // Will be estimated by the wrapped_estimator.
+            // This is the common case (Tokens are supported, distinct and not
+            // ETH). Will be estimated by the wrapped_estimator.
             (
                 Query {
                     verification: Default::default(),
@@ -230,9 +230,10 @@ mod tests {
                     execution: Default::default(),
                 }),
             ),
-            // `sanitized_estimator` will replace `buy_token` with `native_token` before querying
-            // `wrapped_estimator`.
-            // `sanitized_estimator` will add cost of unwrapping ETH to Estimate.
+            // `sanitized_estimator` will replace `buy_token` with
+            // `native_token` before querying `wrapped_estimator`.
+            // `sanitized_estimator` will add cost of unwrapping ETH to
+            // Estimate.
             (
                 Query {
                     verification: Default::default(),
@@ -246,8 +247,8 @@ mod tests {
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
-                    //sanitized_estimator will add ETH_UNWRAP_COST to the gas of any
-                    //Query with ETH as the buy_token.
+                    //sanitized_estimator will add ETH_UNWRAP_COST to the gas
+                    // of any Query with ETH as the buy_token.
                     gas: GAS_PER_WETH_UNWRAP + 100,
                     solver: Default::default(),
                     verified: false,
@@ -272,8 +273,8 @@ mod tests {
                     "cost of converting native asset would overflow gas price"
                 ))),
             ),
-            // `sanitized_estimator` will replace `sell_token` with `native_token` before querying
-            // `wrapped_estimator`.
+            // `sanitized_estimator` will replace `sell_token` with
+            // `native_token` before querying `wrapped_estimator`.
             // `sanitized_estimator` will add cost of wrapping ETH to Estimate.
             (
                 Query {
@@ -288,8 +289,8 @@ mod tests {
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
-                    //sanitized_estimator will add ETH_WRAP_COST to the gas of any
-                    //Query with ETH as the sell_token.
+                    //sanitized_estimator will add ETH_WRAP_COST to the gas of
+                    // any Query with ETH as the sell_token.
                     gas: GAS_PER_WETH_WRAP + 100,
                     solver: Default::default(),
                     verified: false,
@@ -298,8 +299,8 @@ mod tests {
                     execution: Default::default(),
                 }),
             ),
-            // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are
-            // identical.
+            // Can be estimated by `sanitized_estimator` because `buy_token` and
+            // `sell_token` are identical.
             (
                 Query {
                     verification: Default::default(),
@@ -321,7 +322,8 @@ mod tests {
                     execution: Default::default(),
                 }),
             ),
-            // Can be estimated by `sanitized_estimator` because both tokens are the native token.
+            // Can be estimated by `sanitized_estimator` because both tokens are
+            // the native token.
             (
                 Query {
                     verification: Default::default(),
@@ -343,7 +345,8 @@ mod tests {
                     execution: Default::default(),
                 }),
             ),
-            // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
+            // Can be estimated by `sanitized_estimator` because it is a native
+            // token unwrap.
             (
                 Query {
                     verification: Default::default(),
@@ -357,7 +360,8 @@ mod tests {
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
-                    // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
+                    // Sanitized estimator will report a 1:1 estimate when
+                    // unwrapping native token.
                     gas: GAS_PER_WETH_UNWRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
@@ -366,7 +370,8 @@ mod tests {
                     execution: Default::default(),
                 }),
             ),
-            // Can be estimated by `sanitized_estimator` because it is a native token wrap.
+            // Can be estimated by `sanitized_estimator` because it is a native
+            // token wrap.
             (
                 Query {
                     verification: Default::default(),
@@ -380,7 +385,8 @@ mod tests {
                 },
                 Ok(Estimate {
                     out_amount: U256::ONE,
-                    // Sanitized estimator will report a 1:1 estimate when wrapping native token.
+                    // Sanitized estimator will report a 1:1 estimate when
+                    // wrapping native token.
                     gas: GAS_PER_WETH_WRAP + SETTLEMENT_OVERHEAD,
                     solver: Default::default(),
                     verified: true,
@@ -539,8 +545,8 @@ mod tests {
         }
 
         let queries = [
-            // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are
-            // identical.
+            // Can be estimated by `sanitized_estimator` because `buy_token` and
+            // `sell_token` are identical.
             (
                 Query {
                     verification: Default::default(),

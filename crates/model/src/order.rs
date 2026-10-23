@@ -1125,7 +1125,8 @@ mod tests {
                 buy_token_balance: BuyTokenDestination::Internal,
             },
             signature: EcdsaSignature {
-                // v=0x01 in input gets normalized to 28 for Solidity ecrecover compatibility
+                // v=0x01 in input gets normalized to 28 for Solidity ecrecover
+                // compatibility
                 v: 28,
                 r: b256!("0200000000000000000000000000000000000000000000000000000000000003"),
                 s: b256!("0400000000000000000000000000000000000000000000000000000000000005"),

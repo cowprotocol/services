@@ -129,7 +129,8 @@ impl TxSigner<Signature> for Account {
         match self {
             Account::PrivateKey(local_signer) => local_signer.sign_transaction(tx).await,
             Account::Kms(aws_signer) => aws_signer.sign_transaction(tx).await,
-            // The address actually can't sign anything but for TxSigner only the Tx matters
+            // The address actually can't sign anything but for TxSigner only
+            // the Tx matters
             Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
@@ -137,21 +138,37 @@ impl TxSigner<Signature> for Account {
     }
 }
 
-impl Account {
-    /// Sign a hash using the underlying signer. Needed for EIP-7702
-    /// authorization signing which requires `Signer::sign_hash` rather than
-    /// `TxSigner::sign_transaction`.
-    pub async fn sign_hash(
-        &self,
-        hash: &alloy::primitives::B256,
-    ) -> alloy::signers::Result<Signature> {
-        use alloy::signers::Signer;
+/// Signs hashes with the underlying signer: EIP-7702 authorizations and the
+/// `X-Flashbots-Signature` header of builder requests.
+#[async_trait::async_trait]
+impl alloy::signers::Signer for Account {
+    async fn sign_hash(&self, hash: &alloy::primitives::B256) -> alloy::signers::Result<Signature> {
         match self {
             Account::PrivateKey(signer) => signer.sign_hash(hash).await,
             Account::Kms(signer) => signer.sign_hash(hash).await,
             Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
+        }
+    }
+
+    fn address(&self) -> Address {
+        TxSigner::address(self)
+    }
+
+    fn chain_id(&self) -> Option<alloy::primitives::ChainId> {
+        match self {
+            Account::PrivateKey(signer) => alloy::signers::Signer::chain_id(signer),
+            Account::Kms(signer) => alloy::signers::Signer::chain_id(signer),
+            Account::Address(_) => None,
+        }
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<alloy::primitives::ChainId>) {
+        match self {
+            Account::PrivateKey(signer) => alloy::signers::Signer::set_chain_id(signer, chain_id),
+            Account::Kms(signer) => alloy::signers::Signer::set_chain_id(signer, chain_id),
+            Account::Address(_) => {}
         }
     }
 }
@@ -326,8 +343,8 @@ impl Solver {
         Timeouts {
             // quote requests are tiny so the network buffer can be small
             http_delay: chrono::Duration::milliseconds(25),
-            // the driver doesn't do any post-processing for quote responses so we can use
-            // the entire time for computing solutions
+            // the driver doesn't do any post-processing for quote responses so
+            // we can use the entire time for computing solutions
             solving_share_of_deadline: 1.0.try_into().expect("literal is in allowed range"),
         }
     }

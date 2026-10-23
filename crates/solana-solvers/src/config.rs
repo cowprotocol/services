@@ -2,16 +2,16 @@
 
 use {
     configs::rate_limit::Strategy,
-    serde::Deserialize,
+    serde::{Deserialize, de::DeserializeOwned},
     std::{num::NonZeroUsize, path::Path, time::Duration},
     url::Url,
 };
 
-/// Jupiter solver configuration.
+/// Solver configuration around the engine's `[dex]` table.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct Config {
-    /// Orders quoted at once. Each quote is two sequential Jupiter requests.
+pub struct Config<D> {
+    /// Orders quoted at once.
     #[serde(default = "default_concurrent_requests")]
     pub concurrent_requests: NonZeroUsize,
 
@@ -27,11 +27,17 @@ pub struct Config {
     #[serde(with = "humantime_serde", default = "default_max_back_off")]
     pub max_back_off: Duration,
 
-    pub dex: JupiterConfig,
+    /// The most orders one batched solution fills: per side and directed
+    /// pair, orders are quoted most permissive first in batches of up to
+    /// this many, each its own solution. 1 quotes every order on its own.
+    #[serde(default = "default_max_batch_size")]
+    pub max_batch_size: NonZeroUsize,
+
+    pub dex: D,
 }
 
-impl Config {
-    /// The back-off applied to rate-limited Jupiter responses.
+impl<D> Config<D> {
+    /// The back-off applied to rate-limited DEX responses.
     ///
     /// # Panics
     ///
@@ -63,6 +69,10 @@ fn default_max_back_off() -> Duration {
     Duration::from_secs(8)
 }
 
+fn default_max_batch_size() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
+}
+
 /// The `[dex]` table for the Jupiter backend.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -85,12 +95,28 @@ pub struct JupiterConfig {
     pub enable_buy_orders: bool,
 }
 
+/// The `[dex]` table for the Bitget backend. No `Debug`: it holds the secret.
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BitgetConfig {
+    /// Base URL of the Bitget swap API. `swap` is joined onto it, so it needs
+    /// the trailing slash.
+    pub endpoint: Url,
+
+    pub api_key: String,
+
+    pub api_secret: String,
+
+    /// Slippage tolerance in basis points. 50 = 0.5%.
+    pub slippage_bps: u16,
+}
+
 /// Load and parse the TOML config file.
 ///
 /// # Panics
 ///
 /// Panics on I/O or parse errors: a bad config is a startup failure.
-pub async fn load(path: &Path) -> Config {
+pub async fn load<D: DeserializeOwned>(path: &Path) -> Config<D> {
     let text = tokio::fs::read_to_string(path)
         .await
         .unwrap_or_else(|err| panic!("read config {}: {err}", path.display()));
@@ -103,13 +129,14 @@ mod tests {
 
     #[test]
     fn parses_example_config() {
-        let config: Config =
+        let config: Config<JupiterConfig> =
             toml::from_str(include_str!("../config/example.jupiter.toml")).unwrap();
         assert_eq!(config.dex.endpoint.as_str(), "https://api.jup.ag/");
         assert_eq!(config.dex.slippage_bps, 50);
         assert!(config.dex.api_key.is_some());
         assert!(!config.dex.enable_buy_orders);
         assert_eq!(config.concurrent_requests.get(), 8);
+        assert_eq!(config.max_batch_size.get(), 4);
         let strategy = config.rate_limiting();
         assert_eq!(strategy.back_off_growth_factor, 2.0);
         assert_eq!(strategy.min_back_off, Duration::from_secs(1));
@@ -123,8 +150,9 @@ mod tests {
 endpoint = "https://api.jup.ag"
 slippage-bps = 50
 "#;
-        let config: Config = toml::from_str(toml).unwrap();
+        let config: Config<JupiterConfig> = toml::from_str(toml).unwrap();
         assert_eq!(config.concurrent_requests.get(), 8);
+        assert_eq!(config.max_batch_size.get(), 1);
         let strategy = config.rate_limiting();
         assert_eq!(strategy.back_off_growth_factor, 2.0);
         assert_eq!(strategy.min_back_off, Duration::from_secs(1));
@@ -139,6 +167,30 @@ endpoint = "https://api.jup.ag"
 slippage-bps = 50
 bogus = true
 "#;
-        assert!(toml::from_str::<Config>(toml).is_err());
+        assert!(toml::from_str::<Config<JupiterConfig>>(toml).is_err());
+    }
+
+    #[test]
+    fn parses_bitget_example_config() {
+        let config: Config<BitgetConfig> =
+            toml::from_str(include_str!("../config/example.bitget.toml")).unwrap();
+        assert_eq!(
+            config.dex.endpoint.as_str(),
+            "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
+        );
+        assert_eq!(config.dex.slippage_bps, 50);
+    }
+
+    #[test]
+    fn requires_bitget_credentials() {
+        // Deploy templating drops `key = ""` lines, so a missing secret must
+        // fail to parse.
+        let toml = r#"
+[dex]
+endpoint = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
+api-key = "key"
+slippage-bps = 50
+"#;
+        assert!(toml::from_str::<Config<BitgetConfig>>(toml).is_err());
     }
 }

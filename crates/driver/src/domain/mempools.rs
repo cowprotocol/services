@@ -1,13 +1,16 @@
 use {
     super::competition::solution::GasFeeOverride,
     crate::{
-        domain::{blockchain::TxStatus, competition::solution::settlement::EncodedSettlement},
+        domain::{
+            blockchain::TxStatus,
+            competition::solution::settlement::EncodedSettlement,
+            submission,
+        },
         infra::{self, Ethereum, observe},
     },
     alloy::{consensus::Transaction, eips::eip1559::Eip1559Estimation, primitives::Bytes},
     anyhow::{Context, anyhow},
     eth_domain_types::{self as eth, BlockNo, TxId},
-    ethrpc::block_stream::into_stream,
     futures::{FutureExt, StreamExt, future::select_ok},
     itertools::Itertools,
     num::Saturating,
@@ -42,6 +45,18 @@ pub enum SubmissionMode {
     },
 }
 
+/// Submits a settlement and waits until it is mined or the submission
+/// deadline passes.
+#[async_trait::async_trait]
+pub trait TransactionReceiver: Send + Sync + std::fmt::Debug {
+    async fn execute(
+        &self,
+        settlement: &EncodedSettlement,
+        submission_deadline: BlockNo,
+        mode: &SubmissionMode,
+    ) -> Result<eth::TxId, Error>;
+}
+
 /// The mempools used to execute settlements.
 #[derive(Debug, Clone)]
 pub struct Mempools {
@@ -54,49 +69,6 @@ impl Mempools {
         Self { mempools, ethereum }
     }
 
-    /// Race the mempools concurrently; first success wins. Pending
-    /// submission futures are dropped at that point and every other mempool is
-    /// recorded as `Superseded`. If every mempool fails, return one of the
-    /// failure errors.
-    pub async fn execute(
-        &self,
-        settlement: &EncodedSettlement,
-        submission_deadline: BlockNo,
-        mode: &SubmissionMode,
-    ) -> Result<eth::TxId, Error> {
-        let mut stats = vec![Outcome::Superseded; self.mempools.len()];
-
-        let res = select_ok(
-            self.mempools
-                .iter()
-                .zip(stats.iter_mut())
-                .map(|(mempool, stat)| {
-                    async move {
-                        let result = self
-                            .submit(mempool, settlement, submission_deadline, mode)
-                            .instrument(tracing::info_span!("mempool", kind = %mempool))
-                            .await;
-                        // Log inline so errors from mempools that later get
-                        // superseded still surface;
-                        // metrics are emitted from `update_metrics` once the
-                        // race outcome is known.
-                        observe::mempool_log(mempool, settlement, &result);
-                        *stat = Outcome::from(&result);
-                        result
-                    }
-                    .boxed()
-                }),
-        )
-        .await
-        // Drop the remaining futures (and the mutable borrow on `stats` they
-        // carry) so `update_metrics` can read `stats` below.
-        .map(|(success, _remaining)| success);
-
-        self.update_metrics(&stats);
-
-        Ok(res?.tx_hash)
-    }
-
     async fn submit(
         &self,
         mempool: &infra::mempool::Mempool,
@@ -107,11 +79,8 @@ impl Mempools {
         let tx = prepare_submission(&settlement.internalized, mode);
         let signer = tx.from;
 
-        // Instantiate block stream and skip the current block before we submit
-        // the settlement. This way we only run iterations in blocks
-        // that can potentially include the settlement.
-        let mut block_stream = into_stream(self.ethereum.current_block().clone());
-        block_stream.next().await;
+        // Only run iterations in blocks that can include the settlement.
+        let mut block_stream = submission::next_blocks(&self.ethereum).await;
 
         let current_block = self.ethereum.current_block().borrow().number;
         // The tx is simulated before submitting the solution to the
@@ -427,13 +396,63 @@ impl Mempools {
                 Outcome::Failed { .. } if winner_exists => Outcome::Superseded.metric_label(),
                 other => other.metric_label(),
             };
-            observe::mempool_submission_result(mempool, label, outcome.blocks_passed());
+            observe::mempool_submission_result(
+                &mempool.to_string(),
+                label,
+                outcome.blocks_passed(),
+            );
         }
     }
 }
 
+#[async_trait::async_trait]
+impl TransactionReceiver for Mempools {
+    /// Race the mempools concurrently; first success wins. Pending
+    /// submission futures are dropped at that point and every other mempool is
+    /// recorded as `Superseded`. If every mempool fails, return one of the
+    /// failure errors.
+    async fn execute(
+        &self,
+        settlement: &EncodedSettlement,
+        submission_deadline: BlockNo,
+        mode: &SubmissionMode,
+    ) -> Result<eth::TxId, Error> {
+        let mut stats = vec![Outcome::Superseded; self.mempools.len()];
+
+        let res = select_ok(
+            self.mempools
+                .iter()
+                .zip(stats.iter_mut())
+                .map(|(mempool, stat)| {
+                    async move {
+                        let result = self
+                            .submit(mempool, settlement, submission_deadline, mode)
+                            .instrument(tracing::info_span!("mempool", kind = %mempool))
+                            .await;
+                        // Log inline so errors from mempools that later get
+                        // superseded still surface;
+                        // metrics are emitted from `update_metrics` once the
+                        // race outcome is known.
+                        observe::mempool_log(mempool, settlement, &result);
+                        *stat = Outcome::from(&result);
+                        result
+                    }
+                    .boxed()
+                }),
+        )
+        .await
+        // Drop the remaining futures (and the mutable borrow on `stats` they
+        // carry) so `update_metrics` can read `stats` below.
+        .map(|(success, _remaining)| success);
+
+        self.update_metrics(&stats);
+
+        Ok(res?.tx_hash)
+    }
+}
+
 #[derive(Clone, Copy)]
-enum Outcome {
+pub(crate) enum Outcome {
     /// Submission future was dropped because another mempool won the race.
     Superseded,
     Success {
@@ -446,7 +465,7 @@ enum Outcome {
 }
 
 impl Outcome {
-    fn metric_label(self) -> &'static str {
+    pub(crate) fn metric_label(self) -> &'static str {
         match self {
             Outcome::Superseded => "Superseded",
             Outcome::Success { .. } => "Success",
@@ -454,7 +473,7 @@ impl Outcome {
         }
     }
 
-    fn blocks_passed(self) -> Option<u64> {
+    pub(crate) fn blocks_passed(self) -> Option<u64> {
         match self {
             Outcome::Superseded => None,
             Outcome::Success { blocks_passed } => Some(blocks_passed),
@@ -488,7 +507,7 @@ impl From<&Result<SubmissionSuccess, Error>> for Outcome {
 /// Applies the solver's gas fee override if present. When a replacement
 /// transaction is pending, the solver's values are raised to at least the
 /// replacement minimum (a node requirement).
-fn apply_gas_fee_override(
+pub(crate) fn apply_gas_fee_override(
     driver_estimate: Eip1559Estimation,
     solver_override: Option<GasFeeOverride>,
     replacement_price: Option<&Eip1559Estimation>,
@@ -520,7 +539,7 @@ fn apply_gas_fee_override(
 /// `from` is the submitter EOA so simulations see the correct `msg.sender`
 /// for the delegate's caller whitelist. The solver EOA is in `tx.to` and
 /// becomes `address(this)` when the delegate runs.
-fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
+pub(crate) fn prepare_submission(tx: &eth::Tx, mode: &SubmissionMode) -> eth::Tx {
     let mut tx = tx.clone();
     match mode {
         SubmissionMode::Direct(solver_eoa) => {

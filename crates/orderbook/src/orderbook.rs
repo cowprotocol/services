@@ -102,7 +102,8 @@ impl Metrics {
                     sell: quote.sell_amount,
                     buy: quote.buy_amount,
                     fee: FeeParameters {
-                        // safe to unwrap as these values were converted from f64 previously
+                        // safe to unwrap as these values were converted from
+                        // f64 previously
                         gas_amount: quote.gas_amount.to_f64().unwrap(),
                         gas_price: quote.gas_price.to_f64().unwrap(),
                         sell_token_price: quote.sell_token_price.to_f64().unwrap(),
@@ -171,7 +172,8 @@ impl AddOrderError {
             InsertionError::DbError(err) => AddOrderError::Database(err.into()),
             InsertionError::AppDataMismatch(existing) => AddOrderError::AppDataMismatch {
                 contract_app_data: order.data.app_data,
-                // Unwrap because this error can only occur if full app data was set.
+                // Unwrap because this error can only occur if full app data was
+                // set.
                 provided: order.metadata.full_app_data.clone().unwrap(),
                 // Unwrap because we only store utf-8 full app data.
                 existing: {

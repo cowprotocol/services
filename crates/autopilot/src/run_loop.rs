@@ -58,7 +58,6 @@ pub struct Config {
     pub max_winners_per_auction: NonZeroUsize,
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
-    pub compress_solve_request: bool,
     pub auction_delta_checkpoint_interval: Duration,
 }
 
@@ -72,7 +71,6 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_winners_per_auction: value.max_winners_per_auction,
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
-            compress_solve_request: value.compress_solve_request,
             auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
@@ -573,33 +571,36 @@ impl RunLoop {
         Ok(())
     }
 
+    fn extensions(&self) -> impl Iterator<Item = &infra::SupportedExtensions> {
+        self.drivers.iter().map(|driver| &driver.extensions)
+    }
+
     /// Builds the auction requests, if no drivers have opted-in to
     /// delta-auctions or if a checkpoint is due, the second request will
     /// effectively be a copy of the first.
     async fn build_auction_requests(
         &self,
         auction: &Arc<domain::Auction>,
-    ) -> (solve::Request, solve::Request) {
+    ) -> (solve::EncodedRequests, solve::EncodedRequests) {
         let deadline = self.pick_solve_deadline();
         let trusted_tokens = self.trusted_tokens.all();
 
         let (request, delta_request) = tokio::join!(
-            solve::Request::new(
-                auction,
-                &trusted_tokens,
-                deadline,
-                self.config.compress_solve_request,
-            ),
+            async {
+                let request = solve::Request::new(auction, &trusted_tokens, deadline).await;
+                let compress = full_body_needs_compression(self.extensions());
+                solve::EncodedRequests::new(request, compress).await
+            },
             async {
                 self.build_delta_request(auction, &trusted_tokens, deadline)
                     .await
             },
         );
-        Metrics::solve_request_body_size("full", request.body_size());
+        Metrics::solve_request_body_sizes("full", &request);
 
         // On checkpoint auctions the delta drivers receive the full body.
         let delta_request = delta_request.unwrap_or_else(|| request.clone());
-        Metrics::solve_request_body_size("delta", delta_request.body_size());
+        Metrics::solve_request_body_sizes("delta", &delta_request);
 
         (request, delta_request)
     }
@@ -614,11 +615,12 @@ impl RunLoop {
         let (request, delta_request) = self.build_auction_requests(auction).await;
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
-            let solve_request = if driver.supports_auction_deltas {
-                delta_request.clone()
+            let requests = if driver.extensions.auction_deltas {
+                &delta_request
             } else {
-                request.clone()
+                &request
             };
+            let solve_request = requests.for_driver(driver.extensions.compression);
             self.solve(driver, solve_request)
         }))
         .await
@@ -662,11 +664,11 @@ impl RunLoop {
         auction: &Arc<domain::Auction>,
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
-    ) -> Option<solve::Request> {
+    ) -> Option<solve::EncodedRequests> {
         if !self
             .drivers
             .iter()
-            .any(|driver| driver.supports_auction_deltas)
+            .any(|driver| driver.extensions.auction_deltas)
         {
             return None;
         }
@@ -675,16 +677,9 @@ impl RunLoop {
             .lock()
             .unwrap()
             .advance(Instant::now(), auction)?;
-        Some(
-            solve::Request::new_delta(
-                &previous,
-                auction,
-                trusted_tokens,
-                deadline,
-                self.config.compress_solve_request,
-            )
-            .await,
-        )
+        let request = solve::Request::new_delta(&previous, auction, trusted_tokens, deadline).await;
+        let compress = delta_body_needs_compression(self.extensions());
+        Some(solve::EncodedRequests::new(request, compress).await)
     }
 
     /// Sends a `/solve` request to the driver and manages all error cases and
@@ -934,9 +929,12 @@ struct Metrics {
     /// Tracks the size of the `/solve` request body in bytes. The `kind` label
     /// tells the two bodies apart: `full` is sent to regular drivers, `delta`
     /// to the drivers that opted into incremental auctions. Both are equal on
-    /// checkpoint auctions and while no driver has opted in.
+    /// checkpoint auctions and while no driver has opted in. The `encoding`
+    /// label is `uncompressed` for the plain JSON and `br` for its brotli
+    /// compressed copy, which only exists while some driver accepts
+    /// compression.
     #[metric(
-        labels("kind"),
+        labels("kind", "encoding"),
         buckets(
             1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000, 2_000_000,
             3_000_000, 4_000_000
@@ -1086,12 +1084,32 @@ impl Metrics {
         });
     }
 
-    fn solve_request_body_size(kind: &str, size: usize) {
-        Self::get()
-            .solve_request_body_size
-            .with_label_values(&[kind])
-            .observe(size as f64)
+    fn solve_request_body_sizes(kind: &str, requests: &solve::EncodedRequests) {
+        let metric = &Self::get().solve_request_body_size;
+        metric
+            .with_label_values(&[kind, "uncompressed"])
+            .observe(requests.body_size() as f64);
+        if let Some(size) = requests.compressed_body_size() {
+            metric.with_label_values(&[kind, "br"]).observe(size as f64);
+        }
     }
+}
+
+/// Whether the full `/solve` body needs a compressed copy. Delta drivers
+/// receive the full body on checkpoint auctions, so any driver accepting
+/// compression counts.
+fn full_body_needs_compression<'a>(
+    mut drivers: impl Iterator<Item = &'a infra::SupportedExtensions>,
+) -> bool {
+    drivers.any(|driver| driver.compression)
+}
+
+/// Whether the delta `/solve` body needs a compressed copy, i.e. some driver
+/// receiving it accepts compression.
+fn delta_body_needs_compression<'a>(
+    mut drivers: impl Iterator<Item = &'a infra::SupportedExtensions>,
+) -> bool {
+    drivers.any(|driver| driver.auction_deltas && driver.compression)
 }
 
 /// Seconds from `from` to `to`, negative when `to` is the earlier instant.
@@ -1195,6 +1213,35 @@ mod tests {
             base_fee: Default::default(),
             observed_at: Instant::now(),
         }
+    }
+
+    fn extensions(auction_deltas: bool, compression: bool) -> infra::SupportedExtensions {
+        infra::SupportedExtensions {
+            auction_deltas,
+            compression,
+        }
+    }
+
+    #[test]
+    fn no_compressed_copy_without_opted_in_drivers() {
+        let drivers = [extensions(false, false), extensions(true, false)];
+        assert!(!full_body_needs_compression(drivers.iter()));
+        assert!(!delta_body_needs_compression(drivers.iter()));
+    }
+
+    #[test]
+    fn only_full_body_compressed_for_full_auction_driver() {
+        let drivers = [extensions(false, true), extensions(true, false)];
+        assert!(full_body_needs_compression(drivers.iter()));
+        assert!(!delta_body_needs_compression(drivers.iter()));
+    }
+
+    #[test]
+    fn delta_compression_driver_needs_both_bodies_compressed() {
+        // The delta driver receives the full body on checkpoint auctions.
+        let drivers = [extensions(true, true), extensions(false, false)];
+        assert!(full_body_needs_compression(drivers.iter()));
+        assert!(delta_body_needs_compression(drivers.iter()));
     }
 
     #[test]
