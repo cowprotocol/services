@@ -18,7 +18,7 @@ use {
         api::{Sponsoring, State, ValidationParameters, error},
         db,
     },
-    app_data::AppDataHash,
+    app_data::{AppDataHash, OrderCreationAppData},
     axum::{Json, http::StatusCode},
     bigdecimal::ToPrimitive,
     cow_settlement_interface::{
@@ -62,7 +62,8 @@ pub struct Params {
     #[serde(default)]
     pub quote_id: Option<i64>,
     /// The order's app data: the document the intent's `app_data` is the
-    /// keccak256 hash of, stored with the order, or that hash.
+    /// keccak256 hash of, stored with the order, or that hash once the
+    /// document is registered.
     #[serde(default)]
     pub app_data: Option<String>,
     /// The hash the client computed for the `appData` document.
@@ -210,12 +211,31 @@ async fn place(
     let (mut order, preparations) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
     // The intent signed the hash, so whatever the request names must agree
-    // with it. A hash alone stores nothing: its document may be registered on
-    // its own, or never.
-    let document = super::app_data::document(
-        params.app_data.as_deref(),
-        params.app_data_hash,
-        Some(AppDataHash(order.app_data.0)),
+    // with it, and the hash alone needs its document registered already.
+    let intent = AppDataHash(order.app_data.0);
+    let app_data = OrderCreationAppData::from_fields(params.app_data, params.app_data_hash)
+        .map_err(|err| {
+            Failure::Replied(error::reply(
+                StatusCode::BAD_REQUEST,
+                "InvalidRequestBody",
+                err.to_string(),
+            ))
+        })?
+        .unwrap_or(OrderCreationAppData::Hash { hash: intent });
+    // A hash the intent did not sign fails regardless, so only its own is
+    // looked up.
+    let stored = match &app_data {
+        OrderCreationAppData::Hash { hash } if *hash == intent => {
+            super::app_data::find(state.pool(), *hash)
+                .await
+                .map_err(|err| Failure::internal(err, "find app data"))?
+        }
+        _ => None,
+    };
+    let document = super::app_data::resolve(
+        &app_data,
+        stored.as_deref(),
+        Some(intent),
         state.app_data_size_limit(),
     )
     .map_err(|err| Failure::Replied(err.into()))?;
@@ -260,7 +280,7 @@ async fn place(
 
     let uid = const_hex::encode_prefixed(order.uid.0);
     if let Err(err) =
-        db::insert_sponsored_order(state.pool(), &order, quote.as_ref(), document).await
+        db::insert_sponsored_order(state.pool(), &order, quote.as_ref(), &document).await
     {
         let duplicate = err
             .downcast_ref::<sqlx::Error>()

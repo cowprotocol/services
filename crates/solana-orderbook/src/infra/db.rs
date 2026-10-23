@@ -45,7 +45,8 @@ pub async fn find_order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
-       o.kind, o.partially_fillable, o.app_data, a.full_app_data,
+       o.kind, o.partially_fillable, o.app_data,
+       convert_from(a.full_app_data, 'UTF8') AS full_app_data,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
@@ -75,7 +76,8 @@ pub async fn get_orders_by_owner(
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
-       o.kind, o.partially_fillable, o.app_data, a.full_app_data,
+       o.kind, o.partially_fillable, o.app_data,
+       convert_from(a.full_app_data, 'UTF8') AS full_app_data,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
@@ -205,14 +207,14 @@ pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
         .context("check solana.orders existence")
 }
 
-/// Insert a sponsored order, its quote copy when one matched, the app data
-/// `document` when the placement carried one, and its `created` event in one
-/// transaction. A duplicate uid or order PDA surfaces as a unique violation.
+/// Insert a sponsored order, its quote copy when one matched, its app data
+/// `document`, and its `created` event in one transaction. A duplicate uid
+/// or order PDA surfaces as a unique violation.
 pub async fn insert_sponsored_order(
     pool: &PgPool,
     order: &SponsoredOrder,
     quote: Option<&OrderQuote>,
-    document: Option<&str>,
+    document: &str,
 ) -> Result<()> {
     let _timer = query_timer("insert_sponsored_order");
     const QUERY: &str = r#"
@@ -256,13 +258,11 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
         .await
         .context("insert order quote")?;
     }
-    if let Some(document) = document {
-        let existing = insert_app_data(&mut *tx, order.app_data.0, document).await?;
-        // The hash is the document's keccak256, so another document under
-        // it is a collision.
-        if existing.is_some_and(|existing| existing != document) {
-            anyhow::bail!("a different document is stored under {:?}", order.app_data);
-        }
+    let existing = insert_app_data(&mut *tx, order.app_data.0, document).await?;
+    // The hash is the document's keccak256, so another document under it is
+    // a collision.
+    if existing.is_some_and(|existing| existing != document) {
+        anyhow::bail!("a different document is stored under {:?}", order.app_data);
     }
     sqlx::query(
         "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
@@ -292,12 +292,12 @@ WITH inserted AS (
 )
 SELECT CASE
     WHEN (SELECT * FROM inserted) THEN NULL
-    ELSE (SELECT full_app_data FROM solana.app_data WHERE contract_app_data = $1)
+    ELSE (SELECT convert_from(full_app_data, 'UTF8') FROM solana.app_data WHERE contract_app_data = $1)
 END
     "#;
     sqlx::query_scalar(QUERY)
         .bind(ByteArray(hash))
-        .bind(document)
+        .bind(document.as_bytes())
         .fetch_one(ex)
         .await
         .context("insert solana.app_data")
@@ -306,11 +306,14 @@ END
 /// The document stored under `hash`. `None` when the hash is unknown.
 pub async fn find_app_data(ex: impl PgExecutor<'_>, hash: [u8; 32]) -> Result<Option<String>> {
     let _timer = query_timer("find_app_data");
-    sqlx::query_scalar("SELECT full_app_data FROM solana.app_data WHERE contract_app_data = $1")
-        .bind(ByteArray(hash))
-        .fetch_optional(ex)
-        .await
-        .context("read solana.app_data")
+    sqlx::query_scalar(
+        "SELECT convert_from(full_app_data, 'UTF8') FROM solana.app_data WHERE contract_app_data \
+         = $1",
+    )
+    .bind(ByteArray(hash))
+    .fetch_optional(ex)
+    .await
+    .context("read solana.app_data")
 }
 
 /// A stored sponsored creation: the presigned transaction and its expiry.
@@ -780,7 +783,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             buy_amount: BigDecimal::from(2_100u64),
             solver: ByteArray([0xDD; 32]),
         };
-        insert_sponsored_order(&pool, &order, Some(&quote), Some("{}"))
+        insert_sponsored_order(&pool, &order, Some(&quote), "{}")
             .await
             .unwrap();
         assert_eq!(
@@ -820,7 +823,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         // The uid is the primary key: placing the same order twice fails and
         // leaves no second event behind.
         assert!(
-            insert_sponsored_order(&pool, &order, None, None)
+            insert_sponsored_order(&pool, &order, None, "{}")
                 .await
                 .is_err()
         );

@@ -322,19 +322,20 @@ paths:
                   nullable: true
                 appData:
                   description: |
-                    The order's app data: the full `appData` document whose
-                    keccak256 hash the `CreateOrder` intent carries in
-                    `app_data`, stored with the order and served as its
-                    `fullAppData` and by `GET /api/v1/app_data/{app_data_hash}`,
-                    or that hash. A hash alone stores nothing: register the
-                    document through `PUT /api/v1/app_data` instead.
+                    AppData which will be assigned to the order: the full
+                    `appData` document whose keccak256 hash the `CreateOrder`
+                    intent carries in `app_data`, stored with the order and
+                    served as its `fullAppData`, or that hash once the document
+                    is registered through `PUT /api/v1/app_data`. The intent's
+                    hash when omitted.
                   oneOf:
                     - $ref: "#/components/schemas/AppData"
                     - $ref: "#/components/schemas/AppDataHash"
                 appDataHash:
                   description: |
-                    The hash of the `appData` document, checked against it
-                    and against the intent.
+                    The hash of the stringified JSON `appData` doc. If present,
+                    `appData` must be the document this hash is derived from.
+                    In case they differ, the call will fail.
                   allOf:
                     - $ref: "#/components/schemas/AppDataHash"
       responses:
@@ -359,8 +360,9 @@ paths:
             owner signature (`InvalidSignature`), a validTo below the minimum
             or above the maximum validity (`InsufficientValidTo`,
             `ExcessiveValidTo`), an `appData` document that is not a JSON
-            object or exceeds the size limit (`InvalidAppData`), an `appData`
-            document or hash disagreeing with the intent's `app_data`
+            object or exceeds the size limit, or a hash with no registered
+            document (`InvalidAppData`), an `appData` document or hash
+            disagreeing with its `appDataHash` or the intent's `app_data`
             (`AppDataHashMismatch`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
@@ -395,9 +397,10 @@ paths:
             token are the same, wSOL for native SOL included
             (`SameBuyAndSellToken`), the amount is zero
             (`ZeroAmount`), an `appData` document that is not a JSON object
-            or exceeds the size limit (`InvalidAppData`), an `appDataHash`
-            the document does not hash to (`AppDataHashMismatch`),
-            a native SOL buy would leave its wallet under the
+            or exceeds the size limit, or a hash with no registered document
+            (`InvalidAppData`), an `appDataHash` the document does not hash
+            to (`AppDataHashMismatch`), a native SOL buy would leave its
+            wallet under the
             rent-exempt minimum, 890880 lamports for an empty wallet
             (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
@@ -976,17 +979,19 @@ components:
           type: integer
         appData:
           description: |
-            The order's app data, the full document or its hash, echoed back.
-            A document is validated like at placement.
+            The order's app data, the full document or its hash, checked like
+            at placement: a hash must have its document registered, the zero
+            hash names the empty document. The zero hash when omitted.
           oneOf:
             - $ref: "#/components/schemas/AppData"
             - $ref: "#/components/schemas/AppDataHash"
         appDataHash:
           description: |
-            The hash of the `appData` document, checked against it and echoed
-            back.
+            The hash of the `appData` document. If present, `appData` must be
+            the document this hash is derived from.
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
+          nullable: true
     QuoteResponse:
       type: object
       required:
@@ -1029,6 +1034,7 @@ components:
         - sellAmount
         - buyAmount
         - validTo
+        - appData
         - feeAmount
         - costs
         - kind
@@ -1050,13 +1056,14 @@ components:
           description: Unix timestamp (`uint32`) the quoted order expires at.
           type: integer
         appData:
-          description: The request's `appData`, the full document or its hash.
+          description: |
+            The request's `appData`, the full document or its hash, the zero
+            hash when the request named none.
           oneOf:
             - $ref: "#/components/schemas/AppData"
             - $ref: "#/components/schemas/AppDataHash"
-          nullable: true
         appDataHash:
-          description: The request's `appDataHash`, present when it named one.
+          description: The hash of `appData`, present when it is a document.
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
         feeAmount:

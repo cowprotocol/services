@@ -10,6 +10,7 @@ use {
         prices,
         quoter,
     },
+    app_data::OrderCreationAppData,
     axum::{Json, http::StatusCode},
     chrono::Utc,
     cow_settlement_interface::{
@@ -53,9 +54,18 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
-    super::app_data::document(
-        request.app_data.as_deref(),
-        request.app_data_hash,
+    let stored = match &request.app_data {
+        OrderCreationAppData::Hash { hash } => super::app_data::find(state.pool(), *hash)
+            .await
+            .map_err(|err| {
+                tracing::error!(?err, "app data lookup failed");
+                error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
+            })?,
+        _ => None,
+    };
+    super::app_data::resolve(
+        &request.app_data,
+        stored.as_deref(),
         None,
         state.app_data_size_limit(),
     )?;
@@ -152,8 +162,14 @@ pub async fn quote(
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             valid_to,
-            app_data: request.app_data,
-            app_data_hash: request.app_data_hash,
+            // A document answers with its hash alongside, like the EVM orderbook.
+            app_data: match &request.app_data {
+                OrderCreationAppData::Full { full } => OrderCreationAppData::Both {
+                    full: full.clone(),
+                    expected: request.app_data.hash(),
+                },
+                app_data => app_data.clone(),
+            },
             fee_amount: 0,
             costs: dto::Costs {
                 token,
@@ -542,8 +558,7 @@ mod tests {
                 sell_amount: dto::SellAmount::BeforeFee { value: 1 },
             },
             validity: None,
-            app_data: None,
-            app_data_hash: None,
+            app_data: Default::default(),
         }
     }
 

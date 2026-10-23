@@ -7,8 +7,9 @@ use {
         api::{State, error, extract},
         db,
     },
-    app_data::{AppDataDocument, AppDataHash, hash_full_app_data},
+    app_data::{AppDataDocument, AppDataHash, EMPTY, OrderCreationAppData, hash_full_app_data},
     axum::{Json, http::StatusCode},
+    sqlx::PgPool,
 };
 
 /// Handle `GET /api/v1/app_data/{hash}`.
@@ -102,51 +103,74 @@ pub fn validate(document: &str, size_limit: usize) -> Result<AppDataHash, String
     Ok(AppDataHash(hash_full_app_data(document.as_bytes())))
 }
 
-/// The document a request carries, in the EVM orderbook's forms: `appData`
-/// is the document or its hash, and `appDataHash` the hash the client
-/// computed for the document. Every hash named must agree, the `order`'s
-/// signed one first. `None` without a document: the hash forms name one
-/// registered on its own, or none at all.
-pub fn document(
-    app_data: Option<&str>,
-    app_data_hash: Option<AppDataHash>,
-    order: Option<AppDataHash>,
-    size_limit: usize,
-) -> Result<Option<&str>, Error> {
-    let mut hashes: Vec<AppDataHash> = order.into_iter().chain(app_data_hash).collect();
-    let document = match app_data {
-        None => None,
-        Some(value) => match value.parse::<AppDataHash>() {
-            Ok(hash) => {
-                hashes.push(hash);
-                None
-            }
-            Err(_) => Some(value),
-        },
-    };
-    if let Some(document) = document {
-        hashes.push(validate(document, size_limit).map_err(Error::Invalid)?);
+/// The document stored under `hash`. The zero hash names the empty document
+/// by protocol convention.
+pub async fn find(pool: &PgPool, hash: AppDataHash) -> anyhow::Result<Option<String>> {
+    if hash.is_zero() {
+        return Ok(Some(EMPTY.to_owned()));
     }
-    if let Some((expected, named)) = hashes.split_first()
-        && let Some(found) = named.iter().find(|hash| *hash != expected)
-    {
-        return Err(Error::HashMismatch {
-            expected: *expected,
-            found: *found,
-        });
-    }
-    Ok(document)
+    db::find_app_data(pool, hash.0).await
 }
 
-/// Why a request's app data is refused. The reply names are the EVM
-/// orderbook's for order placement.
+/// The document an `app_data` form names, checked the EVM orderbook's way: a
+/// document must hash to the `appDataHash` named with it, a hash alone must
+/// have its document `stored` already, and either must be the `intent`'s
+/// signed hash.
+pub fn resolve(
+    app_data: &OrderCreationAppData,
+    stored: Option<&str>,
+    intent: Option<AppDataHash>,
+    size_limit: usize,
+) -> Result<String, Error> {
+    let hash = match app_data {
+        OrderCreationAppData::Both { full, expected } => {
+            let hash = validate(full, size_limit).map_err(Error::Invalid)?;
+            if hash != *expected {
+                return Err(Error::HashMismatch {
+                    provided: *expected,
+                    actual: hash,
+                });
+            }
+            hash
+        }
+        OrderCreationAppData::Full { full } => {
+            validate(full, size_limit).map_err(Error::Invalid)?
+        }
+        OrderCreationAppData::Hash { hash } => *hash,
+    };
+    if let Some(intent) = intent
+        && hash != intent
+    {
+        return Err(Error::HashMismatch {
+            provided: intent,
+            actual: hash,
+        });
+    }
+    match app_data {
+        OrderCreationAppData::Both { full, .. } | OrderCreationAppData::Full { full } => {
+            Ok(full.clone())
+        }
+        OrderCreationAppData::Hash { hash } => {
+            let Some(stored) = stored else {
+                return Err(Error::Invalid(format!(
+                    "Unknown pre-image for app data hash {hash:?}"
+                )));
+            };
+            validate(stored, size_limit).map_err(Error::Invalid)?;
+            Ok(stored.to_owned())
+        }
+    }
+}
+
+/// Why a request's app data is refused. The reply names and wording are the
+/// EVM orderbook's for order placement.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     Invalid(String),
-    /// A named hash disagrees with the one the request is checked against.
+    /// A hash the request named or signed, and the one its document has.
     HashMismatch {
-        expected: AppDataHash,
-        found: AppDataHash,
+        provided: AppDataHash,
+        actual: AppDataHash,
     },
 }
 
@@ -156,10 +180,13 @@ impl From<Error> for error::Reply {
             Error::Invalid(description) => {
                 error::reply(StatusCode::BAD_REQUEST, "InvalidAppData", description)
             }
-            Error::HashMismatch { expected, found } => error::reply(
+            Error::HashMismatch { provided, actual } => error::reply(
                 StatusCode::BAD_REQUEST,
                 "AppDataHashMismatch",
-                format!("app data hash {found:?} doesn't match {expected:?}"),
+                format!(
+                    "calculated app data hash {actual:?} doesn't match order app data field \
+                     {provided:?}"
+                ),
             ),
         }
     }
@@ -190,80 +217,54 @@ mod tests {
         assert!(validate("not json", LIMIT).is_err());
     }
 
-    /// Every hash a request names must agree with the order's, and the
-    /// document with every hash. Only a document is returned: the hash forms
-    /// name one registered on its own.
+    /// The EVM forms: a document passes with the hash it has, alone or named
+    /// alongside, a hash alone passes with its stored document, and every hash
+    /// in play must be the intent's.
     #[test]
-    fn hashes_must_agree() {
+    fn resolves_the_evm_forms() {
         let empty = hash("{}");
         let other = AppDataHash([0x11; 32]);
-        let empty_hex = format!("{empty:?}");
-        let other_hex = format!("{other:?}");
-        for (app_data, app_data_hash, order, expected) in [
-            (None, None, Some(empty), Ok(None)),
-            (None, Some(empty), Some(empty), Ok(None)),
-            (Some(empty_hex.as_str()), None, Some(empty), Ok(None)),
-            (Some(empty_hex.as_str()), Some(empty), None, Ok(None)),
-            (Some("{}"), None, Some(empty), Ok(Some("{}"))),
-            (Some("{}"), Some(empty), Some(empty), Ok(Some("{}"))),
-            (Some("{}"), Some(empty), None, Ok(Some("{}"))),
-            (Some("{}"), None, None, Ok(Some("{}"))),
-            // The order's hash is the reference the rest is checked against.
+        let full = |document: &str| OrderCreationAppData::Full {
+            full: document.to_owned(),
+        };
+        let both = |document: &str, expected| OrderCreationAppData::Both {
+            full: document.to_owned(),
+            expected,
+        };
+        let only = |hash| OrderCreationAppData::Hash { hash };
+        let mismatch = |provided, actual| Err(Error::HashMismatch { provided, actual });
+        for (app_data, stored, intent, expected) in [
+            (full("{}"), None, None, Ok("{}".to_owned())),
+            (full("{}"), None, Some(empty), Ok("{}".to_owned())),
+            (both("{}", empty), None, None, Ok("{}".to_owned())),
+            (both("{}", empty), None, Some(empty), Ok("{}".to_owned())),
+            (only(empty), Some("{}"), None, Ok("{}".to_owned())),
+            (only(empty), Some("{}"), Some(empty), Ok("{}".to_owned())),
+            (both("{}", other), None, None, mismatch(other, empty)),
+            (both("{}", other), None, Some(empty), mismatch(other, empty)),
+            (full("{}"), None, Some(other), mismatch(other, empty)),
+            (only(empty), Some("{}"), Some(other), mismatch(other, empty)),
             (
+                only(empty),
                 None,
-                Some(other),
                 Some(empty),
-                Err(Error::HashMismatch {
-                    expected: empty,
-                    found: other,
-                }),
-            ),
-            (
-                Some(other_hex.as_str()),
-                None,
-                Some(empty),
-                Err(Error::HashMismatch {
-                    expected: empty,
-                    found: other,
-                }),
-            ),
-            (
-                Some("{}"),
-                None,
-                Some(other),
-                Err(Error::HashMismatch {
-                    expected: other,
-                    found: empty,
-                }),
-            ),
-            (
-                Some("{}"),
-                Some(other),
-                Some(empty),
-                Err(Error::HashMismatch {
-                    expected: empty,
-                    found: other,
-                }),
-            ),
-            // Without an order, the client's own hash is the reference.
-            (
-                Some("{}"),
-                Some(other),
-                None,
-                Err(Error::HashMismatch {
-                    expected: other,
-                    found: empty,
-                }),
+                Err(Error::Invalid(format!(
+                    "Unknown pre-image for app data hash {empty:?}"
+                ))),
             ),
         ] {
             assert_eq!(
-                document(app_data, app_data_hash, order, LIMIT),
+                resolve(&app_data, stored, intent, LIMIT),
                 expected,
-                "{app_data:?} {app_data_hash:?} {order:?}"
+                "{app_data:?} {stored:?} {intent:?}"
             );
         }
         assert!(matches!(
-            document(Some("[]"), None, Some(empty), LIMIT),
+            resolve(&full("[]"), None, None, LIMIT),
+            Err(Error::Invalid(_))
+        ));
+        assert!(matches!(
+            resolve(&only(empty), Some("[]"), None, LIMIT),
             Err(Error::Invalid(_))
         ));
     }
