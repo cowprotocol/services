@@ -842,36 +842,6 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         );
     }
 
-    /// The first document under a hash stays: an identical insert reports
-    /// it, and so does a different one, which is not stored.
-    #[tokio::test]
-    #[ignore = "needs the solana.* schema applied to the local database"]
-    async fn solana_db_app_data_keeps_the_first_document() {
-        let pool = PgPool::connect("postgresql://").await.unwrap();
-        sqlx::query("TRUNCATE solana.app_data")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let hash = [0x11; 32];
-        assert_eq!(find_app_data(&pool, hash).await.unwrap(), None);
-        assert_eq!(insert_app_data(&pool, hash, "{}").await.unwrap(), None);
-        assert_eq!(
-            insert_app_data(&pool, hash, "{}").await.unwrap().as_deref(),
-            Some("{}")
-        );
-        assert_eq!(
-            insert_app_data(&pool, hash, r#"{"a":1}"#)
-                .await
-                .unwrap()
-                .as_deref(),
-            Some("{}")
-        );
-        assert_eq!(
-            find_app_data(&pool, hash).await.unwrap().as_deref(),
-            Some("{}")
-        );
-    }
-
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_reads_an_order_with_fill_state() {

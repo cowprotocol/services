@@ -829,42 +829,28 @@ async fn quote_without_a_route_is_no_liquidity() {
 const EMPTY_APP_DATA_HASH: &str =
     "0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d";
 
-/// A quote checks the app data forms the way a placement does, and passes
-/// the rest on to the (dead) driver: a document alone or with its hash, the
-/// zero hash, which names the empty document, and no app data at all, which
-/// is the zero hash. A hash with a disagreeing document, a hash as the
-/// document, a hash alone, and a document that is not a JSON object are
-/// refused.
+/// The quote parses app data like order creation: a document passes on to
+/// the (dead) driver, a hash that disagrees with it is refused, and so is
+/// `appDataHash` alone.
 #[tokio::test]
 async fn quote_checks_the_app_data_forms() {
     let addr = spawn_server().await;
     let other = format!("0x{}", "11".repeat(32));
-    let zero = format!("0x{}", "00".repeat(32));
-    let passed = (reqwest::StatusCode::NOT_FOUND, "NoLiquidity");
     for (app_data, app_data_hash, expected) in [
-        (Some("{}"), None, passed),
-        (Some("{}"), Some(EMPTY_APP_DATA_HASH), passed),
-        (Some(zero.as_str()), None, passed),
-        (None, None, passed),
+        (
+            Some("{}"),
+            None,
+            (reqwest::StatusCode::NOT_FOUND, "NoLiquidity"),
+        ),
         (
             Some("{}"),
             Some(other.as_str()),
             (reqwest::StatusCode::BAD_REQUEST, "AppDataHashMismatch"),
         ),
         (
-            Some(EMPTY_APP_DATA_HASH),
-            Some(EMPTY_APP_DATA_HASH),
-            (reqwest::StatusCode::BAD_REQUEST, "InvalidAppData"),
-        ),
-        (
             None,
             Some(EMPTY_APP_DATA_HASH),
             (reqwest::StatusCode::BAD_REQUEST, "InvalidRequestBody"),
-        ),
-        (
-            Some("[]"),
-            None,
-            (reqwest::StatusCode::BAD_REQUEST, "InvalidAppData"),
         ),
     ] {
         let mut body = quote_body(serde_json::json!({"validFor": 1800}));

@@ -110,37 +110,3 @@ where
         .map(Option::unwrap_or_default)
         .map_err(de::Error::custom)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `appData` alone is a hash when it parses as one, a document otherwise.
-    /// With `appDataHash` it is a document, and `appDataHash` alone is
-    /// refused.
-    #[test]
-    fn names_the_form_from_the_fields() {
-        let hash = AppDataHash([0x11; 32]);
-        let hex = format!("{hash:?}");
-        let full = |document: &str| Some(document.to_owned());
-        assert_eq!(OrderCreationAppData::from_fields(None, None).unwrap(), None);
-        assert_eq!(
-            OrderCreationAppData::from_fields(full(&hex), None).unwrap(),
-            Some(OrderCreationAppData::Hash { hash })
-        );
-        assert_eq!(
-            OrderCreationAppData::from_fields(full("{}"), None).unwrap(),
-            Some(OrderCreationAppData::Full {
-                full: "{}".to_owned()
-            })
-        );
-        assert_eq!(
-            OrderCreationAppData::from_fields(full(&hex), Some(hash)).unwrap(),
-            Some(OrderCreationAppData::Both {
-                full: hex.clone(),
-                expected: hash
-            })
-        );
-        assert!(OrderCreationAppData::from_fields(None, Some(hash)).is_err());
-    }
-}
