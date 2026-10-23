@@ -3,28 +3,27 @@ use {
     chrono::{TimeZone, Utc},
     configs::fee_factor::FeeFactor,
     fee_engine::{Caps, Evaluation, Fact, Facts, Fee, RuleSet, Settings},
-    model::{
-        order::{Order, OrderData, OrderMetadata},
-        signature::Signature,
-    },
+    model::order::{Order, OrderData, OrderMetadata},
 };
 
 const RULES: &str = include_str!("rules.toml");
 
-fn settings() -> Settings {
-    Settings {
-        caps: Caps::default(),
-    }
-}
-
 fn rules() -> RuleSet {
-    RuleSet::load(RULES, settings()).unwrap()
+    RuleSet::load(
+        RULES,
+        Settings {
+            caps: Caps::default(),
+            chain_id: 1,
+        },
+    )
+    .unwrap()
 }
 
-fn order() -> Order {
+fn order(app_data: Option<&str>) -> Order {
     Order {
         metadata: OrderMetadata {
             owner: address!("0x9999999999999999999999999999999999999999"),
+            full_app_data: app_data.map(str::to_owned),
             ..Default::default()
         },
         data: OrderData {
@@ -41,7 +40,7 @@ fn order() -> Order {
 #[test]
 fn sample_file_loads_cleanly() {
     let rules = rules();
-    assert_eq!(rules.rules().len(), 8);
+    assert_eq!(rules.rules().len(), 13);
     assert_eq!(rules.rules()[0].name(), "Exempt JIT makers");
     assert_eq!(rules.rules()[0].fee(), "no_fee()");
 }
@@ -51,7 +50,8 @@ fn matches_without_market_data_when_no_rule_needs_it() {
     let rules = rules();
     let auction = rules.auction(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
 
-    let Evaluation::Matched { rule, fees } = auction.evaluate(&order(), &Facts::default()) else {
+    let Evaluation::Matched { rule, fees } = auction.evaluate(&order(None), &Facts::default())
+    else {
         panic!("expected a match");
     };
     assert_eq!(rule.name(), "Correlated pairs");
@@ -68,24 +68,25 @@ fn suspends_only_when_a_reached_rule_needs_market_data() {
     let rules = rules();
     let auction = rules.auction(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
 
-    // A smart-wallet buy order does not match the sell rule, so the `size_usd`
-    // its fee reads is never needed.
-    let mut smart_wallet_buy = order();
-    smart_wallet_buy.signature = Signature::Eip1271(vec![]);
+    // Self-declared partners never reach the size-based rule.
+    let claimed = order(Some(r#"{"appCode":"acme"}"#));
     assert!(matches!(
-        auction.evaluate(&smart_wallet_buy, &Facts::default()),
+        auction.evaluate(&claimed, &Facts::default()),
         Evaluation::Matched { rule, .. } if rule.name() == "Correlated pairs"
     ));
 
     // A rule that reads `size_usd` suspends until the fact is supplied.
     let rules = RuleSet::load(
         "[[rule]]\nname = 'Big'\nwhen = 'size_usd > 1e6'\nfee = 'volume(1)'",
-        settings(),
+        Settings {
+            caps: Caps::default(),
+            chain_id: 1,
+        },
     )
     .unwrap();
     let auction = rules.auction(Utc::now());
     assert!(matches!(
-        auction.evaluate(&order(), &Facts::default()),
+        auction.evaluate(&order(None), &Facts::default()),
         Evaluation::Suspended {
             missing: Fact::SizeUsd,
             ..
@@ -93,7 +94,7 @@ fn suspends_only_when_a_reached_rule_needs_market_data() {
     ));
     assert!(matches!(
         auction.evaluate(
-            &order(),
+            &order(None),
             &Facts {
                 size_usd: Some(2e6)
             }
@@ -102,7 +103,7 @@ fn suspends_only_when_a_reached_rule_needs_market_data() {
     ));
     assert!(matches!(
         auction.evaluate(
-            &order(),
+            &order(None),
             &Facts {
                 size_usd: Some(2e3)
             }

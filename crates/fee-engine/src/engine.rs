@@ -5,6 +5,7 @@ use {
         fee::{self, Caps, Fee},
         file::{RuleDef, RulesFile},
         order_view,
+        partner::{self, Signers},
     },
     alloy_primitives::{B256, keccak256},
     cel::{Context, Env, Program, Value},
@@ -21,6 +22,8 @@ use {
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub caps: Caps,
+    /// Chain partner attestations are signed for.
+    pub chain_id: u64,
 }
 
 /// Why a rules file was refused.
@@ -28,6 +31,8 @@ pub struct Settings {
 pub enum LoadError {
     #[error("rules file does not parse: {0}")]
     Toml(#[from] toml::de::Error),
+    #[error("partner `{partner}`: no signers")]
+    NoSigners { partner: String },
     #[error("rule `{name}` is defined twice")]
     DuplicateRule { name: String },
     #[error("rule `{rule}`: `{field}` does not compile: {message}")]
@@ -123,6 +128,7 @@ pub struct RuleSet {
     env: Arc<Env>,
     rules: Vec<Rule>,
     lists: Vec<(String, Value)>,
+    signers: Signers,
     settings: Settings,
     source_hash: B256,
 }
@@ -142,6 +148,18 @@ impl RuleSet {
         let file: RulesFile = toml::from_str(source)?;
         let env = Arc::new(Env::stdlib().with_optional_support(false));
         let lists = list_values(&file.lists);
+        let signers = file
+            .partners
+            .iter()
+            .map(|(code, partner)| {
+                if partner.signers.is_empty() {
+                    return Err(LoadError::NoSigners {
+                        partner: code.clone(),
+                    });
+                }
+                Ok((code.clone(), partner.signers.iter().copied().collect()))
+            })
+            .collect::<Result<Signers, _>>()?;
 
         let mut rules = Vec::with_capacity(file.rules.len());
         let mut names = HashSet::new();
@@ -156,6 +174,7 @@ impl RuleSet {
             env,
             rules,
             lists,
+            signers,
             settings,
             source_hash: keccak256(source.as_bytes()),
         })
@@ -249,10 +268,18 @@ impl<'r> Auction<'r> {
     /// Runs the rules top to bottom against `order`. A rule that fails to
     /// evaluate is logged and skipped.
     pub fn evaluate(&self, order: &Order, facts: &Facts) -> Evaluation<'r> {
+        let app_data = app_data::document_view(order.metadata.full_app_data.as_deref());
+        let partner = partner::verified_partner(
+            order,
+            &app_data,
+            &self.rules.signers,
+            self.rules.settings.chain_id,
+        );
         let mut context = self.context.new_inner_scope();
         context
-            .add_variable("order", order_view::order_view(order))
+            .add_variable("order", order_view::order_view(order, app_data))
             .expect("JSON converts to CEL values");
+        context.add_variable_from_value("partner", partner);
         if let Some(size_usd) = facts.size_usd {
             context.add_variable_from_value("size_usd", size_usd);
         }
@@ -316,21 +343,30 @@ impl<'r> Auction<'r> {
 mod tests {
     use {
         super::*,
-        alloy_primitives::{Address, U256, address},
+        crate::partner::PartnerAttestation,
+        alloy_primitives::{Address, U256, address, b256, hex},
+        alloy_signer::SignerSync,
+        alloy_signer_local::PrivateKeySigner,
         chrono::TimeZone,
         configs::fee_factor::FeeFactor,
-        model::order::{OrderData, OrderKind, OrderMetadata},
+        model::order::{OrderData, OrderMetadata},
+        serde_json::json,
     };
 
     const USDC: Address = address!("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
     const USDT: Address = address!("0xdAC17F958D2ee523a2206206994597C13D831ec7");
     const WETH: Address = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
     const MAKER: Address = address!("0x1111111111111111111111111111111111111111");
+    /// The address of private key `0x…01`.
+    const ACME_SIGNER: Address = address!("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf");
 
     const RULES: &str = r#"
 [lists]
 stablecoins = ["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "0xdAC17F958D2ee523a2206206994597C13D831ec7"]
 jit_makers = ["0x1111111111111111111111111111111111111111"]
+
+[partners]
+acme = { signers = ["0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"] }
 
 [[rule]]
 name = "JIT makers"
@@ -338,14 +374,19 @@ when = 'order.owner in jit_makers'
 fee = 'no_fee()'
 
 [[rule]]
-name = "Stablecoin launch month"
-when = 'order.sellToken in stablecoins && order.buyToken in stablecoins && now < timestamp("2026-12-01T00:00:00Z")'
-fee = 'volume(1)'
+name = "Acme launch month"
+when = 'partner == "acme" && now < timestamp("2026-12-01T00:00:00Z")'
+fee = 'no_fee()'
 
 [[rule]]
-name = "Sells"
-when = 'order.kind == "sell"'
+name = "Acme"
+when = 'partner == "acme"'
 fee = 'volume(size_usd >= 1e6 ? 5 : 10)'
+
+[[rule]]
+name = "Aave flashloans"
+when = 'order.appData.appCode == "aave" && order.appData.metadata.flashloan != null'
+fee = 'volume(20)'
 
 [[rule]]
 name = "Stablecoin swaps"
@@ -361,6 +402,7 @@ fee = 'surplus(50, 1)'
     fn settings() -> Settings {
         Settings {
             caps: Caps::default(),
+            chain_id: 1,
         }
     }
 
@@ -368,10 +410,11 @@ fee = 'surplus(50, 1)'
         RuleSet::load(rules, settings()).unwrap()
     }
 
-    fn order(sell: Address, buy: Address) -> Order {
+    fn order(sell: Address, buy: Address, app_data: Option<serde_json::Value>) -> Order {
         Order {
             metadata: OrderMetadata {
                 owner: address!("0x2222222222222222222222222222222222222222"),
+                full_app_data: app_data.map(|value| value.to_string()),
                 ..Default::default()
             },
             data: OrderData {
@@ -386,8 +429,22 @@ fee = 'surplus(50, 1)'
         }
     }
 
-    fn after_launch() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap()
+    fn attested_by_acme(mut order: Order) -> Order {
+        let signer = PrivateKeySigner::from_bytes(&b256!(
+            "0000000000000000000000000000000000000000000000000000000000000001"
+        ))
+        .unwrap();
+        assert_eq!(signer.address(), ACME_SIGNER);
+        let hash = PartnerAttestation::for_order(&order).signing_hash(1);
+        let signature = signer.sign_hash_sync(&hash).unwrap();
+        order.metadata.full_app_data = Some(
+            json!({
+                "appCode": "acme",
+                "metadata": { "partner": { "signature": hex::encode_prefixed(signature.as_bytes()) } },
+            })
+            .to_string(),
+        );
+        order
     }
 
     fn matched<'r>(evaluation: &Evaluation<'r>) -> (&'r str, Vec<Fee>) {
@@ -406,14 +463,14 @@ fee = 'surplus(50, 1)'
     #[test]
     fn first_matching_rule_wins() {
         let rules = load(RULES);
-        let auction = rules.auction(after_launch());
+        let auction = rules.auction(Utc::now());
         let facts = Facts::default();
 
-        let (rule, fees) = matched(&auction.evaluate(&order(USDC, USDT), &facts));
+        let (rule, fees) = matched(&auction.evaluate(&order(USDC, USDT, None), &facts));
         assert_eq!(rule, "Stablecoin swaps");
         assert_eq!(fees, vec![volume(10.)]);
 
-        let (rule, fees) = matched(&auction.evaluate(&order(WETH, USDT), &facts));
+        let (rule, fees) = matched(&auction.evaluate(&order(WETH, USDT, None), &facts));
         assert_eq!(rule, "Default");
         assert_eq!(
             fees,
@@ -423,42 +480,61 @@ fee = 'surplus(50, 1)'
             }]
         );
 
-        let mut jit = order(USDC, USDT);
+        let mut jit = order(USDC, USDT, None);
         jit.metadata.owner = MAKER;
         let (rule, fees) = matched(&auction.evaluate(&jit, &facts));
         assert_eq!(rule, "JIT makers");
         assert_eq!(fees, vec![]);
+
+        let aave = order(
+            USDC,
+            USDT,
+            Some(json!({
+                "appCode": "aave",
+                "metadata": {
+                    "flashloan": {
+                        "liquidityProvider": MAKER,
+                        "protocolAdapter": MAKER,
+                        "receiver": MAKER,
+                        "token": USDC,
+                        "amount": "1",
+                    },
+                },
+            })),
+        );
+        let (rule, fees) = matched(&auction.evaluate(&aave, &facts));
+        assert_eq!(rule, "Aave flashloans");
+        assert_eq!(fees, vec![volume(20.)]);
     }
 
     #[test]
-    fn size_usd_is_loaded_on_demand() {
+    fn discounts_need_a_verified_partner() {
         let rules = load(RULES);
-        let auction = rules.auction(after_launch());
+        let auction = rules.auction(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
 
-        // A buy order does not match the rule whose fee reads `size_usd`.
-        let (rule, _) = matched(&auction.evaluate(&order(WETH, USDT), &Facts::default()));
+        let claimed = order(WETH, USDT, Some(json!({ "appCode": "acme" })));
+        let (rule, _) = matched(&auction.evaluate(&claimed, &Facts::default()));
         assert_eq!(rule, "Default");
 
-        let mut sell = order(WETH, USDT);
-        sell.data.kind = OrderKind::Sell;
-        let evaluation = auction.evaluate(&sell, &Facts::default());
+        let proven = attested_by_acme(order(WETH, USDT, None));
+        let evaluation = auction.evaluate(&proven, &Facts::default());
         let Evaluation::Suspended { rule, missing } = &evaluation else {
             panic!("expected a suspension, got {evaluation:?}");
         };
-        assert_eq!(rule.name(), "Sells");
+        assert_eq!(rule.name(), "Acme");
         assert_eq!(*missing, Fact::SizeUsd);
 
         let facts = Facts {
             size_usd: Some(2_000_000.),
         };
-        let (rule, fees) = matched(&auction.evaluate(&sell, &facts));
-        assert_eq!(rule, "Sells");
+        let (rule, fees) = matched(&auction.evaluate(&proven, &facts));
+        assert_eq!(rule, "Acme");
         assert_eq!(fees, vec![volume(5.)]);
         let facts = Facts {
             size_usd: Some(1_000.),
         };
         assert_eq!(
-            matched(&auction.evaluate(&sell, &facts)).1,
+            matched(&auction.evaluate(&proven, &facts)).1,
             vec![volume(10.)]
         );
     }
@@ -466,10 +542,11 @@ fee = 'surplus(50, 1)'
     #[test]
     fn now_is_the_auction_time() {
         let rules = load(RULES);
+        let proven = attested_by_acme(order(WETH, USDT, None));
         let launch = rules.auction(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
-        let (rule, fees) = matched(&launch.evaluate(&order(USDC, USDT), &Facts::default()));
-        assert_eq!(rule, "Stablecoin launch month");
-        assert_eq!(fees, vec![volume(1.)]);
+        let (rule, fees) = matched(&launch.evaluate(&proven, &Facts::default()));
+        assert_eq!(rule, "Acme launch month");
+        assert_eq!(fees, vec![]);
     }
 
     #[test]
@@ -478,7 +555,7 @@ fee = 'surplus(50, 1)'
             r#"
 [[rule]]
 name = "Broken when"
-when = 'order.quote.sellAmount == 1'
+when = 'order.appData.metadata.flashloan.token == "x"'
 fee = 'volume(1)'
 
 [[rule]]
@@ -498,7 +575,7 @@ fee = 'volume(2)'
 "#,
         );
         let auction = rules.auction(Utc::now());
-        let (rule, fees) = matched(&auction.evaluate(&order(WETH, USDT), &Facts::default()));
+        let (rule, fees) = matched(&auction.evaluate(&order(WETH, USDT, None), &Facts::default()));
         assert_eq!(rule, "Default");
         assert_eq!(fees, vec![volume(2.)]);
     }
@@ -514,7 +591,7 @@ fee = '[volume(500), surplus(95, 10)]'
 "#,
         );
         let auction = rules.auction(Utc::now());
-        let (_, fees) = matched(&auction.evaluate(&order(WETH, USDT), &Facts::default()));
+        let (_, fees) = matched(&auction.evaluate(&order(WETH, USDT, None), &Facts::default()));
         let caps = Caps::default();
         assert_eq!(
             fees,
@@ -531,11 +608,34 @@ fee = '[volume(500), surplus(95, 10)]'
     }
 
     #[test]
+    fn null_is_in_no_list() {
+        let rules = load(
+            r#"
+[lists]
+partners = ["acme"]
+
+[[rule]]
+name = "Partners"
+when = 'partner in partners'
+fee = 'volume(1)'
+
+[[rule]]
+name = "Default"
+when = 'true'
+fee = 'volume(2)'
+"#,
+        );
+        let auction = rules.auction(Utc::now());
+        let (rule, _) = matched(&auction.evaluate(&order(WETH, USDT, None), &Facts::default()));
+        assert_eq!(rule, "Default");
+    }
+
+    #[test]
     fn no_rules_means_no_fee() {
         let rules = load("");
         let auction = rules.auction(Utc::now());
         assert!(matches!(
-            auction.evaluate(&order(WETH, USDT), &Facts::default()),
+            auction.evaluate(&order(WETH, USDT, None), &Facts::default()),
             Evaluation::NoMatch
         ));
     }
@@ -558,6 +658,10 @@ fee = '[volume(500), surplus(95, 10)]'
                  'x'\nwhen = 'true'\nfee = 'volume(1)'"
             ),
             LoadError::DuplicateRule { .. }
+        ));
+        assert!(matches!(
+            error("[partners]\nacme = { signers = [] }"),
+            LoadError::NoSigners { .. }
         ));
     }
 }

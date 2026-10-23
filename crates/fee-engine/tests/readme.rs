@@ -15,6 +15,7 @@ fn readme_examples_load() {
     for (index, block) in blocks.iter().enumerate() {
         let settings = Settings {
             caps: Caps::default(),
+            chain_id: 1,
         };
         RuleSet::load(block, settings).unwrap_or_else(|err| panic!("README block {index}: {err}"));
     }

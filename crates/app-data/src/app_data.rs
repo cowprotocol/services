@@ -23,13 +23,8 @@ pub struct ValidatedAppData {
     pub protocol: ProtocolAppData,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[cfg_attr(
-    any(test, feature = "test_helpers"),
-    derive(Serialize),
-    serde(into = "RawProtocolAppData")
-)]
-#[serde(try_from = "RawProtocolAppData")]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "RawProtocolAppData", into = "RawProtocolAppData")]
 pub struct ProtocolAppData {
     pub hooks: Hooks,
     pub signer: Option<Address>,
@@ -58,8 +53,7 @@ pub enum ExecutionMode {
 /// Since using flashloans introduces a bunch of complexities
 /// all these hints are not binding for the solver.
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Flashloan {
     /// Which contract to request the flashloan from.
@@ -78,8 +72,7 @@ pub struct Flashloan {
 
 /// Contains information about wrapper contracts
 #[serde_as]
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WrapperCall {
     /// The address of the wrapper contract.
@@ -93,14 +86,12 @@ pub struct WrapperCall {
     pub is_omittable: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReplacedOrder {
     pub uid: OrderUid,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Serialize))]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PartnerFee {
     #[serde(flatten)]
     pub policy: FeePolicy,
@@ -210,26 +201,26 @@ impl<'de> Deserialize<'de> for FeePolicy {
     }
 }
 
-#[cfg(any(test, feature = "test_helpers"))]
 impl serde::Serialize for FeePolicy {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
+        #[serde(untagged)]
         enum Helper {
+            #[serde(rename_all = "camelCase")]
             Surplus {
                 surplus_bps: u64,
                 max_volume_bps: u64,
             },
+            #[serde(rename_all = "camelCase")]
             PriceImprovement {
                 price_improvement_bps: u64,
                 max_volume_bps: u64,
             },
-            Volume {
-                volume_bps: u64,
-            },
+            #[serde(rename_all = "camelCase")]
+            Volume { volume_bps: u64 },
         }
 
         let helper = match self {
@@ -320,8 +311,7 @@ pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error>
 /// serde deserializes into this struct, then [`ProtocolAppData::try_from`]
 /// collapses the two fields into the enum and rejects any orders try to set
 /// both fields simultaneously.
-#[derive(Default, Deserialize)]
-#[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
+#[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RawProtocolAppData {
     #[serde(default)]
@@ -566,12 +556,8 @@ impl<'de> Deserialize<'de> for OrderUid {
 }
 
 /// A list containing all the partner fees
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-#[cfg_attr(
-    any(test, feature = "test_helpers"),
-    derive(Serialize),
-    serde(transparent)
-)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct PartnerFees(Vec<PartnerFee>);
 
 impl PartnerFees {
@@ -1034,5 +1020,25 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn partner_fee_serialization_round_trips() {
+        for json in [
+            r#"{"volumeBps":10,"recipient":"0x0101010101010101010101010101010101010101"}"#,
+            r#"{"surplusBps":50,"maxVolumeBps":100,"recipient":"0x0101010101010101010101010101010101010101"}"#,
+            r#"{"priceImprovementBps":50,"maxVolumeBps":100,"recipient":"0x0101010101010101010101010101010101010101"}"#,
+        ] {
+            let fee: PartnerFee = serde_json::from_str(json).unwrap();
+            let serialized = serde_json::to_value(&fee).unwrap();
+            assert_eq!(
+                serialized,
+                serde_json::from_str::<serde_json::Value>(json).unwrap()
+            );
+            assert_eq!(
+                serde_json::from_value::<PartnerFee>(serialized).unwrap(),
+                fee
+            );
+        }
     }
 }

@@ -1,14 +1,18 @@
 # fee-engine
 
-Rule-based protocol fees. A rules file holds named lists and an ordered list
-of rules. For every order the rules run top to bottom. The first `when` that
-is true picks the fee. The fee is then clamped to the caps in `Settings`.
+Rule-based protocol fees. A rules file holds named lists, the signers of each
+partner and an ordered list of rules. For every order the rules run top to
+bottom. The first `when` that is true picks the fee. The fee is then clamped
+to the caps in `Settings`.
 
 ## Rules file
 
 ```toml
 [lists]
 stablecoins = ["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "0xdAC17F958D2ee523a2206206994597C13D831ec7"]
+
+[partners]
+acme = { signers = ["0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"] }
 
 [[rule]]
 name = "Stablecoin swaps"
@@ -24,8 +28,8 @@ fee  = 'surplus(50, 1)'
 `when` and `fee` are [CEL](https://cel.dev) expressions. `when` must return a
 bool. `fee` must return one fee or a list of fees. `RuleSet::load` refuses the
 whole file when the TOML does not parse, a key is unknown, a rule name repeats,
-or an expression does not compile. A rule whose expression fails at run time
-is logged and skipped.
+a partner has no signers, or an expression does not compile. A rule whose
+expression fails at run time is logged and skipped.
 
 `tests/rules.toml` is a complete sample file.
 
@@ -44,13 +48,16 @@ functions (`size`, `startsWith`, `endsWith`, `contains`, `matches`,
 
 ```toml
 [[rule]]
-name = "Smart-wallet sells"
-when = 'order.kind == "sell" && ["eip1271", "presign"].exists(s, s == order.signingScheme)'
-fee  = 'surplus(order.partiallyFillable ? 40 : 50, 1)'
+name = "Partner fee above 50 bps"
+when = '''
+  order.appData.appCode.startsWith("CoW Swap")
+  && order.appData.metadata.partnerFee.exists(f, has(f.volumeBps) && f.volumeBps > 50)
+'''
+fee = 'surplus(order.kind == "sell" ? 40 : 50, 1)'
 
 [[rule]]
-name = "Orders with a custom receiver"
-when = 'order.receiver != "0x0000000000000000000000000000000000000000"'
+name = "Orders with pre-hooks"
+when = 'size(order.appData.metadata.hooks.pre) > 0'
 fee  = 'volume(5)'
 ```
 
@@ -73,8 +80,8 @@ when = 'order.partiallyFillable'
 fee  = '[volume(size_usd >= 1e6 ? 2 : 5), price_improvement(30, 0.5)]'
 
 [[rule]]
-name = "Liquidity orders pay nothing"
-when = 'order.class == "liquidity"'
+name = "Flashloan orders pay nothing"
+when = 'order.appData.metadata.flashloan != null'
 fee  = 'no_fee()'
 ```
 
@@ -87,7 +94,7 @@ computed fee inside the rule instead of leaving it to the caps.
 ```toml
 [[rule]]
 name = "1 to 10 bps, scaled by size"
-when = 'order.kind == "sell"'
+when = 'partner == "acme"'
 fee  = 'volume(max(1.0, min(10.0, size_usd / 1e5)))'
 ```
 
@@ -122,7 +129,7 @@ Duration units are `h`, `m`, `s`, `ms`, `us` and `ns`; there is no `d`.
 ```toml
 [[rule]]
 name = "Launch month"
-when = 'order.owner in jit_makers && now < timestamp("2026-12-01T00:00:00Z")'
+when = 'partner == "acme" && now < timestamp("2026-12-01T00:00:00Z")'
 fee  = 'no_fee()'
 
 [[rule]]
@@ -138,15 +145,29 @@ order.
 
 ### `order`
 
-The order as the API returns it, with two changes: amounts are doubles
-instead of decimal strings, and hex strings are lowercase. An unset `receiver`
-is the zero address, not `null`.
+The order as the API returns it, with three changes: `appData` holds the
+app-data document instead of its hash, amounts are doubles instead of decimal
+strings, and hex strings are lowercase. `appData.metadata` always carries every
+protocol field, `null` or empty when unset, with `partnerFee` as a list. An
+unset `receiver` is the zero address, not `null`.
 
 ```toml
 [[rule]]
 name = "Large smart-wallet sells"
 when = 'order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21'
 fee  = 'volume(3)'
+```
+
+### `partner`
+
+The app code of a `[partners]` entry whose registered signer attested the
+order, or `null`. An order that only claims an `appCode` does not get it.
+
+```toml
+[[rule]]
+name = "Any verified partner"
+when = 'partner != null'
+fee  = 'volume(5)'
 ```
 
 ### `size_usd`

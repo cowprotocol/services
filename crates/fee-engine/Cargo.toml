@@ -6,7 +6,9 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-alloy-primitives = { workspace = true }
+alloy-primitives = { workspace = true, features = ["k256", "serde"] }
+alloy-sol-types = { workspace = true }
+app-data = { workspace = true }
 cel = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 configs = { workspace = true }
@@ -16,6 +18,10 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+alloy-signer = { workspace = true }
+alloy-signer-local = { workspace = true }
 
 [lints]
 workspace = true

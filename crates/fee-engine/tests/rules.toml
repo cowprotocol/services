@@ -13,7 +13,11 @@ eth_lsts = [
   "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0", # wstETH
 ]
 jit_makers = ["0x1111111111111111111111111111111111111111"]
-treasury = ["0x2222222222222222222222222222222222222222"]
+acme_treasury = ["0x2222222222222222222222222222222222222222"]
+acme_tokens = ["0x3333333333333333333333333333333333333333"]
+
+[partners]
+acme = { signers = ["0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"] }
 
 [[rule]]
 name = "Exempt JIT makers"
@@ -21,23 +25,48 @@ when = 'order.owner in jit_makers'
 fee  = 'no_fee()'
 
 [[rule]]
-name = "Treasury and ops wallets"
-when = 'order.owner in treasury'
+name = "Acme treasury and ops wallets"
+when = 'order.owner in acme_treasury'
 fee  = 'no_fee()'
 
 [[rule]]
-name = "Smart-wallet launch month"
-when = 'order.signingScheme == "eip1271" && now < timestamp("2026-12-01T00:00:00Z")'
+name = "Acme launch month"
+when = 'partner == "acme" && now < timestamp("2026-12-01T00:00:00Z")'
 fee  = 'no_fee()'
 
 [[rule]]
-name = "Smart-wallet sells"
-when = 'order.signingScheme == "eip1271" && order.kind == "sell"'
+name = "Acme staging app"
+when = 'partner == "acme" && order.appData.environment == "staging"'
+fee  = 'no_fee()'
+
+[[rule]]
+name = "Aave flashloan collateral swaps"
+when = 'order.appData.appCode == "aave" && order.appData.metadata.flashloan != null'
+fee  = 'volume(20)'
+
+[[rule]]
+name = "Aave stablecoin swaps"
+when = 'order.appData.appCode == "aave" && order.sellToken in stablecoins && order.buyToken in stablecoins'
+fee  = 'volume(15)'
+
+[[rule]]
+name = "Acme smart-wallet orders"
+when = 'partner == "acme" && order.signingScheme == "eip1271"'
+fee  = 'volume(5)'
+
+[[rule]]
+name = "Acme token trades"
+when = 'partner == "acme" && (order.sellToken in acme_tokens || order.buyToken in acme_tokens)'
+fee  = 'volume(5)'
+
+[[rule]]
+name = "Acme base rate"
+when = 'partner == "acme"'
 fee  = 'volume(size_usd >= 1e6 ? 5 : 10)'
 
 [[rule]]
-name = "Partial fills"
-when = 'order.partiallyFillable'
+name = "Beta blended fee"
+when = 'order.appData.appCode == "beta"'
 fee  = '[surplus(30, 1), volume(2)]'
 
 [[rule]]

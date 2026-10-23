@@ -30,10 +30,11 @@ const QUOTE_AMOUNT_FIELDS: &[&str] = &[
     "sellTokenPrice",
 ];
 
-/// The order as rules see it: the API JSON with amounts as doubles and hex
-/// strings in lowercase.
-pub(crate) fn order_view(order: &Order) -> Value {
+/// The order as rules see it: the API JSON with the app-data document in
+/// place of its hash, amounts as doubles and hex strings in lowercase.
+pub(crate) fn order_view(order: &Order, app_data: Value) -> Value {
     let mut view = serde_json::to_value(order).expect("orders serialize");
+    view["appData"] = app_data;
     amounts_to_numbers(&mut view);
     lowercase_hex(&mut view);
     view
@@ -100,6 +101,7 @@ mod tests {
         let order = Order {
             metadata: OrderMetadata {
                 owner: address!("0xAbCdEf0000000000000000000000000000000001"),
+                full_app_data: Some(r#"{"appCode":"X"}"#.to_owned()),
                 ..Default::default()
             },
             data: OrderData {
@@ -108,13 +110,16 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(&order);
+        let app_data = app_data::document_view(order.metadata.full_app_data.as_deref());
+        let view = order_view(&order, app_data);
 
         assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
         assert_eq!(view["sellAmount"], 1e21);
         assert_eq!(view["kind"], "buy");
         assert_eq!(view["class"], "limit");
         assert_eq!(view["signingScheme"], "eip712");
+        assert_eq!(view["appData"]["appCode"], "X");
+        assert!(view["appData"]["metadata"]["flashloan"].is_null());
     }
 
     #[test]
