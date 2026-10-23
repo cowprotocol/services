@@ -115,7 +115,7 @@ fn priority_fee() -> PriorityFeePolicy {
         recent_slots: 150,
         min_compute_unit_price: 0,
         max_priority_fee_lamports: u64::MAX,
-        compute_unit_limit_headroom_percent: 20,
+        compute_unit_limit_headroom_percent: 10,
     }
 }
 
@@ -751,8 +751,8 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 }
 
 /// Same fee and budget as above, but the `/solve` simulation reports the
-/// settlement's compute units, so the fee is priced at those plus the 20%
-/// headroom, 120_000, not at the runtime's default, fits the budget, and the
+/// settlement's compute units, so the fee is priced at those plus the 10%
+/// headroom, 110_000, not at the runtime's default, fits the budget, and the
 /// settle reaches the send.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
@@ -984,8 +984,8 @@ async fn solve_cuts_at_the_solvers_default_compute_units_without_a_simulation() 
     assert_eq!(request["orders"][0]["buyAmount"], "2995");
 }
 
-/// The simulation reports 100_000 units, so the settlement declares 120_000
-/// and the cut is priced at them: 1_200 lamports of priority fee, 994 atoms,
+/// The simulation reports 100_000 units, so the settlement declares 110_000
+/// and the cut is priced at them: 1_100 lamports of priority fee, 994 atoms,
 /// with no default configured. The limit sent to the engine still moves by
 /// the ceiling's 1000, since no route exists yet.
 #[tokio::test]

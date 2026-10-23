@@ -93,7 +93,7 @@ impl Default for PriorityFeePolicy {
             recent_slots: 50,
             min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
-            compute_unit_limit_headroom_percent: 20,
+            compute_unit_limit_headroom_percent: 10,
         }
     }
 }
@@ -209,7 +209,7 @@ mod tests {
             recent_slots: MAX_RECENT_SLOTS,
             min_compute_unit_price: 0,
             max_priority_fee_lamports: u64::MAX,
-            compute_unit_limit_headroom_percent: 20,
+            compute_unit_limit_headroom_percent: 10,
         }
     }
 
@@ -233,8 +233,8 @@ mod tests {
     #[test]
     fn compute_unit_limit_adds_the_headroom_up_to_the_ceiling() {
         let policy = policy(50);
-        assert_eq!(policy.compute_unit_limit(100_000), 120_000);
-        assert_eq!(policy.compute_unit_limit(1_166_667), MAX_COMPUTE_UNIT_LIMIT);
+        assert_eq!(policy.compute_unit_limit(100_000), 110_000);
+        assert_eq!(policy.compute_unit_limit(1_272_728), MAX_COMPUTE_UNIT_LIMIT);
         assert_eq!(policy.compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
         let policy = PriorityFeePolicy {
             compute_unit_limit_headroom_percent: 0,
