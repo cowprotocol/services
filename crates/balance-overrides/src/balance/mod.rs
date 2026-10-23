@@ -222,6 +222,25 @@ impl Strategy {
         !matches!(self, Self::DirectSlot { .. })
     }
 
+    /// The contract whose storage the strategy overrides, if any.
+    pub(crate) fn target_contract(&self) -> Option<Address> {
+        match self {
+            Self::SolidityMapping {
+                target_contract, ..
+            }
+            | Self::SoladyMapping {
+                target_contract, ..
+            }
+            | Self::DirectSlot {
+                target_contract, ..
+            }
+            | Self::AaveV3AToken {
+                target_contract, ..
+            } => Some(*target_contract),
+            Self::NativeEth => None,
+        }
+    }
+
     /// Sets the packing shift on a balance strategy. No-op for `AaveV3AToken`
     /// and `NativeEth`, which are never packed.
     fn with_shift(mut self, shift_bits: usize) -> Self {
@@ -297,6 +316,29 @@ impl PartialEq for Strategy {
 
 impl Eq for Strategy {}
 
+/// Moves strategies in the token's own storage ahead of those found in other
+/// contracts. A slot in another contract may back `balanceOf` only for some
+/// holders, e.g. RSR reads the old RSR contract until an account has crossed.
+fn prefer_own_storage(mut strategies: Vec<Strategy>, token: Address) -> Vec<Strategy> {
+    strategies.sort_by_key(|strategy| strategy.target_contract() != Some(token));
+    strategies
+}
+
+/// Cache key for a detected strategy. A mapping in the token's own storage
+/// is cached under `(token, None)` and reused for every holder. A slot in
+/// another contract is cached under `(token, Some(holder))` because it may
+/// hold the balance only for that holder: RSR's `balanceOf` reads the old
+/// RSR contract for accounts that never transferred, but not for crossed
+/// accounts like the settlement contract, so the old contract's slot is only
+/// valid for the uncrossed holder it was verified with.
+fn cache_key(token: Address, holder: Address, strategy: &Strategy) -> (Address, Option<Address>) {
+    let any_holder = strategy.can_be_applied_to_any_holder()
+        && strategy
+            .target_contract()
+            .is_none_or(|contract| contract == token);
+    (token, (!any_holder).then_some(holder))
+}
+
 /// Heuristic balance override detector with integrated caching.
 ///
 /// Owns the Web3 handle, detection parameters, and the per-token strategy
@@ -344,10 +386,7 @@ impl Detector {
 
         match strategy.as_ref() {
             Ok(strategy) => {
-                let cache_key = (
-                    token,
-                    (!strategy.can_be_applied_to_any_holder()).then_some(holder),
-                );
+                let cache_key = cache_key(token, holder, strategy);
                 tracing::debug!(?token, ?strategy, "caching auto-detected balance strategy");
                 self.cache.insert(cache_key, Some(strategy.clone()));
             }
@@ -432,6 +471,7 @@ impl Detector {
 
         let strategies =
             find_plausible_strategies_for_slots(&storage_slots, &holder, self.probing_depth.into());
+        let strategies = prefer_own_storage(strategies, token);
 
         tracing::debug!(
             ?token,
@@ -582,6 +622,67 @@ mod tests {
         alloy_primitives::address,
         contracts::WETH9,
     };
+
+    #[test]
+    fn prefer_own_storage_puts_token_slots_first() {
+        let token = Address::with_last_byte(1);
+        let other = Address::with_last_byte(2);
+        let foreign = Strategy::SolidityMapping {
+            target_contract: other,
+            map_slot: U256::ZERO,
+            shift_bits: 0,
+        };
+        let own_first = Strategy::DirectSlot {
+            target_contract: token,
+            slot: B256::with_last_byte(7),
+            shift_bits: 0,
+        };
+        let own_second = Strategy::SolidityMapping {
+            target_contract: token,
+            map_slot: U256::from(2),
+            shift_bits: 0,
+        };
+
+        let ordered = prefer_own_storage(
+            vec![foreign.clone(), own_first.clone(), own_second.clone()],
+            token,
+        );
+
+        // Own-storage strategies first, otherwise the original order is kept.
+        assert_eq!(ordered, vec![own_first, own_second, foreign]);
+    }
+
+    #[test]
+    fn cache_key_reuses_only_own_storage_mappings_for_other_holders() {
+        let token = Address::with_last_byte(1);
+        let holder = Address::with_last_byte(9);
+        let own_mapping = Strategy::SolidityMapping {
+            target_contract: token,
+            map_slot: U256::ZERO,
+            shift_bits: 0,
+        };
+        let foreign_mapping = Strategy::SolidityMapping {
+            target_contract: Address::with_last_byte(2),
+            map_slot: U256::ZERO,
+            shift_bits: 0,
+        };
+        let own_direct = Strategy::DirectSlot {
+            target_contract: token,
+            slot: B256::ZERO,
+            shift_bits: 0,
+        };
+
+        assert_eq!(cache_key(token, holder, &own_mapping), (token, None));
+        assert_eq!(
+            cache_key(token, holder, &foreign_mapping),
+            (token, Some(holder))
+        );
+        assert_eq!(cache_key(token, holder, &own_direct), (token, Some(holder)));
+        assert_eq!(
+            cache_key(NATIVE_ETH, holder, &Strategy::NativeEth),
+            (NATIVE_ETH, None)
+        );
+    }
 
     #[test]
     fn detect_shift_locates_packed_balance() {
