@@ -137,8 +137,8 @@ impl Quoter {
     }
 
     /// Quote `order` on one driver. Failures are logged, counted and
-    /// swallowed: a driver rejecting the quote found no route, which is a
-    /// routine outcome, while anything else is that driver misbehaving.
+    /// swallowed: a `QuotingFailed` reply means no route, which is a routine
+    /// outcome, while anything else is that driver misbehaving.
     async fn quote_one(&self, endpoint: &Url, order: &Order) -> Option<Quote> {
         let driver = driver_name(endpoint);
         let start = Instant::now();
@@ -189,12 +189,13 @@ impl Quoter {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            if status == reqwest::StatusCode::BAD_REQUEST {
+            let result = failure(status, &body);
+            if result == "no_liquidity" {
                 tracing::debug!(%endpoint, body, "driver found no quote");
             } else {
                 tracing::warn!(%endpoint, %status, body, "driver quote failed");
             }
-            return Err(failure(status, &body));
+            return Err(result);
         }
         response
             .json()
