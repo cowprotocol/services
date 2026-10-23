@@ -9,6 +9,7 @@ use {
     model::fee_policy::{ExecutedProtocolFee, FeePolicy, Quote},
     num::BigRational,
     number::conversions::{big_decimal_to_u256, big_rational_to_u256},
+    sqlx::PgConnection,
     std::collections::HashMap,
 };
 
@@ -17,15 +18,14 @@ type Execution = (AuctionId, OrderUid);
 impl super::Postgres {
     pub async fn executed_protocol_fees(
         &self,
+        ex: &mut PgConnection,
         keys_filter: &[Execution],
     ) -> anyhow::Result<HashMap<Execution, Vec<ExecutedProtocolFee>>> {
-        let mut ex = self.pool.acquire().await?;
-
         let timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["fee_policies"])
             .start_timer();
-        let fee_policies = database::fee_policies::fetch_all(&mut ex, keys_filter).await?;
+        let fee_policies = database::fee_policies::fetch_all(ex, keys_filter).await?;
         timer.stop_and_record();
 
         let timer = super::Metrics::get()
@@ -33,7 +33,7 @@ impl super::Postgres {
             .with_label_values(&["executed_protocol_fees"])
             .start_timer();
         let executed_protocol_fees =
-            database::order_execution::executed_protocol_fees(&mut ex, keys_filter).await?;
+            database::order_execution::executed_protocol_fees(ex, keys_filter).await?;
         timer.stop_and_record();
 
         let quote_order_uids = fee_policies
@@ -55,7 +55,7 @@ impl super::Postgres {
             .database_queries
             .with_label_values(&["order_quotes"])
             .start_timer();
-        let quotes = database::orders::read_quotes(&mut ex, quote_order_uids.as_slice())
+        let quotes = database::orders::read_quotes(ex, quote_order_uids.as_slice())
             .await?
             .into_iter()
             .map(|quote| (quote.order_uid, quote))
