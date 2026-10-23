@@ -54,7 +54,11 @@ async fn register(
     document: &str,
 ) -> Result<(StatusCode, Json<AppDataHash>), error::Reply> {
     let hash = validate(document, state.app_data_size_limit()).map_err(|description| {
-        error::reply(StatusCode::BAD_REQUEST, "AppDataInvalid", description)
+        error::reply(
+            StatusCode::BAD_REQUEST,
+            "AppDataInvalid",
+            format!("appData is invalid: {description}"),
+        )
     })?;
     if let Some(expected) = expected
         && expected != hash

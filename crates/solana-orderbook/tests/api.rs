@@ -2494,7 +2494,7 @@ async fn app_data_rejects_invalid_uploads() {
 
 /// A new document answers `201` with its hash, the same document again
 /// `200`, with or without the hash in the path, and the document reads back
-/// by its hash.
+/// by its hash. A hash another document is stored under refuses the upload.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_app_data_round_trips() {
@@ -2503,7 +2503,7 @@ async fn solana_db_app_data_round_trips() {
         .execute(&pool)
         .await
         .unwrap();
-    let addr = spawn_server_on(pool).await;
+    let addr = spawn_server_on(pool.clone()).await;
     let document = r#"{"appCode":"CoW Swap","metadata":{}}"#;
     let hash = const_hex::encode_prefixed(app_data::hash_full_app_data(document.as_bytes()));
     let by_hash = format!("/api/v1/app_data/{hash}");
@@ -2537,4 +2537,20 @@ async fn solana_db_app_data_round_trips() {
     .await
     .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+
+    // Only a keccak256 collision reaches this reply, so the row is seeded.
+    sqlx::query("INSERT INTO solana.app_data (contract_app_data, full_app_data) VALUES ($1, $2)")
+        .bind(ByteArray(app_data::hash_full_app_data(b"{}")))
+        .bind(r#"{"a":1}"#)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, json) = put_app_data(
+        addr,
+        &format!("/api/v1/app_data/{EMPTY_APP_DATA_HASH}"),
+        "{}",
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+    assert_eq!(json["errorType"], "AppDataMismatch");
 }
