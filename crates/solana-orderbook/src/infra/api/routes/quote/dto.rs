@@ -1,6 +1,7 @@
 //! Wire shape of the quote endpoint, mirroring the EVM orderbook.
 
 use {
+    app_data::OrderCreationAppData,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -28,9 +29,10 @@ pub struct Request {
     pub side: Side,
     #[serde(flatten, default)]
     pub validity: Option<Validity>,
-    /// `0x`-prefixed 32 bytes, echoed back untouched.
-    #[serde(default)]
-    pub app_data: Option<String>,
+    /// The order's app data, the document or its hash, checked like at
+    /// placement. The zero hash when absent.
+    #[serde(flatten, deserialize_with = "app_data::deserialize_optional_app_data")]
+    pub app_data: OrderCreationAppData,
 }
 
 /// Which side the quote fixes, and the amount that side names.
@@ -135,7 +137,9 @@ pub struct Quote {
     pub buy_amount: u64,
     /// Unix seconds.
     pub valid_to: u32,
-    pub app_data: Option<String>,
+    /// The request's app data, a document with its hash alongside.
+    #[serde(flatten)]
+    pub app_data: OrderCreationAppData,
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
