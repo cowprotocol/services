@@ -86,11 +86,11 @@ impl Solver {
                     let mut current_sell_amount = quote.sell_amount();
                     for fee_policy in &quote.order.fee_policy {
                         match fee_policy {
-                            // If the fees are handled in the driver, for volume based fee, we
-                            // artificially reduce the limit sell amount
-                            // for buy orders before sending to solvers. This
-                            // allows driver to withhold volume based fee and not violate original
-                            // limit prices.
+                            // If the fees are handled in the driver, for volume
+                            // based fee, we artificially reduce the limit sell
+                            // amount for buy orders before sending to solvers.
+                            // This allows driver to withhold volume based fee
+                            // and not violate original limit prices.
                             fee::Policy::Volume { factor }
                                 if config.fee_handler == FeeHandler::Driver =>
                             {
@@ -123,11 +123,11 @@ impl Solver {
                     let mut current_buy_amount = quote.buy_amount();
                     for fee_policy in &quote.order.fee_policy {
                         match fee_policy {
-                            // If the fees are handled in the driver, for volume based fee, we
-                            // artificially increase the limit buy
-                            // amount for sell orders before sending to solvers. This
-                            // allows driver to withhold volume based fee and not violate original
-                            // limit prices.
+                            // If the fees are handled in the driver, for volume
+                            // based fee, we artificially increase the limit buy
+                            // amount for sell orders before sending to solvers.
+                            // This allows driver to withhold volume based fee
+                            // and not violate original limit prices.
                             fee::Policy::Volume { factor }
                                 if config.fee_handler == FeeHandler::Driver =>
                             {

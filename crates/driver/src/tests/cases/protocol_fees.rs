@@ -28,7 +28,8 @@ struct Amounts {
 struct Execution {
     // The executed net-amounts (including network fee) reported by the solver
     solver: Amounts,
-    // The executed net-amounts (including network and protocol) reported by the driver
+    // The executed net-amounts (including network and protocol) reported by the
+    // driver
     driver: Amounts,
 }
 
@@ -123,10 +124,11 @@ async fn triple_surplus_protocol_fee_buy_order_not_capped() {
         },
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee)
-            // The protocol fees are applied one by one to the orders, altering the order pricing
-            // For this example:
+            // The protocol fees are applied one by one to the orders, altering
+            // the order pricing For this example:
             // -> First fee policy:
-            //  20 ETH surplus (50 ETH - 30 ETH), surplus policy: 50 %, fee 10 ETH
+            //  20 ETH surplus (50 ETH - 30 ETH), surplus policy: 50 %,
+            //  fee 10 ETH
             // -> Second fee policy:
             // New sell amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
             // New surplus: 10 ETH, fee 5 ETH
@@ -134,7 +136,8 @@ async fn triple_surplus_protocol_fee_buy_order_not_capped() {
             // New sell amount in the Order: 50 ETH + 5 ETH (fee) = 55 ETH
             // New surplus: 5 ETH, fee 2.5 ETH
             // Total fee: 17.5 ETH
-            // Out of the 20 ETH of surplus, 17.5 ETH goes to fees and 2.5 ETH goes to the trader
+            // Out of the 20 ETH of surplus, 17.5 ETH goes to fees and 2.5 ETH
+            // goes to the trader
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -144,8 +147,9 @@ async fn triple_surplus_protocol_fee_buy_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (50 / 60 = 80%) this leaves us with a score of 16 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (50 / 60 = 80%) this leaves us with a score
+        // of 16 ETH.
         expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -170,17 +174,19 @@ async fn triple_surplus_protocol_fee_sell_order_not_capped() {
         },
         execution: Execution {
             // 20 ETH surplus in sell token (after network fee)
-            // The protocol fees are applied one by one to the orders, altering the order pricing
-            // For this example:
+            // The protocol fees are applied one by one to the orders, altering
+            // the order pricing For this example:
             // -> First fee policy:
-            //  20 ETH surplus (60 ETH - 40 ETH), surplus policy: 50 %, fee 10 ETH
+            //  20 ETH surplus (60 ETH - 40 ETH), surplus policy: 50 %,
+            //  fee 10 ETH
             // -> Second fee policy:
             // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
             // -> Third fee policy:
             // New buy amount in the Order: 50 ETH + 5 ETH (fee) = 55 ETH
             // New surplus: 5 ETH, fee 2.5 ETH
             // Total fee: 17.5 ETH
-            // Out of the 20 ETH of surplus, 17.5 ETH goes to fees and 2.5 ETH goes to the trader
+            // Out of the 20 ETH of surplus, 17.5 ETH goes to fees and 2.5 ETH
+            // goes to the trader
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -215,7 +221,7 @@ async fn surplus_and_volume_protocol_fee_buy_order_not_capped() {
         execution: Execution {
             // -> First fee policy:
             // 25% of the solver proposed sell volume is kept by the protocol
-            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) = 40 )
+            // solver executes at adjusted limit price ( 50 / (1 + 0.25) = 40 )
             // Fee = 50 ETH (limit price) - 40 ETH => 10 ETH
             // -> Second fee policy:
             // New buy amount in the Order: 40 ETH + 10 ETH (fee) = 50 ETH
@@ -231,8 +237,9 @@ async fn surplus_and_volume_protocol_fee_buy_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
+        // of 13.3 ETH.
         expected_score: 13.3333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -269,9 +276,9 @@ async fn surplus_and_price_improvement_protocol_fee_sell_order_not_capped() {
         execution: Execution {
             // -> First fee policy:
             // Quote is 50 sell for 45 buy, which is equal to 20 sell for 18 buy
-            // Solver returns 20 sell for 30 buy, so the price improvement is 12 in buy token
-            // Receive 12 ETH more than quoted, half of which gets captured by the protocol
-            // Fee = 12 ETH * 0.5 => 6 ETH
+            // Solver returns 20 sell for 30 buy, so the price improvement is 12
+            // in buy token Receive 12 ETH more than quoted, half of which gets
+            // captured by the protocol Fee = 12 ETH * 0.5 => 6 ETH
             // -> Second fee policy:
             // Order is 50 sell for 25 buy, which is equal to 20 sell for 10 buy
             // New buy amount in the Order: 10 ETH + 6 ETH (fee) = 16 ETH
@@ -322,8 +329,8 @@ async fn surplus_and_price_improvement_fee_buy_in_market_order_not_capped() {
         },
         execution: Execution {
             // -> First fee policy:
-            // Receive 10 ETH more than quoted, half of which gets captured by the protocol (10 ETH)
-            // Fee = 10 ETH * 0.5 => 5 ETH
+            // Receive 10 ETH more than quoted, half of which gets captured by
+            // the protocol (10 ETH) Fee = 10 ETH * 0.5 => 5 ETH
             // -> Second fee policy:
             // New buy amount in the Order: 40 ETH + 5 ETH (fee) = 45 ETH
             // New surplus: 5 ETH, fee 2.5 ETH
@@ -337,8 +344,9 @@ async fn surplus_and_price_improvement_fee_buy_in_market_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
+        // of 13.3 ETH.
         expected_score: 13.33333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -361,8 +369,8 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // 20 ETH surplus in sell token (after network fee), half of which is kept by the
-            // protocol
+            // 20 ETH surplus in sell token (after network fee), half of which
+            // is kept by the protocol
             solver: Amounts {
                 sell: 30.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -372,8 +380,9 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 16 ETH.
         expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -405,8 +414,9 @@ async fn protocol_fee_calculated_on_the_solver_side() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 35 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 28 ETH.
+        // Surplus is 35 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 28 ETH.
         expected_score: 28.ether().into_wei(),
         fee_handler: FeeHandler::Solver,
     };
@@ -462,8 +472,8 @@ async fn surplus_protocol_fee_partial_buy_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // 10 ETH surplus in sell token (after network fee), half of which is kept by the
-            // protocol
+            // 10 ETH surplus in sell token (after network fee), half of which
+            // is kept by the protocol
             solver: Amounts {
                 sell: 10.ether().into_wei(),
                 buy: 20.ether().into_wei(),
@@ -538,8 +548,9 @@ async fn surplus_protocol_fee_buy_order_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 16 ETH.
         expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -664,8 +675,9 @@ async fn volume_protocol_fee_buy_order() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 16 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 16 ETH.
         expected_score: 16.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -685,7 +697,8 @@ async fn volume_protocol_fee_buy_order_at_limit_price() {
         },
         execution: Execution {
             // 25% of the solver proposed sell volume is kept by the protocol
-            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) = 40 )
+            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) =
+            // 40 )
             solver: Amounts {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -696,8 +709,9 @@ async fn volume_protocol_fee_buy_order_at_limit_price() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 8 ETH.
+        // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 8 ETH.
         expected_score: 8.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -745,7 +759,8 @@ async fn volume_protocol_fee_sell_order_at_limit_price() {
         },
         execution: Execution {
             // 20% of the solver proposed buy value is kept by the protocol
-            // solver executes at the adjusted limit price ( 40 / (1 - 0.2) = 50 )
+            // solver executes at the adjusted limit price ( 40 / (1 - 0.2) = 50
+            // )
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 50.ether().into_wei(),
@@ -803,8 +818,8 @@ async fn volume_protocol_fee_partial_buy_order_at_limit_price() {
         },
         execution: Execution {
             // 25% of the solver proposed sell volume is kept by the protocol
-            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) = 40 ), which scaled
-            // for partially fillable order gives 16
+            // solver executes at the adjusted limit price ( 50 / (1 + 0.25) =
+            // 40 ), which scaled for partially fillable order gives 16
             solver: Amounts {
                 sell: 16.ether().into_wei(),
                 buy: 20.ether().into_wei(),
@@ -862,8 +877,8 @@ async fn volume_protocol_fee_partial_sell_order_at_limit_price() {
         },
         execution: Execution {
             // 20% of the solver proposed buy value is kept by the protocol
-            // solver executes at the adjusted limit price ( 50 / (1 - 0.2) = 62.5 ), which scaled
-            // for partially fillable order gives 25
+            // solver executes at the adjusted limit price ( 50 / (1 - 0.2) =
+            // 62.5 ), which scaled for partially fillable order gives 25
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 25.ether().into_wei(),
@@ -903,7 +918,8 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // Sell 10 ETH less than quoted, half of which is kept by the protocol
+            // Sell 10 ETH less than quoted, half of which is kept by the
+            // protocol
             solver: Amounts {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -913,8 +929,9 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
+        // of 13.3 ETH.
         expected_score: 13.33333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -944,7 +961,8 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 14 ETH more than quoted, half of which gets captured by the protocol
+            // Receive 14 ETH more than quoted, half of which gets captured by
+            // the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -983,7 +1001,8 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // Sell 10 ETH less than requested, half of which is kept by the protocol
+            // Sell 10 ETH less than requested, half of which is kept by the
+            // protocol
             solver: Amounts {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -993,8 +1012,9 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 8 ETH.
+        // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 8 ETH.
         expected_score: 8.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -1024,7 +1044,8 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 10 ETH more than quoted, half of which gets captured by the protocol
+            // Receive 10 ETH more than quoted, half of which gets captured by
+            // the protocol
             solver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 60.ether().into_wei(),
@@ -1073,8 +1094,9 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 60 = 66.6%) this leaves us with a score of 13.3 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
+        // of 13.3 ETH.
         expected_score: 13.33333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -1153,8 +1175,9 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
                 buy: 40.ether().into_wei(),
             },
         },
-        // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 8 ETH.
+        // Surplus is 10 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 8 ETH.
         expected_score: 8.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -1223,7 +1246,8 @@ async fn price_improvement_fee_partial_buy_in_market_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // Sell 10 ETH less than quoted, half of which is kept by the protocol
+            // Sell 10 ETH less than quoted, half of which is kept by the
+            // protocol
             solver: Amounts {
                 sell: 10.ether().into_wei(),
                 buy: 20.ether().into_wei(),
@@ -1233,8 +1257,9 @@ async fn price_improvement_fee_partial_buy_in_market_order_not_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
-        // Surplus is 15 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (40 / 50 = 80%) this leaves us with a score of 12 ETH.
+        // Surplus is 15 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (40 / 50 = 80%) this leaves us with a score
+        // of 12 ETH.
         expected_score: 12.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };
@@ -1265,8 +1290,9 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
         },
         execution: Execution {
             // Quote is 50 sell for 45 buy, which is equal to 20 sell for 18 buy
-            // Solver returns 20 sell for 30 buy, so the price improvement is 12 in buy token
-            // Receive 12 ETH more than quoted, half of which gets captured by the protocol
+            // Solver returns 20 sell for 30 buy, so the price improvement is 12
+            // in buy token Receive 12 ETH more than quoted, half of which gets
+            // captured by the protocol
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 30.ether().into_wei(),
@@ -1305,7 +1331,8 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_not_capped() {
             side: order::Side::Buy,
         },
         execution: Execution {
-            // Sell 10 ETH less than requested, half of which is kept by the protocol
+            // Sell 10 ETH less than requested, half of which is kept by the
+            // protocol
             solver: Amounts {
                 sell: 10.ether().into_wei(),
                 buy: 20.ether().into_wei(),
@@ -1344,7 +1371,8 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_not_capped() {
             side: order::Side::Sell,
         },
         execution: Execution {
-            // Receive 10 ETH more than quoted, half of which gets captured by the protocol
+            // Receive 10 ETH more than quoted, half of which gets captured by
+            // the protocol
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 30.ether().into_wei(),
@@ -1393,8 +1421,9 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
                 buy: 20.ether().into_wei(),
             },
         },
-        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using the order's
-        // limit price (50 / 75 = 66.6%) this leaves us with a score of 13.3 ETH.
+        // Surplus is 20 ETH worth of sell tokens, converted to buy tokens using
+        // the order's limit price (50 / 75 = 66.6%) this leaves us with a score
+        // of 13.3 ETH.
         expected_score: 13.333333333333333.ether().into_wei(),
         fee_handler: FeeHandler::Driver,
     };

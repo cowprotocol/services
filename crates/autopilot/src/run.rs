@@ -595,8 +595,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .await;
 
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
-            // This cares only about ethflow refund events because all the other ethflow
-            // events are already indexed by the OnchainOrderParser.
+            // This cares only about ethflow refund events because all the other
+            // ethflow events are already indexed by the OnchainOrderParser.
             EthFlowRefundRetriever::new(web3.clone(), config.ethflow.contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
@@ -627,8 +627,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .await;
 
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
-            // The events from the ethflow contract are read with the more generic contract
-            // interface called CoWSwapOnchainOrders.
+            // The events from the ethflow contract are read with the more
+            // generic contract interface called CoWSwapOnchainOrders.
             CoWSwapOnchainOrdersContract::new(web3.clone(), config.ethflow.contracts),
             onchain_order_event_parser,
             block_retriever,

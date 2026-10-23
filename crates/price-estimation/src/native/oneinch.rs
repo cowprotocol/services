@@ -184,7 +184,8 @@ mod tests {
                         *token,
                         TokenInfo {
                             symbol: None,
-                            // hard code 6 decimals because we are testing with USDC
+                            // hard code 6 decimals because we are testing with
+                            // USDC
                             decimals: Some(6),
                         },
                     )

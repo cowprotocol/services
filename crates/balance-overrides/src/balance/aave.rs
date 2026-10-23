@@ -329,7 +329,8 @@ mod tests {
         let web3 = Web3::with_asserter(probe_asserter(
             Some(underlying),
             Some(pool),
-            // Pool agrees on the pair but names the *real* aToken, not the rogue.
+            // Pool agrees on the pair but names the *real* aToken, not the
+            // rogue.
             Some(real_a_token),
         ));
         assert_eq!(probe_aave_token(&web3, rogue).await, None);
