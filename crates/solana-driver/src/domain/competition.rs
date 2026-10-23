@@ -21,6 +21,7 @@ use {
         solver::Solver,
     },
     base64::{Engine, prelude::BASE64_STANDARD},
+    cow_solana_rpc::RpcPrioritizationFee,
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
@@ -100,8 +101,9 @@ impl Competition {
     }
 
     /// Solve the auction, drop the solutions whose settlement provably fails
-    /// (over the byte limit or failing in simulation), and cache the rest for
-    /// a later `settle`.
+    /// (over the byte limit or failing in simulation), cut the execution costs
+    /// from the rest at the compute units their settlement declares, and cache
+    /// them for a later `settle`.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -137,25 +139,40 @@ impl Competition {
             .signed_duration_since(chrono::Utc::now())
             .to_std()
             .unwrap_or_default();
-        let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
+        let simulations = futures::future::join_all(solutions.iter().map(|solution| {
             let auction = &auction;
             async move {
                 let started = Instant::now();
-                let verdict = tokio::time::timeout(
-                    window,
-                    self.simulate_solution(auction_id, auction, solution),
-                )
-                .await
-                .unwrap_or(Err(Error::SimulationTimedOut));
-                (verdict, started.elapsed())
+                // The cut needs the simulated units, so the fees pricing it
+                // are fetched alongside: after the window only the HTTP time
+                // buffer is left.
+                let (verdict, fees) = tokio::join!(
+                    tokio::time::timeout(
+                        window,
+                        self.simulate_solution(auction_id, auction, solution),
+                    ),
+                    async {
+                        match self.solver.fee_handler() {
+                            FeeHandler::Driver => Some(self.prioritization_fees(solution).await),
+                            FeeHandler::Solver => None,
+                        }
+                    },
+                );
+                let verdict = verdict.unwrap_or(Err(Error::SimulationTimedOut));
+                (verdict, started.elapsed(), fees)
             }
         }))
         .await;
 
         let auction = Arc::new(auction);
+        let costs = ExecutionCost {
+            rent: &buy_token_accounts.missing,
+            native_prices: &auction.native_prices,
+        };
+        let orders = orders_by_uid(&auction.orders);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
+        for (mut solution, (verdict, elapsed, fees)) in solutions.into_iter().zip(simulations) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -201,6 +218,29 @@ impl Competition {
                 && solution.cu_estimate.is_none()
             {
                 solution.cu_estimate = Some(priority_fee::compute_unit_limit(units));
+            }
+            if let Some(fees) = fees {
+                let network_fee = match self.network_fee_at(&fees?, &solution) {
+                    Ok(network_fee) => network_fee,
+                    Err(reason) => {
+                        tracing::warn!(
+                            solver = %self.solver.name(),
+                            solution_id = solution.id,
+                            %reason,
+                            "dropping solution, its network fee is over budget"
+                        );
+                        continue;
+                    }
+                };
+                if let Err(reason) = costs.apply(&mut solution, &orders, network_fee) {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        %reason,
+                        "dropping solution the execution costs cannot be cut from"
+                    );
+                    continue;
+                }
             }
             self.solutions.insert(
                 Key {
@@ -301,8 +341,8 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
-    /// driver, every fill is tightened by the solver fee, and a solve fill is
-    /// cut by the execution costs on top.
+    /// driver, every fill is tightened by the solver fee; [`Self::solve`] cuts
+    /// the execution costs once the settlement is simulated.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
     /// its execution costs are reported, not cut, and nothing is flagged.
@@ -312,15 +352,12 @@ impl Competition {
         buy_token_accounts: Option<&BuyTokenAccounts>,
     ) -> Result<Vec<Solution>, Error> {
         let no_rent = HashMap::new();
-        let (charge, costs) = match self.solver.fee_handler() {
-            FeeHandler::Solver => (
-                Charge::Engine {
-                    missing_buy_token_accounts: buy_token_accounts
-                        .map(|accounts| accounts.missing.keys().copied().collect())
-                        .unwrap_or_default(),
-                },
-                None,
-            ),
+        let charge = match self.solver.fee_handler() {
+            FeeHandler::Solver => Charge::Engine {
+                missing_buy_token_accounts: buy_token_accounts
+                    .map(|accounts| accounts.missing.keys().copied().collect())
+                    .unwrap_or_default(),
+            },
             FeeHandler::Driver => {
                 let costs = ExecutionCost {
                     rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
@@ -330,13 +367,10 @@ impl Competition {
                     Some(_) => self.network_fee_reserve().await?,
                     None => 0,
                 };
-                (
-                    Charge::Driver {
-                        cuts: costs.cuts(&auction.orders, network_fee),
-                        fee: self.solver.solver_fee(),
-                    },
-                    Some(costs),
-                )
+                Charge::Driver {
+                    cuts: costs.cuts(&auction.orders, network_fee),
+                    fee: self.solver.solver_fee(),
+                }
             }
         };
         let solutions = self
@@ -358,15 +392,13 @@ impl Competition {
             );
         }
 
-        let Some(costs) = costs else {
+        let Charge::Driver { fee: Some(fee), .. } = &charge else {
             return Ok(solutions);
         };
         let orders = orders_by_uid(&auction.orders);
-        let mut charged = Vec::with_capacity(solutions.len());
+        let mut tightened = Vec::with_capacity(solutions.len());
         for mut solution in solutions {
-            if let Some(fee) = self.solver.solver_fee()
-                && let Err(reason) = fee.apply(&mut solution, &orders)
-            {
+            if let Err(reason) = fee.apply(&mut solution, &orders) {
                 tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
@@ -375,33 +407,9 @@ impl Competition {
                 );
                 continue;
             }
-            let network_fee = match buy_token_accounts {
-                None => 0,
-                Some(_) => match self.network_fee(&solution).await {
-                    Ok(network_fee) => network_fee,
-                    Err(Error::PriorityFeeTooHigh(reason)) => {
-                        tracing::warn!(
-                            solver = %self.solver.name(),
-                            solution_id = solution.id,
-                            %reason,
-                            "dropping solution, its network fee is over budget"
-                        );
-                        continue;
-                    }
-                    Err(err) => return Err(err),
-                },
-            };
-            match costs.apply(&mut solution, &orders, network_fee) {
-                Ok(()) => charged.push(solution),
-                Err(reason) => tracing::warn!(
-                    solver = %self.solver.name(),
-                    solution_id = solution.id,
-                    %reason,
-                    "dropping solution the execution costs cannot be cut from"
-                ),
-            }
+            tightened.push(solution);
         }
-        Ok(charged)
+        Ok(tightened)
     }
 
     /// The network fee the limit legs sent to the engine are moved by, before
@@ -430,17 +438,36 @@ impl Competition {
     /// The network fee of settling `solution`, in lamports: the signature fee
     /// plus the priority fee over the accounts its interactions write, at its
     /// compute unit estimate, or else the solver's default. Prices a quote
-    /// the way `settle` prices its transaction. A quote's settlement accounts
-    /// are placeholders, so only the interactions' accounts are read.
+    /// the way `settle` prices its transaction.
     pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
+        let fees = self.prioritization_fees(solution).await?;
+        Ok(self.network_fee_at(&fees, solution)?)
+    }
+
+    /// The fees recently paid over the accounts `solution`'s interactions
+    /// write. A quote's settlement accounts are placeholders, so only the
+    /// interactions' accounts are read.
+    async fn prioritization_fees(
+        &self,
+        solution: &Solution,
+    ) -> Result<Vec<RpcPrioritizationFee>, Error> {
         let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
-        let fees = self
-            .blockchain
+        self.blockchain
             .recent_prioritization_fees(&writable)
             .await
-            .map_err(Error::Rpc)?;
+            .map_err(Error::Rpc)
+    }
+
+    /// The network fee of settling `solution` given the fees recently paid
+    /// over its accounts, in lamports: the signature fee plus the priority
+    /// fee at its compute unit estimate, or else the solver's default.
+    fn network_fee_at(
+        &self,
+        fees: &[RpcPrioritizationFee],
+        solution: &Solution,
+    ) -> Result<u64, priority_fee::OverBudget> {
         let estimate = self.priority_fee.estimate(
-            &fees,
+            fees,
             solution
                 .cu_estimate
                 .or(self.solver.default_compute_unit_estimate()),

@@ -965,12 +965,12 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     assert!(request["orders"][0].get("missingBuyTokenAccount").is_none());
 }
 
-/// Without an estimate from the engine the cut follows the solver's 200_000
-/// unit default: 2_000 lamports of priority fee instead of the ceiling's
-/// 14_000, so the rent and fee priced at 1000 atoms for the ceiling come to
-/// 995. The limit sent to the engine moves by the same 995.
+/// The mock RPC answers no bundle simulation, so the units come from the
+/// solver's 200_000 default: 2_000 lamports of priority fee instead of the
+/// ceiling's 14_000, so the rent and fee priced at 1000 atoms for the ceiling
+/// come to 995. The limit sent to the engine moves by the same 995.
 #[tokio::test]
-async fn solve_cuts_at_the_solvers_default_compute_units_without_an_engine_estimate() {
+async fn solve_cuts_at_the_solvers_default_compute_units_without_a_simulation() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
     let (solver, _) = solver_with(engine, FeeHandler::Driver, 0, Some(200_000)).await;
     let addr = spawn_server(vec![solver]).await;
@@ -980,6 +980,37 @@ async fn solve_cuts_at_the_solvers_default_compute_units_without_an_engine_estim
 
     let request = requests.lock().unwrap().take().unwrap();
     assert_eq!(request["orders"][0]["buyAmount"], "2995");
+}
+
+/// The simulation reports 100_000 units, so the settlement declares 200_000
+/// and the cut is priced at them: 995 atoms, as above, with no default
+/// configured. The limit sent to the engine still moves by the ceiling's
+/// 1000, since no route exists yet.
+#[tokio::test]
+async fn solve_cuts_at_the_simulated_compute_units() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    mocks.insert(
+        SIMULATE_BUNDLE,
+        serde_json::json!({
+            "context": { "slot": 1 },
+            "value": { "transactionResults": [
+                { "err": null, "logs": [], "unitsConsumed": 100_000 },
+            ] },
+        }),
+    );
+    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2005");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "3000");
 }
 
 /// A route paying exactly the 2000 limit undercuts it once the cut applies

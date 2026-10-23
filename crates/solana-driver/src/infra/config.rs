@@ -169,11 +169,12 @@ pub struct Solver {
     /// Absent means none.
     #[serde(default)]
     pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
-    /// The compute units a solution the engine sends no `cuEstimate` for is
-    /// priced at, for the execution cost cut and a quote's network fee,
-    /// `1..=1_400_000`. Absent means the runtime's 1.4M ceiling. The
-    /// settlement declares the engine's estimate or twice its simulated
-    /// usage either way.
+    /// The compute units a solution is priced at when neither the engine's
+    /// `cuEstimate` nor the solve-time simulation measured them: a quote's
+    /// network fee, the reserve that moves the limits sent to the engine,
+    /// and the cut of a fill whose simulation was inconclusive.
+    /// `1..=1_400_000`; absent means the runtime's 1.4M ceiling. The
+    /// settlement's own limit is unaffected.
     #[serde(default)]
     pub default_compute_unit_estimate: Option<ComputeUnitEstimate>,
 }

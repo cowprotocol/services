@@ -14,9 +14,8 @@ use {
 };
 
 /// The runtime's per-transaction compute unit ceiling. It caps every limit
-/// and prices a solution without an estimate, the engine's or the solver's
-/// default: the cut comes before any settlement instructions exist to derive
-/// the runtime's default from.
+/// and prices a solution whose units neither the engine, a simulation nor
+/// the solver's default supplied.
 pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// The compute units a solution is priced at, `1..=MAX_COMPUTE_UNIT_LIMIT`.
