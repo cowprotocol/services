@@ -173,6 +173,8 @@ pub enum Error {
     RateLimited,
     #[error("dex api error {status}: {body}")]
     Api { status: u16, body: String },
+    #[error("dex error {code}: {message}")]
+    Dex { code: i64, message: String },
     #[error("malformed swap response: {0}")]
     BadResponse(String),
     #[error(transparent)]

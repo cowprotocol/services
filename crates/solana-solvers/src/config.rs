@@ -107,6 +107,10 @@ pub struct BitgetConfig {
 
     pub api_secret: String,
 
+    /// Partner code sent in the `Partner-Code` header.
+    #[serde(default = "default_partner_code")]
+    pub partner_code: String,
+
     /// Slippage tolerance in basis points. We bid Bitget's minimum output, so
     /// this is how far below its expected output the bids land.
     pub slippage_bps: u16,
@@ -119,6 +123,10 @@ pub struct BitgetConfig {
 
 fn default_max_accounts() -> u16 {
     48
+}
+
+fn default_partner_code() -> String {
+    "cowswap".to_string()
 }
 
 /// Load and parse the TOML config file.
@@ -190,6 +198,7 @@ bogus = true
         );
         assert_eq!(config.dex.slippage_bps, 20);
         assert_eq!(config.dex.max_accounts, 48);
+        assert_eq!(config.dex.partner_code, "cowswap");
     }
 
     #[test]

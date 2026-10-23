@@ -73,15 +73,15 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    pub fn into_data(self, http_status: u16) -> Result<SwapResponse, Error> {
+    pub fn into_data(self) -> Result<SwapResponse, Error> {
         if self.status != 0 {
             let code = self.error_code.unwrap_or_default();
             return Err(match code {
                 // No route, or a Bitget-side failure the next auction retries.
                 80000 | 80001 | 80004 | 80005 | 80008..=80012 | 80014 | 80020 => Error::NotFound,
-                _ => Error::Api {
-                    status: http_status,
-                    body: format!("error_code {code}: {}", self.msg.unwrap_or_default()),
+                _ => Error::Dex {
+                    code,
+                    message: self.msg.unwrap_or_default(),
                 },
             });
         }
