@@ -106,6 +106,7 @@ pub async fn quote(
             "the quoted amount does not cover the execution cost",
         )
     })?;
+    quoted.count_win(order.kind);
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
     let expiration = now + state.quote_expiry();
@@ -587,6 +588,7 @@ mod tests {
             buy_amount,
             solver: Pubkey::default(),
             network_fee,
+            driver: String::new(),
         }
     }
 
