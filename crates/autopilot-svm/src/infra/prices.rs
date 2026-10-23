@@ -789,7 +789,7 @@ async fn quote(
 /// one.
 fn implied_price(quote: &QuoteResponse) -> Option<u64> {
     // `sell_amount` is in lamports, `buy_amount` in token atoms.
-    let price = (u128::from(quote.sell_amount) * 1_000_000_000)
+    let price = (u128::from(quote.sell_amount) * u128::from(Solana::NATIVE_PRICE_DENOMINATOR))
         .checked_div(u128::from(quote.buy_amount))?;
     u64::try_from(price).ok().filter(|price| *price > 0)
 }
