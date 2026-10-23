@@ -669,7 +669,14 @@ pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// Query durations, by query.
-    #[metric(labels("type"))]
+    #[metric(
+        name = "autopilot_database_queries",
+        labels("type"),
+        buckets(
+            0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0,
+            60.0, 70.0, 80.0, 90.0
+        )
+    )]
     database_queries: prometheus::HistogramVec,
 }
 

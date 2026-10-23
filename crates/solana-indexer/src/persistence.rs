@@ -612,7 +612,7 @@ fn query_timer(query: &str) -> prometheus::HistogramTimer {
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// Query durations, by query.
-    #[metric(labels("type"))]
+    #[metric(name = "indexer_database_queries", labels("type"))]
     database_queries: prometheus::HistogramVec,
 }
 
