@@ -1128,7 +1128,7 @@ fn sponsored_intent(
             kind: cow_settlement_interface::data::intent::OrderKind::Sell,
             partially_fillable: false,
         },
-        app_data: [0x44; 32],
+        app_data: [0; 32],
     }
 }
 

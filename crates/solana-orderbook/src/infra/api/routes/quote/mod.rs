@@ -162,7 +162,7 @@ pub async fn quote(
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             valid_to,
-            // A document answers with its hash alongside, like the EVM orderbook.
+            // A document answers with its hash alongside.
             app_data: match &request.app_data {
                 OrderCreationAppData::Full { full } => OrderCreationAppData::Both {
                     full: full.clone(),
