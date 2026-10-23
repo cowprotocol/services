@@ -200,7 +200,7 @@ async fn solver_with(
         max_native_shortfall_bps: None,
         default_compute_unit_estimate: compute_unit_estimate
             .map_or_else(ComputeUnitEstimate::default, |units| {
-                ComputeUnitEstimate::try_from(units).unwrap()
+                units.try_into().unwrap()
             }),
     })
     .await
@@ -754,12 +754,10 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 /// settlement's compute units, so the fee is priced at those plus the 20%
 /// headroom, 120_000, not at the runtime's default, fits the budget, and the
 /// settle reaches the send.
-/// The solver's 500_000 unit default, which would be over the budget, prices
-/// only the cut and never reaches the declared limit.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Solver, 0, Some(500_000)).await;
+    let (solver, _) = solver_with_keypair(engine).await;
     let mut mocks = Mocks::new();
     mocks.insert(
         RpcRequest::GetRecentPrioritizationFees,
@@ -1217,32 +1215,27 @@ async fn quote_prices_the_network_fee_at_the_engines_compute_estimate() {
 
 /// Without an estimate from the engine the fee follows the solver's
 /// configured 200_000 units: 2_000 lamports plus the 5_000 signature fee.
-/// An estimate the engine does send wins: 100_000 units are 1_000 lamports.
 #[tokio::test]
 async fn quote_without_an_engine_estimate_is_priced_at_the_solvers_compute_units() {
-    let mut estimated = quote_solution("1000");
-    estimated["solutions"][0]["cuEstimate"] = serde_json::json!(100_000);
-    for (solution, network_fee) in [(quote_solution("1000"), "7000"), (estimated, "6000")] {
-        let engine = spawn_mock_solver_engine(solution).await;
-        let (solver, _) = solver_with(engine, FeeHandler::Solver, 0, Some(200_000)).await;
-        let mut mocks = Mocks::new();
-        mocks.insert(
-            RpcRequest::GetRecentPrioritizationFees,
-            serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
-        );
-        let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, _) = solver_with(engine, FeeHandler::Solver, 0, Some(200_000)).await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
-        let response = reqwest::Client::new()
-            .post(format!("http://{addr}/mock/quote"))
-            .json(&quote_request("sell", "1000"))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&quote_request("sell", "1000"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
 
-        let json: serde_json::Value = response.json().await.unwrap();
-        assert_eq!(json["networkFee"], network_fee);
-    }
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["networkFee"], "7000");
 }
 
 /// A route the driver would refuse to settle over the priority fee budget is

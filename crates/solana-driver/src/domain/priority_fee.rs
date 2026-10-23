@@ -230,8 +230,6 @@ mod tests {
         assert_eq!(policy.compute_unit_price(&fees), 30);
     }
 
-    /// 20% headroom: 100_000 units declare 120_000, 1_166_667 round up past
-    /// the ceiling, and no headroom declares the usage itself.
     #[test]
     fn compute_unit_limit_adds_the_headroom_up_to_the_ceiling() {
         let policy = policy(50);

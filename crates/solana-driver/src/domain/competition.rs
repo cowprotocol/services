@@ -102,8 +102,9 @@ impl Competition {
 
     /// Solve the auction, drop the solutions whose settlement provably fails
     /// (over the byte limit or failing in simulation), cut the execution costs
-    /// from the rest at the compute units their settlement declares, and cache
-    /// them for a later `settle`.
+    /// from the rest when the solver's fee handler is the driver, at the
+    /// compute units their settlement declares or else the solver's default,
+    /// and cache them for a later `settle`.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -143,9 +144,9 @@ impl Competition {
             let auction = &auction;
             async move {
                 let started = Instant::now();
-                // The cut needs the simulated units, so the fees pricing it
-                // are fetched alongside: after the window only the HTTP time
-                // buffer is left.
+                // The cut waits for the simulated units, and after the window
+                // only the HTTP time buffer is left, so the fees pricing it are
+                // fetched alongside the simulation.
                 let (verdict, fees) = tokio::join!(
                     tokio::time::timeout(
                         window,
@@ -341,8 +342,9 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
-    /// driver, every fill is tightened by the solver fee; [`Self::solve`] cuts
-    /// the execution costs once the settlement is simulated.
+    /// driver, the limits sent to the engine are moved by the execution cost
+    /// at the solver's default compute units and every fill is tightened by
+    /// the solver fee; the execution costs themselves are not cut here.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
     /// its execution costs are reported, not cut, and nothing is flagged.
@@ -417,7 +419,7 @@ impl Competition {
     /// solver's default compute unit estimate over the fees recently paid
     /// cluster-wide, or the budget when that is over it. Cluster-wide fees
     /// floor what any route's accounts pay, so a fill priced at the same
-    /// units, see [`Self::network_fee`], pays at least this much, and a
+    /// units, see [`Self::network_fee_at`], pays at least this much, and a
     /// fill on the moved limit whose route pays more is dropped.
     async fn network_fee_reserve(&self) -> Result<u64, Error> {
         let fees = self
@@ -436,8 +438,7 @@ impl Competition {
 
     /// The network fee of settling `solution`, in lamports: the signature fee
     /// plus the priority fee over the accounts its interactions write, at its
-    /// compute unit estimate, or else the solver's default. Prices a quote
-    /// the way `settle` prices its transaction.
+    /// compute unit estimate, or else the solver's default.
     pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
         let fees = self.prioritization_fees(solution).await?;
         Ok(self.network_fee_at(&fees, solution)?)
@@ -457,9 +458,7 @@ impl Competition {
             .map_err(Error::Rpc)
     }
 
-    /// The network fee of settling `solution` given the fees recently paid
-    /// over its accounts, in lamports: the signature fee plus the priority
-    /// fee at its compute unit estimate, or else the solver's default.
+    /// [`Self::network_fee`] over fees already fetched.
     fn network_fee_at(
         &self,
         fees: &[RpcPrioritizationFee],

@@ -69,8 +69,7 @@ signer = { keypair = "/path/to/keypair.json" }
 # on any shortfall.
 # max-native-shortfall-bps = 40
 # The compute units a solution is priced at when neither the engine's
-# cuEstimate nor the solve-time simulation measured them: a quote's network
-# fee, the reserve that moves the limits sent to the engine, and the cut of a
-# fill whose simulation was inconclusive. 1..=1400000; omit for the 1400000
-# ceiling. The settlement's own limit is unaffected.
+# cuEstimate nor the solve-time simulation measured them, so a quote's network
+# fee and the cut at solve time, 1..=1400000. Omit for the 1400000 ceiling.
+# The settlement's declared limit is unaffected.
 # default-compute-unit-estimate = 600000
