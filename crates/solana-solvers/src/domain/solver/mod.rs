@@ -23,6 +23,7 @@ pub trait Aggregator {
     fn quote(
         &self,
         order: &dex::Order,
+        taker: &Pubkey,
     ) -> impl Future<Output = Result<dex::Quote, dex::Error>> + Send;
 
     fn swap(
@@ -36,8 +37,9 @@ impl Aggregator for Dex {
     fn quote(
         &self,
         order: &dex::Order,
+        taker: &Pubkey,
     ) -> impl Future<Output = Result<dex::Quote, dex::Error>> + Send {
-        Dex::quote(self, order)
+        Dex::quote(self, order, taker)
     }
 
     fn swap(
@@ -206,7 +208,9 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     ) -> Option<Solution> {
         while !orders.is_empty() {
             let batch = batch_order(&orders)?;
-            let quote = self.limited("quote", self.quoter.quote(&batch)).await?;
+            let quote = self
+                .limited("quote", self.quoter.quote(&batch, &auction.taker))
+                .await?;
             // The limits are checked at the rate the solution's prices will
             // encode, which for a batch of buys is a little worse than the
             // swap's own.
@@ -520,7 +524,9 @@ mod tests {
         fn quote(
             &self,
             order: &dex::Order,
+            taker: &Pubkey,
         ) -> impl Future<Output = Result<dex::Quote, dex::Error>> + Send {
+            assert_eq!(*taker, pubkey(1), "quotes for the auction's taker");
             let (side, sell_mint, amount) = (order.side, order.sell_mint, order.amount());
             // Nothing runs before the first poll: a quote still held back by
             // the back-off is not recorded.

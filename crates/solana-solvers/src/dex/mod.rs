@@ -4,6 +4,7 @@
 //! `Dex` dispatches to the configured engine.
 
 pub mod bitget;
+mod dto;
 pub mod jupiter;
 
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
@@ -14,8 +15,8 @@ pub struct Order {
     pub sell_mint: Pubkey,
     pub buy_mint: Pubkey,
     /// Where the swap sends its output: the settlement's buy-mint buffer,
-    /// resolved upstream (driver or autopilot). Passed to Jupiter as
-    /// `destinationTokenAccount`. `FinalizeSettle` then pushes to the user.
+    /// resolved upstream (driver or autopilot). `FinalizeSettle` then pushes
+    /// to the user.
     pub buy_destination: Pubkey,
     pub sell_amount: u64,
     pub buy_amount: u64,
@@ -137,21 +138,21 @@ pub enum Dex {
 }
 
 impl Dex {
-    /// Price `order` without building its swap.
-    pub async fn quote(&self, order: &Order) -> Result<Quote, Error> {
+    /// Price `order` for the settlement signer `user` without building its
+    /// swap.
+    pub async fn quote(&self, order: &Order, user: &Pubkey) -> Result<Quote, Error> {
         match self {
             Dex::Jupiter(jupiter) => jupiter.quote(order).await,
-            Dex::Bitget(bitget) => bitget.quote(order).await,
+            Dex::Bitget(bitget) => bitget.quote(order, user).await,
         }
     }
 
     /// Build the swap for `quote` that the settlement signer `user` executes,
     /// at the quote's amounts.
     ///
-    /// The route spends its input from the sell-mint ATA of the solver.
-    /// Jupiter has no source-account override. The sell funds must already be
-    /// in that ATA. The caller must make sure that the ATA exists before the
-    /// pull instructions of the swap run.
+    /// The route spends its input from the sell-mint ATA of the solver. The
+    /// sell funds must already be in that ATA. The caller must make sure that
+    /// the ATA exists before the pull instructions of the swap run.
     pub async fn swap(&self, quote: &Quote, user: &Pubkey) -> Result<Swap, Error> {
         match self {
             Dex::Jupiter(jupiter) => jupiter.swap(quote, user).await,
@@ -172,6 +173,8 @@ pub enum Error {
     RateLimited,
     #[error("dex api error {status}: {body}")]
     Api { status: u16, body: String },
+    #[error("dex error {code}: {message}")]
+    Dex { code: i64, message: String },
     #[error("malformed swap response: {0}")]
     BadResponse(String),
     #[error(transparent)]
