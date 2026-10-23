@@ -652,9 +652,7 @@ fn full_order_with_quote_into_model_order(
             .transpose()
             .context("valid_from is not u32")?,
         fast_path: order.fast_path,
-        quote: quote
-            .map(|q| order_quote_into_model(q, status))
-            .transpose()?,
+        quote: quote.map(order_quote_into_model).transpose()?,
     };
     let data = OrderData {
         sell_token: Address::new(order.sell_token.0),

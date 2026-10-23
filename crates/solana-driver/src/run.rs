@@ -52,6 +52,7 @@ pub async fn run(args: Args) {
         &config.rpc.endpoint,
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
+        "base",
     );
     let solvers: Vec<solver::Solver> =
         futures::future::try_join_all(config.solvers.iter().map(solver::Solver::new))
@@ -61,6 +62,7 @@ pub async fn run(args: Args) {
         &config.rpc.bundle_endpoint,
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
+        "bundle",
     );
     let blockchain = Arc::new(blockchain::Solana::new(
         rpc,

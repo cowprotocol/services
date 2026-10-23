@@ -39,6 +39,7 @@ pub struct OrderRow {
 
 /// Read one order with its fill state. `None` when the uid is unknown.
 pub async fn find_order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Option<OrderRow>> {
+    let _timer = query_timer("find_order_by_uid");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
@@ -67,6 +68,7 @@ pub async fn get_orders_by_owner(
     offset: i64,
     limit: i64,
 ) -> Result<Vec<OrderRow>> {
+    let _timer = query_timer("get_orders_by_owner");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
@@ -117,6 +119,7 @@ pub async fn get_trades(
     offset: i64,
     limit: i64,
 ) -> Result<Vec<TradeRow>> {
+    let _timer = query_timer("get_trades");
     const QUERY: &str = r#"
 SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
        t.sell_amount, t.buy_amount, t.tx_signature,
@@ -146,6 +149,7 @@ OFFSET $3 LIMIT $4
 
 /// Whether the order has at least one trade.
 pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<bool> {
+    let _timer = query_timer("order_has_trade");
     sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM solana.trades WHERE order_uid = $1)",
     )
@@ -189,6 +193,7 @@ pub struct OrderQuote {
 
 /// Whether an order with this uid is already stored.
 pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
+    let _timer = query_timer("order_exists");
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM solana.orders WHERE uid = $1)")
         .bind(ByteArray(*uid))
         .fetch_one(pool)
@@ -204,6 +209,7 @@ pub async fn insert_sponsored_order(
     order: &SponsoredOrder,
     quote: Option<&OrderQuote>,
 ) -> Result<()> {
+    let _timer = query_timer("insert_sponsored_order");
     const QUERY: &str = r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
@@ -269,6 +275,7 @@ pub async fn find_sponsored_creation(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Option<SponsoredCreation>> {
+    let _timer = query_timer("find_sponsored_creation");
     sqlx::query_as(
         "SELECT presigned_transaction, last_valid_block_height
          FROM solana.orders
@@ -285,6 +292,7 @@ pub async fn find_latest_order_event(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Option<OrderEventLabel>> {
+    let _timer = query_timer("find_latest_order_event");
     const QUERY: &str = r#"
 SELECT label
 FROM solana.order_events
@@ -316,6 +324,7 @@ pub async fn find_order_solutions(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Vec<SolutionRow>> {
+    let _timer = query_timer("find_order_solutions");
     const QUERY: &str = r#"
 SELECT ps.solver, pte.executed_sell, pte.executed_buy
 FROM solana.proposed_solutions ps
@@ -390,6 +399,7 @@ pub struct Competition {
 /// one whose deadline slot the indexer has not passed: its winners may still
 /// submit their settlements, and the solutions would show what they trade.
 pub async fn find_competition_by_id(pool: &PgPool, auction_id: i64) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_competition_by_id");
     read_competition(pool, auction_id, true).await
 }
 
@@ -399,6 +409,7 @@ pub async fn find_competition_by_id_unfiltered(
     pool: &PgPool,
     auction_id: i64,
 ) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_competition_by_id_unfiltered");
     read_competition(pool, auction_id, false).await
 }
 
@@ -479,6 +490,7 @@ pub async fn find_competition_by_tx_signature(
     pool: &PgPool,
     tx_signature: [u8; 64],
 ) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_competition_by_tx_signature");
     let auction_id: Option<i64> = sqlx::query_scalar(
         "SELECT auction_id FROM solana.settlements WHERE tx_signature = $1 AND solution_uid IS \
          NOT NULL LIMIT 1",
@@ -495,6 +507,7 @@ pub async fn find_competition_by_tx_signature(
 
 /// The most recent competition whose deadline slot the indexer has passed.
 pub async fn find_latest_competition(pool: &PgPool) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_latest_competition");
     const QUERY: &str = r#"
 SELECT id
 FROM solana.competition_auctions
@@ -526,6 +539,7 @@ pub struct Quote {
 
 /// Store a quote and return the id allocated for it.
 pub async fn save_quote(ex: impl PgExecutor<'_>, quote: &Quote) -> Result<i64> {
+    let _timer = query_timer("save_quote");
     const QUERY: &str = r#"
 INSERT INTO solana.quotes (sell_token, buy_token, sell_amount, buy_amount,
     kind, solver, expiration_timestamp)
@@ -559,6 +573,7 @@ pub struct StoredQuote {
 
 /// Read one stored quote. `None` when the id is unknown.
 pub async fn read_quote(ex: impl PgExecutor<'_>, id: i64) -> Result<Option<StoredQuote>> {
+    let _timer = query_timer("read_quote");
     const QUERY: &str = r#"
 SELECT sell_token, buy_token, sell_amount, buy_amount, kind, solver,
        expiration_timestamp AS expiration
@@ -575,8 +590,25 @@ WHERE id = $1
 /// Check that the pool gives a connection and that the database answers on
 /// it.
 pub async fn ping(pool: &PgPool) -> Result<()> {
+    let _timer = query_timer("ping");
     let mut conn = pool.acquire().await.context("acquire a connection")?;
     conn.ping().await.context("ping the database")
+}
+
+/// Starts timing a query, recorded under `query` when the timer drops.
+fn query_timer(query: &str) -> prometheus::HistogramTimer {
+    Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .database_queries
+        .with_label_values(&[query])
+        .start_timer()
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Query durations, by query.
+    #[metric(name = "orderbook_database_queries", labels("type"))]
+    database_queries: prometheus::HistogramVec,
 }
 
 #[cfg(test)]

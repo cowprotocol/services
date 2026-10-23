@@ -45,6 +45,7 @@ pub async fn open_orders(
     now_unix: i64,
     block_height: Option<i64>,
 ) -> Result<Vec<OrderRow>> {
+    let _timer = query_timer("open_orders");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
@@ -93,6 +94,7 @@ pub async fn unrecorded_dead_creations(
     now_unix: i64,
     block_height: i64,
 ) -> Result<Vec<ByteArray<32>>> {
+    let _timer = query_timer("unrecorded_dead_creations");
     const QUERY: &str = r#"
 SELECT o.uid
 FROM solana.orders o
@@ -119,6 +121,7 @@ ORDER BY o.uid
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
+    let _timer = query_timer("last_indexed_slot");
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
         .fetch_optional(ex)
@@ -152,6 +155,7 @@ pub async fn pending_creations(
     ex: impl PgExecutor<'_>,
     uids: &[Vec<u8>],
 ) -> Result<Vec<StoredCreation>> {
+    let _timer = query_timer("pending_creations");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.order_pda, o.presigned_transaction AS transaction
 FROM solana.orders o
@@ -171,6 +175,7 @@ ORDER BY o.creation_timestamp, o.uid
 /// Lower a pending sponsored creation's stored deadline to `height`, a height
 /// its blockhash is known dead at. Never raises it.
 pub async fn expire_creation(ex: impl PgExecutor<'_>, uid: &[u8], height: i64) -> Result<()> {
+    let _timer = query_timer("expire_creation");
     const QUERY: &str = r#"
 UPDATE solana.orders
 SET last_valid_block_height = LEAST(last_valid_block_height, $2)
@@ -194,6 +199,7 @@ pub async fn open_settlement_window(
     start_slot: i64,
     deadline_slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("open_settlement_window");
     const QUERY: &str = r#"
 INSERT INTO solana.settlement_executions
     (auction_id, solver, solution_uid, start_timestamp, start_slot, deadline_slot)
@@ -221,6 +227,7 @@ pub async fn reject_settlement_window(
     solver: Pubkey,
     solution_uid: i64,
 ) -> Result<()> {
+    let _timer = query_timer("reject_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'rejected', end_timestamp = now(), end_slot = start_slot
@@ -247,6 +254,7 @@ pub async fn revert_settlement_window(
     solution_uid: i64,
     slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("revert_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'reverted', end_timestamp = now(), end_slot = $4
@@ -274,6 +282,7 @@ pub async fn skip_settlement_window(
     slot: i64,
     deadline_slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("skip_settlement_window");
     const QUERY: &str = r#"
 INSERT INTO solana.settlement_executions
     (auction_id, solver, solution_uid, start_timestamp, end_timestamp, start_slot, end_slot,
@@ -304,6 +313,7 @@ pub async fn close_landed_windows(
     ex: impl PgExecutor<'_>,
     auction_id: i64,
 ) -> Result<Vec<LandedWindow>> {
+    let _timer = query_timer("close_landed_windows");
     const QUERY: &str = r#"
 WITH landed AS (
     UPDATE solana.settlement_executions e
@@ -351,6 +361,7 @@ pub async fn expire_settlement_window(
     solution_uid: i64,
     slot: i64,
 ) -> Result<bool> {
+    let _timer = query_timer("expire_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'timeout', end_timestamp = now(), end_slot = $4
@@ -371,6 +382,7 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
 /// Close every open window whose deadline is at or before the slot as timed
 /// out, returning their auction ids.
 pub async fn expire_settlement_windows(ex: impl PgExecutor<'_>, slot: i64) -> Result<Vec<i64>> {
+    let _timer = query_timer("expire_settlement_windows");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'timeout', end_timestamp = now(), end_slot = $1
@@ -386,6 +398,7 @@ RETURNING auction_id
 
 /// Auction ids of open windows, the seed re-read set.
 pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>> {
+    let _timer = query_timer("open_window_auction_ids");
     sqlx::query_scalar("SELECT auction_id FROM solana.settlement_executions WHERE outcome IS NULL")
         .fetch_all(ex)
         .await
@@ -404,6 +417,7 @@ pub async fn in_flight_orders(
     ex: impl PgExecutor<'_>,
     processed_slot: i64,
 ) -> Result<Vec<ByteArray<32>>> {
+    let _timer = query_timer("in_flight_orders");
     const QUERY: &str = r#"
 SELECT DISTINCT pte.order_uid
 FROM solana.competition_auctions ca
@@ -449,6 +463,7 @@ pub async fn replace_current_auction(
     tip_slot: i64,
     json: &serde_json::Value,
 ) -> Result<i64> {
+    let _timer = query_timer("replace_current_auction");
     let mut tx = pool.begin().await.context("begin auction replacement")?;
     sqlx::query("DELETE FROM solana.auctions")
         .execute(&mut *tx)
@@ -508,6 +523,7 @@ pub struct Competition {
 /// Persist a competition: the auction snapshot and every proposed solution
 /// with its executions, in one transaction.
 pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition) -> Result<()> {
+    let _timer = query_timer("persist_competition");
     let mut tx = pool.begin().await.context("begin competition persist")?;
     sqlx::query(
         "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, order_uids, \
@@ -639,6 +655,29 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
     value
         .to_u64()
         .with_context(|| format!("amount {value} does not fit u64"))
+}
+
+/// Starts timing a query, recorded under `query` when the timer drops.
+pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
+    Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .database_queries
+        .with_label_values(&[query])
+        .start_timer()
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Query durations, by query.
+    #[metric(
+        name = "autopilot_database_queries",
+        labels("type"),
+        buckets(
+            0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0,
+            60.0, 70.0, 80.0, 90.0
+        )
+    )]
+    database_queries: prometheus::HistogramVec,
 }
 
 #[cfg(test)]

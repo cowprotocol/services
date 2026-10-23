@@ -27,6 +27,7 @@ use {
         },
         quote::QuoteId,
     },
+    num::BigUint,
     observe::metrics::LivenessChecking,
     shared::{
         fee::FeeParameters,
@@ -501,15 +502,31 @@ impl Orderbook {
     }
 
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        self.database_replica.single_order(uid).await
+        Ok(self
+            .database_replica
+            .single_order(uid)
+            .await?
+            .map(hide_quote_until_filled))
     }
 
     pub async fn get_orders(&self, uids: &[OrderUid]) -> Result<Vec<(OrderUid, Result<Order>)>> {
-        self.database_replica.many_orders(uids).await
+        Ok(self
+            .database_replica
+            .many_orders(uids)
+            .await?
+            .into_iter()
+            .map(|(uid, order)| (uid, order.map(hide_quote_until_filled)))
+            .collect())
     }
 
     pub async fn get_orders_for_tx(&self, hash: &B256) -> Result<Vec<Order>> {
-        self.database_replica.orders_for_tx(hash).await
+        Ok(self
+            .database_replica
+            .orders_for_tx(hash)
+            .await?
+            .into_iter()
+            .map(hide_quote_until_filled)
+            .collect())
     }
 
     pub async fn get_auction(&self) -> Result<Option<dto::AuctionWithId>> {
@@ -529,10 +546,14 @@ impl Orderbook {
         offset: u64,
         limit: u64,
     ) -> Result<Vec<Order>> {
-        self.database_replica
+        Ok(self
+            .database_replica
             .user_orders(owner, offset, Some(limit))
             .await
-            .context("get_user_orders error")
+            .context("get_user_orders error")?
+            .into_iter()
+            .map(hide_quote_until_filled)
+            .collect())
     }
 
     pub async fn get_order_status(
@@ -769,6 +790,20 @@ impl LivenessChecking for Orderbook {
     }
 }
 
+/// Only reveals the quote of orders that have been at least partially filled.
+/// That is enough for solvers to audit quote rewards but prevents them from
+/// placing and cancelling orders just to study other solvers' quotes.
+/// Apply this to every order returned via the API, even if the underlying
+/// query currently doesn't load the quote.
+fn hide_quote_until_filled(mut order: Order) -> Order {
+    if order.metadata.executed_buy_amount == BigUint::ZERO
+        && order.metadata.executed_sell_amount == BigUint::ZERO
+    {
+        order.metadata.quote = None;
+    }
+    order
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -776,11 +811,42 @@ mod tests {
         crate::database::orders::MockOrderStoring,
         mockall::predicate::eq,
         model::{
-            order::{OrderData, OrderMetadata},
+            order::{OrderData, OrderMetadata, OrderQuote},
             signature::Signature,
         },
         shared::order_validation::MockOrderValidating,
     };
+
+    #[test]
+    fn quote_only_revealed_after_fill() {
+        let quote = OrderQuote {
+            metadata: serde_json::json!({ "interactions": [] }),
+            ..Default::default()
+        };
+        let order = Order {
+            metadata: OrderMetadata {
+                quote: Some(quote.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(hide_quote_until_filled(order.clone()).metadata.quote, None);
+
+        // Either side being executed is enough to reveal the quote.
+        let mut only_buy_executed = order.clone();
+        only_buy_executed.metadata.executed_buy_amount = BigUint::from(1u8);
+        let only_buy_executed = hide_quote_until_filled(only_buy_executed);
+        assert_eq!(only_buy_executed.metadata.quote, Some(quote.clone()));
+
+        let mut partially_filled = order;
+        partially_filled.metadata.executed_sell_amount = BigUint::from(1u8);
+        let partially_filled = hide_quote_until_filled(partially_filled);
+        assert_eq!(partially_filled.metadata.quote, Some(quote));
+
+        // The quote's execution plan must never be exposed via the API.
+        let json = serde_json::to_value(&partially_filled).unwrap();
+        assert!(!json["quote"].as_object().unwrap().contains_key("metadata"));
+    }
 
     #[tokio::test]
     #[ignore]
@@ -838,6 +904,7 @@ mod tests {
             Validator::new(8192),
             database.clone(),
             None,
+            1024,
         ));
         let orderbook = Orderbook {
             database,

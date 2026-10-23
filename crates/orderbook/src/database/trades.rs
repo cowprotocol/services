@@ -69,7 +69,7 @@ impl TradeRetrieving for Postgres {
         }
 
         let executed_protocol_fees = self
-            .executed_protocol_fees(auction_order_uids.as_slice())
+            .executed_protocol_fees(&mut ex, auction_order_uids.as_slice())
             .await?;
         let penalty_caps = {
             let _timer = super::Metrics::get()
@@ -137,7 +137,7 @@ impl TradeRetrievingPaginated for Postgres {
         }
 
         let executed_protocol_fees = self
-            .executed_protocol_fees(auction_order_uids.as_slice())
+            .executed_protocol_fees(&mut ex, auction_order_uids.as_slice())
             .await?;
         let penalty_caps = {
             let _timer = super::Metrics::get()

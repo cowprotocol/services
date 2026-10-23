@@ -365,7 +365,7 @@ impl Solution {
         &self,
         eth: &Ethereum,
         internalization: settlement::Internalization,
-    ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, Error> {
+    ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, blockchain::Error> {
         let settlement_contract = *eth.contracts().settlement().address();
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {

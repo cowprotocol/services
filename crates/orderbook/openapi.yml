@@ -1409,7 +1409,8 @@ components:
             If the order was created with a quote, this field contains the original
             quote data for reference. Includes gas estimation and pricing information
             captured at the time of quoting, which can be used to analyze order
-            execution and calculate fees.
+            execution and calculate fees. Only populated once the order has been
+            at least partially filled.
           allOf:
             - $ref: "#/components/schemas/StoredOrderQuote"
           nullable: true
@@ -2355,13 +2356,6 @@ components:
             Whether the quote was verified through simulation. A verified quote
             provides higher confidence that the trade will execute successfully.
           type: boolean
-        metadata:
-          description: |
-            Additional metadata about the quote execution plan (e.g., the route taken).
-            This field is only populated for orders that are no longer fillable
-            (filled, cancelled, or expired) to prevent solvers from copying
-            execution strategies for active orders.
-          type: object
       required:
         - gasAmount
         - gasPrice

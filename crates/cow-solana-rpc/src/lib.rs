@@ -7,7 +7,12 @@ use {
     futures::{TryFutureExt, future},
     itertools::Itertools,
     serde::Deserialize,
-    solana_rpc_client::nonblocking::rpc_client::RpcClient,
+    solana_rpc_client::{
+        http_sender::HttpSender,
+        nonblocking::rpc_client::RpcClient,
+        rpc_client::RpcClientConfig,
+        rpc_sender::{RpcSender, RpcTransportStats},
+    },
     solana_rpc_client_api::{
         config::{RpcBlockConfig, RpcSendTransactionConfig},
         request::{MAX_MULTIPLE_ACCOUNTS, RpcError},
@@ -21,7 +26,10 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     solana_transaction_status_client_types::TransactionDetails,
-    std::{collections::HashMap, time::Duration},
+    std::{
+        collections::HashMap,
+        time::{Duration, Instant},
+    },
     url::Url,
 };
 pub use {
@@ -58,17 +66,20 @@ impl SolanaRPC {
     pub const SIGNATURES_PAGE: usize = 1000;
 
     /// Creates a client for the given HTTP URL, request timeout and
-    /// commitment level.
+    /// commitment level. `component` labels its requests in metrics.
     pub fn new_with_timeout_and_commitment(
         url: &Url,
         request_timeout: Duration,
         commitment: CommitmentConfig,
+        component: &str,
     ) -> Self {
         Self {
-            inner: RpcClient::new_with_timeout_and_commitment(
-                url.to_string(),
-                request_timeout,
-                commitment,
+            inner: RpcClient::new_sender(
+                InstrumentedSender {
+                    inner: HttpSender::new_with_timeout(url, request_timeout),
+                    component: component.to_owned(),
+                },
+                RpcClientConfig::with_commitment(commitment),
             ),
         }
     }
@@ -458,6 +469,86 @@ impl From<BlockHeight> for u64 {
     }
 }
 
+/// An HTTP sender that records each request in metrics.
+struct InstrumentedSender {
+    inner: HttpSender,
+    component: String,
+}
+
+#[async_trait::async_trait]
+impl RpcSender for InstrumentedSender {
+    async fn send(
+        &self,
+        request: RpcRequest,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, Error> {
+        let _request = RequestMetrics::start(&self.component, request.as_str());
+        self.inner.send(request, params).await
+    }
+
+    fn get_transport_stats(&self) -> RpcTransportStats {
+        self.inner.get_transport_stats()
+    }
+
+    fn url(&self) -> String {
+        self.inner.url()
+    }
+}
+
+/// A request in flight. Dropping it records the request as complete, so a
+/// cancelled request counts too.
+struct RequestMetrics<'a> {
+    labels: [&'a str; 2],
+    start: Instant,
+}
+
+impl<'a> RequestMetrics<'a> {
+    fn start(component: &'a str, method: &'a str) -> Self {
+        let labels = [component, method];
+        metrics().requests_inflight.with_label_values(&labels).inc();
+        Self {
+            labels,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for RequestMetrics<'_> {
+    fn drop(&mut self) {
+        let metrics = metrics();
+        metrics
+            .requests_inflight
+            .with_label_values(&self.labels)
+            .dec();
+        metrics
+            .requests_complete
+            .with_label_values(&self.labels)
+            .inc();
+        metrics
+            .requests_duration_seconds
+            .with_label_values(&self.labels)
+            .observe(self.start.elapsed().as_secs_f64());
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "rpc")]
+struct Metrics {
+    /// Requests in flight, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_inflight: prometheus::IntGaugeVec,
+    /// Completed requests, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_complete: prometheus::IntCounterVec,
+    /// Request durations, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_duration_seconds: prometheus::HistogramVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
+
 #[cfg(feature = "test-util")]
 mod mock {
     use {
@@ -538,4 +629,29 @@ pub struct LatestBlockhash {
 fn parse_hash(hash: &str) -> Result<Hash, Error> {
     hash.parse()
         .map_err(|_| ErrorKind::from(RpcError::ParseError("Hash".to_string())).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dropped_request_counts_as_complete() {
+        let labels = ["test", "getSlot"];
+        let metrics = metrics();
+        let request = RequestMetrics::start("test", "getSlot");
+        assert_eq!(
+            metrics.requests_inflight.with_label_values(&labels).get(),
+            1
+        );
+        drop(request);
+        assert_eq!(
+            metrics.requests_inflight.with_label_values(&labels).get(),
+            0
+        );
+        assert_eq!(
+            metrics.requests_complete.with_label_values(&labels).get(),
+            1
+        );
+    }
 }
