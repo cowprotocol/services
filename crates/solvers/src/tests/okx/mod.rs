@@ -1,16 +1,16 @@
 use {crate::tests, std::net::SocketAddr};
 
 mod api_calls;
+mod limit_order;
 mod limit_order_quoting;
-mod market_order;
 mod not_found;
 mod out_of_price;
 
 /// Creates a temporary file containing the config of the given solver.
-pub fn config(solver_addr: &SocketAddr) -> tests::Config {
+pub fn config(solver_addr: &SocketAddr, node_addr: &SocketAddr) -> tests::Config {
     tests::Config::String(format!(
         r"
-node-url = 'http://localhost:8545'
+node-url = 'http://{node_addr}'
 [dex]
 chain-id = '1'
 sell-orders-endpoint = 'http://{solver_addr}/'

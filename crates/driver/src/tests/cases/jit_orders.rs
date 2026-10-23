@@ -80,7 +80,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
 
     let jit_order = setup::JitOrder {
         order: ab_order()
-            .kind(order::Kind::Limit)
             .sell_amount(test_case.solution.jit_order.order.sell_amount)
             .buy_amount(test_case.solution.jit_order.order.buy_amount)
             .solver_fee(Some(solver_fee))
@@ -90,7 +89,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
     };
 
     let order = ab_order()
-        .kind(order::Kind::Limit)
         .sell_amount(test_case.order.sell_amount)
         .buy_amount(test_case.order.buy_amount)
         .solver_fee(Some(solver_fee))

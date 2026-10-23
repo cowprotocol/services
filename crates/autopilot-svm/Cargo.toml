@@ -11,38 +11,55 @@ path = "src/lib.rs"
 [[bin]]
 name = "autopilot-svm"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 bigdecimal = { workspace = true }
+bincode = { workspace = true }
 chain-types = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true }
 configs = { workspace = true }
 const-hex = { workspace = true }
+cow-settlement-interface = { workspace = true }
 cow-solana-rpc = { workspace = true }
+cow-solana-signer = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
+moka = { workspace = true }
 observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
-serde-ext = { workspace = true }
+serde-ext = { workspace = true, features = ["solana"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }
+solana-system-interface = { workspace = true }
+solana-token = { workspace = true }
+spl-associated-token-account-interface = { workspace = true }
+spl-token-2022-interface = { workspace = true }
+spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 toml = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["trace"] }
 tracing = { workspace = true }
 url = { workspace = true }
 winner-selection = { workspace = true }
 
 [dev-dependencies]
+cow-solana-rpc = { workspace = true, features = ["test-util"] }
+solana-testlib = { workspace = true }
 
 [lints]
 workspace = true

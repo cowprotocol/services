@@ -3,7 +3,7 @@ pub mod order;
 
 use {
     alloy::primitives::U256,
-    eth_domain_types::{Address, NonZeroU256},
+    eth_domain_types::{Address, NonZeroU256, Receiver},
     model::{
         order::{BuyTokenDestination, OrderKind, SellTokenSource},
         signature::Signature,
@@ -36,10 +36,8 @@ pub struct OrderSimulationRequest {
     pub kind: OrderKind,
     /// The address of the order's owner
     pub owner: Address,
-    /// The receiver of the `buy_token`. When this field is `None`, the receiver
-    /// is the same as the owner.
     #[serde(default)]
-    pub receiver: Option<Address>,
+    pub receiver: Receiver,
     /// Sell token's source — ERC20, internal vault or external vault (at the
     /// time of writing).
     #[serde(default)]

@@ -2,7 +2,7 @@ use {
     crate::{
         domain::{
             self,
-            Mempools,
+            TransactionReceiver,
             competition::{
                 order::app_data::AppDataRetriever,
                 risk_detector::{self, bad_orders},
@@ -37,9 +37,8 @@ pub struct Api {
     pub liquidity_sources_notifier: notify::liquidity_sources::Notifier,
     pub simulator: Simulator,
     pub eth: Ethereum,
-    pub mempools: Mempools,
+    pub submitter: Arc<dyn TransactionReceiver>,
     pub addr: SocketAddr,
-    pub bad_token_detector: risk_detector::bad_tokens::Detector,
     pub balance_cache: configs::balance_cache::BalanceCacheConfig,
     /// If this channel is specified, the bound address will be sent to it. This
     /// allows the driver to bind to 0.0.0.0:0 during testing.
@@ -76,6 +75,11 @@ impl Api {
         let order_sorting_strategies =
             Self::build_order_sorting_strategies(&order_priority_strategies);
 
+        // One fast-path quote cache per solver account.
+        let quote_cache = domain::competition::FastPathQuoteCache::new(
+            self.solvers.iter().map(|solver| solver.address()),
+        );
+
         // Add the metrics, healthz, and gasprice endpoints.
         app = routes::metrics(app);
         app = routes::healthz(app);
@@ -96,13 +100,11 @@ impl Api {
             let router = routes::solve(router);
             let router = routes::reveal(router);
             let router = routes::settle(router);
+            let router = routes::settle_fast_path(router);
 
             let bad_order_config = solver.bad_order_detection();
             let mut bad_tokens =
                 risk_detector::Detector::new(bad_order_config.tokens_supported.clone());
-            if bad_order_config.enable_simulation_strategy {
-                bad_tokens.with_simulation_detector(self.bad_token_detector.clone());
-            }
 
             if bad_order_config.enable_metrics_strategy {
                 bad_tokens.with_metrics_detector(bad_orders::metrics::Detector::new(
@@ -125,10 +127,11 @@ impl Api {
                     self.liquidity.clone(),
                     self.liquidity_sources_notifier.clone(),
                     self.simulator.clone(),
-                    self.mempools.clone(),
+                    self.submitter.clone(),
                     Arc::new(bad_tokens),
                     fetcher.clone(),
                     order_sorting_strategies.clone(),
+                    quote_cache.clone(),
                 ),
                 liquidity: self.liquidity.clone(),
                 tokens: tokens.clone(),
@@ -138,16 +141,7 @@ impl Api {
             app = app.nest(&path, router);
         }
 
-        app = app
-            // axum's default body limit is 2MB too low for solvers, 20MB is still too low
-            // so instead of constantly guessing and updating, we disable the limit altogether
-            .layer(axum::extract::DefaultBodyLimit::disable())
-            .layer(tower_http::decompression::RequestDecompressionLayer::new())
-            .layer(
-                tower::ServiceBuilder::new()
-                    .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
-                    .map_request(record_trace_id),
-            );
+        let app = with_middleware(app);
 
         // Start the server.
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
@@ -188,6 +182,21 @@ impl Api {
     }
 }
 
+/// Wraps all routes in the middleware every request passes through before
+/// reaching its handler.
+fn with_middleware(app: axum::Router) -> axum::Router {
+    app
+        // axum's default body limit is 2MB too low for solvers, 20MB is still too low
+        // so instead of constantly guessing and updating, we disable the limit altogether
+        .layer(axum::extract::DefaultBodyLimit::disable())
+        .layer(tower_http::decompression::RequestDecompressionLayer::new())
+        .layer(
+            tower::ServiceBuilder::new()
+                .layer(tower_http::trace::TraceLayer::new_for_http().make_span_with(make_span))
+                .map_request(record_trace_id),
+        )
+}
+
 #[derive(Clone)]
 struct State(Arc<Inner>);
 
@@ -219,4 +228,77 @@ struct Inner {
     competition: Arc<domain::Competition>,
     liquidity: liquidity::Fetcher,
     tokens: tokens::Fetcher,
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        axum::{
+            body::Body,
+            http::{Request, StatusCode},
+        },
+        std::io::Write,
+        tower::ServiceExt,
+    };
+
+    const JSON: &str = r#"{"id":"1","orders":[]}"#;
+
+    /// A solver router mounted like in [`Api::serve`], whose `/solve` handler
+    /// streams the raw request body like the real one does.
+    fn app() -> axum::Router {
+        let solver = axum::Router::new().route(
+            "/solve",
+            axum::routing::post(|request: Request<Body>| async move {
+                axum::body::to_bytes(request.into_body(), usize::MAX)
+                    .await
+                    .unwrap()
+            }),
+        );
+        with_middleware(axum::Router::new().nest("/solver", solver))
+    }
+
+    async fn post_solve(body: Vec<u8>, content_encoding: Option<&str>) -> (StatusCode, Vec<u8>) {
+        let mut request = Request::post("/solver/solve").header("content-type", "application/json");
+        if let Some(encoding) = content_encoding {
+            request = request.header("content-encoding", encoding);
+        }
+        let response = app()
+            .oneshot(request.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, body.to_vec())
+    }
+
+    #[tokio::test]
+    async fn solve_handler_receives_decompressed_brotli_body() {
+        // Same settings the autopilot compresses `/solve` bodies with.
+        let mut encoder = brotli::CompressorWriter::new(Vec::new(), 4096, 1, 22);
+        encoder.write_all(JSON.as_bytes()).unwrap();
+        encoder.flush().unwrap();
+
+        let (status, body) = post_solve(encoder.into_inner(), Some("br")).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, JSON.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn solve_handler_receives_plain_body_unchanged() {
+        let (status, body) = post_solve(JSON.as_bytes().to_vec(), None).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, JSON.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn unsupported_encoding_is_rejected() {
+        let (status, _) = post_solve(JSON.as_bytes().to_vec(), Some("unknown")).await;
+
+        assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
 }

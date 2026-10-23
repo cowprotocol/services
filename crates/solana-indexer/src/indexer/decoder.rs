@@ -30,9 +30,15 @@ use {
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{EncodedOrderIntent, OrderKind as InterfaceOrderKind},
+        data::intent::{
+            EncodedOrderIntent,
+            OrderIntent,
+            OrderKind as InterfaceOrderKind,
+            hash_bytes,
+        },
         instruction::{
             InstructionInputParsing,
+            cancel_order::CancelOrderInput,
             create_buffer::CreateBufferInput,
             create_order::CreateOrderInput,
             settle::{BeginSettleInput, FinalizeSettleInput},
@@ -354,8 +360,8 @@ impl Decoder {
     }
 }
 
-/// One slot's accumulated output, flushed once the stream moves past the
-/// hold-back window.
+/// One slot's accumulated output, flushed when its confirmed status
+/// arrives.
 #[derive(Default)]
 struct SlotBuffer {
     events: Vec<DecodedEvent>,
@@ -406,6 +412,7 @@ fn decode_settlement(
             SettlementInstruction::CreateOrder => {
                 decode_order_created(instruction, ctx).map(|event| vec![event])
             }
+            SettlementInstruction::CancelOrder => decode_order_cancelled(instruction, ctx),
             SettlementInstruction::CreateBuffer => {
                 decode_buffers_created(instruction, &ctx.account_keys)
             }
@@ -414,14 +421,19 @@ fn decode_settlement(
                 Ok(Vec::new())
             }
             // No domain event: `Initialize` bootstraps program state,
-            // `ReclaimBuffer` recovers rent, and `TransferAuthority`/`AddSolver`
-            // manage program governance, none touching order state.
+            // `ReclaimBuffer` recovers rent, and `TransferAuthority` plus
+            // `AddSolver`/`RemoveSolver` manage program governance, none
+            // touching order state.
             // TODO: map `ReclaimOrder` to `OrderClosed`.
+            // TODO: index `CreateSelfOrder` (fee-withdrawal orders) once fee
+            // handling lands.
             SettlementInstruction::Initialize
             | SettlementInstruction::ReclaimOrder
             | SettlementInstruction::ReclaimBuffer
             | SettlementInstruction::TransferAuthority
-            | SettlementInstruction::AddSolver => Ok(Vec::new()),
+            | SettlementInstruction::AddSolver
+            | SettlementInstruction::RemoveSolver
+            | SettlementInstruction::CreateSettlementOwnedOrder => Ok(Vec::new()),
         };
         match decoded {
             Ok(decoded_events) => events.extend(decoded_events),
@@ -460,20 +472,62 @@ fn decode_order_created(
     let accounts = instruction_account_keys(instruction, &ctx.account_keys)?;
     let input = CreateOrderInput::parse(&instruction.data, &accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
-    let (intent, uid) = EncodedOrderIntent::decode_and_hash(&input.intent_bytes)
+    order_created(
+        &input.intent_bytes,
+        *input.created_by,
+        *input.order_pda,
+        ctx,
+    )
+}
+
+/// `CancelOrder` -> `OrderCancelled`. Intent bytes on the wire mean the
+/// program created the order already cancelled, so the creation is emitted
+/// first.
+fn decode_order_cancelled(
+    instruction: &ResolvedInstruction,
+    ctx: &TxContext,
+) -> Result<Vec<SettlementEvent>, DecodeError> {
+    let accounts = instruction_account_keys(instruction, &ctx.account_keys)?;
+    let input = CancelOrderInput::parse(&instruction.data, &accounts)
         .map_err(|_| DecodeError::SchemaMismatch)?;
+    let mut events = Vec::with_capacity(2);
+    if let Some(intent_bytes) = &input.intent_bytes {
+        events.push(order_created(
+            intent_bytes,
+            *input.created_by,
+            *input.order_pda,
+            ctx,
+        )?);
+    }
+    events.push(SettlementEvent::OrderCancelled {
+        signature: ctx.signature,
+        order_pda: *input.order_pda,
+    });
+    Ok(events)
+}
+
+/// The `OrderCreated` an intent on the wire describes. Its hash is the UID.
+fn order_created(
+    intent_bytes: &[u8; EncodedOrderIntent::SIZE],
+    created_by: Pubkey,
+    order_pda: Pubkey,
+    ctx: &TxContext,
+) -> Result<SettlementEvent, DecodeError> {
+    let intent = OrderIntent::try_from(intent_bytes).map_err(|_| DecodeError::SchemaMismatch)?;
+    let uid = hash_bytes(intent_bytes);
+    let (buy_mint, buy_token_account) = intent.buy.encode();
     Ok(SettlementEvent::OrderCreated(Box::new(CreatedOrder {
         signature: ctx.signature,
         order_uid: OrderUid(uid.to_bytes()),
         owner: to_sdk_pubkey(intent.owner),
-        created_by: *input.created_by,
-        order_pda: *input.order_pda,
-        sell_token_account: to_sdk_pubkey(intent.sell_token_account),
-        sell_mint: to_sdk_pubkey(intent.sell_mint),
-        buy_token_account: to_sdk_pubkey(intent.buy_token_account),
-        buy_mint: to_sdk_pubkey(intent.buy_mint),
-        sell_amount: intent.sell_amount,
-        buy_amount: intent.buy_amount,
+        created_by,
+        order_pda,
+        sell_token_account: to_sdk_pubkey(intent.sell.token_account),
+        sell_mint: to_sdk_pubkey(intent.sell.mint),
+        buy_token_account: to_sdk_pubkey(buy_token_account),
+        buy_mint: to_sdk_pubkey(buy_mint),
+        sell_amount: intent.sell_amount.get(),
+        buy_amount: intent.buy_amount.get(),
         valid_to: intent.valid_to,
         kind: match intent.flags.kind {
             InterfaceOrderKind::Sell => OrderKind::Sell,
@@ -837,7 +891,8 @@ fn relevant_instructions(
     resolved
 }
 
+mod backfill;
+mod replay;
+
 #[cfg(test)]
 mod tests;
-
-mod backfill;

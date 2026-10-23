@@ -3,4 +3,5 @@
 
 pub mod reveal;
 pub mod settle;
+pub mod settle_fast_path;
 pub mod solve;

@@ -13,13 +13,13 @@ use {
                 self,
                 Solution,
                 Solved,
-                solution::{self, Settlement},
+                solution::{self, Settlement, settlement::EncodedSettlement},
             },
             mempools::{self, SubmissionSuccess},
             quote::{self, Quote},
             time::{Deadline, Remaining},
         },
-        infra::solver,
+        infra::{builders::Delivery, solver},
         util::http,
     },
     eth_domain_types as eth,
@@ -127,24 +127,17 @@ pub fn encoding_failed(
     solver: &solver::Name,
     id: &solution::Id,
     err: &solution::Error,
-    has_haircut: bool,
     orders: &[competition::order::Uid],
 ) {
     tracing::info!(
         ?id,
         ?orders,
         ?err,
-        has_haircut,
         "discarded solution: settlement encoding"
     );
-    let reason = if has_haircut {
-        "SettlementEncodingHaircut"
-    } else {
-        "SettlementEncoding"
-    };
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), reason])
+        .with_label_values(&[solver.as_str(), "SettlementEncoding"])
         .inc();
 }
 
@@ -182,26 +175,11 @@ pub fn score(settlement: &Settlement, score: &eth::Ether) {
 
 // Observe that the winning settlement started failing upon arrival of a new
 // block
-pub fn winner_voided(
-    solver: &solver::Name,
-    block: BlockInfo,
-    err: &simulator::RevertError,
-    has_haircut: bool,
-) {
-    tracing::warn!(
-        block = block.number,
-        ?err,
-        has_haircut,
-        "solution reverts on new block"
-    );
-    let reason = if has_haircut {
-        "SimulationRevertHaircut"
-    } else {
-        "SimulationRevert"
-    };
+pub fn winner_voided(solver: &solver::Name, block: BlockInfo, err: &simulator::RevertError) {
+    tracing::warn!(block = block.number, ?err, "solution reverts on new block");
     metrics::get()
         .dropped_solutions
-        .with_label_values(&[solver.as_str(), reason])
+        .with_label_values(&[solver.as_str(), "SimulationRevert"])
         .inc();
 }
 
@@ -362,21 +340,37 @@ pub fn solver_response(
     res: Result<&str, &http::Error>,
     solver: &str,
     compute_time: Duration,
+    solver_timeout: Duration,
     is_quote_request: bool,
 ) {
+    let metrics = metrics::get();
+    let kind = if is_quote_request { "quote" } else { "auction" };
     match res {
         Ok(res) => {
-            tracing::trace!(%endpoint, %res, "received response from solver")
+            tracing::trace!(%endpoint, %res, kind, "received response from solver")
         }
         Err(err) => {
-            tracing::warn!(%endpoint, ?err, "failed to receive response from solver")
+            tracing::warn!(%endpoint, ?err, kind, "failed to receive response from solver")
         }
     }
-    let kind = if is_quote_request { "quote" } else { "auction" };
-    metrics::get()
+    metrics
         .used_solve_time
         .with_label_values(&[solver, kind])
         .observe(compute_time.as_secs_f64());
+    if compute_time > solver_timeout {
+        let overrun = compute_time - solver_timeout;
+        tracing::trace!(
+            solver,
+            elapsed = ?compute_time,
+            ?solver_timeout,
+            ?overrun,
+            "solver exceeded its deadline",
+        );
+        metrics
+            .solver_deadline_overruns
+            .with_label_values(&[solver, kind])
+            .inc();
+    }
 }
 
 /// Log a single mempool submission attempt. Called inline from the racing
@@ -385,7 +379,7 @@ pub fn solver_response(
 /// once the race outcome is known.
 pub fn mempool_log(
     mempool: &Mempool,
-    settlement: &Settlement,
+    settlement: &EncodedSettlement,
     result: &Result<SubmissionSuccess, mempools::Error>,
 ) {
     match result {
@@ -394,10 +388,6 @@ pub fn mempool_log(
             %mempool,
             ?settlement,
             "sending transaction via mempool succeeded",
-        ),
-        Err(mempools::Error::Disabled) => tracing::debug!(
-            %mempool,
-            "mempool disabled, not sending transaction",
         ),
         Err(err) => tracing::warn!(
             ?err,
@@ -408,21 +398,61 @@ pub fn mempool_log(
     }
 }
 
-/// Emit per-mempool race counters with the final, reclassified label
+/// Log the submission of a settlement to the block builders.
+pub fn builders_submission_result(
+    settlement: &EncodedSettlement,
+    result: &Result<SubmissionSuccess, mempools::Error>,
+) {
+    match result {
+        Ok(submission) => tracing::info!(
+            txid = ?submission.tx_hash,
+            ?settlement,
+            "sending transaction via builders succeeded",
+        ),
+        Err(err) => tracing::warn!(?err, ?settlement, "sending transaction via builders failed",),
+    }
+}
+
+/// Emit per-receiver submission counters with the final, reclassified label
 /// (`Success` / `Revert` / `Expired` / `Other` / `Superseded` / `Disabled`).
-/// Called once per mempool after the race resolves.
-pub fn mempool_submission_result(mempool: &Mempool, label: &str, blocks_passed: Option<u64>) {
-    let name = mempool.to_string();
+/// Called once per receiver after the submission resolves.
+pub fn mempool_submission_result(receiver: &str, label: &str, blocks_passed: Option<u64>) {
     metrics::get()
         .mempool_submission
-        .with_label_values(&[name.as_str(), label])
+        .with_label_values(&[receiver, label])
         .inc();
     if let Some(blocks) = blocks_passed {
         metrics::get()
             .mempool_submission_results_blocks_passed
-            .with_label_values(&[name.as_str(), label])
+            .with_label_values(&[receiver, label])
             .inc_by(blocks);
     }
+}
+
+/// Observe how long a block builder took to answer a settlement bundle.
+pub fn builder_response_time(builder: &str, elapsed: Duration) {
+    metrics::get()
+        .builder_submission_time
+        .with_label_values(&[builder])
+        .observe(elapsed.as_secs_f64());
+}
+
+/// Observe how far the settlement bundle for `block` got with a block builder.
+pub fn bundle_submission(builder: &str, block: u64, delivery: &Delivery) {
+    match delivery {
+        Delivery::Accepted(result) => {
+            tracing::debug!(builder, block, %result, "builder accepted the bundle")
+        }
+        Delivery::Rejected(err) => {
+            tracing::warn!(builder, block, ?err, "builder rejected the bundle")
+        }
+        Delivery::TimedOut => tracing::warn!(builder, block, "builder did not answer in time"),
+        Delivery::Unreachable(err) => tracing::warn!(builder, block, ?err, "builder unreachable"),
+    }
+    metrics::get()
+        .builder_submission
+        .with_label_values(&[builder, delivery.metric_label()])
+        .inc();
 }
 
 /// Observe that an invalid DTO was received.
@@ -451,6 +481,7 @@ fn competition_error(err: &competition::Error) -> &'static str {
         competition::Error::FastPathLimitNotMet => "FastPathLimitNotMet",
         competition::Error::FastPathInvalidOrder(_) => "FastPathInvalidOrder",
         competition::Error::FastPathSettlement(_) => "FastPathSettlement",
+        competition::Error::EncodingFailed(_) => "EncodingFailed",
     }
 }
 
@@ -467,7 +498,7 @@ pub fn sending_solve_request(solver: &str, remaining_time: Duration, is_quote_re
         .observe(remaining_time.as_secs_f64());
 }
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum OrderExcludedFromAuctionReason {
     CouldNotFetchBalance,
     InsufficientBalance,

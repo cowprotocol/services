@@ -19,6 +19,7 @@ use {
     balance_overrides::{ApprovalOverrideRequest, BalanceOverrideRequest, StateOverriding},
     contracts::GPv2Settlement,
     derive_more::Debug,
+    eth_domain_types::Receiver,
     model::{
         interaction::InteractionData,
         order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
@@ -129,7 +130,7 @@ pub struct JitOrder {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub executed_amount: U256,
-    pub receiver: Address,
+    pub receiver: Receiver,
     pub valid_to: u32,
     pub app_data: AppDataHash,
     pub side: Side,
@@ -161,7 +162,9 @@ pub fn encode_trade(
     (
         U256::from(sell_token_index),
         U256::from(buy_token_index),
-        order.receiver.unwrap_or(Address::ZERO),
+        // Use the actual raw bytes that got signed by the owner intead of the
+        // resolved address to make the signature recovery work in the contract.
+        Address::from(*order.receiver.raw_bytes()),
         order.sell_amount,
         order.buy_amount,
         order.valid_to,

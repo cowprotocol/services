@@ -288,7 +288,7 @@ mod tests {
                 },
                 competition::{Bid, Solution, TradedOrder, Unscored},
             },
-            infra::Driver,
+            infra::{Driver, SupportedExtensions},
         },
         alloy::primitives::{Address, U160, U256, address},
         configs::autopilot::solver::Account,
@@ -1174,7 +1174,7 @@ mod tests {
             },
             protocol_fees: vec![],
             side,
-            receiver: None,
+            receiver: Default::default(),
             owner: Default::default(),
             partially_fillable: false,
             executed: eth::U256::ZERO.into(),
@@ -1256,7 +1256,10 @@ mod tests {
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
             Account::Address(solver_address),
-            false,
+            SupportedExtensions {
+                auction_deltas: false,
+                compression: false,
+            },
         )
         .await
         .unwrap();

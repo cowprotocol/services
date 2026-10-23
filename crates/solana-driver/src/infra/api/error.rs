@@ -8,6 +8,8 @@ use {
     serde::Serialize,
 };
 
+/// The kind strings are a wire contract: the autopilot matches on them to
+/// classify failed `/settle` calls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) enum Kind {
@@ -17,9 +19,14 @@ pub(crate) enum Kind {
     DeadlineExceeded,
     TooManyPendingSettlements,
     FailedToSubmit,
+    SettlementReverted,
+    InvalidCreation,
+    FailedToCreate,
     QuoteSameTokens,
     QuotingFailed,
     SimulationFailed,
+    TransactionTooLarge,
+    PriorityFeeTooHigh,
     Unknown,
 }
 
@@ -46,9 +53,14 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::DeadlineExceeded => "The submission deadline has passed",
             Kind::TooManyPendingSettlements => "Too many settlements are pending",
             Kind::FailedToSubmit => "Failed to submit the settlement transaction",
+            Kind::SettlementReverted => "The settlement transaction failed on chain",
+            Kind::InvalidCreation => "A creation transaction does not decode",
+            Kind::FailedToCreate => "Failed to submit an order creation transaction",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
             Kind::QuotingFailed => "No valid quote found",
             Kind::SimulationFailed => "Settlement simulation failed",
+            Kind::TransactionTooLarge => "Settlement transaction exceeds the size limit",
+            Kind::PriorityFeeTooHigh => "Transaction priority fee exceeds the configured budget",
             Kind::Unknown => "An unknown error occurred",
         };
         (
@@ -72,16 +84,26 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             competition::Error::DeadlineExceeded => Kind::DeadlineExceeded,
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
             competition::Error::Rpc(_) => Kind::Unknown,
-            competition::Error::FailedToSubmit(_) => Kind::FailedToSubmit,
-            competition::Error::SimulationFailed(_) => Kind::SimulationFailed,
+            competition::Error::BuyTokenAccounts(_) => Kind::Unknown,
+            competition::Error::FailedToSubmit { .. } => Kind::FailedToSubmit,
+            competition::Error::Reverted { .. } => Kind::SettlementReverted,
+            competition::Error::FailedToCreate(_) => Kind::FailedToCreate,
+            competition::Error::SimulationFailed { .. } => Kind::SimulationFailed,
+            competition::Error::TransactionTooLarge { .. } => Kind::TransactionTooLarge,
+            competition::Error::PriorityFeeTooHigh(_) => Kind::PriorityFeeTooHigh,
             competition::Error::TaskPanicked => Kind::Unknown,
+            // Solve-time verdicts never leave `solve`.
+            competition::Error::SimulationTimedOut
+            | competition::Error::IncompleteSimulation { .. }
+            | competition::Error::TooManyAccounts { .. } => Kind::Unknown,
             // The solver is responsible for valid solutions. Map validation
             // errors to SolverFailed, as the EVM driver does. Map compile,
             // sign, or index-overflow errors to Unknown.
             competition::Error::Settlement(error) => match error {
                 settlement::Error::Compile(_)
                 | settlement::Error::Sign(_)
-                | settlement::Error::InstructionIndexOverflow => Kind::Unknown,
+                | settlement::Error::InstructionIndexOverflow
+                | settlement::Error::UnresolvedMint(_) => Kind::Unknown,
                 settlement::Error::NoTradeForOrder(_)
                 | settlement::Error::NoOrderForTrade(_)
                 | settlement::Error::ExecutedAmountOverflow
@@ -89,18 +111,21 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 | settlement::Error::Overfill(_)
                 | settlement::Error::LimitPriceViolated(_)
                 | settlement::Error::OrderPdaMismatch(..)
-                | settlement::Error::OrderIntentMismatch(..) => Kind::SolverFailed,
+                | settlement::Error::OrderIntentMismatch(..)
+                | settlement::Error::ZeroAmount(_)
+                // The solver's interactions set the message's shape.
+                | settlement::Error::InvalidMessage(_) => Kind::SolverFailed,
                 // The order expired between solve and settle: not solver
                 // fault.
                 settlement::Error::OrderExpired(_) => Kind::DeadlineExceeded,
             },
             competition::Error::Resolve(error) => match error {
-                // The solver supplied the lookup table keys.
-                settlement::ResolveError::InvalidAddressLookupTable { .. } => Kind::SolverFailed,
-                // RPC failures and unexpected setup accounts are outside solver
-                // control. Map them to Unknown.
+                // RPC failures, unexpected setup accounts and mint lookups are
+                // outside solver control. Map them to Unknown.
                 settlement::ResolveError::Rpc(_)
-                | settlement::ResolveError::UnexpectedSetupAccount { .. } => Kind::Unknown,
+                | settlement::ResolveError::UnexpectedSetupAccount { .. }
+                | settlement::ResolveError::InvalidMint { .. }
+                | settlement::ResolveError::UnresolvedMint(_) => Kind::Unknown,
             },
         }
         .into()
@@ -111,6 +136,7 @@ impl From<AuctionError> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: AuctionError) -> Self {
         match value {
             AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
+            AuctionError::InvalidCreation => Kind::InvalidCreation,
         }
         .into()
     }

@@ -78,7 +78,12 @@ async fn impossible() {
         .solvers(vec![test_solver().merge_solutions()])
         .pool(ab_pool())
         .order(order.clone())
-        .order(order.clone().rename("reduced order").reduce_amount("1e-3".ether().into_wei()))
+        .order(
+            order
+                .clone()
+                .rename("reduced order")
+                .reduce_amount("1e-3".ether().into_wei()),
+        )
         // These two solutions result in different clearing prices (due to different surplus),
         // so they can't be merged.
         .solution(ab_solution())

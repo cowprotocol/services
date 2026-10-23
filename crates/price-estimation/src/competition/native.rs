@@ -259,16 +259,18 @@ mod tests {
                             "1.1".into(),
                             estimator(
                                 async {
-                                    // The first stage takes a bit of time but is still
+                                    // The first stage takes a bit of time but
+                                    // is still
                                     // way faster than it needs to be.
                                     tokio::time::sleep(FIRST_STAGE).await;
-                                    // return an error to require the second estimator to run
+                                    // return an error to require the second
+                                    // estimator to run
                                     Err(PriceEstimationError::NoLiquidity)
                                 }
                                 .boxed(),
                                 // first stage gets half the total time
                                 TOTAL_TIMEOUT / 2,
-                            )
+                            ),
                         ),
                         // We add a second estimator in the first stage to catch
                         // the error when you compute the remaining time based on the
@@ -279,7 +281,7 @@ mod tests {
                                 // this task may return immediately because we need to process
                                 // the whole stage before we start the next one
                                 async { Err(PriceEstimationError::NoLiquidity) }.boxed(),
-                                TOTAL_TIMEOUT / 2
+                                TOTAL_TIMEOUT / 2,
                             ),
                         ),
                     ],

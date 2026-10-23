@@ -2,11 +2,15 @@
 
 # Serves /metrics, /liveness, /ready, and /startup.
 metrics-port = 9586
-# The pod fails the liveness probe when no auction cycle completed in this
-# time.
+# Serves /native_price/{mint} to the orderbook.
+api-address = "0.0.0.0:12088"
+# The pod fails the liveness probe when no cut in this time made a new
+# auction, found no order, or waited for a lagging indexer.
 max-auction-age = "5m"
 # Minimum time between auction cycles. Zero runs a cycle every new slot.
 min-auction-interval = "2s"
+# Slots the indexer may lag behind the tip before auction cuts are skipped.
+max-indexer-lag-slots = 150
 
 [database]
 # The Postgres database the indexer writes to. A value like "%DB_WRITE_URL"
@@ -20,6 +24,9 @@ request-timeout = "10s"
 
 [contracts]
 wrapped-native-mint = "So11111111111111111111111111111111111111112"
+# The settlement program whose state PDA sell token accounts must approve.
+# Defaults to the official deployment the interface crate exports.
+# settlement-program-id = "J516Mv7YvvvJyMvNEca8tWNTJyDHbFpzwDZD96BNfR3w"
 
 [competition]
 max-winners = 1
@@ -30,5 +37,43 @@ submission-deadline-slots = 25
 name = "baseline"
 url = "http://localhost:11088"
 
+# Native price lookups for auction tokens. Sources are listed by stage: a
+# lookup asks a stage's sources at once, adds the next stage while fewer
+# sources are in flight than prices are missing, and asks later stages only
+# for the tokens still short of results-required prices.
+[native-prices]
+ttl = "30s"
+# Prices a token needs before its lookup stops asking. The best one wins.
+results-required = 2
+# Lamports a driver source sells per probe quote.
+driver-probe-lamports = 10000000
+# Entries read like the EVM autopilot's. A Driver is quoted through its
+# regular /quote route, its url includes the solver path like the [[drivers]]
+# entries, and its solver must answer sell orders: the probe sells a fixed
+# amount of wSOL.
+estimators = [
+  [{ type = "CoinGecko" }],
+  [{ type = "Driver", name = "baseline", url = "http://localhost:11088/baseline/" }],
+]
+
+# The CoinGecko source. Without a key the public API and its rate limits
+# apply. An api-key like "%COIN_GECKO_API_KEY" reads the key from that
+# environment variable and fails the load when it is unset.
+[native-prices.coin-gecko]
+url = "https://api.coingecko.com/api/v3/simple/token_price"
+# api-key = "%COIN_GECKO_API_KEY"
+
 [logging]
 filter = "info,autopilot_svm=debug"
+
+# Sponsored order execution. Must be set when the orderbook accepts
+# sponsored orders: without it their winning solutions fail at the driver.
+# [sponsoring]
+# The funder's signer: a keypair file, or the id, alias, or ARN of an AWS KMS
+# Ed25519 key so the private key never reaches the autopilot.
+# funder = { keypair = "/path/to/funder-keypair.json" }
+# funder = { kms-key = "arn:aws:kms:eu-central-1:123456789012:key/11111111-2222-3333-4444-555555555555" }
+# Most creations sent per auction for pending sponsored orders that appear
+# only in losing solutions, at most one per owner. The funder pays for each,
+# and the order may never fill. Zero, the default, sends none.
+# max-displaced-creations = 10

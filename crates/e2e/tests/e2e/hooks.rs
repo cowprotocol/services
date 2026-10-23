@@ -487,6 +487,7 @@ async fn partial_fills(web3: Web3) {
 
     tracing::info!("Waiting for first trade.");
     let trade_happened = || async {
+        onchain.mint_block().await;
         sell_token
             .balanceOf(trader.address())
             .call()

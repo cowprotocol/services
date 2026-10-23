@@ -60,9 +60,7 @@ impl Simulator {
             .append(
                 self.authenticator,
                 AccountOverride {
-                    code: Some(
-                        AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone(),
-                    ),
+                    code: Some(AnyoneAuthenticator::AnyoneAuthenticator::DEPLOYED_BYTECODE.clone()),
                     ..Default::default()
                 },
             );

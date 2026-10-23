@@ -281,48 +281,6 @@ paths:
                   $ref: "#/components/schemas/Order"
         "400":
           description: Invalid transaction hash.
-  /api/v1/trades:
-    get:
-      operationId: getTrades
-      summary: Get existing trades (unpaginated).
-      deprecated: true
-      description: |
-        **Deprecated:** This endpoint is deprecated and will be removed in the future. Please use `/api/v2/trades` instead, which provides pagination support.
-
-        Exactly one of `owner` or `orderUid` must be set.
-
-        Results are sorted by block number and log index descending (newest trades first).
-
-        **Note:** This endpoint returns all matching trades without pagination. For paginated results, use `/api/v2/trades`.
-      parameters:
-        - name: owner
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-          required: false
-        - name: orderUid
-          in: query
-          schema:
-            $ref: "#/components/schemas/UID"
-          required: false
-      responses:
-        "200":
-          description: |-
-            ### If `owner` is specified:
-
-            Return all trades related to that `owner`.
-
-            ### If `orderUid` is specified:
-
-            Return all trades related to that `orderUid`. Given that an order
-            may be partially fillable, it is possible that an individual order
-            may have *multiple* trades.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Trade"
   /api/v2/trades:
     get:
       operationId: getTradesV2
@@ -544,13 +502,15 @@ paths:
         solvers have responded. Each emitted quote carries an `id` that can be
         referenced when placing an order.
 
-        The `priceQuality` field of the request body is ignored: this endpoint
-        always queries all solvers and attempts verification, and each emitted
-        quote carries its own `verified` flag. A verified quote ranks above an
-        unverified one regardless of amount, so a later quote may report a lower
-        `out_amount`. Individual solver errors are not streamed; if no solver
-        returns a usable quote, a terminal event named `error` is sent with a
-        `PriceEstimationError` body before the stream closes.
+        The `priceQuality` field uses the same estimator and ranking semantics
+        as `POST /api/v1/quote`. `verified` attempts verification and prefers a
+        verified quote over an unverified one regardless of amount, so a later
+        quote may report a lower `out_amount`. `optimal` skips verification and
+        ranks all responses by their promised price. `fast` is not supported
+        because the streaming endpoint already returns the first usable quote
+        as soon as it arrives. Individual solver errors are not streamed; if no
+        solver returns a usable quote, a terminal event named `error` is sent
+        with a `PriceEstimationError` body before the stream closes.
       requestBody:
         description: The order parameters to compute quotes for.
         required: true
@@ -968,12 +928,15 @@ components:
         - buy
         - sell
     OrderClass:
-      description: Order class.
+      deprecated: true
+      description: |-
+        Deprecated. Order classes were removed: every order is a limit order whose
+        fee is taken from the surplus, and JIT orders are flagged by
+        `isLiquidityOrder`. The field is still returned for backwards
+        compatibility and always reads `limit`.
       type: string
       enum:
-        - market
         - limit
-        - liquidity
     SellTokenSource:
       description: |-
         Where should the `sellToken` be drawn from?
@@ -1303,9 +1266,9 @@ components:
           type: string
           example: "2020-12-03T18:35:18.814523Z"
         class:
+          deprecated: true
           description: >
-            The class of the order (market, limit, or liquidity). Determines
-            how fees are handled.
+            Deprecated, always `limit`. See `OrderClass`.
           allOf:
             - $ref: "#/components/schemas/OrderClass"
         owner:
@@ -1430,7 +1393,8 @@ components:
           description: >
             Earliest time (unix seconds) at which the order may enter a batch
             auction, taken from the order's `appData`. Omitted when the order
-            has no lower bound (eligible immediately).
+            has no lower bound (eligible immediately). Mutually exclusive with
+            `enableFastPath`: an order that sets both is rejected.
           type: integer
           nullable: true
         settlementContract:
@@ -1569,7 +1533,10 @@ components:
             - $ref: "#/components/schemas/BuyTokenDestination"
           default: erc20
         class:
-          $ref: "#/components/schemas/OrderClass"
+          deprecated: true
+          description: Deprecated, always `limit`. See `OrderClass`.
+          allOf:
+            - $ref: "#/components/schemas/OrderClass"
         appData:
           $ref: "#/components/schemas/AppDataHash"
         signature:
@@ -1941,7 +1908,8 @@ components:
           `InvalidNativeSellToken`, `QuoteNotVerified`, `SameBuyAndSellToken`,
           `SellAmountDoesNotCoverFee`, `TokenTemporarilySuspended`,
           `TradingOutsideAllowedWindow`, `UnsupportedBuyTokenDestination`,
-          `UnsupportedOrderType`, `UnsupportedSellTokenSource`,
+          `UnsupportedOrderType`, `UnsupportedPriceQuality`,
+          `UnsupportedSellTokenSource`,
           `UnsupportedToken`
         * 403: `Forbidden`
         * 404: `NoLiquidity`
@@ -1968,6 +1936,7 @@ components:
             - TradingOutsideAllowedWindow
             - UnsupportedBuyTokenDestination
             - UnsupportedOrderType
+            - UnsupportedPriceQuality
             - UnsupportedSellTokenSource
             - UnsupportedToken
         description:
@@ -2112,12 +2081,6 @@ components:
               allOf:
                 - $ref: "#/components/schemas/PriceQuality"
               default: verified
-            fastPath:
-              description: >
-                Signals that this quote is intended for fast-path
-                (out-of-competition) execution. Propagated to the solver.
-              type: boolean
-              default: false
             signingScheme:
               allOf:
                 - $ref: "#/components/schemas/SigningScheme"
@@ -2198,6 +2161,9 @@ components:
         auctionDeadlineBlock:
           type: integer
           description: Block deadline by which the auction must be settled.
+        fastPath:
+          type: boolean
+          description: Whether this is a fast-path auction.
         transactionHashes:
           type: array
           description: |

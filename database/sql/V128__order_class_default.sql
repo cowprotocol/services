@@ -1,0 +1,11 @@
+-- Order classes no longer exist in the code: every order is a limit order (fee signed as zero,
+-- protocol fee taken from the surplus) and JIT orders are identified by living in the
+-- `jit_orders` table. The `class` column is no longer read or written by the services, but it
+-- has to stay for one release so that the previous version of the orderbook (which still writes
+-- it) and this version (which does not) can both insert orders while the deployment rolls over.
+-- The default lets the new binaries insert without specifying the column. Dropping the column,
+-- the `OrderClass` type and the old index happens in a follow-up migration once no writer of
+-- the column is deployed anymore.
+--
+-- Rollback: `ALTER TABLE orders ALTER COLUMN class DROP DEFAULT;`
+ALTER TABLE orders ALTER COLUMN class SET DEFAULT 'limit';

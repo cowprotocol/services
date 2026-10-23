@@ -13,17 +13,26 @@ path = "src/lib.rs"
 [[bin]]
 name = "driver"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 account-balances = { workspace = true }
 alloy = {
   workspace = true,
-  features = ["json-rpc", "provider-anvil-api", "provider-txpool-api", "rand", "rpc-types", "signer-aws", "sol-types"]
+  features = [
+    "json-rpc",
+    "provider-anvil-api",
+    "provider-mev-api",
+    "provider-txpool-api",
+    "rand",
+    "rpc-types",
+    "signer-aws",
+    "sol-types"
+  ]
 }
 app-data = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
-bad-tokens = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes = { workspace = true }
@@ -90,12 +99,14 @@ tracing = { workspace = true }
 [dev-dependencies]
 alloy = { workspace = true, features = ["signer-mnemonic"] }
 app-data = { workspace = true, features = ["test_helpers"] }
+brotli = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
 flate2 = { workspace = true }
 maplit = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
+tower = { workspace = true, features = ["util"] }
 
 [features]
 tokio-console = ["observe/tokio-console"]

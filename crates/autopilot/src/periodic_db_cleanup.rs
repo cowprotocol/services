@@ -33,16 +33,19 @@ impl OrderEventsCleaner {
         let mut interval = time::interval(self.config.cleanup_interval);
         loop {
             interval.tick().await;
+            self.cleanup_once(Utc::now()).await;
+        }
+    }
 
-            let timestamp: DateTime<Utc> = Utc::now() - self.config.event_age_threshold;
-            match self.db.delete_order_events_before(timestamp).await {
-                Ok(affected_rows_count) => {
-                    tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "order events cleanup");
-                    Metrics::get().order_events_cleanup_total.inc()
-                }
-                Err(err) => {
-                    tracing::warn!(?err, "failed to delete order events before {}", timestamp)
-                }
+    async fn cleanup_once(&self, now: DateTime<Utc>) {
+        let timestamp = now - self.config.event_age_threshold;
+        match self.db.delete_order_events_before(timestamp).await {
+            Ok(affected_rows_count) => {
+                tracing::debug!(affected_rows_count, timestamp = %timestamp.to_string(), "order events cleanup");
+                Metrics::get().order_events_cleanup_total.inc()
+            }
+            Err(err) => {
+                tracing::warn!(?err, "failed to delete order events before {}", timestamp)
             }
         }
     }
@@ -73,14 +76,6 @@ mod tests {
         sqlx::{PgPool, Row},
     };
 
-    // Note: `tokio::time::advance` was not used in these tests. While it is a
-    // useful tool for controlling time flow in asynchronous tests, it causes
-    // complications when used with `sqlx::PgPool`. Specifically, pausing or
-    // advancing time with `tokio::time::advance` can interfere with the pool's
-    // ability to acquire database connections, leading to panics and
-    // unpredictable behavior in tests. Given these issues, tests were
-    // designed without manipulating the timer, to maintain stability and
-    // reliability in the database connection handling.
     #[tokio::test]
     #[ignore]
     async fn postgres_order_events_cleaner_flow() {
@@ -88,82 +83,63 @@ mod tests {
         let mut ex = db.pool.begin().await.unwrap();
         database::clear_DANGER_(&mut ex).await.unwrap();
 
-        let now = Utc::now();
-        let event_a = OrderEvent {
-            order_uid: ByteArray([1; 56]),
-            timestamp: now - chrono::Duration::milliseconds(300),
+        let t0 = Utc::now();
+        let event_at = |uid: u8, offset_ms: i64| OrderEvent {
+            order_uid: ByteArray([uid; 56]),
+            timestamp: t0 + chrono::Duration::milliseconds(offset_ms),
             label: OrderEventLabel::Created,
             reason: None,
         };
-        database::order_events::insert_order_event(&mut ex, &event_a)
-            .await
-            .unwrap();
-        let event_b = OrderEvent {
-            order_uid: ByteArray([2; 56]),
-            timestamp: now - chrono::Duration::milliseconds(100),
-            label: OrderEventLabel::Created,
-            reason: None,
-        };
-        database::order_events::insert_order_event(&mut ex, &event_b)
-            .await
-            .unwrap();
-        let event_c = OrderEvent {
-            order_uid: ByteArray([3; 56]),
-            timestamp: now,
-            label: OrderEventLabel::Created,
-            reason: None,
-        };
-        database::order_events::insert_order_event(&mut ex, &event_c)
-            .await
-            .unwrap();
-
+        let event_a = event_at(1, 0);
+        let event_b = event_at(2, 200);
+        let event_c = event_at(3, 400);
+        for event in [&event_a, &event_b, &event_c] {
+            database::order_events::insert_order_event(&mut ex, event)
+                .await
+                .unwrap();
+        }
         ex.commit().await.unwrap();
 
-        let ids = order_event_ids_before(&db.pool).await;
+        let ids = order_event_ids(&db.pool).await;
         assert_eq!(ids.len(), 3);
-        assert!(ids.contains(&event_a.order_uid));
-        assert!(ids.contains(&event_b.order_uid));
-        assert!(ids.contains(&event_c.order_uid));
 
-        let config =
-            OrderEventsCleanerConfig::new(Duration::from_millis(50), Duration::from_millis(200));
-        let cleaner = OrderEventsCleaner::new(config, db.clone());
+        let threshold_ms: i64 = 100;
+        let cleaner = OrderEventsCleaner::new(
+            OrderEventsCleanerConfig::new(
+                Duration::from_secs(60),
+                Duration::from_millis(threshold_ms as u64),
+            ),
+            db.clone(),
+        );
+        let tick_at = async |offset_ms: i64| {
+            cleaner
+                .cleanup_once(t0 + chrono::Duration::milliseconds(offset_ms))
+                .await;
+            order_event_ids(&db.pool).await
+        };
 
-        tokio::task::spawn(cleaner.run_forever());
+        // now=t0+150ms, cutoff=t0+50ms: deletes event_a (at t0).
+        let ids = tick_at(threshold_ms + 50).await;
+        assert_eq!(ids, vec![event_b.order_uid, event_c.order_uid]);
 
-        // delete `order_a` after the initialization
-        time::sleep(Duration::from_millis(20)).await;
-        let ids = order_event_ids_before(&db.pool).await;
-        assert_eq!(ids.len(), 2);
-        assert!(!ids.contains(&event_a.order_uid));
-        assert!(ids.contains(&event_b.order_uid));
-        assert!(ids.contains(&event_c.order_uid));
+        // now=t0+250ms, cutoff=t0+150ms: event_b (at t0+200ms) still safe.
+        let ids = tick_at(threshold_ms + 150).await;
+        assert_eq!(ids, vec![event_b.order_uid, event_c.order_uid]);
 
-        // nothing deleted after the first interval
-        time::sleep(Duration::from_millis(50)).await;
-        let ids = order_event_ids_before(&db.pool).await;
-        assert_eq!(ids.len(), 2);
-        assert!(!ids.contains(&event_a.order_uid));
-        assert!(ids.contains(&event_b.order_uid));
-        assert!(ids.contains(&event_c.order_uid));
+        // now=t0+350ms, cutoff=t0+250ms: deletes event_b.
+        let ids = tick_at(threshold_ms + 250).await;
+        assert_eq!(ids, vec![event_c.order_uid]);
 
-        // delete `event_b` only
-        time::sleep(Duration::from_millis(100)).await;
-        let ids = order_event_ids_before(&db.pool).await;
-        assert_eq!(ids.len(), 1);
-        assert!(!ids.contains(&event_b.order_uid));
-        assert!(ids.contains(&event_c.order_uid));
-
-        // delete `event_c`
-        time::sleep(Duration::from_millis(200)).await;
-        let ids = order_event_ids_before(&db.pool).await;
+        // now=t0+550ms, cutoff=t0+450ms: deletes event_c.
+        let ids = tick_at(threshold_ms + 450).await;
         assert!(ids.is_empty());
     }
 
-    async fn order_event_ids_before(pool: &PgPool) -> Vec<ByteArray<56>> {
+    async fn order_event_ids(pool: &PgPool) -> Vec<ByteArray<56>> {
         const QUERY: &str = r#"
                 SELECT order_uid
                 FROM order_events
+                ORDER BY timestamp
             "#;
         sqlx::query(QUERY)
             .fetch_all(pool)

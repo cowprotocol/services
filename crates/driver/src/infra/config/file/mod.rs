@@ -1,6 +1,6 @@
 pub use load::load;
 use {
-    crate::infra,
+    crate::{infra, infra::mempool::RevertProtection},
     alloy::{eips::BlockNumberOrTag, primitives::Address},
     anyhow::Context,
     configs::gas_price_estimation::{default_past_blocks, default_reward_percentile},
@@ -41,7 +41,6 @@ struct Config {
     gas_estimator: GasEstimatorType,
 
     /// Parameters related to settlement submission.
-    #[serde(default)]
     submission: SubmissionConfig,
 
     /// Override smart contract addresses.
@@ -71,14 +70,6 @@ struct Config {
     )]
     order_priority_strategies: Vec<OrderPriorityStrategy>,
 
-    /// How long should the token quality computed by the simulation
-    /// based logic be cached.
-    #[serde(
-        with = "humantime_serde",
-        default = "default_simulation_bad_token_max_age"
-    )]
-    simulation_bad_token_max_age: Duration,
-
     /// Configuration for the app-data fetching.
     #[serde(default, flatten)]
     app_data_fetching: AppDataFetching,
@@ -103,7 +94,7 @@ struct Config {
 }
 
 #[serde_as]
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct SubmissionConfig {
     /// The minimum priority fee in Gwei the solver is ensuring to pay in a
@@ -134,10 +125,69 @@ struct SubmissionConfig {
     #[serde(default)]
     nonce_block_number: Option<BlockNumber>,
 
-    /// The mempools to submit settlement transactions to. Can be the public
-    /// mempool of a node or the private MEVBlocker mempool.
-    #[serde(rename = "mempool", default)]
-    mempools: Vec<Mempool>,
+    /// Maximum additional tip in Gwei that we are willing to give to
+    /// the validator above regular gas price estimation.
+    #[serde(default = "default_max_additional_tip")]
+    #[serde_as(as = "serde_ext::U256")]
+    max_additional_tip: eth::U256,
+
+    /// Additional tip in percentage of max_fee_per_gas we are giving to
+    /// validator above regular gas price estimation. Expects a
+    /// floating point value between 0 and 1.
+    #[serde(default = "default_additional_tip_percentage")]
+    additional_tip_percentage: f64,
+
+    /// Where to send settlement transactions to.
+    #[serde(flatten)]
+    receiver: Receiver,
+}
+
+impl SubmissionConfig {
+    /// One receiver for each URL, named after the URL host.
+    fn to_domain(&self) -> infra::config::Receiver {
+        let mempool = |name, url, revert_protection| infra::mempool::Config {
+            target_confirm_time: self.target_confirm_time,
+            retry_interval: self.retry_interval,
+            nonce_block_number: self.nonce_block_number.map(Into::into),
+            name,
+            url,
+            revert_protection,
+        };
+        match &self.receiver {
+            Receiver::PublicMempool { urls } => infra::config::Receiver::Mempools(
+                urls.iter()
+                    .map(|url| mempool(host(url), url.clone(), RevertProtection::Disabled))
+                    .collect(),
+            ),
+            Receiver::PrivateRelay {
+                url,
+                mines_reverting_txs,
+            } => {
+                let revert_protection = match mines_reverting_txs {
+                    true => RevertProtection::Disabled,
+                    false => RevertProtection::Enabled,
+                };
+                infra::config::Receiver::Mempools(vec![mempool(
+                    host(url),
+                    url.clone(),
+                    revert_protection,
+                )])
+            }
+            Receiver::Builders { urls } => infra::config::Receiver::Builders(
+                urls.iter()
+                    .map(|url| infra::builders::Config {
+                        name: host(url),
+                        url: url.clone(),
+                    })
+                    .collect(),
+            ),
+        }
+    }
+}
+
+/// Name of a receiver in logs and metrics.
+fn host(url: &Url) -> String {
+    url.host_str().unwrap_or_default().to_owned()
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -158,30 +208,52 @@ impl From<BlockNumber> for BlockNumberOrTag {
     }
 }
 
-#[serde_as]
+/// Set as `[submission.public-mempool]`, `[submission.private-relay]` or
+/// `[submission.builders]`.
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-struct Mempool {
-    /// Name for better logging and metrics.
-    name: Option<String>,
-    /// The RPC URL to use.
-    url: Url,
-    /// Maximum additional tip in Gwei that we are willing to give to
-    /// the validator above regular gas price estimation.
-    #[serde(default = "default_max_additional_tip")]
-    #[serde_as(as = "serde_ext::U256")]
-    max_additional_tip: eth::U256,
-    /// Additional tip in percentage of max_fee_per_gas we are giving to
-    /// validator above regular gas price estimation. Expects a
-    /// floating point value between 0 and 1.
-    #[serde(default = "default_additional_tip_percentage")]
-    additional_tip_percentage: f64,
-    /// Informs the submission logic whether a reverting transaction will
-    /// actually be mined or just ignored. This is an advanced feature
-    /// for private mempools so for most configured mempools you have to
-    /// assume reverting transactions will get mined eventually.
-    #[serde(default = "default_mines_reverting_txs")]
-    mines_reverting_txs: bool,
+#[serde(
+    rename_all = "kebab-case",
+    rename_all_fields = "kebab-case",
+    deny_unknown_fields
+)]
+enum Receiver {
+    /// Nodes that forward settlement transactions to the public mempool.
+    PublicMempool {
+        /// The RPC URLs of the nodes. The driver submits to all of them.
+        #[serde(deserialize_with = "serde_ext::deserialize_nonempty_vec")]
+        urls: Vec<Url>,
+    },
+    /// A private relay like MEV Blocker.
+    PrivateRelay {
+        /// The RPC URL of the relay.
+        ///
+        /// Forwarding the information to more than one private relay does not
+        /// offer better protection, rather the opposite — different relays
+        /// forward different information to searchers, as such, searchers will
+        /// usually be connected to multiple private relays, allowing them to
+        /// piece together more information than each individual private relay
+        /// originally intented, resulting in reduced MEV protection.
+        ///
+        /// Additionally, we run a relay proxy that handles the failover between
+        /// them; the driver also fetches nonces through this URL.
+        url: Url,
+        /// Informs the submission logic whether a reverting transaction will
+        /// actually be mined or just ignored. Set this to `false` only if the
+        /// relay is known to drop reverting transactions.
+        #[serde(default = "default_mines_reverting_txs")]
+        mines_reverting_txs: bool,
+    },
+    /// Block builders that take the settlement as `eth_sendBundle` bundles,
+    /// one for every block until the submission deadline. The driver signs
+    /// the settlement and the `X-Flashbots-Signature` header with the
+    /// settlement account.
+    Builders {
+        /// The RPC URLs of the builders. A builder only confirms that it
+        /// received a bundle. The driver keeps waiting for the settlement as
+        /// long as one builder did, and reports success once it is mined.
+        #[serde(deserialize_with = "serde_ext::deserialize_nonempty_vec")]
+        urls: Vec<Url>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -325,12 +397,13 @@ struct SolverConfig {
     #[serde(default = "default_settle_queue_size")]
     settle_queue_size: usize,
 
-    /// Haircut in basis points (0-10000). Applied to solver-reported
-    /// economics to make bids more conservative by adjusting clearing prices
-    /// to report lower surplus. Useful for solvers prone to negative slippage.
-    /// Default: 0 (no haircut).
-    #[serde(default)]
-    haircut_bps: u32,
+    /// Volume-based solver fee in basis points (0-10000, exclusive). Injected
+    /// as an additional volume fee policy on every auction order, reusing the
+    /// protocol fee machinery to make bids and delivered prices more
+    /// conservative. Useful for solvers prone to negative slippage.
+    /// Default: 0 (no fee).
+    #[serde(default, alias = "haircut-bps")]
+    solver_fee_bps: u32,
 
     /// Additional EOAs that submit settlement txs on behalf of the solver
     /// via EIP-7702 delegation. When non-empty, enables parallel submission
@@ -484,9 +557,15 @@ struct ContractsConfig {
     /// Flashloan router to support taking out multiple flashloans
     /// in the same settlement.
     flashloan_router: Option<eth::Address>,
+
+    /// Override the default address of the DeadlineCheck contract. A
+    /// call to this contract is injected as a pre-interaction at
+    /// `/settle` time so that the settlement reverts on-chain if it is
+    /// mined past its submission deadline.
+    deadline_check: Option<eth::Address>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 struct LiquidityConfig {
     /// Additional tokens for which liquidity is always fetched, regardless of
@@ -518,6 +597,47 @@ struct LiquidityConfig {
     /// requests.
     #[serde(default)]
     fetch_at_block: AtBlock,
+
+    /// Minimum time between two background refreshes of the cached pools.
+    /// Blocks arriving inside the window share one refresh, so a chain with
+    /// sub-second blocks does not refetch every cached pool once per block.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_liquidity_refresh_cooldown"
+    )]
+    refresh_cooldown: Duration,
+
+    /// How many blocks older than the last background refresh cached pools
+    /// may be to still be used by requests for recent liquidity, i.e. quotes
+    /// and /solve with `fetch-at-block = "recent"`. Older pools get evicted.
+    /// Pools kept up to date in the background never get that old, so this
+    /// mainly bounds how long pools that are only used for quoting stay
+    /// cached.
+    #[serde(default = "default_liquidity_max_recent_block_age")]
+    max_recent_block_age: u64,
+
+    /// How many of the most recently used token pairs get kept up to date in
+    /// the background. Should cover the number of pairs an auction requests;
+    /// pairs beyond that get refetched on every /solve request.
+    #[serde(default = "default_liquidity_max_auto_updated_pairs")]
+    max_auto_updated_pairs: NonZeroUsize,
+}
+
+impl Default for LiquidityConfig {
+    fn default() -> Self {
+        Self {
+            base_tokens: Default::default(),
+            uniswap_v2: Default::default(),
+            swapr: Default::default(),
+            uniswap_v3: Default::default(),
+            balancer_v2: Default::default(),
+            zeroex: Default::default(),
+            fetch_at_block: Default::default(),
+            refresh_cooldown: default_liquidity_refresh_cooldown(),
+            max_recent_block_age: default_liquidity_max_recent_block_age(),
+            max_auto_updated_pairs: default_liquidity_max_auto_updated_pairs(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -829,10 +949,6 @@ fn default_max_order_age() -> Option<Duration> {
     Some(Duration::from_secs(300))
 }
 
-fn default_simulation_bad_token_max_age() -> Duration {
-    Duration::from_secs(600)
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -843,11 +959,6 @@ pub struct BadOrderDetectionConfig {
     /// the groups that contain it.
     #[serde(default)]
     pub token_supported: HashMap<String, bool>,
-
-    /// Whether the solver opted into detecting unsupported
-    /// tokens with `trace_callMany` based simulation.
-    #[serde(default, rename = "enable-simulation-bad-token-detection")]
-    pub enable_simulation_strategy: bool,
 
     /// Whether the solver opted into detecting unsupported
     /// orders with metrics-based detection. Orders that continue to result
@@ -1027,6 +1138,18 @@ fn default_app_data_cache_size() -> u64 {
     2000
 }
 
+fn default_liquidity_refresh_cooldown() -> Duration {
+    Duration::from_secs(2)
+}
+
+fn default_liquidity_max_recent_block_age() -> u64 {
+    4
+}
+
+fn default_liquidity_max_auto_updated_pairs() -> NonZeroUsize {
+    NonZeroUsize::new(2000).unwrap()
+}
+
 /// Which block should be used to fetch the liquidity.
 #[derive(Clone, Copy, Debug, Deserialize, Default)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -1034,13 +1157,48 @@ enum AtBlock {
     /// Use the latest block received by the `CurrentBlockWatcher`.
     #[default]
     Latest,
-    /// Use the latest finalized block.
-    Finalized,
+    /// Use the state of the last background refresh of the liquidity caches,
+    /// which is at most `refresh-cooldown`. Avoids refetching all pools on
+    /// every /solve request on chains that produce several blocks between
+    /// two refreshes.
+    Recent,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn liquidity_cache_defaults() {
+        for config in [
+            LiquidityConfig::default(),
+            toml::from_str::<LiquidityConfig>("").unwrap(),
+        ] {
+            assert!(matches!(config.fetch_at_block, AtBlock::Latest));
+            assert_eq!(config.refresh_cooldown, Duration::from_secs(2));
+            assert_eq!(config.max_recent_block_age, 4);
+            assert_eq!(config.max_auto_updated_pairs.get(), 2000);
+        }
+
+        let config: LiquidityConfig = toml::from_str(
+            r#"
+            fetch-at-block = "recent"
+            refresh-cooldown = "500ms"
+            max-recent-block-age = 10
+            max-auto-updated-pairs = 2000
+        "#,
+        )
+        .unwrap();
+        assert!(matches!(config.fetch_at_block, AtBlock::Recent));
+        assert_eq!(config.refresh_cooldown, Duration::from_millis(500));
+        assert_eq!(config.max_recent_block_age, 10);
+        assert_eq!(config.max_auto_updated_pairs.get(), 2000);
+    }
+
+    #[test]
+    fn rejects_zero_max_auto_updated_pairs() {
+        assert!(toml::from_str::<LiquidityConfig>("max-auto-updated-pairs = 0").is_err());
+    }
 
     #[test]
     fn gas_estimator_alloy_defaults() {
@@ -1218,6 +1376,9 @@ mod tests {
     const TOKEN_GROUPS_CONFIG: &str = r#"
         tx-gas-limit = "45000000"
 
+        [submission.public-mempool]
+        urls = ["http://localhost:8545"]
+
         [token-groups]
         ondo = [
             "0x0000000000000000000000000000000000000001",
@@ -1361,5 +1522,107 @@ mod tests {
         let err = SubmissionAccounts::new(vec![Account::Address(address)]).unwrap_err();
 
         assert!(err.to_string().contains("must be signers"));
+    }
+
+    #[test]
+    fn submission_public_mempool() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            gas-price-cap = "1"
+            [public-mempool]
+            urls = ["http://node-1", "http://node-2"]
+        "#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.receiver,
+            Receiver::PublicMempool { urls } if urls.len() == 2
+        ));
+    }
+
+    #[test]
+    fn submission_private_relay() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            [private-relay]
+            url = "http://relay"
+            mines-reverting-txs = false
+        "#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.receiver,
+            Receiver::PrivateRelay {
+                mines_reverting_txs: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn submission_builders() {
+        let config: SubmissionConfig = toml::from_str(
+            r#"
+            [builders]
+            urls = ["https://rpc.titanbuilder.xyz", "https://rpc.buildernet.org"]
+        "#,
+        )
+        .unwrap();
+
+        let infra::config::Receiver::Builders(builders) = config.to_domain() else {
+            panic!("expected builders");
+        };
+        let hosts: Vec<_> = builders.iter().map(|builder| &builder.name).collect();
+        assert_eq!(hosts, ["rpc.titanbuilder.xyz", "rpc.buildernet.org"]);
+    }
+
+    #[test]
+    fn submission_rejects_invalid_config() {
+        for config in [
+            // no receiver
+            r#"gas-price-cap = "1""#,
+            // more than one receiver
+            r#"
+            [public-mempool]
+            urls = ["http://node"]
+            [private-relay]
+            url = "http://relay"
+            "#,
+            // a public mempool needs at least one URL
+            r#"
+            [public-mempool]
+            urls = []
+            "#,
+            // a private relay takes a single URL
+            r#"
+            [private-relay]
+            urls = ["http://relay"]
+            "#,
+            // builders need at least one URL
+            r#"
+            [builders]
+            urls = []
+            "#,
+            // unknown receiver field
+            r#"
+            [public-mempool]
+            urls = ["http://node"]
+            name = "node"
+            "#,
+            // unknown submission field, still rejected next to the flattened
+            // receiver
+            r#"
+            gas-price-caps = "1"
+            [public-mempool]
+            urls = ["http://node"]
+            "#,
+        ] {
+            assert!(
+                toml::from_str::<SubmissionConfig>(config).is_err(),
+                "{config}"
+            );
+        }
     }
 }

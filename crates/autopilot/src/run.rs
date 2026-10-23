@@ -17,22 +17,24 @@ use {
         },
         domain,
         event_updater::EventUpdater,
+        fast_path::FastPathHandler,
         infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
+        settle_call::SettleCall,
         shadow,
         shutdown_controller::ShutdownController,
         solvable_orders::SolvableOrdersCache,
     },
     account_balances::{self, BalanceSimulator},
     alloy::{eips::BlockNumberOrTag, primitives::Address, providers::Provider},
-    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     configs::autopilot::{Configuration, solver::Account},
     contracts::{GPv2Settlement, WETH9},
     ethrpc::{Web3, block_stream::block_number_to_block_number_hash},
     event_indexing::block_retriever::BlockRetriever,
+    futures::channel::mpsc,
     http_client::HttpClientFactory,
     model::DomainSeparator,
     num::ToPrimitive,
@@ -51,7 +53,7 @@ use {
         sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
+    token_info::{CachedTokenInfoFetcher, DenyListedTokens, TokenInfoFetcher, TokenInfoFetching},
     tracing::{Instrument, info_span, instrument},
     url::Url,
 };
@@ -328,6 +330,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
+            quote_id_generator: Arc::new(db_write.clone()),
         },
     )
     .instrument(info_span!("price_estimator_factory"))
@@ -454,6 +457,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 config.order_quoting.standard_offchain_quote_validity,
             )
             .unwrap(),
+            fast_path_quote: chrono::Duration::from_std(
+                config.order_quoting.fast_path_quote_validity,
+            )
+            .unwrap(),
         },
         config.price_estimation.quote_timeout,
         config.price_estimation.max_quote_timeout,
@@ -473,13 +480,21 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
         ));
 
-    // Wakes the run loop on new orders (via the notifier) and new blocks.
+    // New-order notifications from the DB fan out to two subscribers: the run
+    // loop wakes on any new order to consider it for the next auction cycle,
+    // and the fast-path handler receives the uid so it can look up the
+    // staged competition and settle out-of-band.
     let wake_runloop = Arc::new(tokio::sync::Notify::new());
-    infra::order_notify::Notifier::new(banned_users.clone(), wake_runloop.clone())
-        .spawn(db_write.pool.clone());
+    let (fast_path_sender, fast_path_receiver) = mpsc::unbounded();
+    infra::order_notify::Notifier::new(
+        banned_users.clone(),
+        wake_runloop.clone(),
+        fast_path_sender,
+    )
+    .spawn(db_write.pool.clone());
 
     let penalty_cap_calculator = match &config.penalty_cap {
-        Some(penalty_cap_config) => Some(
+        Some(penalty_cap_config) => Some(Arc::new(
             build_penalty_cap_calculator(
                 penalty_cap_config,
                 *eth.contracts().weth().address(),
@@ -487,9 +502,23 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
                 &competition_native_price_updater,
             )
             .await,
-        ),
+        )),
         None => None,
     };
+
+    let protocol_fees = Arc::new(domain::ProtocolFees::new(
+        &config.fee_policies,
+        config
+            .shared
+            .volume_fee_bucket_overrides
+            .iter()
+            .map(Into::into)
+            .collect(),
+        config.shared.enable_sell_equals_buy_volume_fee,
+        *eth.contracts().weth().address(),
+    ));
+    let surplus_capturing_jit_order_owners =
+        Arc::new(config.surplus_capturing_jit_order_owners.clone());
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
@@ -499,19 +528,9 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         deny_listed_tokens.clone(),
         competition_native_price_updater.clone(),
         *eth.contracts().weth().address(),
-        domain::ProtocolFees::new(
-            &config.fee_policies,
-            config
-                .shared
-                .volume_fee_bucket_overrides
-                .iter()
-                .map(Into::into)
-                .collect(),
-            config.shared.enable_sell_equals_buy_volume_fee,
-            *eth.contracts().weth().address(),
-        ),
-        penalty_cap_calculator,
-        config.surplus_capturing_jit_order_owners,
+        protocol_fees.clone(),
+        penalty_cap_calculator.clone(),
+        surplus_capturing_jit_order_owners.clone(),
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
@@ -628,11 +647,12 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let extensions = infra::SupportedExtensions::from(&driver);
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.submission_account,
-                driver.supports_auction_deltas,
+                extensions,
             )
             .await
             .map(Arc::new)
@@ -649,6 +669,31 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let awaiter = maintenance
         .spawn_maintenance_task(eth.current_block().clone(), config.max_maintenance_timeout);
 
+    let settle_coordinator = Arc::new(SettleCall::new(
+        eth.clone(),
+        persistence.clone(),
+        awaiter.clone(),
+        run_loop_config.max_settlement_transaction_wait,
+    ));
+    // Fast-path penalties are decoupled from the regular auction's: the handler
+    // only gets the calculator when explicitly enabled, so orders carry no
+    // penalty cap at launch.
+    let fast_path_penalty_cap_calculator = config
+        .fast_path_penalty_cap_enabled
+        .then(|| penalty_cap_calculator.clone())
+        .flatten();
+    let fast_path_handler = FastPathHandler::new(
+        eth.clone(),
+        persistence.clone(),
+        drivers.clone(),
+        protocol_fees,
+        surplus_capturing_jit_order_owners,
+        settle_coordinator.clone(),
+        config.fast_path_submission_deadline,
+        fast_path_penalty_cap_calculator,
+    );
+    fast_path_handler.spawn(fast_path_receiver).await;
+
     let run = RunLoop::new(
         run_loop_config,
         eth,
@@ -662,6 +707,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         },
         awaiter,
         wake_runloop,
+        settle_coordinator,
     );
     run.run_forever(shutdown_controller).await;
 
@@ -681,6 +727,11 @@ async fn shadow_mode(config: Configuration) -> ! {
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let extensions = infra::SupportedExtensions {
+                // the shadow autopilot always sends full auctions
+                auction_deltas: false,
+                ..infra::SupportedExtensions::from(&driver)
+            };
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
@@ -693,8 +744,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
-                // the shadow autopilot always sends full auctions
-                false,
+                extensions,
             )
             .await
             .map(Arc::new)
@@ -755,7 +805,6 @@ async fn shadow_mode(config: Configuration) -> ! {
         drivers,
         trusted_tokens,
         config.run_loop.min_solve_time,
-        config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
         config.run_loop.max_winners_per_auction,

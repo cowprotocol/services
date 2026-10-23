@@ -13,11 +13,12 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     std::{
+        collections::HashSet,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         path::Path,
         time::Duration,
@@ -122,6 +123,11 @@ pub struct Configuration {
     #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
     pub order_simulation_timeout: Duration,
 
+    /// Flashloan lenders whose orders a passing order-creation simulation
+    /// accepts even when the EIP-1271 signature or transfer check fails.
+    #[serde(default)]
+    pub order_simulation_ignore_legacy_checks_for_lenders: HashSet<Address>,
+
     /// When enabled, solver competition endpoints return 404 until the
     /// auction's submission deadline block has been reached.
     #[serde(default)]
@@ -215,6 +221,7 @@ pub mod test_util {
                 order_quoting: TestDefault::test_default(),
                 price_estimation: PriceEstimation::test_default(),
                 order_simulation_timeout: Duration::from_secs(2),
+                order_simulation_ignore_legacy_checks_for_lenders: Default::default(),
                 hide_competition_before_deadline: false,
             }
         }
@@ -230,6 +237,7 @@ mod tests {
             orderbook::order_validation::SameTokensPolicy,
             test_util::TestDefault,
         },
+        alloy_primitives::address,
         std::time::Duration,
     };
 
@@ -242,14 +250,14 @@ mod tests {
         eip1271-skip-creation-validation = true
         hide-competition-before-deadline = true
         order-simulation-timeout = "3s"
+        order-simulation-ignore-legacy-checks-for-lenders = ["0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"]
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
 
         [order-validation]
         min-order-validity-period = "2m"
-        max-order-validity-period = "6h"
-        max-limit-order-validity-period = "30d"
+        max-order-validity-period = "30d"
         max-limit-orders-per-user = 5
         max-gas-per-order = 5000000
         same-tokens-policy = "allow-sell"
@@ -278,6 +286,10 @@ mod tests {
         assert!(config.eip1271_skip_creation_validation);
         assert!(config.hide_competition_before_deadline);
         assert_eq!(config.order_simulation_timeout, Duration::from_secs(3));
+        assert_eq!(
+            config.order_simulation_ignore_legacy_checks_for_lenders,
+            HashSet::from([address!("87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2")])
+        );
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
@@ -291,10 +303,6 @@ mod tests {
         );
         assert_eq!(
             config.order_validation.max_order_validity_period,
-            Duration::from_secs(21600)
-        );
-        assert_eq!(
-            config.order_validation.max_limit_order_validity_period,
             Duration::from_secs(2_592_000)
         );
 
@@ -327,10 +335,6 @@ mod tests {
         );
         assert_eq!(
             config.order_validation.max_order_validity_period,
-            Duration::from_secs(10800)
-        );
-        assert_eq!(
-            config.order_validation.max_limit_order_validity_period,
             Duration::from_secs(31_536_000)
         );
 
@@ -340,6 +344,11 @@ mod tests {
         assert!(config.banned_users.addresses.is_empty());
         assert!(!config.eip1271_skip_creation_validation);
         assert!(!config.hide_competition_before_deadline);
+        assert!(
+            config
+                .order_simulation_ignore_legacy_checks_for_lenders
+                .is_empty()
+        );
     }
 
     #[test]
@@ -349,8 +358,7 @@ mod tests {
             bind_address: default_bind_address(),
             order_validation: OrderValidationConfig {
                 min_order_validity_period: Duration::from_secs(120),
-                max_order_validity_period: Duration::from_secs(7200),
-                max_limit_order_validity_period: Duration::from_secs(86400),
+                max_order_validity_period: Duration::from_secs(86400),
                 max_limit_orders_per_user: 5,
                 max_gas_per_order: 6_000_000,
                 same_tokens_policy: SameTokensPolicy::AllowSell,
@@ -383,6 +391,9 @@ mod tests {
             http_client: Default::default(),
             price_estimation: Default::default(),
             order_simulation_timeout: default_simulation_timeout(),
+            order_simulation_ignore_legacy_checks_for_lenders: HashSet::from([address!(
+                "87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+            )]),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -416,6 +427,10 @@ mod tests {
         assert_eq!(
             config.hide_competition_before_deadline,
             deserialized.hide_competition_before_deadline
+        );
+        assert_eq!(
+            config.order_simulation_ignore_legacy_checks_for_lenders,
+            deserialized.order_simulation_ignore_legacy_checks_for_lenders
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
     }

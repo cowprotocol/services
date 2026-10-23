@@ -6,7 +6,6 @@ use {
             blockchain,
             config::file,
             liquidity,
-            mempool,
             notify,
             solver::{self, Account, BadOrderDetection, SolutionMerging},
         },
@@ -121,9 +120,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                             )
                         })
                         .collect(),
-                    enable_simulation_strategy: solver_config
-                        .bad_order_detection
-                        .enable_simulation_strategy,
                     enable_metrics_strategy: solver_config
                         .bad_order_detection
                         .enable_metrics_strategy,
@@ -148,11 +144,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 },
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
-                fetch_liquidity_at_block: match config.liquidity.fetch_at_block {
-                    file::AtBlock::Latest => liquidity::AtBlock::Latest,
-                    file::AtBlock::Finalized => liquidity::AtBlock::Finalized,
-                },
-                haircut_bps: solver_config.haircut_bps,
+                solver_fee_bps: solver_config.solver_fee_bps,
                 submission_accounts: join_all(
                     solver_config
                         .submission_accounts
@@ -324,6 +316,15 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                     api_key: config.api_key,
                     http_timeout: config.http_timeout,
                 }),
+            fetch_at_block: match config.liquidity.fetch_at_block {
+                file::AtBlock::Latest => liquidity::AtBlock::Latest,
+                file::AtBlock::Recent => liquidity::AtBlock::Recent {
+                    schedule_update: true,
+                },
+            },
+            refresh_cooldown: config.liquidity.refresh_cooldown,
+            max_recent_block_age: config.liquidity.max_recent_block_age,
+            max_auto_updated_pairs: config.liquidity.max_auto_updated_pairs,
         },
         liquidity_sources_notifier: config.liquidity_sources_notifier.map(|notifier| {
             notify::liquidity_sources::config::Config {
@@ -336,30 +337,13 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 }),
             }
         }),
-        mempools: config
-            .submission
-            .mempools
-            .iter()
-            .enumerate()
-            .map(|(index, mempool)| mempool::Config {
-                min_priority_fee: config.submission.min_priority_fee,
-                gas_price_cap: config.submission.gas_price_cap,
-                target_confirm_time: config.submission.target_confirm_time,
-                retry_interval: config.submission.retry_interval,
-                nonce_block_number: config.submission.nonce_block_number.map(Into::into),
-                name: mempool
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("mempool_{index}")),
-                url: mempool.url.clone(),
-                revert_protection: match mempool.mines_reverting_txs {
-                    true => mempool::RevertProtection::Disabled,
-                    false => mempool::RevertProtection::Enabled,
-                },
-                max_additional_tip: mempool.max_additional_tip,
-                additional_tip_percentage: mempool.additional_tip_percentage,
-            })
-            .collect(),
+        gas_price_parameters: blockchain::gas::GasPriceParameters {
+            max_additional_tip: config.submission.max_additional_tip,
+            additional_tip_factor: config.submission.additional_tip_percentage,
+            max_fee_per_gas: config.submission.gas_price_cap,
+            min_priority_fee: config.submission.min_priority_fee,
+        },
+        receiver: config.submission.to_domain(),
         simulator: config.simulator,
         contracts: blockchain::contracts::Addresses {
             settlement: config.contracts.gp_v2_settlement.map(Into::into),
@@ -367,12 +351,12 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
             balances: config.contracts.balances.map(Into::into),
             signatures: config.contracts.signatures.map(Into::into),
             flashloan_router: config.contracts.flashloan_router.map(Into::into),
+            deadline_check: config.contracts.deadline_check.map(Into::into),
         },
         disable_access_list_simulation: config.disable_access_list_simulation,
         disable_gas_simulation: config.disable_gas_simulation.map(Into::into),
         gas_estimator: config.gas_estimator,
         order_priority_strategies: config.order_priority_strategies,
-        simulation_bad_token_max_age: config.simulation_bad_token_max_age,
         app_data_fetching: config.app_data_fetching,
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,

@@ -4,6 +4,8 @@ use {
     crate::infra::api::ValidationParameters,
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
+    serde_ext::{deserialize_solana_pubkey_b58, deserialize_url_with_trailing_slash},
+    solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
     url::Url,
@@ -43,6 +45,10 @@ pub struct Config {
     pub http: Http,
     /// Quote endpoint configuration.
     pub quoting: Quoting,
+    /// The Solana JSON-RPC node. Required by sponsored order placement.
+    pub rpc: Option<Rpc>,
+    /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
+    pub sponsoring: Option<Sponsoring>,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -70,13 +76,19 @@ pub struct Quoting {
     /// last path segment would be replaced rather than extended.
     #[serde(deserialize_with = "deserialize_urls_with_trailing_slash")]
     pub drivers: Vec<Url>,
+    /// Base URL of the autopilot, whose native price cache gates quotes: a
+    /// pair with a token no estimator prices answers `NoLiquidity`.
+    #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
+    pub autopilot: Url,
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub timeout: Duration,
-    /// Least far in the future a quoted order's `validTo` may lie.
+    /// Least far in the future an order's `validTo` may lie, for quotes and
+    /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_min_validity")]
     pub min_validity: Duration,
-    /// Furthest in the future a quoted order's `validTo` may lie.
+    /// Furthest in the future an order's `validTo` may lie, for quotes and
+    /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_max_validity")]
     pub max_validity: Duration,
     /// How long the quoted amounts are honored.
@@ -92,6 +104,54 @@ impl Quoting {
             max_validity: self.max_validity,
         }
     }
+}
+
+/// Solana JSON-RPC node configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Rpc {
+    /// HTTP endpoint of the Solana JSON-RPC node.
+    pub endpoint: Url,
+    /// Ceiling on one RPC request.
+    #[serde(with = "humantime_serde", default = "default_rpc_timeout")]
+    pub request_timeout: Duration,
+}
+
+/// Sponsored order placement configuration.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct Sponsoring {
+    /// The funding account a sponsored creation transaction must name as its
+    /// fee payer and rent payer. The autopilot countersigns with its key.
+    #[serde(deserialize_with = "deserialize_solana_pubkey_b58")]
+    pub funder: Pubkey,
+    /// The settlement program a creation transaction must target. Defaults
+    /// to the official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
+    pub settlement_program: Pubkey,
+    /// The most the funder will pay in priority fee for one creation, in
+    /// lamports. The client sets the compute unit price and limit whose
+    /// product this bounds, so it caps what a placement can spend.
+    #[serde(default = "default_max_priority_fee_lamports")]
+    pub max_priority_fee_lamports: u64,
+}
+
+/// Wallets commonly ask 75,000 to 100,000 lamports for a creation, so a
+/// deployment raises this in config. The fallback errs towards refusing a
+/// placement over burning funder lamports.
+fn default_max_priority_fee_lamports() -> u64 {
+    100_000
+}
+
+fn default_settlement_program_id() -> Pubkey {
+    cow_settlement_interface::ID
+}
+
+fn default_rpc_timeout() -> Duration {
+    Duration::from_secs(5)
 }
 
 /// Appends the trailing slash `Url::join` needs to every URL in the list.
@@ -147,16 +207,17 @@ mod tests {
         assert_eq!(config.http.bind_address, "0.0.0.0:8080".parse().unwrap());
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
         assert_eq!(config.quoting.drivers[0].as_str(), "http://localhost:8000/");
+        assert_eq!(config.quoting.autopilot.as_str(), "http://localhost:12088/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
-        assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
-        assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
+        assert_eq!(config.quoting.min_validity, Duration::from_secs(60));
+        assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
     }
 
-    /// Routes resolve relative to the driver URLs, so a base URL with a path
-    /// keeps it instead of having its last segment replaced.
+    /// Routes resolve relative to the driver and autopilot URLs, so a base
+    /// URL with a path keeps it instead of having its last segment replaced.
     #[test]
-    fn driver_urls_get_a_trailing_slash() {
+    fn urls_get_a_trailing_slash() {
         #[derive(Debug, Deserialize)]
         struct Wrapper {
             quoting: Quoting,
@@ -165,6 +226,7 @@ mod tests {
             r#"
             [quoting]
             drivers = ["http://driver/baseline"]
+            autopilot = "http://autopilot/base"
             "#,
         )
         .unwrap();
@@ -176,5 +238,6 @@ mod tests {
             wrapper.quoting.drivers[0].join("quote").unwrap().as_str(),
             "http://driver/baseline/quote"
         );
+        assert_eq!(wrapper.quoting.autopilot.as_str(), "http://autopilot/base/");
     }
 }

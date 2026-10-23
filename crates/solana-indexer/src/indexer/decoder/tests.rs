@@ -38,13 +38,16 @@ use {
     cow_settlement_interface::{
         Pubkey as InterfacePubkey,
         SettlementInstruction,
-        data::intent::{Flags, OrderIntent, OrderKind as IntentOrderKind},
+        data::intent::{Asset, Flags, OrderIntent, OrderKind as IntentOrderKind, TokenAsset},
         pda::order::find_order_pda,
     },
     cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
     futures::StreamExt,
     solana_sdk::pubkey::Pubkey,
-    std::sync::{Arc, atomic::AtomicU64},
+    std::{
+        num::NonZeroU64,
+        sync::{Arc, atomic::AtomicU64},
+    },
 };
 
 fn pubkey(n: u8) -> Pubkey {
@@ -327,6 +330,42 @@ fn slot_status_update(slot: u64, status: SlotStatus) -> SubscribeUpdate {
 }
 
 /// Wrap a transaction fixture in the proto envelope the ingester reads.
+/// The geyser sender feeding a spawned pipeline, and the ingester and decoder
+/// tasks reading from it.
+type Pipeline = (
+    tokio::sync::mpsc::Sender<Result<SubscribeUpdate, yellowstone_grpc_proto::tonic::Status>>,
+    tokio::task::JoinHandle<Result<(), crate::indexer::ingester::Error>>,
+    tokio::task::JoinHandle<Result<(), crate::types::errors::PersistenceError>>,
+);
+
+/// An ingester and decoder over a live channel, so a test can interleave
+/// sends with database assertions. Dropping the sender ends the ingester with
+/// the stream and the decoder drains behind it, so joining both tasks is the
+/// guarantee that every write has landed.
+fn spawn_pipeline(
+    pool: &sqlx::PgPool,
+    rpc: SolanaRPC,
+    settlement: Pubkey,
+    solflow: Option<Pubkey>,
+) -> Pipeline {
+    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
+    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
+    let (sender, receiver) = tokio::sync::mpsc::channel(16);
+    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
+    let mut decoder = Decoder::new(
+        Postgres::new(pool.clone()),
+        rpc,
+        receiver,
+        settlement,
+        solflow,
+    );
+    (
+        geyser_tx,
+        tokio::spawn(async move { ingester.run().await }),
+        tokio::spawn(async move { decoder.run().await }),
+    )
+}
+
 fn tx_update(slot: u64, info: SubscribeUpdateTransactionInfo) -> SubscribeUpdate {
     SubscribeUpdate {
         update_oneof: Some(UpdateOneof::Transaction(SubscribeUpdateTransaction {
@@ -351,27 +390,35 @@ fn create_order_tx() -> (SubscribeUpdateTransactionInfo, CreatedOrder) {
     (tx_from_instructions(pubkey(9), &[instruction]), expected)
 }
 
-/// The `CreateOrder` instruction and the event its decode must produce.
-fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
-    let settlement = pubkey(1);
-    let created_by = pubkey(12);
-    let intent = OrderIntent {
+/// The intent behind [`create_order_parts`] and the cancellation test.
+fn sample_intent() -> OrderIntent {
+    OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
-        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
-        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
-        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
-        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
-        sell_amount: 1_000,
-        buy_amount: 2_000,
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
+        sell_amount: NonZeroU64::new(1_000).unwrap(),
+        buy_amount: NonZeroU64::new(2_000).unwrap(),
         valid_to: 42,
         flags: Flags {
-            created_on_chain: true,
             kind: IntentOrderKind::Sell,
             partially_fillable: false,
         },
         app_data: [0x44; 32],
-    };
-    let instruction = cow_settlement_client::instructions::CreateOrder {
+    }
+}
+
+/// The `CreateOrder` instruction and the event its decode must produce.
+fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) {
+    let settlement = pubkey(1);
+    let created_by = pubkey(12);
+    let intent = sample_intent();
+    let instruction = cow_settlement_client::instruction::CreateOrder {
         program_id: settlement,
         owner: pubkey(11),
         created_by,
@@ -398,13 +445,64 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
     (instruction, expected)
 }
 
+/// `CancelOrder` carrying intent bytes created the order cancelled, so it
+/// decodes to the creation followed by the cancellation. Without them only
+/// the cancellation is emitted.
+#[test]
+fn cancel_order_decodes_to_the_cancellation() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let (_, created) = create_order_parts();
+    let intent = sample_intent();
+    let cancelled = SettlementEvent::OrderCancelled {
+        signature: signature(6),
+        order_pda: find_order_pda(&settlement, &intent.uid()).0,
+    };
+    let creating: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::CancelOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+    let existing: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::cancel_order::CancelOutstandingOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &intent,
+        }
+        .into();
+
+    for (instruction, expected) in [
+        (
+            creating,
+            vec![
+                SettlementEvent::OrderCreated(Box::new(created.clone())),
+                cancelled.clone(),
+            ],
+        ),
+        (existing, vec![cancelled.clone()]),
+    ] {
+        let tx = tx_from_instructions(pubkey(9), &[instruction]);
+        let ctx = TxContext {
+            slot: Slot(5),
+            signature: signature(6),
+            account_keys: build_account_keys(&tx),
+            post_token_balances: vec![],
+        };
+        let instructions = relevant_instructions(&tx, &settlement, Some(&solflow));
+        assert_eq!(decode_settlement(&instructions, &ctx), Ok(expected));
+    }
+}
+
 /// The RPC wire form of a signed transaction, as `getTransaction` returns it
 /// with base64 encoding.
 fn rpc_transaction_json(
     tx: &solana_sdk::transaction::VersionedTransaction,
     slot: u64,
 ) -> serde_json::Value {
-    let bytes = bincode::serialize(tx).unwrap();
+    let bytes = wincode::serialize(tx).unwrap();
     serde_json::json!({
         "slot": slot,
         "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
@@ -524,7 +622,7 @@ async fn backfilled_v0_cpi_decodes_like_the_streamed_one() {
         signatures: vec![signature(6)],
         message,
     };
-    let bytes = bincode::serialize(&tx).unwrap();
+    let bytes = wincode::serialize(&tx).unwrap();
     let json = serde_json::json!({
         "slot": 43u64,
         "transaction": [base64::prelude::BASE64_STANDARD.encode(bytes), "base64"],
@@ -728,15 +826,18 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     let fee_payer = pubkey(9);
     let intent = OrderIntent {
         owner: InterfacePubkey::new_from_array([0x11; 32]),
-        buy_token_account: InterfacePubkey::new_from_array([0x22; 32]),
-        sell_token_account: InterfacePubkey::new_from_array([0x33; 32]),
-        buy_mint: InterfacePubkey::new_from_array([0x55; 32]),
-        sell_mint: InterfacePubkey::new_from_array([0x66; 32]),
-        sell_amount: 1_000,
-        buy_amount: 1_234,
+        sell: TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x66; 32]),
+            token_account: InterfacePubkey::new_from_array([0x33; 32]),
+        },
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: InterfacePubkey::new_from_array([0x55; 32]),
+            token_account: InterfacePubkey::new_from_array([0x22; 32]),
+        }),
+        sell_amount: NonZeroU64::new(1_000).unwrap(),
+        buy_amount: NonZeroU64::new(1_234).unwrap(),
         valid_to: 42,
         flags: Flags {
-            created_on_chain: true,
             kind: IntentOrderKind::Sell,
             partially_fillable: false,
         },
@@ -744,32 +845,36 @@ fn begin_and_finalize_settle_decode_to_settlement_finalized() {
     };
     let order_pda = find_order_pda(&settlement, &intent.uid()).0;
 
-    let begin = cow_settlement_client::instructions::BeginSettle {
+    let begin = cow_settlement_client::instruction::BeginSettle {
+        only_token_program: None,
         program_id: settlement,
         solver,
         finalize_ix_index: 1,
         auction_id: 4242,
-        orders: &[cow_settlement_client::instructions::InitializedIntent {
+        orders: &[cow_settlement_client::instruction::InitializedIntent {
             intent: &intent,
             pulls: &[
-                cow_settlement_client::instructions::Pull {
+                cow_settlement_client::instruction::Pull {
                     destination: pubkey(27),
                     amount: 300,
                 },
-                cow_settlement_client::instructions::Pull {
+                cow_settlement_client::instruction::Pull {
                     destination: pubkey(28),
                     amount: 700,
                 },
             ],
+            use_transfer_checked: false,
         }],
     }
     .into();
-    let finalize = cow_settlement_client::instructions::FinalizeSettle {
+    let finalize = cow_settlement_client::instruction::FinalizeSettle {
+        only_token_program: None,
         program_id: settlement,
         begin_ix_index: 0,
-        orders: &[cow_settlement_client::instructions::FinalizedIntent {
+        orders: &[cow_settlement_client::instruction::FinalizedIntent {
             intent: &intent,
             amount: 1_234,
+            use_transfer_checked: false,
         }],
     }
     .into();
@@ -854,22 +959,12 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
     let mut healthy = info;
     healthy.signature = signature(11).as_ref().to_vec();
 
-    // A live channel drives the ingester so the test can interleave sends
-    // with database assertions.
-    let (geyser_tx, mut geyser_rx) = tokio::sync::mpsc::channel(16);
-    let geyser_stream = futures::stream::poll_fn(move |cx| geyser_rx.poll_recv(cx)).boxed();
-
-    let (sender, receiver) = tokio::sync::mpsc::channel(16);
-    let mut ingester = Ingester::new(geyser_stream, sender, Arc::new(AtomicU64::new(0)));
-    let mut decoder = Decoder::new(
-        Postgres::new(pool.clone()),
+    let (geyser_tx, ingester_task, decoder_task) = spawn_pipeline(
+        &pool,
         mock_rpc_with_signature_statuses(),
-        receiver,
         settlement,
         Some(solflow),
     );
-    let ingester_task = tokio::spawn(async move { ingester.run().await });
-    let decoder_task = tokio::spawn(async move { decoder.run().await });
 
     for update in [
         Ok(tx_update(42, reverted)),
@@ -945,8 +1040,9 @@ async fn solana_db_ingester_to_decoder_persists_decoded_events() {
 }
 
 /// Backfill end to end: the watermark trails the tip past the replay window,
-/// RPC history supplies the missing transaction, and the watermark lands on
-/// the scanned tip with the recovered order persisted.
+/// RPC history supplies the missing transaction, and the watermark lands
+/// the signature index allowance below the scanned tip with the recovered
+/// order persisted.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
 async fn solana_db_backfill_recovers_the_gap() {
@@ -959,7 +1055,7 @@ async fn solana_db_backfill_recovers_the_gap() {
     let (instruction, expected) = create_order_parts();
     let tx = versioned_tx(instruction);
     let mut mocks = Mocks::default();
-    mocks.insert(RpcRequest::GetSlot, serde_json::json!(50u64));
+    mocks.insert(RpcRequest::GetSlot, serde_json::json!(100u64));
     mocks.insert(
         RpcRequest::GetSignaturesForAddress,
         serde_json::json!([{
@@ -986,7 +1082,7 @@ async fn solana_db_backfill_recovers_the_gap() {
 
     assert_eq!(
         persistence.last_indexed_slot().await.unwrap(),
-        Some(Slot(50))
+        Some(Slot(100 - super::backfill::SIGNATURE_INDEX_LAG))
     );
     let (uid, created_by_tx, created_in_slot): (Vec<u8>, Vec<u8>, i64) = sqlx::query_as(
         "SELECT o.uid, p.created_by_tx, p.created_in_slot
@@ -998,4 +1094,260 @@ async fn solana_db_backfill_recovers_the_gap() {
     assert_eq!(uid, expected.order_uid.0.to_vec());
     assert_eq!(created_by_tx, signature(6).as_ref().to_vec());
     assert_eq!(created_in_slot, 43);
+}
+
+/// The sample order's creation and its settlement in one transaction, so the
+/// trade finds its order, compiled as v0 and as v1.
+fn create_and_settle_txs() -> [solana_sdk::transaction::VersionedTransaction; 2] {
+    use solana_sdk::message::{VersionedMessage, v0, v1};
+    let intent = sample_intent();
+    let (create, _) = create_order_parts();
+    let begin = cow_settlement_client::instruction::BeginSettle {
+        only_token_program: None,
+        program_id: pubkey(1),
+        solver: pubkey(10),
+        finalize_ix_index: 2,
+        auction_id: 4242,
+        orders: &[cow_settlement_client::instruction::InitializedIntent {
+            intent: &intent,
+            pulls: &[cow_settlement_client::instruction::Pull {
+                destination: pubkey(27),
+                amount: 1_000,
+            }],
+            use_transfer_checked: false,
+        }],
+    }
+    .into();
+    let finalize = cow_settlement_client::instruction::FinalizeSettle {
+        only_token_program: None,
+        program_id: pubkey(1),
+        begin_ix_index: 1,
+        orders: &[cow_settlement_client::instruction::FinalizedIntent {
+            intent: &intent,
+            amount: 2_000,
+            use_transfer_checked: false,
+        }],
+    }
+    .into();
+    let instructions = [create, begin, finalize];
+    let blockhash = solana_sdk::hash::Hash::default();
+    [
+        VersionedMessage::V0(
+            v0::Message::try_compile(&pubkey(9), &instructions, &[], blockhash).unwrap(),
+        ),
+        VersionedMessage::V1(
+            v1::Message::try_compile(&pubkey(9), &instructions, blockhash).unwrap(),
+        ),
+    ]
+    .map(|message| solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![signature(6); usize::from(message.header().num_required_signatures)],
+        message,
+    })
+}
+
+/// The rows [`create_and_settle_txs`] leaves once indexed at slot 43.
+async fn assert_create_and_settle_persisted(
+    pool: &sqlx::PgPool,
+    tx: &solana_sdk::transaction::VersionedTransaction,
+) {
+    type SettlementRow = (i64, Vec<u8>, i32, Vec<u8>, i64);
+    let version = tx.version();
+    let settlements: Vec<SettlementRow> = sqlx::query_as(
+        "SELECT slot, tx_signature, instruction_index, solver, auction_id FROM solana.settlements",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        settlements,
+        vec![(
+            43,
+            signature(6).as_ref().to_vec(),
+            1,
+            pubkey(10).to_bytes().to_vec(),
+            4242
+        )],
+        "{version:?}"
+    );
+    let trades: Vec<(Vec<u8>, i64, i64, i64)> = sqlx::query_as(
+        "SELECT order_uid, sell_amount::bigint, buy_amount::bigint, slot FROM solana.trades",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        trades,
+        vec![(sample_intent().uid().to_bytes().to_vec(), 1_000, 2_000, 43)],
+        "{version:?}"
+    );
+    let dead: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.dead_letter")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(dead, 0, "{version:?}");
+}
+
+/// A settlement fetched over RPC is indexed alike as v0 and as v1.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_backfill_persists_v0_and_v1_settlements() {
+    let pool = crate::test_db::pool().await;
+    for tx in create_and_settle_txs() {
+        crate::test_db::wipe(&pool).await;
+        Postgres::new(pool.clone())
+            .write_last_indexed_slot(Slot(40))
+            .await
+            .unwrap();
+        let mut mocks = Mocks::default();
+        mocks.insert(RpcRequest::GetSlot, serde_json::json!(100u64));
+        mocks.insert(
+            RpcRequest::GetSignaturesForAddress,
+            serde_json::json!([{
+                "signature": signature(6).to_string(),
+                "slot": 43u64,
+                "err": null,
+                "memo": null,
+                "blockTime": null,
+                "confirmationStatus": "finalized"
+            }]),
+        );
+        mocks.insert(RpcRequest::GetTransaction, rpc_transaction_json(&tx, 43));
+
+        replayer(&pool, mocks).backfill().await;
+
+        assert_create_and_settle_persisted(&pool, &tx).await;
+    }
+}
+
+/// A streamed settlement is indexed alike as v0 and as v1. The v1 stream
+/// message carries the compute budget config v0 has no field for.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_stream_persists_v0_and_v1_settlements() {
+    use yellowstone_grpc_proto::solana::storage::confirmed_block::TransactionConfig;
+    let pool = crate::test_db::pool().await;
+    for tx in create_and_settle_txs() {
+        crate::test_db::wipe(&pool).await;
+        let encoded = serde_json::from_value(rpc_transaction_json(&tx, 43)).unwrap();
+        let mut info = super::backfill::convert(encoded, signature(6)).expect("convertible");
+        if let solana_sdk::message::VersionedMessage::V1(message) = &tx.message {
+            let config = message.config;
+            info.transaction
+                .as_mut()
+                .unwrap()
+                .message
+                .as_mut()
+                .unwrap()
+                .config = Some(TransactionConfig {
+                priority_fee: config.priority_fee,
+                compute_unit_limit: config.compute_unit_limit,
+                loaded_accounts_data_size_limit: config.loaded_accounts_data_size_limit,
+                heap_size: config.heap_size,
+            });
+        }
+
+        let (geyser_tx, ingester_task, decoder_task) = spawn_pipeline(
+            &pool,
+            SolanaRPC::new_mock_with_mocks(Mocks::default()),
+            pubkey(1),
+            None,
+        );
+        for update in [
+            tx_update(43, info),
+            slot_status_update(43, SlotStatus::SlotConfirmed),
+        ] {
+            geyser_tx.send(Ok(update)).await.unwrap();
+        }
+        drop(geyser_tx);
+        assert!(ingester_task.await.unwrap().is_err());
+        assert!(decoder_task.await.unwrap().is_ok());
+
+        assert_create_and_settle_persisted(&pool, &tx).await;
+    }
+}
+
+/// A decoder without a stream over the given mocks.
+fn replayer(pool: &sqlx::PgPool, mocks: Mocks) -> Decoder {
+    let (_closed, rx) = tokio::sync::mpsc::channel(1);
+    Decoder::new(
+        Postgres::new(pool.clone()),
+        SolanaRPC::new_mock_with_mocks(mocks),
+        rx,
+        pubkey(1),
+        None,
+    )
+}
+
+/// A healed dead letter: the transaction re-fetches into an order, the row
+/// unparks, and the watermark stays put.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_replay_heals_a_dead_letter() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence
+        .write_last_indexed_slot(Slot(100))
+        .await
+        .unwrap();
+    persistence
+        .record_decode_failure(signature(6), Slot(43))
+        .await
+        .unwrap();
+
+    let (instruction, expected) = create_order_parts();
+    let mocks = Mocks::from([(
+        RpcRequest::GetTransaction,
+        rpc_transaction_json(&versioned_tx(instruction), 43),
+    )]);
+    replayer(&pool, mocks).replay().await.unwrap();
+
+    let uid: Vec<u8> = sqlx::query_scalar("SELECT uid FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(uid, expected.order_uid.0.to_vec());
+    let parked: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.dead_letter")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(parked, 0);
+    assert_eq!(
+        persistence.last_indexed_slot().await.unwrap(),
+        Some(Slot(100))
+    );
+}
+
+/// A dead letter that fails again stays parked: an undecodable payload
+/// leaves the row untouched.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+async fn solana_db_replay_keeps_failing_dead_letters_parked() {
+    let pool = crate::test_db::pool().await;
+    crate::test_db::wipe(&pool).await;
+    let persistence = Postgres::new(pool.clone());
+    persistence
+        .record_decode_failure(signature(6), Slot(43))
+        .await
+        .unwrap();
+
+    // An envelope whose payload is not a transaction.
+    let garbage = Mocks::from([(
+        RpcRequest::GetTransaction,
+        serde_json::json!({
+            "slot": 43u64,
+            "transaction": ["aGVsbG8=", "base64"],
+            "meta": { "err": null, "status": { "Ok": null }, "fee": 0u64,
+                      "preBalances": [], "postBalances": [], "innerInstructions": [],
+                      "logMessages": [], "preTokenBalances": [], "postTokenBalances": [],
+                      "rewards": [] },
+            "blockTime": null
+        }),
+    )]);
+    replayer(&pool, garbage).replay().await.unwrap();
+    let reason: String = sqlx::query_scalar("SELECT reason FROM solana.dead_letter")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(reason, "decoder_error");
 }

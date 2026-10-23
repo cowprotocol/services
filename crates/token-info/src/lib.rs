@@ -1,3 +1,4 @@
+pub use deny_list::DenyListedTokens;
 use {
     alloy_primitives::Address,
     anyhow::Result,
@@ -15,6 +16,9 @@ use {
         sync::{Arc, Mutex},
     },
 };
+
+mod deny_list;
+
 const TOKEN_INFO_FETCH_CONCURRENCY: usize = 32;
 
 #[cfg_attr(test, derive(Eq, PartialEq))]

@@ -10,7 +10,7 @@ use {
         infra::{
             blockchain::{self, Ethereum},
             config::file::FeeHandler,
-            solver::{ManageNativeToken, Solver},
+            solver::Solver,
         },
     },
     alloy::network::TxSigner,
@@ -20,7 +20,10 @@ use {
     futures::future::try_join_all,
     itertools::Itertools,
     num::{BigRational, One},
-    number::conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+    number::{
+        conversions::{big_rational_to_u256, u256_to_big_int, u256_to_big_rational},
+        u256_ext::U256Ext,
+    },
     simulator::{self, Simulator, encoding::WrapperCall},
     solvers_dto::solution::Flashloan,
     std::{
@@ -90,10 +93,19 @@ pub struct LimitPrices {
 }
 
 /// Whether `order` describes the same trade as `quoted`: same tokens, side and
-/// target amount. A partial check, not full order equality.
-fn compare_orders(order: &competition::Order, quoted: &competition::Order) -> bool {
-    order.sell.token == quoted.sell.token
-        && order.buy.token == quoted.buy.token
+/// target amount. Native ETH and WETH are treated as the same token: the
+/// orderbook rewrites buy-ETH quote requests to WETH before they hit the
+/// driver, so a cached fast-path solution's order holds WETH while the signed
+/// order carried into `/settle_fast_path` still carries the ETH marker.
+fn compare_orders(
+    order: &competition::Order,
+    quoted: &competition::Order,
+    weth: eth::WrappedNativeToken,
+) -> bool {
+    order.buy.token.as_erc20(weth) == quoted.buy.token.as_erc20(weth)
+        // only the BUY side has a sentinel value for ETH so sell tokens
+        // get compared as they are
+        && order.sell.token == quoted.sell.token
         && order.side == quoted.side
         && order.target() == quoted.target()
 }
@@ -155,12 +167,11 @@ impl Solution {
                     competition::Order {
                         data: std::sync::Arc::new(order::OrderData {
                             uid: jit.order().uid,
-                            kind: order::Kind::Limit,
                             side: jit.order().side,
                             sell: jit.order().sell,
                             buy: jit.order().buy,
                             signature: jit.order().signature.clone(),
-                            receiver: Some(jit.order().receiver),
+                            receiver: jit.order().receiver,
                             created: u32::try_from(Utc::now().timestamp())
                                 .unwrap_or(u32::MIN)
                                 .into(),
@@ -178,9 +189,6 @@ impl Solution {
                     },
                     jit.executed(),
                     jit.fee(),
-                    // JIT orders don't get haircut because they supply private
-                    // liquidity which should not prone to negative slippage.
-                    eth::U256::ZERO,
                 )
                 .map_err(error::Solution::InvalidJitTrade)?,
             );
@@ -335,6 +343,9 @@ impl Solution {
                 trade.side(),
                 executed,
                 trade.custom_prices(&uniform_prices)?,
+                // Every policy is passed on, including the ones that do not
+                // count towards the score: scoring needs them to reconstruct
+                // the prices the earlier policies were applied at.
                 trade.protocol_fees(),
             ))
         }
@@ -545,9 +556,9 @@ impl Solution {
         auction: &competition::Auction,
         eth: &Ethereum,
         simulator: &Simulator,
-        solver_native_token: ManageNativeToken,
     ) -> Result<Settlement, Error> {
-        Settlement::encode(self, auction, eth, simulator, solver_native_token).await
+        let auction_id = auction.auction_id().ok_or(Error::MissingAuctionId)?;
+        Settlement::new(self, auction, auction_id, eth, simulator).await
     }
 
     /// Swap this quote solution's single user order for the real signed
@@ -571,7 +582,7 @@ impl Solution {
             return Err(error::Error::FastPathTradeCount(self.user_trades().count()));
         };
 
-        if !compare_orders(&order, user.order()) {
+        if !compare_orders(&order, user.order(), self.weth) {
             return Err(error::Error::FastPathOrderMismatch);
         }
 
@@ -583,25 +594,55 @@ impl Solution {
                 .clearing_price(order.buy.token)
                 .ok_or(error::Error::FastPathOrderMismatch)?,
         };
+        // This solution was cached from a quote request. If there is a bug
+        // that causes the autopilot to tell us to settle an order with at a
+        // price our original solution cannot support we want to detect that
+        // and throw an error instead of submitting a transaction that will
+        // ultimately revert.
+        // This should not happen but let's check just to be sure.
         let within_limit = match order.side {
-            order::Side::Sell => user.buy_amount(&clearing)?.0 >= limit_prices.buy,
-            order::Side::Buy => user.sell_amount(&clearing)?.0 <= limit_prices.sell,
+            order::Side::Sell => {
+                let sell_amount = order.sell.amount.0;
+                let projected_buy_amount = sell_amount
+                    .checked_mul(clearing.sell)
+                    .ok_or(error::Math::Overflow)?
+                    .checked_ceil_div(&clearing.buy)
+                    .ok_or(error::Math::DivisionByZero)?;
+                projected_buy_amount >= limit_prices.buy
+            }
+            order::Side::Buy => {
+                let buy_amount = order.buy.amount.0;
+                let projected_sell_amount = buy_amount
+                    .checked_mul(clearing.buy)
+                    .ok_or(error::Math::Overflow)?
+                    .checked_ceil_div(&clearing.sell)
+                    .ok_or(error::Math::DivisionByZero)?;
+                projected_sell_amount <= limit_prices.sell
+            }
         };
         if !within_limit {
             return Err(error::Error::FastPathLimitNotMet);
         }
 
-        let (flashloans, wrappers) = recover_flashloans_and_wrappers(&order);
-        *user = user.with_order(order)?;
-        solution.flashloans = flashloans;
-        solution.wrappers = wrappers;
+        // Fast-path orders are fill-or-kill and shouldn't contain any fees. In
+        // the case the solver charges a solver fee this should have been
+        // reflected in the quote and thus in the signed limit prices already.
+        let executed = order.target();
+        *user = Fulfillment::new(order, executed, Default::default())?;
 
-        // Pin the fill to the signed limit so it settles at exactly
-        // the price the autopilot expects.
+        // However, limit prices may be different than the ones found in the
+        // quote, because the orderbook adds room for network and
+        // protocol fees. Update the solution accordingly.
         let sell = user.order().sell.token.as_erc20(self.weth);
         let buy = user.order().buy.token.as_erc20(self.weth);
         solution.prices.insert(sell, limit_prices.buy);
         solution.prices.insert(buy, limit_prices.sell);
+
+        // Add other parts the quote might not have known about
+        let (flashloans, wrappers) = recover_flashloans_and_wrappers(user.order());
+        solution.flashloans = flashloans;
+        solution.wrappers = wrappers;
+
         Ok(solution)
     }
 
@@ -654,29 +695,6 @@ impl Solution {
         // The clearing price of ETH is equal to WETH.
         let token = token.as_erc20(self.weth);
         self.prices.get(&token).map(ToOwned::to_owned)
-    }
-
-    /// Whether there is a reasonable risk of this solution reverting on chain.
-    pub fn revertable(&self) -> bool {
-        self.interactions
-            .iter()
-            .any(|interaction| !interaction.internalize())
-            || self.user_trades().any(|trade| {
-                matches!(
-                    trade.order().signature.scheme,
-                    order::signature::Scheme::Eip1271
-                )
-            })
-    }
-
-    /// Returns true if any trade in this solution has a non-zero haircut fee.
-    /// Used to determine if simulation failures should suppress solver
-    /// notifications.
-    pub fn has_haircut(&self) -> bool {
-        self.trades.iter().any(|trade| match trade {
-            Trade::Fulfillment(fulfillment) => !fulfillment.haircut_fee().is_zero(),
-            Trade::Jit(_) => false, // JIT orders don't have haircut
-        })
     }
 }
 
@@ -809,6 +827,8 @@ pub mod error {
         FastPathLimitNotMet,
         #[error(transparent)]
         Math(#[from] Math),
+        #[error("auction has no id (quote auctions cannot be settled)")]
+        MissingAuctionId,
     }
 
     // Custom conversion function because clippy wants us to box this

@@ -230,6 +230,26 @@ fn post(
     query: Option<String>,
     req: serde_json::Value,
 ) -> serde_json::Value {
+    // JSON-RPC clients may batch several requests into a single HTTP request.
+    // Match every batched request against its own expectation and respond
+    // with a batch of responses.
+    if let serde_json::Value::Array(requests) = req {
+        return serde_json::Value::Array(
+            requests
+                .into_iter()
+                .map(|req| post_single(state.clone(), path.clone(), query.clone(), req))
+                .collect(),
+        );
+    }
+    post_single(state, path, query, req)
+}
+
+fn post_single(
+    state: State,
+    path: Option<String>,
+    query: Option<String>,
+    req: serde_json::Value,
+) -> serde_json::Value {
     let expectation = state.expectations.lock().unwrap().pop();
 
     let assertions = move || {

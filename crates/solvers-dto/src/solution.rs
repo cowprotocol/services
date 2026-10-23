@@ -1,5 +1,6 @@
 use {
     alloy_primitives::{Address, U256},
+    eth_domain_types::Receiver,
     number::serialization::HexOrDecimalU256,
     serde::{Deserialize, Deserializer, Serialize, de},
     serde_with::serde_as,
@@ -160,7 +161,8 @@ pub struct JitTrade {
 pub struct JitOrder {
     pub sell_token: Address,
     pub buy_token: Address,
-    pub receiver: Address,
+    #[serde(default)]
+    pub receiver: Receiver,
     #[serde_as(as = "HexOrDecimalU256")]
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]

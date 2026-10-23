@@ -14,7 +14,10 @@ use {
         instruction::{AccountMeta as SdkAccountMeta, Instruction as SdkInstruction},
         pubkey::Pubkey,
     },
-    std::{collections::HashMap, num::NonZero},
+    std::{
+        collections::{HashMap, HashSet},
+        num::NonZero,
+    },
 };
 
 /// The solutions one engine returned for one auction. This wrapper owns the
@@ -34,8 +37,8 @@ pub struct Solution {
     /// Uniform clearing prices by mint: the sell mint maps to the amount
     /// bought and the buy mint to the amount sold, so for every trade
     /// `executed_sell * price_sell == executed_buy * price_buy`. The engine
-    /// currently only produces single-order solutions, so the pair is the
-    /// executed swap's ratio.
+    /// fills one order, or a batch of orders of one side on one directed
+    /// pair, with one swap, so the pair is that swap's ratio.
     #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
     pub prices: HashMap<Pubkey, NonZero<u64>>,
     pub trades: Vec<Trade>,
@@ -43,10 +46,6 @@ pub struct Solution {
     /// Optional solver estimate of total settlement compute units.
     #[serde(default)]
     pub cu_estimate: Option<u32>,
-    /// The address lookup tables the interactions assume.
-    #[serde(default)]
-    #[serde_as(as = "Vec<serde_with::DisplayFromStr>")]
-    pub address_lookup_tables: Vec<Pubkey>,
 }
 
 /// A fulfillment of one auction order.
@@ -71,14 +70,6 @@ impl Trade {
         price_sell: NonZero<u64>,
         price_buy: NonZero<u64>,
     ) -> Result<domain::Trade, Error> {
-        if self.executed_amount > order.amount {
-            return Err(Error::ExecutedAmountExceedsOrderAmount(
-                self.order_uid,
-                self.executed_amount,
-                order.amount,
-            ));
-        }
-
         // The engine reports one executed amount, on the order's own side, plus
         // uniform clearing prices per mint. Derive the counterpart leg from the
         // prices so the domain trade carries a real amount on both sides.
@@ -97,6 +88,7 @@ impl Trade {
             order_uid: self.order_uid,
             executed_sell,
             executed_buy,
+            solver_fee: 0,
         })
     }
 
@@ -161,9 +153,12 @@ pub enum Error {
     /// A trade references an order that was not in the sent auction.
     #[error("trade references unknown order UID {0}")]
     UnknownOrderUid(OrderUid),
-    /// A trade executes more than the order amount.
-    #[error("trade {0} executes {1} but order amount is {2}")]
+    /// A trade executes more than its order has left to fill.
+    #[error("trade {0} executes {1} but only {2} is left to fill")]
     ExecutedAmountExceedsOrderAmount(OrderUid, u64, u64),
+    /// Two trades name one order.
+    #[error("order {0} is traded twice")]
+    DuplicateTrade(OrderUid),
     /// The engine did not report a clearing price for a mint a trade touches.
     #[error("trade {0} has no clearing price for mint {1}")]
     MissingClearingPrice(OrderUid, Pubkey),
@@ -175,9 +170,9 @@ pub enum Error {
 impl Solutions {
     /// Convert the wire solutions into domain solutions.
     ///
-    /// Each trade must reference an order from the auction the driver sent.
-    /// Any trade referencing an unknown order UID rejects the entire engine
-    /// response.
+    /// Each trade must reference an order from the auction the driver sent,
+    /// once, and may not fill more than it has left. Any violation rejects
+    /// the entire engine response.
     pub fn into_domain(
         self,
         auction: &Auction,
@@ -195,8 +190,12 @@ impl Solutions {
                     trades,
                     interactions,
                     cu_estimate,
-                    address_lookup_tables,
                 } = solution;
+                // Under uniform prices a second trade of one order says
+                // nothing a larger first one would not, and the readers
+                // downstream (the `/solve` response, the quote) take one
+                // trade per order, so a duplicate is refused, not folded.
+                let mut traded = HashSet::<OrderUid>::new();
                 let trades = trades
                     .into_iter()
                     .map(|trade| {
@@ -204,6 +203,16 @@ impl Solutions {
                             .get(&trade.order_uid)
                             .copied()
                             .ok_or(Error::UnknownOrderUid(trade.order_uid))?;
+                        if !traded.insert(trade.order_uid) {
+                            return Err(Error::DuplicateTrade(trade.order_uid));
+                        }
+                        if trade.executed_amount > order.target_amount() {
+                            return Err(Error::ExecutedAmountExceedsOrderAmount(
+                                trade.order_uid,
+                                trade.executed_amount,
+                                order.target_amount(),
+                            ));
+                        }
                         let price_sell = prices.get(&order.sell_mint).copied().ok_or(
                             Error::MissingClearingPrice(trade.order_uid, order.sell_mint),
                         )?;
@@ -221,8 +230,10 @@ impl Solutions {
                     prices,
                     trades,
                     interactions: interactions.into_iter().map(Into::into).collect(),
-                    address_lookup_tables,
-                    cu_estimate,
+                    // The runtime clamps a v1 limit but charges its priority
+                    // fee in full, and the driver prices the fee at the limit.
+                    cu_estimate: cu_estimate
+                        .map(|limit| limit.min(domain::priority_fee::MAX_COMPUTE_UNIT_LIMIT)),
                 })
             })
             .collect()
@@ -234,6 +245,7 @@ mod tests {
     use {
         super::*,
         crate::{domain::Side, infra::blockchain::associated_token_address},
+        cow_settlement_interface::token_program::TokenProgram,
         serde_json::json,
         solana_sdk::pubkey::Pubkey,
     };
@@ -254,11 +266,22 @@ mod tests {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
-                buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
+                buy_destination: associated_token_address(
+                    &pubkey(3),
+                    &pubkey(2),
+                    TokenProgram::SplToken,
+                ),
+                sell_amount: 1_000,
+                buy_amount: 0,
                 amount: 1_000,
+                full_sell_amount: 1_000,
+                full_buy_amount: 0,
                 side: Side::Sell,
+                partially_fillable: false,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
+            tokens: HashMap::new(),
         }
     }
 
@@ -276,7 +299,6 @@ mod tests {
                     "executedAmount": "1001",
                 }],
                 "interactions": [],
-                "addressLookupTables": [],
             }],
         });
         let solutions: Solutions = serde_json::from_value(bad).unwrap();
@@ -287,6 +309,32 @@ mod tests {
             err,
             Error::ExecutedAmountExceedsOrderAmount(OrderUid([8; 32]), 1001, 1000)
         );
+    }
+
+    /// A second trade of one order rejects the response, even when the two
+    /// would fit the order together.
+    #[test]
+    fn rejects_a_second_trade_of_one_order() {
+        let trade = json!({
+            "orderUid": format!("0x{}", "08".repeat(32)),
+            "executedAmount": "500",
+        });
+        let solutions: Solutions = serde_json::from_value(json!({
+            "solutions": [{
+                "id": 1,
+                "prices": {
+                    (pubkey(1).to_string()): "2000",
+                    (pubkey(2).to_string()): "1000",
+                },
+                "trades": [trade.clone(), trade],
+                "interactions": [],
+            }],
+        }))
+        .unwrap();
+        let err = solutions
+            .into_domain(&sample_auction_dto(), pubkey(6))
+            .unwrap_err();
+        assert_eq!(err, Error::DuplicateTrade(OrderUid([8; 32])));
     }
 
     #[test]
@@ -303,7 +351,6 @@ mod tests {
                     "executedAmount": "1000",
                 }],
                 "interactions": [],
-                "addressLookupTables": [],
             }],
         });
         let solutions: Solutions = serde_json::from_value(bad).unwrap();
@@ -327,7 +374,6 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
-                address_lookup_tables: vec![],
             }],
         };
         let domain = solutions
@@ -352,7 +398,6 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
-                address_lookup_tables: vec![],
             }],
         };
         let err = solutions
@@ -375,11 +420,22 @@ mod tests {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
-                buy_destination: associated_token_address(&pubkey(3), &pubkey(2)),
+                buy_destination: associated_token_address(
+                    &pubkey(3),
+                    &pubkey(2),
+                    TokenProgram::SplToken,
+                ),
+                sell_amount: u64::MAX,
+                buy_amount: 0,
                 amount: u64::MAX,
+                full_sell_amount: u64::MAX,
+                full_buy_amount: 0,
                 side: Side::Sell,
+                partially_fillable: false,
+                missing_buy_token_account: false,
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
+            tokens: HashMap::new(),
         };
         let solutions = Solutions {
             solutions: vec![Solution {
@@ -393,7 +449,6 @@ mod tests {
                 }],
                 interactions: vec![],
                 cu_estimate: None,
-                address_lookup_tables: vec![],
             }],
         };
         let domain = solutions.into_domain(&auction, pubkey(6)).unwrap();
@@ -450,7 +505,6 @@ mod tests {
                     }],
                     "instructionData": "3q0=",
                 }],
-                "addressLookupTables": [pubkey(7).to_string()],
             }]
         });
 
@@ -472,11 +526,30 @@ mod tests {
                     instruction_data: vec![0xde, 0xad],
                 }],
                 cu_estimate: None,
-                address_lookup_tables: vec![pubkey(7)],
             }],
         };
 
         let actual: Solutions = serde_json::from_value(json).unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn caps_the_compute_unit_estimate_at_the_runtime_ceiling() {
+        let solutions = Solutions {
+            solutions: vec![Solution {
+                id: 1,
+                prices: HashMap::from([(pubkey(1), nz(2_000)), (pubkey(2), nz(1_000))]),
+                trades: vec![Trade {
+                    order_uid: OrderUid([8; 32]),
+                    executed_amount: 1_000,
+                }],
+                interactions: vec![],
+                cu_estimate: Some(2_000_000),
+            }],
+        };
+        let domain = solutions
+            .into_domain(&sample_auction_dto(), pubkey(6))
+            .unwrap();
+        assert_eq!(domain[0].cu_estimate, Some(1_400_000));
     }
 }

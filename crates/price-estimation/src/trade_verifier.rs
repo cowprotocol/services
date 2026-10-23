@@ -15,6 +15,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::BigDecimal,
     contracts::support::Solver,
+    eth_domain_types::Receiver,
     model::{
         DomainSeparator,
         interaction::InteractionData,
@@ -130,6 +131,7 @@ impl TradeVerifier {
                     solver: trade.solver(),
                     verified: false,
                     supports_fast_path: trade.supports_fast_path(),
+                    quote_id: Some(trade.quote_id()),
                     execution: QuoteExecution {
                         interactions: map_interactions_data(trade.interactions()),
                         pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -153,21 +155,26 @@ impl TradeVerifier {
 
         let summary = self.execute_and_analyze(swap, query, verification).await?;
 
-        tracing::debug!(
-            tokens_lost = ?summary.tokens_lost,
-            gas_diff = ?trade.gas_estimate().unwrap_or_default().abs_diff(summary.gas_used.saturating_to()),
-            time = ?start.elapsed(),
-            promised_out_amount = ?out_amount,
-            verified_out_amount = ?summary.out_amount,
-            promised_gas = trade.gas_estimate(),
-            verified_gas = ?summary.gas_used,
-            out_diff = ?(I512::from(out_amount) - summary.out_amount).abs(),
-            ?query,
-            ?verification,
-            "verified quote",
-        );
+        let result = ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary);
 
-        ensure_quote_accuracy(&self.quote_inaccuracy_limit, query, trade, &summary)
+        if let Err(err) = &result {
+            tracing::debug!(
+                ?err,
+                tokens_lost = ?summary.tokens_lost,
+                gas_diff = ?trade.gas_estimate().unwrap_or_default().abs_diff(summary.gas_used.saturating_to()),
+                time = ?start.elapsed(),
+                promised_out_amount = ?out_amount,
+                verified_out_amount = ?summary.out_amount,
+                promised_gas = trade.gas_estimate(),
+                verified_gas = ?summary.gas_used,
+                out_diff = ?(I512::from(out_amount) - summary.out_amount).abs(),
+                ?query,
+                ?verification,
+                "quote failed verification",
+            );
+        };
+
+        result
     }
 
     /// Passes the prepared `settle_call` to the simulation machinery which
@@ -206,7 +213,7 @@ impl TradeVerifier {
             .swap(
                 self.simulator.settlement_address(),
                 tokens.clone(),
-                *verification.effective_receiver(),
+                verification.effective_receiver(),
                 verification.from,
                 query.sell_token,
                 sell_amount,
@@ -291,11 +298,12 @@ impl TradeVerifier {
             trade.simulation_solver_address(),
         );
 
-        self
-            .simulator
+        self.simulator
             .new_simulation_builder()
             .with_orders(std::iter::once(fake_order).chain(jit_orders))
-            .from_solver(SimulationSolver::OriginUnaltered(trade.simulation_solver_address()))
+            .from_solver(SimulationSolver::OriginUnaltered(
+                trade.simulation_solver_address(),
+            ))
             .presign_orders()
             .with_overrides(override_requests)
             // the order in which we add interactions is currently quite fragile.
@@ -327,7 +335,7 @@ impl TradeVerifier {
         // storeBalance interactions surrounding the settlement to measure the
         // actual out_amount
         let (tracked_token, tracked_owner) = match query.kind {
-            OrderKind::Sell => (query.buy_token, *verification.effective_receiver()),
+            OrderKind::Sell => (query.buy_token, verification.effective_receiver()),
             OrderKind::Buy => (query.sell_token, verification.from),
         };
         InteractionData {
@@ -374,7 +382,7 @@ impl TradeVerifier {
         // It looks like the contract gained a lot of buy tokens (negative loss)
         // but only because it was the receiver and got the payout.
         // Adjust the tokens lost upward.
-        if verification.receiver == settlement_address {
+        if verification.effective_receiver() == settlement_address {
             summary
                 .tokens_lost
                 .entry(query.buy_token)
@@ -418,8 +426,7 @@ impl TradeVerifier {
         //
         // The general formula being: correct_out_amount = query.input +
         // out_amount
-        let owner_is_receiver =
-            verification.receiver.is_zero() || verification.receiver == verification.from;
+        let owner_is_receiver = verification.effective_receiver() == verification.from;
         if query.sell_token == query.buy_token && owner_is_receiver {
             summary.out_amount = I512::from(query.in_amount.get()) + summary.out_amount;
         } else if summary.out_amount < I512::ZERO {
@@ -483,7 +490,7 @@ impl TradeVerifier {
             sell_amount: fake_sell_amount,
             buy_token: query.buy_token,
             buy_amount: fake_buy_amount,
-            receiver: Some(*verification.effective_receiver()),
+            receiver: Receiver::new(verification.effective_receiver()),
             valid_to: u32::MAX,
             app_data: Default::default(),
             fee_amount: U256::ZERO,
@@ -837,6 +844,7 @@ fn ensure_quote_accuracy(
         solver: trade.solver(),
         verified: true,
         supports_fast_path: trade.supports_fast_path(),
+        quote_id: Some(trade.quote_id()),
         execution: QuoteExecution {
             interactions: map_interactions_data(trade.interactions()),
             pre_interactions: map_interactions_data(trade.pre_interactions()),
@@ -869,7 +877,7 @@ fn encode_jit_orders(
             let order_data = OrderData {
                 sell_token: jit_order.sell_token,
                 buy_token: jit_order.buy_token,
-                receiver: Some(jit_order.receiver),
+                receiver: jit_order.receiver,
                 sell_amount: jit_order.sell_amount,
                 buy_amount: jit_order.buy_amount,
                 valid_to: jit_order.valid_to,
@@ -1150,7 +1158,7 @@ mod tests {
         // Zero receiver means the trader is also the receiver.
         let verification = Verification {
             from: trader,
-            receiver: Address::ZERO,
+            receiver: Receiver::OWNER,
             app_data: Default::default(),
         };
         let summary = |out_amount: I512| SettleOutput {

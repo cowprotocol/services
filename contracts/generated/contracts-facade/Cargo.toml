@@ -7,6 +7,7 @@ publish = false
 
 [lib]
 doctest = false
+test = false
 
 [dependencies]
 cow-contract-anyoneauthenticator = { path = "../contracts-generated/anyoneauthenticator" }
@@ -57,6 +58,7 @@ cow-contract-counter = { path = "../contracts-generated/counter" }
 cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoken" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }
 cow-contract-cowswaponchainorders = { path = "../contracts-generated/cowswaponchainorders" }
+cow-contract-deadlinecheck = { path = "../contracts-generated/deadlinecheck" }
 cow-contract-erc20 = { path = "../contracts-generated/erc20" }
 cow-contract-erc20mintable = { path = "../contracts-generated/erc20mintable" }
 cow-contract-erc1271signaturevalidator = { path = "../contracts-generated/erc1271signaturevalidator" }

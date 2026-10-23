@@ -1,24 +1,22 @@
 //! Typed views of fetched on-chain accounts.
 //!
 //! Raw account state (owners, data bytes) stays behind the blockchain
-//! adapter. The domain receives decoded lookup tables and classified
-//! token-account states, never raw `Account`s.
+//! adapter. The domain receives mint facts and classified token-account
+//! states, never raw `Account`s.
 
 use {
-    solana_address_lookup_table_interface::{
-        program::ID as ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
-        state::AddressLookupTable,
-    },
+    cow_settlement_interface::token_program::TokenProgram,
     solana_sdk::{
-        account::Account,
-        message::AddressLookupTableAccount,
-        program_pack::Pack,
+        account::{Account, from_account},
         pubkey::Pubkey,
+        rent::Rent,
+        sysvar,
     },
     solana_system_interface::program::ID as SYSTEM_PROGRAM_ID,
-    spl_token_interface::{
-        ID as SPL_TOKEN_PROGRAM_ID,
-        state::{Account as TokenAccount, AccountState},
+    solana_token::ata_len,
+    spl_token_2022_interface::{
+        extension::StateWithExtensions,
+        state::{Account as TokenAccount, AccountState, Mint},
     },
     std::collections::HashMap,
 };
@@ -26,8 +24,8 @@ use {
 /// A point-in-time snapshot of accounts from one batched fetch.
 ///
 /// An account that does not exist on chain is not in the snapshot. Each
-/// interpretation method (ALT, Token account) reports a missing account for its
-/// key.
+/// interpretation method (mint, token account) reports a missing account
+/// for its key.
 pub struct AccountsSnapshot {
     accounts: HashMap<Pubkey, Account>,
 }
@@ -37,65 +35,57 @@ impl AccountsSnapshot {
         Self { accounts }
     }
 
-    /// Return the address lookup table at `key` for the v0 message compiler.
-    ///
-    /// # Requirements
-    ///
-    /// - The account must exist.
-    /// - The address-lookup-table program must own the account.
-    /// - The table must be active. Reject tables in the deactivation cool-down.
-    ///   The cool-down can finish before the transaction lands, and then the
-    ///   compiled indexes become stale.
-    ///
-    /// # Why these checks matter
-    ///
-    /// `MessageV0::try_compile` runs in this driver and does not read chain
-    /// state. It only sees the addresses that this method returns. The
-    /// Solana runtime resolves the real table account when it executes the
-    /// transaction. A missing, wrongly owned, inactive, or deactivating
-    /// table passes compilation and then fails on-chain after submission.
-    /// These checks reject bad tables before the driver sends the
-    /// transaction.
-    ///
-    /// These checks cannot catch a table extended in the snapshot's slot. Its
-    /// new addresses become usable only in the next slot.
-    pub fn lookup_table(
-        &self,
-        key: &Pubkey,
-    ) -> Result<AddressLookupTableAccount, InvalidAddressLookupTableReason> {
-        use InvalidAddressLookupTableReason::*;
-        let account = self.accounts.get(key).ok_or(AccountNotFound)?;
-        if account.owner != ADDRESS_LOOKUP_TABLE_PROGRAM_ID {
-            return Err(UnexpectedOwner);
-        }
-        let table =
-            AddressLookupTable::deserialize(&account.data).map_err(|_| DeserializeFailed)?;
-        if table.meta.deactivation_slot != u64::MAX {
-            return Err(Deactivated);
-        }
-        Ok(AddressLookupTableAccount {
-            key: *key,
-            addresses: table.addresses.to_vec(),
-        })
+    pub fn exists(&self, address: &Pubkey) -> bool {
+        self.accounts.contains_key(address)
+    }
+
+    /// The lamports at `address`, zero when no account is there.
+    pub fn lamports(&self, address: &Pubkey) -> u64 {
+        self.accounts
+            .get(address)
+            .map_or(0, |account| account.lamports)
+    }
+
+    /// The rent sysvar, or the SDK's default when the snapshot does not hold
+    /// it.
+    pub fn rent(&self) -> Rent {
+        self.accounts
+            .get(&sysvar::rent::ID)
+            .and_then(from_account::<Rent, _>)
+            .unwrap_or_default()
+    }
+
+    /// The facts of the mint at `mint`, when the account's owner is one of
+    /// the two token programs and its data reads as an initialized mint.
+    pub fn mint_info(&self, mint: &Pubkey) -> Result<MintInfo, InvalidMintReason> {
+        let account = self
+            .accounts
+            .get(mint)
+            .ok_or(InvalidMintReason::AccountNotFound)?;
+        let program =
+            TokenProgram::try_from(&account.owner).map_err(|_| InvalidMintReason::NotAMint)?;
+        StateWithExtensions::<Mint>::unpack(&account.data)
+            .map_err(|_| InvalidMintReason::NotAMint)?;
+        let ata_len = ata_len(account).ok_or(InvalidMintReason::NotAMint)?;
+        Ok(MintInfo { program, ata_len })
     }
 
     /// Classify the state of the token account at `address` for a caller that
     /// creates missing token accounts idempotently.
     ///
-    /// An SPL-token-owned account is `Initialized` only when it unpacks as an
-    /// initialized, unfrozen token account. Anything else the token program
-    /// owns (wrong length, uninitialized, frozen) is `Unexpected`: an
-    /// idempotent create cannot replace it.
+    /// An account of either token program is `Initialized` only when it
+    /// unpacks as an initialized, unfrozen token account, extensions included.
+    /// Anything else a token program owns (wrong length, uninitialized,
+    /// frozen) is `Unexpected`: an idempotent create cannot replace it.
     pub fn token_account_state(&self, address: &Pubkey) -> TokenAccountState {
         match self.accounts.get(address) {
             // The account does not exist on chain: the idempotent create makes it.
             None => TokenAccountState::NeedsCreation,
-            // An initialized, unfrozen SPL token account. Anything else the
-            // token program owns is `Unexpected`.
-            Some(account) if account.owner == SPL_TOKEN_PROGRAM_ID => {
-                let usable = TokenAccount::unpack(&account.data)
-                    .map(|ta| ta.state == AccountState::Initialized)
-                    .unwrap_or(false);
+            // An initialized, unfrozen token account. Anything else a token
+            // program owns is `Unexpected`.
+            Some(account) if TokenProgram::try_from(&account.owner).is_ok() => {
+                let usable = StateWithExtensions::<TokenAccount>::unpack(&account.data)
+                    .is_ok_and(|state| state.base.state == AccountState::Initialized);
                 if usable {
                     TokenAccountState::Initialized
                 } else {
@@ -116,6 +106,25 @@ impl AccountsSnapshot {
             },
         }
     }
+
+    /// Whether the token account at `address` must be created before it can
+    /// hold tokens, see [`Self::token_account_state`].
+    pub fn token_account_needs_creation(&self, address: Pubkey) -> bool {
+        matches!(
+            self.token_account_state(&address),
+            TokenAccountState::NeedsCreation
+        )
+    }
+}
+
+/// What the driver keeps of a mint: its token program and the size of its
+/// associated token accounts, which the mint's extensions fix at its
+/// creation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MintInfo {
+    pub program: TokenProgram,
+    /// The data length of a new associated token account of the mint.
+    pub ata_len: usize,
 }
 
 /// The observed state of a token account, for a caller that creates missing
@@ -126,8 +135,8 @@ pub enum TokenAccountState {
     /// account does not exist, or it is a pre-funded system-owned account with
     /// no data.
     NeedsCreation,
-    /// An initialized, unfrozen SPL token account. The caller does not need to
-    /// create it.
+    /// An initialized, unfrozen account of either token program. The caller
+    /// does not need to create it.
     Initialized,
     /// Any other state: a foreign owner, or a system account with data. The
     /// caller cannot use this account, and an idempotent create cannot
@@ -135,29 +144,31 @@ pub enum TokenAccountState {
     Unexpected { owner: Pubkey, data_len: usize },
 }
 
-/// Why the snapshot rejected an account as an address lookup table.
-#[derive(Debug, Clone, Copy, thiserror::Error)]
-pub enum InvalidAddressLookupTableReason {
+/// Why the snapshot rejected an account as a mint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum InvalidMintReason {
     /// The account does not exist on chain.
     #[error("account not found")]
     AccountNotFound,
-    /// The address-lookup-table program does not own the account.
-    #[error("unexpected owner")]
-    UnexpectedOwner,
-    /// The account data does not deserialize as an address lookup table.
-    #[error("failed to deserialize")]
-    DeserializeFailed,
-    /// The table is deactivated or deactivating.
-    #[error("deactivated")]
-    Deactivated,
+    /// Neither token program owns the account, or its data does not read as
+    /// an initialized mint.
+    #[error("not a mint of either token program")]
+    NotAMint,
 }
 
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        solana_address_lookup_table_interface::state::LookupTableMeta,
-        std::borrow::Cow,
+        solana_sdk::program_pack::Pack,
+        spl_token_2022_interface::extension::{
+            BaseStateWithExtensionsMut,
+            ExtensionType,
+            StateWithExtensionsMut,
+            immutable_owner::ImmutableOwner,
+            mint_close_authority::MintCloseAuthority,
+        },
+        spl_token_interface::ID as SPL_TOKEN_PROGRAM_ID,
     };
 
     fn pubkey(byte: u8) -> Pubkey {
@@ -166,82 +177,6 @@ mod tests {
 
     fn snapshot(entries: impl IntoIterator<Item = (Pubkey, Account)>) -> AccountsSnapshot {
         AccountsSnapshot::new(entries.into_iter().collect())
-    }
-
-    /// A serialized lookup table that contains `addresses` and has the given
-    /// `deactivation_slot`. A slot of `u64::MAX` means the table is active.
-    fn serialized_table(deactivation_slot: u64, addresses: &[Pubkey]) -> Vec<u8> {
-        AddressLookupTable {
-            meta: LookupTableMeta {
-                deactivation_slot,
-                ..LookupTableMeta::default()
-            },
-            addresses: Cow::Borrowed(addresses),
-        }
-        .serialize_for_tests()
-        .unwrap()
-    }
-
-    fn table_account(data: Vec<u8>) -> Account {
-        Account {
-            owner: ADDRESS_LOOKUP_TABLE_PROGRAM_ID,
-            data,
-            ..Account::default()
-        }
-    }
-
-    #[test]
-    fn resolves_an_active_lookup_table() {
-        let key = pubkey(0x11);
-        let addresses = vec![pubkey(0x22), pubkey(0x33)];
-        let snapshot = snapshot([(key, table_account(serialized_table(u64::MAX, &addresses)))]);
-
-        let table = snapshot.lookup_table(&key).unwrap();
-        assert_eq!(table.key, key);
-        assert_eq!(table.addresses, addresses);
-    }
-
-    #[test]
-    fn rejects_a_missing_lookup_table() {
-        let err = snapshot([]).lookup_table(&pubkey(0x11)).unwrap_err();
-        assert!(matches!(
-            err,
-            InvalidAddressLookupTableReason::AccountNotFound
-        ));
-    }
-
-    #[test]
-    fn rejects_a_lookup_table_with_a_foreign_owner() {
-        let key = pubkey(0x11);
-        let account = Account {
-            owner: pubkey(0xff),
-            data: serialized_table(u64::MAX, &[]),
-            ..Account::default()
-        };
-        let err = snapshot([(key, account)]).lookup_table(&key).unwrap_err();
-        assert!(matches!(
-            err,
-            InvalidAddressLookupTableReason::UnexpectedOwner
-        ));
-    }
-
-    #[test]
-    fn rejects_a_lookup_table_that_fails_to_deserialize() {
-        let key = pubkey(0x11);
-        let account = table_account(vec![0xff; 4]);
-        let err = snapshot([(key, account)]).lookup_table(&key).unwrap_err();
-        assert!(matches!(
-            err,
-            InvalidAddressLookupTableReason::DeserializeFailed
-        ));
-    }
-
-    #[test]
-    fn rejects_a_deactivated_lookup_table() {
-        let key = pubkey(0x11);
-        let account = table_account(serialized_table(5, &[pubkey(0x22)]));
-        let err = snapshot([(key, account)]).lookup_table(&key).unwrap_err();
-        assert!(matches!(err, InvalidAddressLookupTableReason::Deactivated));
     }
 
     #[test]
@@ -297,7 +232,7 @@ mod tests {
         let address = pubkey(0x11);
         let account = Account {
             owner: SPL_TOKEN_PROGRAM_ID,
-            data: vec![0; spl_token_interface::state::Mint::LEN],
+            data: vec![0; Mint::LEN],
             ..Account::default()
         };
         let state = snapshot([(address, account)]).token_account_state(&address);
@@ -357,5 +292,170 @@ mod tests {
             state,
             TokenAccountState::Unexpected { data_len: 8, .. }
         ));
+    }
+
+    /// A Token-2022 account with the given state and the `ImmutableOwner`
+    /// extension, which every Token-2022 ATA carries.
+    fn token_2022_account(state: AccountState) -> Account {
+        let len = ExtensionType::try_calculate_account_len::<TokenAccount>(&[
+            ExtensionType::ImmutableOwner,
+        ])
+        .unwrap();
+        let mut data = vec![0; len];
+        let mut account =
+            StateWithExtensionsMut::<TokenAccount>::unpack_uninitialized(&mut data).unwrap();
+        account.init_extension::<ImmutableOwner>(true).unwrap();
+        account.base = TokenAccount {
+            mint: pubkey(0x22),
+            owner: pubkey(0x33),
+            state,
+            ..TokenAccount::default()
+        };
+        account.pack_base();
+        account.init_account_type().unwrap();
+        Account {
+            owner: TokenProgram::Token2022.address(),
+            data,
+            ..Account::default()
+        }
+    }
+
+    #[test]
+    fn an_initialized_token_2022_account_is_initialized() {
+        let address = pubkey(0x11);
+        let account = token_2022_account(AccountState::Initialized);
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Initialized));
+    }
+
+    #[test]
+    fn a_frozen_token_2022_account_is_unexpected() {
+        let address = pubkey(0x11);
+        let account = token_2022_account(AccountState::Frozen);
+        let state = snapshot([(address, account)]).token_account_state(&address);
+        assert!(matches!(state, TokenAccountState::Unexpected { .. }));
+    }
+
+    /// An initialized 82-byte SPL Token mint.
+    fn mint_account() -> Account {
+        let mut data = vec![0; Mint::LEN];
+        Mint {
+            is_initialized: true,
+            decimals: 6,
+            ..Mint::default()
+        }
+        .pack_into_slice(&mut data);
+        Account {
+            owner: SPL_TOKEN_PROGRAM_ID,
+            data,
+            ..Account::default()
+        }
+    }
+
+    /// An initialized Token-2022 mint with the `MintCloseAuthority` extension,
+    /// so its data is longer than an SPL Token mint's.
+    fn token_2022_mint_account() -> Account {
+        let len =
+            ExtensionType::try_calculate_account_len::<Mint>(&[ExtensionType::MintCloseAuthority])
+                .unwrap();
+        let mut data = vec![0; len];
+        let mut mint = StateWithExtensionsMut::<Mint>::unpack_uninitialized(&mut data).unwrap();
+        mint.init_extension::<MintCloseAuthority>(true).unwrap();
+        mint.base = Mint {
+            is_initialized: true,
+            decimals: 6,
+            ..Mint::default()
+        };
+        mint.pack_base();
+        mint.init_account_type().unwrap();
+        Account {
+            owner: TokenProgram::Token2022.address(),
+            data,
+            ..Account::default()
+        }
+    }
+
+    /// A Token-2022 associated token account carries the immutable owner
+    /// extension, which the SPL Token one has no room for.
+    #[test]
+    fn a_mint_reads_as_its_owners_token_program_and_sizes_its_atas() {
+        let (spl, token_2022) = (pubkey(0x11), pubkey(0x12));
+        let snapshot = snapshot([
+            (spl, mint_account()),
+            (token_2022, token_2022_mint_account()),
+        ]);
+        assert_eq!(
+            snapshot.mint_info(&spl),
+            Ok(MintInfo {
+                program: TokenProgram::SplToken,
+                ata_len: TokenAccount::LEN,
+            })
+        );
+        assert_eq!(
+            snapshot.mint_info(&token_2022),
+            Ok(MintInfo {
+                program: TokenProgram::Token2022,
+                ata_len: ExtensionType::try_calculate_account_len::<TokenAccount>(&[
+                    ExtensionType::ImmutableOwner,
+                ])
+                .unwrap(),
+            })
+        );
+    }
+
+    /// The rent sysvar is read when fetched and taken from the SDK otherwise.
+    #[test]
+    fn the_rent_is_the_fetched_sysvar_or_the_default() {
+        let rent = Rent {
+            lamports_per_byte: 1,
+            ..Rent::default()
+        };
+        let account = Account {
+            data: bincode::serialize(&rent).unwrap(),
+            ..Account::default()
+        };
+        assert_eq!(snapshot([(sysvar::rent::ID, account)]).rent(), rent);
+        assert_eq!(snapshot([]).rent(), Rent::default());
+    }
+
+    #[test]
+    fn lamports_are_zero_where_no_account_is() {
+        let address = pubkey(0x11);
+        let account = Account {
+            lamports: 7,
+            ..Account::default()
+        };
+        let snapshot = snapshot([(address, account)]);
+        assert_eq!(snapshot.lamports(&address), 7);
+        assert_eq!(snapshot.lamports(&pubkey(0x12)), 0);
+    }
+
+    /// A missing account is told apart from a token account or an account of
+    /// another program at a mint's address.
+    #[test]
+    fn only_a_token_program_mint_has_a_token_program() {
+        let (token_account, foreign) = (pubkey(0x11), pubkey(0x12));
+        let snapshot = snapshot([
+            (token_account, token_2022_account(AccountState::Initialized)),
+            (
+                foreign,
+                Account {
+                    owner: pubkey(0xff),
+                    ..mint_account()
+                },
+            ),
+        ]);
+        assert_eq!(
+            snapshot.mint_info(&pubkey(0x13)),
+            Err(InvalidMintReason::AccountNotFound)
+        );
+        assert_eq!(
+            snapshot.mint_info(&token_account),
+            Err(InvalidMintReason::NotAMint)
+        );
+        assert_eq!(
+            snapshot.mint_info(&foreign),
+            Err(InvalidMintReason::NotAMint)
+        );
     }
 }

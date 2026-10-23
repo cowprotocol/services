@@ -1020,14 +1020,11 @@ mod tests {
         mock_chain
             .with_ethflow_addresses(vec![KNOWN_ETHFLOW])
             .receiving_eth() // Owner can receive ETH (only relevant for order 3 which passes status check)
-
             .expect_get_order_status()
-            .returning(|_, order_hash| {
-                match order_hash.0[31] {
-                    1 | 2 => Err(anyhow!("RPC timeout")),
-                    3 => Ok(RefundStatus::NotYetRefunded(EOA_OWNER)),
-                    _ => unreachable!()
-                }
+            .returning(|_, order_hash| match order_hash.0[31] {
+                1 | 2 => Err(anyhow!("RPC timeout")),
+                3 => Ok(RefundStatus::NotYetRefunded(EOA_OWNER)),
+                _ => unreachable!(),
             });
 
         let result = identify_uids_refunding_status(&mock_chain, &[order1, order2, order3]).await;

@@ -153,7 +153,6 @@ mod tests {
             block_dependent: false,
             fast_path: false,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
-            auction_id: None,
         });
 
         let mut estimator = MockPriceEstimating::new();

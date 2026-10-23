@@ -3,6 +3,7 @@
 pub mod dto;
 
 use {
+    super::order::{self, now_unix},
     crate::infra::{
         api::{State, error, extract},
         db,
@@ -19,15 +20,26 @@ pub async fn order_status(
         tracing::error!(?err, "order status lookup failed");
         error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
     };
+    // Awaited only by the statuses that report solutions.
+    let solutions = async {
+        db::find_order_solutions(state.pool(), uid)
+            .await
+            .and_then(|rows| {
+                rows.into_iter()
+                    .map(dto::SolutionInclusion::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(internal)
+    };
     // A trade outranks the event log so an executed order stays traded even
     // when a later event said otherwise.
     if db::order_has_trade(state.pool(), uid)
         .await
         .map_err(internal)?
     {
-        return Ok(Json(dto::Status::Traded(Vec::new())));
+        return Ok(Json(dto::Status::Traded(solutions.await?)));
     }
-    let row = db::order_by_uid(state.pool(), uid)
+    let row = db::find_order_by_uid(state.pool(), uid)
         .await
         .map_err(internal)?
         .ok_or_else(|| error::reply(StatusCode::NOT_FOUND, "NotFound", "order status not found"))?;
@@ -35,11 +47,23 @@ pub async fn order_status(
     if row.cancellation_timestamp.is_some() {
         return Ok(Json(dto::Status::Cancelled));
     }
-    if let Some(label) = db::latest_order_event(state.pool(), uid)
+    // Expiry depends on the clock and the chain height, no auction event
+    // records it.
+    let block_height = order::block_height_for(&state, &row).await;
+    if order::dto::status(&row, now_unix(), block_height) == order::dto::Status::Expired {
+        return Ok(Json(dto::Status::Expired));
+    }
+    if let Some(label) = db::find_latest_order_event(state.pool(), uid)
         .await
         .map_err(internal)?
     {
-        return Ok(Json(dto::Status::from(label)));
+        let status = match dto::Status::from(label) {
+            dto::Status::Solved(_) => dto::Status::Solved(solutions.await?),
+            dto::Status::Executing(_) => dto::Status::Executing(solutions.await?),
+            dto::Status::Traded(_) => dto::Status::Traded(solutions.await?),
+            status => status,
+        };
+        return Ok(Json(status));
     }
     // Orders are created on-chain, an indexed order can predate its first
     // auction event.

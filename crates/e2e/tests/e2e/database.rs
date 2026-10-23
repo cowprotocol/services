@@ -36,6 +36,17 @@ WHERE order_uids @> ARRAY[$1::bytea]
     rows.into_iter().filter_map(|(cap,)| cap).collect()
 }
 
+/// Returns the quote a fast-path auction settled, or `None` for a regular one.
+pub async fn fast_path_quote_id_of_auction(db: &Db, auction_id: i64) -> Option<i64> {
+    const QUERY: &str = "SELECT fast_path_quote_id FROM competition_auctions WHERE id = $1";
+    let mut db = db.acquire().await.unwrap();
+    sqlx::query_scalar(QUERY)
+        .bind(auction_id)
+        .fetch_one(db.deref_mut())
+        .await
+        .unwrap()
+}
+
 /// Returns quote.
 pub async fn quote_metadata(db: &Db, quote_id: i64) -> Option<(serde_json::Value,)> {
     const QUERY: &str = "SELECT metadata FROM quotes WHERE id = $1";

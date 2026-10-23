@@ -1,5 +1,11 @@
 use {
-    super::{CompetitionEstimator, EstimatorIndex, PriceRanking, compare_error},
+    super::{
+        CompetitionEstimator,
+        EstimatorIndex,
+        PriceRanking,
+        compare_error,
+        report_winner_by_name,
+    },
     crate::{
         CompetitionPriceEstimating,
         Estimate,
@@ -11,7 +17,7 @@ use {
         RankedEstimates,
         StreamingPriceEstimating,
     },
-    alloy::primitives::U256,
+    alloy::primitives::{Address, U256},
     event_bus_dto::{
         price_estimate::{EstimateResult, PriceEstimateEvent},
         query::{OrderKind as DtoOrderKind, QueryFields},
@@ -42,23 +48,18 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
             let get_context = self.ranking.provide_context(&query);
 
             let get_results = self
-                .produce_results(query.clone(), is_reasonable, |context| {
+                .produce_results(query.clone(), is_reasonable, move |context| {
                     // Call estimate() eagerly so its side-effects still happen
                     // when an early-return drops the future before it's polled.
                     let start = Instant::now();
                     let estimator_name = context.name;
-                    let inner_query = context.query.clone();
+                    let query = context.query.clone();
                     context
                         .estimator
-                        .estimate(context.query.clone())
+                        .estimate(query.clone())
                         .map(move |res| {
                             if res.is_ok() {
-                                emit_quote_event(
-                                    estimator_name,
-                                    &inner_query,
-                                    &res,
-                                    start.elapsed(),
-                                );
+                                emit_quote_event(estimator_name, &query, &res, start.elapsed());
                             }
                             res
                         })
@@ -87,7 +88,7 @@ impl CompetitionPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating
                 (_, Err(err)) => Err(err),
                 (EstimatorIndex(stage_index, estimator_index), Ok(quote)) => {
                     let (name, _) = &self.stages[stage_index][estimator_index];
-                    emit_winning_price_estimate_event(name, &query);
+                    emit_winning_price_estimate_event(name, &query, &quote);
                     let rest = results.filter_map(|(_, r)| r.ok());
                     Ok(RankedEstimates::new(quote, rest))
                 }
@@ -114,16 +115,32 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
     /// would return for the same query: the highest-priority estimator error,
     /// or the "unreasonable estimates" error when every quote had 0 gas or 0
     /// out_amount.
+    ///
+    /// The competition is reported like the one-shot path reports it: every
+    /// solver's quote is published as a `priceEstimate` event when it arrives,
+    /// and once all estimators answered the final best is published as the
+    /// `winningPriceEstimate` and counted as its estimator's win. A client
+    /// that drops the stream early cancels the outstanding estimator calls, so
+    /// those answers and the winner go unrecorded.
     fn estimate_stream(&self, query: Arc<Query>) -> BoxStream<'_, PriceEstimateResult> {
         async_stream::stream! {
             let mut estimates = self
                 .stages
                 .iter()
                 .flatten()
-                .map(|(_name, estimator)| estimator.estimate(query.clone()))
+                .map(|(name, estimator)| {
+                    let start = Instant::now();
+                    let query = query.clone();
+                    estimator.estimate(query.clone()).map(move |result| {
+                        if result.is_ok() {
+                            emit_quote_event(name, &query, &result, start.elapsed());
+                        }
+                        (name.as_str(), result)
+                    })
+                })
                 .collect::<FuturesUnordered<_>>()
                 // Only errors and reasonable estimates can be ranked
-                .filter(|r| std::future::ready(r.is_err() || is_reasonable(r)));
+                .filter(|(_, r)| std::future::ready(r.is_err() || is_reasonable(r)));
 
             let context_fut = self.ranking.provide_context(&query).shared();
 
@@ -147,11 +164,11 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
             // Replay the buffered results (arrival order), then continue draining
             // the live stream. Every result is kept so that, if no quote is ever
             // forwarded, the terminal error can be picked as `estimate` does.
-            let mut best: Option<Estimate> = None;
+            let mut best: Option<(&str, Estimate)> = None;
             let mut stream = futures::stream::iter(std::mem::take(&mut results)).chain(estimates);
-            while let Some(result) = stream.next().await {
+            while let Some((name, result)) = stream.next().await {
                 if let Ok(estimate) = &result {
-                    let beats_best = best.as_ref().is_none_or(|best| {
+                    let beats_best = best.as_ref().is_none_or(|(_, best)| {
                         compare_quote_result(
                             &query,
                             &result,
@@ -162,18 +179,33 @@ impl StreamingPriceEstimating for CompetitionEstimator<Arc<dyn PriceEstimating>>
                         .is_gt()
                     });
                     if beats_best {
-                        best = Some(estimate.clone());
+                        best = Some((name, estimate.clone()));
                         yield Ok(estimate.clone());
                     }
                 }
-                results.push(result);
+                results.push((name, result));
             }
 
-            if best.is_none() {
-                yield results
+            if let Some((name, estimate)) = best {
+                // The last improvement forwarded is the winner of the competition.
+                emit_winning_price_estimate_event(name, &query, &estimate);
+                let winner: PriceEstimateResult = Ok(estimate);
+                report_winner_by_name(&query, query.kind, name, &winner);
+            } else {
+                // Nothing was forwarded, so the stream ends with the terminal
+                // error the one-shot path would return.
+                let terminal = results
                     .into_iter()
-                    .max_by(|a, b| compare_quote_result(&query, a, b, &context, self.verification_mode))
-                    .unwrap_or_else(|| Err(unreasonable_estimates_error()));
+                    .max_by(|(_, a), (_, b)| {
+                        compare_quote_result(&query, a, b, &context, self.verification_mode)
+                    });
+
+                if let Some((name, result)) = terminal {
+                    report_winner_by_name(&query, query.kind, name, &result);
+                    yield result;
+                } else {
+                    yield Err(unreasonable_estimates_error());
+                }
             }
         }
         .boxed()
@@ -310,10 +342,19 @@ fn query_fields(query: &Query) -> QueryFields {
     }
 }
 
-fn emit_winning_price_estimate_event(estimator_name: &str, query: &Query) {
+/// The solver behind an estimate. `None` for the trivial ETH/WETH estimates
+/// the sanitized estimator answers itself: no solver produced those, and they
+/// carry the zero address.
+fn solver_of(estimate: &Estimate) -> Option<Address> {
+    (!estimate.solver.is_zero()).then_some(estimate.solver)
+}
+
+fn emit_winning_price_estimate_event(estimator_name: &str, query: &Query, winner: &Estimate) {
     observe::event_bus::publish_event(WinningPriceEstimateEvent {
         query: query_fields(query),
         estimator: estimator_name.to_owned(),
+        solver: solver_of(winner),
+        quote_id: winner.quote_id,
     });
 }
 
@@ -332,6 +373,8 @@ fn emit_quote_event(
         timeout: query.timeout.as_millis() as u64,
         elapsed: elapsed.as_millis() as u64,
         estimator: estimator_name.to_owned(),
+        solver: result.as_ref().ok().and_then(solver_of),
+        quote_id: result.as_ref().ok().and_then(|estimate| estimate.quote_id),
         result: match result {
             Ok(estimate) => EstimateResult::Ok {
                 out_amount: estimate.out_amount.to_string(),

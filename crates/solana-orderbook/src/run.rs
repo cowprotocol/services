@@ -1,9 +1,18 @@
 //! Orderbook entry-point logic.
 
 use {
-    crate::infra::{Api, config, observe as infra_observe, quoter::Quoter},
+    crate::infra::{
+        Api,
+        api::Sponsoring,
+        config,
+        db,
+        observe as infra_observe,
+        prices::NativePrices,
+        quoter::Quoter,
+    },
     clap::Parser,
     configs::database::DatabasePoolConfig,
+    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
     observe::metrics::{DEFAULT_METRICS_PORT, LivenessChecking, serve_metrics},
     sqlx::{Executor, PgPool, postgres::PgPoolOptions},
     std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration},
@@ -50,7 +59,7 @@ struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+        db::ping(&self.pool).await.is_ok()
     }
 }
 
@@ -85,12 +94,31 @@ pub async fn run(args: Args) {
     let metrics = serve_probes(pool.clone(), config.http.bind_address);
 
     let shutdown_token = tokio_util::sync::CancellationToken::new();
+    let sponsoring = config.sponsoring.as_ref().map(|sponsoring| {
+        let rpc = config
+            .rpc
+            .as_ref()
+            .expect("the [sponsoring] section requires the [rpc] section");
+        Sponsoring {
+            funder: sponsoring.funder,
+            settlement_program: sponsoring.settlement_program,
+            rpc: SolanaRPC::new_with_timeout_and_commitment(
+                &rpc.endpoint,
+                rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+            ),
+            max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
+            mints: solana_token::MintVerdicts::default(),
+        }
+    });
     let api = Api {
         addr: config.http.bind_address,
         pool,
         quoter: Quoter::new(config.quoting.drivers.clone(), config.quoting.timeout),
+        prices: NativePrices::new(config.quoting.autopilot.clone(), config.quoting.timeout),
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
+        sponsoring,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

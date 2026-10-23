@@ -108,6 +108,7 @@ impl Observer {
                     &transaction,
                     separator,
                     settlement_contract,
+                    self.eth.contracts().wrapped_native_token(),
                     self.eth.contracts().authenticator(),
                 )
                 .await

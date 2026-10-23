@@ -12,14 +12,32 @@ bind-address = "0.0.0.0:8080"
 [quoting]
 # The drivers asked to quote orders. The best answer wins.
 drivers = ["http://localhost:8000"]
+# The autopilot, whose native prices gate quotes: a pair with a token no
+# estimator prices answers NoLiquidity.
+autopilot = "http://localhost:12088"
 # How long the driver has to answer. Defaults to 5s.
 # timeout = "5s"
-# Bounds on a quoted order's validTo and how long the amounts are honored.
-# min-validity = "2m"
-# max-validity = "2h"
+# Bounds on an order's validTo, for quotes and sponsored placement, and
+# how long the quoted amounts are honored.
+# min-validity = "1m"
+# max-validity = "1y"
 # quote-expiry = "1m"
 
 [logging]
 filter = "info,solana_orderbook=debug"
 # stderr-threshold = "warn"
 # use-json = false
+
+# The Solana JSON-RPC node. Required by sponsored order placement.
+# [rpc]
+# endpoint = "https://api.mainnet-beta.solana.com"
+# Ceiling on one RPC request. Defaults to 5s.
+# request-timeout = "5s"
+
+# Sponsored order placement. Omit the section to disable POST /api/v1/orders.
+# [sponsoring]
+# The funding account creation transactions must name as their fee payer.
+# funder = "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
+# The most the funder pays in priority fee for one creation, in lamports.
+# Defaults to 100000.
+# max-priority-fee-lamports = 100000

@@ -6,11 +6,14 @@ use {
         infra::{
             driver::{Driver, dto},
             observation::SettlementWindows,
+            sponsor::Sponsor,
         },
-        run_loop::SettlementExecutor,
+        run_loop::{RankingInfo, SettlementExecutor},
     },
     async_trait::async_trait,
     std::sync::Arc,
+    tracing::Instrument,
+    winner_selection::state::RankedItem,
 };
 
 /// Sends `/settle` to each winner's driver. Submission runs detached, the
@@ -20,18 +23,33 @@ pub struct DriverExecutor {
     /// Opens a settlement-execution window per dispatched settlement, which
     /// the observation side later resolves or times out.
     windows: SettlementWindows,
+    /// Countersigns pending sponsored creations. Absent, winners dispatch
+    /// without creations, and one containing a pending sponsored order fails
+    /// at the driver.
+    sponsor: Option<Arc<Sponsor>>,
 }
 
 impl DriverExecutor {
-    pub fn new(drivers: Vec<Arc<Driver>>, windows: SettlementWindows) -> Self {
-        Self { drivers, windows }
+    pub fn new(
+        drivers: Vec<Arc<Driver>>,
+        windows: SettlementWindows,
+        sponsor: Option<Arc<Sponsor>>,
+    ) -> Self {
+        Self {
+            drivers,
+            windows,
+            sponsor,
+        }
     }
 }
 
 #[async_trait]
 impl SettlementExecutor<SolanaCycle> for DriverExecutor {
     async fn execute(&self, auction_id: i64, ranking: &Ranking, tip: &u64, deadline: u64) {
-        for winner in ranking.inner.winners() {
+        for (uid, winner) in ranking
+            .enumerated()
+            .filter(|(_, winner)| winner.is_winner())
+        {
             let key = (winner.solver(), winner.id());
             let Some(driver) = ranking
                 .drivers
@@ -43,20 +61,59 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
             };
             let driver = Arc::clone(driver);
             tracing::info!(driver = %driver.name, solution = winner.id(), "executing solution");
+            // Countersign the winner's pending sponsored creations. A winner
+            // whose creations cannot land any more cannot settle, so it is
+            // skipped rather than dispatched to fail, and its orders return
+            // to the next cut.
+            let creations = match &self.sponsor {
+                Some(sponsor) => {
+                    match sponsor
+                        .countersign_creations(winner.orders().iter().map(|order| order.uid))
+                        .await
+                    {
+                        Ok(creations) => creations,
+                        Err(err) => {
+                            tracing::warn!(
+                                solution = winner.id(),
+                                ?err,
+                                "skipping winner, sponsored creations unavailable"
+                            );
+                            if let Err(err) = self
+                                .windows
+                                .record_skipped(auction_id, winner.solver(), uid, *tip, deadline)
+                                .await
+                            {
+                                tracing::warn!(
+                                    auction_id,
+                                    ?err,
+                                    "failed to record the skipped settlement"
+                                );
+                            }
+                            continue;
+                        }
+                    }
+                }
+                None => vec![],
+            };
             let request = dto::SettleRequest {
                 auction_id,
                 solution_id: winner.id(),
                 submission_deadline_slot: deadline,
+                creations,
             };
             // A window that cannot be opened must not block the settlement,
-            // the dispatch is the priority.
+            // the dispatch is the priority. The window carries the generated
+            // solution uid, the driver request keeps the driver-local id its
+            // solution cache is keyed by.
             if let Err(err) = self
                 .windows
-                .open_dispatched(auction_id, winner.solver(), winner.id(), *tip, deadline)
+                .open_dispatched(auction_id, winner.solver(), uid, *tip, deadline)
                 .await
             {
                 tracing::error!(auction_id, ?err, "failed to open the settlement window");
             }
+            let windows = self.windows.clone();
+            let solver = winner.solver();
             tokio::spawn(async move {
                 match driver.settle(&request).await {
                     Ok(response) => tracing::info!(
@@ -66,6 +123,43 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         tx_signature = %response.tx_signature,
                         "settlement submitted"
                     ),
+                    // No transaction went out, so the window closes as
+                    // rejected: the orders re-enter the next cut and nothing
+                    // is left to observe.
+                    Err(err) if err.settlement_provably_unsent() => {
+                        tracing::warn!(
+                            driver = %driver.name,
+                            auction_id,
+                            ?err,
+                            "settlement rejected before submission"
+                        );
+                        if let Err(err) = windows.close_rejected(auction_id, solver, uid).await {
+                            tracing::error!(
+                                auction_id,
+                                ?err,
+                                "failed to close the settlement window"
+                            );
+                        }
+                        return;
+                    }
+                    // The transaction failed on chain and cannot land again,
+                    // so its orders re-enter the next cut.
+                    Err(err) if err.settlement_reverted() => {
+                        tracing::error!(
+                            driver = %driver.name,
+                            auction_id,
+                            ?err,
+                            "settlement reverted"
+                        );
+                        if let Err(err) = windows.close_reverted(auction_id, solver, uid).await {
+                            tracing::error!(
+                                auction_id,
+                                ?err,
+                                "failed to close the settlement window"
+                            );
+                        }
+                        return;
+                    }
                     Err(err) => tracing::error!(
                         driver = %driver.name,
                         auction_id,
@@ -73,7 +167,36 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         "settlement failed"
                     ),
                 }
+                // The window stays with this task until it resolves: the
+                // indexer closes it as landed, or the deadline passes and it
+                // times out here.
+                windows
+                    .expire_when_due(auction_id, solver, uid, deadline)
+                    .await;
             });
+        }
+
+        // TODO: a workaround, not a final solution. The arbitrator picks one
+        // winner per directed token pair, so other orders on that pair wait,
+        // and a pending sponsored order dies with its creation blockhash after
+        // a few lost auctions. Creating it on chain lets it wait like any
+        // other order.
+        if let Some(sponsor) = &self.sponsor {
+            let executing = ranking.winning_order_uids();
+            let displaced: Vec<_> = ranking
+                .considered_order_uids()
+                .into_iter()
+                .filter(|uid| !executing.contains(uid))
+                .collect();
+            // Detached: the creations go out while the loop runs the next
+            // cycle. The auction span stays on for the logs.
+            let sponsor = Arc::clone(sponsor);
+            tokio::spawn(
+                async move {
+                    sponsor.create_displaced(displaced.into_iter()).await;
+                }
+                .instrument(tracing::Span::current()),
+            );
         }
     }
 }

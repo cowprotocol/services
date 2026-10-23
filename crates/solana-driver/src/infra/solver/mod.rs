@@ -6,16 +6,21 @@
 
 use {
     crate::{
-        domain,
-        infra::{config, solver::dto::auction::Auction},
+        domain::{
+            self,
+            execution_cost::Charge,
+            settlement::MaxNativeShortfall,
+            solver_fee::SolverFee,
+        },
+        infra::{
+            config::{self, FeeHandler},
+            solver::dto::auction::Auction,
+        },
     },
-    solana_sdk::{
-        pubkey::Pubkey,
-        signer::{Signer, keypair::Keypair},
-    },
+    cow_solana_signer::Signer,
+    solana_sdk::pubkey::Pubkey,
     std::{num::NonZero, sync::Arc},
     thiserror::Error,
-    tokio::sync::Semaphore,
 };
 
 pub mod dto;
@@ -24,11 +29,13 @@ pub mod dto;
 #[derive(Clone)]
 pub struct Solver {
     name: String,
-    keypair: Arc<Keypair>,
+    signer: Arc<Signer>,
     client: reqwest::Client,
     base_url: reqwest::Url,
-    in_flight: Arc<Semaphore>,
     solve_every_nth_auction: Option<NonZero<u64>>,
+    fee_handler: FeeHandler,
+    solver_fee: Option<SolverFee>,
+    max_native_shortfall: Option<MaxNativeShortfall>,
 }
 
 impl Solver {
@@ -37,14 +44,14 @@ impl Solver {
         &self.name
     }
 
-    /// The solver's on-chain identity, derived from its signer keypair.
+    /// The solver's on-chain identity, derived from its signer.
     pub fn pubkey(&self) -> Pubkey {
-        self.keypair.pubkey()
+        self.signer.pubkey()
     }
 
-    /// The solver's settlement signer keypair.
-    pub(crate) fn keypair(&self) -> &Keypair {
-        &self.keypair
+    /// The solver's settlement signer.
+    pub(crate) fn signer(&self) -> &Signer {
+        &self.signer
     }
 
     /// The auction-id stride this solver participates at, when throttled.
@@ -52,34 +59,49 @@ impl Solver {
         self.solve_every_nth_auction
     }
 
-    /// Build a solver client from its configuration.
-    ///
-    /// Loads the signer keypair from `config.signer_keypair`.
-    pub fn new(config: &config::Solver) -> Result<Self, Error> {
-        let keypair = solana_sdk::signer::keypair::read_keypair_file(&config.signer_keypair)
-            .map_err(|error| Error::SignerKeypair {
-                solver: config.name.clone(),
-                path: config.signer_keypair.clone(),
-                error: error.to_string().into(),
-            })?;
-        let keypair = Arc::new(keypair);
+    /// Who prices the execution costs into this solver's fills.
+    pub fn fee_handler(&self) -> FeeHandler {
+        self.fee_handler
+    }
+
+    /// The volume-based solver fee, `None` when no fee is configured.
+    pub fn solver_fee(&self) -> Option<SolverFee> {
+        self.solver_fee
+    }
+
+    /// The largest share of the native SOL payouts the solver's own SOL
+    /// covers, `None` when it covers none.
+    pub fn max_native_shortfall(&self) -> Option<MaxNativeShortfall> {
+        self.max_native_shortfall
+    }
+
+    /// Build a solver client from its configuration, loading the signer the
+    /// config names: a local keypair file or an AWS KMS key.
+    pub async fn new(config: &config::Solver) -> Result<Self, Error> {
+        let signer = config.signer.load().await.map_err(|error| Error::Signer {
+            solver: config.name.clone(),
+            error,
+        })?;
         tracing::info!(
             solver = %config.name,
-            pubkey = %keypair.pubkey(),
-            "loaded solver keypair"
+            pubkey = %signer.pubkey(),
+            "loaded solver signer"
         );
         Ok(Self {
             name: config.name.clone(),
-            keypair,
+            signer: Arc::new(signer),
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
-            in_flight: Arc::new(Semaphore::new(config.max_in_flight.get())),
             solve_every_nth_auction: config.solve_every_nth_auction,
+            fee_handler: config.fee_handler,
+            solver_fee: config.solver_fee_bps,
+            max_native_shortfall: config.max_native_shortfall_bps,
         })
     }
 
     /// POST the auction to this engine's `/solve` endpoint and return the
-    /// domain solutions it produced.
+    /// domain solutions it produced. An auction with no order left to send
+    /// after `charge` is not posted.
     ///
     /// `program_id` is the settlement program the swap instructions are built
     /// for.
@@ -88,26 +110,18 @@ impl Solver {
         &self,
         auction: &domain::Auction,
         program_id: Pubkey,
+        charge: &Charge,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.pubkey(), program_id);
+        let auction_dto = Auction::new(auction, self.pubkey(), program_id, charge);
+        if auction_dto.orders.is_empty() {
+            tracing::debug!("no order to send; skipping the engine");
+            return Ok(Default::default());
+        }
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
 
-        let _permit = self
-            .in_flight
-            .acquire()
-            .await
-            .expect("semaphore is never closed");
-
-        // Calculate the time remaining until the auction's deadline. Do this
-        // after acquiring the permit. Otherwise the wait for the permit could
-        // use part of the time budget and the solve could run past the
-        // deadline.
-        //
-        // TODO: Split the deadline budget between solver time and driver
-        // processing time. Give the solver a configurable fraction of the
-        // remaining time and reserve the rest for building the transaction.
+        // Calculate the time remaining until the auction's deadline.
         let timeout = {
             let remaining = auction.deadline.signed_duration_since(chrono::Utc::now());
             if remaining <= chrono::Duration::zero() {
@@ -162,19 +176,18 @@ pub enum Error {
     /// The request body could not be serialized.
     #[error("JSON serialization error: {0}")]
     Serialize(#[from] serde_json::Error),
-    /// The signer keypair could not be loaded from the configured path.
-    #[error("failed to load signer keypair for solver {solver} from {path}: {error}")]
-    SignerKeypair {
+    /// The configured signer could not be loaded.
+    #[error("failed to load the signer for solver {solver}: {error}")]
+    Signer {
         solver: String,
-        path: std::path::PathBuf,
         #[source]
-        error: Box<dyn std::error::Error + Send + Sync>,
+        error: cow_solana_signer::Error,
     },
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, solana_testlib::temp_keypair, std::num::NonZero};
+    use {super::*, solana_testlib::temp_keypair};
 
     #[tokio::test]
     async fn solve_with_past_deadline_returns_empty() {
@@ -186,10 +199,13 @@ mod tests {
         let solver = Solver::new(&config::Solver {
             name: "test".to_owned(),
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
-            signer_keypair: keypair_path,
-            max_in_flight: NonZero::new(1).unwrap(),
+            signer: cow_solana_signer::Config::Keypair(keypair_path),
             solve_every_nth_auction: None,
+            fee_handler: FeeHandler::default(),
+            solver_fee_bps: None,
+            max_native_shortfall_bps: None,
         })
+        .await
         .expect("solver construction should succeed");
         let auction = domain::Auction {
             id: Some(domain::Id::new(1).unwrap()),
@@ -197,10 +213,12 @@ mod tests {
             deadline_slot: domain::Slot(1),
             // Well in the past: the request must be skipped entirely.
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
+            creations: std::collections::HashMap::new(),
+            native_prices: std::collections::HashMap::new(),
         };
 
         let solutions = solver
-            .solve(&auction, Pubkey::default())
+            .solve(&auction, Pubkey::default(), &Charge::default())
             .await
             .expect("solve should succeed with no solutions");
         assert!(

@@ -57,16 +57,23 @@ pub async fn account_orders(
     let offset = i64::try_from(offset).unwrap_or(i64::MAX);
     let limit = i64::try_from(limit).expect("limit is at most 1000");
 
-    let rows = db::orders_by_owner(state.pool(), owner.to_bytes(), offset, limit)
+    let rows = db::get_orders_by_owner(state.pool(), owner.to_bytes(), offset, limit)
         .await
         .map_err(|err| {
             tracing::error!(?err, "account orders lookup failed");
             error::reply(StatusCode::INTERNAL_SERVER_ERROR, "InternalServerError", "")
         })?;
     let now = now_unix();
+    // Only a pending creation has a deadline to check against the chain.
+    let pending = rows.iter().any(|row| row.last_valid_block_height.is_some());
+    let block_height = if pending {
+        state.block_height().await
+    } else {
+        None
+    };
     Ok(Json(
         rows.into_iter()
-            .map(|row| dto::Order::new(row, now))
+            .map(|row| dto::Order::new(row, now, block_height))
             .collect(),
     ))
 }

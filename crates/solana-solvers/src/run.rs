@@ -6,6 +6,7 @@ use {
         cli::{Args, Command},
         config,
         dex,
+        domain::solver::Solver,
     },
     clap::Parser,
     std::sync::Arc,
@@ -25,25 +26,40 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
     observe::tracing::init::initialize_reentrant(&obs_config);
     tracing::info!(version = %observe::version::git_version(), "running solana-solvers with {args:#?}");
 
-    match args.command {
+    let solver = match args.command {
         Command::Jupiter { config: path } => {
-            let config = config::load(&path).await;
+            let config = config::load::<config::JupiterConfig>(&path).await;
             let jupiter = dex::jupiter::Jupiter::new(&config.dex)
                 .unwrap_or_else(|err| panic!("build jupiter dex: {err}"));
-            let api = Api {
-                addr: args.addr,
-                dex: Arc::new(dex::Dex::Jupiter(jupiter)),
-            };
-            let (listener, _addr) = api
-                .bind()
-                .await
-                .unwrap_or_else(|err| panic!("bind solana-solvers: {err}"));
-            if let Err(err) = api
-                .serve(listener, observe::shutdown::shutdown_signal())
-                .await
-            {
-                tracing::error!(?err, "server error");
-            }
+            Solver::new(
+                dex::Dex::Jupiter(jupiter),
+                config.concurrent_requests,
+                config.rate_limiting(),
+                config.max_batch_size,
+            )
         }
+        Command::Bitget { config: path } => {
+            let config = config::load::<config::BitgetConfig>(&path).await;
+            Solver::new(
+                dex::Dex::Bitget(dex::bitget::Bitget),
+                config.concurrent_requests,
+                config.rate_limiting(),
+                config.max_batch_size,
+            )
+        }
+    };
+    let api = Api {
+        addr: args.addr,
+        solver: Arc::new(solver),
+    };
+    let (listener, _addr) = api
+        .bind()
+        .await
+        .unwrap_or_else(|err| panic!("bind solana-solvers: {err}"));
+    if let Err(err) = api
+        .serve(listener, observe::shutdown::shutdown_signal())
+        .await
+    {
+        tracing::error!(?err, "server error");
     }
 }

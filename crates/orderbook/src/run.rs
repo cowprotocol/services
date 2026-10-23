@@ -12,7 +12,6 @@ use {
     alloy::providers::Provider,
     anyhow::{Context, Result, anyhow},
     app_data::Validator,
-    bad_tokens::list_based::DenyListedTokens,
     chain::Chain,
     clap::Parser,
     configs::orderbook::Configuration,
@@ -44,7 +43,7 @@ use {
         order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
     std::{future::Future, net::SocketAddr, sync::Arc, time::Duration},
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    token_info::{CachedTokenInfoFetcher, DenyListedTokens, TokenInfoFetcher},
     tokio::task::{self, JoinHandle},
 };
 
@@ -266,6 +265,7 @@ pub async fn run(config: Configuration) {
             }),
             deny_listed_tokens: deny_listed_tokens.clone(),
             tokens: token_info_fetcher.clone(),
+            quote_id_generator: Arc::new(postgres_write.clone()),
         },
     )
     .await
@@ -333,8 +333,7 @@ pub async fn run(config: Configuration) {
 
     let validity_configuration = OrderValidPeriodConfiguration {
         min: config.order_validation.min_order_validity_period,
-        max_market: config.order_validation.max_order_validity_period,
-        max_limit: config.order_validation.max_limit_order_validity_period,
+        max: config.order_validation.max_order_validity_period,
     };
 
     let create_quoter = |price_estimator: Arc<dyn CompetitionPriceEstimating>| {
@@ -356,6 +355,10 @@ pub async fn run(config: Configuration) {
                     config.order_quoting.standard_offchain_quote_validity,
                 )
                 .unwrap(),
+                fast_path_quote: chrono::Duration::from_std(
+                    config.order_quoting.fast_path_quote_validity,
+                )
+                .unwrap(),
             },
             config.price_estimation.quote_timeout,
             config.price_estimation.max_quote_timeout,
@@ -373,7 +376,10 @@ pub async fn run(config: Configuration) {
             gas_price_estimator.clone(),
         )
         .unwrap();
-    let optimal_quoter = Arc::new(create_quoter(unverified_price_estimator));
+    let optimal_quoter = Arc::new(
+        create_quoter(unverified_price_estimator.clone())
+            .with_streaming_estimator(unverified_price_estimator),
+    );
 
     // Fast quoting is able to return early and if none of the produced quotes
     // are verifiable we are left with no quote at all. Since fast estimates
@@ -395,8 +401,34 @@ pub async fn run(config: Configuration) {
         OrderSimulator {
             simulator,
             timeout: config.order_simulation_timeout,
+            ignore_legacy_checks_for_lenders: config
+                .order_simulation_ignore_legacy_checks_for_lenders
+                .clone(),
         }
     });
+    assert!(
+        validator_simulator.is_some()
+            || config
+                .order_simulation_ignore_legacy_checks_for_lenders
+                .is_empty(),
+        "order-simulation-ignore-legacy-checks-for-lenders requires simulation-node-url"
+    );
+
+    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
+        .shared
+        .volume_fee_bucket_overrides
+        .iter()
+        .map(Into::into)
+        .collect();
+    // Shared between the fast-path limit-price check in `OrderValidator` and
+    // the quote-time volume fee adjustment in `QuoteHandler` so a single
+    // configuration change propagates everywhere.
+    let volume_fee_policy = Arc::new(shared::fee::VolumeFeePolicy::new(
+        volume_fee_bucket_overrides,
+        config.volume_fee.as_ref().and_then(|c| c.factor),
+        config.shared.enable_sell_equals_buy_volume_fee,
+        *native_token.address(),
+    ));
 
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
@@ -425,6 +457,8 @@ pub async fn run(config: Configuration) {
         app_data_validator.clone(),
         config.order_validation.max_gas_per_order,
         config.order_validation.same_tokens_policy,
+        Some(volume_fee_policy.clone()),
+        config.order_quoting.max_partner_fee,
     ));
     let ipfs = config
         .ipfs
@@ -453,25 +487,17 @@ pub async fn run(config: Configuration) {
     ));
 
     check_database_connection(orderbook.as_ref()).await;
-    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
-        .shared
-        .volume_fee_bucket_overrides
-        .iter()
-        .map(Into::into)
-        .collect();
     let quotes = QuoteHandler::new(
         order_validator,
         optimal_quoter.clone(),
         app_data.clone(),
         config.volume_fee,
-        volume_fee_bucket_overrides,
-        config.shared.enable_sell_equals_buy_volume_fee,
-        *native_token.address(),
+        volume_fee_policy,
         token_info_fetcher.clone(),
     )
     .with_verified_quoter(verified_quoter.clone())
     .with_fast_quoter(fast_quoter)
-    .with_streaming_quoter(verified_quoter.clone());
+    .with_streaming_quoters(optimal_quoter, verified_quoter);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
