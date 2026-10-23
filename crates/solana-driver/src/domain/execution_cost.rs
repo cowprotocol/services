@@ -8,11 +8,13 @@
 //! than the route achieved. The difference stays where the solver fee's
 //! does, see [`super::solver_fee`].
 //!
-//! The cut is enforced at the solver fee's two points: the limit leg sent to
-//! the engine is moved by the cut before the fee tightens it, and
-//! [`ExecutionCost::apply`] re-validates every fill once the fee is taken. A
-//! solution whose trades cannot absorb the cut within the order's signed
-//! limit is dropped whole, like one that cannot absorb the fee.
+//! The cut is taken at two points of solve time. Before any route is known,
+//! the limit leg sent to the engine is moved by the cut priced at the
+//! solver's default compute units, before the solver fee tightens it. Once
+//! the settlement is simulated, [`ExecutionCost::apply`] cuts every fill at
+//! the compute units the settlement will declare, or else the solver's
+//! default. A solution whose trades cannot absorb the cut within the order's
+//! signed limit is dropped whole, like one that cannot absorb the fee.
 
 use {
     super::{

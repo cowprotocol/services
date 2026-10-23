@@ -38,8 +38,8 @@ pub struct QuoteResponse {
     pub solver: Pubkey,
     /// The network fee of settling the quoted route, in lamports: the
     /// signature fee plus the priority fee at the solution's compute unit
-    /// estimate, the runtime's ceiling when the engine sent none. The amounts
-    /// are not reduced by it.
+    /// estimate, or the solver's default when the engine sent none. The
+    /// amounts are not reduced by it.
     #[serde_as(as = "DisplayFromStr")]
     pub network_fee: u64,
 }
