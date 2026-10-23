@@ -16,7 +16,10 @@ use {
     },
     cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
     solana_driver::{
-        domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
+        domain::{
+            priority_fee::{ComputeUnitEstimate, PriorityFeePolicy},
+            solver_fee::SolverFee,
+        },
         infra::{
             api::Api,
             blockchain::{Solana, associated_token_address},
@@ -169,19 +172,20 @@ async fn spawn_recording_solver_engine(
 /// so the test can register a matching settlement signer. Its engine prices
 /// the execution costs in, so fills come back as the engine reports them.
 async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
-    solver_with(addr, FeeHandler::Solver, 0).await
+    solver_with(addr, FeeHandler::Solver, 0, None).await
 }
 
 /// A solver client whose fills the driver cuts, by `solver_fee_bps` and the
 /// execution costs.
 async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
-    solver_with(addr, FeeHandler::Driver, solver_fee_bps).await
+    solver_with(addr, FeeHandler::Driver, solver_fee_bps, None).await
 }
 
 async fn solver_with(
     addr: SocketAddr,
     fee_handler: FeeHandler,
     solver_fee_bps: u16,
+    compute_unit_estimate: Option<u32>,
 ) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
@@ -193,6 +197,8 @@ async fn solver_with(
         fee_handler,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
         max_native_shortfall_bps: None,
+        default_compute_unit_estimate: compute_unit_estimate
+            .map(|units| ComputeUnitEstimate::try_from(units).unwrap()),
     })
     .await
     .expect("solver construction should succeed");
@@ -216,6 +222,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         fee_handler: FeeHandler::Solver,
         solver_fee_bps: None,
         max_native_shortfall_bps: None,
+        default_compute_unit_estimate: None,
     })
     .await
     .expect("solver construction should succeed")
@@ -743,10 +750,12 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 /// Same fee and budget as above, but the `/solve` simulation reports the
 /// settlement's compute units, so the fee is priced at twice those units, not
 /// at the runtime's default, fits the budget, and the settle reaches the send.
+/// The solver's 500_000 unit default, which would be over the budget, prices
+/// only the cut and never reaches the declared limit.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
-    let (solver, _) = solver_with_keypair(engine).await;
+    let (solver, _) = solver_with(engine, FeeHandler::Solver, 0, Some(500_000)).await;
     let mut mocks = Mocks::new();
     mocks.insert(
         RpcRequest::GetRecentPrioritizationFees,
@@ -927,10 +936,10 @@ fn execution_cost() -> u64 {
 }
 
 /// The standard solve request pricing the buy token so that the execution
-/// cost comes to exactly 100 of its atoms.
-fn solve_request_priced_for_a_cut_of_100() -> serde_json::Value {
+/// cost at the ceiling comes to exactly `atoms` of its atoms.
+fn solve_request_priced_for_a_cut_of(atoms: u64) -> serde_json::Value {
     let mut request = solve_request();
-    let price = execution_cost() * 10_000_000;
+    let price = execution_cost() * 1_000_000_000 / atoms;
     request["tokens"] =
         serde_json::json!({ (pubkey(0x44).to_string()): { "price": price.to_string() } });
     request
@@ -946,7 +955,7 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     let (solver, _) = solver_with_fee(engine, 500).await;
     let addr = spawn_server(vec![solver]).await;
 
-    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(100)).await;
     let amounts = &body["solutions"][0]["orders"][uid()];
     assert_eq!(amounts["executedSell"], "1000");
     assert_eq!(amounts["executedBuy"], "2750");
@@ -954,6 +963,23 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     let request = requests.lock().unwrap().take().unwrap();
     assert_eq!(request["orders"][0]["buyAmount"], "2211");
     assert!(request["orders"][0].get("missingBuyTokenAccount").is_none());
+}
+
+/// Without an estimate from the engine the cut follows the solver's 200_000
+/// unit default: 2_000 lamports of priority fee instead of the ceiling's
+/// 14_000, so the rent and fee priced at 1000 atoms for the ceiling come to
+/// 995. The limit sent to the engine moves by the same 995.
+#[tokio::test]
+async fn solve_cuts_at_the_solvers_default_compute_units_without_an_engine_estimate() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with(engine, FeeHandler::Driver, 0, Some(200_000)).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2005");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2995");
 }
 
 /// A route paying exactly the 2000 limit undercuts it once the cut applies
@@ -964,7 +990,7 @@ async fn solve_drops_the_fill_the_cut_pushes_under_the_limit() {
     let (solver, _) = solver_with_fee(engine, 0).await;
     let addr = spawn_server(vec![solver]).await;
 
-    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of_100()).await;
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(100)).await;
     assert_eq!(response_ids(&body), vec![2]);
 }
 
@@ -1152,6 +1178,36 @@ async fn quote_prices_the_network_fee_at_the_engines_compute_estimate() {
 
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["networkFee"], "7000");
+}
+
+/// Without an estimate from the engine the fee follows the solver's
+/// configured 200_000 units: 2_000 lamports plus the 5_000 signature fee.
+/// An estimate the engine does send wins: 100_000 units are 1_000 lamports.
+#[tokio::test]
+async fn quote_without_an_engine_estimate_is_priced_at_the_solvers_compute_units() {
+    let mut estimated = quote_solution("1000");
+    estimated["solutions"][0]["cuEstimate"] = serde_json::json!(100_000);
+    for (solution, network_fee) in [(quote_solution("1000"), "7000"), (estimated, "6000")] {
+        let engine = spawn_mock_solver_engine(solution).await;
+        let (solver, _) = solver_with(engine, FeeHandler::Solver, 0, Some(200_000)).await;
+        let mut mocks = Mocks::new();
+        mocks.insert(
+            RpcRequest::GetRecentPrioritizationFees,
+            serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+        );
+        let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/mock/quote"))
+            .json(&quote_request("sell", "1000"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(json["networkFee"], network_fee);
+    }
 }
 
 /// A route the driver would refuse to settle over the priority fee budget is

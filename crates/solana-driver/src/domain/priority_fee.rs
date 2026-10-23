@@ -14,9 +14,39 @@ use {
 };
 
 /// The runtime's per-transaction compute unit ceiling. It caps every limit
-/// and prices a quote whose engine sent no estimate: the quote has no
-/// settlement instructions to derive the runtime's default from.
+/// and prices a solution without an estimate, the engine's or the solver's
+/// default: the cut comes before any settlement instructions exist to derive
+/// the runtime's default from.
 pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+
+/// The compute units a solution is priced at, `1..=MAX_COMPUTE_UNIT_LIMIT`.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "u32")]
+pub struct ComputeUnitEstimate(u32);
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "compute unit estimate must be within 1..={}, got {0}",
+    MAX_COMPUTE_UNIT_LIMIT
+)]
+pub struct EstimateOutOfRange(u32);
+
+impl TryFrom<u32> for ComputeUnitEstimate {
+    type Error = EstimateOutOfRange;
+
+    fn try_from(units: u32) -> Result<Self, Self::Error> {
+        (1..=MAX_COMPUTE_UNIT_LIMIT)
+            .contains(&units)
+            .then_some(Self(units))
+            .ok_or(EstimateOutOfRange(units))
+    }
+}
+
+impl From<ComputeUnitEstimate> for u32 {
+    fn from(estimate: ComputeUnitEstimate) -> Self {
+        estimate.0
+    }
+}
 
 /// The base fee of one signature, in lamports: the cluster's
 /// `lamports_per_signature`, 5000 on every cluster. Precompile signature

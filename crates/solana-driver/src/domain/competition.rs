@@ -406,28 +406,32 @@ impl Competition {
 
     /// The network fee the limit legs sent to the engine are moved by, before
     /// any route is known: the signature fee plus the priority fee at the
-    /// runtime's compute unit ceiling over the fees recently paid cluster-wide,
-    /// or the budget when that is over it. Cluster-wide fees floor what any
-    /// route's accounts pay, so the fill's own fee, see [`Self::network_fee`],
-    /// is at least this much, and a fill on the moved limit whose route pays
-    /// more is dropped.
+    /// solver's default compute unit estimate, or else the runtime's ceiling,
+    /// over the fees recently paid cluster-wide, or the budget when that is
+    /// over it. Cluster-wide fees floor what any route's accounts pay, so a
+    /// fill priced at the same units, see [`Self::network_fee`], pays at
+    /// least this much, and a fill on the moved limit whose route pays more
+    /// is dropped.
     async fn network_fee_reserve(&self) -> Result<u64, Error> {
         let fees = self
             .blockchain
             .recent_prioritization_fees(&[])
             .await
             .map_err(Error::Rpc)?;
-        Ok(self.priority_fee.estimate(&fees, None).map_or_else(
-            |_| self.priority_fee.max_network_fee(),
-            |estimate| estimate.network_fee(),
-        ))
+        Ok(self
+            .priority_fee
+            .estimate(&fees, self.solver.default_compute_unit_estimate())
+            .map_or_else(
+                |_| self.priority_fee.max_network_fee(),
+                |estimate| estimate.network_fee(),
+            ))
     }
 
     /// The network fee of settling `solution`, in lamports: the signature fee
     /// plus the priority fee over the accounts its interactions write, at its
-    /// compute unit estimate. Prices a quote the way `settle` prices its
-    /// transaction. A quote's settlement accounts are placeholders, so only
-    /// the interactions' accounts are read.
+    /// compute unit estimate, or else the solver's default. Prices a quote
+    /// the way `settle` prices its transaction. A quote's settlement accounts
+    /// are placeholders, so only the interactions' accounts are read.
     pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
         let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
         let fees = self
@@ -435,7 +439,12 @@ impl Competition {
             .recent_prioritization_fees(&writable)
             .await
             .map_err(Error::Rpc)?;
-        let estimate = self.priority_fee.estimate(&fees, solution.cu_estimate)?;
+        let estimate = self.priority_fee.estimate(
+            &fees,
+            solution
+                .cu_estimate
+                .or(self.solver.default_compute_unit_estimate()),
+        )?;
         let network_fee = estimate.network_fee();
         tracing::debug!(
             solution_id = solution.id,
