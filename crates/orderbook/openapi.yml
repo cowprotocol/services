@@ -863,7 +863,7 @@ components:
         fullAppData:
           $ref: "#/components/schemas/AppData"
       required:
-        - appData
+        - fullAppData
     BigUint:
       description: A big unsigned integer encoded in decimal.
       type: string
