@@ -34,9 +34,27 @@ impl Solutions {
         solver: Solver,
         flashloan_hints: &HashMap<competition::order::Uid, domain::flashloan::Flashloan>,
     ) -> Result<Vec<competition::Solution>, super::Error> {
+        // Quotes are not penalized for failing to settle, so they always bid
+        // the full score.
+        let native_prices = (!auction.is_quote()).then(|| auction.native_prices());
         self.0
             .into_iter()
             .map(|solution| {
+                let risk_adjustment = match &native_prices {
+                    Some(native_prices) => solution
+                        .success_probability
+                        .or(solver.success_probability())
+                        .map(|p| {
+                            Ok::<_, super::Error>(competition::solution::RiskAdjustment {
+                                success_probability:
+                                    competition::solution::risk::SuccessProbability::new(p)
+                                        .map_err(|err| super::Error(err.to_string()))?,
+                                native_prices,
+                            })
+                        })
+                        .transpose()?,
+                    None => None,
+                };
                 competition::Solution::new(
                     competition::solution::Id::new(solution.id),
                     solution
@@ -252,6 +270,7 @@ impl Solutions {
                         address: w.address,
                         data: w.data.into(),
                     }).collect(),
+                    risk_adjustment,
                 )
                 .map_err(|err| match err {
                     competition::solution::error::Solution::InvalidClearingPrices => {
@@ -259,6 +278,9 @@ impl Solutions {
                     }
                     competition::solution::error::Solution::ProtocolFee(err) => {
                         super::Error(format!("could not incorporate protocol fee: {err}"))
+                    }
+                    competition::solution::error::Solution::RiskAdjustment(err) => {
+                        super::Error(format!("could not apply risk adjustment: {err}"))
                     }
                     competition::solution::error::Solution::InvalidJitTrade(err) => {
                         super::Error(format!("invalid jit trade: {err}"))

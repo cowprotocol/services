@@ -533,6 +533,7 @@ async fn store_filtered_solutions(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        success_probability: None,
         gas_fee_override: None,
     }));
 
@@ -564,6 +565,7 @@ async fn store_filtered_solutions(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        success_probability: None,
         gas_fee_override: None,
     }));
 
@@ -807,6 +809,7 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        success_probability: None,
         gas_fee_override: None,
     }));
 
@@ -838,6 +841,7 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        success_probability: None,
         gas_fee_override: None,
     }));
 

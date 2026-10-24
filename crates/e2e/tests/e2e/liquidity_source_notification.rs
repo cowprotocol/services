@@ -330,6 +330,7 @@ http-timeout = "10s"
         gas: None,
         flashloans: None,
         wrappers: vec![],
+        success_probability: None,
         gas_fee_override: None,
     }));
 

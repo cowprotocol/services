@@ -145,6 +145,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                 settle_queue_size: solver_config.settle_queue_size,
                 flashloans_enabled: config.flashloans_enabled,
                 solver_fee_bps: solver_config.solver_fee_bps,
+                success_probability: solver_config.success_probability,
                 submission_accounts: join_all(
                     solver_config
                         .submission_accounts

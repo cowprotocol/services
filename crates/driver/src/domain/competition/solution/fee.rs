@@ -54,25 +54,45 @@ impl Fulfillment {
         protocol_fee: &FeePolicy,
     ) -> Result<Self, Error> {
         let protocol_fee = self.protocol_fee_in_sell_token(prices, protocol_fee)?;
+        self.with_fee_in_sell_token(protocol_fee)
+    }
 
-        // Increase the fee by the protocol fee
+    /// Withholds `margin` (denominated in the surplus token) from the user so
+    /// the solver keeps it, lowering the solution's score by the same amount.
+    /// See [`super::risk`].
+    ///
+    /// Has to be applied before the protocol fees: the score is reconstructed
+    /// by unwinding the protocol fee policies from the final traded amounts,
+    /// which only works if they were applied last.
+    pub fn with_risk_margin(
+        &self,
+        prices: ClearingPrices,
+        margin: eth::TokenAmount,
+    ) -> Result<Self, Error> {
+        let margin = self.surplus_to_sell_token(prices, margin)?;
+        self.with_fee_in_sell_token(margin)
+    }
+
+    /// Charges the user an additional `fee` denominated in the sell token.
+    fn with_fee_in_sell_token(&self, additional_fee: eth::TokenAmount) -> Result<Self, Error> {
+        // Increase the fee by the additional fee
         let fee = order::SellAmount(
             self.fee()
                 .0
-                .checked_add(protocol_fee.0)
+                .checked_add(additional_fee.0)
                 .ok_or(Math::Overflow)?,
         );
 
-        // Reduce the executed amount by the protocol fee. This is because
-        // solvers are unaware of the protocol fee that driver
-        // introduces and they only account for their own fee.
+        // Reduce the executed amount by the additional fee. This is because
+        // solvers are unaware of the fees that driver introduces and they
+        // only account for their own fee.
         let order = self.order().clone();
         let executed = match order.side {
             order::Side::Buy => self.executed(),
             order::Side::Sell => order::TargetAmount(
                 self.executed()
                     .0
-                    .checked_sub(protocol_fee.0)
+                    .checked_sub(additional_fee.0)
                     .ok_or(Math::Overflow)?,
             ),
         };
@@ -200,16 +220,25 @@ impl Fulfillment {
         prices: ClearingPrices,
         protocol_fee: &FeePolicy,
     ) -> Result<eth::TokenAmount, Error> {
-        let fee_in_sell_token = match self.order().side {
-            Side::Buy => self.protocol_fee(prices, protocol_fee)?,
-            Side::Sell => self
-                .protocol_fee(prices, protocol_fee)?
+        let fee = self.protocol_fee(prices, protocol_fee)?;
+        self.surplus_to_sell_token(prices, fee)
+    }
+
+    /// Converts an amount of the surplus token into the sell token using the
+    /// uniform clearing prices.
+    fn surplus_to_sell_token(
+        &self,
+        prices: ClearingPrices,
+        amount: eth::TokenAmount,
+    ) -> Result<eth::TokenAmount, Error> {
+        Ok(match self.order().side {
+            Side::Buy => amount,
+            Side::Sell => amount
                 .0
                 .checked_mul_ratio(&prices.buy, &prices.sell)
                 .map_err(Math::from)?
                 .into(),
-        };
-        Ok(fee_in_sell_token)
+        })
     }
 }
 
