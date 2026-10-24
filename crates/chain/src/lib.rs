@@ -21,6 +21,7 @@ pub enum Chain {
     Linea = 59144,
     Plasma = 9745,
     Ink = 57073,
+    Robinhood = 4663,
 }
 
 impl Chain {
@@ -47,6 +48,7 @@ impl Chain {
             Self::Linea => "Linea",
             Self::Plasma => "Plasma",
             Self::Ink => "Ink",
+            Self::Robinhood => "Robinhood Chain",
         }
     }
 
@@ -67,6 +69,7 @@ impl Chain {
             Self::Linea => "linea",
             Self::Plasma => "plasma",
             Self::Ink => "ink",
+            Self::Robinhood => "robinhood",
         }
     }
 
@@ -80,7 +83,8 @@ impl Chain {
             | Self::Bnb
             | Self::Linea
             | Self::Optimism
-            | Self::Ink => U256::from(10u128.pow(17)),
+            | Self::Ink
+            | Self::Robinhood => U256::from(10u128.pow(17)),
             Self::Gnosis | Self::Avalanche => U256::from(10u128.pow(18)),
             Self::Polygon | Self::Plasma => U256::from(10u128.pow(20)),
             Self::Hardhat => {
@@ -105,6 +109,7 @@ impl Chain {
             Self::Linea => Duration::from_millis(2_000),
             Self::Plasma => Duration::from_millis(1_000),
             Self::Ink => Duration::from_millis(1_000),
+            Self::Robinhood => Duration::from_millis(100),
         }
     }
 
@@ -135,6 +140,7 @@ impl TryFrom<u64> for Chain {
             x if x == Self::Linea as u64 => Self::Linea,
             x if x == Self::Plasma as u64 => Self::Plasma,
             x if x == Self::Ink as u64 => Self::Ink,
+            x if x == Self::Robinhood as u64 => Self::Robinhood,
             _ => Err(ChainIdNotSupported)?,
         };
         Ok(network)
@@ -211,6 +217,7 @@ mod test {
         assert_eq!(Chain::Gnosis.blocks_in(TARGET_AGE).round(), 4320.0);
         assert_eq!(Chain::Base.blocks_in(TARGET_AGE).round(), 10800.0);
         assert_eq!(Chain::ArbitrumOne.blocks_in(TARGET_AGE).round(), 86400.0);
+        assert_eq!(Chain::Robinhood.blocks_in(TARGET_AGE).round(), 216000.0);
     }
 
     #[test]
