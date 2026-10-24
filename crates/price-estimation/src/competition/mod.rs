@@ -1,5 +1,5 @@
 use {
-    super::{QuoteVerificationMode, native::NativePriceEstimating},
+    super::{native::NativePriceEstimating},
     crate::PriceEstimationError,
     futures::{
         future::{BoxFuture, FutureExt},
@@ -38,7 +38,6 @@ pub struct CompetitionEstimator<T> {
     stages: Vec<PriceEstimationStage<T>>,
     usable_results_for_early_return: NonZeroUsize,
     ranking: PriceRanking,
-    verification_mode: QuoteVerificationMode,
 }
 
 impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
@@ -49,17 +48,6 @@ impl<T: Send + Sync + 'static> CompetitionEstimator<T> {
             stages,
             usable_results_for_early_return: NonZeroUsize::MAX,
             ranking,
-            verification_mode: QuoteVerificationMode::Unverified,
-        }
-    }
-
-    /// Configures if verified price estimates should be ranked higher than
-    /// unverified ones even if the price is worse.
-    /// Per default verified quotes do not get preferred.
-    pub fn with_verification(self, mode: QuoteVerificationMode) -> Self {
-        Self {
-            verification_mode: mode,
-            ..self
         }
     }
 
@@ -628,7 +616,6 @@ mod tests {
             ],
             usable_results_for_early_return: NonZeroUsize::new(2).unwrap(),
             ranking: PriceRanking::MaxOutAmount,
-            verification_mode: QuoteVerificationMode::Unverified,
         };
 
         let result = racing.estimates(query).await.unwrap().into_vec();
@@ -836,11 +823,7 @@ mod tests {
         assert!(matches!(results[0], Err(PriceEstimationError::RateLimited)));
     }
 
-    /// Best-so-far under `QuoteVerificationMode::Prefer`: a quote is forwarded
-    /// only when it ranks better than the best already sent. Errors are dropped
-    /// mid-stream, and because a verified quote outranks an unverified one
-    /// regardless of `out_amount` (same as the one-shot competition), a later
-    /// verified quote supersedes an earlier, higher unverified one.
+    /// Best-so-far: a quote is forwarded only when it ranks better than the best already sent.
     #[tokio::test]
     async fn estimate_stream_only_forwards_improving_quotes() {
         // Staggered delays make the arrival order deterministic.
@@ -883,8 +866,7 @@ mod tests {
                 ("verified-worse".to_owned(), quote(30, 150, true)),
             ]],
             PriceRanking::MaxOutAmount,
-        )
-        .with_verification(QuoteVerificationMode::Prefer);
+        );
 
         let results: Vec<_> = estimator.estimate_stream(make_query()).collect().await;
 

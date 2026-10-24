@@ -473,7 +473,7 @@ async fn single_replace_order_test(web3: Web3) {
     // orders we override the quote verification to prefer mode.
     let orderbook_config = configs::orderbook::Configuration {
         price_estimation: configs::price_estimation::PriceEstimation {
-            quote_verification: configs::price_estimation::QuoteVerificationMode::Prefer,
+            quote_verification: Default::default(),
             ..configs::orderbook::Configuration::test_default().price_estimation
         },
         ..configs::orderbook::Configuration::test_default()
