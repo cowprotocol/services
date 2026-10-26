@@ -1159,7 +1159,8 @@ fn state_pda() -> solana_sdk::pubkey::Pubkey {
 }
 
 /// The full whitelisted preparation prefix for a native-sell intent: create
-/// the wSOL account, fund it, sync it, delegate it, create the buy account.
+/// the wSOL account (the owner pays its rent, as placement requires), fund
+/// it, sync it, delegate it, create the buy account.
 fn full_preparations(
     funder: solana_sdk::pubkey::Pubkey,
     owner: solana_sdk::pubkey::Pubkey,
@@ -1167,7 +1168,7 @@ fn full_preparations(
 ) -> Vec<solana_sdk::instruction::Instruction> {
     vec![
         spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
-            &funder,
+            &owner,
             &owner,
             &intent.sell.mint,
             &spl_token_interface::ID,
@@ -1968,6 +1969,31 @@ async fn create_order_checks_the_preparation_template() {
         destination_creation(funder, owner, &foreign_sell),
     ];
     let transaction = creation_tx(funder, &owner_keypair, &foreign_sell, preparations, true);
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
+    );
+}
+
+/// A native SOL sell whose wSOL account creation the funder pays is refused:
+/// nothing charges the rent back, and closing the account at settlement
+/// returns it to the owner.
+#[tokio::test]
+async fn create_order_rejects_a_funder_paid_sell_account_creation() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+    let intent = sponsored_intent(owner.pubkey(), true);
+    let mut preparations = full_preparations(funder, owner.pubkey(), &intent);
+    preparations[0] = spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+        &funder,
+        &owner.pubkey(),
+        &intent.sell.mint,
+        &spl_token_interface::ID,
+    );
+    let transaction = creation_tx(funder, &owner, &intent, preparations, true);
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
         (status, kind.as_str()),

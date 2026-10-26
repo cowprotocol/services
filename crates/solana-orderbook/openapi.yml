@@ -273,7 +273,8 @@ paths:
         creation transaction (owner signed, the deployment's funder as its
         unsigned fee payer), and every order field derives from its trailing
         `CreateOrder` instruction. In front of it the transaction carries the
-        preparation steps, in this order: create the wSOL account, fund it,
+        preparation steps, in this order: create the wSOL account (the owner
+        pays for it, a funder-paid creation is refused), fund it,
         sync it, approve the settlement delegate, and create the buy token
         account (idempotent, a no-op when the account already exists), each
         omittable (the wrap steps only for native SOL sells). Without the
@@ -349,6 +350,7 @@ paths:
           description: |
             Sponsoring disabled on this deployment (`SponsoringDisabled`), an
             undecodable or wrongly shaped transaction (`InvalidTransaction`),
+            a wSOL sell account creation paid by anyone but the order owner,
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
