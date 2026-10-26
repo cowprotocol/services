@@ -113,7 +113,7 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
-    let (quoted, cost) = best(quotes, kind, buy_token_ata_costs, price).ok_or_else(|| {
+    let (quoted, costs) = best(quotes, kind, buy_token_ata_costs, price).ok_or_else(|| {
         error::reply(
             StatusCode::BAD_REQUEST,
             "SellAmountDoesNotCoverFee",
@@ -171,10 +171,10 @@ pub async fn quote(
             fee_amount: 0,
             costs: dto::Costs {
                 token,
-                network_fees: in_token(quoted.network_fee, price).unwrap_or(u64::MAX),
-                buy_token_ata_costs: cost,
+                network_fees: costs.network_fees,
+                buy_token_ata_costs: costs.buy_token_ata_costs,
                 protocol_fee: 0,
-                total: cost,
+                total: costs.total,
             },
             kind,
             partially_fillable: false,
@@ -196,7 +196,7 @@ fn best(
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
-) -> Option<(quoter::Quote, u64)> {
+) -> Option<(quoter::Quote, Costs)> {
     let quotes = quotes.into_iter();
     let best = match kind {
         dto::Kind::Sell => quotes.max_by_key(|quote| quote.buy_amount),
@@ -205,33 +205,50 @@ fn best(
     net(best, kind, rent, price)
 }
 
-/// `quote` with the buy token account's `rent` taken out of the side the
-/// trader does not fix: a sell order delivers less buy token, a buy order
-/// pulls more sell token. The rent converts at `price`, rounded up against
-/// the trader. The settlement's network fee is the solver's to pay and is
-/// not taken. Returned with the rent in that token, `None` when the amount
-/// cannot absorb it.
+/// A quote's execution cost in the token it comes out of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Costs {
+    network_fees: u64,
+    buy_token_ata_costs: u64,
+    /// What the quote is cut by: the rent, not the network fee.
+    total: u64,
+}
+
+/// `quote` with its execution cost, `rent`, taken out of the side the trader
+/// does not fix: a sell order delivers less buy token, a buy order pulls more
+/// sell token. Each cost converts at `price` on its own, rounded up against
+/// the trader. Its own network fee is the solver's to pay, so it is reported,
+/// not taken. `None` when the amount cannot absorb the cost.
 fn net(
     quote: quoter::Quote,
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
-) -> Option<(quoter::Quote, u64)> {
-    let cost = in_token(rent, price)?;
+) -> Option<(quoter::Quote, Costs)> {
+    let network_fees = in_token(quote.network_fee, price).unwrap_or(u64::MAX);
+    let buy_token_ata_costs = in_token(rent, price)?;
+    let total = buy_token_ata_costs;
     let quote = match kind {
         dto::Kind::Sell => quoter::Quote {
             buy_amount: quote
                 .buy_amount
-                .checked_sub(cost)
+                .checked_sub(total)
                 .filter(|delivered| *delivered > 0)?,
             ..quote
         },
         dto::Kind::Buy => quoter::Quote {
-            sell_amount: quote.sell_amount.checked_add(cost)?,
+            sell_amount: quote.sell_amount.checked_add(total)?,
             ..quote
         },
     };
-    Some((quote, cost))
+    Some((
+        quote,
+        Costs {
+            network_fees,
+            buy_token_ata_costs,
+            total,
+        },
+    ))
 }
 
 /// What `lamports` are worth in the token priced at `price`, rounded up.
@@ -585,12 +602,12 @@ mod tests {
         }
     }
 
-    fn quote(sell_amount: u64, buy_amount: u64) -> quoter::Quote {
+    fn quote(sell_amount: u64, buy_amount: u64, network_fee: u64) -> quoter::Quote {
         quoter::Quote {
             sell_amount,
             buy_amount,
             solver: Pubkey::default(),
-            network_fee: 0,
+            network_fee,
             driver: String::new(),
         }
     }
@@ -603,41 +620,57 @@ mod tests {
         (quote.sell_amount, quote.buy_amount)
     }
 
-    /// 1000 lamports of rent are 2000 atoms of a token worth half a lamport
-    /// an atom: off the buy leg of a sell order, onto the sell leg of a buy
-    /// order. Without rent the quote stays as the driver gave it.
+    /// 600 lamports of rent are 1200 atoms of a token worth half a lamport an
+    /// atom: off the buy leg of a sell order, onto the sell leg of a buy
+    /// order. The 400 lamport fee is reported as 800 atoms but not taken.
+    /// Nothing to take leaves the quote as the driver gave it.
     #[test]
-    fn the_rent_comes_out_of_the_side_the_trader_does_not_fix() {
+    fn the_cost_comes_out_of_the_side_the_trader_does_not_fix() {
         let price = price(Solana::NATIVE_PRICE_DENOMINATOR / 2);
-        let (sell, cost) = net(quote(1_000, 5_000), dto::Kind::Sell, 1_000, price).unwrap();
-        assert_eq!((legs(&sell), cost), ((1_000, 3_000), 2_000));
-        let (buy, _) = net(quote(1_000, 5_000), dto::Kind::Buy, 1_000, price).unwrap();
-        assert_eq!(legs(&buy), (3_000, 5_000));
-        let (free, cost) = net(quote(1_000, 5_000), dto::Kind::Sell, 0, price).unwrap();
-        assert_eq!((legs(&free), cost), ((1_000, 5_000), 0));
+        let (sell, costs) = net(quote(1_000, 5_000, 400), dto::Kind::Sell, 600, price).unwrap();
+        assert_eq!(legs(&sell), (1_000, 3_800));
+        assert_eq!(
+            costs,
+            Costs {
+                network_fees: 800,
+                buy_token_ata_costs: 1_200,
+                total: 1_200,
+            }
+        );
+        let (buy, _) = net(quote(1_000, 5_000, 400), dto::Kind::Buy, 600, price).unwrap();
+        assert_eq!(legs(&buy), (2_200, 5_000));
+        let (free, _) = net(quote(1_000, 5_000, 0), dto::Kind::Sell, 0, price).unwrap();
+        assert_eq!(legs(&free), (1_000, 5_000));
     }
 
-    /// At three lamports an atom, one lamport of rent is a third of an atom
-    /// and costs a whole one, three lamports cost one, four cost two.
+    /// At three lamports an atom, one lamport is a third of an atom and
+    /// costs a whole one, three lamports cost one, four cost two. The rent
+    /// and the fee round up on their own, and only the rent comes off.
     #[test]
     fn the_cut_rounds_up_against_the_trader() {
         let price = price(3 * Solana::NATIVE_PRICE_DENOMINATOR);
-        for (rent, buy_amount) in [(1, 4_999), (3, 4_999), (4, 4_998)] {
-            let (sell, _) = net(quote(1_000, 5_000), dto::Kind::Sell, rent, price).unwrap();
+        for (lamports, buy_amount) in [(1, 4_999), (3, 4_999), (4, 4_998)] {
+            let (sell, _) = net(quote(1_000, 5_000, 0), dto::Kind::Sell, lamports, price).unwrap();
             assert_eq!(sell.buy_amount, buy_amount);
-            let (buy, _) = net(quote(1_000, 5_000), dto::Kind::Buy, rent, price).unwrap();
+            let (buy, _) = net(quote(1_000, 5_000, 0), dto::Kind::Buy, lamports, price).unwrap();
             assert_eq!(buy.sell_amount, 1_000 + 5_000 - buy_amount);
         }
+        let (sell, costs) = net(quote(1_000, 5_000, 1), dto::Kind::Sell, 1, price).unwrap();
+        assert_eq!(
+            (sell.buy_amount, costs.network_fees, costs.total),
+            (4_999, 1, 1)
+        );
     }
 
     /// A sell order delivering nothing after the cut, a buy order whose sell
-    /// leg overflows, and a cut past `u64::MAX` are all dropped.
+    /// leg overflows, and a cut past `u64::MAX` are all dropped. A reported
+    /// network fee past `u64::MAX` saturates instead.
     #[test]
     fn a_quote_that_cannot_absorb_its_cost_is_dropped() {
         let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
         let sell = |buy_amount, rent| {
             net(
-                quote(1_000, buy_amount),
+                quote(1_000, buy_amount, 0),
                 dto::Kind::Sell,
                 rent,
                 lamport_an_atom,
@@ -645,23 +678,36 @@ mod tests {
         };
         assert!(sell(500, 500).is_none());
         assert_eq!(sell(501, 500).unwrap().0.buy_amount, 1);
-        assert!(net(quote(u64::MAX, 500), dto::Kind::Buy, 1, lamport_an_atom).is_none());
-        assert!(net(quote(1_000, 5_000), dto::Kind::Sell, u64::MAX, price(1)).is_none());
+        assert!(net(quote(u64::MAX, 500, 0), dto::Kind::Buy, 1, lamport_an_atom).is_none());
+        assert!(net(quote(1_000, 5_000, 0), dto::Kind::Sell, u64::MAX, price(1)).is_none());
+        let (_, costs) = net(quote(1_000, 5_000, u64::MAX), dto::Kind::Sell, 0, price(1)).unwrap();
+        assert_eq!(costs.network_fees, u64::MAX);
     }
 
-    /// The largest buy wins a sell order and the smallest sell a buy order,
-    /// each netted of the rent, and a best quote that cannot absorb the rent
-    /// is no quote.
+    /// The raw-best quote wins whatever network fee it reports, and a quote
+    /// that cannot absorb its cost never wins.
     #[test]
-    fn the_best_quote_is_netted_of_the_rent() {
+    fn the_best_quote_is_the_best_netted_one() {
         let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
-        let quotes = vec![quote(1_000, 5_000), quote(1_000, 5_100), quote(1_000, 10)];
+        let quotes = vec![
+            quote(1_000, 5_000, 0),
+            quote(1_000, 5_100, 200),
+            quote(1_000, 10, 0),
+        ];
         let (sell, _) = best(quotes, dto::Kind::Sell, 50, lamport_an_atom).unwrap();
-        assert_eq!(sell.buy_amount, 5_050);
-        let quotes = vec![quote(1_000, 5_000), quote(900, 5_000)];
+        assert_eq!((sell.buy_amount, sell.network_fee), (5_050, 200));
+        let quotes = vec![quote(1_000, 5_000, 0), quote(900, 5_000, 200)];
         let (buy, _) = best(quotes, dto::Kind::Buy, 50, lamport_an_atom).unwrap();
-        assert_eq!(buy.sell_amount, 950);
-        assert!(best(vec![quote(1_000, 10)], dto::Kind::Sell, 50, lamport_an_atom).is_none());
+        assert_eq!((buy.sell_amount, buy.network_fee), (950, 200));
+        assert!(
+            best(
+                vec![quote(1_000, 10, 0)],
+                dto::Kind::Sell,
+                50,
+                lamport_an_atom
+            )
+            .is_none()
+        );
     }
 
     #[test]
