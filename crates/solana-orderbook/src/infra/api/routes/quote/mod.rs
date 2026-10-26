@@ -128,7 +128,9 @@ pub async fn quote(
         ));
     };
     quoted.count_win(order.kind);
-    check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
+    check_native_payout(state.sponsoring(), &request, quoted.buy_amount)
+        .await
+        .inspect_err(|_| log_competition(&competition))?;
 
     let expiration = now + state.quote_expiry();
     // A failed insert answers without an id instead of failing the quote,
@@ -218,8 +220,12 @@ fn rank(
                 netted.as_ref().map(|(q, _)| Reverse(q.buy_amount)),
             )
         }),
-        dto::Kind::Buy => ranked
-            .sort_by_key(|(_, netted)| (netted.is_none(), netted.as_ref().map(|(q, _)| q.sell_amount))),
+        dto::Kind::Buy => ranked.sort_by_key(|(_, netted)| {
+            (
+                netted.is_none(),
+                netted.as_ref().map(|(q, _)| q.sell_amount),
+            )
+        }),
     }
     ranked
 }
