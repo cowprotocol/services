@@ -118,10 +118,9 @@ pub async fn quote(
     let ranked = rank(quotes, kind, buy_token_ata_costs, price);
     // Before taking the winner, so a competition without one is logged too.
     let competition = competition(&request, kind, amount, buy_token_ata_costs, &ranked);
-    match serde_json::to_string(&competition) {
-        Ok(json) => tracing::debug!(competition = %json, "computed quote"),
-        Err(err) => tracing::warn!(?err, "failed to serialize the quote competition"),
-    }
+    // Strings and integers, so the serialization cannot fail.
+    let json = serde_json::to_string(&competition).unwrap_or_default();
+    tracing::debug!(competition = %json, "computed quote");
     let (quoted, costs) = ranked
         .into_iter()
         .find_map(|(_, netted)| netted)
