@@ -4,7 +4,7 @@ use {
         tests::{
             self,
             cases::{DEFAULT_SOLVER_FEE, EtherExt},
-            setup::{ab_order, ab_pool, ab_solution},
+            setup::{ab_order, ab_pool, ab_solution, builder::Builder},
         },
     },
     alloy::providers::Provider,
@@ -51,6 +51,52 @@ async fn solution_not_available() {
         .await;
 
     test.settle(99).await.err().kind("SolutionNotAvailable");
+}
+
+/// Checks that a settlement goes to the block builders as one bundle for each
+/// block up to the deadline and that an unreachable builder does not fail the
+/// submission.
+#[tokio::test]
+#[ignore]
+async fn submits_bundles_to_builders() {
+    let builder = Builder::bind().await;
+    let test = tests::setup()
+        .name("builder submission")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .builders(vec![builder.url(), "http://non-existant:8545".to_string()])
+        .done()
+        .await;
+    let requests = builder.serve(test.web3());
+
+    let id = test.solve().await.ok().id();
+    test.settle(id)
+        .await
+        .ok()
+        .await
+        .ab_order_executed(&test)
+        .await;
+    // One bundle for each block up to the deadline, 3 blocks away.
+    let blocks = requests.bundle_blocks();
+    assert_eq!(blocks, (blocks[0]..blocks[0] + 3).collect::<Vec<_>>());
+}
+
+/// Checks that the submission fails when no builder accepts the bundles.
+#[tokio::test]
+#[ignore]
+async fn fails_when_no_builder_accepts() {
+    let test = tests::setup()
+        .name("no builder accepts")
+        .pool(ab_pool())
+        .order(ab_order())
+        .solution(ab_solution())
+        .builders(vec!["http://non-existant:8545".to_string()])
+        .done()
+        .await;
+
+    let id = test.solve().await.ok().id();
+    test.settle(id).await.err().kind("FailedToSubmit");
 }
 
 #[tokio::test]

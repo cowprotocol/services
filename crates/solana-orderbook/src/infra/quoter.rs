@@ -6,7 +6,7 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
-    std::time::Duration,
+    std::time::{Duration, Instant},
     url::Url,
 };
 
@@ -51,6 +51,22 @@ pub struct Quote {
     /// The network fee of settling the quoted route, in lamports. Zero when
     /// the driver reports none.
     pub network_fee: u64,
+    /// The driver that answered, as labelled in metrics.
+    pub driver: String,
+}
+
+impl Quote {
+    /// Counts this quote as the winner of its quote competition.
+    pub fn count_win(&self, kind: Kind) {
+        let kind = match kind {
+            Kind::Sell => "sell",
+            Kind::Buy => "buy",
+        };
+        metrics()
+            .competition_price_estimator_queries_won
+            .with_label_values(&[self.driver.as_str(), kind])
+            .inc();
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -89,6 +105,11 @@ struct ResponseBody {
     network_fee: Option<u64>,
 }
 
+#[derive(Deserialize)]
+struct ErrorBody {
+    kind: String,
+}
+
 impl Quoter {
     pub fn new(endpoints: Vec<Url>, timeout: Duration) -> Self {
         Self {
@@ -115,10 +136,39 @@ impl Quoter {
         Ok(quotes)
     }
 
-    /// Quote `order` on one driver. Failures are logged and swallowed: a
-    /// driver rejecting the quote found no route, which is a routine outcome,
-    /// while anything else is that driver misbehaving.
+    /// Quote `order` on one driver. Failures are logged, counted and
+    /// swallowed: a `QuotingFailed` reply means no route, which is a routine
+    /// outcome, while anything else is that driver misbehaving.
     async fn quote_one(&self, endpoint: &Url, order: &Order) -> Option<Quote> {
+        let driver = driver_name(endpoint);
+        let start = Instant::now();
+        let quoted = self.ask(endpoint, order).await;
+        let metrics = metrics();
+        metrics
+            .price_estimation_times
+            .with_label_values(&[driver.as_str()])
+            .observe(start.elapsed().as_secs_f64());
+        let result = match &quoted {
+            Ok(_) => "success",
+            Err(result) => result,
+        };
+        metrics
+            .price_estimates
+            .with_label_values(&[driver.as_str(), result])
+            .inc();
+        let quoted = quoted.ok()?;
+        Some(Quote {
+            sell_amount: quoted.sell_amount,
+            buy_amount: quoted.buy_amount,
+            solver: quoted.solver,
+            network_fee: quoted.network_fee.unwrap_or(0),
+            driver,
+        })
+    }
+
+    /// Ask one driver to quote `order`. An error is the `price_estimates`
+    /// result the failure counts as.
+    async fn ask(&self, endpoint: &Url, order: &Order) -> Result<ResponseBody, &'static str> {
         let url = endpoint.join("quote").expect("valid /quote path");
         let body = RequestBody {
             sell_token: order.sell_token,
@@ -135,27 +185,99 @@ impl Quoter {
             .send()
             .await
             .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote request failed"))
-            .ok()?;
+            .map_err(|_| "estimator_internal_error")?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            if status == reqwest::StatusCode::BAD_REQUEST {
+            let result = failure(status, &body);
+            if result == "no_liquidity" {
                 tracing::debug!(%endpoint, body, "driver found no quote");
             } else {
                 tracing::warn!(%endpoint, %status, body, "driver quote failed");
             }
-            return None;
+            return Err(result);
         }
-        let quoted: ResponseBody = response
+        response
             .json()
             .await
             .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote response malformed"))
-            .ok()?;
-        Some(Quote {
-            sell_amount: quoted.sell_amount,
-            buy_amount: quoted.buy_amount,
-            solver: quoted.solver,
-            network_fee: quoted.network_fee.unwrap_or(0),
-        })
+            .map_err(|_| "estimator_internal_error")
+    }
+}
+
+/// A driver's metric label: the last segment of its URL path, which names the
+/// solver behind it, or the host for a URL without a path.
+fn driver_name(endpoint: &Url) -> String {
+    endpoint
+        .path_segments()
+        .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
+        .or(endpoint.host_str())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// The `price_estimates` result of a driver's error reply: `QuotingFailed`
+/// means no route, 429 rate limiting, anything else a driver fault.
+fn failure(status: reqwest::StatusCode, body: &str) -> &'static str {
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return "rate_limited";
+    }
+    match serde_json::from_str::<ErrorBody>(body) {
+        Ok(error) if error.kind == "QuotingFailed" => "no_liquidity",
+        _ => "estimator_internal_error",
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Driver quotes by driver and result.
+    #[metric(labels("estimator_type", "result"))]
+    price_estimates: prometheus::IntCounterVec,
+    /// Duration of each driver quote request.
+    #[metric(labels("estimator_type"))]
+    price_estimation_times: prometheus::HistogramVec,
+    /// Quotes won by driver and order kind.
+    #[metric(labels("estimator_type", "order_kind"))]
+    competition_price_estimator_queries_won: prometheus::IntCounterVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, reqwest::StatusCode};
+
+    #[test]
+    fn labels_drivers_by_their_last_path_segment() {
+        let name = |url: &str| driver_name(&url.parse().unwrap());
+        assert_eq!(
+            name("http://driver.svc/jupiter-quote-native"),
+            "jupiter-quote-native"
+        );
+        assert_eq!(
+            name("http://quoter.example:15090/SolverName/"),
+            "SolverName"
+        );
+        assert_eq!(name("http://quoter.example:15090"), "quoter.example");
+    }
+
+    #[test]
+    fn counts_only_quoting_failed_as_no_liquidity() {
+        let error = |kind: &str| format!(r#"{{"kind":"{kind}","description":"test"}}"#);
+        assert_eq!(
+            failure(StatusCode::BAD_REQUEST, &error("QuotingFailed")),
+            "no_liquidity"
+        );
+        assert_eq!(
+            failure(StatusCode::BAD_REQUEST, &error("SolverFailed")),
+            "estimator_internal_error"
+        );
+        assert_eq!(failure(StatusCode::TOO_MANY_REQUESTS, ""), "rate_limited");
+        assert_eq!(
+            failure(StatusCode::INTERNAL_SERVER_ERROR, "upstream down"),
+            "estimator_internal_error"
+        );
     }
 }

@@ -17,4 +17,13 @@ ignore = [
   # Pulled in exclusively through the `ark-ff-03` / `ark-ff-04` optional
   # features of `ruint`.
   "RUSTSEC-2024-0388",
+
+  # ----------------------------------------------------------------
+  # Compiled, but no patched version is reachable yet.
+
+  # crypto-bigint 0.5 - Timing variability in constant-time operations
+  # (RUSTSEC-2026-0387). Pulled in through `k256` 0.13, which alloy and
+  # the Solana secp256k1 crates still require. The fix (0.7.6) needs
+  # `k256` 0.14; drop this once they move to it.
+  "RUSTSEC-2026-0387",
 ]

@@ -80,20 +80,13 @@ impl Mempool {
     /// specified block number. If no block number is provided in the config,
     /// uses the alloy's default behavior.
     pub async fn get_nonce(&self, address: eth::Address) -> Result<u64, mempools::Error> {
-        let call = self.transport.provider.get_transaction_count(address);
-        match self.config.nonce_block_number {
-            Some(BlockNumberOrTag::Latest) => call.latest(),
-            Some(BlockNumberOrTag::Earliest) => call.earliest(),
-            Some(BlockNumberOrTag::Finalized) => call.finalized(),
-            Some(BlockNumberOrTag::Number(number)) => call.number(number),
-            Some(BlockNumberOrTag::Pending) => call.pending(),
-            Some(BlockNumberOrTag::Safe) => call.safe(),
-            None => call,
-        }
+        get_nonce(
+            &self.transport.provider,
+            address,
+            self.config.nonce_block_number,
+        )
         .await
-        .map_err(|err| {
-            mempools::Error::Other(anyhow::Error::from(err).context("failed to fetch nonce"))
-        })
+        .map_err(mempools::Error::Other)
     }
 
     /// Submits a transaction to the mempool. Returns optimistically as soon as
@@ -107,20 +100,8 @@ impl Mempool {
         signer: eth::Address,
         nonce: u64,
     ) -> Result<eth::TxId, mempools::Error> {
-        let max_fee_per_gas = gas_price.max_fee_per_gas;
-        let max_priority_fee_per_gas = gas_price.max_priority_fee_per_gas;
         let gas_limit = gas_limit.0.try_into().map_err(anyhow::Error::from)?;
-
-        let tx_request = TransactionRequest::default()
-            .from(signer)
-            .to(tx.to)
-            .nonce(nonce)
-            .max_fee_per_gas(max_fee_per_gas)
-            .max_priority_fee_per_gas(max_priority_fee_per_gas)
-            .gas_limit(gas_limit)
-            .input(tx.input.into())
-            .value(tx.value.0)
-            .access_list(tx.access_list.into());
+        let tx_request = tx_request(tx, gas_price, gas_limit, signer, nonce);
 
         let submission = self
             .transport
@@ -202,6 +183,47 @@ impl Mempool {
             infra::mempool::RevertProtection::Disabled
         )
     }
+}
+
+/// Fetches the transaction count (nonce) of `address` at `block`, or at
+/// alloy's default (`latest`) when `None`.
+pub async fn get_nonce(
+    provider: &impl Provider,
+    address: eth::Address,
+    block: Option<BlockNumberOrTag>,
+) -> anyhow::Result<u64> {
+    let call = provider.get_transaction_count(address);
+    match block {
+        Some(BlockNumberOrTag::Latest) => call.latest(),
+        Some(BlockNumberOrTag::Earliest) => call.earliest(),
+        Some(BlockNumberOrTag::Finalized) => call.finalized(),
+        Some(BlockNumberOrTag::Number(number)) => call.number(number),
+        Some(BlockNumberOrTag::Pending) => call.pending(),
+        Some(BlockNumberOrTag::Safe) => call.safe(),
+        None => call,
+    }
+    .await
+    .context("failed to fetch nonce")
+}
+
+/// Builds the EIP-1559 transaction request for `tx`.
+pub fn tx_request(
+    tx: eth::Tx,
+    gas_price: Eip1559Estimation,
+    gas_limit: u64,
+    signer: eth::Address,
+    nonce: u64,
+) -> TransactionRequest {
+    TransactionRequest::default()
+        .from(signer)
+        .to(tx.to)
+        .nonce(nonce)
+        .max_fee_per_gas(gas_price.max_fee_per_gas)
+        .max_priority_fee_per_gas(gas_price.max_priority_fee_per_gas)
+        .gas_limit(gas_limit)
+        .input(tx.input.into())
+        .value(tx.value.0)
+        .access_list(tx.access_list.into())
 }
 
 /// Logs a hint for known JSON-RPC error codes. Codes in -32768..=-32000 mean

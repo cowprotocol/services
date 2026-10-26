@@ -28,10 +28,11 @@ use {
 /// ones the indexer saw land.
 ///
 /// `outcome` records what the indexer observed on chain, which is why a
-/// landing observed after the deadline overwrites a timeout. The one
-/// exception is `rejected`, written when no transaction went out, leaving
-/// nothing for the indexer to observe: a driver error proves it, or the
-/// executor skipped the winner before dispatch.
+/// landing observed after the deadline overwrites a timeout. The exceptions
+/// leave nothing for the indexer to observe: `rejected` is written when no
+/// transaction went out (a driver error proves it, or the executor skipped
+/// the winner before dispatch), `reverted` when the driver saw the
+/// transaction land and fail.
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
@@ -98,6 +99,18 @@ impl SettlementWindows {
         solution_uid: i64,
     ) -> Result<()> {
         db::reject_settlement_window(&self.pool, auction_id, solver, solution_uid).await
+    }
+
+    /// Close the window of a settlement the driver saw land and fail on
+    /// chain. The transaction cannot land again, so its orders need no hold.
+    pub async fn close_reverted(
+        &self,
+        auction_id: i64,
+        solver: Pubkey,
+        solution_uid: i64,
+    ) -> Result<()> {
+        let slot = to_db_integer(*self.tip.borrow());
+        db::revert_settlement_window(&self.pool, auction_id, solver, solution_uid, slot).await
     }
 
     /// Record a winner skipped before dispatch. Its window closes as rejected

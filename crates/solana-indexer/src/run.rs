@@ -86,6 +86,7 @@ async fn run(config: Config, start_slot: Option<u64>) {
         &config.rpc.endpoint,
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
+        "base",
     );
 
     let (tx, rx) = mpsc::channel(INGEST_TO_DECODER_CAPACITY);

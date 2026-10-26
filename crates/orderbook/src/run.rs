@@ -189,6 +189,8 @@ pub async fn run(config: Configuration) {
     let db_config = crate::database::Config {
         max_pool_size: config.database.max_connections.get(),
         statement_timeout: config.database.statement_timeout,
+        connection_release_timeout: config.database.connection_release_timeout,
+        client_connection_check_interval: config.database.client_connection_check_interval,
     };
     let postgres_write = Postgres::try_new(config.database.write_url.as_str(), db_config.clone())
         .expect("failed to create database");
@@ -473,6 +475,7 @@ pub async fn run(config: Configuration) {
         app_data_validator,
         postgres_write.clone(),
         ipfs,
+        config.app_data_cache_max_bytes,
     ));
 
     let orderbook = Arc::new(Orderbook::new(

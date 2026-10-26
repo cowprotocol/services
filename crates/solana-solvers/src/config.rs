@@ -27,6 +27,12 @@ pub struct Config<D> {
     #[serde(with = "humantime_serde", default = "default_max_back_off")]
     pub max_back_off: Duration,
 
+    /// The most orders one batched solution fills: per side and directed
+    /// pair, orders are quoted most permissive first in batches of up to
+    /// this many, each its own solution. 1 quotes every order on its own.
+    #[serde(default = "default_max_batch_size")]
+    pub max_batch_size: NonZeroUsize,
+
     pub dex: D,
 }
 
@@ -63,6 +69,10 @@ fn default_max_back_off() -> Duration {
     Duration::from_secs(8)
 }
 
+fn default_max_batch_size() -> NonZeroUsize {
+    NonZeroUsize::new(1).unwrap()
+}
+
 /// The `[dex]` table for the Jupiter backend.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -89,16 +99,34 @@ pub struct JupiterConfig {
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct BitgetConfig {
-    /// Base URL of the Bitget swap API. `swap` is joined onto it, so it needs
-    /// the trailing slash.
+    /// Base URL of the Bitget swap API, or a proxy route to it.
+    #[serde(deserialize_with = "serde_ext::deserialize_url_with_trailing_slash")]
     pub endpoint: Url,
 
     pub api_key: String,
 
     pub api_secret: String,
 
-    /// Slippage tolerance in basis points. 50 = 0.5%.
+    /// Partner code sent in the `Partner-Code` header.
+    #[serde(default = "default_partner_code")]
+    pub partner_code: String,
+
+    /// Slippage tolerance in basis points. We bid Bitget's minimum output, so
+    /// this is how far below its expected output the bids land.
     pub slippage_bps: u16,
+
+    /// Caps the accounts Bitget's route may use, leaving room for the
+    /// settlement around it in the 64 a transaction can lock.
+    #[serde(default = "default_max_accounts")]
+    pub max_accounts: u16,
+}
+
+fn default_max_accounts() -> u16 {
+    48
+}
+
+fn default_partner_code() -> String {
+    "cowswap".to_string()
 }
 
 /// Load and parse the TOML config file.
@@ -126,6 +154,7 @@ mod tests {
         assert!(config.dex.api_key.is_some());
         assert!(!config.dex.enable_buy_orders);
         assert_eq!(config.concurrent_requests.get(), 8);
+        assert_eq!(config.max_batch_size.get(), 4);
         let strategy = config.rate_limiting();
         assert_eq!(strategy.back_off_growth_factor, 2.0);
         assert_eq!(strategy.min_back_off, Duration::from_secs(1));
@@ -141,6 +170,7 @@ slippage-bps = 50
 "#;
         let config: Config<JupiterConfig> = toml::from_str(toml).unwrap();
         assert_eq!(config.concurrent_requests.get(), 8);
+        assert_eq!(config.max_batch_size.get(), 1);
         let strategy = config.rate_limiting();
         assert_eq!(strategy.back_off_growth_factor, 2.0);
         assert_eq!(strategy.min_back_off, Duration::from_secs(1));
@@ -166,7 +196,9 @@ bogus = true
             config.dex.endpoint.as_str(),
             "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
         );
-        assert_eq!(config.dex.slippage_bps, 50);
+        assert_eq!(config.dex.slippage_bps, 20);
+        assert_eq!(config.dex.max_accounts, 48);
+        assert_eq!(config.dex.partner_code, "cowswap");
     }
 
     #[test]

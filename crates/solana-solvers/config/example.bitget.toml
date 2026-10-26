@@ -10,10 +10,15 @@ min-back-off = "1s"
 max-back-off = "8s"
 
 [dex]
-# Bitget swap API base URL, or a proxy route to it. Keep the trailing slash.
+# Bitget swap API base URL, or a proxy route to it.
 endpoint = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
 # Credentials from the Bitget developer portal. Requests are signed with the secret.
 api-key = "your-bitget-api-key"
 api-secret = "your-bitget-api-secret"
-# Slippage tolerance in basis points. 50 = 0.5%.
-slippage-bps = 50
+# Partner code sent in the Partner-Code header (defaults to "cowswap").
+# partner-code = "cowswap"
+# Slippage tolerance in basis points. Bids use Bitget's minimum output, so this
+# is how far below its expected output they land. 20 = 0.2%.
+slippage-bps = 20
+# Most accounts Bitget's route may use, leaving room for the settlement.
+max-accounts = 48

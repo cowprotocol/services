@@ -106,6 +106,7 @@ pub async fn run(args: Args) {
                 &rpc.endpoint,
                 rpc.request_timeout,
                 CommitmentConfig::confirmed(),
+                "sponsoring",
             ),
             max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
             mints: solana_token::MintVerdicts::default(),
@@ -119,6 +120,7 @@ pub async fn run(args: Args) {
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
         sponsoring,
+        app_data_size_limit: config.app_data_size_limit,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

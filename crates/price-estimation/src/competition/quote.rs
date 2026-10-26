@@ -321,10 +321,11 @@ impl RankingContext {
             v if v.is_sign_negative() || v.is_nan() => U256::ZERO,
             // Previous case already covered negative infinity
             v if v.is_infinite() => U256::MAX,
-            // Note on truncation: previously we used primitive_types::U256::from_f64_lossy which
-            // truncated the floating point, while alloy is slightly more faithful to the original
-            // value and rounds to closest integer: [0, 0.5) => 0, [0.5, 1] => 1
-            // Source: https://github.com/paritytech/parity-common/blob/2b887751f2bd3aafe7d6b33197f5a4a35ae61d34/primitive-types/src/fp_conversion.rs#L4-L13
+            // Note on truncation: previously we used
+            // primitive_types::U256::from_f64_lossy which truncated the
+            // floating point, while alloy is slightly more faithful to the
+            // original value and rounds to closest integer: [0, 0.5) => 0,
+            // [0.5, 1] => 1 Source: https://github.com/paritytech/parity-common/blob/2b887751f2bd3aafe7d6b33197f5a4a35ae61d34/primitive-types/src/fp_conversion.rs#L4-L13
             v => U256::saturating_from(v.trunc()),
         }
     }
@@ -367,9 +368,9 @@ fn emit_quote_event(
     let event = PriceEstimateEvent {
         query: query_fields(query),
         from: query.verification.from.to_string(),
-        // even though as_millis returns u128 timeout and elapsed are not expected to even surpass
-        // JSON's 53bit limit as u53::MAX would roughly be half a milion years, furthermore,
-        // the cast truncates values to u64
+        // even though as_millis returns u128 timeout and elapsed are not
+        // expected to even surpass JSON's 53bit limit as u53::MAX would roughly
+        // be half a milion years, furthermore, the cast truncates values to u64
         timeout: query.timeout.as_millis() as u64,
         elapsed: elapsed.as_millis() as u64,
         estimator: estimator_name.to_owned(),

@@ -49,6 +49,9 @@ pub struct Config {
     pub rpc: Option<Rpc>,
     /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
     pub sponsoring: Option<Sponsoring>,
+    /// Most bytes an app data document may have.
+    #[serde(default = "default_app_data_size_limit")]
+    pub app_data_size_limit: usize,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -154,6 +157,11 @@ fn default_rpc_timeout() -> Duration {
     Duration::from_secs(5)
 }
 
+/// The EVM orderbook's default.
+fn default_app_data_size_limit() -> usize {
+    8192
+}
+
 /// Appends the trailing slash `Url::join` needs to every URL in the list.
 fn deserialize_urls_with_trailing_slash<'de, D>(deserializer: D) -> Result<Vec<Url>, D::Error>
 where
@@ -212,6 +220,7 @@ mod tests {
         assert_eq!(config.quoting.min_validity, Duration::from_secs(60));
         assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
+        assert_eq!(config.app_data_size_limit, 8192);
     }
 
     /// Routes resolve relative to the driver and autopilot URLs, so a base

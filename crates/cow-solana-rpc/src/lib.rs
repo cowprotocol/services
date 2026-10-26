@@ -7,22 +7,35 @@ use {
     futures::{TryFutureExt, future},
     itertools::Itertools,
     serde::Deserialize,
-    solana_rpc_client::nonblocking::rpc_client::RpcClient,
-    solana_rpc_client_api::{client_error::ErrorKind, request::MAX_MULTIPLE_ACCOUNTS},
+    solana_rpc_client::{
+        http_sender::HttpSender,
+        nonblocking::rpc_client::RpcClient,
+        rpc_client::RpcClientConfig,
+        rpc_sender::{RpcSender, RpcTransportStats},
+    },
+    solana_rpc_client_api::{
+        config::{RpcBlockConfig, RpcSendTransactionConfig},
+        request::{MAX_MULTIPLE_ACCOUNTS, RpcError},
+        response::RpcBlockhash,
+    },
     solana_sdk::{
         account::Account,
         hash::Hash,
         pubkey::Pubkey,
         signature::Signature,
-        transaction::VersionedTransaction,
+        transaction::{TransactionError, VersionedTransaction},
     },
-    std::{collections::HashMap, time::Duration},
+    solana_transaction_status_client_types::TransactionDetails,
+    std::{
+        collections::HashMap,
+        time::{Duration, Instant},
+    },
     url::Url,
 };
 pub use {
     solana_commitment_config::CommitmentConfig,
     solana_rpc_client_api::{
-        client_error::Error,
+        client_error::{Error, ErrorKind},
         request::RpcRequest,
         response::{
             Response,
@@ -39,6 +52,10 @@ pub const SIMULATE_BUNDLE: RpcRequest = RpcRequest::Custom {
     method: "simulateBundle",
 };
 
+/// The newest transaction version requested back from the node, which fails
+/// a request that would encode a newer one. The driver settles with v1.
+const MAX_SUPPORTED_TRANSACTION_VERSION: u8 = 1;
+
 pub struct SolanaRPC {
     inner: RpcClient,
 }
@@ -49,17 +66,20 @@ impl SolanaRPC {
     pub const SIGNATURES_PAGE: usize = 1000;
 
     /// Creates a client for the given HTTP URL, request timeout and
-    /// commitment level.
+    /// commitment level. `component` labels its requests in metrics.
     pub fn new_with_timeout_and_commitment(
         url: &Url,
         request_timeout: Duration,
         commitment: CommitmentConfig,
+        component: &str,
     ) -> Self {
         Self {
-            inner: RpcClient::new_with_timeout_and_commitment(
-                url.to_string(),
-                request_timeout,
-                commitment,
+            inner: RpcClient::new_sender(
+                InstrumentedSender {
+                    inner: HttpSender::new_with_timeout(url, request_timeout),
+                    component: component.to_owned(),
+                },
+                RpcClientConfig::with_commitment(commitment),
             ),
         }
     }
@@ -142,20 +162,50 @@ impl SolanaRPC {
         Ok(BlockHeight(self.inner.get_block_height().await?))
     }
 
-    /// The latest confirmed blockhash and the last block height at
-    /// which it stays usable.
+    /// The latest confirmed blockhash, the last block height at which it
+    /// stays usable, and the slot of its block.
     ///
     /// The method always fetches the blockhash at `confirmed`,
     /// regardless of the client's configured commitment level.
     pub async fn latest_confirmed_blockhash(&self) -> Result<LatestBlockhash, Error> {
-        let (blockhash, last_valid_block_height) = self
+        let response: Response<RpcBlockhash> = self
             .inner
-            .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+            .send(
+                RpcRequest::GetLatestBlockhash,
+                serde_json::json!([CommitmentConfig::confirmed()]),
+            )
             .await?;
         Ok(LatestBlockhash {
-            blockhash,
-            last_valid_block_height: BlockHeight(last_valid_block_height),
+            blockhash: parse_hash(&response.value.blockhash)?,
+            last_valid_block_height: BlockHeight(response.value.last_valid_block_height),
+            slot: response.context.slot,
         })
+    }
+
+    /// The slots of the confirmed blocks from `start` to `end`, both
+    /// included, in ascending order.
+    pub async fn blocks(&self, start: u64, end: u64) -> Result<Vec<u64>, Error> {
+        self.inner
+            .get_blocks_with_commitment(start, Some(end), CommitmentConfig::confirmed())
+            .await
+    }
+
+    /// The hash and height of the confirmed block at `slot`.
+    pub async fn block(&self, slot: u64) -> Result<(Hash, BlockHeight), Error> {
+        let config = RpcBlockConfig {
+            transaction_details: Some(TransactionDetails::None),
+            rewards: Some(false),
+            commitment: Some(CommitmentConfig::confirmed()),
+            // Agave checks no version without transaction details, but a
+            // provider that does would fail every block holding a newer one.
+            max_supported_transaction_version: Some(MAX_SUPPORTED_TRANSACTION_VERSION),
+            ..Default::default()
+        };
+        let block = self.inner.get_block_with_config(slot, config).await?;
+        let height = block
+            .block_height
+            .ok_or_else(|| ErrorKind::from(RpcError::ParseError("block height".to_string())))?;
+        Ok((parse_hash(&block.blockhash)?, BlockHeight(height)))
     }
 
     /// Whether each signature exists on the node's chain. The lookup falls
@@ -233,7 +283,7 @@ impl SolanaRPC {
                         solana_transaction_status_client_types::UiTransactionEncoding::Base64,
                     ),
                     commitment: Some(CommitmentConfig::confirmed()),
-                    max_supported_transaction_version: Some(0),
+                    max_supported_transaction_version: Some(MAX_SUPPORTED_TRANSACTION_VERSION),
                 },
             )
             .await
@@ -274,7 +324,7 @@ impl SolanaRPC {
         let encoded = transactions
             .iter()
             .map(|transaction| {
-                bincode::serialize(transaction)
+                wincode::serialize(transaction)
                     .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes))
             })
             .collect::<Result<Vec<_>, _>>()
@@ -315,17 +365,36 @@ impl SolanaRPC {
             .await
     }
 
-    /// Send a versioned transaction and wait until it reaches the client's
-    /// configured commitment level.
-    ///
-    /// Each individual RPC request is capped at the client's request timeout,
-    /// but the confirm loop has no overall timeout: it polls until the
-    /// transaction confirms or its blockhash expires.
-    pub async fn send_and_confirm_transaction(
+    /// Send a versioned transaction once, after the preflight simulation at
+    /// the client's commitment level. The node keeps no copy to rebroadcast,
+    /// so the caller resends it. A rejected preflight is an
+    /// [`ErrorKind::RpcError`].
+    pub async fn send_transaction_once(
         &self,
         transaction: &VersionedTransaction,
     ) -> Result<Signature, Error> {
-        self.inner.send_and_confirm_transaction(transaction).await
+        self.inner
+            .send_transaction_with_config(
+                transaction,
+                RpcSendTransactionConfig {
+                    preflight_commitment: Some(self.inner.commitment().commitment),
+                    // A node drops every resend of a transaction it holds to
+                    // rebroadcast.
+                    max_retries: Some(0),
+                    ..RpcSendTransactionConfig::default()
+                },
+            )
+            .await
+    }
+
+    /// The outcome of a transaction at the client's commitment level, `None`
+    /// until it lands. An error means the transaction landed and failed, so it
+    /// cannot land again.
+    pub async fn signature_status(
+        &self,
+        signature: &Signature,
+    ) -> Result<Option<Result<(), TransactionError>>, Error> {
+        self.inner.get_signature_status(signature).await
     }
 
     /// Send a versioned transaction without waiting for it to land.
@@ -334,6 +403,25 @@ impl SolanaRPC {
         transaction: &VersionedTransaction,
     ) -> Result<Signature, Error> {
         self.inner.send_transaction(transaction).await
+    }
+
+    /// Send a transaction again, without the preflight simulation and
+    /// without the node's own rebroadcasts. A copy of a transaction the
+    /// cluster already processed is dropped.
+    pub async fn resend_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Signature, Error> {
+        self.inner
+            .send_transaction_with_config(
+                transaction,
+                RpcSendTransactionConfig {
+                    skip_preflight: true,
+                    max_retries: Some(0),
+                    ..RpcSendTransactionConfig::default()
+                },
+            )
+            .await
     }
 }
 
@@ -379,6 +467,86 @@ impl From<BlockHeight> for u64 {
     fn from(height: BlockHeight) -> Self {
         height.0
     }
+}
+
+/// An HTTP sender that records each request in metrics.
+struct InstrumentedSender {
+    inner: HttpSender,
+    component: String,
+}
+
+#[async_trait::async_trait]
+impl RpcSender for InstrumentedSender {
+    async fn send(
+        &self,
+        request: RpcRequest,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, Error> {
+        let _request = RequestMetrics::start(&self.component, request.as_str());
+        self.inner.send(request, params).await
+    }
+
+    fn get_transport_stats(&self) -> RpcTransportStats {
+        self.inner.get_transport_stats()
+    }
+
+    fn url(&self) -> String {
+        self.inner.url()
+    }
+}
+
+/// A request in flight. Dropping it records the request as complete, so a
+/// cancelled request counts too.
+struct RequestMetrics<'a> {
+    labels: [&'a str; 2],
+    start: Instant,
+}
+
+impl<'a> RequestMetrics<'a> {
+    fn start(component: &'a str, method: &'a str) -> Self {
+        let labels = [component, method];
+        metrics().requests_inflight.with_label_values(&labels).inc();
+        Self {
+            labels,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for RequestMetrics<'_> {
+    fn drop(&mut self) {
+        let metrics = metrics();
+        metrics
+            .requests_inflight
+            .with_label_values(&self.labels)
+            .dec();
+        metrics
+            .requests_complete
+            .with_label_values(&self.labels)
+            .inc();
+        metrics
+            .requests_duration_seconds
+            .with_label_values(&self.labels)
+            .observe(self.start.elapsed().as_secs_f64());
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "rpc")]
+struct Metrics {
+    /// Requests in flight, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_inflight: prometheus::IntGaugeVec,
+    /// Completed requests, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_complete: prometheus::IntCounterVec,
+    /// Request durations, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_duration_seconds: prometheus::HistogramVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
 #[cfg(feature = "test-util")]
@@ -445,8 +613,8 @@ mod mock {
     }
 }
 
-/// The latest confirmed blockhash and the last block height at which
-/// it stays usable.
+/// The latest confirmed blockhash, the last block height at which it
+/// stays usable, and the slot of its block.
 #[derive(Debug)]
 pub struct LatestBlockhash {
     /// The blockhash to sign transactions with.
@@ -454,4 +622,36 @@ pub struct LatestBlockhash {
     /// The last block height at which transactions signed with this
     /// blockhash as `recent_blockhash` remain valid.
     pub last_valid_block_height: BlockHeight,
+    /// The slot of the block the blockhash belongs to.
+    pub slot: u64,
+}
+
+fn parse_hash(hash: &str) -> Result<Hash, Error> {
+    hash.parse()
+        .map_err(|_| ErrorKind::from(RpcError::ParseError("Hash".to_string())).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dropped_request_counts_as_complete() {
+        let labels = ["test", "getSlot"];
+        let metrics = metrics();
+        let request = RequestMetrics::start("test", "getSlot");
+        assert_eq!(
+            metrics.requests_inflight.with_label_values(&labels).get(),
+            1
+        );
+        drop(request);
+        assert_eq!(
+            metrics.requests_inflight.with_label_values(&labels).get(),
+            0
+        );
+        assert_eq!(
+            metrics.requests_complete.with_label_values(&labels).get(),
+            1
+        );
+    }
 }

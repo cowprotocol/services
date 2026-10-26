@@ -365,7 +365,7 @@ impl Solution {
         &self,
         eth: &Ethereum,
         internalization: settlement::Internalization,
-    ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, Error> {
+    ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, blockchain::Error> {
         let settlement_contract = *eth.contracts().settlement().address();
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {
@@ -497,7 +497,8 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
-            // Gas fee overrides are per-solution; no meaningful way to merge them.
+            // Gas fee overrides are per-solution; no meaningful way to merge
+            // them.
             gas_fee_override: None,
             flashloans,
             wrappers: self.wrappers.clone(),

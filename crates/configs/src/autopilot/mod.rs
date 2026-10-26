@@ -19,7 +19,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::{anyhow, ensure},
     serde::Deserialize,
     std::{net::SocketAddr, path::Path, time::Duration},
@@ -263,7 +263,7 @@ impl Configuration {
         }
     }
 
-    pub fn test(name: &str, solver_address: alloy::primitives::Address) -> Self {
+    pub fn test(name: &str, solver_address: alloy_primitives::Address) -> Self {
         use crate::test_util::TestDefault;
 
         Self {
@@ -331,7 +331,7 @@ mod tests {
             },
             native_price_estimators::{ExternalSolver, NativePriceEstimator},
         },
-        alloy::primitives::address,
+        alloy_primitives::address,
         std::time::Duration,
     };
 

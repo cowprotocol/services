@@ -75,7 +75,7 @@ impl Arbitrator {
         // Compute reference scores while we still have ws_ranking
         let reference_scores: HashMap<eth::Address, Score> = self
             .0
-            .compute_reference_scores(&ws_ranking)
+            .compute_reference_scores(&ws_ranking, &context)
             .into_iter()
             .map(|(solver, score)| (solver, Score(eth::Ether(score))))
             .collect();
@@ -288,7 +288,7 @@ mod tests {
                 },
                 competition::{Bid, Solution, TradedOrder, Unscored},
             },
-            infra::Driver,
+            infra::{Driver, SupportedExtensions},
         },
         alloy::primitives::{Address, U160, U256, address},
         configs::autopilot::solver::Account,
@@ -1256,7 +1256,10 @@ mod tests {
             url::Url::parse("http://localhost").unwrap(),
             solver_address.to_string(),
             Account::Address(solver_address),
-            false,
+            SupportedExtensions {
+                auction_deltas: false,
+                compression: false,
+            },
         )
         .await
         .unwrap();

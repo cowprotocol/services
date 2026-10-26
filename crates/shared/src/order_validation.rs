@@ -738,8 +738,9 @@ impl OrderValidator {
             // passes we consider the token transferable. If all transfers fail
             // we return the last error.
             match simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await {
-                // A zero/low balance is acceptable as long as the owner has already set a
-                // real on-chain approval that covers the order (spam protection).
+                // A zero/low balance is acceptable as long as the owner has
+                // already set a real on-chain approval that covers the order
+                // (spam protection).
                 Err(ValidationError::InsufficientBalance) => {
                     let data = order.data();
                     let approval = self
@@ -1107,8 +1108,8 @@ impl OrderValidating for OrderValidator {
                 }
                 Some(quote)
             }
-            // If there is not enough liquidity, it's still possible to place this order (as
-            // an implicit out of market order)
+            // If there is not enough liquidity, it's still possible to place
+            // this order (as an implicit out of market order)
             Err(ValidationError::PriceForQuote(PriceEstimationError::NoLiquidity)) => {
                 tracing::debug!("placing order without quote");
                 None
@@ -1225,7 +1226,8 @@ pub async fn get_or_create_quote(
             tracing::debug!(quote_id =? quote.id, "found quote for order creation");
             quote
         }
-        // We couldn't find a quote, so try computing a fresh quote to use instead.
+        // We couldn't find a quote, so try computing a fresh quote to use
+        // instead.
         Err(err) => {
             tracing::debug!(?err, "failed to find quote for order creation");
             let parameters = QuoteParameters {

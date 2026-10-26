@@ -1,6 +1,6 @@
 use {
     crate::deserialize_env::{deserialize_optional_string_from_env, deserialize_string_from_env},
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     serde::Deserialize,
     std::{fmt::Debug, num::NonZeroUsize},
     url::Url,
@@ -72,7 +72,7 @@ impl Debug for HermodConfig {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address};
+    use {super::*, alloy_primitives::address};
 
     #[test]
     fn deserialize_defaults() {
