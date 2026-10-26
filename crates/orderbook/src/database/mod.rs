@@ -36,12 +36,13 @@ pub struct Config {
     pub statement_timeout: Duration,
     /// Connections returned to the pool that still have pending work after
     /// this long get closed instead of reused, which makes the server abort
-    /// that work.
+    /// that work (in conjunction with `client_connection_check_interval`).
     pub connection_release_timeout: Duration,
-    /// Maps directly to Postgres' `client_connection_check_interval`
-    /// parameter. Without these checks the server only notices a closed
-    /// connection when it sends the results, so closing a connection would not
-    /// stop its query.
+    /// By default Postgres doesn't stop a running query when the caller
+    /// disconnects. This option configures Postgres'
+    /// `client_connection_check_interval` which continuously checks if the
+    /// caller is still alive and aborts the running query when the caller
+    /// disconnects.
     pub client_connection_check_interval: Duration,
 }
 
@@ -106,6 +107,10 @@ impl Postgres {
     }
 }
 
+/// Applies connnect options that should be applied to ALL connections:
+/// - `client_connection_check_interval`: interval in which the postgres DB
+///   checks if the caller is still alive. When the caller no longer responds to
+///   those health pings the DB will abort the currently running query.
 fn connect_options(uri: &str, config: &Config) -> Result<PgConnectOptions> {
     Ok(uri.parse::<PgConnectOptions>()?.options([(
         "client_connection_check_interval",
@@ -119,13 +124,19 @@ fn pool_options(config: &Config) -> PgPoolOptions {
         .max_connections(config.max_pool_size)
         .after_release(move |conn, _meta| {
             Box::pin(async move {
-                // Dropping a query's future (e.g. because the HTTP request got
-                // cancelled) does not stop the query on the server and sqlx
-                // waits for it to finish before reusing the connection. That
-                // blocks a pool slot for as long as the query runs. The server
-                // answers a ping only after all pending work is done, so a
-                // timeout means the connection is still busy. Closing it frees
-                // the slot and lets the server abort the query.
+                // Normally a when a connection's RAII guard struct gets dropped
+                // `sqlx` still awaits the connection's result before returning
+                // it back to the connection pool. At that point it's impossible
+                // for anyone to even see the result of the query so the DB is
+                // kept busy AND we have 1 fewer connection in our pool until
+                // the query finishes.
+                // `after_release()` runs BEFORE all this happens and can signal
+                // whether we want to immediately terminate the connection
+                // (return false) or do the usual work of awaiting the result
+                // (return true).
+                // We use the same mechanism as `sqlx` to determine whether the
+                // connection is busy (`conn.ping().await`) but we apply a
+                // timout to catch long running queries early.
                 match tokio::time::timeout(release_timeout, conn.ping()).await {
                     Ok(result) => result.map(|()| true),
                     Err(_) => {
