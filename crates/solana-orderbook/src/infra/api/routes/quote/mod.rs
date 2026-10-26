@@ -13,7 +13,7 @@ use {
     app_data::OrderCreationAppData,
     axum::{Json, http::StatusCode},
     chain_types::{ChainTypes, solana::Solana},
-    chrono::Utc,
+    chrono::{DateTime, Utc},
     cow_settlement_interface::{
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
         token_program::TokenProgram,
@@ -115,10 +115,23 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
+    let expiration = now + state.quote_expiry();
     let ranked = rank(quotes, kind, buy_token_ata_costs, price);
     // Built before the winner is taken, so a competition without one is on the
-    // record too, and logged once the insert names the quote an order can cite.
-    let mut competition = competition(&request, kind, amount, buy_token_ata_costs, price, &ranked);
+    // record too. Logged after the insert, which is what gives it an id.
+    let mut competition = competition(
+        &request,
+        kind,
+        amount,
+        CompetitionMetadata {
+            quote_id: None,
+            sell_token_price: sell_price,
+            buy_token_price: buy_price,
+            buy_token_ata_costs,
+            expiration,
+        },
+        &ranked,
+    );
     let Some((quoted, costs)) = ranked.into_iter().find_map(|(_, netted)| netted) else {
         log_competition(&competition);
         return Err(error::reply(
@@ -128,11 +141,12 @@ pub async fn quote(
         ));
     };
     quoted.count_win(order.kind);
+    // The last exit before the insert, and the competition is worth having for
+    // a quote this rejects.
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount)
         .await
         .inspect_err(|_| log_competition(&competition))?;
 
-    let expiration = now + state.quote_expiry();
     // A failed insert answers without an id instead of failing the quote,
     // since the fees are not yet implemented and stored quote are not mandatory
     // at the moment.
@@ -266,13 +280,17 @@ struct CompetitionMetadata {
     /// The quote the winner was stored as, which is what an order names when
     /// it is placed. `None` when nothing won, or when the insert failed.
     quote_id: Option<i64>,
-    /// Native price of the token the cost comes out of: the buy token of a
-    /// sell order, the sell token of a buy order.
+    /// The cost comes out of the buy token of a sell order and the sell token
+    /// of a buy order, and converts at that token's price.
     #[serde_as(as = "DisplayFromStr")]
-    native_price: u64,
+    sell_token_price: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    buy_token_price: u64,
     /// Rent of the buy token account.
     #[serde_as(as = "DisplayFromStr")]
     buy_token_ata_costs: u64,
+    /// When the stored quote stops matching an order placed with it.
+    expiration: DateTime<Utc>,
 }
 
 /// One driver's answer: `sell_amount` and `buy_amount` are after the execution
@@ -303,8 +321,7 @@ fn competition(
     request: &dto::Request,
     kind: dto::Kind,
     amount: u64,
-    rent: u64,
-    price: NonZero<u64>,
+    metadata: CompetitionMetadata,
     ranked: &[(quoter::Quote, Option<(quoter::Quote, Costs)>)],
 ) -> Competition {
     Competition {
@@ -314,11 +331,7 @@ fn competition(
             amount,
             kind,
         },
-        metadata: CompetitionMetadata {
-            quote_id: None,
-            native_price: price.get(),
-            buy_token_ata_costs: rent,
-        },
+        metadata,
         quotes: ranked
             .iter()
             .map(|(quote, netted)| CompetitionQuote {
@@ -877,9 +890,7 @@ mod tests {
         );
     }
 
-    /// Ranking by a stable sort takes the first of two equal quotes, where
-    /// the `max_by_key` it replaced took the last. Pinned because which
-    /// driver wins is observable.
+    /// Which driver wins is observable, so the tie-break is pinned.
     #[test]
     fn a_tie_goes_to_the_first_driver() {
         let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
@@ -913,22 +924,29 @@ mod tests {
             price,
         );
         let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
-        let json = serde_json::to_value(competition(
-            &request,
-            dto::Kind::Sell,
-            1_000,
-            100,
-            price,
-            &ranked,
-        ))
-        .unwrap();
+        let expiration = Utc::now();
+        let metadata = CompetitionMetadata {
+            quote_id: None,
+            sell_token_price: 7,
+            buy_token_price: Solana::NATIVE_PRICE_DENOMINATOR,
+            buy_token_ata_costs: 100,
+            expiration,
+        };
+        let json =
+            serde_json::to_value(competition(&request, dto::Kind::Sell, 1_000, metadata, &ranked))
+                .unwrap();
         assert_eq!(json["request"]["kind"], "sell");
         assert_eq!(json["request"]["amount"], "1000");
         assert_eq!(json["request"]["sellToken"], request.sell_token.to_string());
         assert_eq!(json["metadata"]["buyTokenAtaCosts"], "100");
+        assert_eq!(json["metadata"]["sellTokenPrice"], "7");
         assert_eq!(
-            json["metadata"]["nativePrice"],
+            json["metadata"]["buyTokenPrice"],
             Solana::NATIVE_PRICE_DENOMINATOR.to_string()
+        );
+        assert_eq!(
+            json["metadata"]["expiration"],
+            serde_json::to_value(expiration).unwrap()
         );
         // Filled in once the winner is stored.
         assert!(json["metadata"]["quoteId"].is_null());
