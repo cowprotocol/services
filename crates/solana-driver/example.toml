@@ -24,6 +24,9 @@ min-compute-unit-price = 10000
 # The most a transaction pays in priority fee (price times compute unit
 # limit), in lamports. A transaction over it is refused as over budget.
 max-priority-fee-lamports = 1000000
+# The compute unit limit priced when a transaction's usage is not measured
+# (quotes, and solutions before their simulation), 1..=1400000.
+default-compute-unit-limit = 400000
 # The share of the simulated compute units added to the limit a settlement
 # declares, in percent. The priority fee is paid on the limit, used or not,
 # while running out of units fails the settlement.
@@ -68,8 +71,3 @@ signer = { keypair = "/path/to/keypair.json" }
 # than the payouts. A larger shortfall reverts the settlement. Omit to revert
 # on any shortfall.
 # max-native-shortfall-bps = 40
-# The compute units a solution is priced at when neither the engine's
-# cuEstimate nor the solve-time simulation measured them, so a quote's network
-# fee and the cut at solve time, 1..=1400000. Omit for the 1400000 ceiling.
-# The settlement's declared limit is unaffected.
-# default-compute-unit-estimate = 600000

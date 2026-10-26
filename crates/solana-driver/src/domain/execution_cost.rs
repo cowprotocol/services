@@ -10,9 +10,9 @@
 //!
 //! The cut is taken at two points of solve time. Before any route is known,
 //! the limit leg sent to the engine is moved by the cut priced at the
-//! solver's default compute units, before the solver fee tightens it. Once
+//! policy's default compute units, before the solver fee tightens it. Once
 //! the settlement is simulated, [`ExecutionCost::apply`] cuts every fill at
-//! the compute units the settlement will declare, or else the solver's
+//! the compute units the settlement will declare, or else the policy's
 //! default. A solution whose trades cannot absorb the cut within the order's
 //! signed limit is dropped whole, like one that cannot absorb the fee.
 

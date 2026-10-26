@@ -2,7 +2,7 @@
 
 use {
     crate::domain::{
-        priority_fee::{ComputeUnitEstimate, MAX_RECENT_SLOTS, PriorityFeePolicy},
+        priority_fee::{MAX_COMPUTE_UNIT_LIMIT, MAX_RECENT_SLOTS, PriorityFeePolicy},
         settlement::MaxNativeShortfall,
         solver_fee::SolverFee,
     },
@@ -46,6 +46,10 @@ pub async fn load(path: &Path) -> Config {
     assert!(
         (1..=MAX_RECENT_SLOTS).contains(&priority_fee.recent_slots),
         "priority-fee: recent-slots is outside 1..={MAX_RECENT_SLOTS}"
+    );
+    assert!(
+        (1..=MAX_COMPUTE_UNIT_LIMIT).contains(&priority_fee.default_compute_unit_limit),
+        "priority-fee: default-compute-unit-limit is outside 1..={MAX_COMPUTE_UNIT_LIMIT}"
     );
     config
 }
@@ -169,13 +173,6 @@ pub struct Solver {
     /// Absent means none.
     #[serde(default)]
     pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
-    /// The compute units a solution is priced at when neither the engine's
-    /// `cuEstimate` nor the solve-time simulation measured them, so a quote's
-    /// network fee and the cut at solve time, `1..=1_400_000`. Absent means
-    /// the runtime's 1.4M ceiling. The settlement's declared limit is
-    /// unaffected.
-    #[serde(default)]
-    pub default_compute_unit_estimate: ComputeUnitEstimate,
 }
 
 /// Who prices a settlement's execution costs, its network fee and the rent
@@ -307,32 +304,6 @@ mod tests {
             solver-fee-bps = 65536
         "#;
         assert!(toml::de::from_str::<Solver>(solver_config).is_err());
-    }
-
-    #[test]
-    fn default_compute_unit_estimate_parses_within_the_ceiling() {
-        let solver = |field: &str| {
-            toml::de::from_str::<Solver>(&format!(
-                r#"
-                name = "baseline"
-                endpoint = "http://localhost:8001"
-                signer = {{ keypair = "/path/to/keypair.json" }}
-                {field}
-                "#
-            ))
-        };
-        assert_eq!(
-            u32::from(solver("").unwrap().default_compute_unit_estimate),
-            1_400_000
-        );
-        assert_eq!(
-            solver("default-compute-unit-estimate = 600000")
-                .unwrap()
-                .default_compute_unit_estimate,
-            ComputeUnitEstimate::try_from(600_000).unwrap()
-        );
-        assert!(solver("default-compute-unit-estimate = 0").is_err());
-        assert!(solver("default-compute-unit-estimate = 1400001").is_err());
     }
 
     #[test]

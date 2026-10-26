@@ -9,7 +9,6 @@ use {
         domain::{
             self,
             execution_cost::Charge,
-            priority_fee::ComputeUnitEstimate,
             settlement::MaxNativeShortfall,
             solver_fee::SolverFee,
         },
@@ -37,7 +36,6 @@ pub struct Solver {
     fee_handler: FeeHandler,
     solver_fee: Option<SolverFee>,
     max_native_shortfall: Option<MaxNativeShortfall>,
-    default_compute_unit_estimate: ComputeUnitEstimate,
 }
 
 impl Solver {
@@ -77,12 +75,6 @@ impl Solver {
         self.max_native_shortfall
     }
 
-    /// The compute units a solution is priced at when neither the engine nor
-    /// a simulation measured them.
-    pub fn default_compute_unit_estimate(&self) -> u32 {
-        u32::from(self.default_compute_unit_estimate)
-    }
-
     /// Build a solver client from its configuration, loading the signer the
     /// config names: a local keypair file or an AWS KMS key.
     pub async fn new(config: &config::Solver) -> Result<Self, Error> {
@@ -104,7 +96,6 @@ impl Solver {
             fee_handler: config.fee_handler,
             solver_fee: config.solver_fee_bps,
             max_native_shortfall: config.max_native_shortfall_bps,
-            default_compute_unit_estimate: config.default_compute_unit_estimate,
         })
     }
 
@@ -213,7 +204,6 @@ mod tests {
             fee_handler: FeeHandler::default(),
             solver_fee_bps: None,
             max_native_shortfall_bps: None,
-            default_compute_unit_estimate: ComputeUnitEstimate::default(),
         })
         .await
         .expect("solver construction should succeed");

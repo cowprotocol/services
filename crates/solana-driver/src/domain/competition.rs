@@ -103,7 +103,7 @@ impl Competition {
     /// Solve the auction, drop the solutions whose settlement provably fails
     /// (over the byte limit or failing in simulation), cut the execution costs
     /// from the rest when the solver's fee handler is the driver, at the
-    /// compute units their settlement declares or else the solver's default,
+    /// compute units their settlement declares or else the policy's default,
     /// and cache them for a later `settle`.
     pub async fn solve(
         &self,
@@ -343,7 +343,7 @@ impl Competition {
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
     /// driver, the limits sent to the engine are moved by the execution cost
-    /// at the solver's default compute units and every fill is tightened by
+    /// at the policy's default compute units and every fill is tightened by
     /// the solver fee; the execution costs themselves are not cut here.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
@@ -416,7 +416,7 @@ impl Competition {
 
     /// The network fee the limit legs sent to the engine are moved by, before
     /// any route is known: the signature fee plus the priority fee at the
-    /// solver's default compute unit estimate over the fees recently paid
+    /// policy's default compute unit limit over the fees recently paid
     /// cluster-wide, or the budget when that is over it. Cluster-wide fees
     /// floor what any route's accounts pay, so a fill priced at the same
     /// units, see [`Self::network_fee_at`], pays at least this much, and a
@@ -427,18 +427,15 @@ impl Competition {
             .recent_prioritization_fees(&[])
             .await
             .map_err(Error::Rpc)?;
-        Ok(self
-            .priority_fee
-            .estimate(&fees, self.solver.default_compute_unit_estimate())
-            .map_or_else(
-                |_| self.priority_fee.max_network_fee(),
-                |estimate| estimate.network_fee(),
-            ))
+        Ok(self.priority_fee.estimate(&fees, None).map_or_else(
+            |_| self.priority_fee.max_network_fee(),
+            |estimate| estimate.network_fee(),
+        ))
     }
 
     /// The network fee of settling `solution`, in lamports: the signature fee
     /// plus the priority fee over the accounts its interactions write, at its
-    /// compute unit estimate, or else the solver's default.
+    /// compute unit estimate, or else the policy's default.
     pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
         let fees = self.prioritization_fees(solution).await?;
         Ok(self.network_fee_at(&fees, solution)?)
@@ -464,12 +461,7 @@ impl Competition {
         fees: &[RpcPrioritizationFee],
         solution: &Solution,
     ) -> Result<u64, priority_fee::OverBudget> {
-        let estimate = self.priority_fee.estimate(
-            fees,
-            solution
-                .cu_estimate
-                .unwrap_or(self.solver.default_compute_unit_estimate()),
-        )?;
+        let estimate = self.priority_fee.estimate(fees, solution.cu_estimate)?;
         let network_fee = estimate.network_fee();
         tracing::debug!(
             solution_id = solution.id,
@@ -751,7 +743,9 @@ impl Competition {
             .recent_prioritization_fees(&writable)
             .await
             .map_err(Error::Rpc)?;
-        let estimate = self.priority_fee.estimate(&fees, compute_unit_limit)?;
+        let estimate = self
+            .priority_fee
+            .estimate(&fees, Some(compute_unit_limit))?;
         metrics()
             .compute_unit_price
             .observe(estimate.compute_unit_price as f64);

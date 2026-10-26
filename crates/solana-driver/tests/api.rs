@@ -16,10 +16,7 @@ use {
     },
     cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
     solana_driver::{
-        domain::{
-            priority_fee::{ComputeUnitEstimate, PriorityFeePolicy},
-            solver_fee::SolverFee,
-        },
+        domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
         infra::{
             api::Api,
             blockchain::{Solana, associated_token_address},
@@ -108,13 +105,15 @@ async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
     Arc::new(blockchain)
 }
 
-/// Pays whatever the mock RPC reports and never refuses.
+/// Pays whatever the mock RPC reports, at the runtime ceiling for an
+/// undeclared limit, and never refuses.
 fn priority_fee() -> PriorityFeePolicy {
     PriorityFeePolicy {
         percentile: 50,
         recent_slots: 150,
         min_compute_unit_price: 0,
         max_priority_fee_lamports: u64::MAX,
+        default_compute_unit_limit: 1_400_000,
         compute_unit_limit_headroom_percent: 10,
     }
 }
@@ -173,20 +172,19 @@ async fn spawn_recording_solver_engine(
 /// so the test can register a matching settlement signer. Its engine prices
 /// the execution costs in, so fills come back as the engine reports them.
 async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
-    solver_with(addr, FeeHandler::Solver, 0, None).await
+    solver_with(addr, FeeHandler::Solver, 0).await
 }
 
 /// A solver client whose fills the driver cuts, by `solver_fee_bps` and the
 /// execution costs.
 async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
-    solver_with(addr, FeeHandler::Driver, solver_fee_bps, None).await
+    solver_with(addr, FeeHandler::Driver, solver_fee_bps).await
 }
 
 async fn solver_with(
     addr: SocketAddr,
     fee_handler: FeeHandler,
     solver_fee_bps: u16,
-    compute_unit_estimate: Option<u32>,
 ) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
@@ -198,10 +196,6 @@ async fn solver_with(
         fee_handler,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
         max_native_shortfall_bps: None,
-        default_compute_unit_estimate: compute_unit_estimate
-            .map_or_else(ComputeUnitEstimate::default, |units| {
-                units.try_into().unwrap()
-            }),
     })
     .await
     .expect("solver construction should succeed");
@@ -225,7 +219,6 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         fee_handler: FeeHandler::Solver,
         solver_fee_bps: None,
         max_native_shortfall_bps: None,
-        default_compute_unit_estimate: ComputeUnitEstimate::default(),
     })
     .await
     .expect("solver construction should succeed")
@@ -968,14 +961,23 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
 }
 
 /// The mock RPC answers no bundle simulation, so the units come from the
-/// solver's 200_000 default: 2_000 lamports of priority fee instead of the
+/// policy's 200_000 default: 2_000 lamports of priority fee instead of the
 /// ceiling's 14_000, so the rent and fee priced at 1000 atoms for the ceiling
 /// come to 995. The limit sent to the engine moves by the same 995.
 #[tokio::test]
-async fn solve_cuts_at_the_solvers_default_compute_units_without_a_simulation() {
+async fn solve_cuts_at_the_policy_default_compute_units_without_a_simulation() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Driver, 0, Some(200_000)).await;
-    let addr = spawn_server(vec![solver]).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
+    let api = Api {
+        priority_fee: PriorityFeePolicy {
+            default_compute_unit_limit: 200_000,
+            ..priority_fee()
+        },
+        ..api_with(vec![solver], Mocks::new()).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
     assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2005");
@@ -985,9 +987,9 @@ async fn solve_cuts_at_the_solvers_default_compute_units_without_a_simulation() 
 }
 
 /// The simulation reports 100_000 units, so the settlement declares 110_000
-/// and the cut is priced at them: 1_100 lamports of priority fee, 994 atoms,
-/// with no default configured. The limit sent to the engine still moves by
-/// the ceiling's 1000, since no route exists yet.
+/// and the cut is priced at them: 1_100 lamports of priority fee, 994 atoms.
+/// The limit sent to the engine still moves by the 1000 of the policy's
+/// default, the ceiling here, since no route exists yet.
 #[tokio::test]
 async fn solve_cuts_at_the_simulated_compute_units() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
@@ -1213,18 +1215,27 @@ async fn quote_prices_the_network_fee_at_the_engines_compute_estimate() {
     assert_eq!(json["networkFee"], "7000");
 }
 
-/// Without an estimate from the engine the fee follows the solver's
-/// configured 200_000 units: 2_000 lamports plus the 5_000 signature fee.
+/// Without an estimate from the engine the fee follows the policy's 200_000
+/// unit default: 2_000 lamports plus the 5_000 signature fee.
 #[tokio::test]
-async fn quote_without_an_engine_estimate_is_priced_at_the_solvers_compute_units() {
+async fn quote_without_an_engine_estimate_is_priced_at_the_policy_default() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
-    let (solver, _) = solver_with(engine, FeeHandler::Solver, 0, Some(200_000)).await;
+    let (solver, _) = solver_with_keypair(engine).await;
     let mut mocks = Mocks::new();
     mocks.insert(
         RpcRequest::GetRecentPrioritizationFees,
         serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
     );
-    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+    let api = Api {
+        priority_fee: PriorityFeePolicy {
+            default_compute_unit_limit: 200_000,
+            ..priority_fee()
+        },
+        ..api_with(vec![solver], mocks).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/quote"))
