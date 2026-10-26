@@ -164,7 +164,6 @@ impl Competition {
                 ])
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
-            // Without this the verdicts below cannot be found by order.
             let orders = solution
                 .trades
                 .iter()
@@ -241,7 +240,6 @@ impl Competition {
     ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
-        // Kept as strings because `orders` is moved into the settlement below.
         let order_uids = orders
             .iter()
             .map(|order| order.uid.to_string())
