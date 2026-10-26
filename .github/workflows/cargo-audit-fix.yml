@@ -1,10 +1,11 @@
 name: cargo audit fix
 
-# Audits main every day and opens one pull request that bumps the vulnerable
-# crates, or ignores the advisories that no semver-compatible bump patches.
+# Audits main every four hours and opens one pull request that bumps the
+# vulnerable crates, or ignores the advisories that no semver-compatible bump
+# patches.
 on:
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "23 */4 * * *"
   workflow_dispatch:
 
 permissions:
