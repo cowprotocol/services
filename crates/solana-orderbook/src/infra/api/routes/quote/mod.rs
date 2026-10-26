@@ -845,6 +845,31 @@ mod tests {
         );
     }
 
+    /// Ranking by a stable sort takes the first of two equal quotes, where
+    /// the `max_by_key` it replaced took the last. Pinned because which
+    /// driver wins is observable.
+    #[test]
+    fn a_tie_goes_to_the_first_driver() {
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
+        let named = |driver: &str| quoter::Quote {
+            driver: driver.to_owned(),
+            ..quote(1_000, 5_000, 0)
+        };
+        let winner = |kind| {
+            rank(
+                vec![named("first"), named("second")],
+                kind,
+                50,
+                lamport_an_atom,
+            )
+            .swap_remove(0)
+            .0
+            .driver
+        };
+        assert_eq!(winner(dto::Kind::Sell), "first");
+        assert_eq!(winner(dto::Kind::Buy), "first");
+    }
+
     /// Base58 pubkeys and amounts as strings, like the API.
     #[test]
     fn the_competition_serializes_for_the_log_line() {
