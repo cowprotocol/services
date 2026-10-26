@@ -743,10 +743,10 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     assert_eq!(json["kind"], "PriorityFeeTooHigh");
 }
 
-/// Same fee and budget as above, but the `/solve` simulation reports the
-/// settlement's compute units, so the fee is priced at those plus the 10%
-/// headroom, 110_000, not at the runtime's default, fits the budget, and the
-/// settle reaches the send.
+/// Same fee as above, but the `/solve` simulation reports the settlement's
+/// compute units, so the fee is priced at those plus the 10% headroom,
+/// 110_000 units: 1_100 lamports, exactly the budget, so the settle reaches
+/// the send. A unit more, or the old doubling, is over it.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
@@ -772,7 +772,7 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     );
     let api = Api {
         priority_fee: PriorityFeePolicy {
-            max_priority_fee_lamports: 3_999,
+            max_priority_fee_lamports: 1_100,
             ..priority_fee()
         },
         ..api_with(vec![solver], mocks).await
