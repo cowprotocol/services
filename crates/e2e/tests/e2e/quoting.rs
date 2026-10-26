@@ -121,7 +121,8 @@ async fn test(web3: Web3) {
             configs::orderbook::Configuration {
                 volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
-                    // Set a far future effective timestamp to ensure the fee is not applied
+                    // Set a far future effective timestamp to ensure the fee is
+                    // not applied
                     effective_from_timestamp: Some("2099-01-01T10:00:00Z".parse().unwrap()),
                 }),
                 ..configs::orderbook::Configuration::test_default()
@@ -898,7 +899,8 @@ async fn volume_fee(web3: Web3) {
                 },
                 volume_fee: Some(configs::orderbook::VolumeFeeConfig {
                     factor: Some(FeeFactor::new(0.0002)),
-                    // Set a past effective timestamp to ensure the fee is applied
+                    // Set a past effective timestamp to ensure the fee is
+                    // applied
                     effective_from_timestamp: Some("2000-01-01T10:00:00Z".parse().unwrap()),
                 }),
                 ..configs::orderbook::Configuration::test_default()

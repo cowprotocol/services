@@ -105,13 +105,15 @@ async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
     Arc::new(blockchain)
 }
 
-/// Pays whatever the mock RPC reports and never refuses.
+/// Pays whatever the mock RPC reports, at the runtime ceiling for an
+/// undeclared limit, and never refuses.
 fn priority_fee() -> PriorityFeePolicy {
     PriorityFeePolicy {
         percentile: 50,
         recent_slots: 150,
         min_compute_unit_price: 0,
         max_priority_fee_lamports: u64::MAX,
+        default_compute_unit_limit: 1_400_000,
     }
 }
 
@@ -592,14 +594,21 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
             "interactions": interactions,
         })
     };
-    // 1,233 zero bytes of instruction data alone exceed the 1,232-byte limit.
-    let oversized = serde_json::json!([{
-        "programId": pubkey(0x99).to_string(),
-        "accounts": [],
-        "instructionData": "AAAA".repeat(411),
-    }]);
+    let interaction = |zero_bytes: usize| {
+        serde_json::json!([{
+            "programId": pubkey(0x99).to_string(),
+            "accounts": [],
+            "instructionData": "AAAA".repeat(zero_bytes / 3),
+        }])
+    };
+    // The v1 settlement takes 1,233 bytes of instruction data, past v0's
+    // 1,232-byte limit, but nothing fits 4,097 bytes of it.
     let engine = spawn_mock_solver_engine(serde_json::json!({
-        "solutions": [solution(1, serde_json::json!([])), solution(2, oversized)],
+        "solutions": [
+            solution(1, serde_json::json!([])),
+            solution(2, interaction(4_098)),
+            solution(3, interaction(1_233)),
+        ],
     }))
     .await;
     let (solver, _) = solver_with_keypair(engine).await;
@@ -612,7 +621,7 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert_eq!(response_ids(&response.json().await.unwrap()), [1]);
+    assert_eq!(response_ids(&response.json().await.unwrap()), [1, 3]);
 }
 
 #[tokio::test]
@@ -692,8 +701,8 @@ async fn settle_rejects_a_passed_submission_deadline() {
 }
 
 /// The RPC reports a 10_000 micro-lamport fee and the engine sends no compute
-/// unit estimate, so the fee is computed at the 1.4M unit ceiling: 14_000
-/// lamports, one over the budget.
+/// unit estimate, so the fee is computed at the runtime's default for the two
+/// settlement instructions, 400k units: 4_000 lamports, one over the budget.
 #[tokio::test]
 async fn settle_refuses_a_priority_fee_over_budget() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
@@ -705,7 +714,7 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     );
     let api = Api {
         priority_fee: PriorityFeePolicy {
-            max_priority_fee_lamports: 13_999,
+            max_priority_fee_lamports: 3_999,
             ..priority_fee()
         },
         ..api_with(vec![solver], mocks).await
@@ -735,7 +744,7 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 
 /// Same fee and budget as above, but the `/solve` simulation reports the
 /// settlement's compute units, so the fee is priced at twice those units, not
-/// at the 1.4M ceiling, fits the budget, and the settle reaches the send.
+/// at the runtime's default, fits the budget, and the settle reaches the send.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
@@ -761,7 +770,7 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     );
     let api = Api {
         priority_fee: PriorityFeePolicy {
-            max_priority_fee_lamports: 13_999,
+            max_priority_fee_lamports: 3_999,
             ..priority_fee()
         },
         ..api_with(vec![solver], mocks).await

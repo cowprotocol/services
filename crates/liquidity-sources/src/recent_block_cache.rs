@@ -84,9 +84,10 @@ impl Block {
     fn schedules_update(self) -> bool {
         matches!(
             self,
-            // If a block number was specified the caller actually cared about the most accurate
-            // data for these keys. In that case we want to be nice and remember the key for future
-            // background updates of the cached liquidity.
+            // If a block number was specified the caller actually cared about
+            // the most accurate data for these keys. In that case we want to be
+            // nice and remember the key for future background updates of the
+            // cached liquidity.
             Block::Number(_)
                 | Block::Recent {
                     schedule_update: true

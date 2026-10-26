@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "autopilot-svm"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 anyhow = { workspace = true }
@@ -36,7 +37,7 @@ prometheus-metric-storage = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
-serde-ext = { workspace = true }
+serde-ext = { workspace = true, features = ["solana"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }

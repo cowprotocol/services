@@ -1,10 +1,12 @@
 mod account;
+mod app_data;
 mod create_order;
 mod healthz;
 mod mint;
 mod order;
 mod quote;
 mod ready;
+mod solver_competition;
 mod status;
 mod trades;
 mod version;
@@ -12,11 +14,18 @@ mod version;
 use solana_sdk::{account::Account, rent::Rent};
 pub use {
     account::account_orders,
+    app_data::{get_app_data, put_app_data, put_app_data_by_hash},
     create_order::create_order,
     healthz::healthz,
     order::order,
     quote::quote,
     ready::ready,
+    solver_competition::{
+        solver_competition_by_id,
+        solver_competition_by_id_unfiltered,
+        solver_competition_by_tx_hash,
+        solver_competition_latest,
+    },
     status::order_status,
     trades::trades,
     version::version,

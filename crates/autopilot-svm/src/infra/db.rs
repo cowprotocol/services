@@ -6,7 +6,6 @@ use {
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
     database::{byte_array::ByteArray, solana::OrderEventLabel},
-    solana_sdk::clock::MAX_PROCESSING_AGE,
     sqlx::{PgExecutor, Postgres, QueryBuilder},
 };
 
@@ -46,6 +45,7 @@ pub async fn open_orders(
     now_unix: i64,
     block_height: Option<i64>,
 ) -> Result<Vec<OrderRow>> {
+    let _timer = query_timer("open_orders");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
@@ -94,6 +94,7 @@ pub async fn unrecorded_dead_creations(
     now_unix: i64,
     block_height: i64,
 ) -> Result<Vec<ByteArray<32>>> {
+    let _timer = query_timer("unrecorded_dead_creations");
     const QUERY: &str = r#"
 SELECT o.uid
 FROM solana.orders o
@@ -120,6 +121,7 @@ ORDER BY o.uid
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
+    let _timer = query_timer("last_indexed_slot");
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
         .fetch_optional(ex)
@@ -153,6 +155,7 @@ pub async fn pending_creations(
     ex: impl PgExecutor<'_>,
     uids: &[Vec<u8>],
 ) -> Result<Vec<StoredCreation>> {
+    let _timer = query_timer("pending_creations");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.order_pda, o.presigned_transaction AS transaction
 FROM solana.orders o
@@ -172,6 +175,7 @@ ORDER BY o.creation_timestamp, o.uid
 /// Lower a pending sponsored creation's stored deadline to `height`, a height
 /// its blockhash is known dead at. Never raises it.
 pub async fn expire_creation(ex: impl PgExecutor<'_>, uid: &[u8], height: i64) -> Result<()> {
+    let _timer = query_timer("expire_creation");
     const QUERY: &str = r#"
 UPDATE solana.orders
 SET last_valid_block_height = LEAST(last_valid_block_height, $2)
@@ -195,6 +199,7 @@ pub async fn open_settlement_window(
     start_slot: i64,
     deadline_slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("open_settlement_window");
     const QUERY: &str = r#"
 INSERT INTO solana.settlement_executions
     (auction_id, solver, solution_uid, start_timestamp, start_slot, deadline_slot)
@@ -222,6 +227,7 @@ pub async fn reject_settlement_window(
     solver: Pubkey,
     solution_uid: i64,
 ) -> Result<()> {
+    let _timer = query_timer("reject_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'rejected', end_timestamp = now(), end_slot = start_slot
@@ -237,6 +243,35 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3 AND outcome IS NULL
     Ok(())
 }
 
+/// Close a window whose settlement landed and failed on chain, as the driver
+/// reported: the transaction cannot land again. A timed-out window closes
+/// too, since the deadline sweep can run before the driver answers. The end
+/// slot is the tip at the report.
+pub async fn revert_settlement_window(
+    ex: impl PgExecutor<'_>,
+    auction_id: i64,
+    solver: Pubkey,
+    solution_uid: i64,
+    slot: i64,
+) -> Result<()> {
+    let _timer = query_timer("revert_settlement_window");
+    const QUERY: &str = r#"
+UPDATE solana.settlement_executions
+SET outcome = 'reverted', end_timestamp = now(), end_slot = $4
+WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
+  AND (outcome IS NULL OR outcome = 'timeout')
+    "#;
+    sqlx::query(QUERY)
+        .bind(auction_id)
+        .bind(solver.0)
+        .bind(solution_uid)
+        .bind(slot)
+        .execute(ex)
+        .await
+        .context("revert settlement execution window")?;
+    Ok(())
+}
+
 /// Record a winner skipped before dispatch as a window already closed as
 /// rejected. No transaction went out, so its orders are not in flight.
 pub async fn skip_settlement_window(
@@ -247,6 +282,7 @@ pub async fn skip_settlement_window(
     slot: i64,
     deadline_slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("skip_settlement_window");
     const QUERY: &str = r#"
 INSERT INTO solana.settlement_executions
     (auction_id, solver, solution_uid, start_timestamp, end_timestamp, start_slot, end_slot,
@@ -269,32 +305,45 @@ ON CONFLICT (auction_id, solver, solution_uid) DO NOTHING
 /// Close the auction's windows against the settlements the indexer recorded.
 /// A settlement carries no solution uid, so a window is matched through its
 /// solution's trade executions: the solver's settlement that traded one of
-/// them is the one that executed it. A window already closed as timed out
-/// upgrades to landed: the settlement executed, just late, and lateness stays
-/// visible as `end_slot` past `deadline_slot`.
+/// them is the one that executed it. The matched settlement row takes the
+/// window's solution uid. A window already closed as timed out upgrades to
+/// landed: the settlement executed, just late, and lateness stays visible as
+/// `end_slot` past `deadline_slot`.
 pub async fn close_landed_windows(
     ex: impl PgExecutor<'_>,
     auction_id: i64,
 ) -> Result<Vec<LandedWindow>> {
+    let _timer = query_timer("close_landed_windows");
     const QUERY: &str = r#"
-UPDATE solana.settlement_executions e
-SET outcome = 'landed', end_timestamp = now(), end_slot = s.slot,
-    submitted_signature = s.tx_signature
-FROM solana.settlements s
-WHERE e.auction_id = $1
-  AND s.auction_id = e.auction_id
-  AND s.solver = e.solver
-  AND (e.outcome IS NULL OR e.outcome = 'timeout')
-  AND EXISTS (
-      SELECT 1
-      FROM solana.proposed_trade_executions pte
-      JOIN solana.trades t
-        ON t.tx_signature = s.tx_signature
-       AND t.instruction_index = s.instruction_index
-       AND t.order_uid = pte.order_uid
-      WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
-  )
-RETURNING e.solver, e.end_slot, e.submitted_signature
+WITH landed AS (
+    UPDATE solana.settlement_executions e
+    SET outcome = 'landed', end_timestamp = now(), end_slot = s.slot,
+        submitted_signature = s.tx_signature
+    FROM solana.settlements s
+    WHERE e.auction_id = $1
+      AND s.auction_id = e.auction_id
+      AND s.solver = e.solver
+      AND (e.outcome IS NULL OR e.outcome = 'timeout')
+      AND EXISTS (
+          SELECT 1
+          FROM solana.proposed_trade_executions pte
+          JOIN solana.trades t
+            ON t.tx_signature = s.tx_signature
+           AND t.instruction_index = s.instruction_index
+           AND t.order_uid = pte.order_uid
+          WHERE pte.auction_id = e.auction_id AND pte.solution_uid = e.solution_uid
+      )
+    RETURNING e.solver, e.solution_uid, e.end_slot, e.submitted_signature,
+              s.instruction_index
+),
+attributed AS (
+    UPDATE solana.settlements s
+    SET solution_uid = landed.solution_uid
+    FROM landed
+    WHERE s.tx_signature = landed.submitted_signature
+      AND s.instruction_index = landed.instruction_index
+)
+SELECT solver, end_slot, submitted_signature FROM landed
     "#;
     sqlx::query_as(QUERY)
         .bind(auction_id)
@@ -312,6 +361,7 @@ pub async fn expire_settlement_window(
     solution_uid: i64,
     slot: i64,
 ) -> Result<bool> {
+    let _timer = query_timer("expire_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'timeout', end_timestamp = now(), end_slot = $4
@@ -332,6 +382,7 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
 /// Close every open window whose deadline is at or before the slot as timed
 /// out, returning their auction ids.
 pub async fn expire_settlement_windows(ex: impl PgExecutor<'_>, slot: i64) -> Result<Vec<i64>> {
+    let _timer = query_timer("expire_settlement_windows");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'timeout', end_timestamp = now(), end_slot = $1
@@ -347,30 +398,33 @@ RETURNING auction_id
 
 /// Auction ids of open windows, the seed re-read set.
 pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>> {
+    let _timer = query_timer("open_window_auction_ids");
     sqlx::query_scalar("SELECT auction_id FROM solana.settlement_executions WHERE outcome IS NULL")
         .fetch_all(ex)
         .await
         .context("read open settlement execution windows")
 }
 
-/// Orders inside a winning solution whose settlement transaction may still
-/// land: a blockhash lifetime past the deadline slot has not run out, no
-/// settlement of the auction traded the order yet, and no `rejected` window
-/// says the solution never went out. A timed-out window keeps the hold,
-/// its transaction may land until the blockhash expires. Landing is checked
-/// per order through the settlement's trades: `settlements.solution_uid` is
-/// unattributed, and one solver may win several solutions of one auction.
+/// Orders inside a winning solution whose settlement may still land by its
+/// deadline: the indexer has not processed the deadline slot, no settlement
+/// of the auction traded the order, and no `rejected` or `reverted` window
+/// says the solution never went out or already failed on chain.
+/// `processed_slot` is the slot the indexer has processed up to. Landing is
+/// checked per order through the settlement's trades:
+/// `settlements.solution_uid` is written only when the window closes, and
+/// one solver may win several solutions of one auction.
 pub async fn in_flight_orders(
     ex: impl PgExecutor<'_>,
-    tip_slot: i64,
+    processed_slot: i64,
 ) -> Result<Vec<ByteArray<32>>> {
+    let _timer = query_timer("in_flight_orders");
     const QUERY: &str = r#"
 SELECT DISTINCT pte.order_uid
 FROM solana.competition_auctions ca
 JOIN solana.proposed_solutions ps ON ps.auction_id = ca.id AND ps.is_winner
 JOIN solana.proposed_trade_executions pte
   ON pte.auction_id = ca.id AND pte.solution_uid = ps.uid
-WHERE ca.deadline_slot >= $1
+WHERE ca.deadline_slot > $1
   AND NOT EXISTS (
       SELECT 1
       FROM solana.settlements s
@@ -380,14 +434,12 @@ WHERE ca.deadline_slot >= $1
   )
   AND NOT EXISTS (
       SELECT 1 FROM solana.settlement_executions se
-      WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid AND se.outcome = 'rejected'
+      WHERE se.auction_id = ca.id AND se.solution_uid = ps.uid
+        AND se.outcome IN ('rejected', 'reverted')
   )
     "#;
-    // The oldest deadline whose transaction can still land at the tip.
-    let lifetime = i64::try_from(MAX_PROCESSING_AGE).expect("blockhash lifetime fits i64");
-    let landable_deadline = tip_slot.saturating_sub(lifetime);
     sqlx::query_scalar(QUERY)
-        .bind(landable_deadline)
+        .bind(processed_slot)
         .fetch_all(ex)
         .await
         .context("read in-flight orders")
@@ -411,6 +463,7 @@ pub async fn replace_current_auction(
     tip_slot: i64,
     json: &serde_json::Value,
 ) -> Result<i64> {
+    let _timer = query_timer("replace_current_auction");
     let mut tx = pool.begin().await.context("begin auction replacement")?;
     sqlx::query("DELETE FROM solana.auctions")
         .execute(&mut *tx)
@@ -470,6 +523,7 @@ pub struct Competition {
 /// Persist a competition: the auction snapshot and every proposed solution
 /// with its executions, in one transaction.
 pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition) -> Result<()> {
+    let _timer = query_timer("persist_competition");
     let mut tx = pool.begin().await.context("begin competition persist")?;
     sqlx::query(
         "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, order_uids, \
@@ -603,6 +657,29 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
         .with_context(|| format!("amount {value} does not fit u64"))
 }
 
+/// Starts timing a query, recorded under `query` when the timer drops.
+pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
+    Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .database_queries
+        .with_label_values(&[query])
+        .start_timer()
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Query durations, by query.
+    #[metric(
+        name = "autopilot_database_queries",
+        labels("type"),
+        buckets(
+            0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0,
+            60.0, 70.0, 80.0, 90.0
+        )
+    )]
+    database_queries: prometheus::HistogramVec,
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -610,6 +687,7 @@ mod tests {
             in_flight_orders,
             last_indexed_slot,
             open_orders,
+            revert_settlement_window,
             skip_settlement_window,
             unrecorded_dead_creations,
         },
@@ -862,12 +940,13 @@ VALUES ($1, now(), $2)
         assert!(dead(&mut tx, 151).await.is_empty());
     }
 
-    /// Held: an order of a winning solution through its deadline slot plus
-    /// the blockhash lifetime, a timed-out window included. Released: after
-    /// that, once a settlement of the auction trades the order, or once the
-    /// driver rejects its solution before sending. A solver's second winning
-    /// solution keeps its hold when the first one lands. Orders of
-    /// non-winning solutions are never held.
+    /// Held: an order of a winning solution until the indexer has processed
+    /// its deadline slot, a timed-out window included. Released: after that,
+    /// once a settlement of the auction trades the order, or once the driver
+    /// rejects its solution before sending or reports it reverted, a report
+    /// after the deadline sweep included. A solver's second winning solution
+    /// keeps its hold when the first one lands. Orders of non-winning
+    /// solutions are never held.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_in_flight_orders_follow_the_winning_settlement() {
@@ -919,8 +998,8 @@ VALUES ($1, now(), $2)
             .await
             .unwrap();
         }
-        async fn held(tx: &mut PgTransaction<'_>, tip: i64) -> Vec<u8> {
-            let mut held: Vec<u8> = in_flight_orders(&mut **tx, tip)
+        async fn held(tx: &mut PgTransaction<'_>, processed: i64) -> Vec<u8> {
+            let mut held: Vec<u8> = in_flight_orders(&mut **tx, processed)
                 .await
                 .unwrap()
                 .iter()
@@ -930,9 +1009,8 @@ VALUES ($1, now(), $2)
             held
         }
 
-        assert_eq!(held(&mut tx, 100).await, vec![1, 3]);
-        assert_eq!(held(&mut tx, 250).await, vec![1, 3]);
-        assert_eq!(held(&mut tx, 251).await, Vec::<u8>::new());
+        assert_eq!(held(&mut tx, 99).await, vec![1, 3]);
+        assert_eq!(held(&mut tx, 100).await, Vec::<u8>::new());
 
         sqlx::query(
             "INSERT INTO solana.settlement_executions (auction_id, solver, solution_uid, \
@@ -963,7 +1041,17 @@ VALUES ($1, now(), $2)
         .execute(&mut *tx)
         .await
         .unwrap();
-        assert_eq!(held(&mut tx, 150).await, vec![1, 3]);
+        assert_eq!(held(&mut tx, 99).await, vec![1, 3]);
+        revert_settlement_window(&mut *tx, 77, Pubkey(winner.0), 0, 101)
+            .await
+            .unwrap();
+        assert_eq!(held(&mut tx, 99).await, vec![3]);
+        sqlx::query(
+            "UPDATE solana.settlement_executions SET outcome = 'timeout' WHERE auction_id = 77",
+        )
+        .execute(&mut *tx)
+        .await
+        .unwrap();
 
         // The solver's settlement trades order 1 only: order 3, its other
         // winning solution, stays held until its own trade lands.

@@ -1056,8 +1056,8 @@ mod tests {
             Arc::new(web3.provider.clone()),
             contract,
             storage_nonempty,
-            // Same event start as for the two previous event handlers. The test checks that this
-            // is disregarded.
+            // Same event start as for the two previous event handlers. The test
+            // checks that this is disregarded.
             event_start,
         )
         .await

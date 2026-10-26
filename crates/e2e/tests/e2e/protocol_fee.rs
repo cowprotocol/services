@@ -388,7 +388,8 @@ async fn combined_protocol_fees(web3: Web3) {
     let partner_fee_executed_fee_in_buy_token =
         fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     assert!(
-        // see `max-partner-fee` in the `[fee-policies]` autopilot config, which is 0.02
+        // see `max-partner-fee` in the `[fee-policies]` autopilot config, which
+        // is 0.02
         partner_fee_executed_fee_in_buy_token
             >= (partner_fee_quote.quote.buy_amount * U256::from(2) / U256::from(100))
     );
@@ -693,8 +694,8 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         kind: ConfigFeePolicyKind::Volume {
             factor: 0.1.try_into().unwrap(),
         },
-        // The order is in-market, but specifying `Any` order class to make sure it is properly
-        // applied
+        // The order is in-market, but specifying `Any` order class to make sure
+        // it is properly applied
         order_class: ConfigFeePolicyOrderClass::Any,
     };
     let outdated_fee_policy = ConfigFeePolicy {
@@ -785,8 +786,8 @@ async fn volume_fee_buy_order_test(web3: Web3) {
                     policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
                     upcoming_policies: UpcomingFeePolicies {
                         policies: vec![fee_policy.clone(), fee_policy],
-                        // Set the effective time to 10 minutes ago to make sure the new policy
-                        // is applied
+                        // Set the effective time to 10 minutes ago to make sure
+                        // the new policy is applied
                         effective_from_timestamp: Some(
                             chrono::Utc::now() - chrono::Duration::minutes(10),
                         ),
@@ -855,8 +856,8 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         kind: ConfigFeePolicyKind::Volume {
             factor: 0.1.try_into().unwrap(),
         },
-        // The order is in-market, but specifying `Any` order class to make sure it is properly
-        // applied
+        // The order is in-market, but specifying `Any` order class to make sure
+        // it is properly applied
         order_class: ConfigFeePolicyOrderClass::Any,
     };
     let future_fee_policy = ConfigFeePolicy {
@@ -947,8 +948,8 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
                     policies: vec![fee_policy.clone(), fee_policy],
                     upcoming_policies: UpcomingFeePolicies {
                         policies: vec![future_fee_policy.clone(), future_fee_policy],
-                        // Set the effective time to far in the future to make sure the new policy
-                        // is NOT applied
+                        // Set the effective time to far in the future to make
+                        // sure the new policy is NOT applied
                         effective_from_timestamp: Some(
                             chrono::Utc::now() + chrono::Duration::days(1),
                         ),

@@ -322,16 +322,16 @@ mod tests {
             SimulationReport {
                 events: vec![
                     Event::SettlementEntered,
-                    // tx succeeded despite the hook throwing an error. Also despite
-                    // the trampoline contract catching the error we can still see
-                    // the revert message.
+                    // tx succeeded despite the hook throwing an error. Also
+                    // despite the trampoline contract catching the error we can
+                    // still see the revert message.
                     Event::Hook {
                         target: address!("0xc139190f447e929f090edeb554d95abb8b18ac1c"),
                         caught_error: Some("ERC20Permit: invalid signature".to_string()),
                     },
-                    // no additional information about the signature check is available
-                    // as we can only recover that for eip 1271 signatures and the
-                    // order used a different signing scheme
+                    // no additional information about the signature check is
+                    // available as we can only recover that for eip 1271
+                    // signatures and the order used a different signing scheme
                     Event::AllSignatureChecksSuccessful,
                     Event::Transfer {
                         token: address!("0xc139190f447e929f090edeb554d95abb8b18ac1c"),

@@ -5,7 +5,7 @@ use {
     axum::{
         Router,
         http,
-        routing::{get, post},
+        routing::{get, post, put},
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
@@ -50,6 +50,8 @@ pub struct Api {
     pub quote_expiry: std::time::Duration,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
+    /// Most bytes an app data document may have.
+    pub app_data_size_limit: usize,
 }
 
 /// Bounds on an order's `validTo`, for quotes and sponsored placement
@@ -104,6 +106,7 @@ impl Api {
             self.validation,
             self.quote_expiry,
             self.sponsoring,
+            self.app_data_size_limit,
         );
 
         // Browsers call this API directly, so it answers cross-origin
@@ -113,6 +116,7 @@ impl Api {
             .allow_methods([
                 http::Method::GET,
                 http::Method::POST,
+                http::Method::PUT,
                 http::Method::OPTIONS,
                 http::Method::HEAD,
             ])
@@ -129,8 +133,29 @@ impl Api {
             .route("/api/v1/orders/{uid}", get(routes::order))
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
             .route("/api/v2/trades", get(routes::trades))
+            .route(
+                "/api/v2/solver_competition/latest",
+                get(routes::solver_competition_latest),
+            )
+            .route(
+                "/api/v2/solver_competition/by_tx_hash/{tx_hash}",
+                get(routes::solver_competition_by_tx_hash),
+            )
+            .route(
+                "/api/v2/solver_competition/{auction_id}",
+                get(routes::solver_competition_by_id),
+            )
+            .route(
+                "/restricted/api/v2/solver_competition/{auction_id}",
+                get(routes::solver_competition_by_id_unfiltered),
+            )
             .route("/api/v1/orders", post(routes::create_order))
             .route("/api/v1/quote", post(routes::quote))
+            .route("/api/v1/app_data", put(routes::put_app_data))
+            .route(
+                "/api/v1/app_data/{hash}",
+                get(routes::get_app_data).put(routes::put_app_data_by_hash),
+            )
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
@@ -168,6 +193,7 @@ impl State {
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
         sponsoring: Option<Sponsoring>,
+        app_data_size_limit: usize,
     ) -> Self {
         Self(Arc::new(Inner {
             pool,
@@ -176,6 +202,7 @@ impl State {
             validation,
             quote_expiry,
             sponsoring,
+            app_data_size_limit,
             block_height: Mutex::default(),
         }))
     }
@@ -209,6 +236,11 @@ impl State {
     /// Sponsored placement dependencies, absent when the feature is off.
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
+    }
+
+    /// Most bytes an app data document may have.
+    pub fn app_data_size_limit(&self) -> usize {
+        self.0.app_data_size_limit
     }
 
     /// The chain's block height, which decides whether a pending sponsored
@@ -255,6 +287,8 @@ struct Inner {
     quote_expiry: std::time::Duration,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
+    /// Most bytes an app data document may have.
+    app_data_size_limit: usize,
     /// The last block height read and when, see [`State::block_height`].
     block_height: Mutex<Option<(Instant, i64)>>,
 }
