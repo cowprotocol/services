@@ -714,7 +714,6 @@ mod tests {
             buy_amount,
             solver: Pubkey::default(),
             network_fee,
-            driver: String::new(),
         }
     }
 
@@ -727,7 +726,7 @@ mod tests {
         kind: dto::Kind,
         rent: u64,
         price: NonZero<u64>,
-    ) -> Option<quoter::Quote> {
+    ) -> Option<(quoter::Quote, Costs)> {
         rank(quotes, kind, rent, price)
             .into_iter()
             .find_map(|(_, netted)| netted)
@@ -823,7 +822,7 @@ mod tests {
 
     #[test]
     fn the_competition_keeps_every_quote_best_first() {
-        let lamport_an_atom = price(PRICE_UNIT);
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
         let named = |driver: &str, buy_amount, fee| quoter::Quote {
             driver: driver.to_owned(),
             ..quote(1_000, buy_amount, fee)
@@ -840,7 +839,7 @@ mod tests {
         );
         let order = ranked
             .iter()
-            .map(|(quote, netted)| (&*quote.driver, netted.as_ref().map(|q| q.buy_amount)))
+            .map(|(quote, netted)| (&*quote.driver, netted.as_ref().map(|(q, _)| q.buy_amount)))
             .collect::<Vec<_>>();
         assert_eq!(
             order,
@@ -859,7 +858,7 @@ mod tests {
             vec![quote(1_000, 5_000, 400), quote(1_000, 10, 0)],
             dto::Kind::Sell,
             100,
-            price(PRICE_UNIT),
+            price(Solana::NATIVE_PRICE_DENOMINATOR),
         );
         let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
         let json =
