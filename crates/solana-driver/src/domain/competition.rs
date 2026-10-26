@@ -101,10 +101,9 @@ impl Competition {
     }
 
     /// Solve the auction, drop the solutions whose settlement provably fails
-    /// (over the byte limit or failing in simulation), and when the solver's
-    /// fee handler is the driver, drop those whose network fee is over budget
-    /// and cut the buy token account rent from the rest. Cache what is left
-    /// for a later `settle`.
+    /// (over the byte limit or failing in simulation) or, when the solver's
+    /// fee handler is the driver, whose network fee is over budget, and cache
+    /// the rest for a later `settle`.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -166,11 +165,6 @@ impl Competition {
         .await;
 
         let auction = Arc::new(auction);
-        let costs = ExecutionCost {
-            rent: &buy_token_accounts.missing,
-            native_prices: &auction.native_prices,
-        };
-        let orders = orders_by_uid(&auction.orders);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
         for (mut solution, (verdict, elapsed, fees)) in solutions.into_iter().zip(simulations) {
@@ -220,25 +214,16 @@ impl Competition {
             {
                 solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
-            if let Some(fees) = fees {
-                if let Err(reason) = self.network_fee_at(&fees?, &solution) {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        %reason,
-                        "dropping solution, its network fee is over budget"
-                    );
-                    continue;
-                }
-                if let Err(reason) = costs.apply(&mut solution, &orders) {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        %reason,
-                        "dropping solution the execution costs cannot be cut from"
-                    );
-                    continue;
-                }
+            if let Some(fees) = fees
+                && let Err(reason) = self.network_fee_at(&fees?, &solution)
+            {
+                tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution, its network fee is over budget"
+                );
+                continue;
             }
             self.solutions.insert(
                 Key {
@@ -340,8 +325,8 @@ impl Competition {
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
     /// driver, the limits sent to the engine are moved by the buy token
-    /// account rent and every fill is tightened by the solver fee; the rent
-    /// itself is not cut here.
+    /// account rent, and every fill is tightened by the solver fee and cut by
+    /// that rent.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
     /// its execution costs are reported, not cut, and nothing is flagged.
@@ -351,22 +336,20 @@ impl Competition {
         buy_token_accounts: Option<&BuyTokenAccounts>,
     ) -> Result<Vec<Solution>, Error> {
         let no_rent = HashMap::new();
+        let costs = ExecutionCost {
+            rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
+            native_prices: &auction.native_prices,
+        };
         let charge = match self.solver.fee_handler() {
             FeeHandler::Solver => Charge::Engine {
                 missing_buy_token_accounts: buy_token_accounts
                     .map(|accounts| accounts.missing.keys().copied().collect())
                     .unwrap_or_default(),
             },
-            FeeHandler::Driver => {
-                let costs = ExecutionCost {
-                    rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
-                    native_prices: &auction.native_prices,
-                };
-                Charge::Driver {
-                    cuts: costs.cuts(&auction.orders),
-                    fee: self.solver.solver_fee(),
-                }
-            }
+            FeeHandler::Driver => Charge::Driver {
+                cuts: costs.cuts(&auction.orders),
+                fee: self.solver.solver_fee(),
+            },
         };
         let solutions = self
             .solver
@@ -387,13 +370,15 @@ impl Competition {
             );
         }
 
-        let Charge::Driver { fee: Some(fee), .. } = &charge else {
+        let Charge::Driver { fee, .. } = &charge else {
             return Ok(solutions);
         };
         let orders = orders_by_uid(&auction.orders);
-        let mut tightened = Vec::with_capacity(solutions.len());
+        let mut charged = Vec::with_capacity(solutions.len());
         for mut solution in solutions {
-            if let Err(reason) = fee.apply(&mut solution, &orders) {
+            if let Some(fee) = fee
+                && let Err(reason) = fee.apply(&mut solution, &orders)
+            {
                 tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
@@ -402,9 +387,17 @@ impl Competition {
                 );
                 continue;
             }
-            tightened.push(solution);
+            match costs.apply(&mut solution, &orders) {
+                Ok(()) => charged.push(solution),
+                Err(reason) => tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    %reason,
+                    "dropping solution the execution costs cannot be cut from"
+                ),
+            }
         }
-        Ok(tightened)
+        Ok(charged)
     }
 
     /// The network fee of settling `solution`, in lamports: the signature fee

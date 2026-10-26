@@ -11,7 +11,7 @@
 //!
 //! The cut is taken at two points of solve time: the limit leg sent to the
 //! engine is moved by it before the solver fee tightens it, and
-//! [`ExecutionCost::apply`] cuts every fill once the settlement is simulated.
+//! [`ExecutionCost::apply`] cuts every fill the engine reports.
 //! A solution whose trades cannot absorb the cut within the order's signed
 //! limit is dropped whole, like one that cannot absorb the fee.
 
