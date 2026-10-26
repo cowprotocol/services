@@ -164,8 +164,7 @@ impl Competition {
                 ])
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
-            // A verdict names its solution, not what the solution fills, so
-            // without this no log of one can be found by the order it is about.
+            // Without this the verdicts below cannot be found by order.
             let orders = solution
                 .trades
                 .iter()
