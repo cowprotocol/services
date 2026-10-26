@@ -116,21 +116,17 @@ pub async fn quote(
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
     let ranked = rank(quotes, kind, buy_token_ata_costs, price);
-    // Before taking the winner, so a competition without one is logged too.
-    let competition = competition(&request, kind, amount, buy_token_ata_costs, price, &ranked);
-    // Strings and integers, so the serialization cannot fail.
-    let json = serde_json::to_string(&competition).unwrap_or_default();
-    tracing::debug!(competition = %json, "computed quote");
-    let (quoted, costs) = ranked
-        .into_iter()
-        .find_map(|(_, netted)| netted)
-        .ok_or_else(|| {
-            error::reply(
-                StatusCode::BAD_REQUEST,
-                "SellAmountDoesNotCoverFee",
-                "the quoted amount does not cover the execution cost",
-            )
-        })?;
+    // Built before the winner is taken, so a competition without one is on the
+    // record too, and logged once the insert names the quote an order can cite.
+    let mut competition = competition(&request, kind, amount, buy_token_ata_costs, price, &ranked);
+    let Some((quoted, costs)) = ranked.into_iter().find_map(|(_, netted)| netted) else {
+        log_competition(&competition);
+        return Err(error::reply(
+            StatusCode::BAD_REQUEST,
+            "SellAmountDoesNotCoverFee",
+            "the quoted amount does not cover the execution cost",
+        ));
+    };
     quoted.count_win(order.kind);
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
@@ -162,6 +158,8 @@ pub async fn quote(
             None
         }
     };
+    competition.metadata.quote_id = id;
+    log_competition(&competition);
 
     Ok(Json(dto::Response {
         quote: dto::Quote {
@@ -226,12 +224,18 @@ fn rank(
     ranked
 }
 
+fn log_competition(competition: &Competition) {
+    // Strings and integers, so the serialization cannot fail.
+    let json = serde_json::to_string(competition).unwrap_or_default();
+    tracing::debug!(competition = %json, "computed quote");
+}
+
 /// The `computed quote` log line: every driver's answer, best first.
 #[derive(Serialize)]
-struct Competition<'a> {
+struct Competition {
     request: CompetitionRequest,
     metadata: CompetitionMetadata,
-    quotes: Vec<CompetitionQuote<'a>>,
+    quotes: Vec<CompetitionQuote>,
 }
 
 #[serde_as]
@@ -253,6 +257,9 @@ struct CompetitionRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CompetitionMetadata {
+    /// The quote the winner was stored as, which is what an order names when
+    /// it is placed. `None` when nothing won, or when the insert failed.
+    quote_id: Option<i64>,
     /// Native price of the token the cost comes out of: the buy token of a
     /// sell order, the sell token of a buy order.
     #[serde_as(as = "DisplayFromStr")]
@@ -267,8 +274,8 @@ struct CompetitionMetadata {
 #[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CompetitionQuote<'a> {
-    driver: &'a str,
+struct CompetitionQuote {
+    driver: String,
     #[serde_as(as = "DisplayFromStr")]
     solver: Pubkey,
     /// `None` when the quote cannot absorb its execution cost.
@@ -286,14 +293,14 @@ struct CompetitionQuote<'a> {
     elapsed_ms: u64,
 }
 
-fn competition<'a>(
+fn competition(
     request: &dto::Request,
     kind: dto::Kind,
     amount: u64,
     rent: u64,
     price: NonZero<u64>,
-    ranked: &'a [(quoter::Quote, Option<(quoter::Quote, Costs)>)],
-) -> Competition<'a> {
+    ranked: &[(quoter::Quote, Option<(quoter::Quote, Costs)>)],
+) -> Competition {
     Competition {
         request: CompetitionRequest {
             sell_token: request.sell_token,
@@ -302,13 +309,14 @@ fn competition<'a>(
             kind,
         },
         metadata: CompetitionMetadata {
+            quote_id: None,
             native_price: price.get(),
             buy_token_ata_costs: rent,
         },
         quotes: ranked
             .iter()
             .map(|(quote, netted)| CompetitionQuote {
-                driver: &quote.driver,
+                driver: quote.driver.clone(),
                 solver: quote.solver,
                 sell_amount: netted.as_ref().map(|(q, _)| q.sell_amount),
                 buy_amount: netted.as_ref().map(|(q, _)| q.buy_amount),
@@ -916,6 +924,8 @@ mod tests {
             json["metadata"]["nativePrice"],
             Solana::NATIVE_PRICE_DENOMINATOR.to_string()
         );
+        // Filled in once the winner is stored.
+        assert!(json["metadata"]["quoteId"].is_null());
         let winner = &json["quotes"][0];
         assert_eq!(winner["driver"], "driver");
         assert_eq!(winner["solver"], Pubkey::default().to_string());
