@@ -40,8 +40,10 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
         }
         Command::Bitget { config: path } => {
             let config = config::load::<config::BitgetConfig>(&path).await;
+            let bitget = dex::bitget::Bitget::new(&config.dex)
+                .unwrap_or_else(|err| panic!("build bitget dex: {err}"));
             Solver::new(
-                dex::Dex::Bitget(dex::bitget::Bitget),
+                dex::Dex::Bitget(bitget),
                 config.concurrent_requests,
                 config.rate_limiting(),
                 config.max_batch_size,
