@@ -42,11 +42,10 @@ pub struct PriorityFeePolicy {
     /// over it is refused.
     pub max_priority_fee_lamports: u64,
     /// The compute unit limit priced when a transaction's usage is not
-    /// measured: quotes, the limit legs moved before solving, and solutions
-    /// neither their engine nor their simulation measured, which also declare
-    /// it when the driver cuts their fills. Settlements declare their
-    /// simulated usage plus the headroom, so keep this near the top of that
-    /// range.
+    /// measured: quotes, and solutions neither their engine nor their
+    /// simulation measured, which also declare it when the driver checks
+    /// their network fee at solve time. Settlements declare their simulated
+    /// usage plus the headroom, so keep this near the top of that range.
     pub default_compute_unit_limit: u32,
     /// The share of the simulated compute units added to the limit a
     /// settlement declares, in percent. Usage can grow before the transaction
@@ -119,13 +118,6 @@ impl PriorityFeePolicy {
                 cap: self.max_priority_fee_lamports,
             }),
         }
-    }
-
-    /// The most a transaction's network fee comes to under this policy: the
-    /// budget plus the signature fee.
-    pub(crate) fn max_network_fee(&self) -> u64 {
-        self.max_priority_fee_lamports
-            .saturating_add(LAMPORTS_PER_SIGNATURE)
     }
 
     /// The compute unit limit for a settlement that consumed `units` in

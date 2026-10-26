@@ -175,10 +175,10 @@ pub struct Solver {
     pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
 }
 
-/// Who prices a settlement's execution costs, its network fee and the rent
-/// of the buy token accounts it creates, into the fills: the driver cuts
-/// them from every fill the engine reports, or the solver engine prices them
-/// in itself.
+/// Who prices a settlement's execution costs, the rent of the buy token
+/// accounts it creates, into the fills: the driver cuts them from every fill
+/// the engine reports, or the solver engine prices them in itself. The
+/// network fee is never cut.
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum FeeHandler {
