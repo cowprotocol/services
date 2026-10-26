@@ -324,9 +324,8 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
-    /// driver, the limits sent to the engine are moved by the buy token
-    /// account rent, and every fill is tightened by the solver fee and cut by
-    /// that rent.
+    /// driver, every fill is tightened by the solver fee, and a solve fill is
+    /// cut by the execution costs on top.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
     /// its execution costs are reported, not cut, and nothing is flagged.
@@ -402,7 +401,7 @@ impl Competition {
 
     /// The network fee of settling `solution`, in lamports: the signature fee
     /// plus the priority fee over the accounts its interactions write, at its
-    /// compute unit estimate, or else the policy's default.
+    /// compute unit estimate.
     pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
         let fees = self.prioritization_fees(solution).await?;
         Ok(self.network_fee_at(&fees, solution)?)
@@ -422,7 +421,6 @@ impl Competition {
             .map_err(Error::Rpc)
     }
 
-    /// [`Self::network_fee`] over fees already fetched.
     fn network_fee_at(
         &self,
         fees: &[RpcPrioritizationFee],

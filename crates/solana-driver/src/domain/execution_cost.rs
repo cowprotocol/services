@@ -9,10 +9,10 @@
 //! does, see [`super::solver_fee`]. The network fee is the solver's to pay,
 //! never the trader's.
 //!
-//! The cut is taken at two points of solve time: the limit leg sent to the
-//! engine is moved by it before the solver fee tightens it, and
-//! [`ExecutionCost::apply`] cuts every fill the engine reports.
-//! A solution whose trades cannot absorb the cut within the order's signed
+//! The cut is enforced at the solver fee's two points: the limit leg sent to
+//! the engine is moved by the cut before the fee tightens it, and
+//! [`ExecutionCost::apply`] re-validates every fill once the fee is taken. A
+//! solution whose trades cannot absorb the cut within the order's signed
 //! limit is dropped whole, like one that cannot absorb the fee.
 
 use {
