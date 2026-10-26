@@ -6,11 +6,37 @@ use {
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
     database::{byte_array::ByteArray, solana::OrderEventLabel},
-    sqlx::{PgExecutor, Postgres, QueryBuilder},
+    sqlx::{PgExecutor, PgPool, Postgres, QueryBuilder},
+    std::time::Duration,
 };
 
 /// The channel the schema's `solana.settlements` trigger notifies.
 pub const SETTLEMENT_FINALIZED_CHANNEL: &str = "solana_settlement_finalized";
+
+/// Tables the `autopilot_table_rows` gauge counts exactly.
+const TABLES: &[&str] = &[
+    "app_data",
+    "auctions",
+    "dead_letter",
+    "indexer_state",
+    "order_pda",
+    "quotes",
+    "reference_scores",
+    "settlement_executions",
+    "settlements",
+    "trades",
+];
+
+/// Tables the gauge reports from the planner's estimate: a full scan every
+/// minute would weigh on the largest ones.
+const LARGE_TABLES: &[&str] = &[
+    "competition_auctions",
+    "orders",
+    "order_events",
+    "order_quotes",
+    "proposed_solutions",
+    "proposed_trade_executions",
+];
 
 /// The `solana.orders` columns auction assembly reads.
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -666,8 +692,46 @@ pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
         .start_timer()
 }
 
+/// Refreshes `autopilot_table_rows` every minute. The first refresh waits a
+/// minute so the counts stay off the busy startup.
+pub fn spawn_table_rows_metric(pool: PgPool) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            if let Err(err) = update_table_rows(&pool).await {
+                tracing::error!(?err, "failed to update table rows metric");
+            }
+        }
+    });
+}
+
+async fn update_table_rows(pool: &PgPool) -> Result<()> {
+    let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+    for &table in TABLES {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM solana.{table}"))
+            .fetch_one(pool)
+            .await?;
+        metrics.table_rows.with_label_values(&[table]).set(count);
+    }
+    for &table in LARGE_TABLES {
+        let count: i64 = sqlx::query_scalar(&format!(
+            "SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = \
+             'solana.{table}'::regclass"
+        ))
+        .fetch_one(pool)
+        .await?;
+        metrics.table_rows.with_label_values(&[table]).set(count);
+    }
+    Ok(())
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
+    /// Rows per `solana.*` table, exact for small tables and the planner's
+    /// estimate for large ones.
+    #[metric(name = "autopilot_table_rows", labels("table"))]
+    table_rows: prometheus::IntGaugeVec,
+
     /// Query durations, by query.
     #[metric(
         name = "autopilot_database_queries",
@@ -785,6 +849,31 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         .execute(&mut **tx)
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_table_rows_count_every_listed_table() {
+        let pool = crate::test_db::pool().await;
+        sqlx::query("DELETE FROM solana.app_data")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        super::update_table_rows(&pool).await.unwrap();
+        let metrics = super::Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 0);
+
+        sqlx::query(
+            "INSERT INTO solana.app_data (contract_app_data, full_app_data) VALUES ($1, $2)",
+        )
+        .bind([7u8; 32].to_vec())
+        .bind(b"{}".to_vec())
+        .execute(&pool)
+        .await
+        .unwrap();
+        super::update_table_rows(&pool).await.unwrap();
+        assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 1);
     }
 
     #[tokio::test]
