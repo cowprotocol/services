@@ -563,7 +563,7 @@ async fn link_quote(
     let quote = match db::read_quote(pool, id).await {
         Ok(Some(quote)) => quote,
         Ok(None) => {
-            tracing::warn!(id, %order_uid, "quote link dropped, no such quote");
+            tracing::debug!(id, %order_uid, "quote link dropped, no such quote");
             return None;
         }
         Err(err) => {
@@ -587,7 +587,7 @@ async fn link_quote(
         && fixed_amount_matches
         && unexpired;
     if !matches {
-        tracing::warn!(
+        tracing::debug!(
             id,
             %order_uid,
             sell_token_matches,
