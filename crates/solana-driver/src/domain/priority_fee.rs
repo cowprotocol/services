@@ -13,9 +13,7 @@ use {
     std::cmp::Reverse,
 };
 
-/// The runtime's per-transaction compute unit ceiling. It caps every limit
-/// and prices a quote whose engine sent no estimate: the quote has no
-/// settlement instructions to derive the runtime's default from.
+/// The runtime's per-transaction compute unit ceiling. It caps every limit.
 pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// The base fee of one signature, in lamports: the cluster's
@@ -53,6 +51,11 @@ pub struct PriorityFeePolicy {
     /// The most a transaction pays in priority fee, in lamports. A transaction
     /// over it is refused.
     pub max_priority_fee_lamports: u64,
+    /// The compute unit limit priced when a transaction's usage is not
+    /// measured: quotes, the limit legs moved before solving, and solutions
+    /// whose engine sent no estimate. Settlements declare twice their
+    /// simulated usage, so keep this near the top of that range.
+    pub default_compute_unit_limit: u32,
 }
 
 impl Default for PriorityFeePolicy {
@@ -62,6 +65,7 @@ impl Default for PriorityFeePolicy {
             recent_slots: 50,
             min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
+            default_compute_unit_limit: 400_000,
         }
     }
 }
@@ -97,14 +101,14 @@ impl PriorityFeePolicy {
     /// The priority fee for a transaction given the fees recently paid over its
     /// writable accounts and its compute unit limit, or the fee it would pay
     /// when that is over the budget. An undeclared limit is priced at the
-    /// runtime's ceiling.
+    /// policy's default.
     pub(crate) fn estimate(
         &self,
         fees: &[RpcPrioritizationFee],
         compute_unit_limit: Option<u32>,
     ) -> Result<Estimate, OverBudget> {
         let compute_unit_price = self.compute_unit_price(fees);
-        let limit = compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
+        let limit = compute_unit_limit.unwrap_or(self.default_compute_unit_limit);
         // Micro-lamports per unit times units, rounded up to whole lamports.
         let lamports = (u128::from(compute_unit_price) * u128::from(limit)).div_ceil(1_000_000);
         match u64::try_from(lamports) {
@@ -167,6 +171,7 @@ mod tests {
             recent_slots: MAX_RECENT_SLOTS,
             min_compute_unit_price: 0,
             max_priority_fee_lamports: u64::MAX,
+            default_compute_unit_limit: MAX_COMPUTE_UNIT_LIMIT,
         }
     }
 
@@ -217,11 +222,14 @@ mod tests {
         assert_eq!(estimate.lamports, 1);
     }
 
-    /// An undeclared limit is priced at the 1.4M ceiling.
     #[test]
-    fn undeclared_limit_is_priced_at_the_ceiling() {
-        let estimate = policy(50).estimate(&[fee(1, 1_000)], None).unwrap();
-        assert_eq!(estimate.lamports, 1_400);
+    fn undeclared_limit_is_priced_at_the_policy_default() {
+        let policy = PriorityFeePolicy {
+            default_compute_unit_limit: 300_000,
+            ..policy(50)
+        };
+        let estimate = policy.estimate(&[fee(1, 1_000)], None).unwrap();
+        assert_eq!(estimate.lamports, 300);
     }
 
     #[test]

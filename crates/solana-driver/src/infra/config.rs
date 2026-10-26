@@ -2,7 +2,7 @@
 
 use {
     crate::domain::{
-        priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
+        priority_fee::{MAX_COMPUTE_UNIT_LIMIT, MAX_RECENT_SLOTS, PriorityFeePolicy},
         settlement::MaxNativeShortfall,
         solver_fee::SolverFee,
     },
@@ -46,6 +46,10 @@ pub async fn load(path: &Path) -> Config {
     assert!(
         (1..=MAX_RECENT_SLOTS).contains(&priority_fee.recent_slots),
         "priority-fee: recent-slots is outside 1..={MAX_RECENT_SLOTS}"
+    );
+    assert!(
+        (1..=MAX_COMPUTE_UNIT_LIMIT).contains(&priority_fee.default_compute_unit_limit),
+        "priority-fee: default-compute-unit-limit is outside 1..={MAX_COMPUTE_UNIT_LIMIT}"
     );
     config
 }

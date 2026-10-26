@@ -406,11 +406,11 @@ impl Competition {
 
     /// The network fee the limit legs sent to the engine are moved by, before
     /// any route is known: the signature fee plus the priority fee at the
-    /// runtime's compute unit ceiling over the fees recently paid cluster-wide,
-    /// or the budget when that is over it. Cluster-wide fees floor what any
-    /// route's accounts pay, so the fill's own fee, see [`Self::network_fee`],
-    /// is at least this much, and a fill on the moved limit whose route pays
-    /// more is dropped.
+    /// policy's default compute unit limit over the fees recently paid
+    /// cluster-wide, or the budget when that is over it. Cluster-wide fees
+    /// floor what any route's accounts pay, so the fill's own fee, see
+    /// [`Self::network_fee`], is at least this much, and a fill on the
+    /// moved limit whose route pays more is dropped.
     async fn network_fee_reserve(&self) -> Result<u64, Error> {
         let fees = self
             .blockchain
