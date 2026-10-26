@@ -221,6 +221,12 @@ impl Competition {
                 solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
             if let Some(fees) = fees {
+                // The cut and its budget check price this limit, so `settle`
+                // declares it instead of the runtime's default, which can be
+                // several times larger.
+                solution
+                    .cu_estimate
+                    .get_or_insert(self.priority_fee.default_compute_unit_limit);
                 let network_fee = match self.network_fee_at(&fees?, &solution) {
                     Ok(network_fee) => network_fee,
                     Err(reason) => {

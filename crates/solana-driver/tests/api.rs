@@ -800,6 +800,56 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     assert_eq!(json["kind"], "FailedToSubmit");
 }
 
+/// The mock RPC answers no bundle simulation, so the driver prices the cut
+/// at the policy's 200_000 default units: 2_000 lamports, within the 3_999
+/// budget. The settlement declares the same 200_000, not the runtime's
+/// default of 200_000 per instruction that the budget refuses, so the settle
+/// reaches the send.
+#[tokio::test]
+async fn settle_declares_the_compute_units_an_unsimulated_cut_was_priced_at() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    // A signature other than the transaction's own fails the send.
+    mocks.insert(
+        RpcRequest::SendTransaction,
+        serde_json::json!(Signature::default().to_string()),
+    );
+    let api = Api {
+        priority_fee: PriorityFeePolicy {
+            max_priority_fee_lamports: 3_999,
+            default_compute_unit_limit: 200_000,
+            ..priority_fee()
+        },
+        ..api_with(vec![solver], mocks).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
+    let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/settle"))
+        .json(&serde_json::json!({
+            "auctionId": 7,
+            "solutionId": solution_id,
+            "submissionDeadlineSlot": 1_000_000,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["kind"], "FailedToSubmit");
+}
+
 #[tokio::test]
 async fn solve_keeps_the_first_of_duplicate_solution_ids() {
     // Both solutions use id 7 but different sell prices. `executedBuy`
