@@ -105,13 +105,15 @@ async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
     Arc::new(blockchain)
 }
 
-/// Pays whatever the mock RPC reports and never refuses.
+/// Pays whatever the mock RPC reports, at the runtime ceiling for an
+/// undeclared limit, and never refuses.
 fn priority_fee() -> PriorityFeePolicy {
     PriorityFeePolicy {
         percentile: 50,
         recent_slots: 150,
         min_compute_unit_price: 0,
         max_priority_fee_lamports: u64::MAX,
+        default_compute_unit_limit: 1_400_000,
     }
 }
 
