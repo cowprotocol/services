@@ -3,15 +3,10 @@
 
 use {
     super::Error,
-    crate::dex::Swap,
-    base64::prelude::*,
+    crate::dex::{Swap, dto::ApiInstruction},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
-    solana_sdk::{
-        instruction::{AccountMeta, Instruction},
-        pubkey::Pubkey,
-    },
-    std::str::FromStr,
+    solana_sdk::pubkey::Pubkey,
 };
 
 /// Body of the `/swap-instructions` request.
@@ -63,10 +58,10 @@ impl<'a> SwapInstructionsRequest<'a> {
 #[serde(rename_all = "camelCase")]
 pub struct SwapInstructionsResponse {
     #[serde(default)]
-    setup_instructions: Vec<JupInstruction>,
-    swap_instruction: JupInstruction,
+    setup_instructions: Vec<ApiInstruction>,
+    swap_instruction: ApiInstruction,
     #[serde(default)]
-    cleanup_instruction: Option<JupInstruction>,
+    cleanup_instruction: Option<ApiInstruction>,
 }
 
 impl SwapInstructionsResponse {
@@ -84,53 +79,6 @@ impl SwapInstructionsResponse {
             in_amount,
             out_amount,
             instructions,
-        })
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct JupInstruction {
-    program_id: String,
-    accounts: Vec<JupAccount>,
-    data: String,
-}
-
-impl JupInstruction {
-    fn into_instruction(self) -> Result<Instruction, Error> {
-        let program_id = Pubkey::from_str(&self.program_id)
-            .map_err(|err| Error::BadResponse(format!("program id: {err}")))?;
-        let accounts = self
-            .accounts
-            .into_iter()
-            .map(JupAccount::into_meta)
-            .collect::<Result<_, _>>()?;
-        let data = BASE64_STANDARD
-            .decode(&self.data)
-            .map_err(|err| Error::BadResponse(format!("instruction data: {err}")))?;
-        Ok(Instruction {
-            program_id,
-            accounts,
-            data,
-        })
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct JupAccount {
-    pubkey: String,
-    is_signer: bool,
-    is_writable: bool,
-}
-
-impl JupAccount {
-    fn into_meta(self) -> Result<AccountMeta, Error> {
-        Ok(AccountMeta {
-            pubkey: Pubkey::from_str(&self.pubkey)
-                .map_err(|err| Error::BadResponse(format!("account pubkey: {err}")))?,
-            is_signer: self.is_signer,
-            is_writable: self.is_writable,
         })
     }
 }

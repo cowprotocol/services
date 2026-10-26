@@ -18,6 +18,7 @@ use {
         api::{Sponsoring, State, ValidationParameters, error},
         db,
     },
+    app_data::{AppDataHash, OrderCreationAppData},
     axum::{Json, http::StatusCode},
     bigdecimal::ToPrimitive,
     cow_settlement_interface::{
@@ -60,6 +61,14 @@ pub struct Params {
     /// The id the quote endpoint answered for this order, if any.
     #[serde(default)]
     pub quote_id: Option<i64>,
+    /// The order's app data: the document the intent's `app_data` is the
+    /// keccak256 hash of, stored with the order, or that hash once the
+    /// document is registered.
+    #[serde(default)]
+    pub app_data: Option<String>,
+    /// The hash the client computed for the `appData` document.
+    #[serde(default)]
+    pub app_data_hash: Option<AppDataHash>,
 }
 
 /// Rejections of a sponsored order placement. The names follow the EVM
@@ -137,8 +146,7 @@ impl From<PlacementError> for error::Reply {
 /// error with the step that failed.
 enum Failure {
     Refused(PlacementError),
-    /// A refusal the mint check shared with quoting already shaped into its
-    /// reply.
+    /// A refusal a check shared with quoting already shaped into its reply.
     Replied(error::Reply),
     Internal {
         err: Box<dyn std::fmt::Debug + Send>,
@@ -202,6 +210,35 @@ async fn place(
         })?;
     let (mut order, preparations) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
+    // The intent signed the hash, so whatever the request names must agree
+    // with it, and the hash alone needs its document registered already.
+    let intent = AppDataHash(order.app_data.0);
+    let app_data = OrderCreationAppData::from_fields(params.app_data, params.app_data_hash)
+        .map_err(|err| {
+            Failure::Replied(error::reply(
+                StatusCode::BAD_REQUEST,
+                "InvalidRequestBody",
+                err.to_string(),
+            ))
+        })?
+        .unwrap_or(OrderCreationAppData::Hash { hash: intent });
+    // A hash the intent did not sign fails regardless, so only its own is
+    // looked up.
+    let stored = match &app_data {
+        OrderCreationAppData::Hash { hash } if *hash == intent => {
+            super::app_data::find(state.pool(), *hash)
+                .await
+                .map_err(|err| Failure::internal(err, "find app data"))?
+        }
+        _ => None,
+    };
+    let document = super::app_data::resolve(
+        &app_data,
+        stored.as_deref(),
+        Some(intent),
+        state.app_data_size_limit(),
+    )
+    .map_err(|err| Failure::Replied(err.into()))?;
     check_accounts(sponsoring, &order, &preparations).await?;
 
     // The countersign re-checks freshness, so the stored expiry only has to
@@ -242,7 +279,9 @@ async fn place(
     };
 
     let uid = const_hex::encode_prefixed(order.uid.0);
-    if let Err(err) = db::insert_sponsored_order(state.pool(), &order, quote.as_ref()).await {
+    if let Err(err) =
+        db::insert_sponsored_order(state.pool(), &order, quote.as_ref(), &document).await
+    {
         let duplicate = err
             .downcast_ref::<sqlx::Error>()
             .and_then(|err| err.as_database_error())
