@@ -472,8 +472,7 @@ fn build_module() -> Module {
                 LINEA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 24333100),
                 PLASMA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 3439709),
                 INK => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 34436840),
-                // TODO: deploy block not known yet
-                ROBINHOOD => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 0),
+                ROBINHOOD => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 94383767),
             ]),
         )
         .add_contract(Contract::new("GPv2Settlement").with_networks(networks![
@@ -489,8 +488,7 @@ fn build_module() -> Module {
             LINEA => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 24333100),
             PLASMA => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 3439711),
             INK => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 34436849),
-            // TODO: deploy block not known yet
-            ROBINHOOD => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 0),
+            ROBINHOOD => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 94383793),
         ]))
         .add_contract(Contract::new("WETH9").with_networks(networks![
             MAINNET => "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
@@ -541,7 +539,7 @@ fn build_module() -> Module {
                     LINEA => "0xf6E57e72F7dB3D9A51a8B4c149C00475b94A37e4",
                     PLASMA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
                     INK => "0x8262d639c38470F38d2eff15926F7071c28057Af",
-                    ROBINHOOD => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    ROBINHOOD => "0x49EFD31621DB3aeF29df2e588840D3c38c9ce5dB",
                 ]))
                 .add_contract(Contract::new("Balances").with_networks(networks![
                     MAINNET => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
@@ -556,7 +554,7 @@ fn build_module() -> Module {
                     PLASMA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     LINEA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     INK => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
-                    ROBINHOOD => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
+                    ROBINHOOD => "0xd37631880976Ba6cf580d24e6A7D4D7b9C2be887",
                 ]))
                 .add_contract(Contract::new("DeadlineCheck").with_networks(networks! {
                     MAINNET => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
