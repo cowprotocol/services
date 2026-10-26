@@ -171,7 +171,7 @@ pub async fn quote(
             fee_amount: 0,
             costs: dto::Costs {
                 token,
-                network_fees: 0,
+                network_fees: in_token(quoted.network_fee, price).unwrap_or(u64::MAX),
                 buy_token_ata_costs: cost,
                 protocol_fee: 0,
                 total: cost,
@@ -590,6 +590,7 @@ mod tests {
             sell_amount,
             buy_amount,
             solver: Pubkey::default(),
+            network_fee: 0,
             driver: String::new(),
         }
     }

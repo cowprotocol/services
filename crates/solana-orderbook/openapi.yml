@@ -1078,11 +1078,11 @@ components:
           type: boolean
     Costs:
       description: >-
-        The execution cost taken out of the quoted amounts, in the token it
-        comes out of: a sell order's `buyAmount` is lower by `total`, a buy
-        order's `sellAmount` higher. Each cost converts from lamports at the
-        autopilot's native price on its own, rounded up against the trader.
-        Drivers are ranked on the amounts after the cut.
+        The execution costs of the quoted route, in the token they would come
+        out of: a sell order's `buyAmount` is lower by `total`, a buy order's
+        `sellAmount` higher. Each cost converts from lamports at the
+        autopilot's native price on its own, rounded up. Drivers are ranked on
+        the amounts after the cut.
       type: object
       required:
         - token
@@ -1098,8 +1098,10 @@ components:
             - $ref: "#/components/schemas/Pubkey"
         networkFees:
           description: >-
-            Always zero: the network fee of settling is the solver's to pay,
-            not the trader's.
+            The network fee of settling the quoted route, as the winning
+            driver reported it. Zero when the driver reports none. The solver
+            pays it, so it is not taken out of the amounts and `total` leaves
+            it out.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         buyTokenAtaCosts:
@@ -1117,7 +1119,9 @@ components:
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         total:
-          description: The sum of the costs above.
+          description: >-
+            What the quoted amounts are cut by: `buyTokenAtaCosts` plus
+            `protocolFee`. `networkFees` is left out.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
     Error:

@@ -148,8 +148,8 @@ pub struct Quote {
     pub partially_fillable: bool,
 }
 
-/// The execution cost taken out of the quoted amounts, in the token it comes
-/// out of.
+/// The execution costs of the quoted route, in the token they would come out
+/// of.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -158,8 +158,9 @@ pub struct Costs {
     /// amounts below are in its atoms.
     #[serde_as(as = "DisplayFromStr")]
     pub token: Pubkey,
-    /// Always zero: the network fee of settling is the solver's to pay, not
-    /// the trader's.
+    /// The network fee of settling the quoted route, as the winning driver
+    /// reported it, zero when it reported none. The solver pays it, so the
+    /// amounts are not reduced by it and `total` leaves it out.
     #[serde_as(as = "DisplayFromStr")]
     pub network_fees: u64,
     /// Rent of the buy token account when the settlement must create it.
@@ -168,8 +169,8 @@ pub struct Costs {
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub protocol_fee: u64,
-    /// The sum: a sell order's `buy_amount` is lower by it, a buy order's
-    /// `sell_amount` higher.
+    /// What the amounts are cut by, the buy token account rent: a sell order's
+    /// `buy_amount` is lower by it, a buy order's `sell_amount` higher.
     #[serde_as(as = "DisplayFromStr")]
     pub total: u64,
 }

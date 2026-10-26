@@ -402,7 +402,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
 /// The full happy path: the driver's amounts come back in the EVM response
 /// shape with the request's own fields echoed, net of the buy token account
 /// rent at the mock price of a lamport an atom. The driver's 6400 lamport
-/// network fee is not charged.
+/// network fee is reported but not charged.
 #[tokio::test]
 async fn quote_answers_in_the_evm_shape() {
     let driver = spawn_mock_driver(serde_json::json!({
@@ -452,7 +452,7 @@ async fn quote_answers_in_the_evm_shape() {
                 // default rent.
                 "costs": {
                     "token": body["buyToken"],
-                    "networkFees": "0",
+                    "networkFees": "6400",
                     "buyTokenAtaCosts": "2220240",
                     "protocolFee": "0",
                     "total": "2220240",
@@ -624,7 +624,8 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
 /// With several drivers configured, the best answer wins: the largest buy
 /// amount for a sell order once the buy token account rent (2,220,240
 /// lamports, a lamport an atom) comes off it. The network fee a driver
-/// reports is not charged, so the larger raw answer wins despite its own.
+/// reports is not charged, so the larger raw answer wins despite its own,
+/// which the quote reports.
 #[tokio::test]
 async fn quote_picks_the_best_driver_answer() {
     let worse = spawn_mock_driver(serde_json::json!({
@@ -659,7 +660,7 @@ async fn quote_picks_the_best_driver_answer() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["buyAmount"], "2780760");
-    assert_eq!(json["quote"]["costs"]["networkFees"], "0");
+    assert_eq!(json["quote"]["costs"]["networkFees"], "2000000");
 }
 
 /// A buy order keeps its buy amount and pulls the buy token account rent,
@@ -698,7 +699,7 @@ async fn quote_charges_a_buy_order_on_the_sell_side() {
         json["quote"]["costs"],
         serde_json::json!({
             "token": body["sellToken"],
-            "networkFees": "0",
+            "networkFees": "6400",
             "buyTokenAtaCosts": "2220240",
             "protocolFee": "0",
             "total": "2220240",

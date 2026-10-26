@@ -48,6 +48,9 @@ pub struct Quote {
     pub buy_amount: u64,
     /// The solver that produced the quote.
     pub solver: Pubkey,
+    /// The network fee of settling the quoted route, in lamports. Zero when
+    /// the driver reports none.
+    pub network_fee: u64,
     /// The driver that answered, as labelled in metrics.
     pub driver: String,
 }
@@ -96,6 +99,10 @@ struct ResponseBody {
     buy_amount: u64,
     #[serde_as(as = "DisplayFromStr")]
     solver: Pubkey,
+    /// Absent from a driver that does not report it.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(default)]
+    network_fee: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -154,6 +161,7 @@ impl Quoter {
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             solver: quoted.solver,
+            network_fee: quoted.network_fee.unwrap_or(0),
             driver,
         })
     }
