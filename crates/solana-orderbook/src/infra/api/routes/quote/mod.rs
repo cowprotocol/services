@@ -117,7 +117,7 @@ pub async fn quote(
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
     let ranked = rank(quotes, kind, buy_token_ata_costs, price);
     // Before taking the winner, so a competition without one is logged too.
-    let competition = competition(&request, kind, amount, buy_token_ata_costs, &ranked);
+    let competition = competition(&request, kind, amount, buy_token_ata_costs, price, &ranked);
     // Strings and integers, so the serialization cannot fail.
     let json = serde_json::to_string(&competition).unwrap_or_default();
     tracing::debug!(competition = %json, "computed quote");
@@ -230,6 +230,7 @@ fn rank(
 #[derive(Serialize)]
 struct Competition<'a> {
     request: CompetitionRequest,
+    metadata: CompetitionMetadata,
     quotes: Vec<CompetitionQuote<'a>>,
 }
 
@@ -244,6 +245,19 @@ struct CompetitionRequest {
     #[serde_as(as = "DisplayFromStr")]
     amount: u64,
     kind: dto::Kind,
+}
+
+/// What the execution cost was taken with, so the netted amounts can be
+/// recomputed from the quoted ones.
+#[serde_as]
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompetitionMetadata {
+    /// Native price of the token the cost comes out of: the buy token of a
+    /// sell order, the sell token of a buy order.
+    #[serde_as(as = "DisplayFromStr")]
+    native_price: u64,
+    /// Rent of the buy token account.
     #[serde_as(as = "DisplayFromStr")]
     buy_token_ata_costs: u64,
 }
@@ -277,6 +291,7 @@ fn competition<'a>(
     kind: dto::Kind,
     amount: u64,
     rent: u64,
+    price: NonZero<u64>,
     ranked: &'a [(quoter::Quote, Option<(quoter::Quote, Costs)>)],
 ) -> Competition<'a> {
     Competition {
@@ -285,6 +300,9 @@ fn competition<'a>(
             buy_token: request.buy_token,
             amount,
             kind,
+        },
+        metadata: CompetitionMetadata {
+            native_price: price.get(),
             buy_token_ata_costs: rent,
         },
         quotes: ranked
@@ -873,20 +891,31 @@ mod tests {
     /// Base58 pubkeys and amounts as strings, like the API.
     #[test]
     fn the_competition_serializes_for_the_log_line() {
+        let price = price(Solana::NATIVE_PRICE_DENOMINATOR);
         let ranked = rank(
             vec![quote(1_000, 5_000, 400), quote(1_000, 10, 0)],
             dto::Kind::Sell,
             100,
-            price(Solana::NATIVE_PRICE_DENOMINATOR),
+            price,
         );
         let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
-        let json =
-            serde_json::to_value(competition(&request, dto::Kind::Sell, 1_000, 100, &ranked))
-                .unwrap();
+        let json = serde_json::to_value(competition(
+            &request,
+            dto::Kind::Sell,
+            1_000,
+            100,
+            price,
+            &ranked,
+        ))
+        .unwrap();
         assert_eq!(json["request"]["kind"], "sell");
         assert_eq!(json["request"]["amount"], "1000");
-        assert_eq!(json["request"]["buyTokenAtaCosts"], "100");
         assert_eq!(json["request"]["sellToken"], request.sell_token.to_string());
+        assert_eq!(json["metadata"]["buyTokenAtaCosts"], "100");
+        assert_eq!(
+            json["metadata"]["nativePrice"],
+            Solana::NATIVE_PRICE_DENOMINATOR.to_string()
+        );
         let winner = &json["quotes"][0];
         assert_eq!(winner["driver"], "driver");
         assert_eq!(winner["solver"], Pubkey::default().to_string());
