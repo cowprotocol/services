@@ -158,8 +158,8 @@ pub struct Costs {
     /// amounts below are in its atoms.
     #[serde_as(as = "DisplayFromStr")]
     pub token: Pubkey,
-    /// The network fee of settling the quoted route, as the winning driver
-    /// reported it, zero when it reported none.
+    /// Always zero: the network fee of settling is the solver's to pay, not
+    /// the trader's.
     #[serde_as(as = "DisplayFromStr")]
     pub network_fees: u64,
     /// Rent of the buy token account when the settlement must create it.

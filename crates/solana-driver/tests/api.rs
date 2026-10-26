@@ -923,15 +923,14 @@ async fn buy_quote_returns_the_executed_amounts() {
 
 /// The lamports settling the standard solve request costs a driver that
 /// charges them: the rent of the order's missing 165-byte buy token account
-/// at the SDK's default rent, the mock RPC answering no rent sysvar, plus the
-/// 19_000 lamport network fee of the 1.4M unit ceiling at the mock's 10_000
-/// micro-lamports per unit.
+/// at the SDK's default rent, the mock RPC answering no rent sysvar. The
+/// network fee is not charged.
 fn execution_cost() -> u64 {
-    Rent::default().minimum_balance(spl_token_interface::state::Account::LEN) + 19_000
+    Rent::default().minimum_balance(spl_token_interface::state::Account::LEN)
 }
 
 /// The standard solve request pricing the buy token so that the execution
-/// cost at the ceiling comes to exactly `atoms` of its atoms.
+/// cost comes to exactly `atoms` of its atoms.
 fn solve_request_priced_for_a_cut_of(atoms: u64) -> serde_json::Value {
     let mut request = solve_request();
     let price = execution_cost() * 1_000_000_000 / atoms;
@@ -960,38 +959,14 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     assert!(request["orders"][0].get("missingBuyTokenAccount").is_none());
 }
 
-/// The mock RPC answers no bundle simulation, so the units come from the
-/// policy's 200_000 default: 2_000 lamports of priority fee instead of the
-/// ceiling's 14_000, so the rent and fee priced at 1000 atoms for the ceiling
-/// come to 995. The limit sent to the engine moves by the same 995.
+/// The cut is the rent alone, 1000 atoms, so the 3000 route is reported at
+/// exactly the 2000 limit although its simulated settlement pays a 6_100
+/// lamport network fee: 1_100 of priority fee on the 110_000 units it
+/// declares plus the signature. Cutting that fee too would push the fill
+/// under the limit and drop it. The limit sent to the engine moves by the
+/// same 1000.
 #[tokio::test]
-async fn solve_cuts_at_the_policy_default_compute_units_without_a_simulation() {
-    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with_fee(engine, 0).await;
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
-            default_compute_unit_limit: 200_000,
-            ..priority_fee()
-        },
-        ..api_with(vec![solver], Mocks::new()).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
-
-    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
-    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2005");
-
-    let request = requests.lock().unwrap().take().unwrap();
-    assert_eq!(request["orders"][0]["buyAmount"], "2995");
-}
-
-/// The simulation reports 100_000 units, so the settlement declares 110_000
-/// and the cut is priced at them: 1_100 lamports of priority fee, 994 atoms.
-/// The limit sent to the engine still moves by the 1000 of the policy's
-/// default, the ceiling here, since no route exists yet.
-#[tokio::test]
-async fn solve_cuts_at_the_simulated_compute_units() {
+async fn solve_does_not_cut_the_network_fee() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
     let (solver, _) = solver_with_fee(engine, 0).await;
     let mut mocks = Mocks::new();
@@ -1011,7 +986,7 @@ async fn solve_cuts_at_the_simulated_compute_units() {
     let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
-    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2006");
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2000");
 
     let request = requests.lock().unwrap().take().unwrap();
     assert_eq!(request["orders"][0]["buyAmount"], "3000");
@@ -1043,8 +1018,8 @@ async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
 }
 
 /// A quote shrinks by the fee like a fill, but not by the execution costs:
-/// the orderbook nets those from the quote itself, so the engine's 2000 buy
-/// comes back as 1900 with the network fee beside it.
+/// the orderbook nets the rent from the quote itself, so the engine's 2000
+/// buy comes back as 1900 with the network fee beside it, uncharged.
 #[tokio::test]
 async fn sell_quote_reports_the_fee_adjusted_buy_amount() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;

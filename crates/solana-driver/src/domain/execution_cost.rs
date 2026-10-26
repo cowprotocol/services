@@ -2,19 +2,18 @@
 //!
 //! A settlement costs its payer the network fee of its transaction and the
 //! rent of every buy token account it creates. A solver whose `fee-handler`
-//! is the driver has those lamports cut from every fill its engine reports,
+//! is the driver has the rent cut from every fill its engine reports,
 //! converted into the order's limit-leg token at the auction's native prices:
 //! a sell order delivers less buy token and a buy order pulls more sell token
 //! than the route achieved. The difference stays where the solver fee's
-//! does, see [`super::solver_fee`].
+//! does, see [`super::solver_fee`]. The network fee is the solver's to pay,
+//! never the trader's.
 //!
-//! The cut is taken at two points of solve time. Before any route is known,
-//! the limit leg sent to the engine is moved by the cut priced at the
-//! policy's default compute units, before the solver fee tightens it. Once
-//! the settlement is simulated, [`ExecutionCost::apply`] cuts every fill at
-//! the compute units the settlement will declare, or else the policy's
-//! default. A solution whose trades cannot absorb the cut within the order's
-//! signed limit is dropped whole, like one that cannot absorb the fee.
+//! The cut is taken at two points of solve time: the limit leg sent to the
+//! engine is moved by it before the solver fee tightens it, and
+//! [`ExecutionCost::apply`] cuts every fill once the settlement is simulated.
+//! A solution whose trades cannot absorb the cut within the order's signed
+//! limit is dropped whole, like one that cannot absorb the fee.
 
 use {
     super::{
@@ -88,13 +87,13 @@ pub enum Rejected {
 impl ExecutionCost<'_> {
     /// The cut of each order a fill can be charged for: the atoms of its
     /// limit-leg token, the buy token of a sell order and the sell token of
-    /// a buy order, worth its rent plus `network_fee` lamports. An order
-    /// whose limit-leg token has no positive price is left out.
-    pub fn cuts(&self, orders: &[Order], network_fee: u64) -> HashMap<OrderUid, u64> {
+    /// a buy order, worth its rent. An order whose limit-leg token has no
+    /// positive price is left out.
+    pub fn cuts(&self, orders: &[Order]) -> HashMap<OrderUid, u64> {
         orders
             .iter()
             .filter_map(|order| {
-                let cut = self.cut(order, self.rent(order) + u128::from(network_fee));
+                let cut = self.cut(order, self.rent(order));
                 if cut.is_none() {
                     tracing::debug!(
                         order = %order.uid,
@@ -106,22 +105,15 @@ impl ExecutionCost<'_> {
             .collect()
     }
 
-    /// Cuts every trade of `solution` by its order's rent and its share of
-    /// `network_fee`, the settlement's network fee split evenly over the
-    /// trades and rounded up. An order filled by several trades pays its
-    /// rent on the first. One failing trade rejects the whole solution, left
-    /// untouched. `Trade::solver_fee` carries the solver fee only, not the
-    /// cut.
+    /// Cuts every trade of `solution` by its order's rent. An order filled by
+    /// several trades pays its rent on the first. One failing trade rejects
+    /// the whole solution, left untouched. `Trade::solver_fee` carries the
+    /// solver fee only, not the cut.
     pub fn apply(
         &self,
         solution: &mut Solution,
         orders: &HashMap<OrderUid, &Order>,
-        network_fee: u64,
     ) -> Result<(), Rejected> {
-        let Some(trades) = NonZero::new(solution.trades.len() as u64) else {
-            return Ok(());
-        };
-        let fee_share = network_fee.div_ceil(trades.get());
         let mut rent_charged = HashSet::new();
         let solution_id = solution.id;
         let trades = solution
@@ -132,12 +124,11 @@ impl ExecutionCost<'_> {
                     .get(&trade.order_uid)
                     .copied()
                     .ok_or(Rejected::UnknownOrder(trade.order_uid))?;
-                let rent = if rent_charged.insert(order.uid) {
+                let lamports = if rent_charged.insert(order.uid) {
                     self.rent(order)
                 } else {
                     0
                 };
-                let lamports = rent + u128::from(fee_share);
                 let atoms = self
                     .cut(order, lamports)
                     .ok_or(Rejected::MissingPrice(order.uid))?;
@@ -286,12 +277,18 @@ mod tests {
         }
     }
 
-    /// 1000 lamports are 2000 buy atoms for a sell order and 500 sell atoms
-    /// for a buy order, rent adds to the fee, a lone lamport rounds up to an
-    /// atom, and a native SOL buy is cut in lamports with no price looked up.
+    /// 1000 lamports of rent are 2000 buy atoms for a sell order and 500 sell
+    /// atoms for a buy order, an order without rent is cut nothing, a native
+    /// SOL buy is cut in lamports with no price looked up, and a lone lamport
+    /// rounds up to an atom.
     #[test]
-    fn the_cut_is_the_rent_and_the_fee_in_the_limit_leg_token() {
-        let rent = HashMap::from([(OrderUid([3; 32]), 500)]);
+    fn the_cut_is_the_rent_in_the_limit_leg_token() {
+        let rent = HashMap::from([
+            (OrderUid([1; 32]), 1_000),
+            (OrderUid([2; 32]), 1_000),
+            (OrderUid([4; 32]), 1_000),
+            (OrderUid([5; 32]), 1),
+        ]);
         let prices = prices();
         let cost = cost(&rent, &prices);
         let orders = [
@@ -302,13 +299,14 @@ mod tests {
                 buy_token: ENCODED_NATIVE_SOL_TRANSFER,
                 ..order(4, Side::Sell, 1_000, 1_000)
             },
+            order(5, Side::Buy, 1_000, 1_000),
         ];
-        let cuts = cost.cuts(&orders, 1_000);
+        let cuts = cost.cuts(&orders);
         assert_eq!(cuts[&orders[0].uid], 2_000);
         assert_eq!(cuts[&orders[1].uid], 500);
-        assert_eq!(cuts[&orders[2].uid], 3_000);
+        assert_eq!(cuts[&orders[2].uid], 0);
         assert_eq!(cuts[&orders[3].uid], 1_000);
-        assert_eq!(cost.cuts(&orders[1..2], 1)[&orders[1].uid], 1);
+        assert_eq!(cuts[&orders[4].uid], 1);
     }
 
     /// An order whose limit-leg token has no positive price gets no cut and
@@ -316,65 +314,65 @@ mod tests {
     /// `u64::MAX` saturates.
     #[test]
     fn a_cut_needs_a_price_unless_there_is_nothing_to_convert() {
-        let rent = HashMap::new();
+        let rent = HashMap::from([(OrderUid([1; 32]), 1_000), (OrderUid([2; 32]), 1_000)]);
+        let no_rent = HashMap::new();
         let unpriced = HashMap::from([(pubkey(0x44), 0)]);
         let orders = [
             order(1, Side::Sell, 1_000, 1_000),
             order(2, Side::Buy, 1_000, 1_000),
         ];
-        let cost = cost(&rent, &unpriced);
-        assert!(cost.cuts(&orders, 1_000).is_empty());
+        assert!(cost(&rent, &unpriced).cuts(&orders).is_empty());
         assert_eq!(
-            cost.cuts(&orders, 0),
+            cost(&no_rent, &unpriced).cuts(&orders),
             HashMap::from([(orders[0].uid, 0), (orders[1].uid, 0)])
         );
 
+        let huge = HashMap::from([(OrderUid([1; 32]), u64::MAX)]);
         let tiny = HashMap::from([(pubkey(0x44), 1)]);
-        let cuts = self::cost(&rent, &tiny).cuts(&orders[..1], u64::MAX);
+        let cuts = cost(&huge, &tiny).cuts(&orders[..1]);
         assert_eq!(cuts[&orders[0].uid], u64::MAX);
     }
 
-    /// 1000 lamports come off the 3000 buy leg as 2000 atoms and go onto the
-    /// 1000 sell leg as 500. The trade's solver fee is left alone. Nothing to
-    /// cut leaves the fill as the engine reported it.
+    /// 1000 lamports of rent come off the 3000 buy leg as 2000 atoms and go
+    /// onto the 1000 sell leg as 500. The trade's solver fee is left alone.
+    /// An order without rent leaves the fill as the engine reported it.
     #[test]
     fn the_cut_comes_off_the_limit_leg() {
-        let (rent, prices) = (HashMap::new(), prices());
+        let (rent, prices) = (HashMap::from([(OrderUid([1; 32]), 1_000)]), prices());
         let cost = cost(&rent, &prices);
 
         let orders = [order(1, Side::Sell, 1_000, 500)];
         let mut sol = solution(vec![trade(1, 1_000, 3_000)]);
-        cost.apply(&mut sol, &self::orders(&orders), 1_000).unwrap();
+        cost.apply(&mut sol, &self::orders(&orders)).unwrap();
         assert_eq!(sol.trades[0].executed_sell, 1_000);
         assert_eq!(sol.trades[0].executed_buy, 1_000);
         assert_eq!(sol.trades[0].solver_fee, 7);
 
         let orders = [order(1, Side::Buy, 2_000, 1_000)];
         let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
-        cost.apply(&mut sol, &self::orders(&orders), 1_000).unwrap();
+        cost.apply(&mut sol, &self::orders(&orders)).unwrap();
         assert_eq!(sol.trades[0].executed_sell, 1_500);
         assert_eq!(sol.trades[0].executed_buy, 1_000);
 
-        let orders = [order(1, Side::Sell, 1_000, 1_000)];
-        let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
-        cost.apply(&mut sol, &self::orders(&orders), 0).unwrap();
+        let orders = [order(2, Side::Sell, 1_000, 1_000)];
+        let mut sol = solution(vec![trade(2, 1_000, 1_000)]);
+        cost.apply(&mut sol, &self::orders(&orders)).unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
     }
 
-    /// Two trades share the 1001 lamport fee as 501 lamports each, and only
-    /// the first trade of an order pays its rent: 1000 lamports are 2000
-    /// atoms off the first buy leg, 501 are 1002 off the second.
+    /// Only the first trade of an order pays its rent: 1000 lamports are 2000
+    /// atoms off the first buy leg, and the second is left alone.
     #[test]
-    fn the_network_fee_is_split_over_the_trades_and_the_rent_paid_once() {
-        let rent = HashMap::from([(OrderUid([1; 32]), 499)]);
+    fn the_rent_is_paid_once_per_order() {
+        let rent = HashMap::from([(OrderUid([1; 32]), 1_000)]);
         let prices = prices();
         let orders = [order(1, Side::Sell, 1_000, 1_000)];
         let mut sol = solution(vec![trade(1, 500, 3_000), trade(1, 500, 3_000)]);
         cost(&rent, &prices)
-            .apply(&mut sol, &self::orders(&orders), 1_001)
+            .apply(&mut sol, &self::orders(&orders))
             .unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
-        assert_eq!(sol.trades[1].executed_buy, 1_998);
+        assert_eq!(sol.trades[1].executed_buy, 3_000);
     }
 
     /// The limit leg sent to the engine, the signed limit moved by the cut,
@@ -382,30 +380,32 @@ mod tests {
     /// rejected.
     #[test]
     fn the_moved_limit_is_the_exact_boundary() {
-        let rent = HashMap::from([(OrderUid([1; 32]), 123)]);
+        let rent = HashMap::from([(OrderUid([1; 32]), 1_123)]);
         let prices = prices();
         let cost = cost(&rent, &prices);
         for side in [Side::Sell, Side::Buy] {
             let orders = [order(1, side, 1_000, 1_000)];
-            let cut = cost.cuts(&orders, 1_000)[&orders[0].uid];
+            let cut = cost.cuts(&orders)[&orders[0].uid];
             let (at_limit, beyond) = match side {
                 Side::Sell => (trade(1, 1_000, 1_000 + cut), trade(1, 1_000, 999 + cut)),
                 Side::Buy => (trade(1, 1_000 - cut, 1_000), trade(1, 1_001 - cut, 1_000)),
             };
-            cost.apply(&mut solution(vec![at_limit]), &self::orders(&orders), 1_000)
+            cost.apply(&mut solution(vec![at_limit]), &self::orders(&orders))
                 .unwrap();
             assert_eq!(
-                cost.apply(&mut solution(vec![beyond]), &self::orders(&orders), 1_000),
+                cost.apply(&mut solution(vec![beyond]), &self::orders(&orders)),
                 Err(Rejected::LimitPrice(orders[0].uid))
             );
         }
     }
 
     /// Each failing trade names its reason, and the passing trade before it
-    /// is left as the engine reported it.
+    /// is left as the engine reported it. Every order's rent is 500 lamports,
+    /// 1000 buy atoms or 250 sell atoms.
     #[test]
     fn a_bad_trade_rejects_the_whole_solution_untouched() {
-        let (rent, prices) = (HashMap::new(), prices());
+        let rent = (1..=5).map(|byte| (OrderUid([byte; 32]), 500)).collect();
+        let prices = prices();
         let cost = cost(&rent, &prices);
         let fine = order(1, Side::Sell, 1_000, 1_000);
         let uid = |byte| OrderUid([byte; 32]);
@@ -442,10 +442,7 @@ mod tests {
         for (order, bad, reason) in cases {
             let orders = [fine.clone(), order];
             let mut sol = solution(vec![trade(1, 1_000, 3_000), bad]);
-            assert_eq!(
-                cost.apply(&mut sol, &self::orders(&orders), 1_000),
-                Err(reason)
-            );
+            assert_eq!(cost.apply(&mut sol, &self::orders(&orders)), Err(reason));
             assert_eq!(sol.trades[0].executed_buy, 3_000);
         }
     }

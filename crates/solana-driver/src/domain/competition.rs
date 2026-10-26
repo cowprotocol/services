@@ -101,10 +101,10 @@ impl Competition {
     }
 
     /// Solve the auction, drop the solutions whose settlement provably fails
-    /// (over the byte limit or failing in simulation), cut the execution costs
-    /// from the rest when the solver's fee handler is the driver, at the
-    /// compute units their settlement declares or else the policy's default,
-    /// and cache them for a later `settle`.
+    /// (over the byte limit or failing in simulation), and when the solver's
+    /// fee handler is the driver, drop those whose network fee is over budget
+    /// and cut the buy token account rent from the rest. Cache what is left
+    /// for a later `settle`.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -144,9 +144,9 @@ impl Competition {
             let auction = &auction;
             async move {
                 let started = Instant::now();
-                // The cut waits for the simulated units, and after the window
-                // only the HTTP time buffer is left, so the fees pricing it are
-                // fetched alongside the simulation.
+                // The budget check waits for the simulated units, and after the
+                // window only the HTTP time buffer is left, so the fees pricing
+                // it are fetched alongside the simulation.
                 let (verdict, fees) = tokio::join!(
                     tokio::time::timeout(
                         window,
@@ -221,19 +221,16 @@ impl Competition {
                 solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
             if let Some(fees) = fees {
-                let network_fee = match self.network_fee_at(&fees?, &solution) {
-                    Ok(network_fee) => network_fee,
-                    Err(reason) => {
-                        tracing::warn!(
-                            solver = %self.solver.name(),
-                            solution_id = solution.id,
-                            %reason,
-                            "dropping solution, its network fee is over budget"
-                        );
-                        continue;
-                    }
-                };
-                if let Err(reason) = costs.apply(&mut solution, &orders, network_fee) {
+                if let Err(reason) = self.network_fee_at(&fees?, &solution) {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        %reason,
+                        "dropping solution, its network fee is over budget"
+                    );
+                    continue;
+                }
+                if let Err(reason) = costs.apply(&mut solution, &orders) {
                     tracing::warn!(
                         solver = %self.solver.name(),
                         solution_id = solution.id,
@@ -342,9 +339,9 @@ impl Competition {
 
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
-    /// driver, the limits sent to the engine are moved by the execution cost
-    /// at the policy's default compute units and every fill is tightened by
-    /// the solver fee; the execution costs themselves are not cut here.
+    /// driver, the limits sent to the engine are moved by the buy token
+    /// account rent and every fill is tightened by the solver fee; the rent
+    /// itself is not cut here.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
     /// its execution costs are reported, not cut, and nothing is flagged.
@@ -365,12 +362,8 @@ impl Competition {
                     rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
                     native_prices: &auction.native_prices,
                 };
-                let network_fee = match buy_token_accounts {
-                    Some(_) => self.network_fee_reserve().await?,
-                    None => 0,
-                };
                 Charge::Driver {
-                    cuts: costs.cuts(&auction.orders, network_fee),
+                    cuts: costs.cuts(&auction.orders),
                     fee: self.solver.solver_fee(),
                 }
             }
@@ -412,25 +405,6 @@ impl Competition {
             tightened.push(solution);
         }
         Ok(tightened)
-    }
-
-    /// The network fee the limit legs sent to the engine are moved by, before
-    /// any route is known: the signature fee plus the priority fee at the
-    /// policy's default compute unit limit over the fees recently paid
-    /// cluster-wide, or the budget when that is over it. Cluster-wide fees
-    /// floor what any route's accounts pay, so a fill priced at the same
-    /// units, see [`Self::network_fee_at`], pays at least this much, and a
-    /// fill on the moved limit whose route pays more is dropped.
-    async fn network_fee_reserve(&self) -> Result<u64, Error> {
-        let fees = self
-            .blockchain
-            .recent_prioritization_fees(&[])
-            .await
-            .map_err(Error::Rpc)?;
-        Ok(self.priority_fee.estimate(&fees, None).map_or_else(
-            |_| self.priority_fee.max_network_fee(),
-            |estimate| estimate.network_fee(),
-        ))
     }
 
     /// The network fee of settling `solution`, in lamports: the signature fee
