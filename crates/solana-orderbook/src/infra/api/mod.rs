@@ -99,6 +99,7 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
+        routes::initialize_metrics();
         let state = State::new(
             self.pool,
             self.quoter,

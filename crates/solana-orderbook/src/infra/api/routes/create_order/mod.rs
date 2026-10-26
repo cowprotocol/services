@@ -291,14 +291,16 @@ async fn place(
         }
         return Err(Failure::internal(err, "sponsored order insert"));
     }
-    let in_market = quote
-        .as_ref()
-        .is_some_and(|quote| in_market(order.sell_amount, order.buy_amount, quote));
+    let position = MarketPosition::of(order.sell_amount, order.buy_amount, quote.as_ref());
     metrics()
         .orders
-        .with_label_values(&[if in_market { "market" } else { "limit" }, "created"])
+        .with_label_values(&[position.as_str(), "created"])
         .inc();
-    tracing::info!(order_uid = %uid, in_market, "order created");
+    tracing::info!(
+        order_uid = %uid,
+        in_market = position == MarketPosition::InMarket,
+        "order created"
+    );
     Ok((StatusCode::CREATED, Json(uid)))
 }
 
@@ -596,30 +598,65 @@ async fn link_quote(
     })
 }
 
-/// Whether an order asks no better price than `quote` gave, the EVM
+/// Whether an order's limit sat within its quote when it was placed, the EVM
 /// `is_order_outside_market_price` check. The quote's execution cost is
 /// already netted into its amounts, so the comparison is the plain cross
-/// product. A quote amount past `u64` counts as out of market.
-fn in_market(sell_amount: u64, buy_amount: u64, quote: &db::OrderQuote) -> bool {
-    let (Some(quote_sell), Some(quote_buy)) =
-        (quote.sell_amount.to_u64(), quote.buy_amount.to_u64())
-    else {
-        return false;
-    };
-    u128::from(sell_amount) * u128::from(quote_buy)
-        >= u128::from(quote_sell) * u128::from(buy_amount)
+/// product. An order without a quote, or with a quote amount past `u64`, is
+/// out of market.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MarketPosition {
+    InMarket,
+    OutOfMarket,
+}
+
+impl MarketPosition {
+    fn of(sell_amount: u64, buy_amount: u64, quote: Option<&db::OrderQuote>) -> Self {
+        let in_market = quote.is_some_and(|quote| {
+            let (Some(quote_sell), Some(quote_buy)) =
+                (quote.sell_amount.to_u64(), quote.buy_amount.to_u64())
+            else {
+                return false;
+            };
+            u128::from(sell_amount) * u128::from(quote_buy)
+                >= u128::from(quote_sell) * u128::from(buy_amount)
+        });
+        if in_market {
+            Self::InMarket
+        } else {
+            Self::OutOfMarket
+        }
+    }
+
+    /// The metric label values keep the EVM `market`/`limit` naming.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InMarket => "market",
+            Self::OutOfMarket => "limit",
+        }
+    }
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
-    /// Placed orders by whether their limit was within their quote
-    /// (`market`) or not (`limit`).
+    /// Placed orders by market position, `market` or `limit`, and operation.
     #[metric(name = "orderbook_orders", labels("kind", "operation"))]
     orders: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {
     Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
+
+/// Create every placement series at zero, so a query over one reads 0
+/// instead of no data before its first order.
+pub fn initialize_metrics() {
+    let metrics = metrics();
+    for position in [MarketPosition::InMarket, MarketPosition::OutOfMarket] {
+        metrics
+            .orders
+            .with_label_values(&[position.as_str(), "created"])
+            .reset();
+    }
 }
 
 /// Resolve an instruction's account indexes into the transaction's keys.
@@ -1010,21 +1047,29 @@ mod tests {
     }
 
     /// At the quote, or asking less buy for the sell (slippage), the order
-    /// is in market. Asking more buy, or offering less sell, it is not. A
-    /// quote amount past `u64` is never in market.
+    /// is in market. Asking more buy, or offering less sell, it is not. No
+    /// quote, or a quote amount past `u64`, is never in market.
     #[test]
     fn an_order_is_in_market_when_it_asks_no_better_than_its_quote() {
         let quote_1000_for_2000 = quote(1_000, 2_000);
-        assert!(in_market(1_000, 2_000, &quote_1000_for_2000));
-        assert!(in_market(1_000, 1_900, &quote_1000_for_2000));
-        assert!(in_market(1_100, 2_000, &quote_1000_for_2000));
-        assert!(!in_market(1_000, 2_001, &quote_1000_for_2000));
-        assert!(!in_market(999, 2_000, &quote_1000_for_2000));
+        let position = |sell, buy| MarketPosition::of(sell, buy, Some(&quote_1000_for_2000));
+        assert_eq!(position(1_000, 2_000), MarketPosition::InMarket);
+        assert_eq!(position(1_000, 1_900), MarketPosition::InMarket);
+        assert_eq!(position(1_100, 2_000), MarketPosition::InMarket);
+        assert_eq!(position(1_000, 2_001), MarketPosition::OutOfMarket);
+        assert_eq!(position(999, 2_000), MarketPosition::OutOfMarket);
+        assert_eq!(
+            MarketPosition::of(1_000, 2_000, None),
+            MarketPosition::OutOfMarket
+        );
         let past_u64 = db::OrderQuote {
             sell_amount: "18446744073709551616".parse().unwrap(),
             ..quote(1_000, 2_000)
         };
-        assert!(!in_market(1_000, 2_000, &past_u64));
+        assert_eq!(
+            MarketPosition::of(1_000, 2_000, Some(&past_u64)),
+            MarketPosition::OutOfMarket
+        );
     }
 
     #[test]
