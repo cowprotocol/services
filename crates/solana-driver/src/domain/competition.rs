@@ -146,7 +146,7 @@ impl Competition {
                 let started = Instant::now();
                 // The cut waits for the simulated units, and after the window
                 // only the HTTP time buffer is left, so the fees pricing it are
-                // fetched alongside the simulation.
+                // fetched alongside the simulation and within the same window.
                 let (verdict, fees) = tokio::join!(
                     tokio::time::timeout(
                         window,
@@ -154,7 +154,10 @@ impl Competition {
                     ),
                     async {
                         match self.solver.fee_handler() {
-                            FeeHandler::Driver => Some(self.prioritization_fees(solution).await),
+                            FeeHandler::Driver => Some(
+                                tokio::time::timeout(window, self.prioritization_fees(solution))
+                                    .await,
+                            ),
                             FeeHandler::Solver => None,
                         }
                     },
@@ -221,6 +224,15 @@ impl Competition {
                 solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
             if let Some(fees) = fees {
+                let Ok(fees) = fees else {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        window_ms,
+                        "dropping solution, its prioritization fees timed out"
+                    );
+                    continue;
+                };
                 // The cut and its budget check price this limit, so `settle`
                 // declares it instead of the runtime's default, which can be
                 // several times larger.
