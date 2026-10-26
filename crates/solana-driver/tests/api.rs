@@ -701,11 +701,14 @@ async fn settle_rejects_a_passed_submission_deadline() {
     assert_eq!(json["kind"], "DeadlineExceeded");
 }
 
-/// The RPC reports a 10_000 micro-lamport fee and the engine sends no compute
-/// unit estimate, so the fee is computed at the runtime's default for the two
-/// settlement instructions, 400k units: 4_000 lamports, one over the budget.
+/// The RPC reports a 10_000 micro-lamport fee, the engine sends no compute
+/// unit estimate and the simulation reports no units, so the fee is computed
+/// at the limit the settlement would declare, the runtime's default for its
+/// two instructions, 400k units: 4_000 lamports, one over the budget. The
+/// solution is dropped at `/solve` although the policy's 200k default fits,
+/// and although its engine, not the driver, prices the execution costs.
 #[tokio::test]
-async fn settle_refuses_a_priority_fee_over_budget() {
+async fn solve_drops_a_solution_whose_priority_fee_is_over_budget() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
     let (solver, _) = solver_with_keypair(engine).await;
     let mut mocks = Mocks::new();
@@ -716,6 +719,7 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     let api = Api {
         priority_fee: PriorityFeePolicy {
             max_priority_fee_lamports: 3_999,
+            default_compute_unit_limit: 200_000,
             ..priority_fee()
         },
         ..api_with(vec![solver], mocks).await
@@ -725,22 +729,7 @@ async fn settle_refuses_a_priority_fee_over_budget() {
     tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
 
     let body = call_solve(addr).await;
-    let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
-
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/settle"))
-        .json(&serde_json::json!({
-            "auctionId": 7,
-            "solutionId": solution_id,
-            "submissionDeadlineSlot": 1_000_000,
-        }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-
-    let json: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(json["kind"], "PriorityFeeTooHigh");
+    assert!(response_ids(&body).is_empty());
 }
 
 /// Same fee and budget as above, but the `/solve` simulation reports the

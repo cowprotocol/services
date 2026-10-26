@@ -101,9 +101,8 @@ impl Competition {
     }
 
     /// Solve the auction, drop the solutions whose settlement provably fails
-    /// (over the byte limit or failing in simulation) or, when the solver's
-    /// fee handler is the driver, whose network fee is over budget, and cache
-    /// the rest for a later `settle`.
+    /// (over the byte limit, failing in simulation or over the priority fee
+    /// budget), and cache the rest for a later `settle`.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -139,27 +138,17 @@ impl Competition {
             .signed_duration_since(chrono::Utc::now())
             .to_std()
             .unwrap_or_default();
-        let simulations = futures::future::join_all(solutions.iter().map(|solution| {
+        let verdicts = futures::future::join_all(solutions.iter().map(|solution| {
             let auction = &auction;
             async move {
                 let started = Instant::now();
-                // The budget check waits for the simulated units, and after the
-                // window only the HTTP time buffer is left, so the fees pricing
-                // it are fetched alongside the simulation.
-                let (verdict, fees) = tokio::join!(
-                    tokio::time::timeout(
-                        window,
-                        self.simulate_solution(auction_id, auction, solution),
-                    ),
-                    async {
-                        match self.solver.fee_handler() {
-                            FeeHandler::Driver => Some(self.prioritization_fees(solution).await),
-                            FeeHandler::Solver => None,
-                        }
-                    },
-                );
-                let verdict = verdict.unwrap_or(Err(Error::SimulationTimedOut));
-                (verdict, started.elapsed(), fees)
+                let verdict = tokio::time::timeout(
+                    window,
+                    self.simulate_solution(auction_id, auction, solution),
+                )
+                .await
+                .unwrap_or(Err(Error::SimulationTimedOut));
+                (verdict, started.elapsed())
             }
         }))
         .await;
@@ -167,7 +156,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        for (mut solution, (verdict, elapsed, fees)) in solutions.into_iter().zip(simulations) {
+        for (mut solution, (verdict, elapsed)) in solutions.into_iter().zip(verdicts) {
             metrics()
                 .solve_simulations
                 .with_label_values(&[
@@ -189,6 +178,15 @@ impl Competition {
                     window_ms,
                     "solution simulation passed"
                 ),
+                Err(Error::PriorityFeeTooHigh(reason)) => {
+                    tracing::warn!(
+                        solver = %self.solver.name(),
+                        solution_id = solution.id,
+                        %reason,
+                        "dropping solution, its network fee is over budget"
+                    );
+                    continue;
+                }
                 Err(error) if proves_failure(error) => {
                     tracing::warn!(
                         solver = %self.solver.name(),
@@ -214,17 +212,6 @@ impl Competition {
             {
                 solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
-            if let Some(fees) = fees
-                && let Err(reason) = self.network_fee_at(&fees?, &solution)
-            {
-                tracing::warn!(
-                    solver = %self.solver.name(),
-                    solution_id = solution.id,
-                    %reason,
-                    "dropping solution, its network fee is over budget"
-                );
-                continue;
-            }
             self.solutions.insert(
                 Key {
                     auction_id,
@@ -242,11 +229,13 @@ impl Competition {
 
     /// Check the solution's settlement fits the network's byte and account
     /// lock limits, then simulate it as one atomic bundle behind the
-    /// creations of its orders not created on chain yet. Any failure would
-    /// win the auction and then fail to settle. An error that
-    /// [`proves_failure`] is a verdict on the solution; any other means the
-    /// driver could not find out. A pass returns the slot the bundle
-    /// simulated against and the compute units the settlement consumed.
+    /// creations of its orders not created on chain yet, and check its
+    /// priority fee at the limit it will declare fits the budget. Any failure
+    /// would win the auction and then fail to settle. A priority fee over
+    /// budget, or an error that [`proves_failure`], is a verdict on the
+    /// solution; any other means the driver could not find out. A pass returns
+    /// the slot the bundle simulated against and the compute units the
+    /// settlement consumed.
     async fn simulate_solution(
         &self,
         auction_id: Id,
@@ -282,11 +271,20 @@ impl Competition {
             "simulating settlement bundle"
         );
 
-        let BundleSimulation { slot, results } = self
-            .blockchain
-            .simulate_bundle(&bundle)
-            .await
-            .map_err(Error::Rpc)?;
+        let writable = resolved.writable_accounts()?;
+        // The budget check waits for the simulated units, so the fees pricing
+        // it are fetched alongside the simulation.
+        let (simulation, fees) = tokio::join!(
+            self.blockchain.simulate_bundle(&bundle),
+            self.blockchain.recent_prioritization_fees(&writable),
+        );
+        let BundleSimulation { slot, results } = match simulation {
+            Ok(simulation) => simulation,
+            Err(err) => {
+                self.check_budget(fees, solution, &resolved, None)?;
+                return Err(Error::Rpc(err));
+            }
+        };
         for (leg, (transaction, result)) in bundle.iter().zip(&results).enumerate() {
             if let Some(err) = &result.err {
                 // Named here because the bundle endpoint may return no logs
@@ -316,10 +314,40 @@ impl Competition {
                 legs: bundle.len(),
             });
         }
-        Ok((
-            slot,
-            results.last().and_then(|result| result.units_consumed),
-        ))
+        let units = results.last().and_then(|result| result.units_consumed);
+        self.check_budget(fees, solution, &resolved, units)?;
+        Ok((slot, units))
+    }
+
+    /// Refuses, as `settle` would, a settlement whose priority fee is over
+    /// budget at the limit it will declare: the solution's estimate, else the
+    /// simulated `units` plus the headroom, else the runtime's default. Fees
+    /// the RPC failed to report leave the budget unchecked.
+    fn check_budget(
+        &self,
+        fees: Result<Vec<RpcPrioritizationFee>, cow_solana_rpc::Error>,
+        solution: &Solution,
+        resolved: &settlement::ResolvedSettlement,
+        units: Option<u64>,
+    ) -> Result<(), Error> {
+        let fees = match fees {
+            Ok(fees) => fees,
+            Err(err) => {
+                tracing::info!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    ?err,
+                    "priority fee budget unchecked"
+                );
+                return Ok(());
+            }
+        };
+        let limit = match (solution.cu_estimate, units) {
+            (None, Some(units)) => self.priority_fee.compute_unit_limit(units),
+            _ => resolved.compute_unit_limit()?,
+        };
+        self.priority_fee.estimate(&fees, Some(limit))?;
+        Ok(())
     }
 
     /// Send the auction to the solver engine and return its deduplicated
@@ -401,32 +429,16 @@ impl Competition {
 
     /// The network fee of settling `solution`, in lamports: the signature fee
     /// plus the priority fee over the accounts its interactions write, at its
-    /// compute unit estimate.
+    /// compute unit estimate. A quote's settlement accounts are placeholders,
+    /// so only the interactions' accounts are read.
     pub async fn network_fee(&self, solution: &Solution) -> Result<u64, Error> {
-        let fees = self.prioritization_fees(solution).await?;
-        Ok(self.network_fee_at(&fees, solution)?)
-    }
-
-    /// The fees recently paid over the accounts `solution`'s interactions
-    /// write. A quote's settlement accounts are placeholders, so only the
-    /// interactions' accounts are read.
-    async fn prioritization_fees(
-        &self,
-        solution: &Solution,
-    ) -> Result<Vec<RpcPrioritizationFee>, Error> {
         let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
-        self.blockchain
+        let fees = self
+            .blockchain
             .recent_prioritization_fees(&writable)
             .await
-            .map_err(Error::Rpc)
-    }
-
-    fn network_fee_at(
-        &self,
-        fees: &[RpcPrioritizationFee],
-        solution: &Solution,
-    ) -> Result<u64, priority_fee::OverBudget> {
-        let estimate = self.priority_fee.estimate(fees, solution.cu_estimate)?;
+            .map_err(Error::Rpc)?;
+        let estimate = self.priority_fee.estimate(&fees, solution.cu_estimate)?;
         let network_fee = estimate.network_fee();
         tracing::debug!(
             solution_id = solution.id,
