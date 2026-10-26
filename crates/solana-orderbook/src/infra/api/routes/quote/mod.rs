@@ -708,7 +708,7 @@ mod tests {
 
     fn quote(sell_amount: u64, buy_amount: u64, network_fee: u64) -> quoter::Quote {
         quoter::Quote {
-            driver: "http://driver/".to_owned(),
+            driver: "driver".to_owned(),
             elapsed: Duration::from_millis(1),
             sell_amount,
             buy_amount,
@@ -869,7 +869,7 @@ mod tests {
         assert_eq!(json["request"]["buyTokenAtaCosts"], "100");
         assert_eq!(json["request"]["sellToken"], request.sell_token.to_string());
         let winner = &json["quotes"][0];
-        assert_eq!(winner["driver"], "http://driver/");
+        assert_eq!(winner["driver"], "driver");
         assert_eq!(winner["solver"], Pubkey::default().to_string());
         assert_eq!(winner["buyAmount"], "4500");
         assert_eq!(winner["quotedBuyAmount"], "5000");
