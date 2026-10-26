@@ -80,7 +80,7 @@ impl NativePriceConfig {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address};
+    use {super::*, alloy_primitives::address};
 
     #[test]
     fn deserialize_full() {

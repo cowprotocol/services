@@ -99,6 +99,7 @@ async fn run(config: Config) {
         &config.rpc.endpoint,
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
+        "slot_trigger",
     );
     let trigger = SlotTrigger::new(rpc, config.min_auction_interval);
 
@@ -140,6 +141,7 @@ async fn run(config: Config) {
                     &config.rpc.endpoint,
                     config.rpc.request_timeout,
                     CommitmentConfig::confirmed(),
+                    "sponsoring",
                 ),
                 pool.clone(),
                 sponsoring.max_displaced_creations,
@@ -154,6 +156,7 @@ async fn run(config: Config) {
             &config.rpc.endpoint,
             config.rpc.request_timeout,
             CommitmentConfig::confirmed(),
+            "native_prices",
         ),
         config.contracts.wrapped_native_mint,
     );
@@ -174,6 +177,7 @@ async fn run(config: Config) {
                 &config.rpc.endpoint,
                 config.rpc.request_timeout,
                 CommitmentConfig::confirmed(),
+                "auction_provider",
             ),
             config.max_indexer_lag_slots,
             prices,

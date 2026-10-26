@@ -125,6 +125,13 @@ pub struct Rpc {
 pub struct Http {
     /// Address the HTTP API server binds to and listens on.
     pub bind_address: SocketAddr,
+    /// Port the metrics and probes server binds to, on every interface.
+    #[serde(default = "default_metrics_port")]
+    pub metrics_port: u16,
+}
+
+const fn default_metrics_port() -> u16 {
+    observe::metrics::DEFAULT_METRICS_PORT
 }
 
 /// A configured solver engine.
@@ -189,6 +196,7 @@ mod tests {
             config.rpc.endpoint.as_str(),
             "https://api.mainnet-beta.solana.com/"
         );
+        assert_eq!(config.http.metrics_port, 9586);
         assert_eq!(
             config.rpc.bundle_endpoint.as_str(),
             "https://bundles.example.com/"

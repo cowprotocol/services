@@ -2817,10 +2817,11 @@ checksum = "75984efb6ed102a0d42db99afb6c1948f0380d1d91808d5529916e6c08b49d8d"
 name = "configs"
 version = "0.1.0"
 dependencies = [
- "alloy",
+ "alloy-primitives",
  "anyhow",
  "bigdecimal",
  "chrono",
+ "configs",
  "humantime-serde",
  "rate-limit",
  "s3",
@@ -3937,6 +3938,9 @@ dependencies = [
  "base64 0.22.1",
  "futures",
  "itertools 0.14.0",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "serde",
  "serde_json",
  "solana-commitment-config",
@@ -4104,9 +4108,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
 ]
@@ -6890,6 +6894,7 @@ dependencies = [
  "humantime-serde",
  "mockall",
  "model",
+ "moka",
  "multibase",
  "num",
  "number",
@@ -8646,8 +8651,9 @@ dependencies = [
  "alloy-primitives",
  "const-hex",
  "serde",
+ "serde-ext",
  "serde_with",
- "solana-sdk",
+ "solana-pubkey 4.2.0",
  "url",
 ]
 
@@ -9475,9 +9481,11 @@ dependencies = [
 name = "solana-driver"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "base64 0.22.1",
  "bincode",
+ "chain-types",
  "chrono",
  "clap",
  "configs",
@@ -9691,6 +9699,8 @@ dependencies = [
  "futures",
  "humantime-serde",
  "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "rustls",
  "serde",
  "serde-ext",
@@ -9924,6 +9934,7 @@ dependencies = [
  "base64 0.22.1",
  "bigdecimal",
  "bincode",
+ "chain-types",
  "chrono",
  "clap",
  "configs",
@@ -9935,6 +9946,8 @@ dependencies = [
  "futures",
  "humantime-serde",
  "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "reqwest 0.13.4",
  "serde",
  "serde-ext",

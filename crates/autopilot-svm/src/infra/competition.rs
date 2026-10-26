@@ -14,7 +14,7 @@ use {
     std::{
         collections::{HashMap, HashSet},
         sync::Arc,
-        time::Duration,
+        time::{Duration, Instant},
     },
     winner_selection::{Side, solution},
 };
@@ -74,7 +74,19 @@ impl SolverCompetition<SolanaCycle> for DriverCompetition {
         let budget = self.solve_deadline;
         let responses = futures::future::join_all(self.drivers.iter().enumerate().map(
             |(driver_index, driver)| async move {
-                match tokio::time::timeout(budget, driver.solve(request)).await {
+                let start = Instant::now();
+                let result = tokio::time::timeout(budget, driver.solve(request)).await;
+                let label = match &result {
+                    Ok(Ok(response)) if response.solutions.is_empty() => "no_solutions",
+                    Ok(Ok(_)) => "success",
+                    Ok(Err(_)) => "error",
+                    Err(_) => "timeout",
+                };
+                metrics()
+                    .solve
+                    .with_label_values(&[driver.name.as_str(), label])
+                    .observe(start.elapsed().as_secs_f64());
+                match result {
                     Ok(Ok(response)) => Some((driver_index, driver, response)),
                     Ok(Err(err)) => {
                         tracing::warn!(driver = %driver.name, ?err, "solve failed");
@@ -180,6 +192,22 @@ fn convert(
         driver_index,
         inner: solution::Solution::new(dto_solution.solution_id, dto_solution.solver, orders),
     })
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "runloop")]
+struct Metrics {
+    /// Driver `/solve` durations by driver and result: `success`,
+    /// `no_solutions`, `error` or `timeout`.
+    #[metric(
+        labels("driver", "result"),
+        buckets(0.1, 0.25, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7)
+    )]
+    solve: prometheus::HistogramVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
 #[cfg(test)]

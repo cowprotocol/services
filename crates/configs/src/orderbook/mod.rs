@@ -13,7 +13,7 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
@@ -35,6 +35,10 @@ const fn default_bind_address() -> SocketAddr {
 
 const fn default_app_data_size_limit() -> usize {
     8192
+}
+
+const fn default_app_data_cache_max_bytes() -> u64 {
+    32 * 1024 * 1024 // 32 MiB
 }
 
 const fn default_active_order_competition_threshold() -> u32 {
@@ -87,6 +91,11 @@ pub struct Configuration {
     /// Maximum allowed size (in bytes) for order app-data.
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
+
+    /// Approximate maximum memory (in bytes) of the in-memory app-data cache,
+    /// per-entry overhead included.
+    #[serde(default = "default_app_data_cache_max_bytes")]
+    pub app_data_cache_max_bytes: u64,
 
     /// Missed auctions threshold after which an order is no longer "active".
     #[serde(default = "default_active_order_competition_threshold")]
@@ -163,6 +172,7 @@ pub mod test_util {
             orderbook::{
                 Configuration,
                 default_active_order_competition_threshold,
+                default_app_data_cache_max_bytes,
                 default_app_data_size_limit,
                 default_bind_address,
                 native_price::NativePriceConfig,
@@ -210,11 +220,12 @@ pub mod test_util {
                 ipfs: Default::default(),
                 volume_fee: Default::default(),
                 app_data_size_limit: default_app_data_size_limit(),
+                app_data_cache_max_bytes: default_app_data_cache_max_bytes(),
                 active_order_competition_threshold: default_active_order_competition_threshold(),
                 unsupported_tokens: Default::default(),
                 eip1271_skip_creation_validation: Default::default(),
-                // NOTE: NativePriceConfig needs to be moved to the config crate and then it can
-                // have the test_default trait impl
+                // NOTE: NativePriceConfig needs to be moved to the config crate
+                // and then it can have the test_default trait impl
                 native_price_estimation: NativePriceConfig::test_default(),
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
@@ -237,7 +248,7 @@ mod tests {
             orderbook::order_validation::SameTokensPolicy,
             test_util::TestDefault,
         },
-        alloy::primitives::address,
+        alloy_primitives::address,
         std::time::Duration,
     };
 
@@ -245,6 +256,7 @@ mod tests {
     fn deserialize_full_configuration() {
         let toml = r#"
         app-data-size-limit = 4096
+        app-data-cache-max-bytes = 1048576
         active-order-competition-threshold = 10
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
@@ -280,6 +292,7 @@ mod tests {
         let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 4096);
+        assert_eq!(config.app_data_cache_max_bytes, 1_048_576);
         assert_eq!(config.active_order_competition_threshold, 10);
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
@@ -327,6 +340,7 @@ mod tests {
         let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 8192);
+        assert_eq!(config.app_data_cache_max_bytes, 32 * 1024 * 1024);
         assert_eq!(config.active_order_competition_threshold, 5);
 
         assert_eq!(
@@ -368,6 +382,7 @@ mod tests {
                 auth_token: Some("secret".to_string()),
             }),
             app_data_size_limit: 4096,
+            app_data_cache_max_bytes: 1_048_576,
             active_order_competition_threshold: 10,
             volume_fee: Some(VolumeFeeConfig {
                 factor: Some(0.0002.try_into().unwrap()),

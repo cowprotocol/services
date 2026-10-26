@@ -12,6 +12,7 @@ pub struct S3Config {
     pub filename_prefix: String,
 }
 
+#[cfg(feature = "s3")]
 impl From<S3Config> for s3::Config {
     fn from(config: S3Config) -> Self {
         Self {
@@ -44,6 +45,7 @@ mod tests {
         assert!(toml::from_str::<S3Config>(toml).is_err());
     }
 
+    #[cfg(feature = "s3")]
     #[test]
     fn into_s3_config() {
         let config = S3Config {

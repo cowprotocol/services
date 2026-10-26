@@ -129,7 +129,8 @@ impl TxSigner<Signature> for Account {
         match self {
             Account::PrivateKey(local_signer) => local_signer.sign_transaction(tx).await,
             Account::Kms(aws_signer) => aws_signer.sign_transaction(tx).await,
-            // The address actually can't sign anything but for TxSigner only the Tx matters
+            // The address actually can't sign anything but for TxSigner only
+            // the Tx matters
             Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
@@ -342,8 +343,8 @@ impl Solver {
         Timeouts {
             // quote requests are tiny so the network buffer can be small
             http_delay: chrono::Duration::milliseconds(25),
-            // the driver doesn't do any post-processing for quote responses so we can use
-            // the entire time for computing solutions
+            // the driver doesn't do any post-processing for quote responses so
+            // we can use the entire time for computing solutions
             solving_share_of_deadline: 1.0.try_into().expect("literal is in allowed range"),
         }
     }

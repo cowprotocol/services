@@ -38,8 +38,9 @@ impl<'a> SwapInstructionsRequest<'a> {
             destination_token_account: *destination,
             wrap_and_unwrap_sol: false,
             skip_user_accounts_rpc_calls: true,
-            // Use direct Route mode while we investigate errors with SharedAccountsRoute. Its
-            // instructions ignored the buy-token destination, leaving the buy-buffer PDAs empty and
+            // Use direct Route mode while we investigate errors with
+            // SharedAccountsRoute. Its instructions ignored the buy-token
+            // destination, leaving the buy-buffer PDAs empty and
             // causing settlement transactions to revert.
             use_shared_accounts: false,
         }

@@ -18,8 +18,8 @@ pub struct Order {
     pub owner: eth::Address,
     pub partially_fillable: bool,
     pub executed: TargetAmount,
-    // Partially fillable orders should have their pre-interactions only executed
-    // on the first fill.
+    // Partially fillable orders should have their pre-interactions only
+    // executed on the first fill.
     pub pre_interactions: Vec<Interaction>,
     pub post_interactions: Vec<Interaction>,
     pub sell_token_balance: SellTokenSource,

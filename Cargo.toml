@@ -134,6 +134,7 @@ solana-compute-budget-interface = "3"
 solana-driver = { path = "crates/solana-driver" }
 solana-fee-structure = "3"
 solana-indexer = { path = "crates/solana-indexer" }
+solana-pubkey = "4"
 solana-rpc-client = "4.2.2"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
@@ -183,3 +184,6 @@ clippy.cast_possible_wrap = "deny"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tokio_unstable)"] }
+
+[profile.dev]
+debug = "line-tables-only"
