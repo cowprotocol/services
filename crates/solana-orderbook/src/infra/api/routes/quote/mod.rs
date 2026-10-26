@@ -932,9 +932,14 @@ mod tests {
             buy_token_ata_costs: 100,
             expiration,
         };
-        let json =
-            serde_json::to_value(competition(&request, dto::Kind::Sell, 1_000, metadata, &ranked))
-                .unwrap();
+        let json = serde_json::to_value(competition(
+            &request,
+            dto::Kind::Sell,
+            1_000,
+            metadata,
+            &ranked,
+        ))
+        .unwrap();
         assert_eq!(json["request"]["kind"], "sell");
         assert_eq!(json["request"]["amount"], "1000");
         assert_eq!(json["request"]["sellToken"], request.sell_token.to_string());
