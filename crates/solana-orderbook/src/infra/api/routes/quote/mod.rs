@@ -271,8 +271,6 @@ struct CompetitionQuote<'a> {
     #[serde_as(as = "DisplayFromStr")]
     network_fee: u64,
     elapsed_ms: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<&'static str>,
 }
 
 fn competition<'a>(
@@ -301,9 +299,6 @@ fn competition<'a>(
                 quoted_buy_amount: quote.buy_amount,
                 network_fee: quote.network_fee,
                 elapsed_ms: quote.elapsed.as_millis().try_into().unwrap_or(u64::MAX),
-                error: netted
-                    .is_none()
-                    .then_some("the quoted amount does not cover the execution cost"),
             })
             .collect(),
     }
@@ -875,13 +870,9 @@ mod tests {
         assert_eq!(winner["quotedBuyAmount"], "5000");
         assert_eq!(winner["networkFee"], "400");
         assert_eq!(winner["elapsedMs"], 1);
-        assert!(winner.get("error").is_none());
         let dropped = &json["quotes"][1];
+        assert!(dropped["sellAmount"].is_null());
         assert!(dropped["buyAmount"].is_null());
-        assert_eq!(
-            dropped["error"],
-            "the quoted amount does not cover the execution cost"
-        );
     }
 
     #[test]
