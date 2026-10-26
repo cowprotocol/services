@@ -4,7 +4,6 @@
 use {
     crate::{AppDataHash, hash_full_app_data},
     serde::{Deserialize, Deserializer, Serialize, de},
-    std::fmt,
 };
 
 /// The order's AppData (can be an hash, the JSON body or both).
@@ -75,16 +74,9 @@ impl OrderCreationAppData {
 }
 
 /// `appDataHash` without the `appData` document it is the hash of.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("invalid app data")]
 pub struct HashWithoutDocument;
-
-impl fmt::Display for HashWithoutDocument {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("invalid app data")
-    }
-}
-
-impl std::error::Error for HashWithoutDocument {}
 
 /// Deserializes the `appData` and `appDataHash` fields, the zero hash when
 /// both are absent. `#[serde(default, flatten)]` does not work as expected
