@@ -291,7 +291,14 @@ async fn place(
         }
         return Err(Failure::internal(err, "sponsored order insert"));
     }
-    tracing::info!(order_uid = %uid, "order created");
+    let in_market = quote
+        .as_ref()
+        .is_some_and(|quote| in_market(order.sell_amount, order.buy_amount, quote));
+    metrics()
+        .orders
+        .with_label_values(&[if in_market { "market" } else { "limit" }, "created"])
+        .inc();
+    tracing::info!(order_uid = %uid, in_market, "order created");
     Ok((StatusCode::CREATED, Json(uid)))
 }
 
@@ -587,6 +594,32 @@ async fn link_quote(
         buy_amount: quote.buy_amount,
         solver: quote.solver,
     })
+}
+
+/// Whether an order asks no better price than `quote` gave, the EVM
+/// `is_order_outside_market_price` check. The quote's execution cost is
+/// already netted into its amounts, so the comparison is the plain cross
+/// product. A quote amount past `u64` counts as out of market.
+fn in_market(sell_amount: u64, buy_amount: u64, quote: &db::OrderQuote) -> bool {
+    let (Some(quote_sell), Some(quote_buy)) =
+        (quote.sell_amount.to_u64(), quote.buy_amount.to_u64())
+    else {
+        return false;
+    };
+    u128::from(sell_amount) * u128::from(quote_buy)
+        >= u128::from(quote_sell) * u128::from(buy_amount)
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Placed orders by whether their limit was within their quote
+    /// (`market`) or not (`limit`).
+    #[metric(name = "orderbook_orders", labels("kind", "operation"))]
+    orders: prometheus::IntCounterVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
 
 /// Resolve an instruction's account indexes into the transaction's keys.
@@ -965,6 +998,33 @@ mod tests {
         assert!(budget.read(&[2, 1]).is_err());
         // Variants that cost the funder nothing are ignored, not parsed.
         assert!(budget.read(&[1, 0, 0, 4, 0]).is_ok());
+    }
+
+    fn quote(sell_amount: u64, buy_amount: u64) -> db::OrderQuote {
+        db::OrderQuote {
+            quote_id: 1,
+            sell_amount: sell_amount.into(),
+            buy_amount: buy_amount.into(),
+            solver: ByteArray([0; 32]),
+        }
+    }
+
+    /// At the quote, or asking less buy for the sell (slippage), the order
+    /// is in market. Asking more buy, or offering less sell, it is not. A
+    /// quote amount past `u64` is never in market.
+    #[test]
+    fn an_order_is_in_market_when_it_asks_no_better_than_its_quote() {
+        let quote_1000_for_2000 = quote(1_000, 2_000);
+        assert!(in_market(1_000, 2_000, &quote_1000_for_2000));
+        assert!(in_market(1_000, 1_900, &quote_1000_for_2000));
+        assert!(in_market(1_100, 2_000, &quote_1000_for_2000));
+        assert!(!in_market(1_000, 2_001, &quote_1000_for_2000));
+        assert!(!in_market(999, 2_000, &quote_1000_for_2000));
+        let past_u64 = db::OrderQuote {
+            sell_amount: "18446744073709551616".parse().unwrap(),
+            ..quote(1_000, 2_000)
+        };
+        assert!(!in_market(1_000, 2_000, &past_u64));
     }
 
     #[test]
