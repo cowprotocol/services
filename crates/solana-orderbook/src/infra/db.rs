@@ -26,6 +26,8 @@ pub struct OrderRow {
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub app_data: ByteArray<32>,
+    /// The document `app_data` is the hash of, once registered.
+    pub full_app_data: Option<String>,
     pub creation_timestamp: DateTime<Utc>,
     pub order_pda: ByteArray<32>,
     pub amount_withdrawn: BigDecimal,
@@ -44,6 +46,7 @@ pub async fn find_order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.app_data,
+       convert_from(a.full_app_data, 'UTF8') AS full_app_data,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
@@ -52,6 +55,7 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.app_data a ON a.contract_app_data = o.app_data
 WHERE o.uid = $1 AND NOT COALESCE(p.is_reorged, false)
     "#;
     sqlx::query_as(QUERY)
@@ -73,6 +77,7 @@ pub async fn get_orders_by_owner(
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.app_data,
+       convert_from(a.full_app_data, 'UTF8') AS full_app_data,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
@@ -81,6 +86,7 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.app_data a ON a.contract_app_data = o.app_data
 WHERE o.owner = $1
 ORDER BY o.creation_timestamp DESC
 LIMIT $2 OFFSET $3
@@ -201,13 +207,14 @@ pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
         .context("check solana.orders existence")
 }
 
-/// Insert a sponsored order, its quote copy when one matched, and its
-/// `created` event in one transaction. A duplicate uid or order PDA surfaces
-/// as a unique violation.
+/// Insert a sponsored order, its quote copy when one matched, its app data
+/// `document`, and its `created` event in one transaction. A duplicate uid
+/// or order PDA surfaces as a unique violation.
 pub async fn insert_sponsored_order(
     pool: &PgPool,
     order: &SponsoredOrder,
     quote: Option<&OrderQuote>,
+    document: &str,
 ) -> Result<()> {
     let _timer = query_timer("insert_sponsored_order");
     const QUERY: &str = r#"
@@ -251,6 +258,12 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
         .await
         .context("insert order quote")?;
     }
+    let existing = insert_app_data(&mut *tx, order.app_data.0, document).await?;
+    // The hash is the document's keccak256, so another document under it is
+    // a collision.
+    if existing.is_some_and(|existing| existing != document) {
+        anyhow::bail!("a different document is stored under {:?}", order.app_data);
+    }
     sqlx::query(
         "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
     )
@@ -260,6 +273,47 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
     .await
     .context("insert created event")?;
     tx.commit().await.context("commit sponsored order insert")
+}
+
+/// Store `document` under `hash`. `None` once stored, otherwise the document
+/// already under the hash, which stays.
+pub async fn insert_app_data(
+    ex: impl PgExecutor<'_>,
+    hash: [u8; 32],
+    document: &str,
+) -> Result<Option<String>> {
+    let _timer = query_timer("insert_app_data");
+    const QUERY: &str = r#"
+WITH inserted AS (
+    INSERT INTO solana.app_data (contract_app_data, full_app_data)
+    VALUES ($1, $2)
+    ON CONFLICT DO NOTHING
+    RETURNING TRUE
+)
+SELECT CASE
+    WHEN (SELECT * FROM inserted) THEN NULL
+    ELSE (SELECT convert_from(full_app_data, 'UTF8') FROM solana.app_data WHERE contract_app_data = $1)
+END
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(ByteArray(hash))
+        .bind(document.as_bytes())
+        .fetch_one(ex)
+        .await
+        .context("insert solana.app_data")
+}
+
+/// The document stored under `hash`. `None` when the hash is unknown.
+pub async fn find_app_data(ex: impl PgExecutor<'_>, hash: [u8; 32]) -> Result<Option<String>> {
+    let _timer = query_timer("find_app_data");
+    sqlx::query_scalar(
+        "SELECT convert_from(full_app_data, 'UTF8') FROM solana.app_data WHERE contract_app_data \
+         = $1",
+    )
+    .bind(ByteArray(hash))
+    .fetch_optional(ex)
+    .await
+    .context("read solana.app_data")
 }
 
 /// A stored sponsored creation: the presigned transaction and its expiry.
@@ -700,8 +754,8 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
     async fn solana_db_inserts_a_sponsored_order_once() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         sqlx::query(
-            "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
-             CASCADE",
+            "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+             solana.app_data CASCADE",
         )
         .execute(&pool)
         .await
@@ -729,9 +783,16 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             buy_amount: BigDecimal::from(2_100u64),
             solver: ByteArray([0xDD; 32]),
         };
-        insert_sponsored_order(&pool, &order, Some(&quote))
+        insert_sponsored_order(&pool, &order, Some(&quote), "{}")
             .await
             .unwrap();
+        assert_eq!(
+            find_app_data(&pool, order.app_data.0)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{}")
+        );
 
         let creation = find_sponsored_creation(&pool, order.uid.0)
             .await
@@ -761,7 +822,11 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
 
         // The uid is the primary key: placing the same order twice fails and
         // leaves no second event behind.
-        assert!(insert_sponsored_order(&pool, &order, None).await.is_err());
+        assert!(
+            insert_sponsored_order(&pool, &order, None, "{}")
+                .await
+                .is_err()
+        );
         let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_events")
             .fetch_one(&pool)
             .await

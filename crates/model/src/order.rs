@@ -1,6 +1,7 @@
 //! Contains the order type as described by the specification with serialization
 //! as described by the openapi documentation.
 
+pub use app_data::OrderCreationAppData;
 use {
     crate::{
         DomainSeparator,
@@ -12,7 +13,7 @@ use {
     alloy_primitives::{Address, B256, U256, U512, b256, keccak256},
     alloy_signer_local::PrivateKeySigner,
     anyhow::{Result, anyhow},
-    app_data::{AppDataHash, hash_full_app_data},
+    app_data::AppDataHash,
     bigdecimal::BigDecimal,
     chrono::{DateTime, offset::Utc},
     derive_more::Debug as DeriveDebug,
@@ -417,56 +418,6 @@ impl OrderCreation {
         };
 
         Ok(verified_owner)
-    }
-}
-
-/// The order's AppData (can be an hash, the JSON body or both).
-// Note that the order of the variants is important for deserialization.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum OrderCreationAppData {
-    /// Hash is inferred from full app data and validated against expectation.
-    Both {
-        #[serde(rename = "appData")]
-        full: String,
-        #[serde(rename = "appDataHash")]
-        expected: AppDataHash,
-    },
-    /// Backward compatible app data hash.
-    Hash {
-        #[serde(rename = "appData")]
-        hash: AppDataHash,
-    },
-    /// Hash is inferred from full app data.
-    Full {
-        #[serde(rename = "appData")]
-        full: String,
-    },
-}
-
-impl Default for OrderCreationAppData {
-    fn default() -> Self {
-        Self::Hash {
-            hash: Default::default(),
-        }
-    }
-}
-
-impl From<AppDataHash> for OrderCreationAppData {
-    fn from(hash: AppDataHash) -> Self {
-        Self::Hash { hash }
-    }
-}
-
-impl OrderCreationAppData {
-    /// Returns the app data hash. Does not validate expectation.
-    pub fn hash(&self) -> AppDataHash {
-        match self {
-            Self::Hash { hash } => *hash,
-            Self::Full { full } | Self::Both { full, .. } => {
-                AppDataHash(hash_full_app_data(full.as_bytes()))
-            }
-        }
     }
 }
 
