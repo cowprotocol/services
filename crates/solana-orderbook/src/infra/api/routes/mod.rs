@@ -1,4 +1,5 @@
 mod account;
+mod app_data;
 mod create_order;
 mod healthz;
 mod mint;
@@ -13,6 +14,7 @@ mod version;
 use solana_sdk::{account::Account, rent::Rent};
 pub use {
     account::account_orders,
+    app_data::{get_app_data, put_app_data, put_app_data_by_hash},
     create_order::create_order,
     healthz::healthz,
     order::order,
