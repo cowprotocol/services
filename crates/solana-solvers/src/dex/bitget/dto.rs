@@ -142,24 +142,24 @@ pub fn swap(quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
             instructions.push(instruction);
         }
     }
-    let accounts = || {
-        instructions
-            .iter()
-            .flat_map(|instruction| &instruction.accounts)
-    };
-    if accounts().any(|account| account.is_signer && account.pubkey != *taker) {
-        return Err(Error::BadResponse(
-            "route needs a signer besides the taker".into(),
-        ));
+    let atas = [inline_spl_token::ID, spl_token_2022_interface::ID].map(|program| {
+        let ata = get_associated_token_address_with_program_id(taker, &buy_mint, &program);
+        (program, ata)
+    });
+    let mut paid = None;
+    for account in instructions
+        .iter()
+        .flat_map(|instruction| &instruction.accounts)
+    {
+        if account.is_signer && account.pubkey != *taker {
+            return Err(Error::BadResponse(
+                "route needs a signer besides the taker".into(),
+            ));
+        }
+        paid = paid.or_else(|| atas.into_iter().find(|(_, ata)| *ata == account.pubkey));
     }
-    let (token_program, output) = [inline_spl_token::ID, spl_token_2022_interface::ID]
-        .into_iter()
-        .map(|program| {
-            let ata = get_associated_token_address_with_program_id(taker, &buy_mint, &program);
-            (program, ata)
-        })
-        .find(|(_, ata)| accounts().any(|account| account.pubkey == *ata))
-        .ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
+    let (token_program, output) =
+        paid.ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
     // Unchecked because the auction carries no decimals. Token-2022 mints with
     // a transfer fee or hook reject it, and simulation drops them.
     #[allow(deprecated)]
