@@ -159,6 +159,16 @@ impl Quoter {
             .price_estimates
             .with_label_values(&[driver.as_str(), result])
             .inc();
+        // Every driver, answered or not: a driver that fails never reaches the
+        // quote competition, and a request where they all fail logs no
+        // competition at all.
+        tracing::debug!(
+            driver = %driver,
+            result,
+            elapsed_ms = elapsed.as_millis() as u64,
+            ?order,
+            "new price estimate"
+        );
         let quoted = quoted.ok()?;
         Some(Quote {
             sell_amount: quoted.sell_amount,
