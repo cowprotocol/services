@@ -378,12 +378,18 @@ impl Competition {
         let orders = orders_by_uid(&auction.orders);
         let mut charged = Vec::with_capacity(solutions.len());
         for mut solution in solutions {
+            let order_uids = solution
+                .trades
+                .iter()
+                .map(|trade| trade.order_uid.to_string())
+                .collect::<Vec<_>>();
             if let Some(fee) = self.solver.solver_fee()
                 && let Err(reason) = fee.apply(&mut solution, &orders)
             {
                 tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     %reason,
                     "dropping solution the solver fee cannot be applied to"
                 );
@@ -397,6 +403,7 @@ impl Competition {
                         tracing::warn!(
                             solver = %self.solver.name(),
                             solution_id = solution.id,
+                            orders = ?order_uids,
                             %reason,
                             "dropping solution, its network fee is over budget"
                         );
@@ -410,6 +417,7 @@ impl Competition {
                 Err(reason) => tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     %reason,
                     "dropping solution the execution costs cannot be cut from"
                 ),
