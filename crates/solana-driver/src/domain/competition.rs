@@ -492,6 +492,8 @@ impl Competition {
         &self,
         solution: &Solution,
     ) -> Result<Vec<RpcPrioritizationFee>, Error> {
+        // `settle` also reads the order PDA and the user's token accounts;
+        // those are cold, so the price is the same.
         let writable = writable_accounts(self.solver.pubkey(), &solution.interactions);
         self.blockchain
             .recent_prioritization_fees(&writable)
