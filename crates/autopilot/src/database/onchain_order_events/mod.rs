@@ -31,7 +31,7 @@ use {
     eth_domain_types::Receiver,
     ethrpc::{AlloyProvider, Web3, block_stream::timestamp_of_block_in_seconds},
     event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
-    futures::{StreamExt, stream},
+    futures::{StreamExt, future, stream},
     itertools::{izip, multiunzip},
     model::{
         DomainSeparator,
@@ -428,14 +428,9 @@ async fn get_block_numbers_of_events(
             let timestamp =
                 timestamp_of_block_in_seconds(provider, BlockNumberOrTag::Number(block_number))
                     .await?;
-            Ok((block_number, timestamp))
+            anyhow::Ok((block_number, timestamp))
         });
-    let fetched: Vec<Result<(u64, u32)>> =
-        stream::iter(futures).buffer_unordered(10).collect().await;
-    for result in fetched {
-        let (block_number, timestamp) = result?;
-        timestamps.insert(block_number, timestamp);
-    }
+    timestamps.extend(future::try_join_all(futures).await?);
     Ok(timestamps)
 }
 
