@@ -296,27 +296,35 @@ async fn place(
     Ok((StatusCode::CREATED, Json(uid)))
 }
 
-/// How often placement asks the node again about a blockhash it does not
-/// know, about one slot.
+/// How often placement asks the node again about a blockhash it has not
+/// confirmed, about one slot.
 const BLOCKHASH_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Whether `blockhash` is usable, waiting up to `catch_up` for the node to
 /// confirm it. The node reports a blockhash from a slot it has not confirmed
-/// yet as invalid, and the client may read one from a node ahead of ours.
+/// yet as invalid, and the client may read one from a node ahead of ours. A
+/// blockhash the node does not know even at processed commitment is expired,
+/// or newer than anything the node has seen, so it is refused without waiting.
 async fn blockhash_valid(
     rpc: &SolanaRPC,
     blockhash: &Hash,
     catch_up: Duration,
 ) -> Result<bool, cow_solana_rpc::Error> {
+    if rpc.is_blockhash_valid(blockhash).await? {
+        return Ok(true);
+    }
+    if catch_up.is_zero() || !rpc.is_blockhash_valid_at_processed(blockhash).await? {
+        return Ok(false);
+    }
     let deadline = Instant::now() + catch_up;
     loop {
+        tokio::time::sleep(BLOCKHASH_POLL_INTERVAL).await;
         if rpc.is_blockhash_valid(blockhash).await? {
             return Ok(true);
         }
         if Instant::now() >= deadline {
             return Ok(false);
         }
-        tokio::time::sleep(BLOCKHASH_POLL_INTERVAL).await;
     }
 }
 
@@ -949,21 +957,30 @@ mod tests {
         )
     }
 
-    /// A client reading a node ahead of ours signs a blockhash our node
-    /// confirms a moment later, so placement waits for it.
+    /// A client reading a node ahead of ours signs a blockhash our node has
+    /// processed and confirms a moment later, so placement waits for it.
     #[tokio::test]
     async fn a_blockhash_the_node_confirms_within_the_catch_up_is_valid() {
-        let rpc = validity_answers([false, false, true]);
+        let rpc = validity_answers([false, true, false, true]);
         let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
         assert!(valid.unwrap());
     }
 
-    /// The wait is bounded: a blockhash the node still does not know when the
-    /// window closes is refused.
+    /// The wait is bounded: a blockhash the node processed but still has not
+    /// confirmed when the window closes is refused.
     #[tokio::test]
-    async fn a_blockhash_unknown_after_the_catch_up_is_refused() {
-        let rpc = validity_answers([false; 8]);
+    async fn a_blockhash_unconfirmed_after_the_catch_up_is_refused() {
+        let rpc = validity_answers([false, true, false, false, false, false]);
         let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_millis(300)).await;
+        assert!(!valid.unwrap());
+    }
+
+    /// A blockhash the node does not know even at processed commitment is
+    /// refused at once. The mock has no third answer, so a poll would fail.
+    #[tokio::test]
+    async fn a_blockhash_unknown_at_processed_is_refused_without_waiting() {
+        let rpc = validity_answers([false, false]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
         assert!(!valid.unwrap());
     }
 
