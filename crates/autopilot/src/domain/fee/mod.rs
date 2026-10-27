@@ -107,7 +107,7 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: &domain::Quote,
         max_partner_fee: f64,
-    ) -> Vec<Policy> {
+    ) -> Vec<PolicyWithOrigin> {
         /// Number of basis points that make up 100%.
         const MAX_BPS: u32 = 10_000;
 
@@ -198,6 +198,10 @@ impl ProtocolFees {
                     }
                 }
             })
+            .map(|policy| PolicyWithOrigin {
+                policy,
+                origin: Origin::Partner,
+            })
             .collect::<Vec<_>>()
     }
 
@@ -219,13 +223,7 @@ impl ProtocolFees {
         });
 
         let partner_fee =
-            Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get())
-                .into_iter()
-                .map(|policy| PolicyWithOrigin {
-                    policy,
-                    origin: Origin::Partner,
-                })
-                .collect();
+            Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
             return partner_fee;
@@ -365,6 +363,14 @@ impl Quote {
 mod test {
     use {super::*, model::order::OrderMetadata};
 
+    /// `policy` as requested by a partner.
+    fn partner(policy: Policy) -> PolicyWithOrigin {
+        PolicyWithOrigin {
+            policy,
+            origin: Origin::Partner,
+        }
+    }
+
     #[test]
     fn test_get_partner_fee_valid_multiple_fees_not_capped() {
         // Scenario: Multiple partner fees, with valid values (not capped)
@@ -405,12 +411,12 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.05).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.2).unwrap(),
-                }
+                })
             ]
         );
     }
@@ -479,9 +485,9 @@ mod test {
         // Expected: Empty vector since the only fee has 0 bps
         assert_eq!(
             result,
-            vec![Policy::Volume {
+            vec![partner(Policy::Volume {
                 factor: FeeFactor::try_from(0.0).unwrap(),
-            }]
+            })]
         );
     }
 
@@ -524,12 +530,12 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.0).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.0).unwrap(),
-                }
+                })
             ]
         );
     }
@@ -568,9 +574,9 @@ mod test {
         // Expected: Single fee capped at 0.3 (instead of 0.5)
         assert_eq!(
             result,
-            vec![Policy::Volume {
+            vec![partner(Policy::Volume {
                 factor: FeeFactor::try_from(0.3).unwrap(),
-            }]
+            })]
         );
     }
 
@@ -616,12 +622,12 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.1).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
-                }
+                })
             ]
         );
     }
@@ -674,15 +680,15 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.1).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.0).unwrap(),
-                }
+                })
             ]
         );
     }
