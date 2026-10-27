@@ -936,8 +936,9 @@ async fn quote_prefers_a_verified_answer_in_prefer_mode() {
     assert_eq!(json["verified"], true);
 }
 
-/// A sell mint nobody can mint is funded by its largest holder, read from
-/// the holders node, and stays unverified without one.
+/// A sell mint nobody can mint is funded by its largest wallet-owned holder,
+/// read from the holders node. A PDA-owned holder funds nothing, and neither
+/// does a missing holders node.
 #[tokio::test]
 async fn quote_selling_a_mint_nobody_can_mint_is_funded_by_its_largest_holder() {
     let solver = solana_sdk::pubkey::Pubkey::new_unique();
@@ -952,7 +953,13 @@ async fn quote_selling_a_mint_nobody_can_mint_is_funded_by_its_largest_holder() 
             "uiAmountString": "20",
         }],
     });
-    for (holders, verified) in [(Some(largest), true), (None, false)] {
+    let wallet = solana_sdk::signature::Keypair::new().pubkey();
+    let pool = solana_sdk::pubkey::Pubkey::find_program_address(&[b"pool"], &program_id()).0;
+    for (holders, owner, verified) in [
+        (Some(largest.clone()), wallet, true),
+        (Some(largest), pool, false),
+        (None, wallet, false),
+    ] {
         let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
         let reads = MocksMap::from_iter([
             (
@@ -964,10 +971,7 @@ async fn quote_selling_a_mint_nobody_can_mint_is_funded_by_its_largest_holder() 
             ),
             (
                 RpcRequest::GetMultipleAccounts,
-                solana_testlib::multiple_accounts_json([holding_json(
-                    solana_sdk::pubkey::Pubkey::new_unique(),
-                    20_000_000,
-                )]),
+                solana_testlib::multiple_accounts_json([holding_json(owner, 20_000_000)]),
             ),
         ]);
         let verifier = verifier(

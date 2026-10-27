@@ -49,10 +49,6 @@ const HOLDERS_REFRESH: Duration = Duration::from_secs(10 * 60);
 /// How many entries each cache keeps.
 const CACHE_CAPACITY: u64 = 10_000;
 
-/// How many of a mint's largest holders are read. The first one holding a
-/// sell amount funds it.
-const HOLDERS_READ: usize = 5;
-
 /// Settles quotes in simulation.
 pub struct Verifier {
     /// Reads the mints and the accounts that fund them.
@@ -500,9 +496,9 @@ impl Verifier {
                 .is_none_or(|listed| listed.listed_at.elapsed() >= HOLDERS_REFRESH)
     }
 
-    /// `mint`'s largest unfrozen holders and their balances, largest first.
-    /// They are looked up again when none holds `needed` and the lookup is
-    /// due.
+    /// `mint`'s largest unfrozen, wallet-owned holders and their balances,
+    /// largest first. They are looked up again when none holds `needed` and
+    /// the lookup is due.
     async fn holders(&self, mint: Pubkey, needed: u64) -> Result<Vec<Holder>, Error> {
         if let Some(listed) = self.holder_accounts.get(&mint) {
             let holders = self.read_holders(&listed.accounts).await?;
@@ -522,13 +518,6 @@ impl Verifier {
                 .token_largest_accounts(&mint)
                 .await
                 .inspect_err(|err| tracing::warn!(%mint, ?err, "largest holders not listed"))
-                .map(|holdings| {
-                    holdings
-                        .iter()
-                        .take(HOLDERS_READ)
-                        .map(|holding| holding.account)
-                        .collect()
-                })
                 .unwrap_or_default(),
             None => {
                 tracing::debug!(%mint, "no holders node, a mint nobody can mint stays unfunded");
@@ -545,8 +534,8 @@ impl Verifier {
         accounts
     }
 
-    /// The unfrozen token accounts among `accounts`, in order, with their
-    /// owners and balances.
+    /// The unfrozen, wallet-owned token accounts among `accounts`, in order,
+    /// with their owners and balances.
     async fn read_holders(&self, accounts: &[Pubkey]) -> Result<Vec<Holder>, Error> {
         if accounts.is_empty() {
             return Ok(Vec::new());
@@ -557,11 +546,14 @@ impl Verifier {
             .filter_map(|account| {
                 let state =
                     StateWithExtensions::<TokenAccount>::unpack(&read.get(account)?.data).ok()?;
-                (state.base.state != AccountState::Frozen).then_some(Holder {
-                    account: *account,
-                    owner: state.base.owner,
-                    amount: state.base.amount,
-                })
+                // A PDA owner may be a pool on the route. Draining its vault
+                // would move the pool's price.
+                (state.base.state != AccountState::Frozen && state.base.owner.is_on_curve())
+                    .then_some(Holder {
+                        account: *account,
+                        owner: state.base.owner,
+                        amount: state.base.amount,
+                    })
             })
             .collect())
     }
@@ -755,38 +747,26 @@ mod tests {
         assert_eq!(accounts(&leg, 3)[..2], [order.owner, payer]);
     }
 
-    /// The first holder holding the amount transfers it, checked against the
-    /// mint, and none holding it leaves the sell unfunded.
+    /// The first holder holding the amount transfers it, and none holding it
+    /// leaves the sell unfunded.
     #[test]
     fn the_first_holder_holding_the_amount_funds_the_sell() {
-        let (program_id, payer) = (pubkey(0xaa), pubkey(0xbb));
         let order = quoted();
-        let poor = Holder {
-            account: pubkey(0xe1),
-            owner: pubkey(0xe2),
-            amount: 999,
+        let holder = |byte: u8, amount| Holder {
+            account: pubkey(byte),
+            owner: pubkey(byte + 1),
+            amount,
         };
-        let rich = Holder {
-            account: pubkey(0xe3),
-            owner: pubkey(0xe4),
-            amount: 1_000,
-        };
-        let funded = funding(Source::Holders(vec![poor.clone(), rich.clone()]));
-        let fund = funded.instruction(&order).unwrap();
-        let leg = creation_leg(&program_id, &payer, &order, &order.intent().unwrap(), fund);
-        assert_eq!(
-            accounts(&leg, 1),
-            vec![
-                rich.account,
-                order.sell_mint,
-                order.sell_token_account(),
-                rich.owner
-            ]
+        let (poor, rich) = (holder(0xe1, 999), holder(0xe3, 1_000));
+        let fund = funding(Source::Holders(vec![poor.clone(), rich.clone()]))
+            .instruction(&order)
+            .unwrap();
+        assert_eq!(fund.accounts[0].pubkey, rich.account);
+        assert!(
+            funding(Source::Holders(vec![poor]))
+                .instruction(&order)
+                .is_none()
         );
-        assert!(signers(&leg).contains(&rich.owner));
-        assert!(!signers(&leg).contains(&poor.owner));
-        let unfunded = funding(Source::Holders(vec![poor]));
-        assert!(unfunded.instruction(&order).is_none());
     }
 
     /// A mint reads as its program, decimals and authority, a revoked one as

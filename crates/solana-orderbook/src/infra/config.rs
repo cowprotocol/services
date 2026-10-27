@@ -161,10 +161,8 @@ pub struct QuoteVerification {
     /// HTTP endpoint of a node with the Jito `simulateBundle` extension.
     pub bundle_endpoint: Url,
     /// HTTP endpoint of a node serving `getTokenLargestAccounts`, which needs
-    /// the account index most nodes drop. Absent, a mint nobody can mint
-    /// cannot be funded in simulation and its quotes stay unverified. A mint
-    /// is looked up once a day, or after 10 minutes when its holders fund no
-    /// quote.
+    /// the `spl-token-mint` account index. Absent, quotes selling a mint
+    /// without a mint authority stay unverified.
     pub holders_endpoint: Option<Url>,
     /// How inaccurate a quote must be before it is dropped, as the share of
     /// the sell or buy amount the settlement program's buffers may pay.

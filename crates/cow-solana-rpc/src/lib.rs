@@ -368,18 +368,13 @@ impl SolanaRPC {
         })
     }
 
-    /// The largest token accounts of `mint`, up to 20, largest first. Needs a
-    /// node with the account index, which most refuse.
-    pub async fn token_largest_accounts(&self, mint: &Pubkey) -> Result<Vec<TokenHolding>, Error> {
+    /// The addresses of `mint`'s largest token accounts, up to 20, largest
+    /// first. Needs a node with the `spl-token-mint` account index.
+    pub async fn token_largest_accounts(&self, mint: &Pubkey) -> Result<Vec<Pubkey>, Error> {
         let holdings = self.inner.get_token_largest_accounts(mint).await?;
         Ok(holdings
             .into_iter()
-            .filter_map(|holding| {
-                Some(TokenHolding {
-                    account: holding.address.parse().ok()?,
-                    amount: holding.amount.amount.parse().ok()?,
-                })
-            })
+            .filter_map(|holding| holding.address.parse().ok())
             .collect())
     }
 
@@ -469,13 +464,6 @@ pub struct RpcSimulateBundleTransactionResult {
     /// a missing account as an empty one. Empty when none were requested.
     #[serde(default, deserialize_with = "deserialize_accounts")]
     pub post_execution_accounts: Vec<Account>,
-}
-
-/// A token account and its balance.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TokenHolding {
-    pub account: Pubkey,
-    pub amount: u64,
 }
 
 /// Accounts the node encoded, an undecodable one as empty.
