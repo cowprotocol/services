@@ -385,6 +385,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
+                blockhash_catch_up: Duration::ZERO,
             }),
             ..mock_api().await
         };
@@ -534,6 +535,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
             )])),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
         }),
         ..mock_api().await
     };
@@ -600,6 +602,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
+                blockhash_catch_up: Duration::ZERO,
             }),
             ..mock_api().await
         };
@@ -1043,6 +1046,7 @@ async fn spawn_sponsored_server_with(
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
         }),
         ..mock_api().await
     };

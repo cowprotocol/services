@@ -571,6 +571,7 @@ mod tests {
             )])),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
         }
     }
 

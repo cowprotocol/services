@@ -33,11 +33,13 @@ use {
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::STATE_PDA_SEEDS},
     },
+    cow_solana_rpc::SolanaRPC,
     database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
+        hash::Hash,
         message::{VersionedMessage, compiled_instruction::CompiledInstruction},
         pubkey::Pubkey,
         transaction::VersionedTransaction,
@@ -45,6 +47,7 @@ use {
     solana_system_interface::instruction::SystemInstruction,
     solana_token::receivable_or_creatable,
     spl_token_interface::instruction::TokenInstruction,
+    std::time::{Duration, Instant},
 };
 
 /// Request body: the user's partially signed creation transaction,
@@ -245,9 +248,7 @@ async fn place(
     // be an upper bound: the tip cannot have moved past the blockhash's own
     // last valid height by more than the maximum age.
     let blockhash = transaction.message.recent_blockhash();
-    let valid = sponsoring
-        .rpc
-        .is_blockhash_valid(blockhash)
+    let valid = blockhash_valid(&sponsoring.rpc, blockhash, sponsoring.blockhash_catch_up)
         .await
         .map_err(|err| Failure::internal(err, "blockhash validity check"))?;
     if !valid {
@@ -293,6 +294,30 @@ async fn place(
     }
     tracing::info!(order_uid = %uid, "order created");
     Ok((StatusCode::CREATED, Json(uid)))
+}
+
+/// How often placement asks the node again about a blockhash it does not
+/// know, about one slot.
+const BLOCKHASH_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Whether `blockhash` is usable, waiting up to `catch_up` for the node to
+/// confirm it. The node reports a blockhash from a slot it has not confirmed
+/// yet as invalid, and the client may read one from a node ahead of ours.
+async fn blockhash_valid(
+    rpc: &SolanaRPC,
+    blockhash: &Hash,
+    catch_up: Duration,
+) -> Result<bool, cow_solana_rpc::Error> {
+    let deadline = Instant::now() + catch_up;
+    loop {
+        if rpc.is_blockhash_valid(blockhash).await? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        tokio::time::sleep(BLOCKHASH_POLL_INTERVAL).await;
+    }
 }
 
 /// What the preparation steps of a creation transaction name, for the
@@ -904,7 +929,43 @@ fn build_order(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, cow_solana_rpc::RpcRequest};
+
+    /// A mock RPC answering the blockhash probes with `answers`, in order.
+    fn validity_answers<const N: usize>(answers: [bool; N]) -> SolanaRPC {
+        SolanaRPC::new_mock_with_mocks_map(
+            answers
+                .into_iter()
+                .map(|valid| {
+                    (
+                        RpcRequest::IsBlockhashValid,
+                        serde_json::json!({
+                            "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+                            "value": valid,
+                        }),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// A client reading a node ahead of ours signs a blockhash our node
+    /// confirms a moment later, so placement waits for it.
+    #[tokio::test]
+    async fn a_blockhash_the_node_confirms_within_the_catch_up_is_valid() {
+        let rpc = validity_answers([false, false, true]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
+        assert!(valid.unwrap());
+    }
+
+    /// The wait is bounded: a blockhash the node still does not know when the
+    /// window closes is refused.
+    #[tokio::test]
+    async fn a_blockhash_unknown_after_the_catch_up_is_refused() {
+        let rpc = validity_answers([false; 8]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_millis(300)).await;
+        assert!(!valid.unwrap());
+    }
 
     fn set_limit(units: u32) -> Vec<u8> {
         std::iter::once(2u8)
