@@ -271,8 +271,8 @@ async fn place(
     }
 
     // The link is best-effort: a quote that is missing, expired, or not the
-    // one this order came from is dropped with a warning instead of
-    // rejecting an otherwise valid order.
+    // one this order came from is dropped instead of rejecting an otherwise
+    // valid order.
     let quote = match params.quote_id {
         Some(id) => link_quote(state.pool(), id, &order).await,
         None => None,
@@ -291,7 +291,11 @@ async fn place(
         }
         return Err(Failure::internal(err, "sponsored order insert"));
     }
-    tracing::info!(order_uid = %uid, "order created");
+    let quote_id = quote.as_ref().map(|quote| quote.quote_id);
+    let quote_solver = quote
+        .as_ref()
+        .map(|quote| Pubkey::new_from_array(quote.solver.0));
+    tracing::info!(order_uid = %uid, ?quote_id, ?quote_solver, "order created");
     Ok((StatusCode::CREATED, Json(uid)))
 }
 
@@ -555,14 +559,15 @@ async fn link_quote(
     id: i64,
     order: &db::SponsoredOrder,
 ) -> Option<db::OrderQuote> {
+    let order_uid = const_hex::encode_prefixed(order.uid.0);
     let quote = match db::read_quote(pool, id).await {
         Ok(Some(quote)) => quote,
         Ok(None) => {
-            tracing::warn!(id, "quote link dropped, no such quote");
+            tracing::debug!(id, %order_uid, "quote link dropped, no such quote");
             return None;
         }
         Err(err) => {
-            tracing::warn!(id, ?err, "quote link dropped, lookup failed");
+            tracing::warn!(id, %order_uid, ?err, "quote link dropped, lookup failed");
             return None;
         }
     };
@@ -572,13 +577,26 @@ async fn link_quote(
         OrderKind::Sell => quote.sell_amount.to_u64() == Some(order.sell_amount),
         OrderKind::Buy => quote.buy_amount.to_u64() == Some(order.buy_amount),
     };
-    let matches = quote.sell_token == order.sell_token
-        && quote.buy_token == order.buy_token
-        && quote.kind == order.kind
+    let sell_token_matches = quote.sell_token == order.sell_token;
+    let buy_token_matches = quote.buy_token == order.buy_token;
+    let kind_matches = quote.kind == order.kind;
+    let unexpired = quote.expiration > chrono::Utc::now();
+    let matches = sell_token_matches
+        && buy_token_matches
+        && kind_matches
         && fixed_amount_matches
-        && quote.expiration > chrono::Utc::now();
+        && unexpired;
     if !matches {
-        tracing::warn!(id, "quote link dropped, the quote does not match the order");
+        tracing::debug!(
+            id,
+            %order_uid,
+            sell_token_matches,
+            buy_token_matches,
+            kind_matches,
+            fixed_amount_matches,
+            unexpired,
+            "quote link dropped, the quote does not match the order"
+        );
         return None;
     }
     Some(db::OrderQuote {
