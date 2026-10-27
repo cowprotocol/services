@@ -363,11 +363,7 @@ impl Quote {
 
 #[cfg(test)]
 mod test {
-    use {
-        super::*,
-        configs::autopilot::fee_policy::FeePolicyKind,
-        model::order::{OrderData, OrderMetadata},
-    };
+    use {super::*, model::order::OrderMetadata};
 
     #[test]
     fn test_get_partner_fee_valid_multiple_fees_not_capped() {
