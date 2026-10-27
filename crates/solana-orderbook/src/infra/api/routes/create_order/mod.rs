@@ -271,8 +271,8 @@ async fn place(
     }
 
     // The link is best-effort: a quote that is missing, expired, or not the
-    // one this order came from is dropped with a warning instead of
-    // rejecting an otherwise valid order.
+    // one this order came from is dropped instead of rejecting an otherwise
+    // valid order.
     let quote = match params.quote_id {
         Some(id) => link_quote(state.pool(), id, &order).await,
         None => None,
