@@ -127,7 +127,7 @@ pub async fn quote(
             quote_id: None,
             sell_token_price: sell_price,
             buy_token_price: buy_price,
-            buy_token_ata_costs,
+            buy_token_ata_rent: buy_token_ata_costs,
             expiration,
         },
         &ranked,
@@ -286,9 +286,10 @@ struct CompetitionMetadata {
     sell_token_price: u64,
     #[serde_as(as = "DisplayFromStr")]
     buy_token_price: u64,
-    /// Rent of the buy token account.
+    /// Rent of the buy token account, in lamports. The response reports the
+    /// same cost in token atoms, under `costs.buyTokenAtaCosts`.
     #[serde_as(as = "DisplayFromStr")]
-    buy_token_ata_costs: u64,
+    buy_token_ata_rent: u64,
     /// When the stored quote stops matching an order placed with it.
     expiration: DateTime<Utc>,
 }
@@ -929,7 +930,7 @@ mod tests {
             quote_id: None,
             sell_token_price: 7,
             buy_token_price: Solana::NATIVE_PRICE_DENOMINATOR,
-            buy_token_ata_costs: 100,
+            buy_token_ata_rent: 100,
             expiration,
         };
         let json = serde_json::to_value(competition(
@@ -943,7 +944,7 @@ mod tests {
         assert_eq!(json["request"]["kind"], "sell");
         assert_eq!(json["request"]["amount"], "1000");
         assert_eq!(json["request"]["sellToken"], request.sell_token.to_string());
-        assert_eq!(json["metadata"]["buyTokenAtaCosts"], "100");
+        assert_eq!(json["metadata"]["buyTokenAtaRent"], "100");
         assert_eq!(json["metadata"]["sellTokenPrice"], "7");
         assert_eq!(
             json["metadata"]["buyTokenPrice"],
