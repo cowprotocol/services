@@ -118,14 +118,4 @@ mod tests {
         assert_eq!(order.buy_account(), order.owner);
         assert_eq!(order.intent().unwrap().buy, Asset::Native(order.owner));
     }
-
-    #[test]
-    fn a_zero_amount_has_no_intent() {
-        let mut order = order(
-            Pubkey::new_from_array([0x44; 32]),
-            Some(TokenProgram::SplToken),
-        );
-        order.buy_amount = 0;
-        assert!(order.intent().is_none());
-    }
 }

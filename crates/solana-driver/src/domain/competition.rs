@@ -448,10 +448,8 @@ impl Competition {
         Ok(network_fee)
     }
 
-    /// The settlement of `solution`'s fill of `quoted`, unsigned: it fills an
-    /// order of the executed amounts owned by `owner` in place of the
-    /// placeholder, resolved against the chain as `settle` would, so the
-    /// orderbook can simulate it behind that order's creation.
+    /// The unsigned settlement of `solution`, filling `owner`'s order of the
+    /// executed amounts in place of the placeholder `quoted`.
     pub async fn quote_settlement(
         &self,
         quoted: &Order,

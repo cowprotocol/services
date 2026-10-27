@@ -184,14 +184,12 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         transaction:
           description: >-
-            The settlement of the quoted route, unsigned, bincode-serialized
-            and base64-encoded. It fills a fill-or-kill order of the quoted
-            amounts owned by the request's `owner`, trading through the
-            owner's associated token accounts (or into the wallet for a native
-            SOL buy), never expiring, with empty app data. The orderbook
-            simulates it behind that order's creation to verify the quote.
-            Absent without an `owner`, or when the settlement could not be
-            built.
+            The unsigned settlement of the quote, bincode-serialized and
+            base64-encoded. It fills a fill-or-kill order of the quoted
+            amounts that the request's `owner` trades through its associated
+            token accounts (or its wallet for a native SOL buy), never
+            expiring, with empty app data. Absent without an `owner`, or when
+            the settlement could not be built.
           type: string
       required:
         - sellAmount

@@ -47,11 +47,9 @@ pub struct QuoteResponse {
     /// are not reduced by it.
     #[serde_as(as = "DisplayFromStr")]
     pub network_fee: u64,
-    /// The settlement of the quoted route, unsigned, bincode-serialized and
-    /// base64-encoded: it fills an order of the quoted amounts owned by the
-    /// request's `owner`, see `solana_token::quote::QuoteOrder`, for the
-    /// orderbook to simulate behind that order's creation. Absent without an
-    /// `owner`, or when the settlement could not be built.
+    /// The unsigned settlement of the `owner`'s quoted order (see
+    /// `solana_token::quote::QuoteOrder`), bincode-serialized. Absent without
+    /// an `owner` or when it could not be built.
     #[serde_as(as = "Option<Base64>")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction: Option<Vec<u8>>,
