@@ -150,7 +150,7 @@ pub struct Sponsoring {
 
 /// Quote verification configuration: each driver's quoted settlement is
 /// simulated behind the quoted order's creation. Requires the `[rpc]`
-/// section, which reads the mints.
+/// section, which reads the mints and their holders.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct QuoteVerification {
@@ -160,6 +160,12 @@ pub struct QuoteVerification {
     pub mode: QuoteVerificationMode,
     /// HTTP endpoint of a node with the Jito `simulateBundle` extension.
     pub bundle_endpoint: Url,
+    /// HTTP endpoint of a node serving `getTokenLargestAccounts`, which needs
+    /// the account index most nodes drop. Absent, a mint nobody can mint
+    /// cannot be funded in simulation and its quotes stay unverified. A mint
+    /// is looked up once a day, or after 10 minutes when its holders fund no
+    /// quote.
+    pub holders_endpoint: Option<Url>,
     /// How inaccurate a quote must be before it is dropped, as the share of
     /// the sell or buy amount the settlement program's buffers may pay.
     /// Defaults to 1.

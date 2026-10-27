@@ -51,6 +51,11 @@ filter = "info,solana_orderbook=debug"
 # mode = "prefer"
 # A node with the Jito simulateBundle extension.
 # bundle-endpoint = "https://bundles.example.com"
+# A node serving getTokenLargestAccounts, which needs the account index.
+# Without it a mint nobody can mint stays unfunded and its quotes unverified.
+# A mint is looked up once a day, or after 10 minutes when its holders fund no
+# quote.
+# holders-endpoint = "https://solana-mainnet.g.alchemy.com/v2/<key>"
 # The share of the sell or buy amount the settlement program's buffers may
 # pay before the quote is dropped. Defaults to 1.
 # quote-inaccuracy-limit = 0.000001
