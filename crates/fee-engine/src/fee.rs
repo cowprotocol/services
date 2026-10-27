@@ -3,6 +3,10 @@
 use {
     cel::{Context, Value, objects::Key},
     configs::fee_factor::FeeFactor,
+    rust_decimal::{
+        Decimal,
+        prelude::{FromPrimitive, ToPrimitive},
+    },
     std::{collections::HashMap, sync::Arc},
 };
 
@@ -26,8 +30,30 @@ pub enum Fee {
 }
 
 const KIND: &str = "kind";
-const BPS: f64 = 10_000.;
-const PERCENT: f64 = 100.;
+
+/// How a fee argument is read: its size on the
+/// [`FeeFactor::HIGH_PRECISION_SCALE`] grid and the decimal places it may
+/// have. Finer values are rejected, not rounded.
+struct Unit {
+    grid_units: u64,
+    decimals: u32,
+}
+
+/// `volume(bps)`: two decimal places, so 0.3 and 0.33 are fine.
+const BPS: Unit = Unit {
+    grid_units: FeeFactor::HIGH_PRECISION_SCALE / 10_000,
+    decimals: 2,
+};
+/// `share`: a whole percent.
+const SHARE: Unit = Unit {
+    grid_units: FeeFactor::HIGH_PRECISION_SCALE / 100,
+    decimals: 0,
+};
+/// `max_volume`: a percent with two decimal places, so 0.98 is fine.
+const MAX_VOLUME: Unit = Unit {
+    grid_units: FeeFactor::HIGH_PRECISION_SCALE / 100,
+    decimals: 2,
+};
 
 /// Binds the fee functions. Each returns a tagged map that
 /// [`fees_from_value`] turns into a [`Fee`] after the rule has run.
@@ -74,8 +100,9 @@ pub(crate) fn fees_from_value(value: &Value) -> Result<Vec<Fee>, String> {
 }
 
 /// Turns the tagged map a fee function returned (see [`fee_value`]) into a
-/// [`Fee`]: reads `kind`, then each argument as a number scaled by its unit
-/// (bps or percent). Fails with a message naming what is wrong.
+/// [`Fee`]: reads `kind`, then each argument as a decimal scaled by its unit
+/// (bps or percent) onto the high precision grid. Fails with a message naming
+/// what is wrong.
 fn fee_from_value(value: &Value) -> Result<Fee, String> {
     let Value::Map(map) = value else {
         return Err(format!(
@@ -87,12 +114,15 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
     let Some(Value::String(kind)) = field(KIND) else {
         return Err("returned a map instead of a fee such as volume(10)".to_owned());
     };
-    let factor = |name: &str, per_unit: f64| -> Result<FeeFactor, String> {
+    let factor = |name: &str, unit: Unit| -> Result<FeeFactor, String> {
         let value = field(name).ok_or_else(|| format!("`{kind}` is missing `{name}`"))?;
+        let out_of_range = || format!("`{kind}` argument `{name}` = {value:?} is out of range");
+        // `from_f64` recovers the decimal the rule spelled out (0.3, not the
+        // nearest binary fraction), so the grid check below is exact.
         let number = match value {
-            Value::Int(int) => *int as f64,
-            Value::UInt(uint) => *uint as f64,
-            Value::Float(float) => *float,
+            Value::Int(int) => Decimal::from(*int),
+            Value::UInt(uint) => Decimal::from(*uint),
+            Value::Float(float) => Decimal::from_f64(*float).ok_or_else(out_of_range)?,
             other => {
                 return Err(format!(
                     "`{kind}` argument `{name}` is {} instead of a number",
@@ -100,24 +130,32 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
                 ));
             }
         };
-        // Round to the grid `FeeFactor` compares on, so `volume(0.3)` is
-        // exactly 3e-5 and not 2.9999999999999997e-05.
-        let grid = FeeFactor::HIGH_PRECISION_SCALE as f64;
-        let factor = (number / per_unit * grid).round() / grid;
-        FeeFactor::try_from(factor)
-            .map_err(|_| format!("`{kind}` argument `{name}` = {number} is out of range"))
+        if number.normalize().scale() > unit.decimals {
+            return Err(match unit.decimals {
+                0 => format!("`{kind}` argument `{name}` = {number} is not a whole number"),
+                decimals => format!(
+                    "`{kind}` argument `{name}` = {number} has more than {decimals} decimal places"
+                ),
+            });
+        }
+        number
+            .checked_mul(Decimal::from(unit.grid_units))
+            .filter(Decimal::is_integer)
+            .and_then(|scaled| scaled.to_u64())
+            .and_then(|units| FeeFactor::from_high_precision(units).ok())
+            .ok_or_else(out_of_range)
     };
     match kind.as_str() {
         "volume" => Ok(Fee::Volume {
             factor: factor("bps", BPS)?,
         }),
         "surplus" => Ok(Fee::Surplus {
-            factor: factor("share", PERCENT)?,
-            max_volume_factor: factor("max_volume", PERCENT)?,
+            factor: factor("share", SHARE)?,
+            max_volume_factor: factor("max_volume", MAX_VOLUME)?,
         }),
         "price_improvement" => Ok(Fee::PriceImprovement {
-            factor: factor("share", PERCENT)?,
-            max_volume_factor: factor("max_volume", PERCENT)?,
+            factor: factor("share", SHARE)?,
+            max_volume_factor: factor("max_volume", MAX_VOLUME)?,
         }),
         other => Err(format!("unknown fee kind `{other}`")),
     }
@@ -182,13 +220,34 @@ mod tests {
     }
 
     #[test]
-    fn snaps_factors_to_the_high_precision_grid() {
-        let [Fee::Volume { factor }] = evaluate("volume(0.3)").unwrap()[..] else {
-            panic!("expected one volume fee");
+    fn reads_arguments_on_the_high_precision_grid() {
+        let volume = |source: &str| match evaluate(source).unwrap()[..] {
+            [Fee::Volume { factor }] => factor,
+            _ => panic!("expected one volume fee"),
         };
         assert_ne!(0.3 / 10_000., 0.00003);
-        assert_eq!(factor.get(), 0.00003);
-        assert_eq!(factor.to_high_precision(), 30);
+        assert_eq!(volume("volume(0.3)").get(), 0.00003);
+        assert_eq!(volume("volume(0.3)").to_high_precision(), 30);
+        assert_eq!(volume("volume(0.33)").to_high_precision(), 33);
+        assert_eq!(
+            evaluate("surplus(50, 0.98)").unwrap(),
+            vec![Fee::Surplus {
+                factor: factor(0.5),
+                max_volume_factor: factor(0.0098)
+            }]
+        );
+    }
+
+    #[test]
+    fn rejects_arguments_with_too_many_decimal_places() {
+        for (source, message) in [
+            ("volume(0.333)", "more than 2 decimal places"),
+            ("surplus(50.5, 1)", "is not a whole number"),
+            ("surplus(50, 0.985)", "more than 2 decimal places"),
+            ("price_improvement(0.5, 1)", "is not a whole number"),
+        ] {
+            assert!(evaluate(source).unwrap_err().contains(message), "{source}");
+        }
     }
 
     #[test]

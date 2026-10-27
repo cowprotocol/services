@@ -43,12 +43,13 @@ fee:  surplus(order.partiallyFillable ? 40 : 50, 1)
 ### Fee functions
 
 The only values a `fee` expression may return. Arguments are CEL expressions,
-so a fee can depend on the order. A list stacks several fees. Factors are
-rounded to the 1e-6 grid `FeeFactor` compares on.
+so a fee can depend on the order. A list stacks several fees. A value with
+more decimal places than its argument allows is rejected, not rounded.
 
-- `volume(bps)` — `bps / 10000` of the volume.
+- `volume(bps)` — `bps / 10000` of the volume; up to two decimal places.
 - `surplus(share, max_volume)` — `share` percent of the surplus over the limit
-  price, at most `max_volume` percent of the volume.
+  price, at most `max_volume` percent of the volume. `share` is a whole
+  number; `max_volume` has up to two decimal places.
 - `price_improvement(share, max_volume)` — `share` percent of the improvement
   over the quote, with the same cap.
 - `no_fee()` — no protocol fee.
