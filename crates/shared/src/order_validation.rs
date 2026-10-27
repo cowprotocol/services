@@ -340,6 +340,8 @@ pub enum ValidationError {
     TooManyLimitOrders,
     TooMuchGas,
     QuoteNotVerified,
+    /// The app-data names a wrapper that can't be trusted to settle the order.
+    InvalidWrapper(Address),
     Other(anyhow::Error),
 }
 
@@ -455,6 +457,7 @@ pub struct OrderValidator {
     /// volume-fee factor from an order's app-data. `None` disables partner
     /// fees entirely for the fast-path limit-price check.
     max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+    wrapper_validator: order_validation::wrappers::Validator,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -525,6 +528,7 @@ impl OrderValidator {
         // `fee_policies.max_partner_fee`. `None` disables partner fees for
         // the check.
         max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+        wrapper_validator: order_validation::wrappers::Validator,
     ) -> Self {
         Self {
             native_token,
@@ -544,6 +548,7 @@ impl OrderValidator {
             same_tokens_policy,
             protocol_volume_fee_policy,
             max_partner_fee,
+            wrapper_validator,
         }
     }
 
@@ -968,6 +973,16 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
+        let wrappers = app_data.inner.protocol.wrappers.iter().map(|w| w.address);
+        if let Some(wrapper) = self
+            .wrapper_validator
+            .find_invalid(wrappers)
+            .await
+            .map_err(|err| ValidationError::Other(err.into()))?
+        {
+            return Err(ValidationError::InvalidWrapper(wrapper));
+        }
+
         let preview_order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -1359,9 +1374,10 @@ mod tests {
         },
         account_balances::MockBalanceFetching,
         alloy::{
-            primitives::{Address, U160, U256, address, b256},
+            primitives::{Address, Bytes, U160, U256, address, b256},
             providers::{Provider, ProviderBuilder, mock::Asserter},
             signers::local::PrivateKeySigner,
+            sol_types::SolCall,
         },
         futures::FutureExt,
         maplit::hashset,
@@ -1376,6 +1392,22 @@ mod tests {
     };
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
+
+    const SETTLEMENT: Address = Address::repeat_byte(0x90);
+
+    /// Wrapper validator whose RPC calls get answered with the responses
+    /// pushed to `asserter`.
+    fn wrapper_validator(asserter: Asserter) -> order_validation::wrappers::Validator {
+        order_validation::wrappers::Validator::new(
+            contracts::GPv2AllowListAuthentication::Instance::new(
+                Address::repeat_byte(0xaa),
+                ProviderBuilder::new()
+                    .connect_mocked_client(asserter)
+                    .erased(),
+            ),
+            SETTLEMENT,
+        )
+    }
 
     #[test]
     fn hash_app_data_keeps_full_document_for_simulation() {
@@ -1410,6 +1442,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         // App data with a pre-hook (a gasless approval, the shape that surfaced
@@ -1479,6 +1512,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
         std::assert_matches!(
             validator
@@ -1610,6 +1644,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1677,6 +1712,7 @@ mod tests {
             SameTokensPolicy::AllowSell,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let order = || PreOrderData {
@@ -1776,6 +1812,7 @@ mod tests {
             SameTokensPolicy::Allow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let valid_to =
@@ -1852,6 +1889,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let now = time::now_in_epoch_seconds();
@@ -1980,6 +2018,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let creation = OrderCreation {
@@ -2192,6 +2231,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let creation = OrderCreation {
@@ -2267,6 +2307,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let creation = OrderCreation {
@@ -2292,6 +2333,90 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn post_validate_rejects_invalid_wrappers() {
+        let wrapper = Address::repeat_byte(0x11);
+        let validate = async |asserter: Asserter| {
+            let mut order_quoter = MockOrderQuoting::new();
+            order_quoter
+                .expect_find_quote()
+                .returning(|_, _| Ok(Default::default()));
+            let mut balance_fetcher = MockBalanceFetching::new();
+            balance_fetcher
+                .expect_can_transfer()
+                .returning(|_, _| Ok(()));
+            let mut limit_order_counter = MockLimitOrderCounting::new();
+            limit_order_counter.expect_count().returning(|_| Ok(0u64));
+            let validator = OrderValidator::new(
+                WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider),
+                Arc::new(order_validation::banned::Users::none()),
+                OrderValidPeriodConfiguration::any(),
+                false,
+                Default::default(),
+                HooksTrampoline::Instance::new(
+                    Address::repeat_byte(0xcf),
+                    ProviderBuilder::new()
+                        .connect_mocked_client(Asserter::new())
+                        .erased(),
+                ),
+                Arc::new(order_quoter),
+                Arc::new(balance_fetcher),
+                Arc::new(MockSignatureValidating::new()),
+                None,
+                Arc::new(limit_order_counter),
+                u64::MAX,
+                Default::default(),
+                u64::MAX,
+                SameTokensPolicy::Disallow,
+                None,
+                None,
+                wrapper_validator(asserter),
+            );
+            let order = OrderCreation {
+                valid_to: time::now_in_epoch_seconds() + 2,
+                sell_token: Address::with_last_byte(1),
+                buy_token: Address::with_last_byte(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                signature: Signature::Eip712(EcdsaSignature::non_zero()),
+                app_data: OrderCreationAppData::Full {
+                    full: json!({
+                        "metadata": {"wrappers": [{"address": wrapper, "data": "0x"}]}
+                    })
+                    .to_string(),
+                },
+                ..Default::default()
+            };
+            validator
+                .validate_and_construct_order(order, &Default::default(), Default::default(), None)
+                .await
+        };
+
+        let is_solver = |asserter: &Asserter, is_solver: bool| {
+            asserter.push_success(&Bytes::from(
+                contracts::GPv2AllowListAuthentication::GPv2AllowListAuthentication::isSolverCall::abi_encode_returns(
+                    &is_solver,
+                ),
+            ));
+        };
+
+        let asserter = Asserter::new();
+        is_solver(&asserter, false);
+        let result = validate(asserter).await;
+        assert!(
+            matches!(result, Err(ValidationError::InvalidWrapper(w)) if w == wrapper),
+            "{result:?}"
+        );
+
+        let asserter = Asserter::new();
+        is_solver(&asserter, true);
+        asserter.push_success(&Bytes::from(
+            contracts::ICowWrapper::ICowWrapper::SETTLEMENTCall::abi_encode_returns(&SETTLEMENT),
+        ));
+        let result = validate(asserter).await;
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[tokio::test]
@@ -2330,6 +2455,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2386,6 +2512,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let order = OrderCreation {
@@ -2446,6 +2573,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let order = OrderCreation {
@@ -2512,6 +2640,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let order = OrderCreation {
@@ -2579,6 +2708,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let order = OrderCreation {
@@ -2640,6 +2770,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let creation = OrderCreation {
@@ -2712,6 +2843,7 @@ mod tests {
                 SameTokensPolicy::Disallow,
                 None,
                 None,
+                wrapper_validator(Asserter::new()),
             );
 
             let order = OrderCreation {
@@ -2808,6 +2940,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         // Test with flashloan hint that covers the sell amount
@@ -3226,6 +3359,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         );
 
         let creation = OrderCreation {
@@ -3341,6 +3475,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(Asserter::new()),
         )
     }
 

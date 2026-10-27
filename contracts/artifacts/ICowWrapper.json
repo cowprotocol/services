@@ -2,6 +2,19 @@
   "abi": [
     {
       "type": "function",
+      "name": "SETTLEMENT",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "contract ICowSettlement"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
       "name": "wrappedSettle",
       "inputs": [
         {

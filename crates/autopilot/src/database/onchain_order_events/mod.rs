@@ -18,6 +18,7 @@ use {
             OrderInvalidation,
             OrderPlacement as ContractOrderPlacement,
         },
+        GPv2AllowListAuthentication,
         HooksTrampoline::{self, HooksTrampoline::Hook},
     },
     database::{
@@ -72,6 +73,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     settlement_contract: Address,
     metrics: &'static Metrics,
     trampoline: HooksTrampoline::Instance,
+    wrapper_validator: order_validation::wrappers::Validator,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -79,6 +81,7 @@ where
     EventData: Send + Sync,
     EventRow: Send + Sync,
 {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         db: Postgres,
         web3: Web3,
@@ -87,6 +90,7 @@ where
         domain_separator: DomainSeparator,
         settlement_contract: Address,
         trampoline: HooksTrampoline::Instance,
+        authenticator: GPv2AllowListAuthentication::Instance,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -97,6 +101,10 @@ where
             settlement_contract,
             metrics: Metrics::get(),
             trampoline,
+            wrapper_validator: order_validation::wrappers::Validator::new(
+                authenticator,
+                settlement_contract,
+            ),
         }
     }
 }
@@ -357,9 +365,14 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await
         .context("appending quotes for onchain orders failed")?;
 
-        handle_app_data(transaction, &mut orders, &self.trampoline)
-            .await
-            .context("failed to handle app data")?;
+        handle_app_data(
+            transaction,
+            &mut orders,
+            &self.trampoline,
+            &self.wrapper_validator,
+        )
+        .await
+        .context("failed to handle app data")?;
 
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
@@ -685,8 +698,9 @@ fn extract_order_data_from_onchain_order_placement_event(
 /// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
 /// backfills `valid_from` for non-fast-path orders that requested one,
 /// and indexes pre/post hook interactions. Must run before the orders
-/// are inserted (it mutates them). Orders whose app-data is unknown or
-/// unparseable are left unchanged.
+/// are inserted (it mutates them). Orders whose app-data is unknown are
+/// left unchanged. Orders whose app-data is unparseable or names a wrapper
+/// that can't be trusted to settle the order are marked invalid.
 ///
 /// For fast-path orders `valid_from` is intentionally left `NULL`: the
 /// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
@@ -697,6 +711,7 @@ async fn handle_app_data(
     db: &mut PgConnection,
     orders: &mut [Order],
     trampoline: &HooksTrampoline::Instance,
+    wrapper_validator: &order_validation::wrappers::Validator,
 ) -> Result<()> {
     for order in orders.iter_mut() {
         let appdata_json = database::app_data::fetch(db, &order.app_data)
@@ -720,6 +735,23 @@ async fn handle_app_data(
             .context("failed to mark order invalid")?;
             continue;
         };
+
+        let wrappers = parsed.wrappers.iter().map(|w| w.address);
+        if let Some(wrapper) = wrapper_validator
+            .find_invalid(wrappers)
+            .await
+            .context("failed to validate wrappers")?
+        {
+            tracing::debug!(order = ?order.uid, ?wrapper, "marking order invalid: invalid wrapper");
+            database::onchain_broadcasted_orders::set_placement_error(
+                db,
+                &order.uid,
+                OnchainOrderPlacementError::InvalidOrderData,
+            )
+            .await
+            .context("failed to mark order invalid")?;
+            continue;
+        }
 
         store_hooks(db, order, &parsed, trampoline).await?;
         // `validFrom` is only honoured for non-fast-path orders; fast-path
@@ -822,7 +854,11 @@ mod test {
 
     use {
         super::*,
-        alloy::primitives::U256,
+        alloy::{
+            primitives::{Bytes, U256},
+            providers::{Provider, ProviderBuilder, mock::Asserter},
+            sol_types::SolCall,
+        },
         contracts::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethrpc::Web3,
@@ -832,6 +868,7 @@ mod test {
             signature::SigningScheme,
         },
         number::conversions::u256_to_big_decimal,
+        serde_json::json,
         shared::{
             db_order_conversions::{
                 buy_token_destination_into,
@@ -1296,6 +1333,10 @@ mod test {
             trampoline: HooksTrampoline::Instance::deployed(&web3.provider)
                 .await
                 .unwrap(),
+            wrapper_validator: order_validation::wrappers::Validator::new(
+                GPv2AllowListAuthentication::Instance::new(Address::ZERO, web3.provider.clone()),
+                Address::ZERO,
+            ),
             web3,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
@@ -1353,5 +1394,80 @@ mod test {
                 },
             )]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_handle_app_data_marks_orders_with_invalid_wrappers_invalid() {
+        let db = Postgres::with_defaults().await.unwrap();
+        let mut ex = db.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+
+        let settlement = Address::repeat_byte(0x90);
+        let unauthorized = Address::repeat_byte(1);
+        let wrapper = Address::repeat_byte(2);
+        let mut orders = Vec::new();
+        for (i, wrapper) in [unauthorized, wrapper].into_iter().enumerate() {
+            let app_data = ByteArray([i as u8; 32]);
+            let document = json!({"metadata": {"wrappers": [{"address": wrapper, "data": "0x"}]}});
+            database::app_data::insert(&mut ex, &app_data, document.to_string().as_bytes())
+                .await
+                .unwrap();
+            let order = Order {
+                uid: ByteArray([i as u8; 56]),
+                app_data,
+                ..Default::default()
+            };
+            database::onchain_broadcasted_orders::insert_onchain_order(
+                &mut ex,
+                &EventIndex::default(),
+                &OnchainOrderPlacement {
+                    order_uid: order.uid,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            orders.push(order);
+        }
+
+        // Orders get processed sequentially so the responses are consumed in
+        // the same order.
+        let asserter = Asserter::new();
+        let is_solver = |is_solver: bool| {
+            Bytes::from(
+                GPv2AllowListAuthentication::GPv2AllowListAuthentication::isSolverCall::abi_encode_returns(
+                    &is_solver,
+                ),
+            )
+        };
+        asserter.push_success(&is_solver(false));
+        asserter.push_success(&is_solver(true));
+        asserter.push_success(&Bytes::from(
+            contracts::ICowWrapper::ICowWrapper::SETTLEMENTCall::abi_encode_returns(&settlement),
+        ));
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter)
+            .erased();
+        handle_app_data(
+            &mut ex,
+            &mut orders,
+            &HooksTrampoline::Instance::new(Address::ZERO, provider.clone()),
+            &order_validation::wrappers::Validator::new(
+                GPv2AllowListAuthentication::Instance::new(Address::ZERO, provider),
+                settlement,
+            ),
+        )
+        .await
+        .unwrap();
+
+        let expected = [Some(OnchainOrderPlacementError::InvalidOrderData), None];
+        for (order, expected) in orders.iter().zip(expected) {
+            let placement = database::onchain_broadcasted_orders::read_order(&mut ex, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(placement.placement_error, expected);
+        }
     }
 }
