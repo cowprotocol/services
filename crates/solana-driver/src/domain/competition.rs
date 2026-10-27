@@ -9,7 +9,7 @@ use {
         buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
         execution_cost::{Charge, ExecutionCost},
         order_uid::OrderUid,
-        priority_fee::{self, PriorityFeePolicy},
+        priority_fee::{self, MAX_COMPUTE_UNIT_LIMIT, PriorityFeePolicy},
         program_error::ProgramError,
         settlement::{self, ResolveError, writable_accounts},
         slot::Slot,
@@ -218,10 +218,11 @@ impl Competition {
                     "solution simulation inconclusive"
                 ),
             }
-            if let Ok((_, Some(units))) = verdict
-                && solution.cu_estimate.is_none()
-            {
-                solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
+            if let Ok((_, Some(units))) = verdict {
+                // An engine's estimate over the measured usage is its margin
+                // to keep; one under it would fail the settlement.
+                let measured = self.priority_fee.compute_unit_limit(units);
+                solution.cu_estimate = Some(measured.max(solution.cu_estimate.unwrap_or(0)));
             }
             if let Some(fees) = fees {
                 let Ok(fees) = fees else {
@@ -282,7 +283,8 @@ impl Competition {
     /// win the auction and then fail to settle. An error that
     /// [`proves_failure`] is a verdict on the solution; any other means the
     /// driver could not find out. A pass returns the slot the bundle
-    /// simulated against and the compute units the settlement consumed.
+    /// simulated against and the compute units the settlement consumed,
+    /// simulated at the ceiling whatever limit it will declare.
     async fn simulate_solution(
         &self,
         auction_id: Id,
@@ -295,7 +297,17 @@ impl Competition {
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
-        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
+        // The limit only caps the simulation, so the ceiling measures the
+        // usage of every route, including one its engine underestimated.
+        let settlement = super::Settlement::new(
+            program_id,
+            auction_id,
+            orders,
+            Solution {
+                cu_estimate: Some(MAX_COMPUTE_UNIT_LIMIT),
+                ..solution.clone()
+            },
+        )?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?

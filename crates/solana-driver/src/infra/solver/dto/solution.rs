@@ -43,7 +43,8 @@ pub struct Solution {
     pub prices: HashMap<Pubkey, NonZero<u64>>,
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
-    /// Optional solver estimate of total settlement compute units.
+    /// Optional solver estimate of total settlement compute units. The
+    /// settlement declares it unless its simulation measures more.
     #[serde(default)]
     pub cu_estimate: Option<u32>,
 }

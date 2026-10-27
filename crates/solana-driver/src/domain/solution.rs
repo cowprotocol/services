@@ -27,8 +27,9 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     /// Solana instructions to execute as part of the settlement.
     pub interactions: Vec<Instruction>,
-    /// The settlement's compute unit limit: the solver's estimate, or else one
-    /// derived from simulating the settlement.
+    /// The settlement's compute unit limit: the larger of the solver's
+    /// estimate and the simulated usage plus the headroom, or whichever of
+    /// the two is known.
     pub cu_estimate: Option<u32>,
 }
 

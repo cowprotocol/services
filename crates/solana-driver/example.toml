@@ -29,7 +29,8 @@ max-priority-fee-lamports = 1000000
 default-compute-unit-limit = 400000
 # The share of the simulated compute units added to the limit a settlement
 # declares, in percent. The priority fee is paid on the limit, used or not,
-# while running out of units fails the settlement.
+# while running out of units fails the settlement. A solver's own estimate
+# above that is declared instead.
 compute-unit-limit-headroom-percent = 10
 
 [http]

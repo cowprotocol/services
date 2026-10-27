@@ -1067,6 +1067,52 @@ async fn solve_cuts_at_the_simulated_compute_units() {
     assert_eq!(request["orders"][0]["buyAmount"], "3000");
 }
 
+/// The settlement declares the larger of the engine's estimate and the
+/// simulated units plus the headroom, and the cut is priced at it. 100_000
+/// simulated units declare 110_000 over an engine's 50_000: 1_100 lamports
+/// at the mock's 10_000 micro-lamports, kept at a 1_100 budget and dropped
+/// at 1_099. An engine's 200_000 stays over the 110_000: dropped at 1_999.
+#[tokio::test]
+async fn solve_declares_the_larger_of_the_engines_estimate_and_the_simulated_units() {
+    async fn solve_ids(cu_estimate: u32, max_priority_fee_lamports: u64) -> Vec<u64> {
+        let mut response = engine_response(&[(1, "3000")]);
+        response["solutions"][0]["cuEstimate"] = serde_json::json!(cu_estimate);
+        let engine = spawn_mock_solver_engine(response).await;
+        let (solver, _) = solver_with_fee(engine, 0).await;
+        let mut mocks = Mocks::new();
+        mocks.insert(
+            RpcRequest::GetRecentPrioritizationFees,
+            serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+        );
+        mocks.insert(
+            SIMULATE_BUNDLE,
+            serde_json::json!({
+                "context": { "slot": 1 },
+                "value": { "transactionResults": [
+                    { "err": null, "logs": [], "unitsConsumed": 100_000 },
+                ] },
+            }),
+        );
+        let api = Api {
+            priority_fee: PriorityFeePolicy {
+                max_priority_fee_lamports,
+                ..priority_fee()
+            },
+            ..api_with(vec![solver], mocks).await
+        };
+        let (listener, addr) = api.bind().await.unwrap();
+        let shutdown = CancellationToken::new();
+        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+        let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(100)).await;
+        response_ids(&body)
+    }
+
+    assert_eq!(solve_ids(50_000, 1_100).await, vec![1]);
+    assert!(solve_ids(50_000, 1_099).await.is_empty());
+    assert!(solve_ids(200_000, 1_999).await.is_empty());
+}
+
 /// A route paying exactly the 2000 limit undercuts it once the cut applies
 /// and is dropped before the autopilot sees it. The other solution survives.
 #[tokio::test]
