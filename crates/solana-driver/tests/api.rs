@@ -800,13 +800,13 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     assert_eq!(json["kind"], "FailedToSubmit");
 }
 
-/// The mock RPC answers no bundle simulation, so solve checks the network
-/// fee at the policy's 200_000 default units: 2_000 lamports of priority
-/// fee, within the 3_999 budget. The settlement declares the same 200_000,
-/// not the runtime's default of 200_000 per instruction that the budget
-/// refuses, so the settle reaches the send.
+/// The mock RPC answers no bundle simulation, so the driver prices the cut
+/// at the policy's 200_000 default units: 2_000 lamports, within the 3_999
+/// budget. The settlement declares the same 200_000, not the runtime's
+/// default of 200_000 per instruction that the budget refuses, so the settle
+/// reaches the send.
 #[tokio::test]
-async fn settle_declares_the_compute_units_an_unsimulated_solution_was_checked_at() {
+async fn settle_declares_the_compute_units_an_unsimulated_cut_was_priced_at() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
     let (solver, _) = solver_with_fee(engine, 0).await;
     let mut mocks = Mocks::new();
@@ -971,15 +971,17 @@ async fn buy_quote_returns_the_executed_amounts() {
     );
 }
 
-/// The lamports a driver that charges them cuts from the standard solve
-/// request: the rent of the order's missing 165-byte buy token account at
-/// the SDK's default rent, the mock RPC answering no rent sysvar.
+/// The lamports settling the standard solve request costs a driver that
+/// charges them: the rent of the order's missing 165-byte buy token account
+/// at the SDK's default rent, the mock RPC answering no rent sysvar, plus the
+/// 19_000 lamport network fee of the 1.4M unit ceiling at the mock's 10_000
+/// micro-lamports per unit.
 fn execution_cost() -> u64 {
-    Rent::default().minimum_balance(spl_token_interface::state::Account::LEN)
+    Rent::default().minimum_balance(spl_token_interface::state::Account::LEN) + 19_000
 }
 
 /// The standard solve request pricing the buy token so that the execution
-/// cost comes to exactly `atoms` of its atoms.
+/// cost at the ceiling comes to exactly `atoms` of its atoms.
 fn solve_request_priced_for_a_cut_of(atoms: u64) -> serde_json::Value {
     let mut request = solve_request();
     let price = execution_cost() * 1_000_000_000 / atoms;
@@ -1008,13 +1010,38 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     assert!(request["orders"][0].get("missingBuyTokenAccount").is_none());
 }
 
-/// The mock RPC reports 10_000 micro-lamports per unit and the simulation
-/// 100_000 units, so the settlement's network fee is 6_100 lamports, but only
-/// the rent, priced at 1000 atoms, is cut: the route paying 3000 is reported
-/// at 2000, and the engine is asked for the 2000 limit moved by the same
-/// 1000.
+/// The mock RPC answers no bundle simulation, so the units come from the
+/// policy's 200_000 default: 2_000 lamports of priority fee instead of the
+/// ceiling's 14_000, so the rent and fee priced at 1000 atoms for the ceiling
+/// come to 995. The limit sent to the engine moves by the same 995.
 #[tokio::test]
-async fn solve_cuts_the_rent_but_not_the_network_fee() {
+async fn solve_cuts_at_the_policy_default_compute_units_without_a_simulation() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
+    let api = Api {
+        priority_fee: PriorityFeePolicy {
+            default_compute_unit_limit: 200_000,
+            ..priority_fee()
+        },
+        ..api_with(vec![solver], Mocks::new()).await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2005");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2995");
+}
+
+/// The simulation reports 100_000 units, so the settlement declares 110_000
+/// and the cut is priced at them: 1_100 lamports of priority fee, 994 atoms.
+/// The limit sent to the engine still moves by the 1000 of the policy's
+/// default, the ceiling here, since no route exists yet.
+#[tokio::test]
+async fn solve_cuts_at_the_simulated_compute_units() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
     let (solver, _) = solver_with_fee(engine, 0).await;
     let mut mocks = Mocks::new();
@@ -1034,46 +1061,10 @@ async fn solve_cuts_the_rent_but_not_the_network_fee() {
     let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
-    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2000");
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2006");
 
     let request = requests.lock().unwrap().take().unwrap();
     assert_eq!(request["orders"][0]["buyAmount"], "3000");
-}
-
-/// The same fee and units come to 1_100 lamports of priority fee at the
-/// 110_000 units the settlement declares, one over the budget, so the
-/// solution is dropped instead of winning a settlement that refuses it.
-#[tokio::test]
-async fn solve_drops_a_solution_whose_network_fee_is_over_budget() {
-    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
-    let (solver, _) = solver_with_fee(engine, 0).await;
-    let mut mocks = Mocks::new();
-    mocks.insert(
-        RpcRequest::GetRecentPrioritizationFees,
-        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
-    );
-    mocks.insert(
-        SIMULATE_BUNDLE,
-        serde_json::json!({
-            "context": { "slot": 1 },
-            "value": { "transactionResults": [
-                { "err": null, "logs": [], "unitsConsumed": 100_000 },
-            ] },
-        }),
-    );
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
-            max_priority_fee_lamports: 1_099,
-            ..priority_fee()
-        },
-        ..api_with(vec![solver], mocks).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
-
-    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
-    assert!(response_ids(&body).is_empty());
 }
 
 /// A route paying exactly the 2000 limit undercuts it once the cut applies

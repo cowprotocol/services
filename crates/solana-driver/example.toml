@@ -25,7 +25,7 @@ min-compute-unit-price = 10000
 # limit), in lamports. A transaction over it is refused as over budget.
 max-priority-fee-lamports = 1000000
 # The compute unit limit priced when a transaction's usage is not measured
-# (quotes, and solutions their simulation did not measure), 1..=1400000.
+# (quotes, and solutions before their simulation), 1..=1400000.
 default-compute-unit-limit = 400000
 # The share of the simulated compute units added to the limit a settlement
 # declares, in percent. The priority fee is paid on the limit, used or not,
@@ -54,11 +54,11 @@ signer = { keypair = "/path/to/keypair.json" }
 # value, sitting the rest out so other solvers win settlements to test
 # against. Omit to participate in every auction.
 # solve-every-nth-auction = 5
-# Who prices the execution costs, the rent of the buy token accounts the
-# settlement creates, into the fills: "driver" cuts them from every fill the
-# engine reports, on top of the solver fee below, "solver" sends the engine
-# the signed limits and leaves them to it. The network fee is never cut.
-# Omit for the driver.
+# Who prices the execution costs, the network fee and the rent of the buy
+# token accounts the settlement creates, into the fills: "driver" cuts them
+# from every fill the engine reports, on top of the solver fee below, "solver"
+# sends the engine the signed limits and leaves both to it. Omit for the
+# driver.
 # fee-handler = "driver"
 # Volume-based solver fee in basis points, 0..10000. Sell orders deliver
 # (1 - fee) of the fill's buy leg; buy orders pull (1 + fee) of its sell leg.
