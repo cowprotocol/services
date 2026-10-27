@@ -225,14 +225,28 @@ impl Competition {
                 solution.cu_estimate = Some(measured.max(solution.cu_estimate.unwrap_or(0)));
             }
             if let Some(fees) = fees {
-                let Ok(fees) = fees else {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        window_ms,
-                        "dropping solution, its prioritization fees timed out"
-                    );
-                    continue;
+                // A failed fetch is no verdict on the other solutions, so
+                // only this one, whose cut cannot be priced, is dropped.
+                let fees = match fees {
+                    Ok(Ok(fees)) => fees,
+                    Ok(Err(error)) => {
+                        tracing::warn!(
+                            solver = %self.solver.name(),
+                            solution_id = solution.id,
+                            ?error,
+                            "dropping solution, its prioritization fees failed"
+                        );
+                        continue;
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            solver = %self.solver.name(),
+                            solution_id = solution.id,
+                            window_ms,
+                            "dropping solution, its prioritization fees timed out"
+                        );
+                        continue;
+                    }
                 };
                 // The cut and its budget check price this limit, so `settle`
                 // declares it instead of the runtime's default, which can be
@@ -240,7 +254,7 @@ impl Competition {
                 solution
                     .cu_estimate
                     .get_or_insert(self.priority_fee.default_compute_unit_limit);
-                let network_fee = match self.network_fee_at(&fees?, &solution) {
+                let network_fee = match self.network_fee_at(&fees, &solution) {
                     Ok(network_fee) => network_fee,
                     Err(reason) => {
                         tracing::warn!(

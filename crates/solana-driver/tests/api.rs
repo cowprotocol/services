@@ -14,7 +14,7 @@ use {
         pda::order::find_order_pda,
         token_program::TokenProgram,
     },
-    cow_solana_rpc::{Mocks, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
+    cow_solana_rpc::{Mocks, MocksMap, RpcRequest, SIMULATE_BUNDLE, SolanaRPC},
     solana_driver::{
         domain::{priority_fee::PriorityFeePolicy, solver_fee::SolverFee},
         infra::{
@@ -88,14 +88,15 @@ fn buy_token_account() -> Pubkey {
 /// Token mints, so that the mock RPC's answer to every account lookup,
 /// "absent", only ever reaches the token accounts. `mocks` answers the other
 /// requests.
-async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
+async fn blockchain_with(mocks: impl Into<MocksMap>) -> Arc<Solana> {
+    let mut mocks = mocks.into();
     mocks.insert(
         RpcRequest::GetMultipleAccounts,
         multiple_accounts_json([mint_account_json(), mint_account_json()]),
     );
     let blockchain = Solana::new(
-        SolanaRPC::new_mock_with_mocks(mocks.clone()),
-        SolanaRPC::new_mock_with_mocks(mocks),
+        SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
+        SolanaRPC::new_mock_with_mocks_map(mocks),
         program_id(),
     );
     blockchain
@@ -118,7 +119,7 @@ fn priority_fee() -> PriorityFeePolicy {
     }
 }
 
-async fn api_with(solvers: Vec<Solver>, mocks: Mocks) -> Api {
+async fn api_with(solvers: Vec<Solver>, mocks: impl Into<MocksMap>) -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         blockchain: blockchain_with(mocks).await,
@@ -152,13 +153,13 @@ async fn spawn_server(solvers: Vec<Solver>) -> SocketAddr {
     spawn_server_with_mocks(solvers, Mocks::new()).await
 }
 
-async fn spawn_server_with_mocks(solvers: Vec<Solver>, mocks: Mocks) -> SocketAddr {
+async fn spawn_server_with_mocks(solvers: Vec<Solver>, mocks: impl Into<MocksMap>) -> SocketAddr {
     spawn_api(api_with(solvers, mocks).await).await
 }
 
 async fn spawn_server_with_policy(
     solvers: Vec<Solver>,
-    mocks: Mocks,
+    mocks: impl Into<MocksMap>,
     priority_fee: PriorityFeePolicy,
 ) -> SocketAddr {
     spawn_api(Api {
@@ -1089,6 +1090,30 @@ async fn solve_declares_the_larger_of_the_engines_estimate_and_the_simulated_uni
     assert_eq!(solve_ids(50_000, 1_100).await, vec![1]);
     assert!(solve_ids(50_000, 1_099).await.is_empty());
     assert!(solve_ids(200_000, 1_999).await.is_empty());
+}
+
+/// The reserve fetch before the engine is asked takes the one queued fee
+/// answer. Of the two solutions' own fetches, one gets the `null` and fails,
+/// the other the mock's default. The failed one is dropped like a timed out
+/// one, and the solve answers with the other instead of failing whole.
+#[tokio::test]
+async fn solve_drops_only_the_solution_whose_fee_fetch_fails() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000"), (2, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 0).await;
+    let mocks = MocksMap::from_iter([
+        (
+            RpcRequest::GetRecentPrioritizationFees,
+            serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+        ),
+        (
+            RpcRequest::GetRecentPrioritizationFees,
+            serde_json::Value::Null,
+        ),
+    ]);
+    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+
+    let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(100)).await;
+    assert_eq!(response_ids(&body).len(), 1);
 }
 
 /// A route paying exactly the 2000 limit undercuts it once the cut applies
