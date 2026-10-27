@@ -8,9 +8,9 @@ is true picks the fee. The fee is then clamped to the caps.
 
 A rule is a `RuleDefinition`: a name and two [CEL](https://cel.dev)
 expressions. `when` must return a bool. `fee` must return one fee or a list
-of fees. `RuleSet::new` refuses the whole set when a rule name repeats or an
-expression does not compile. A rule whose expression fails at run time is
-logged and skipped.
+of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
+list takes a reserved name or an expression does not compile. A rule whose
+expression fails at run time is skipped and logged at debug level.
 
 ```
 name: Stablecoin swaps
@@ -70,12 +70,24 @@ leaving it to the caps.
 fee: volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e20)))
 ```
 
+### The CEL strings extension
+
+`lowerAscii`, `upperAscii`, `split`, `join`, `substring`, `trim`, `replace`,
+`format` and the rest of the
+[strings extension](https://github.com/google/cel-spec/blob/master/doc/extensions/strings.md).
+`lowerAscii` makes a pasted checksummed address compare equal to the
+lowercase view.
+
+```
+when: order.sellToken == "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".lowerAscii()
+```
+
 ### Lists
 
 Each entry of the lists map is a CEL list of strings under its name. `in`
 tests membership and the list macros work on it. Hex members are lowercased
 when the set is built, as are the hex strings in `order`, so address case
-does not matter.
+does not matter. The names `order`, `now` and `math` are reserved.
 
 ```
 when: order.sellToken in stablecoins && order.buyToken in stablecoins
@@ -110,10 +122,14 @@ address, not `null`.
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
 ```
 
+A hex literal compares equal to the view only in lowercase: write it so, or
+call `lowerAscii()` on it. Addresses belong in lists, where case does not
+matter.
+
 ## Outcome
 
-`Evaluator::evaluate` returns one of:
+`Evaluator::evaluate` returns:
 
-- `Matched { rule, fees }` — the first rule whose `when` held, with each fee
-  clamped to `Caps`. A clamp is logged.
-- `NoMatch` — no rule matched; the order pays no protocol fee.
+- `Some(Match { rule, fees })`: the first rule whose `when` held, with each
+  fee clamped to `Caps`. A clamp is logged at debug level.
+- `None`: no rule matched, so the order pays no protocol fee.

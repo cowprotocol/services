@@ -18,11 +18,17 @@ pub struct RuleDefinition {
     pub fee: String,
 }
 
+/// Names the evaluator binds itself; a list under one of them would be
+/// shadowed or overwritten without any error.
+const RESERVED_NAMES: [&str; 3] = ["order", "now", "math"];
+
 /// Why a set of rule definitions was refused.
 #[derive(Debug, thiserror::Error)]
 pub enum CompileError {
     #[error("rule `{name}` is defined twice")]
     DuplicateRule { name: String },
+    #[error("list `{name}` takes a name the engine binds itself")]
+    ReservedList { name: String },
     #[error("rule `{rule}`: `{field}` does not compile: {message}")]
     Expression {
         rule: String,
@@ -116,8 +122,8 @@ impl fmt::Debug for RuleSet {
 
 impl RuleSet {
     /// Compiles the rules in the order they are tried against the CEL
-    /// stdlib plus its math extension. Each list becomes a CEL list under
-    /// its name. Any failure refuses the whole set.
+    /// stdlib plus its math and strings extensions. Each list becomes a CEL
+    /// list under its name. Any failure refuses the whole set.
     pub fn new(
         definitions: Vec<RuleDefinition>,
         lists: BTreeMap<String, Vec<String>>,
@@ -125,8 +131,15 @@ impl RuleSet {
     ) -> Result<Self, CompileError> {
         let mut env = Env::stdlib().with_optional_support(false);
         cel::extensions::math(&mut env).expect("math names are free in the stdlib");
+        cel::extensions::strings(&mut env).expect("strings names are free in the stdlib");
         let env = Arc::new(env);
         let mut rules = Vec::with_capacity(definitions.len());
+        if let Some(name) = lists
+            .keys()
+            .find(|name| RESERVED_NAMES.contains(&name.as_str()))
+        {
+            return Err(CompileError::ReservedList { name: name.clone() });
+        }
         let mut names = HashSet::new();
         for definition in definitions {
             if !names.insert(definition.name.clone()) {
@@ -250,5 +263,16 @@ mod tests {
             ]),
             CompileError::DuplicateRule { .. }
         ));
+    }
+
+    #[test]
+    fn refuses_reserved_list_names() {
+        for name in RESERVED_NAMES {
+            let lists = BTreeMap::from([(name.to_owned(), vec![])]);
+            assert!(matches!(
+                RuleSet::new(vec![], lists, caps()).unwrap_err(),
+                CompileError::ReservedList { name: found } if found == name
+            ));
+        }
     }
 }

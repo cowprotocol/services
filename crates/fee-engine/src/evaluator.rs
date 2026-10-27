@@ -44,8 +44,8 @@ pub struct Evaluator<'r> {
 
 impl<'r> Evaluator<'r> {
     /// Runs the rules top to bottom against `order`. A rule that fails to
-    /// evaluate is logged and skipped. `None` means the order pays no
-    /// protocol fee.
+    /// evaluate is skipped and logged at debug level, as this runs once per
+    /// order per rule. `None` means the order pays no protocol fee.
     pub fn evaluate(&self, order: &Order) -> Option<Match<'r>> {
         let mut context = self.context.new_inner_scope();
         context
@@ -56,7 +56,7 @@ impl<'r> Evaluator<'r> {
             let matched = match rule.when.execute(&context) {
                 Ok(Value::Bool(matched)) => matched,
                 Ok(other) => {
-                    tracing::warn!(
+                    tracing::debug!(
                         rule = %rule.name(),
                         returned = %other.type_of(),
                         "fee rule `when` is not a bool, skipping rule"
@@ -64,7 +64,7 @@ impl<'r> Evaluator<'r> {
                     false
                 }
                 Err(err) => {
-                    tracing::warn!(rule = %rule.name(), ?err, "fee rule `when` failed, skipping rule");
+                    tracing::debug!(rule = %rule.name(), ?err, "fee rule `when` failed, skipping rule");
                     false
                 }
             };
@@ -74,21 +74,21 @@ impl<'r> Evaluator<'r> {
             let value = match rule.fee.execute(&context) {
                 Ok(value) => value,
                 Err(err) => {
-                    tracing::warn!(rule = %rule.name(), ?err, "fee rule `fee` failed, skipping rule");
+                    tracing::debug!(rule = %rule.name(), ?err, "fee rule `fee` failed, skipping rule");
                     continue;
                 }
             };
             let mut fees = match fee::fees_from_value(&value) {
                 Ok(fees) => fees,
                 Err(err) => {
-                    tracing::warn!(rule = %rule.name(), %err, "fee rule `fee` is not a fee, skipping rule");
+                    tracing::debug!(rule = %rule.name(), %err, "fee rule `fee` is not a fee, skipping rule");
                     continue;
                 }
             };
             for fee in &mut fees {
                 let before = *fee;
                 if fee.clamp(self.rules.caps()) {
-                    tracing::warn!(rule = %rule.name(), ?before, clamped = ?fee, "fee clamped to the caps");
+                    tracing::debug!(rule = %rule.name(), ?before, clamped = ?fee, "fee clamped to the caps");
                 }
             }
             return Some(Match { rule, fees });
@@ -307,6 +307,18 @@ mod tests {
         let evaluator = rules.evaluator(after_launch());
         let (_, fees) = matched(&evaluator.evaluate(&order(WETH, USDT)));
         assert_eq!(fees, vec![volume(10.)]);
+    }
+
+    #[test]
+    fn strings_extension_lowercases_literals() {
+        let rules = rule_set(vec![rule(
+            "Checksummed literal",
+            "order.sellToken == '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'.lowerAscii()",
+            "volume(1)",
+        )]);
+        let evaluator = rules.evaluator(after_launch());
+        let (rule, _) = matched(&evaluator.evaluate(&order(USDC, WETH)));
+        assert_eq!(rule, "Checksummed literal");
     }
 
     #[test]
