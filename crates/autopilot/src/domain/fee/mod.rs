@@ -207,7 +207,7 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: Option<&domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
-    ) -> Vec<Policy> {
+    ) -> Vec<PolicyWithOrigin> {
         // In case there is no quote, we assume 0 buy amount so that the order
         // ends up being considered out of market price.
         let reference_quote = quote.cloned().unwrap_or(domain::Quote {
@@ -219,7 +219,13 @@ impl ProtocolFees {
         });
 
         let partner_fee =
-            Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
+            Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get())
+                .into_iter()
+                .map(|policy| PolicyWithOrigin {
+                    policy,
+                    origin: Origin::Partner,
+                })
+                .collect();
 
         if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
             return partner_fee;
@@ -232,8 +238,8 @@ impl ProtocolFees {
         &self,
         order: &boundary::Order,
         quote: &domain::Quote,
-        partner_fees: Vec<Policy>,
-    ) -> Vec<Policy> {
+        partner_fees: Vec<PolicyWithOrigin>,
+    ) -> Vec<PolicyWithOrigin> {
         let now = Utc::now();
         let fee_policies = self
             .upcoming_fee_policies
@@ -246,6 +252,10 @@ impl ProtocolFees {
             .iter()
             .filter_map(|fee_policy| Self::protocol_fee_into_policy(order, quote, fee_policy))
             .flat_map(|policy| self.variant_fee_apply(order, quote, policy))
+            .map(|policy| PolicyWithOrigin {
+                policy,
+                origin: Origin::Protocol,
+            })
             .chain(partner_fees)
             .collect()
     }
@@ -314,6 +324,21 @@ pub enum Policy {
     },
 }
 
+/// A fee policy together with the party it is charged for.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PolicyWithOrigin {
+    pub policy: Policy,
+    pub origin: Origin,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// Configured by the protocol.
+    Protocol,
+    /// Requested by a partner via the order's app data.
+    Partner,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Quote {
     /// The amount of the sell token.
@@ -338,7 +363,11 @@ impl Quote {
 
 #[cfg(test)]
 mod test {
-    use {super::*, model::order::OrderMetadata};
+    use {
+        super::*,
+        configs::autopilot::fee_policy::FeePolicyKind,
+        model::order::{OrderData, OrderMetadata},
+    };
 
     #[test]
     fn test_get_partner_fee_valid_multiple_fees_not_capped() {
