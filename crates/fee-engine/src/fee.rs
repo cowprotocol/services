@@ -1,5 +1,4 @@
-//! Fees a rule returns, the CEL functions that build them and the caps they
-//! are clamped to.
+//! Fees a rule returns and the CEL functions that build them.
 
 use {
     cel::{Context, Value, objects::Key},
@@ -24,40 +23,6 @@ pub enum Fee {
         factor: FeeFactor,
         max_volume_factor: FeeFactor,
     },
-}
-
-impl Fee {
-    /// Lowers every component to its cap. Returns whether anything changed.
-    pub fn clamp(&mut self, caps: &Caps) -> bool {
-        match self {
-            Fee::Volume { factor } => factor.cap(caps.volume_factor),
-            Fee::Surplus {
-                factor,
-                max_volume_factor,
-            }
-            | Fee::PriceImprovement {
-                factor,
-                max_volume_factor,
-            } => {
-                // Evaluate both so neither clamp is skipped by
-                // short-circuiting.
-                let share = factor.cap(caps.share_factor);
-                let volume = max_volume_factor.cap(caps.max_volume_factor);
-                share || volume
-            }
-        }
-    }
-}
-
-/// Upper bounds every fee is clamped to.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Caps {
-    /// Highest volume share a `volume()` fee charges.
-    pub volume_factor: FeeFactor,
-    /// Highest surplus or price-improvement share a fee takes.
-    pub share_factor: FeeFactor,
-    /// Highest volume share a surplus or price-improvement fee is capped at.
-    pub max_volume_factor: FeeFactor,
 }
 
 const KIND: &str = "kind";
@@ -250,38 +215,5 @@ mod tests {
                 .unwrap_err()
                 .contains("missing `bps`")
         );
-    }
-
-    #[test]
-    fn clamps_to_caps() {
-        let caps = Caps {
-            volume_factor: factor(0.01),
-            share_factor: factor(0.9),
-            max_volume_factor: factor(0.05),
-        };
-        let mut fee = Fee::Volume {
-            factor: factor(0.5),
-        };
-        assert!(fee.clamp(&caps));
-        assert_eq!(
-            fee,
-            Fee::Volume {
-                factor: caps.volume_factor
-            }
-        );
-
-        let mut fee = Fee::Surplus {
-            factor: factor(0.5),
-            max_volume_factor: factor(0.5),
-        };
-        assert!(fee.clamp(&caps));
-        assert_eq!(
-            fee,
-            Fee::Surplus {
-                factor: factor(0.5),
-                max_volume_factor: caps.max_volume_factor
-            }
-        );
-        assert!(!fee.clamp(&caps));
     }
 }

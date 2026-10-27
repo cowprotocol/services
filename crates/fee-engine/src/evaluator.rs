@@ -28,8 +28,7 @@ impl RuleSet {
     }
 }
 
-/// The first rule whose `when` held for an order, with its fees clamped to
-/// the caps.
+/// The first rule whose `when` held for an order, and its fees.
 #[derive(Debug)]
 pub struct Match<'r> {
     pub rule: &'r Rule,
@@ -78,19 +77,13 @@ impl<'r> Evaluator<'r> {
                     continue;
                 }
             };
-            let mut fees = match fee::fees_from_value(&value) {
+            let fees = match fee::fees_from_value(&value) {
                 Ok(fees) => fees,
                 Err(err) => {
                     tracing::debug!(rule = %rule.name(), %err, "fee rule `fee` is not a fee, skipping rule");
                     continue;
                 }
             };
-            for fee in &mut fees {
-                let before = *fee;
-                if fee.clamp(self.rules.caps()) {
-                    tracing::debug!(rule = %rule.name(), ?before, clamped = ?fee, "fee clamped to the caps");
-                }
-            }
             return Some(Match { rule, fees });
         }
         None
@@ -101,7 +94,7 @@ impl<'r> Evaluator<'r> {
 mod tests {
     use {
         super::*,
-        crate::{fee::Caps, rules::RuleDefinition},
+        crate::rules::RuleDefinition,
         alloy_primitives::{Address, U256, address},
         chrono::TimeZone,
         configs::fee_factor::FeeFactor,
@@ -149,16 +142,8 @@ mod tests {
         ])
     }
 
-    fn caps() -> Caps {
-        Caps {
-            volume_factor: FeeFactor::new(0.01),
-            share_factor: FeeFactor::new(0.9),
-            max_volume_factor: FeeFactor::new(0.05),
-        }
-    }
-
     fn rule_set(definitions: Vec<RuleDefinition>) -> RuleSet {
-        RuleSet::new(definitions, sample_lists(), caps()).unwrap()
+        RuleSet::new(definitions, sample_lists()).unwrap()
     }
 
     fn order(sell: Address, buy: Address) -> Order {
@@ -275,7 +260,6 @@ mod tests {
                 "volume(1)",
             )],
             lists,
-            caps(),
         )
         .unwrap();
         let evaluator = rules.evaluator(after_launch());
@@ -319,30 +303,6 @@ mod tests {
         let evaluator = rules.evaluator(after_launch());
         let (rule, _) = matched(&evaluator.evaluate(&order(USDC, WETH)));
         assert_eq!(rule, "Checksummed literal");
-    }
-
-    #[test]
-    fn fees_are_clamped_to_the_caps() {
-        let rules = rule_set(vec![rule(
-            "Greedy",
-            "true",
-            "[volume(500), surplus(95, 10)]",
-        )]);
-        let evaluator = rules.evaluator(after_launch());
-        let (_, fees) = matched(&evaluator.evaluate(&order(WETH, USDT)));
-        let caps = caps();
-        assert_eq!(
-            fees,
-            vec![
-                Fee::Volume {
-                    factor: caps.volume_factor
-                },
-                Fee::Surplus {
-                    factor: caps.share_factor,
-                    max_volume_factor: caps.max_volume_factor
-                }
-            ]
-        );
     }
 
     #[test]

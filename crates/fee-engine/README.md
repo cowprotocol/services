@@ -2,7 +2,7 @@
 
 Rule-based protocol fees. A `RuleSet` holds named lists and an ordered list
 of rules. For every order the rules run top to bottom. The first `when` that
-is true picks the fee. The fee is then clamped to the caps.
+is true picks the fee.
 
 ## Rules
 
@@ -63,8 +63,7 @@ fee: no_fee()
 `math.greatest`, `math.least`, `math.ceil`, `math.floor`, `math.round`,
 `math.abs`, `math.sqrt` and the rest of the
 [math extension](https://github.com/google/cel-spec/blob/master/doc/extensions/math.md).
-`greatest` and `least` clamp a computed fee inside the rule instead of
-leaving it to the caps.
+`greatest` and `least` bound a computed fee inside the rule.
 
 ```
 fee: volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e20)))
@@ -130,6 +129,6 @@ matter.
 
 `Evaluator::evaluate` returns:
 
-- `Some(Match { rule, fees })`: the first rule whose `when` held, with each
-  fee clamped to `Caps`. A clamp is logged at debug level.
+- `Some(Match { rule, fees })`: the first rule whose `when` held, and its
+  fees.
 - `None`: no rule matched, so the order pays no protocol fee.

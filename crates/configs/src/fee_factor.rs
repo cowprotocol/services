@@ -39,16 +39,6 @@ impl FeeFactor {
     pub fn get(&self) -> f64 {
         self.0
     }
-
-    /// Lowers the factor to `cap` when it is above it. Returns whether it
-    /// changed.
-    pub fn cap(&mut self, cap: FeeFactor) -> bool {
-        if self.0 <= cap.0 {
-            return false;
-        }
-        *self = cap;
-        true
-    }
 }
 
 impl TryFrom<f64> for FeeFactor {

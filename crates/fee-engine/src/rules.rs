@@ -1,7 +1,7 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::{fee::Caps, order_view},
+    crate::order_view,
     cel::{Env, Program, Value},
     std::{
         collections::{BTreeMap, HashSet},
@@ -108,14 +108,12 @@ pub struct RuleSet {
     pub(crate) env: Arc<Env>,
     rules: Vec<Rule>,
     pub(crate) lists: Vec<(String, Value)>,
-    caps: Caps,
 }
 
 impl fmt::Debug for RuleSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuleSet")
             .field("rules", &self.rules)
-            .field("caps", &self.caps)
             .finish_non_exhaustive()
     }
 }
@@ -127,7 +125,6 @@ impl RuleSet {
     pub fn new(
         definitions: Vec<RuleDefinition>,
         lists: BTreeMap<String, Vec<String>>,
-        caps: Caps,
     ) -> Result<Self, CompileError> {
         let mut env = Env::stdlib().with_optional_support(false);
         cel::extensions::math(&mut env).expect("math names are free in the stdlib");
@@ -153,17 +150,12 @@ impl RuleSet {
             env,
             rules,
             lists: list_values(&lists),
-            caps,
         })
     }
 
     /// The rules in the order they are tried.
     pub fn rules(&self) -> &[Rule] {
         &self.rules
-    }
-
-    pub fn caps(&self) -> &Caps {
-        &self.caps
     }
 }
 
@@ -186,21 +178,13 @@ fn list_values(lists: &BTreeMap<String, Vec<String>>) -> Vec<(String, Value)> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, configs::fee_factor::FeeFactor};
+    use super::*;
 
     fn rule(name: &str, when: &str, fee: &str) -> RuleDefinition {
         RuleDefinition {
             name: name.to_owned(),
             when: when.to_owned(),
             fee: fee.to_owned(),
-        }
-    }
-
-    fn caps() -> Caps {
-        Caps {
-            volume_factor: FeeFactor::new(0.01),
-            share_factor: FeeFactor::new(0.9),
-            max_volume_factor: FeeFactor::new(0.05),
         }
     }
 
@@ -212,7 +196,6 @@ mod tests {
                 rule("Second", "true", "no_fee()"),
             ],
             BTreeMap::new(),
-            caps(),
         )
         .unwrap();
         let names: Vec<_> = rules.rules().iter().map(Rule::name).collect();
@@ -227,7 +210,7 @@ mod tests {
             "tokens".to_owned(),
             vec!["0xAbC".to_owned(), "Acme".to_owned()],
         )]);
-        let rules = RuleSet::new(vec![], lists, caps()).unwrap();
+        let rules = RuleSet::new(vec![], lists).unwrap();
         let [(name, members)] = &rules.lists[..] else {
             panic!("expected one list");
         };
@@ -240,7 +223,7 @@ mod tests {
 
     #[test]
     fn refuses_bad_definitions() {
-        let error = |definitions| RuleSet::new(definitions, BTreeMap::new(), caps()).unwrap_err();
+        let error = |definitions| RuleSet::new(definitions, BTreeMap::new()).unwrap_err();
 
         assert!(matches!(
             error(vec![rule("x", "order.sellToken in", "volume(1)")]),
@@ -270,7 +253,7 @@ mod tests {
         for name in RESERVED_NAMES {
             let lists = BTreeMap::from([(name.to_owned(), vec![])]);
             assert!(matches!(
-                RuleSet::new(vec![], lists, caps()).unwrap_err(),
+                RuleSet::new(vec![], lists).unwrap_err(),
                 CompileError::ReservedList { name: found } if found == name
             ));
         }
