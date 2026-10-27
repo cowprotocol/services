@@ -37,32 +37,33 @@ impl Validator {
     pub async fn find_invalid(&self, wrappers: &[Address]) -> Result<Option<Address>, Error> {
         let mut checked = HashSet::new();
         for &wrapper in wrappers {
-            if checked.insert(wrapper) && !self.is_valid(wrapper).await? {
+            if checked.insert(wrapper) && self.is_invalid(wrapper).await? {
                 return Ok(Some(wrapper));
             }
         }
         Ok(None)
     }
 
-    /// Only authorized solvers may call `settle()` but that alone isn't
-    /// sufficient: solvers' submission accounts (EOAs, possibly with an
-    /// EIP-7702 delegation) are authorized as well and may accept arbitrary
-    /// calls without settling anything. So the wrapper additionally has to
+    /// A wrapper is invalid if it isn't an authorized solver since only those
+    /// may call `settle()`. Being authorized isn't sufficient though:
+    /// solvers' submission accounts (EOAs, possibly with an EIP-7702
+    /// delegation) are authorized as well and may accept arbitrary calls
+    /// without settling anything. So a wrapper is also invalid if it doesn't
     /// identify as a `CowWrapper` of our settlement contract.
-    async fn is_valid(&self, wrapper: Address) -> Result<bool, Error> {
+    async fn is_invalid(&self, wrapper: Address) -> Result<bool, Error> {
         if !self.authenticator.isSolver(wrapper).call().await? {
-            return Ok(false);
+            return Ok(true);
         }
         let settlement = ICowWrapper::Instance::new(wrapper, self.authenticator.provider().clone())
             .SETTLEMENT()
             .call()
             .await;
         match settlement {
-            Ok(settlement) => Ok(settlement == self.settlement),
+            Ok(settlement) => Ok(settlement != self.settlement),
             // Accounts that aren't wrappers revert, return no data (e.g. EOAs)
             // or return data that isn't an address. Any other error (e.g. a
             // node error) doesn't tell us anything about the wrapper.
-            Err(err) if err.is_contract_revert() || matches!(err, Error::AbiError(_)) => Ok(false),
+            Err(err) if err.is_contract_revert() || matches!(err, Error::AbiError(_)) => Ok(true),
             Err(err) => Err(err),
         }
     }
