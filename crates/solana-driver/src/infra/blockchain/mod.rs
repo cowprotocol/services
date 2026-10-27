@@ -191,7 +191,7 @@ impl Solana {
         &self,
         transactions: &[VersionedTransaction],
     ) -> Result<BundleSimulation, Error> {
-        let response = self.bundle_rpc.simulate_bundle(transactions).await?;
+        let response = self.bundle_rpc.simulate_bundle(transactions, &[]).await?;
         Ok(BundleSimulation {
             slot: Slot(response.context.slot),
             results: response.value,

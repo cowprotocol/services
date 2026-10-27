@@ -7,8 +7,14 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    solana_orderbook::infra::{api::Api, db, prices::NativePrices, quoter::Quoter},
-    solana_sdk::signer::Signer,
+    solana_orderbook::infra::{
+        api::Api,
+        db,
+        prices::NativePrices,
+        quoter::Quoter,
+        verifier::Verifier,
+    },
+    solana_sdk::{program_pack::Pack, signer::Signer},
     spl_token_2022_interface::extension::{
         BaseStateWithExtensionsMut,
         ExtensionType,
@@ -30,6 +36,7 @@ async fn mock_api() -> Api {
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
         sponsoring: None,
+        verifier: None,
         app_data_size_limit: 8192,
     }
 }
@@ -660,6 +667,332 @@ async fn quote_picks_the_best_driver_answer() {
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["buyAmount"], "2779760");
     assert_eq!(json["quote"]["costs"]["networkFees"], "0");
+}
+
+/// A driver answer for the `quote_body` sell, settling it for `buy_amount`
+/// with the unsigned settlement transaction `signers` sign, the first as
+/// the fee payer and the solver.
+fn settling_driver_answer(
+    buy_amount: &str,
+    signers: &[solana_sdk::pubkey::Pubkey],
+) -> serde_json::Value {
+    let instructions: Vec<_> = signers
+        .iter()
+        .map(|signer| solana_system_interface::instruction::transfer(signer, &program_id(), 1))
+        .collect();
+    let message = solana_sdk::message::Message::new(&instructions, Some(&signers[0]));
+    let transaction = solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![solana_sdk::signature::Signature::default(); signers.len()],
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    };
+    serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": buy_amount,
+        "solver": signers[0].to_string(),
+        "networkFee": "0",
+        "transaction": base64::engine::general_purpose::STANDARD
+            .encode(bincode::serialize(&transaction).unwrap()),
+    })
+}
+
+/// An SPL Token mint `authority` can mint more of.
+fn mintable_mint_json(authority: solana_sdk::pubkey::Pubkey) -> serde_json::Value {
+    let mut data = vec![0; spl_token_interface::state::Mint::LEN];
+    spl_token_interface::state::Mint {
+        mint_authority: solana_sdk::program_option::COption::Some(authority),
+        decimals: 6,
+        is_initialized: true,
+        ..Default::default()
+    }
+    .pack_into_slice(&mut data);
+    solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 1_461_600,
+        owner: spl_token_interface::ID,
+        data,
+        ..Default::default()
+    })
+}
+
+/// An initialized SPL token account holding `amount`.
+fn holding_json(owner: solana_sdk::pubkey::Pubkey, amount: u64) -> serde_json::Value {
+    let mut data = vec![0; spl_token_interface::state::Account::LEN];
+    spl_token_interface::state::Account {
+        owner,
+        amount,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..Default::default()
+    }
+    .pack_into_slice(&mut data);
+    solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 2_039_280,
+        owner: spl_token_interface::ID,
+        data,
+        ..Default::default()
+    })
+}
+
+/// A bundle answer whose creation leg passes and whose settlement leg is
+/// `settlement`.
+fn bundle_json(settlement: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "context": { "slot": 1 },
+        "value": { "transactionResults": [{ "err": null, "logs": [] }, settlement] },
+    })
+}
+
+/// A passing settlement leg: the watched accounts are the order's buy
+/// account, the sell buffer and the buy buffer, holding `pre` before and
+/// `post` after.
+fn settled_json(pre: [u64; 3], post: [u64; 3]) -> serde_json::Value {
+    let owner = program_id();
+    let holdings = |amounts: [u64; 3]| -> Vec<serde_json::Value> {
+        amounts
+            .into_iter()
+            .map(|amount| holding_json(owner, amount))
+            .collect()
+    };
+    serde_json::json!({
+        "err": null,
+        "logs": [],
+        "unitsConsumed": 100_000,
+        "preExecutionAccounts": holdings(pre),
+        "postExecutionAccounts": holdings(post),
+    })
+}
+
+/// A verifier over mock nodes: `rpc` answers the account reads in queue
+/// order, `bundle` every bundle simulation.
+fn verifier(
+    rpc: MocksMap,
+    bundle: serde_json::Value,
+    inaccuracy_limit: f64,
+    mode: configs::price_estimation::QuoteVerificationMode,
+) -> Verifier {
+    Verifier::new(
+        SolanaRPC::new_mock_with_mocks_map(rpc),
+        SolanaRPC::new_mock_with_mocks(Mocks::from([(cow_solana_rpc::SIMULATE_BUNDLE, bundle)])),
+        program_id(),
+        inaccuracy_limit,
+        mode,
+    )
+}
+
+/// The mock account reads of a verification whose sell mint `authority` can
+/// mint: the two mints, then the authority, a plain wallet.
+fn mintable_reads(authority: solana_sdk::pubkey::Pubkey) -> MocksMap {
+    MocksMap::from_iter([
+        (
+            RpcRequest::GetMultipleAccounts,
+            solana_testlib::multiple_accounts_json([
+                mintable_mint_json(authority),
+                solana_testlib::mint_account_json(),
+            ]),
+        ),
+        (
+            RpcRequest::GetMultipleAccounts,
+            solana_testlib::multiple_accounts_json([solana_testlib::account_json(
+                &solana_sdk::account::Account {
+                    lamports: 1_000_000_000,
+                    ..Default::default()
+                },
+            )]),
+        ),
+    ])
+}
+
+async fn spawn_verifying_server(drivers: Vec<SocketAddr>, verifier: Verifier) -> SocketAddr {
+    let api = Api {
+        quoter: Quoter::new(
+            drivers
+                .iter()
+                .map(|driver| format!("http://{driver}/").parse().unwrap())
+                .collect(),
+            Duration::from_secs(1),
+        ),
+        verifier: Some(verifier),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    addr
+}
+
+/// Post the `quote_body` sell and return the HTTP status and the parsed body.
+async fn quote_verified(addr: SocketAddr) -> (reqwest::StatusCode, serde_json::Value) {
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validFor": 1800})))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response.json().await.unwrap())
+}
+
+/// The sell mint's authority mints the sell amount in the creation leg, the
+/// settlement delivers the quoted amount and the buffers keep theirs: the
+/// quote is verified.
+#[tokio::test]
+async fn quote_verified_by_a_passing_bundle_simulation() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+        0.01,
+        configs::price_estimation::QuoteVerificationMode::Prefer,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    let (status, json) = quote_verified(addr).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["verified"], true);
+    assert_eq!(json["quote"]["buyAmount"], "1240967");
+}
+
+/// Two quotes of one pair read the mints once: the reads mocked for the first
+/// quote are all there is, and the second quote still verifies.
+#[tokio::test]
+async fn quote_verification_reuses_the_pair_funding() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let settled = bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000]));
+    let verifier = Verifier::new(
+        SolanaRPC::new_mock_with_mocks_map(
+            mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        ),
+        SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+            (cow_solana_rpc::SIMULATE_BUNDLE, settled.clone()),
+            (cow_solana_rpc::SIMULATE_BUNDLE, settled),
+        ])),
+        program_id(),
+        0.01,
+        configs::price_estimation::QuoteVerificationMode::Prefer,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    for _ in 0..2 {
+        let (status, json) = quote_verified(addr).await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(json["verified"], true);
+    }
+}
+
+/// A settlement that fails in simulation, or delivers less than it quoted,
+/// leaves the quote as the driver gave it, unverified.
+#[tokio::test]
+async fn quote_whose_settlement_fails_or_underdelivers_is_unverified() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let failing = serde_json::json!({
+        "err": { "InstructionError": [1, { "Custom": 1 }] },
+        "logs": ["boom"],
+    });
+    for settlement in [
+        failing,
+        settled_json([0, 1_000, 5_000], [3_461_206, 1_000, 5_000]),
+    ] {
+        let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+        let verifier = verifier(
+            mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+            bundle_json(settlement.clone()),
+            0.01,
+            configs::price_estimation::QuoteVerificationMode::Prefer,
+        );
+        let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+        let (status, json) = quote_verified(addr).await;
+        assert_eq!(status, reqwest::StatusCode::OK, "{settlement}");
+        assert_eq!(json["verified"], false);
+        assert_eq!(json["quote"]["buyAmount"], "1240967");
+    }
+}
+
+/// A settlement the buffers pay for, beyond the inaccuracy limit's share of
+/// the amount, is dropped: with no other quote there is no liquidity.
+#[tokio::test]
+async fn quote_the_buffers_pay_for_is_dropped() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json(
+            [0, 1_000, 5_000_000],
+            [3_461_207, 1_000, 4_900_000],
+        )),
+        0.01,
+        configs::price_estimation::QuoteVerificationMode::Prefer,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    let (status, json) = quote_verified(addr).await;
+    assert_eq!(status, reqwest::StatusCode::NOT_FOUND);
+    assert_eq!(json["errorType"], "NoLiquidity");
+}
+
+/// Preferring verified quotes, a verified quote beats a better one whose
+/// settlement signs as more than the solver, which no simulation can vouch
+/// for. Not preferring them, the better amount wins.
+#[tokio::test]
+async fn quote_prefers_a_verified_answer_in_prefer_mode() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let unverifiable = spawn_mock_driver(settling_driver_answer(
+        "5000000",
+        &[solver, solana_sdk::pubkey::Pubkey::new_unique()],
+    ))
+    .await;
+    let verifiable = spawn_mock_driver(settling_driver_answer("4000000", &[solver])).await;
+    for (mode, buy_amount, verified) in [
+        (
+            configs::price_estimation::QuoteVerificationMode::Prefer,
+            "1779760",
+            true,
+        ),
+        (
+            configs::price_estimation::QuoteVerificationMode::Unverified,
+            "2779760",
+            false,
+        ),
+    ] {
+        let verifier = verifier(
+            mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+            bundle_json(settled_json([0, 1_000, 5_000], [4_000_000, 1_000, 5_000])),
+            0.01,
+            mode,
+        );
+        let addr = spawn_verifying_server(vec![unverifiable, verifiable], verifier).await;
+
+        let (status, json) = quote_verified(addr).await;
+        assert_eq!(status, reqwest::StatusCode::OK, "{mode:?}");
+        assert_eq!(json["quote"]["buyAmount"], buy_amount, "{mode:?}");
+        assert_eq!(json["verified"], verified, "{mode:?}");
+    }
+}
+
+/// A sell mint nobody can mint has nothing to fund its sell in simulation,
+/// so the quote stays unverified.
+#[tokio::test]
+async fn quote_selling_a_mint_nobody_can_mint_is_unverified() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let reads = MocksMap::from_iter([(
+        RpcRequest::GetMultipleAccounts,
+        solana_testlib::multiple_accounts_json([
+            solana_testlib::mint_account_json(),
+            solana_testlib::mint_account_json(),
+        ]),
+    )]);
+    let verifier = verifier(
+        reads,
+        bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+        0.01,
+        configs::price_estimation::QuoteVerificationMode::Prefer,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    let (status, json) = quote_verified(addr).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["verified"], false);
 }
 
 /// A buy order keeps its buy amount and pulls the execution cost, priced in

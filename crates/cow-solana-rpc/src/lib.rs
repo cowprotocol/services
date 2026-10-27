@@ -6,7 +6,8 @@ use {
     base64::Engine,
     futures::{TryFutureExt, future},
     itertools::Itertools,
-    serde::Deserialize,
+    serde::{Deserialize, Deserializer},
+    solana_account_decoder_client_types::UiAccount,
     solana_rpc_client::{
         http_sender::HttpSender,
         nonblocking::rpc_client::RpcClient,
@@ -315,11 +316,13 @@ impl SolanaRPC {
     /// the node's latest, so partially signed and stale transactions still
     /// simulate. The value holds one result per executed transaction, in
     /// order, ending at the first failure; the context carries the slot it
-    /// simulated against. A node without the Jito extension answers with an
-    /// error.
+    /// simulated against. `accounts` lists, per transaction, the accounts to
+    /// report before and after it, a missing list reporting none. A node
+    /// without the Jito extension answers with an error.
     pub async fn simulate_bundle(
         &self,
         transactions: &[VersionedTransaction],
+        accounts: &[Vec<Pubkey>],
     ) -> Result<Response<Vec<RpcSimulateBundleTransactionResult>>, Error> {
         let encoded = transactions
             .iter()
@@ -329,8 +332,16 @@ impl SolanaRPC {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err| ErrorKind::Custom(format!("serialize transaction: {err}")))?;
-        // The account config lists are mandatory: one `null` per transaction.
-        let accounts = vec![serde_json::Value::Null; encoded.len()];
+        // The account config lists are mandatory: one entry per transaction.
+        let accounts: Vec<serde_json::Value> = (0..encoded.len())
+            .map(|index| match accounts.get(index) {
+                Some(addresses) if !addresses.is_empty() => serde_json::json!({
+                    "encoding": "base64",
+                    "addresses": addresses.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                }),
+                _ => serde_json::Value::Null,
+            })
+            .collect();
         let params = serde_json::json!([
             { "encodedTransactions": encoded },
             {
@@ -434,6 +445,27 @@ pub struct RpcSimulateBundleTransactionResult {
     /// Compute units the transaction consumed, `None` when the endpoint does
     /// not report them.
     pub units_consumed: Option<u64>,
+    /// The requested accounts as they were before the transaction, in request
+    /// order, a missing account as an empty one. Empty when none were
+    /// requested.
+    #[serde(default, deserialize_with = "deserialize_accounts")]
+    pub pre_execution_accounts: Vec<Account>,
+    /// The requested accounts as the transaction left them, in request order,
+    /// a missing account as an empty one. Empty when none were requested.
+    #[serde(default, deserialize_with = "deserialize_accounts")]
+    pub post_execution_accounts: Vec<Account>,
+}
+
+/// Accounts the node encoded, an undecodable one as empty.
+fn deserialize_accounts<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Account>, D::Error> {
+    let accounts: Option<Vec<UiAccount>> = Deserialize::deserialize(deserializer)?;
+    Ok(accounts
+        .unwrap_or_default()
+        .iter()
+        .map(|account| account.to_account().unwrap_or_default())
+        .collect())
 }
 
 /// One page of an address's transaction history.

@@ -128,6 +128,7 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
+solana-account-decoder-client-types = "4"
 solana-client = "4"
 solana-commitment-config = "3"
 solana-compute-budget-interface = "3"

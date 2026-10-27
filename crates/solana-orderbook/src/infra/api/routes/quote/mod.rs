@@ -9,6 +9,7 @@ use {
         db,
         prices,
         quoter,
+        verifier::Verifier,
     },
     app_data::OrderCreationAppData,
     axum::{Json, http::StatusCode},
@@ -23,6 +24,8 @@ use {
         account::{Account, from_account},
         pubkey::Pubkey,
         rent::Rent,
+        signature::Keypair,
+        signer::Signer,
         sysvar,
     },
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
@@ -70,6 +73,10 @@ pub async fn quote(
     let buy_program = check_mints(state.sponsoring(), &request).await?;
 
     let (kind, amount) = request.side.kind_and_amount();
+    let verifier = state.verifier();
+    // A fresh wallet owns the quoted order, so no real balance or existing
+    // account sways the simulation.
+    let owner = verifier.map(|_| Keypair::new().pubkey());
     let order = quoter::Order {
         sell_token: request.sell_token,
         buy_token: request.buy_token,
@@ -78,17 +85,25 @@ pub async fn quote(
             dto::Kind::Sell => quoter::Kind::Sell,
             dto::Kind::Buy => quoter::Kind::Buy,
         },
+        owner,
     };
     let quotes = async {
         // Every driver failure answers as no liquidity, the EVM mapping for
         // estimator errors.
-        state
+        let no_liquidity = || error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found");
+        let quotes = state
             .quoter()
             .quotes(&order)
             .await
-            .map_err(|quoter::Error::NoQuotes| {
-                error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
-            })
+            .map_err(|quoter::Error::NoQuotes| no_liquidity())?;
+        let quotes = match (verifier, owner) {
+            (Some(verifier), Some(owner)) => verifier.verify(&order, owner, quotes).await,
+            _ => quotes,
+        };
+        if quotes.is_empty() {
+            return Err(no_liquidity());
+        }
+        Ok(quotes)
     };
     // The autopilot leaves an order on a token no estimator prices out of
     // every auction, so the quote fails before such an order is placed.
@@ -113,13 +128,15 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
-    let (quoted, costs) = best(quotes, kind, buy_token_ata_costs, price).ok_or_else(|| {
-        error::reply(
-            StatusCode::BAD_REQUEST,
-            "SellAmountDoesNotCoverFee",
-            "the quoted amount does not cover the execution cost",
-        )
-    })?;
+    let prefer_verified = verifier.is_some_and(Verifier::prefers_verified);
+    let (quoted, costs) = best(quotes, kind, buy_token_ata_costs, price, prefer_verified)
+        .ok_or_else(|| {
+            error::reply(
+                StatusCode::BAD_REQUEST,
+                "SellAmountDoesNotCoverFee",
+                "the quoted amount does not cover the execution cost",
+            )
+        })?;
     quoted.count_win(order.kind);
     check_native_payout(state.sponsoring(), &request, quoted.buy_amount).await?;
 
@@ -182,28 +199,31 @@ pub async fn quote(
         from: request.from,
         expiration,
         id,
-        verified: false,
+        verified: quoted.verified,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
 }
 
 /// The best of `quotes` once each has its execution cost taken out: the
-/// largest buy for a sell order, the smallest sell for a buy order. Returned
-/// with the cost it absorbed. `rent` is the buy token account's, `price` the
-/// native price of the token the cost comes out of. `None` when no quote can
-/// absorb its cost.
+/// largest buy for a sell order, the smallest sell for a buy order, and with
+/// `prefer_verified` a verified quote ahead of any unverified one whatever
+/// its amount. Returned with the cost it absorbed. `rent` is the buy token
+/// account's, `price` the native price of the token the cost comes out of.
+/// `None` when no quote can absorb its cost.
 fn best(
     quotes: Vec<quoter::Quote>,
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
+    prefer_verified: bool,
 ) -> Option<(quoter::Quote, Costs)> {
     let netted = quotes
         .into_iter()
         .filter_map(|quote| net(quote, kind, rent, price));
+    let verified = |quote: &quoter::Quote| prefer_verified && quote.verified;
     match kind {
-        dto::Kind::Sell => netted.max_by_key(|(quote, _)| quote.buy_amount),
-        dto::Kind::Buy => netted.min_by_key(|(quote, _)| quote.sell_amount),
+        dto::Kind::Sell => netted.max_by_key(|(quote, _)| (verified(quote), quote.buy_amount)),
+        dto::Kind::Buy => netted.min_by_key(|(quote, _)| (!verified(quote), quote.sell_amount)),
     }
 }
 
@@ -610,6 +630,8 @@ mod tests {
             buy_amount,
             solver: Pubkey::default(),
             network_fee,
+            transaction: None,
+            verified: false,
             driver: String::new(),
         }
     }
@@ -690,20 +712,55 @@ mod tests {
             quote(1_000, 5_100, 200),
             quote(1_000, 10, 0),
         ];
-        let (sell, _) = best(quotes, dto::Kind::Sell, 50, lamport_an_atom).unwrap();
+        let (sell, _) = best(quotes, dto::Kind::Sell, 50, lamport_an_atom, false).unwrap();
         assert_eq!((sell.buy_amount, sell.network_fee), (4_950, 0));
         let quotes = vec![quote(1_000, 5_000, 0), quote(900, 5_000, 200)];
-        let (buy, _) = best(quotes, dto::Kind::Buy, 50, lamport_an_atom).unwrap();
+        let (buy, _) = best(quotes, dto::Kind::Buy, 50, lamport_an_atom, false).unwrap();
         assert_eq!((buy.sell_amount, buy.network_fee), (1_050, 0));
         assert!(
             best(
                 vec![quote(1_000, 10, 0)],
                 dto::Kind::Sell,
                 50,
-                lamport_an_atom
+                lamport_an_atom,
+                false
             )
             .is_none()
         );
+    }
+
+    /// Preferring verified quotes, a verified quote beats a better unverified
+    /// one on either side and the best verified quote wins among verified
+    /// ones. Not preferring them, the amounts alone rank.
+    #[test]
+    fn a_verified_quote_outranks_a_better_unverified_one_when_preferred() {
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
+        let verified = |sell_amount, buy_amount| quoter::Quote {
+            verified: true,
+            ..quote(sell_amount, buy_amount, 0)
+        };
+        let sells = || {
+            vec![
+                quote(1_000, 5_000, 0),
+                verified(1_000, 4_000),
+                verified(1_000, 4_500),
+            ]
+        };
+        let (sell, _) = best(sells(), dto::Kind::Sell, 0, lamport_an_atom, true).unwrap();
+        assert_eq!((sell.buy_amount, sell.verified), (4_500, true));
+        let (sell, _) = best(sells(), dto::Kind::Sell, 0, lamport_an_atom, false).unwrap();
+        assert_eq!((sell.buy_amount, sell.verified), (5_000, false));
+        let buys = || {
+            vec![
+                quote(1_000, 5_000, 0),
+                verified(1_200, 5_000),
+                verified(1_100, 5_000),
+            ]
+        };
+        let (buy, _) = best(buys(), dto::Kind::Buy, 0, lamport_an_atom, true).unwrap();
+        assert_eq!((buy.sell_amount, buy.verified), (1_100, true));
+        let (buy, _) = best(buys(), dto::Kind::Buy, 0, lamport_an_atom, false).unwrap();
+        assert_eq!((buy.sell_amount, buy.verified), (1_000, false));
     }
 
     #[test]

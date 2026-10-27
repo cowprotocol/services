@@ -41,3 +41,16 @@ filter = "info,solana_orderbook=debug"
 # The most the funder pays in priority fee for one creation, in lamports.
 # Defaults to 100000.
 # max-priority-fee-lamports = 100000
+
+# Quote verification: each driver's quoted settlement is simulated behind the
+# quoted order's creation. Omit the section to leave every quote unverified.
+# Requires the [rpc] section.
+# [quote-verification]
+# Whether a verified quote outranks an unverified one: "unverified" (the
+# default, the amounts alone rank) or "prefer".
+# mode = "prefer"
+# A node with the Jito simulateBundle extension.
+# bundle-endpoint = "https://bundles.example.com"
+# The share of the sell or buy amount the settlement program's buffers may
+# pay before the quote is dropped. Defaults to 1, dropping nothing.
+# quote-inaccuracy-limit = 0.000001

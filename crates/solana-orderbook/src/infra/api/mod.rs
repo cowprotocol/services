@@ -1,7 +1,7 @@
 //! HTTP API server.
 
 use {
-    super::{prices::NativePrices, quoter::Quoter},
+    super::{prices::NativePrices, quoter::Quoter, verifier::Verifier},
     axum::{
         Router,
         http,
@@ -50,6 +50,8 @@ pub struct Api {
     pub quote_expiry: std::time::Duration,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     pub app_data_size_limit: usize,
 }
@@ -106,6 +108,7 @@ impl Api {
             self.validation,
             self.quote_expiry,
             self.sponsoring,
+            self.verifier,
             self.app_data_size_limit,
         );
 
@@ -186,6 +189,7 @@ pub struct Sponsoring {
 }
 
 impl State {
+    #[expect(clippy::too_many_arguments)]
     fn new(
         pool: PgPool,
         quoter: Quoter,
@@ -193,6 +197,7 @@ impl State {
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
         sponsoring: Option<Sponsoring>,
+        verifier: Option<Verifier>,
         app_data_size_limit: usize,
     ) -> Self {
         Self(Arc::new(Inner {
@@ -202,6 +207,7 @@ impl State {
             validation,
             quote_expiry,
             sponsoring,
+            verifier,
             app_data_size_limit,
             block_height: Mutex::default(),
         }))
@@ -236,6 +242,11 @@ impl State {
     /// Sponsored placement dependencies, absent when the feature is off.
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
+    }
+
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub fn verifier(&self) -> Option<&Verifier> {
+        self.0.verifier.as_ref()
     }
 
     /// Most bytes an app data document may have.
@@ -287,6 +298,8 @@ struct Inner {
     quote_expiry: std::time::Duration,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     app_data_size_limit: usize,
     /// The last block height read and when, see [`State::block_height`].
