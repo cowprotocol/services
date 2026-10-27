@@ -349,8 +349,8 @@ paths:
         "400":
           description: |
             Sponsoring disabled on this deployment (`SponsoringDisabled`), an
-            undecodable or wrongly shaped transaction (`InvalidTransaction`),
-            a wSOL sell account creation paid by anyone but the order owner,
+            undecodable or wrongly shaped transaction, or a wSOL sell account
+            creation paid by anyone but the order owner (`InvalidTransaction`),
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
