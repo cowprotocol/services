@@ -61,7 +61,10 @@ use {
         },
     },
     sqlx::PgConnection,
-    std::{collections::HashMap, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
@@ -400,21 +403,19 @@ async fn get_block_numbers_of_events(
     events: &[(ContractEvent, Log)],
 ) -> Result<HashMap<u64, u32>> {
     let mut timestamps = HashMap::new();
-    let mut missing_timestamps = Vec::new();
+    let mut missing_timestamps = HashSet::new();
     for (_, log) in events {
         let block_number = log
             .block_number
             .ok_or_else(|| anyhow!("event without metadata"))?;
         let Some(timestamp) = log.block_timestamp else {
-            missing_timestamps.push(block_number);
+            missing_timestamps.insert(block_number);
             continue;
         };
         let timestamp = u32::try_from(timestamp)
             .with_context(|| format!("block {block_number} timestamp is not u32"))?;
         timestamps.insert(block_number, timestamp);
     }
-    missing_timestamps.sort_unstable();
-    missing_timestamps.dedup();
     missing_timestamps.retain(|block_number| !timestamps.contains_key(block_number));
     if missing_timestamps.is_empty() {
         return Ok(timestamps);
