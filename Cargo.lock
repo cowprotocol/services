@@ -6847,9 +6847,12 @@ version = "0.1.0"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
+ "alloy-provider",
+ "alloy-sol-types",
  "async-trait",
  "const-hex",
  "contracts",
+ "ethrpc",
  "futures",
  "hmac 0.12.1",
  "moka",
