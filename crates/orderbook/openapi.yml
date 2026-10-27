@@ -1397,6 +1397,13 @@ components:
             `enableFastPath`: an order that sets both is rejected.
           type: integer
           nullable: true
+        waitForCow:
+          description: >
+            Whether the order waits for a 15-minute slot to be batched with
+            other orders: it is not a fast-path order and its `validFrom` is
+            exactly on :00, :15, :30 or :45 (UTC). Decided at placement.
+            Omitted when `false`.
+          type: boolean
         settlementContract:
           description: >
             The address of the CoW Protocol settlement contract that this order

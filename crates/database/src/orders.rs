@@ -93,6 +93,9 @@ pub struct Order {
     /// The autopilot's fast-path handler owns `valid_from` once this is
     /// `true`; `false` orders never go through that pipeline.
     pub fast_path: bool,
+    /// Set at placement when the order is not fast-path and its
+    /// `valid_from` sits on a 15-minute slot. Only feeds fee rules.
+    pub wait_for_cow: bool,
 }
 
 #[instrument(skip_all)]
@@ -142,7 +145,8 @@ INSERT INTO orders (
     cancellation_timestamp,
     true_valid_to,
     valid_from,
-    fast_path
+    fast_path,
+    wait_for_cow
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
@@ -156,7 +160,8 @@ VALUES (
             $20
     END,
     $21,
-    $22
+    $22,
+    $23
 )
     "#;
 
@@ -202,6 +207,7 @@ async fn insert_order_execute_sqlx(
         .bind(order.valid_to)
         .bind(order.valid_from)
         .bind(order.fast_path)
+        .bind(order.wait_for_cow)
         .execute(ex)
         .await
         .map(|result| result.rows_affected() > 0)
@@ -227,7 +233,7 @@ SELECT uid, owner, creation_timestamp, sell_token, buy_token,
     sell_amount, buy_amount, valid_to, app_data, fee_amount, kind,
     partially_fillable, signature, signing_scheme, settlement_contract,
     sell_token_balance, buy_token_balance, cancellation_timestamp,
-    valid_from, fast_path
+    valid_from, fast_path, wait_for_cow
 FROM orders
 WHERE uid = $1
     "#;
@@ -559,6 +565,8 @@ pub struct FullOrder {
     /// Whether the caller asked for fast-path treatment. See
     /// `Order::fast_path` for the write path.
     pub fast_path: bool,
+    /// See `Order::wait_for_cow`.
+    pub wait_for_cow: bool,
     pub app_data: AppId,
     pub fee_amount: BigDecimal,
     pub kind: OrderKind,
@@ -679,7 +687,7 @@ impl FullOrderWithQuote {
 // that with the current amount of data this wouldn't be better.
 pub const SELECT: &str = r#"
 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount,
-o.valid_to, o.valid_from, o.fast_path, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
+o.valid_to, o.valid_from, o.fast_path, o.wait_for_cow, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature,
 COALESCE(o.receiver, '\x0000000000000000000000000000000000000000'::bytea) AS receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 FALSE AS is_liquidity_order,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
@@ -853,6 +861,7 @@ pub fn solvable_orders(
         lo.valid_to,
         lo.valid_from,
         lo.fast_path,
+        lo.wait_for_cow,
         lo.app_data,
         lo.fee_amount,
         lo.kind,
@@ -987,6 +996,7 @@ SELECT
     so.valid_to,
     so.valid_from,
     so.fast_path,
+    so.wait_for_cow,
     so.app_data,
     so.fee_amount,
     so.kind,
@@ -2289,6 +2299,32 @@ mod tests {
         };
         insert_order(&mut db, &ungated).await.unwrap();
         assert_eq!(solvable_uids(&mut db, 0).await, hashset![ungated.uid]);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_wait_for_cow_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order {
+            uid: ByteArray([1u8; 56]),
+            valid_to: 10_000,
+            valid_from: Some(900),
+            wait_for_cow: true,
+            ..Default::default()
+        };
+        insert_order(&mut db, &order).await.unwrap();
+
+        let read = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert!(read.wait_for_cow);
+        let full = solvable_orders(&mut db, 0, 1_000)
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert!(full.iter().all(|o| o.wait_for_cow));
+        assert_eq!(full.len(), 1);
     }
 
     #[tokio::test]

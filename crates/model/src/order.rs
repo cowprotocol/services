@@ -682,10 +682,24 @@ pub struct OrderMetadata {
     /// regular auction.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
+    /// Whether the order waits for a 15-minute slot to be batched with
+    /// other orders. See [`is_wait_for_cow`].
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wait_for_cow: bool,
     /// If the order was created with a quote, then this field contains that
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quote: Option<OrderQuote>,
+}
+
+/// Length of a wait-for-CoW slot: orders land on :00, :15, :30 or :45.
+const WAIT_FOR_COW_SLOT_SECS: u32 = 15 * 60;
+
+/// Whether an order is a "wait for CoW" order: not fast-path, with a
+/// `valid_from` exactly on a 15-minute slot boundary (UTC, seconds at 0).
+/// Unix time has no leap seconds, so slot boundaries are multiples of 900.
+pub fn is_wait_for_cow(valid_from: Option<u32>, fast_path: bool) -> bool {
+    !fast_path && valid_from.is_some_and(|valid_from| valid_from % WAIT_FOR_COW_SLOT_SECS == 0)
 }
 
 /// Serializes the constant `"limit"` for the deprecated `class` field, see
@@ -996,6 +1010,26 @@ mod tests {
         serde_json::json,
         testlib::assert_json_matches,
     };
+
+    #[test]
+    fn wait_for_cow_needs_a_slot_aligned_valid_from_and_no_fast_path() {
+        let at = |h, m, s| {
+            u32::try_from(
+                Utc.with_ymd_and_hms(2026, 10, 27, h, m, s)
+                    .unwrap()
+                    .timestamp(),
+            )
+            .unwrap()
+        };
+        for slot in [at(14, 0, 0), at(14, 15, 0), at(14, 30, 0), at(14, 45, 0)] {
+            assert!(is_wait_for_cow(Some(slot), false), "{slot}");
+            assert!(!is_wait_for_cow(Some(slot), true), "{slot}");
+        }
+        for off_slot in [at(14, 10, 0), at(14, 15, 1), at(14, 44, 59)] {
+            assert!(!is_wait_for_cow(Some(off_slot), false), "{off_slot}");
+        }
+        assert!(!is_wait_for_cow(None, false));
+    }
 
     #[test]
     fn deserialization_and_back() {

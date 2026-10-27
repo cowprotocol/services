@@ -665,6 +665,8 @@ fn convert_onchain_order_placement(
         // Same as `valid_from`: filled in from the app-data after it has been
         // fetched.
         fast_path: false,
+        // Derived from `valid_from` and `fast_path` once both are filled in.
+        wait_for_cow: false,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -715,10 +717,11 @@ fn extract_order_data_from_onchain_order_placement_event(
 /// Populates all app-data-derived order fields before the orders are
 /// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
 /// backfills `valid_from` for non-fast-path orders that requested one,
-/// and indexes pre/post hook interactions. Must run before the orders
-/// are inserted (it mutates them). Orders whose app-data is unknown are
-/// left unchanged. Orders whose app-data is unparseable or names a wrapper
-/// that can't be trusted to settle the order are marked invalid.
+/// classifies them as wait-for-CoW from those two, and indexes pre/post hook
+/// interactions. Must run before the orders are inserted (it mutates them).
+/// Orders whose app-data is unknown are left unchanged. Orders whose app-data
+/// is unparseable or names a wrapper that can't be trusted to settle the order
+/// are marked invalid.
 ///
 /// For fast-path orders `valid_from` is intentionally left `NULL`: the
 /// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
@@ -779,6 +782,12 @@ async fn handle_app_data(
             ExecutionMode::ValidFrom(valid_from) => order.valid_from = Some(i64::from(valid_from)),
             ExecutionMode::RegularAuction => {}
         }
+        order.wait_for_cow = model::order::is_wait_for_cow(
+            order
+                .valid_from
+                .and_then(|valid_from| u32::try_from(valid_from).ok()),
+            order.fast_path,
+        );
     }
     Ok(())
 }
@@ -1125,6 +1134,7 @@ mod test {
             cancellation_timestamp: None,
             valid_from: None,
             fast_path: false,
+            wait_for_cow: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1239,6 +1249,7 @@ mod test {
             cancellation_timestamp: None,
             valid_from: None,
             fast_path: false,
+            wait_for_cow: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);

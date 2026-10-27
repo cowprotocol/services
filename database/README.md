@@ -259,6 +259,7 @@ Column                    | Type                         | Nullable | Details
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  true_valid_to | bigint                       | not null | UNIX timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
  valid\_from               | bigint                       | nullable | earliest UNIX timestamp (in seconds) at which the order may enter a batch auction. Taken from the order's app-data (`validFrom`). NULL means no lower bound, i.e. the order is eligible immediately (the default for all existing orders).
+ wait\_for\_cow             | bool                         | not null | whether the order waits for a 15-minute slot: it is not fast-path and its `valid_from` is exactly on :00, :15, :30 or :45. Set at placement; `false` for orders placed before the column existed.
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)

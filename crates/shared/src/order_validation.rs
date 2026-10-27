@@ -1171,6 +1171,7 @@ impl OrderValidating for OrderValidator {
                     .map_err(ValidationError::Other)?,
                 valid_from,
                 fast_path,
+                wait_for_cow: model::order::is_wait_for_cow(valid_from, fast_path),
                 ..Default::default()
             },
             signature: order.signature.clone(),
