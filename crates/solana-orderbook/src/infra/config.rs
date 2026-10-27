@@ -10,7 +10,7 @@ use {
     serde::Deserialize,
     serde_ext::{deserialize_solana_pubkey_b58, deserialize_url_with_trailing_slash},
     solana_sdk::pubkey::Pubkey,
-    std::{net::SocketAddr, path::Path, time::Duration},
+    std::{fmt, net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
     url::Url,
 };
@@ -151,7 +151,7 @@ pub struct Sponsoring {
 /// Quote verification configuration: each driver's quoted settlement is
 /// simulated behind the quoted order's creation. Requires the `[rpc]`
 /// section, which reads the mints and their holders.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct QuoteVerification {
     /// Whether a verified quote outranks an unverified one. Every quote is
@@ -176,6 +176,22 @@ pub struct QuoteVerification {
         deserialize_with = "deserialize_solana_pubkey_b58"
     )]
     pub settlement_program: Pubkey,
+}
+
+impl fmt::Debug for QuoteVerification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QuoteVerification")
+            .field("mode", &self.mode)
+            .field("bundle_endpoint", &self.bundle_endpoint)
+            // Providers like Alchemy put the API key in the path.
+            .field(
+                "holders_endpoint",
+                &self.holders_endpoint.as_ref().map(|_| "<REDACTED>"),
+            )
+            .field("quote_inaccuracy_limit", &self.quote_inaccuracy_limit)
+            .field("settlement_program", &self.settlement_program)
+            .finish()
+    }
 }
 
 /// The EVM orderbook's default.
@@ -262,6 +278,18 @@ mod tests {
         assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
         assert_eq!(config.app_data_size_limit, 8192);
+    }
+
+    #[test]
+    fn debug_redacts_the_holders_endpoint() {
+        let config: QuoteVerification = toml::from_str(
+            r#"
+            bundle-endpoint = "https://bundles.example.com"
+            holders-endpoint = "https://solana-mainnet.g.alchemy.com/v2/secret"
+            "#,
+        )
+        .unwrap();
+        assert!(!format!("{config:?}").contains("secret"));
     }
 
     /// Routes resolve relative to the driver and autopilot URLs, so a base
