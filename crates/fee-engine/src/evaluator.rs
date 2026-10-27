@@ -7,26 +7,8 @@ use {
         rules::{Rule, RuleSet},
     },
     cel::{Context, Value},
-    chrono::{DateTime, Utc},
     model::order::Order,
 };
-
-impl RuleSet {
-    /// Binds lists, functions and `now` once; each order evaluated through
-    /// the result gets a cheap child scope on top.
-    pub fn evaluator(&self, now: DateTime<Utc>) -> Evaluator<'_> {
-        let mut context = Context::with_env(self.env.clone());
-        fee::register_fee_functions(&mut context);
-        for (name, list) in &self.lists {
-            context.add_variable_from_value(name.clone(), list.clone());
-        }
-        context.add_variable_from_value("now", now.fixed_offset());
-        Evaluator {
-            rules: self,
-            context,
-        }
-    }
-}
 
 /// The first rule whose `when` held for an order, and its fees.
 #[derive(Debug)]
@@ -42,6 +24,10 @@ pub struct Evaluator<'r> {
 }
 
 impl<'r> Evaluator<'r> {
+    pub fn new(rules: &'r RuleSet, context: Context<'static, 'static>) -> Self {
+        Self { rules, context }
+    }
+
     /// Runs the rules top to bottom against `order`. A rule that fails to
     /// evaluate is skipped and logged at debug level, as this runs once per
     /// order per rule. `None` means the order pays no protocol fee.
@@ -96,7 +82,7 @@ mod tests {
         super::*,
         crate::rules::RuleDefinition,
         alloy_primitives::{Address, U256, address},
-        chrono::TimeZone,
+        chrono::{DateTime, TimeZone, Utc},
         configs::fee_factor::FeeFactor,
         model::order::{OrderData, OrderMetadata},
         std::collections::BTreeMap,

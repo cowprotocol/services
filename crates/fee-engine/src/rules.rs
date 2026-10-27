@@ -1,8 +1,9 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::order_view,
-    cel::{Env, Program, Value},
+    crate::{Evaluator, fee, order_view},
+    cel::{Context, Env, Program, Value},
+    chrono::{DateTime, Utc},
     std::{
         collections::{BTreeMap, HashSet},
         fmt,
@@ -156,6 +157,18 @@ impl RuleSet {
     /// The rules in the order they are tried.
     pub fn rules(&self) -> &[Rule] {
         &self.rules
+    }
+
+    /// Binds lists, functions and `now` once; each order evaluated through
+    /// the result gets a cheap child scope on top.
+    pub fn evaluator(&self, now: DateTime<Utc>) -> Evaluator<'_> {
+        let mut context = Context::with_env(self.env.clone());
+        fee::register_fee_functions(&mut context);
+        for (name, list) in &self.lists {
+            context.add_variable_from_value(name.clone(), list.clone());
+        }
+        context.add_variable_from_value("now", now.fixed_offset());
+        Evaluator::new(self, context)
     }
 }
 
