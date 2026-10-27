@@ -45,7 +45,7 @@ pub enum Kind {
 }
 
 /// What a driver quoted.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Quote {
     pub sell_amount: u64,
     pub buy_amount: u64,
@@ -61,6 +61,8 @@ pub struct Quote {
     pub verified: bool,
     /// The driver that answered, as labelled in metrics.
     pub driver: String,
+    /// How long the driver took to answer.
+    pub elapsed: Duration,
 }
 
 impl Quote {
@@ -159,11 +161,12 @@ impl Quoter {
         let driver = driver_name(endpoint);
         let start = Instant::now();
         let quoted = self.ask(endpoint, order).await;
+        let elapsed = start.elapsed();
         let metrics = metrics();
         metrics
             .price_estimation_times
             .with_label_values(&[driver.as_str()])
-            .observe(start.elapsed().as_secs_f64());
+            .observe(elapsed.as_secs_f64());
         let result = match &quoted {
             Ok(_) => "success",
             Err(result) => result,
@@ -172,6 +175,16 @@ impl Quoter {
             .price_estimates
             .with_label_values(&[driver.as_str(), result])
             .inc();
+        // Every driver, answered or not: a driver that fails never reaches the
+        // quote competition, and a request where they all fail logs no
+        // competition at all.
+        tracing::debug!(
+            driver = %driver,
+            result,
+            elapsed_ms = elapsed.as_millis() as u64,
+            ?order,
+            "new price estimate"
+        );
         let quoted = quoted.ok()?;
         let transaction = quoted.transaction.as_deref().and_then(|bytes| {
             bincode::deserialize(bytes)
@@ -188,6 +201,7 @@ impl Quoter {
             transaction,
             verified: false,
             driver,
+            elapsed,
         })
     }
 
