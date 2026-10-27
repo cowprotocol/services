@@ -12,9 +12,9 @@
 //! the limit leg sent to the engine is moved by the cut priced at the
 //! policy's default compute units, before the solver fee tightens it. Once
 //! the settlement is simulated, [`ExecutionCost::apply`] cuts every fill at
-//! the compute units the settlement will declare, or else the policy's
-//! default. A solution whose trades cannot absorb the cut within the order's
-//! signed limit is dropped whole, like one that cannot absorb the fee.
+//! the compute units the settlement will declare. A solution whose trades
+//! cannot absorb the cut within the order's signed limit is dropped whole,
+//! like one that cannot absorb the fee.
 
 use {
     super::{

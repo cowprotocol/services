@@ -132,9 +132,8 @@ impl PriorityFeePolicy {
     /// simulation: the usage plus the headroom, rounded up, up to the
     /// runtime's ceiling.
     pub(crate) fn compute_unit_limit(&self, units: u64) -> u32 {
-        let percent = 100 + u128::from(self.compute_unit_limit_headroom_percent);
-        let limit = (u128::from(units) * percent).div_ceil(100);
-        u32::try_from(limit)
+        let percent = 100 + u64::from(self.compute_unit_limit_headroom_percent);
+        u32::try_from(units.saturating_mul(percent).div_ceil(100))
             .unwrap_or(u32::MAX)
             .min(MAX_COMPUTE_UNIT_LIMIT)
     }

@@ -103,8 +103,8 @@ impl Competition {
     /// Solve the auction, drop the solutions whose settlement provably fails
     /// (over the byte limit or failing in simulation), cut the execution costs
     /// from the rest when the solver's fee handler is the driver, at the
-    /// compute units their settlement declares or else the policy's default,
-    /// and cache them for a later `settle`.
+    /// compute units their settlement declares, and cache them for a later
+    /// `settle`.
     pub async fn solve(
         &self,
         auction_id: Id,

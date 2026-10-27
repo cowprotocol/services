@@ -127,13 +127,48 @@ async fn api_with(solvers: Vec<Solver>, mocks: Mocks) -> Api {
     }
 }
 
+/// Mocks pricing every unit at 10_000 micro-lamports and passing the bundle
+/// simulation at `units`.
+fn simulation_mocks(units: u64) -> Mocks {
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    mocks.insert(
+        SIMULATE_BUNDLE,
+        serde_json::json!({
+            "context": { "slot": 1 },
+            "value": { "transactionResults": [
+                { "err": null, "logs": [], "unitsConsumed": units },
+            ] },
+        }),
+    );
+    mocks
+}
+
 /// Spawn the API server on an ephemeral port and return its bound address.
 async fn spawn_server(solvers: Vec<Solver>) -> SocketAddr {
     spawn_server_with_mocks(solvers, Mocks::new()).await
 }
 
 async fn spawn_server_with_mocks(solvers: Vec<Solver>, mocks: Mocks) -> SocketAddr {
-    let api = api_with(solvers, mocks).await;
+    spawn_api(api_with(solvers, mocks).await).await
+}
+
+async fn spawn_server_with_policy(
+    solvers: Vec<Solver>,
+    mocks: Mocks,
+    priority_fee: PriorityFeePolicy,
+) -> SocketAddr {
+    spawn_api(Api {
+        priority_fee,
+        ..api_with(solvers, mocks).await
+    })
+    .await
+}
+
+async fn spawn_api(api: Api) -> SocketAddr {
     let (listener, addr) = api.bind().await.unwrap();
     // The test never cancels this token, so the server stays alive.
     let shutdown = CancellationToken::new();
@@ -346,6 +381,20 @@ fn sponsored_solve_request() -> serde_json::Value {
         .encode(bincode::serialize(&VersionedTransaction::default()).unwrap())
         .into();
     request
+}
+
+/// Settle `solution_id` of auction 7 with a submission deadline far off.
+async fn call_settle(addr: SocketAddr, solution_id: u64) -> reqwest::Response {
+    reqwest::Client::new()
+        .post(format!("http://{addr}/mock/settle"))
+        .json(&serde_json::json!({
+            "auctionId": 7,
+            "solutionId": solution_id,
+            "submissionDeadlineSlot": 1_000_000,
+        }))
+        .send()
+        .await
+        .unwrap()
 }
 
 async fn post_solve(addr: SocketAddr, request: &serde_json::Value) -> reqwest::Response {
@@ -713,30 +762,20 @@ async fn settle_refuses_a_priority_fee_over_budget() {
         RpcRequest::GetRecentPrioritizationFees,
         serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
     );
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
+    let addr = spawn_server_with_policy(
+        vec![solver],
+        mocks,
+        PriorityFeePolicy {
             max_priority_fee_lamports: 3_999,
             ..priority_fee()
         },
-        ..api_with(vec![solver], mocks).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    )
+    .await;
 
     let body = call_solve(addr).await;
     let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
 
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/settle"))
-        .json(&serde_json::json!({
-            "auctionId": 7,
-            "solutionId": solution_id,
-            "submissionDeadlineSlot": 1_000_000,
-        }))
-        .send()
-        .await
-        .unwrap();
+    let response = call_settle(addr, solution_id).await;
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
 
     let json: serde_json::Value = response.json().await.unwrap();
@@ -746,54 +785,31 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 /// Same fee as above, but the `/solve` simulation reports the settlement's
 /// compute units, so the fee is priced at those plus the 10% headroom,
 /// 110_000 units: 1_100 lamports, exactly the budget, so the settle reaches
-/// the send. A unit more, or the old doubling, is over it.
+/// the send. A unit more is over it.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
     let (solver, _) = solver_with_keypair(engine).await;
-    let mut mocks = Mocks::new();
-    mocks.insert(
-        RpcRequest::GetRecentPrioritizationFees,
-        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
-    );
-    mocks.insert(
-        SIMULATE_BUNDLE,
-        serde_json::json!({
-            "context": { "slot": 1 },
-            "value": { "transactionResults": [
-                { "err": null, "logs": [], "unitsConsumed": 100_000 },
-            ] },
-        }),
-    );
+    let mut mocks = simulation_mocks(100_000);
     // A signature other than the transaction's own fails the send.
     mocks.insert(
         RpcRequest::SendTransaction,
         serde_json::json!(Signature::default().to_string()),
     );
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
+    let addr = spawn_server_with_policy(
+        vec![solver],
+        mocks,
+        PriorityFeePolicy {
             max_priority_fee_lamports: 1_100,
             ..priority_fee()
         },
-        ..api_with(vec![solver], mocks).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    )
+    .await;
 
     let body = call_solve(addr).await;
     let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
 
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/settle"))
-        .json(&serde_json::json!({
-            "auctionId": 7,
-            "solutionId": solution_id,
-            "submissionDeadlineSlot": 1_000_000,
-        }))
-        .send()
-        .await
-        .unwrap();
+    let response = call_settle(addr, solution_id).await;
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
 
     let json: serde_json::Value = response.json().await.unwrap();
@@ -819,31 +835,21 @@ async fn settle_declares_the_compute_units_an_unsimulated_cut_was_priced_at() {
         RpcRequest::SendTransaction,
         serde_json::json!(Signature::default().to_string()),
     );
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
+    let addr = spawn_server_with_policy(
+        vec![solver],
+        mocks,
+        PriorityFeePolicy {
             max_priority_fee_lamports: 3_999,
             default_compute_unit_limit: 200_000,
             ..priority_fee()
         },
-        ..api_with(vec![solver], mocks).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    )
+    .await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
     let solution_id = body["solutions"][0]["solutionId"].as_u64().unwrap();
 
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/settle"))
-        .json(&serde_json::json!({
-            "auctionId": 7,
-            "solutionId": solution_id,
-            "submissionDeadlineSlot": 1_000_000,
-        }))
-        .send()
-        .await
-        .unwrap();
+    let response = call_settle(addr, solution_id).await;
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
 
     let json: serde_json::Value = response.json().await.unwrap();
@@ -1018,16 +1024,15 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
 async fn solve_cuts_at_the_policy_default_compute_units_without_a_simulation() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
     let (solver, _) = solver_with_fee(engine, 0).await;
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
+    let addr = spawn_server_with_policy(
+        vec![solver],
+        Mocks::new(),
+        PriorityFeePolicy {
             default_compute_unit_limit: 200_000,
             ..priority_fee()
         },
-        ..api_with(vec![solver], Mocks::new()).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    )
+    .await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
     assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2005");
@@ -1044,20 +1049,7 @@ async fn solve_cuts_at_the_policy_default_compute_units_without_a_simulation() {
 async fn solve_cuts_at_the_simulated_compute_units() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
     let (solver, _) = solver_with_fee(engine, 0).await;
-    let mut mocks = Mocks::new();
-    mocks.insert(
-        RpcRequest::GetRecentPrioritizationFees,
-        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
-    );
-    mocks.insert(
-        SIMULATE_BUNDLE,
-        serde_json::json!({
-            "context": { "slot": 1 },
-            "value": { "transactionResults": [
-                { "err": null, "logs": [], "unitsConsumed": 100_000 },
-            ] },
-        }),
-    );
+    let mocks = simulation_mocks(100_000);
     let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(1_000)).await;
@@ -1079,30 +1071,16 @@ async fn solve_declares_the_larger_of_the_engines_estimate_and_the_simulated_uni
         response["solutions"][0]["cuEstimate"] = serde_json::json!(cu_estimate);
         let engine = spawn_mock_solver_engine(response).await;
         let (solver, _) = solver_with_fee(engine, 0).await;
-        let mut mocks = Mocks::new();
-        mocks.insert(
-            RpcRequest::GetRecentPrioritizationFees,
-            serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
-        );
-        mocks.insert(
-            SIMULATE_BUNDLE,
-            serde_json::json!({
-                "context": { "slot": 1 },
-                "value": { "transactionResults": [
-                    { "err": null, "logs": [], "unitsConsumed": 100_000 },
-                ] },
-            }),
-        );
-        let api = Api {
-            priority_fee: PriorityFeePolicy {
+        let mocks = simulation_mocks(100_000);
+        let addr = spawn_server_with_policy(
+            vec![solver],
+            mocks,
+            PriorityFeePolicy {
                 max_priority_fee_lamports,
                 ..priority_fee()
             },
-            ..api_with(vec![solver], mocks).await
-        };
-        let (listener, addr) = api.bind().await.unwrap();
-        let shutdown = CancellationToken::new();
-        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+        )
+        .await;
 
         let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(100)).await;
         response_ids(&body)
@@ -1322,16 +1300,15 @@ async fn quote_without_an_engine_estimate_is_priced_at_the_policy_default() {
         RpcRequest::GetRecentPrioritizationFees,
         serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
     );
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
+    let addr = spawn_server_with_policy(
+        vec![solver],
+        mocks,
+        PriorityFeePolicy {
             default_compute_unit_limit: 200_000,
             ..priority_fee()
         },
-        ..api_with(vec![solver], mocks).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    )
+    .await;
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/quote"))
@@ -1352,16 +1329,15 @@ async fn quote_without_an_engine_estimate_is_priced_at_the_policy_default() {
 async fn quote_refuses_a_priority_fee_over_budget() {
     let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
     let (solver, _) = solver_with_keypair(engine).await;
-    let api = Api {
-        priority_fee: PriorityFeePolicy {
+    let addr = spawn_server_with_policy(
+        vec![solver],
+        Mocks::new(),
+        PriorityFeePolicy {
             max_priority_fee_lamports: 13_999,
             ..priority_fee()
         },
-        ..api_with(vec![solver], Mocks::new()).await
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    let shutdown = CancellationToken::new();
-    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    )
+    .await;
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/mock/quote"))
