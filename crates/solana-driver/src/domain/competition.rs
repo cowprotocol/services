@@ -11,12 +11,13 @@ use {
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
+        quote,
         settlement::{self, ResolveError, writable_accounts},
         slot::Slot,
-        solution::Solution,
+        solution::{Solution, Trade},
     },
     crate::infra::{
-        blockchain::{BundleSimulation, Solana},
+        blockchain::{BundleSimulation, InvalidMintReason, Solana},
         config::FeeHandler,
         solver::Solver,
     },
@@ -236,7 +237,8 @@ impl Competition {
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
-        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
+        let settlement =
+            super::Settlement::new(program_id, Some(auction_id), orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
@@ -446,6 +448,48 @@ impl Competition {
         Ok(network_fee)
     }
 
+    /// The settlement of `solution`'s fill of `quoted`, unsigned: it fills an
+    /// order of the executed amounts owned by `owner` in place of the
+    /// placeholder, resolved against the chain as `settle` would, so the
+    /// orderbook can simulate it behind that order's creation.
+    pub async fn quote_settlement(
+        &self,
+        quoted: &Order,
+        solution: &Solution,
+        trade: &Trade,
+        owner: Pubkey,
+    ) -> Result<VersionedTransaction, Error> {
+        let program_id = self.blockchain.program_id();
+        let buy_mint = (!quoted.buys_native_sol()).then_some(quoted.buy_token);
+        let programs = self
+            .blockchain
+            .token_programs([quoted.sell_token].into_iter().chain(buy_mint))
+            .await
+            .map_err(Error::Rpc)?;
+        let program = |mint: Pubkey| {
+            programs
+                .get(&mint)
+                .copied()
+                .unwrap_or(Err(InvalidMintReason::AccountNotFound))
+                .map_err(|reason| ResolveError::InvalidMint { mint, reason })
+        };
+        let sell_program = program(quoted.sell_token)?;
+        let buy_program = buy_mint.map(program).transpose()?;
+        let order = quote::order(&program_id, quoted, trade, owner, sell_program, buy_program)?;
+        // The engine filled the placeholder order, the settlement fills the
+        // quote's.
+        let mut filled = solution.clone();
+        for trade in &mut filled.trades {
+            trade.order_uid = order.uid;
+        }
+        let settlement = super::Settlement::new(program_id, None, vec![order], filled)?;
+        let resolved = settlement
+            .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
+        Ok(resolved.unsigned()?)
+    }
+
     /// Submit a previously proposed solution on chain.
     ///
     /// The work runs on a spawned task: a client disconnect must not cancel
@@ -549,7 +593,7 @@ impl Competition {
 
         let volume_fees = solver_volume_fees(&orders, &solution);
 
-        let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
+        let settlement = super::Settlement::new(program_id, Some(auction_id), orders, solution)?;
 
         // Land the creations only after the solution validated: an invalid
         // solution must not cost the funder any fees. They get the full

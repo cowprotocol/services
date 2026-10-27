@@ -3,7 +3,7 @@
 use {
     crate::infra::api::routes::Kind,
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, serde_as},
+    serde_with::{DisplayFromStr, base64::Base64, serde_as},
     solana_sdk::pubkey::Pubkey,
 };
 
@@ -22,6 +22,11 @@ pub struct QuoteRequest {
     pub kind: Kind,
     /// Absolute deadline by which the solver engine must answer.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The wallet the quoted order belongs to, see `transaction`. Absent, no
+    /// transaction is answered.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(default)]
+    pub owner: Option<Pubkey>,
 }
 
 /// The quoted amounts and what settling them costs.
@@ -42,4 +47,12 @@ pub struct QuoteResponse {
     /// are not reduced by it.
     #[serde_as(as = "DisplayFromStr")]
     pub network_fee: u64,
+    /// The settlement of the quoted route, unsigned, bincode-serialized and
+    /// base64-encoded: it fills an order of the quoted amounts owned by the
+    /// request's `owner`, see `solana_token::quote::QuoteOrder`, for the
+    /// orderbook to simulate behind that order's creation. Absent without an
+    /// `owner`, or when the settlement could not be built.
+    #[serde_as(as = "Option<Base64>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction: Option<Vec<u8>>,
 }

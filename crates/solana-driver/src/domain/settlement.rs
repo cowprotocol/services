@@ -60,7 +60,8 @@ use {
 pub struct Settlement {
     /// The settlement program id.
     program_id: Pubkey,
-    auction_id: Id,
+    /// `None` for a quote, which settles in no auction.
+    auction_id: Option<Id>,
     /// The orders this settlement fills.
     orders: Vec<Order>,
     solution: Solution,
@@ -120,7 +121,7 @@ impl Settlement {
     /// contract. Orders that already expired are rejected.
     pub fn new(
         program_id: Pubkey,
-        auction_id: Id,
+        auction_id: Option<Id>,
         mut orders: Vec<Order>,
         solution: Solution,
     ) -> Result<Self, Error> {
@@ -330,7 +331,7 @@ impl ResolvedSettlement {
             state_pda,
             payer,
             finalize_ix_index,
-            self.settlement.auction_id.get(),
+            self.settlement.auction_id.map_or(0, Id::get),
             &settlement_orders,
         ));
         instructions.extend(self.settlement.solution.interactions.iter().cloned());
@@ -826,7 +827,8 @@ fn find_state_pda(program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&STATE_PDA_SEEDS, program_id)
 }
 
-/// The `BeginSettle` instruction pulling each order's sell tokens.
+/// The `BeginSettle` instruction pulling each order's sell tokens. The
+/// program only records `auction_id`, zero for a quote's simulated settlement.
 fn begin_settle(
     program_id: &Pubkey,
     state_pda: Pubkey,
@@ -1082,7 +1084,7 @@ mod tests {
     fn test_settlement(orders: &[Order], trades: &[Trade]) -> Result<Settlement, Error> {
         Settlement::new(
             pubkey(0xaa),
-            Id::new(7).unwrap(),
+            Some(Id::new(7).unwrap()),
             orders.to_vec(),
             solution(trades.to_vec()),
         )
@@ -1496,7 +1498,7 @@ mod tests {
         let uid = order.uid;
         let err = Settlement::new(
             program_id,
-            Id::new(7).unwrap(),
+            Some(Id::new(7).unwrap()),
             vec![order],
             solution(vec![trade(uid, 1_000, 2_000)]),
         )
@@ -1822,7 +1824,7 @@ mod tests {
         }];
         let settlement = Settlement::new(
             program_id,
-            Id::new(7).unwrap(),
+            Some(Id::new(7).unwrap()),
             vec![order],
             solution(trades),
         )

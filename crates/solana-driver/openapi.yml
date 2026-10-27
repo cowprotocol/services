@@ -152,6 +152,12 @@ components:
           description: The time until which the caller expects a response.
           allOf:
             - $ref: "#/components/schemas/DateTime"
+        owner:
+          description: >-
+            The wallet the quoted order belongs to, see `transaction` in the
+            response. Without it no transaction is answered.
+          allOf:
+            - $ref: "#/components/schemas/Address"
       required:
         - sellToken
         - buyToken
@@ -176,6 +182,17 @@ components:
             the engine sent none. The amounts are not reduced by it.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        transaction:
+          description: >-
+            The settlement of the quoted route, unsigned, bincode-serialized
+            and base64-encoded. It fills a fill-or-kill order of the quoted
+            amounts owned by the request's `owner`, trading through the
+            owner's associated token accounts (or into the wallet for a native
+            SOL buy), never expiring, with empty app data. The orderbook
+            simulates it behind that order's creation to verify the quote.
+            Absent without an `owner`, or when the settlement could not be
+            built.
+          type: string
       required:
         - sellAmount
         - buyAmount

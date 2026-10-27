@@ -5,6 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod quote;
+
 use {
     cow_settlement_interface::token_program::TokenProgram,
     moka::sync::Cache,
