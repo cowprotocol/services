@@ -6,9 +6,13 @@ use {
     configs::price_estimation::QuoteVerificationMode,
     cow_settlement_client::instruction::CreateOrder,
     cow_settlement_interface::{
-        data::intent::{ENCODED_NATIVE_SOL_TRANSFER, OrderIntent, OrderKind},
+        data::{
+            intent::{ENCODED_NATIVE_SOL_TRANSFER, OrderIntent, OrderKind},
+            order::OrderAccount,
+        },
         pda::{
             buffer::{find_buffer_pda, find_native_sol_buffer_pda},
+            order::find_order_pda,
             state::find_state_pda,
         },
         token_program::TokenProgram,
@@ -87,8 +91,8 @@ struct Holder {
 /// What a quote's verification found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verdict {
-    /// The order receives the quoted amount, and the buffers pay less than
-    /// the inaccuracy limit.
+    /// The program records the order receiving the quoted amount, and the
+    /// buffers pay less than the inaccuracy limit.
     Verified,
     /// The simulation could not confirm the quote, which stays as the driver
     /// gave it.
@@ -196,6 +200,8 @@ enum Error {
 enum Unit {
     Lamports,
     Tokens,
+    /// The buy amount an order account records as received.
+    Received,
 }
 
 impl Verifier {
@@ -270,8 +276,8 @@ impl Verifier {
     }
 
     /// Settle `quote`'s transaction behind the creation of the quoted order
-    /// and read what the fill did to the order's buy account and to the
-    /// settlement program's buffers.
+    /// and read the fill the program records on the order and what the
+    /// settlement did to the program's buffers.
     async fn verify_one(
         &self,
         order: &Order,
@@ -322,7 +328,13 @@ impl Verifier {
             None => find_native_sol_buffer_pda(&self.program_id).0,
         };
         let watched = [
-            (quoted.buy_account(), buy_unit),
+            // Only a settlement through the program, which checks the solver
+            // against its allowlist, records a fill on the order. A payment
+            // that bypasses the program records none.
+            (
+                find_order_pda(&self.program_id, &intent.uid()).0,
+                Unit::Received,
+            ),
             (
                 find_buffer_pda(&self.program_id, &order.sell_token).0,
                 Unit::Tokens,
@@ -578,12 +590,15 @@ fn mint_info(account: Option<&Account>) -> Option<MintInfo> {
 }
 
 /// An account's balance in `unit`, zero for a missing account or one that
-/// is no token account.
+/// is no token or order account.
 fn balance(account: &Account, unit: Unit) -> u64 {
     match unit {
         Unit::Lamports => account.lamports,
         Unit::Tokens => StateWithExtensions::<TokenAccount>::unpack(&account.data)
             .map(|state| state.base.amount)
+            .unwrap_or(0),
+        Unit::Received => OrderAccount::attach(account.data.as_slice())
+            .map(|order| order.filled_amounts().received)
             .unwrap_or(0),
     }
 }

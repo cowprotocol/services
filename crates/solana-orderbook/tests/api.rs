@@ -740,23 +740,45 @@ fn bundle_json(settlement: serde_json::Value) -> serde_json::Value {
     })
 }
 
-/// A passing settlement leg: the watched accounts are the order's buy
-/// account, the sell buffer and the buy buffer, holding `pre` before and
-/// `post` after.
+/// An order account recording `received` of its buy token.
+fn order_json(received: u64) -> serde_json::Value {
+    let mut data = vec![0; cow_settlement_interface::data::order::SIZE];
+    cow_settlement_interface::data::order::OrderAccount::initialize(
+        data.as_mut_slice(),
+        0,
+        false,
+        0,
+        received,
+        &solana_sdk::pubkey::Pubkey::default(),
+        &[0; cow_settlement_interface::data::intent::EncodedOrderIntent::SIZE],
+    )
+    .unwrap();
+    solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 2_728_560,
+        owner: program_id(),
+        data,
+        ..Default::default()
+    })
+}
+
+/// A passing settlement leg: the watched accounts are the order, recording
+/// the buy amount received, the sell buffer and the buy buffer, at `pre`
+/// before and `post` after.
 fn settled_json(pre: [u64; 3], post: [u64; 3]) -> serde_json::Value {
-    let owner = program_id();
-    let holdings = |amounts: [u64; 3]| -> Vec<serde_json::Value> {
-        amounts
-            .into_iter()
-            .map(|amount| holding_json(owner, amount))
-            .collect()
+    let accounts = |[received, sell_buffer, buy_buffer]: [u64; 3]| {
+        let owner = program_id();
+        [
+            order_json(received),
+            holding_json(owner, sell_buffer),
+            holding_json(owner, buy_buffer),
+        ]
     };
     serde_json::json!({
         "err": null,
         "logs": [],
         "unitsConsumed": 100_000,
-        "preExecutionAccounts": holdings(pre),
-        "postExecutionAccounts": holdings(post),
+        "preExecutionAccounts": accounts(pre),
+        "postExecutionAccounts": accounts(post),
     })
 }
 
