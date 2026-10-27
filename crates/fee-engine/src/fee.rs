@@ -3,7 +3,7 @@
 use {
     cel::{Context, Value, objects::Key},
     configs::fee_factor::FeeFactor,
-    std::collections::HashMap,
+    std::{collections::HashMap, sync::Arc},
 };
 
 /// A protocol fee a rule returns.
@@ -83,12 +83,7 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
             value.type_of()
         ));
     };
-    let field = |name: &str| {
-        map.map
-            .iter()
-            .find(|(key, _)| matches!(key, Key::String(key) if key.as_str() == name))
-            .map(|(_, value)| value)
-    };
+    let field = |name: &str| map.map.get(&Key::String(Arc::from(name.to_string())));
     let Some(Value::String(kind)) = field(KIND) else {
         return Err("returned a map instead of a fee such as volume(10)".to_owned());
     };
