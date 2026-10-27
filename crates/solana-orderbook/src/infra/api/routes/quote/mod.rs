@@ -148,7 +148,7 @@ pub async fn quote(
         },
         &ranked,
     );
-    let Some((quoted, costs)) = ranked.into_iter().find_map(|(_, netted)| netted) else {
+    let Some((quoted, costs)) = ranked.into_iter().next().and_then(|(_, netted)| netted) else {
         log_competition(&competition);
         return Err(error::reply(
             StatusCode::BAD_REQUEST,
@@ -228,10 +228,11 @@ pub async fn quote(
     }))
 }
 
-/// Every quote paired with its [`net`] self, best netted first. With
+/// Every quote paired with its [`net`] self, best first. With
 /// `prefer_verified`, a verified quote ranks ahead of any unverified one
-/// whatever its amount. Quotes that cannot absorb their cost rank last, so
-/// the first netted one is the winner.
+/// whatever its amount. Within each group, quotes that absorb their cost
+/// rank first, by netted amount. Only the first quote can win: when it
+/// cannot absorb its cost, the quote fails.
 fn rank(
     quotes: Vec<quoter::Quote>,
     kind: dto::Kind,
@@ -250,15 +251,15 @@ fn rank(
     match kind {
         dto::Kind::Sell => ranked.sort_by_key(|(quote, netted)| {
             (
-                netted.is_none(),
                 unverified(quote),
+                netted.is_none(),
                 netted.as_ref().map(|(q, _)| Reverse(q.buy_amount)),
             )
         }),
         dto::Kind::Buy => ranked.sort_by_key(|(quote, netted)| {
             (
-                netted.is_none(),
                 unverified(quote),
+                netted.is_none(),
                 netted.as_ref().map(|(q, _)| q.sell_amount),
             )
         }),
@@ -337,6 +338,7 @@ struct CompetitionQuote {
     /// In lamports.
     #[serde_as(as = "DisplayFromStr")]
     network_fee: u64,
+    verified: bool,
     elapsed_ms: u64,
 }
 
@@ -365,6 +367,7 @@ fn competition(
                 quoted_sell_amount: quote.sell_amount,
                 quoted_buy_amount: quote.buy_amount,
                 network_fee: quote.network_fee,
+                verified: quote.verified,
                 elapsed_ms: quote.elapsed.as_millis().try_into().unwrap_or(u64::MAX),
             })
             .collect(),
@@ -794,7 +797,8 @@ mod tests {
     ) -> Option<(quoter::Quote, Costs)> {
         rank(quotes, kind, rent, price, prefer_verified)
             .into_iter()
-            .find_map(|(_, netted)| netted)
+            .next()
+            .and_then(|(_, netted)| netted)
     }
 
     fn legs(quote: &quoter::Quote) -> (u64, u64) {
@@ -887,8 +891,9 @@ mod tests {
     }
 
     /// Preferring verified quotes, a verified quote beats a better unverified
-    /// one on either side and the best verified quote wins among verified
-    /// ones. Not preferring them, the amounts alone rank.
+    /// one on either side, the best verified quote wins among verified ones,
+    /// and a verified quote that cannot absorb its cost fails the quote. Not
+    /// preferring them, the amounts alone rank.
     #[test]
     fn a_verified_quote_outranks_a_better_unverified_one_when_preferred() {
         let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
@@ -918,6 +923,10 @@ mod tests {
         assert_eq!((buy.sell_amount, buy.verified), (1_100, true));
         let (buy, _) = best(buys(), dto::Kind::Buy, 0, lamport_an_atom, false).unwrap();
         assert_eq!((buy.sell_amount, buy.verified), (1_000, false));
+        let uncovered = || vec![quote(1_000, 5_000, 0), verified(1_000, 10)];
+        assert!(best(uncovered(), dto::Kind::Sell, 50, lamport_an_atom, true).is_none());
+        let (sell, _) = best(uncovered(), dto::Kind::Sell, 50, lamport_an_atom, false).unwrap();
+        assert_eq!((sell.buy_amount, sell.verified), (4_950, false));
     }
 
     #[test]
@@ -1025,6 +1034,7 @@ mod tests {
         assert_eq!(winner["buyAmount"], "4500");
         assert_eq!(winner["quotedBuyAmount"], "5000");
         assert_eq!(winner["networkFee"], "400");
+        assert_eq!(winner["verified"], false);
         assert_eq!(winner["elapsedMs"], 1);
         let dropped = &json["quotes"][1];
         assert!(dropped["sellAmount"].is_null());
