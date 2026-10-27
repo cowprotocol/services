@@ -1,15 +1,14 @@
-//! Wrappers listed in an order's app-data become the target of the settlement
-//! transaction and are expected to forward the call to `settle()`. A wrapper
-//! that doesn't do that makes the transaction succeed without settling
-//! anything, so the order stays in subsequent auctions and solvers pay gas for
-//! it over and over again.
+//! Wrappers listed in an order's app-data form a chain of calls: the first
+//! wrapper is the target of the settlement transaction and the last one is
+//! expected to call `settle()`. A wrapper that doesn't continue the chain makes
+//! the transaction succeed without settling anything, so the order stays in
+//! subsequent auctions and solvers pay gas for it over and over again.
 
 use {
     alloy_contract::Error,
     alloy_primitives::Address,
     contracts::{GPv2AllowListAuthentication, ICowWrapper},
     ethrpc::alloy::errors::ContractErrorExt,
-    futures::future::try_join_all,
     std::collections::HashSet,
 };
 
@@ -28,27 +27,28 @@ impl Validator {
         }
     }
 
-    /// Returns one of the `wrappers` that can't be trusted to settle orders, if
-    /// any.
-    pub async fn find_invalid(
-        &self,
-        wrappers: impl IntoIterator<Item = Address>,
-    ) -> Result<Option<Address>, Error> {
-        let mut seen = HashSet::new();
-        let checks = wrappers
-            .into_iter()
-            .filter(|wrapper| seen.insert(*wrapper))
-            .map(|wrapper| async move {
-                let is_valid = self.is_valid(wrapper).await?;
-                Ok::<_, Error>((!is_valid).then_some(wrapper))
-            });
-        Ok(try_join_all(checks).await?.into_iter().flatten().next())
+    /// Returns the first of the `wrappers` that can't be trusted to settle
+    /// orders, if any. Errors if the RPC calls needed to decide that fail.
+    ///
+    /// Wrappers get checked one after another and the check stops at the first
+    /// invalid one. That way an order listing lots of wrappers can only make us
+    /// issue a few RPC calls since just the few legitimate wrappers let the
+    /// check move on to the next one.
+    pub async fn find_invalid(&self, wrappers: &[Address]) -> Result<Option<Address>, Error> {
+        let mut checked = HashSet::new();
+        for &wrapper in wrappers {
+            if checked.insert(wrapper) && !self.is_valid(wrapper).await? {
+                return Ok(Some(wrapper));
+            }
+        }
+        Ok(None)
     }
 
     /// Only authorized solvers may call `settle()` but that alone isn't
-    /// sufficient: solvers' submission accounts are authorized as well and
-    /// accept any call without settling anything. So the wrapper additionally
-    /// has to identify as a `CowWrapper` of our settlement contract.
+    /// sufficient: solvers' submission accounts (EOAs, possibly with an
+    /// EIP-7702 delegation) are authorized as well and may accept arbitrary
+    /// calls without settling anything. So the wrapper additionally has to
+    /// identify as a `CowWrapper` of our settlement contract.
     async fn is_valid(&self, wrapper: Address) -> Result<bool, Error> {
         if !self.authenticator.isSolver(wrapper).call().await? {
             return Ok(false);
@@ -60,8 +60,8 @@ impl Validator {
         match settlement {
             Ok(settlement) => Ok(settlement == self.settlement),
             // Accounts that aren't wrappers revert, return no data (e.g. EOAs)
-            // or return data that isn't an address. Only node errors bubble up
-            // since they don't tell us anything about the wrapper.
+            // or return data that isn't an address. Any other error (e.g. a
+            // node error) doesn't tell us anything about the wrapper.
             Err(err) if err.is_contract_revert() || matches!(err, Error::AbiError(_)) => Ok(false),
             Err(err) => Err(err),
         }
@@ -105,7 +105,7 @@ mod tests {
     }
 
     async fn find_invalid(asserter: Asserter) -> Result<Option<Address>, Error> {
-        validator(asserter).find_invalid([WRAPPER]).await
+        validator(asserter).find_invalid(&[WRAPPER]).await
     }
 
     #[tokio::test]
@@ -161,13 +161,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stops_at_first_invalid_wrapper() {
+        // Responses for a single check; checking the second wrapper would fail
+        // since the asserter has no responses left.
+        let asserter = Asserter::new();
+        is_solver(&asserter, false);
+        let result = validator(asserter)
+            .find_invalid(&[WRAPPER, Address::repeat_byte(0x12)])
+            .await;
+        assert_eq!(result.unwrap(), Some(WRAPPER));
+    }
+
+    #[tokio::test]
     async fn checks_each_wrapper_once() {
         // Responses for a single check; a second check would fail since the
         // asserter has no responses left.
         let asserter = Asserter::new();
         is_solver(&asserter, true);
         settlement(&asserter, SETTLEMENT);
-        let result = validator(asserter).find_invalid([WRAPPER, WRAPPER]).await;
+        let result = validator(asserter).find_invalid(&[WRAPPER, WRAPPER]).await;
         assert_eq!(result.unwrap(), None);
     }
 }

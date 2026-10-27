@@ -736,11 +736,11 @@ async fn handle_app_data(
             continue;
         };
 
-        let wrappers = parsed.wrappers.iter().map(|w| w.address);
+        let wrappers: Vec<_> = parsed.wrappers.iter().map(|w| w.address).collect();
         if let Some(wrapper) = wrapper_validator
-            .find_invalid(wrappers)
+            .find_invalid(&wrappers)
             .await
-            .context("failed to validate wrappers")?
+            .with_context(|| format!("failed to validate wrappers of order {:?}", order.uid))?
         {
             tracing::debug!(order = ?order.uid, ?wrapper, "marking order invalid: invalid wrapper");
             database::onchain_broadcasted_orders::set_placement_error(

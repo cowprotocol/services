@@ -973,10 +973,16 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
-        let wrappers = app_data.inner.protocol.wrappers.iter().map(|w| w.address);
+        let wrappers: Vec<_> = app_data
+            .inner
+            .protocol
+            .wrappers
+            .iter()
+            .map(|w| w.address)
+            .collect();
         if let Some(wrapper) = self
             .wrapper_validator
-            .find_invalid(wrappers)
+            .find_invalid(&wrappers)
             .await
             .map_err(|err| ValidationError::Other(err.into()))?
         {
