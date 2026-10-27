@@ -1977,8 +1977,8 @@ async fn create_order_checks_the_preparation_template() {
 }
 
 /// A native SOL sell whose wSOL account creation the funder pays is refused:
-/// nothing charges the rent back, and closing the account at settlement
-/// returns it to the owner.
+/// nothing charges the rent back, and the owner closes the account after the
+/// fill and keeps it.
 #[tokio::test]
 async fn create_order_rejects_a_funder_paid_sell_account_creation() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
