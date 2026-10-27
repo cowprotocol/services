@@ -340,6 +340,8 @@ pub enum ValidationError {
     TooManyLimitOrders,
     TooMuchGas,
     QuoteNotVerified,
+    /// The app-data names a wrapper that can't be trusted to settle the order.
+    InvalidWrapper(Address),
     Other(anyhow::Error),
 }
 
@@ -455,6 +457,7 @@ pub struct OrderValidator {
     /// volume-fee factor from an order's app-data. `None` disables partner
     /// fees entirely for the fast-path limit-price check.
     max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+    wrapper_validator: order_validation::wrappers::Validator,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -525,6 +528,7 @@ impl OrderValidator {
         // `fee_policies.max_partner_fee`. `None` disables partner fees for
         // the check.
         max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+        wrapper_validator: order_validation::wrappers::Validator,
     ) -> Self {
         Self {
             native_token,
@@ -544,6 +548,7 @@ impl OrderValidator {
             same_tokens_policy,
             protocol_volume_fee_policy,
             max_partner_fee,
+            wrapper_validator,
         }
     }
 
@@ -968,6 +973,22 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
+        let wrappers: Vec<_> = app_data
+            .inner
+            .protocol
+            .wrappers
+            .iter()
+            .map(|w| w.address)
+            .collect();
+        if let Some(wrapper) = self
+            .wrapper_validator
+            .find_invalid(&wrappers)
+            .await
+            .map_err(|err| ValidationError::Other(err.into()))?
+        {
+            return Err(ValidationError::InvalidWrapper(wrapper));
+        }
+
         let preview_order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -1377,6 +1398,20 @@ mod tests {
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 
+    /// Wrapper validator whose RPC calls all fail, so it's only usable with
+    /// orders that don't specify any wrappers.
+    fn wrapper_validator() -> order_validation::wrappers::Validator {
+        order_validation::wrappers::Validator::new(
+            contracts::GPv2AllowListAuthentication::Instance::new(
+                Address::repeat_byte(0xaa),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Address::repeat_byte(0x90),
+        )
+    }
+
     #[test]
     fn hash_app_data_keeps_full_document_for_simulation() {
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
@@ -1410,6 +1445,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         // App data with a pre-hook (a gasless approval, the shape that surfaced
@@ -1479,6 +1515,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
         std::assert_matches!(
             validator
@@ -1610,6 +1647,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1677,6 +1715,7 @@ mod tests {
             SameTokensPolicy::AllowSell,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = || PreOrderData {
@@ -1776,6 +1815,7 @@ mod tests {
             SameTokensPolicy::Allow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let valid_to =
@@ -1852,6 +1892,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let now = time::now_in_epoch_seconds();
@@ -1980,6 +2021,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2192,6 +2234,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2267,6 +2310,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2330,6 +2374,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2386,6 +2431,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2446,6 +2492,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2512,6 +2559,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2579,6 +2627,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2640,6 +2689,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2712,6 +2762,7 @@ mod tests {
                 SameTokensPolicy::Disallow,
                 None,
                 None,
+                wrapper_validator(),
             );
 
             let order = OrderCreation {
@@ -2808,6 +2859,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         // Test with flashloan hint that covers the sell amount
@@ -3226,6 +3278,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -3341,6 +3394,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         )
     }
 
