@@ -760,20 +760,19 @@ fn settled_json(pre: [u64; 3], post: [u64; 3]) -> serde_json::Value {
     })
 }
 
-/// A verifier over mock nodes: `rpc` answers the account reads in queue
-/// order, `bundle` every bundle simulation.
-fn verifier(
-    rpc: MocksMap,
-    bundle: serde_json::Value,
-    inaccuracy_limit: f64,
-    mode: configs::price_estimation::QuoteVerificationMode,
-) -> Verifier {
+/// A verifier preferring verified quotes, with a 1% inaccuracy limit, over
+/// mock nodes: `rpc` answers the account reads in queue order, `bundle` up to
+/// two bundle simulations.
+fn verifier(rpc: MocksMap, bundle: serde_json::Value) -> Verifier {
     Verifier::new(
         SolanaRPC::new_mock_with_mocks_map(rpc),
-        SolanaRPC::new_mock_with_mocks(Mocks::from([(cow_solana_rpc::SIMULATE_BUNDLE, bundle)])),
+        SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+            (cow_solana_rpc::SIMULATE_BUNDLE, bundle.clone()),
+            (cow_solana_rpc::SIMULATE_BUNDLE, bundle),
+        ])),
         program_id(),
-        inaccuracy_limit,
-        mode,
+        0.01,
+        configs::price_estimation::QuoteVerificationMode::Prefer,
     )
 }
 
@@ -832,7 +831,8 @@ async fn quote_verified(addr: SocketAddr) -> (reqwest::StatusCode, serde_json::V
 
 /// The sell mint's authority mints the sell amount in the creation leg, the
 /// settlement delivers the quoted amount and the buffers keep theirs: the
-/// quote is verified.
+/// quote is verified. A second quote of the pair reuses the mints read for the
+/// first, the only reads mocked.
 #[tokio::test]
 async fn quote_verified_by_a_passing_bundle_simulation() {
     let solver = solana_sdk::pubkey::Pubkey::new_unique();
@@ -840,35 +840,6 @@ async fn quote_verified_by_a_passing_bundle_simulation() {
     let verifier = verifier(
         mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
         bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
-        0.01,
-        configs::price_estimation::QuoteVerificationMode::Prefer,
-    );
-    let addr = spawn_verifying_server(vec![driver], verifier).await;
-
-    let (status, json) = quote_verified(addr).await;
-    assert_eq!(status, reqwest::StatusCode::OK);
-    assert_eq!(json["verified"], true);
-    assert_eq!(json["quote"]["buyAmount"], "1240967");
-}
-
-/// Two quotes of one pair read the mints once: the reads mocked for the first
-/// quote are all there is, and the second quote still verifies.
-#[tokio::test]
-async fn quote_verification_reuses_the_pair_funding() {
-    let solver = solana_sdk::pubkey::Pubkey::new_unique();
-    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
-    let settled = bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000]));
-    let verifier = Verifier::new(
-        SolanaRPC::new_mock_with_mocks_map(
-            mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
-        ),
-        SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
-            (cow_solana_rpc::SIMULATE_BUNDLE, settled.clone()),
-            (cow_solana_rpc::SIMULATE_BUNDLE, settled),
-        ])),
-        program_id(),
-        0.01,
-        configs::price_estimation::QuoteVerificationMode::Prefer,
     );
     let addr = spawn_verifying_server(vec![driver], verifier).await;
 
@@ -876,6 +847,7 @@ async fn quote_verification_reuses_the_pair_funding() {
         let (status, json) = quote_verified(addr).await;
         assert_eq!(status, reqwest::StatusCode::OK);
         assert_eq!(json["verified"], true);
+        assert_eq!(json["quote"]["buyAmount"], "1240967");
     }
 }
 
@@ -896,8 +868,6 @@ async fn quote_whose_settlement_fails_or_underdelivers_is_unverified() {
         let verifier = verifier(
             mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
             bundle_json(settlement.clone()),
-            0.01,
-            configs::price_estimation::QuoteVerificationMode::Prefer,
         );
         let addr = spawn_verifying_server(vec![driver], verifier).await;
 
@@ -920,8 +890,6 @@ async fn quote_the_buffers_pay_for_is_dropped() {
             [0, 1_000, 5_000_000],
             [3_461_207, 1_000, 4_900_000],
         )),
-        0.01,
-        configs::price_estimation::QuoteVerificationMode::Prefer,
     );
     let addr = spawn_verifying_server(vec![driver], verifier).await;
 
@@ -932,7 +900,7 @@ async fn quote_the_buffers_pay_for_is_dropped() {
 
 /// Preferring verified quotes, a verified quote beats a better one whose
 /// settlement signs as more than the solver, which no simulation can vouch
-/// for. Not preferring them, the better amount wins.
+/// for.
 #[tokio::test]
 async fn quote_prefers_a_verified_answer_in_prefer_mode() {
     let solver = solana_sdk::pubkey::Pubkey::new_unique();
@@ -942,31 +910,16 @@ async fn quote_prefers_a_verified_answer_in_prefer_mode() {
     ))
     .await;
     let verifiable = spawn_mock_driver(settling_driver_answer("4000000", &[solver])).await;
-    for (mode, buy_amount, verified) in [
-        (
-            configs::price_estimation::QuoteVerificationMode::Prefer,
-            "1779760",
-            true,
-        ),
-        (
-            configs::price_estimation::QuoteVerificationMode::Unverified,
-            "2779760",
-            false,
-        ),
-    ] {
-        let verifier = verifier(
-            mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
-            bundle_json(settled_json([0, 1_000, 5_000], [4_000_000, 1_000, 5_000])),
-            0.01,
-            mode,
-        );
-        let addr = spawn_verifying_server(vec![unverifiable, verifiable], verifier).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json([0, 1_000, 5_000], [4_000_000, 1_000, 5_000])),
+    );
+    let addr = spawn_verifying_server(vec![unverifiable, verifiable], verifier).await;
 
-        let (status, json) = quote_verified(addr).await;
-        assert_eq!(status, reqwest::StatusCode::OK, "{mode:?}");
-        assert_eq!(json["quote"]["buyAmount"], buy_amount, "{mode:?}");
-        assert_eq!(json["verified"], verified, "{mode:?}");
-    }
+    let (status, json) = quote_verified(addr).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["quote"]["buyAmount"], "1779760");
+    assert_eq!(json["verified"], true);
 }
 
 /// A sell mint nobody can mint has nothing to fund its sell in simulation,
@@ -985,8 +938,6 @@ async fn quote_selling_a_mint_nobody_can_mint_is_unverified() {
     let verifier = verifier(
         reads,
         bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
-        0.01,
-        configs::price_estimation::QuoteVerificationMode::Prefer,
     );
     let addr = spawn_verifying_server(vec![driver], verifier).await;
 

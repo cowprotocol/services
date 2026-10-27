@@ -162,7 +162,7 @@ pub struct QuoteVerification {
     pub bundle_endpoint: Url,
     /// How inaccurate a quote must be before it is dropped, as the share of
     /// the sell or buy amount the settlement program's buffers may pay.
-    /// Defaults to 1, dropping nothing.
+    /// Defaults to 1.
     #[serde(default = "default_quote_inaccuracy_limit")]
     pub quote_inaccuracy_limit: f64,
     /// The settlement program the quoted settlements target. Defaults to the

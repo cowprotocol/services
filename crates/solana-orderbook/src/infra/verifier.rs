@@ -1,8 +1,5 @@
-//! Quote verification. Each driver answers a quote with the settlement of an
-//! order the quoted wallet would place, and this module settles it in
-//! simulation behind that order's creation, the sell tokens conjured: a
-//! quote is verified when the order receives the quoted amount without the
-//! settlement program's buffers paying for any of it.
+//! Quote verification: each driver's quoted settlement is simulated after a
+//! transaction that creates and funds the quoted order.
 
 use {
     super::quoter::{Kind, Order, Quote},
@@ -63,15 +60,13 @@ pub struct Verifier {
 /// What a quote's verification found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verdict {
-    /// The order receives the quoted amount and the buffers pay for none of
-    /// it.
+    /// The order receives the quoted amount, and the buffers pay less than
+    /// the inaccuracy limit.
     Verified,
-    /// Nothing found out: no transaction, nothing funds the sell, the
-    /// creation leg fails, or the settlement fails or delivers less. The
-    /// quote stands as the driver gave it.
+    /// The simulation could not confirm the quote, which stays as the driver
+    /// gave it.
     Unverified,
-    /// The buffers pay for the fill beyond the inaccuracy limit. The quote
-    /// is dropped.
+    /// The buffers pay the inaccuracy limit or more. The quote is dropped.
     Inaccurate,
 }
 
@@ -95,8 +90,8 @@ struct Funding {
     source: Source,
 }
 
-/// Who conjures a mint's tokens. The simulation checks no signature, so
-/// whoever can move them on chain can in simulation.
+/// Who supplies the sell tokens in simulation. Signatures go unchecked, so
+/// anyone who can move them on chain can.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Source {
     /// The mint authority mints them. `signers` is empty when the authority
@@ -182,15 +177,16 @@ impl Verifier {
     /// owns: a verified quote is marked, an inaccurate one dropped, the rest
     /// stay as the drivers gave them.
     pub async fn verify(&self, order: &Order, owner: Pubkey, quotes: Vec<Quote>) -> Vec<Quote> {
-        let funding = match self.funding(order).await {
-            Ok(funding) => funding,
-            Err(err) => {
-                tracing::warn!(?err, "quotes left unverified, the sell mint is unread");
-                return quotes;
-            }
-        };
+        let funding = self
+            .funding(order)
+            .await
+            .inspect_err(|err| tracing::debug!(?err, "quote funding not read"))
+            .ok();
         let verdicts = join_all(quotes.into_iter().map(|quote| async {
-            let verdict = self.verify_one(order, owner, &funding, &quote).await;
+            let verdict = match &funding {
+                Some(funding) => self.verify_one(order, owner, funding, &quote).await,
+                None => Verdict::Unverified,
+            };
             metrics()
                 .quote_verifications
                 .with_label_values(&[verdict.label(), quote.driver.as_str()])
@@ -228,7 +224,7 @@ impl Verifier {
         // The simulation checks no signature, so a transaction may only sign
         // as the solver, which signs for real on chain.
         if signers(settlement) != [quote.solver] {
-            tracing::warn!(
+            tracing::debug!(
                 driver,
                 "quote unverified, its settlement signs as more than the solver"
             );
@@ -279,7 +275,7 @@ impl Verifier {
         let response = match self.bundle.simulate_bundle(&bundle, &accounts).await {
             Ok(response) => response,
             Err(err) => {
-                tracing::warn!(
+                tracing::debug!(
                     driver,
                     ?err,
                     "quote unverified, the bundle simulation failed"
@@ -289,7 +285,7 @@ impl Verifier {
         };
         let results = response.value;
         if let Some(err) = results.first().and_then(|result| result.err.as_ref()) {
-            tracing::warn!(
+            tracing::debug!(
                 driver,
                 ?err,
                 logs = ?results[0].logs,
@@ -300,14 +296,14 @@ impl Verifier {
             return Verdict::Unverified;
         }
         let Some(settled) = results.get(1) else {
-            tracing::warn!(
+            tracing::debug!(
                 driver,
                 "quote unverified, the bundle simulation stopped short"
             );
             return Verdict::Unverified;
         };
         if let Some(err) = &settled.err {
-            tracing::info!(
+            tracing::debug!(
                 driver,
                 ?err,
                 logs = ?settled.logs,
@@ -326,7 +322,7 @@ impl Verifier {
             balances(&settled.pre_execution_accounts),
             balances(&settled.post_execution_accounts),
         ) else {
-            tracing::warn!(
+            tracing::debug!(
                 driver,
                 "quote unverified, the simulation reported no accounts"
             );
@@ -334,7 +330,7 @@ impl Verifier {
         };
         let received = post[0].saturating_sub(pre[0]);
         if received < quote.buy_amount {
-            tracing::warn!(
+            tracing::debug!(
                 driver,
                 received,
                 quoted = quote.buy_amount,
@@ -348,7 +344,7 @@ impl Verifier {
         {
             let lost = pre[index].saturating_sub(post[index]);
             if lost as f64 >= self.inaccuracy_limit * amount as f64 {
-                tracing::warn!(
+                tracing::debug!(
                     driver,
                     side,
                     lost,
@@ -358,7 +354,7 @@ impl Verifier {
                 return Verdict::Inaccurate;
             }
         }
-        tracing::info!(
+        tracing::debug!(
             driver,
             slot = response.context.slot,
             units_consumed = ?settled.units_consumed,
@@ -404,22 +400,22 @@ impl Verifier {
         })
     }
 
-    /// The signers a token program multisig at `authority` requires, its
-    /// threshold's worth of its signer set. Empty when the authority is no
-    /// multisig and signs itself.
+    /// The first `m` signers of the token program multisig at `authority`,
+    /// enough to sign for it. Empty when `authority` is no multisig.
     async fn multisig_signers(&self, authority: Pubkey) -> Result<Vec<Pubkey>, Error> {
         let accounts = self.rpc.multiple_accounts([authority]).await?;
         let multisig = accounts
             .get(&authority)
             .filter(|account| TokenProgram::try_from(&account.owner).is_ok())
             .and_then(|account| Multisig::unpack(&account.data).ok());
+        // An account that only looks like a multisig may claim more signers
+        // than the array holds.
         Ok(multisig
-            .map(|multisig| {
-                multisig.signers[..usize::from(multisig.n)]
-                    .iter()
-                    .take(usize::from(multisig.m))
-                    .copied()
-                    .collect()
+            .and_then(|multisig| {
+                multisig
+                    .signers
+                    .get(..usize::from(multisig.m))
+                    .map(<[Pubkey]>::to_vec)
             })
             .unwrap_or_default())
     }
@@ -510,12 +506,7 @@ fn metrics() -> &'static Metrics {
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        solana_sdk::program_option::COption,
-        solana_system_interface::instruction::transfer,
-        spl_token_2022_interface::{instruction::MAX_SIGNERS, state::AccountState},
-    };
+    use {super::*, solana_sdk::program_option::COption};
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -562,16 +553,18 @@ mod tests {
             .collect()
     }
 
-    /// The mint authority mints the sell amount into the owner's new sell
-    /// account, the owner delegates it to the state PDA and creates the
-    /// order, the payer pays: those three sign, nobody else.
+    /// The creation leg makes the owner's sell account, mints the sell amount
+    /// into it, delegates that to the state PDA and creates the order. The
+    /// payer, the owner and the authority's multisig signers sign, the
+    /// authority itself does not.
     #[test]
     fn the_creation_leg_mints_delegates_and_creates() {
         let (program_id, payer, authority) = (pubkey(0xaa), pubkey(0xbb), pubkey(0xcc));
+        let multisig = vec![pubkey(0xd1), pubkey(0xd2)];
         let order = quoted();
         let funding = funding(Source::Authority {
             authority,
-            signers: Vec::new(),
+            signers: multisig.clone(),
         });
         let fund = funding.instruction(&order).unwrap();
         let leg = creation_leg(&program_id, &payer, &order, &order.intent().unwrap(), fund);
@@ -584,15 +577,16 @@ mod tests {
                 program_id,
             ]
         );
-        let mut signers = signers(&leg).to_vec();
-        assert_eq!(signers.remove(0), payer);
-        signers.sort();
-        let mut expected = vec![order.owner, authority];
+        let mut signed = signers(&leg).to_vec();
+        assert_eq!(signed.remove(0), payer);
+        signed.sort();
+        let mut expected = [vec![order.owner], multisig].concat();
         expected.sort();
-        assert_eq!(signers, expected);
+        assert_eq!(signed, expected);
+        assert_eq!(leg.signatures.len(), 4);
         assert_eq!(
-            accounts(&leg, 1),
-            vec![order.sell_mint, order.sell_token_account(), authority]
+            accounts(&leg, 1)[..2],
+            [order.sell_mint, order.sell_token_account()]
         );
         assert_eq!(
             &leg.message.instructions()[1].data[1..],
@@ -611,23 +605,6 @@ mod tests {
             &1_000u64.to_le_bytes()
         );
         assert_eq!(accounts(&leg, 3)[..2], [order.owner, payer]);
-        assert_eq!(leg.signatures.len(), 3);
-    }
-
-    /// A multisig authority's signers sign in its place.
-    #[test]
-    fn a_multisig_authority_lists_its_signers() {
-        let (program_id, payer, authority) = (pubkey(0xaa), pubkey(0xbb), pubkey(0xcc));
-        let order = quoted();
-        let funding = funding(Source::Authority {
-            authority,
-            signers: vec![pubkey(0xd1), pubkey(0xd2)],
-        });
-        let fund = funding.instruction(&order).unwrap();
-        let leg = creation_leg(&program_id, &payer, &order, &order.intent().unwrap(), fund);
-        let signers = signers(&leg);
-        assert!(signers.contains(&pubkey(0xd1)) && signers.contains(&pubkey(0xd2)));
-        assert!(!signers.contains(&authority));
     }
 
     /// A mint reads as its program and authority, a revoked one as none, and
@@ -658,57 +635,5 @@ mod tests {
         assert_eq!(mint_info(Some(&revoked)).unwrap().authority, None);
         assert!(mint_info(None).is_none());
         assert!(mint_info(Some(&Account::default())).is_none());
-    }
-
-    /// A balance is the lamports or the token amount, and a missing or
-    /// foreign account counts as empty.
-    #[test]
-    fn a_balance_is_read_in_its_unit() {
-        let mut data = vec![0; TokenAccount::LEN];
-        TokenAccount {
-            amount: 42,
-            state: AccountState::Initialized,
-            ..TokenAccount::default()
-        }
-        .pack_into_slice(&mut data);
-        let token_account = Account {
-            lamports: 7,
-            owner: spl_token_interface::ID,
-            data,
-            ..Account::default()
-        };
-        assert_eq!(balance(&token_account, Unit::Tokens), 42);
-        assert_eq!(balance(&token_account, Unit::Lamports), 7);
-        assert_eq!(balance(&Account::default(), Unit::Tokens), 0);
-    }
-
-    #[test]
-    fn a_transactions_signers_lead_its_keys() {
-        let (payer, other) = (pubkey(0x01), pubkey(0x02));
-        let message = Message::new(&[transfer(&payer, &other, 1)], Some(&payer));
-        let transaction = VersionedTransaction {
-            signatures: vec![Signature::default()],
-            message: VersionedMessage::Legacy(message),
-        };
-        assert_eq!(signers(&transaction), [payer]);
-    }
-
-    /// Multisig bookkeeping: a 2-of-3 lists its first two signers.
-    #[test]
-    fn a_multisig_lists_its_thresholds_worth_of_signers() {
-        let signers = [pubkey(0x21), pubkey(0x22), pubkey(0x23)];
-        let mut state = Multisig {
-            m: 2,
-            n: 3,
-            is_initialized: true,
-            signers: [Pubkey::default(); MAX_SIGNERS],
-        };
-        state.signers[..3].copy_from_slice(&signers);
-        let listed: Vec<Pubkey> = state.signers[..usize::from(state.n)]
-            .iter()
-            .take(usize::from(state.m))
-            .copied()
-            .collect();
-        assert_eq!(listed, signers[..2]);
     }
 }

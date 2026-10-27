@@ -52,5 +52,5 @@ filter = "info,solana_orderbook=debug"
 # A node with the Jito simulateBundle extension.
 # bundle-endpoint = "https://bundles.example.com"
 # The share of the sell or buy amount the settlement program's buffers may
-# pay before the quote is dropped. Defaults to 1, dropping nothing.
+# pay before the quote is dropped. Defaults to 1.
 # quote-inaccuracy-limit = 0.000001

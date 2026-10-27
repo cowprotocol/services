@@ -1015,11 +1015,8 @@ components:
           nullable: true
         verified:
           description: >-
-            Whether the amounts were confirmed by simulating the quoted
-            settlement behind the creation of the quoted order, its sell
-            tokens conjured. False when the deployment does not verify,
-            nothing funds the sell in simulation, or the simulation did not
-            confirm them.
+            Whether it was possible to verify that the quoted amounts are
+            accurate using a simulation.
           type: boolean
         funder:
           description: >-
