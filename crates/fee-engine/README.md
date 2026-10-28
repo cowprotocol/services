@@ -20,6 +20,15 @@ present) and reports every `when` that does not return a bool and every
 This catches a misspelt name or a bad fee argument such as `volume(0.001)`
 at load time instead of on the first order.
 
+The preflight runs every rule twice, with `order.inMarket` true and false,
+because a ternary runs only the branch it takes: with one run, the bad
+argument in `order.inMarket ? volume(0.001) : volume(1)` is never reached.
+An error that both runs give is reported once. A ternary, `&&` or `||` on
+any other field runs only what the sample order reaches, and `&&` / `||`
+can hide an error in one operand (`order.kind == "sell" && order.sellAmout
+> 1` passes, as the sample is a buy order); a static check of every branch
+is planned.
+
 ```
 name: Stablecoin swaps
 when: order.sellToken in stablecoins && order.buyToken in stablecoins
@@ -160,15 +169,36 @@ order.
 
 ### `order`
 
-The order as the API returns it, with three changes: decimal strings
-(amounts and prices, including the quote's) are doubles, hex strings are
-lowercase, and `fastPath` is always present (the API omits it when false).
-`fullAppData` stays text. An unset `receiver` is the zero address, not
-`null`. Optional fields such as `quote` are absent when unset, not `null`:
-test them with `has(order.quote)`.
+The fields of the API order that a fee can depend on, built field by field
+in `order_view.rs`, which is the reference. Amounts and prices are doubles,
+addresses and hashes are lowercase hex, and the API names are kept:
+
+```
+Group      Fields
+────────   ─────────────────────────────────────────────────────────────
+Identity   uid, owner, creationDate
+Trade      sellToken, buyToken, receiver, sellAmount, buyAmount,
+           feeAmount, kind, partiallyFillable, sellTokenBalance,
+           buyTokenBalance
+Signing    signingScheme, validTo, validFrom
+App data   appData (hash), fullAppData (text)
+Pricing    inMarket, fastPath, quote { sellAmount, buyAmount, feeAmount,
+           gasAmount, gasPrice, sellTokenPrice, solver, verified }
+On-chain   ethflowData { userValidTo, refundTxHash, isRefunded },
+           onchainOrderData { sender, placementError }, onchainUser
+```
+
+`inMarket` is the host's `Order::in_market`, false when the order has no
+quote. Execution state (`executed*`, `status`, `invalidated`,
+`availableBalance`, `gasCost`), settlement fields (`signature`,
+`interactions`, `settlementContract`) and legacy fields (`class`,
+`isLiquidityOrder`) are not in the view. An unset `receiver` is the zero
+address. Other optional fields are absent when unset, not `null`: test them
+with `has(order.quote)`.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
+fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
 ```
 
 A hex literal compares equal to the view only in lowercase: write it so, or

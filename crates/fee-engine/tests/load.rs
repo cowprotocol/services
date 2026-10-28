@@ -53,17 +53,32 @@ fn mainnet_sample_lists_reach_the_rules() {
     let rules = load_rules(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
 
-    let evaluation = evaluator.evaluate(&order(USDC, USDT));
+    let evaluation = evaluator.evaluate(fee_engine::Order {
+        order: &order(USDC, USDT),
+        in_market: false,
+    });
     assert!(evaluation.skipped.is_empty());
     let Match { rule, fees } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Stablecoin bucket: 0.3 bps");
-    // Surplus, not price improvement: `order.class` is always "limit".
     assert!(matches!(
         fees[..],
         [Fee::Surplus { .. }, Fee::Volume { factor }] if factor.to_high_precision() == 30
     ));
 
-    let evaluation = evaluator.evaluate(&order(WETH, USDC));
+    let evaluation = evaluator.evaluate(fee_engine::Order {
+        order: &order(USDC, USDT),
+        in_market: true,
+    });
+    let Match { fees, .. } = evaluation.matched.first().unwrap();
+    assert!(matches!(
+        fees[..],
+        [Fee::PriceImprovement { .. }, Fee::Volume { .. }]
+    ));
+
+    let evaluation = evaluator.evaluate(fee_engine::Order {
+        order: &order(WETH, USDC),
+        in_market: false,
+    });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
 }

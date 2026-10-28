@@ -166,9 +166,9 @@ impl RuleSet {
         })
     }
 
-    /// Runs both expressions of every rule against a sample order, whatever
-    /// `when` says, and reports every one that yields no bool or no fee. This
-    /// catches bad fee arguments and misspelt names before any real order.
+    /// Runs both expressions of every rule against a sample order, once per
+    /// `in_market` value, and reports each one that yields no bool or no fee,
+    /// once per rule and field. See the README for what this does not reach.
     pub fn preflight(&self) -> Result<(), Vec<PreflightError>> {
         let errors: Vec<_> = self
             .evaluator(Utc::now())
@@ -209,8 +209,6 @@ impl RuleSet {
 fn sample_order() -> Order {
     Order {
         metadata: OrderMetadata {
-            available_balance: Some(Default::default()),
-            gas_cost: Some(Default::default()),
             ethflow_data: Some(EthflowData {
                 refund_tx_hash: Some(Default::default()),
                 ..Default::default()
@@ -399,5 +397,23 @@ mod tests {
                 ("Fee".to_owned(), Field::Fee),
             ]
         );
+    }
+
+    #[test]
+    fn preflight_runs_in_and_out_of_market() {
+        let failed = |fee: &str| {
+            RuleSet::new(vec![rule("x", "true", fee)], BTreeMap::new())
+                .unwrap()
+                .preflight()
+                .map_err(|errors| errors.len())
+        };
+        assert_eq!(failed("order.inMarket ? volume(0.001) : volume(1)"), Err(1));
+        assert_eq!(failed("order.inMarket ? volume(1) : volume(0.001)"), Err(1));
+        assert_eq!(failed("volume('ten')"), Err(1));
+        assert_eq!(
+            failed("order.inMarket ? volume(0.001) : volume('ten')"),
+            Err(2)
+        );
+        assert_eq!(failed("order.inMarket ? volume(1) : volume(2)"), Ok(()));
     }
 }
