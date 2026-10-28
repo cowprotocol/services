@@ -2,6 +2,7 @@ use {
     crate::fee_factor::FeeFactor,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
+    std::time::Duration,
 };
 
 pub const fn default_max_partner_fee() -> FeeFactor {
@@ -24,6 +25,12 @@ pub struct FeePoliciesConfig {
     /// Fee policies that will become effective at a future timestamp.
     #[serde(default)]
     pub upcoming_policies: UpcomingFeePolicies,
+
+    /// Orders that wait for a CoW (no fast path and a `validFrom` at least
+    /// this long after creation) pay no protocol fee. Unset disables the
+    /// waiver.
+    #[serde(default, with = "humantime_serde")]
+    pub wait_for_cow_min_delay: Option<Duration>,
 }
 
 impl Default for FeePoliciesConfig {
@@ -32,6 +39,7 @@ impl Default for FeePoliciesConfig {
             policies: Default::default(),
             max_partner_fee: default_max_partner_fee(),
             upcoming_policies: Default::default(),
+            wait_for_cow_min_delay: None,
         }
     }
 }

@@ -358,6 +358,7 @@ mod tests {
 
         [fee-policies]
         max-partner-fee = 0.005
+        wait-for-cow-min-delay = "5m"
 
         [[fee-policies.policies]]
         kind.surplus = { factor = 0.5, max-volume-factor = 0.9 }
@@ -417,6 +418,10 @@ mod tests {
         assert_eq!(config.drivers[1].name, "solver2");
 
         assert_eq!(config.fee_policies.max_partner_fee.get(), 0.005);
+        assert_eq!(
+            config.fee_policies.wait_for_cow_min_delay,
+            Some(std::time::Duration::from_secs(300))
+        );
         assert_eq!(config.fee_policies.policies.len(), 2);
         assert!(matches!(
             config.fee_policies.policies[0].kind,
@@ -589,6 +594,7 @@ mod tests {
                 }],
                 max_partner_fee: 0.02.try_into().unwrap(),
                 upcoming_policies: UpcomingFeePolicies::default(),
+                wait_for_cow_min_delay: None,
             },
             ..Configuration::test_no_drivers()
         };

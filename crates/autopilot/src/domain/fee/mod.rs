@@ -25,7 +25,7 @@ use {
     eth_domain_types as eth,
     rust_decimal::Decimal,
     shared::{arguments::TokenBucketFeeOverride, fee::VolumeFeePolicy},
-    std::collections::HashSet,
+    std::{collections::HashSet, time::Duration},
 };
 
 /// Constructs fee policies based on the current configuration.
@@ -72,6 +72,7 @@ pub struct ProtocolFees {
     max_partner_fee: FeeFactor,
     upcoming_fee_policies: Option<UpcomingProtocolFees>,
     volume_fee_policy: VolumeFeePolicy,
+    wait_for_cow_min_delay: Option<Duration>,
 }
 
 impl ProtocolFees {
@@ -99,7 +100,25 @@ impl ProtocolFees {
                 config.upcoming_policies.clone(),
             ),
             volume_fee_policy,
+            wait_for_cow_min_delay: config.wait_for_cow_min_delay,
         }
+    }
+
+    /// An order waits for a CoW when it did not ask for the fast path and
+    /// its `valid_from` is at least the configured delay after creation.
+    /// Fast-path orders are excluded because the fast-path handler sets
+    /// `valid_from` itself when it falls through to a regular auction.
+    fn waits_for_cow(&self, order: &boundary::Order) -> bool {
+        let Some(min_delay) = self.wait_for_cow_min_delay else {
+            return false;
+        };
+        if order.metadata.fast_path {
+            return false;
+        }
+        let min_delay = i64::try_from(min_delay.as_secs()).unwrap_or(i64::MAX);
+        order.metadata.valid_from.is_some_and(|valid_from| {
+            i64::from(valid_from) - order.metadata.creation_date.timestamp() >= min_delay
+        })
     }
 
     /// Returns the capped aggregated partner fee
@@ -221,7 +240,9 @@ impl ProtocolFees {
         let partner_fee =
             Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
 
-        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner) {
+        if surplus_capturing_jit_order_owners.contains(&order.metadata.owner)
+            || self.waits_for_cow(order)
+        {
             return partner_fee;
         }
 
@@ -659,6 +680,59 @@ mod test {
                     factor: FeeFactor::try_from(0.0).unwrap(),
                 }
             ]
+        );
+    }
+
+    fn wait_for_cow_fees(min_delay: Option<Duration>) -> ProtocolFees {
+        let config = FeePoliciesConfig {
+            policies: vec![FeePolicy {
+                kind: configs::autopilot::fee_policy::FeePolicyKind::Surplus {
+                    factor: FeeFactor::try_from(0.5).unwrap(),
+                    max_volume_factor: FeeFactor::try_from(0.01).unwrap(),
+                },
+                order_class: FeePolicyOrderClass::Any,
+            }],
+            wait_for_cow_min_delay: min_delay,
+            ..Default::default()
+        };
+        ProtocolFees::new(&config, vec![], false, Address::ZERO)
+    }
+
+    fn order_created_at_1000(fast_path: bool, valid_from: Option<u32>) -> boundary::Order {
+        boundary::Order {
+            metadata: OrderMetadata {
+                creation_date: chrono::DateTime::from_timestamp(1_000, 0).unwrap(),
+                fast_path,
+                valid_from,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn waives_protocol_fee_for_wait_for_cow_orders() {
+        let fees = wait_for_cow_fees(Some(Duration::from_secs(300)));
+        let charged = |fast_path, valid_from| {
+            !fees
+                .apply(&order_created_at_1000(fast_path, valid_from), None, &[])
+                .is_empty()
+        };
+
+        // Waited at least the minimum delay without the fast path: no fee.
+        assert!(!charged(false, Some(1_300)));
+        assert!(!charged(false, Some(2_000)));
+        // Too short a wait, no wait, or a fast-path fall-through: fee applies.
+        assert!(charged(false, Some(1_299)));
+        assert!(charged(false, None));
+        assert!(charged(true, Some(2_000)));
+
+        // Waiver disabled: fee applies even after a long wait.
+        let fees = wait_for_cow_fees(None);
+        assert!(
+            !fees
+                .apply(&order_created_at_1000(false, Some(2_000)), None, &[])
+                .is_empty()
         );
     }
 }
