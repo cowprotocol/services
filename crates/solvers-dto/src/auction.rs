@@ -127,8 +127,6 @@ pub struct Order {
     pub buy_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub full_buy_amount: U256,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fee_policies: Option<Vec<FeePolicy>>,
     /// Cap on the penalty a solver can incur for winning this order but
     /// failing to execute it, in native token.
     #[serde_as(as = "Option<HexOrDecimalU256>")]
@@ -227,33 +225,6 @@ pub enum Class {
     Market,
     #[default]
     Limit,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum FeePolicy {
-    #[serde(rename_all = "camelCase")]
-    Surplus { factor: f64, max_volume_factor: f64 },
-    #[serde(rename_all = "camelCase")]
-    PriceImprovement {
-        factor: f64,
-        max_volume_factor: f64,
-        quote: Quote,
-    },
-    #[serde(rename_all = "camelCase")]
-    Volume { factor: f64 },
-}
-
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Quote {
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub sell_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub buy_amount: U256,
-    #[serde_as(as = "HexOrDecimalU256")]
-    pub fee: U256,
 }
 
 #[serde_as]

@@ -1,13 +1,13 @@
 //! Fees a rule returns and the CEL functions that build them.
 
 use {
-    cel::{Context, Value, objects::Key},
+    cel::{Context, Value, objects::KeyRef},
     configs::fee_factor::FeeFactor,
     rust_decimal::{
         Decimal,
         prelude::{FromPrimitive, ToPrimitive},
     },
-    std::{collections::HashMap, sync::Arc},
+    std::collections::HashMap,
 };
 
 /// A protocol fee a rule returns.
@@ -31,29 +31,12 @@ pub enum Fee {
 
 const KIND: &str = "kind";
 
-/// How a fee argument is read: its size on the
-/// [`FeeFactor::HIGH_PRECISION_SCALE`] grid and the decimal places it may
-/// have. Finer values are rejected, not rounded.
-struct Unit {
-    grid_units: u64,
-    decimals: u32,
-}
-
-/// `volume(bps)`: two decimal places, so 0.3 and 0.33 are fine.
-const BPS: Unit = Unit {
-    grid_units: FeeFactor::HIGH_PRECISION_SCALE / 10_000,
-    decimals: 2,
-};
-/// `share`: a whole percent.
-const SHARE: Unit = Unit {
-    grid_units: FeeFactor::HIGH_PRECISION_SCALE / 100,
-    decimals: 0,
-};
-/// `max_volume`: a percent with two decimal places, so 0.98 is fine.
-const MAX_VOLUME: Unit = Unit {
-    grid_units: FeeFactor::HIGH_PRECISION_SCALE / 100,
-    decimals: 2,
-};
+/// Grid units per basis point. Every argument must land on the
+/// [`FeeFactor::HIGH_PRECISION_SCALE`] grid; finer values are rejected, not
+/// rounded.
+const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
+/// Grid units per percent.
+const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
 
 /// Binds the fee functions. Each returns a tagged map that
 /// [`fees_from_value`] turns into a [`Fee`] after the rule has run.
@@ -110,11 +93,11 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
             value.type_of()
         ));
     };
-    let field = |name: &str| map.map.get(&Key::String(Arc::from(name.to_string())));
+    let field = |name: &str| map.get(&KeyRef::String(name));
     let Some(Value::String(kind)) = field(KIND) else {
         return Err("returned a map instead of a fee such as volume(10)".to_owned());
     };
-    let factor = |name: &str, unit: Unit| -> Result<FeeFactor, String> {
+    let factor = |name: &str, grid_units: u64| -> Result<FeeFactor, String> {
         let value = field(name).ok_or_else(|| format!("`{kind}` is missing `{name}`"))?;
         let out_of_range = || format!("`{kind}` argument `{name}` = {value:?} is out of range");
         // `from_f64` recovers the decimal the rule spelled out (0.3, not the
@@ -130,18 +113,17 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
                 ));
             }
         };
-        if number.normalize().scale() > unit.decimals {
-            return Err(match unit.decimals {
-                0 => format!("`{kind}` argument `{name}` = {number} is not a whole number"),
-                decimals => format!(
-                    "`{kind}` argument `{name}` = {number} has more than {decimals} decimal places"
-                ),
-            });
+        let scaled = number
+            .checked_mul(Decimal::from(grid_units))
+            .ok_or_else(out_of_range)?;
+        if !scaled.is_integer() {
+            return Err(format!(
+                "`{kind}` argument `{name}` = {number} is finer than the fee precision (1e-6 of \
+                 the volume)"
+            ));
         }
-        number
-            .checked_mul(Decimal::from(unit.grid_units))
-            .filter(Decimal::is_integer)
-            .and_then(|scaled| scaled.to_u64())
+        scaled
+            .to_u64()
             .and_then(|units| FeeFactor::from_high_precision(units).ok())
             .ok_or_else(out_of_range)
     };
@@ -150,12 +132,12 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
             factor: factor("bps", BPS)?,
         }),
         "surplus" => Ok(Fee::Surplus {
-            factor: factor("share", SHARE)?,
-            max_volume_factor: factor("max_volume", MAX_VOLUME)?,
+            factor: factor("share", PERCENT)?,
+            max_volume_factor: factor("max_volume", PERCENT)?,
         }),
         "price_improvement" => Ok(Fee::PriceImprovement {
-            factor: factor("share", SHARE)?,
-            max_volume_factor: factor("max_volume", MAX_VOLUME)?,
+            factor: factor("share", PERCENT)?,
+            max_volume_factor: factor("max_volume", PERCENT)?,
         }),
         other => Err(format!("unknown fee kind `{other}`")),
     }
@@ -239,14 +221,35 @@ mod tests {
     }
 
     #[test]
-    fn rejects_arguments_with_too_many_decimal_places() {
-        for (source, message) in [
-            ("volume(0.333)", "more than 2 decimal places"),
-            ("surplus(50.5, 1)", "is not a whole number"),
-            ("surplus(50, 0.985)", "more than 2 decimal places"),
-            ("price_improvement(0.5, 1)", "is not a whole number"),
+    fn accepts_every_argument_down_to_the_grid() {
+        assert_eq!(
+            evaluate("price_improvement(50.5, 0.9875)").unwrap(),
+            vec![Fee::PriceImprovement {
+                factor: factor(0.505),
+                max_volume_factor: factor(0.009875)
+            }]
+        );
+        assert_eq!(
+            evaluate("surplus(0.0001, 0.0001)").unwrap(),
+            vec![Fee::Surplus {
+                factor: factor(0.000001),
+                max_volume_factor: factor(0.000001)
+            }]
+        );
+    }
+
+    #[test]
+    fn rejects_arguments_finer_than_the_grid() {
+        for source in [
+            "volume(0.333)",
+            "surplus(50.00001, 1)",
+            "surplus(50, 0.98765)",
+            "price_improvement(0.00005, 1)",
         ] {
-            assert!(evaluate(source).unwrap_err().contains(message), "{source}");
+            assert!(
+                evaluate(source).unwrap_err().contains("finer than the fee"),
+                "{source}"
+            );
         }
     }
 

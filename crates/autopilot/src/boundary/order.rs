@@ -2,7 +2,7 @@ use {crate::domain, eth_domain_types as eth, shared::remaining_amounts};
 
 pub fn to_domain(
     order: &model::order::Order,
-    protocol_fees: Vec<domain::fee::Policy>,
+    protocol_fees: Vec<domain::fee::PolicyWithOrigin>,
     quote: Option<domain::Quote>,
     penalty_cap_native: Option<eth::Ether>,
 ) -> domain::Order {
