@@ -89,27 +89,18 @@ impl<'r> Evaluator<'r> {
         evaluation
     }
 
-    /// Runs both expressions of every rule against `order` twice, with
-    /// `in_market` true and false, as a ternary runs only one branch. Reports
-    /// every distinct failure once, in rule order, `when` before `fee`.
-    pub(crate) fn check(&self, order: &model::order::Order) -> Vec<Skipped<'r>> {
-        let contexts = [true, false].map(|in_market| self.scope(Order { order, in_market }));
-        let mut skipped: Vec<Skipped<'r>> = Vec::new();
+    /// Runs both expressions of every rule against `order`, whatever `when`
+    /// says, and reports every one that fails, in rule order.
+    pub(crate) fn check(&self, order: Order) -> Vec<Skipped<'r>> {
+        let context = self.scope(order);
+        let mut skipped = Vec::new();
         for rule in self.rules.rules() {
-            let failures = [Field::When, Field::Fee].into_iter().flat_map(|field| {
-                contexts.iter().filter_map(move |context| match field {
-                    Field::When => Self::matched(rule, context).err(),
-                    Field::Fee => Self::fees(rule, context).err(),
-                })
-            });
-            let first = skipped.len();
-            for (field, error) in failures {
-                let seen = skipped[first..].iter().any(|skipped| {
-                    skipped.field == field && skipped.error.to_string() == error.to_string()
-                });
-                if !seen {
-                    skipped.push(Skipped { rule, field, error });
-                }
+            let results = [
+                Self::matched(rule, &context).map(drop),
+                Self::fees(rule, &context).map(drop),
+            ];
+            for (field, error) in results.into_iter().filter_map(Result::err) {
+                skipped.push(Skipped { rule, field, error });
             }
         }
         skipped

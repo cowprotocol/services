@@ -20,14 +20,10 @@ present) and reports every `when` that does not return a bool and every
 This catches a misspelt name or a bad fee argument such as `volume(0.001)`
 at load time instead of on the first order.
 
-The preflight runs every rule twice, with `order.inMarket` true and false,
-because a ternary runs only the branch it takes: with one run, the bad
-argument in `order.inMarket ? volume(0.001) : volume(1)` is never reached.
-An error that both runs give is reported once. A ternary, `&&` or `||` on
-any other field runs only what the sample order reaches, and `&&` / `||`
-can hide an error in one operand (`order.kind == "sell" && order.sellAmout
-> 1` passes, as the sample is a buy order); a static check of every branch
-is planned.
+A ternary, `&&` or `||` runs only what the sample order reaches. The
+sample is out of market, so the bad argument in `order.inMarket ?
+volume(0.001) : volume(1)` is not found; a static check of every branch is
+planned.
 
 ```
 name: Stablecoin swaps
