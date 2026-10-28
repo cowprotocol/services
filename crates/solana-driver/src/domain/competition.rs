@@ -145,15 +145,19 @@ impl Competition {
         let simulations = futures::future::join_all(solutions.iter().map(|solution| {
             let auction = &auction;
             async move {
-                let started = Instant::now();
                 // The cut waits for the simulated units, and after the window
                 // only the HTTP time buffer is left, so the fees pricing it are
                 // fetched alongside the simulation and within the same window.
-                let (verdict, fees) = tokio::join!(
-                    tokio::time::timeout(
-                        window,
-                        self.simulate_solution(auction_id, auction, solution),
-                    ),
+                let ((verdict, elapsed), fees) = tokio::join!(
+                    async {
+                        let started = Instant::now();
+                        let verdict = tokio::time::timeout(
+                            window,
+                            self.simulate_solution(auction_id, auction, solution),
+                        )
+                        .await;
+                        (verdict, started.elapsed())
+                    },
                     async {
                         match self.solver.fee_handler() {
                             FeeHandler::Driver => Some(
@@ -165,7 +169,7 @@ impl Competition {
                     },
                 );
                 let verdict = verdict.unwrap_or(Err(Error::SimulationTimedOut));
-                (verdict, started.elapsed(), fees)
+                (verdict, elapsed, fees)
             }
         }))
         .await;
