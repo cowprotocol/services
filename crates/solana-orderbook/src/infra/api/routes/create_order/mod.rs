@@ -419,8 +419,7 @@ fn validate(
     let mut last_step = 0;
     let mut token_programs = Vec::new();
     for preparation in preparations {
-        let (step, token_program) =
-            preparation_step(sponsoring, &state_pda, &intent, keys, preparation)?;
+        let (step, token_program) = preparation_step(&state_pda, &intent, keys, preparation)?;
         if step <= last_step {
             return Err(PlacementError::InvalidTransaction(
                 "the instructions do not follow the sponsored template order",
@@ -709,7 +708,6 @@ impl ComputeBudget {
 /// the step's template position and, for a token step, its mint with the
 /// token program it names.
 fn preparation_step(
-    sponsoring: &Sponsoring,
     state_pda: &Pubkey,
     intent: &OrderIntent,
     keys: &[Pubkey],
@@ -817,11 +815,6 @@ fn preparation_step(
         if system != solana_system_interface::program::ID || !is_token_program(&token_program) {
             return Err(PlacementError::InvalidTransaction(
                 "the account creation must reference the system and token programs",
-            ));
-        }
-        if payer != sponsoring.funder && payer != intent.owner {
-            return Err(PlacementError::InvalidTransaction(
-                "the account creation must be paid by the funder or the owner",
             ));
         }
         if wrapped_sell && account == intent.sell.token_account && mint == intent.sell.mint {

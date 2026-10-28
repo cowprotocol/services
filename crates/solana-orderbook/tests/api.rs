@@ -1867,7 +1867,7 @@ async fn create_order_rejects_creating_the_buy_token_account() {
         ),
         // For a custom receiver.
         (&received, vec![destination_creation(funder, receiver, &received)]),
-        // After a valid delegation, where the template used to place it.
+        // After a valid delegation.
         (
             &owned,
             vec![
@@ -2358,7 +2358,9 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
 
 /// Token-2022 mints place like classic ones: the delegation goes through
 /// Token-2022, and the buy account is the owner's missing Token-2022
-/// associated token account, which the settlement creates.
+/// associated token account, which the settlement creates. The lookup
+/// answers the sell and buy mints, the Clock sysvar, then the buy token
+/// account.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_token_2022_mints() {
@@ -2401,7 +2403,10 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
     let addr = spawn_sponsored_server_with(
         pool.clone(),
         funder,
-        sponsored_mocks(true, accounts_response(&[token_2022.clone(), token_2022])),
+        sponsored_mocks(
+            true,
+            accounts_response(&[token_2022.clone(), token_2022, None, None]),
+        ),
     )
     .await;
 
