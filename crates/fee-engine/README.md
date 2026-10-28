@@ -13,6 +13,13 @@ of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
 list takes a reserved name or an expression does not compile. A rule whose
 expression fails at run time is skipped and reported to the caller.
 
+`RuleSet::preflight` is a separate pass: it runs both expressions of every
+rule against a sample order (a default order with every optional field
+present) and reports every `when` that does not return a bool and every
+`fee` that does not return valid fees, so one run shows all the mistakes.
+This catches a misspelt name or a bad fee argument such as `volume(0.001)`
+at load time instead of on the first order.
+
 ```
 name: Stablecoin swaps
 when: order.sellToken in stablecoins && order.buyToken in stablecoins
