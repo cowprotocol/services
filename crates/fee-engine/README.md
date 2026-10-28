@@ -121,10 +121,12 @@ order.
 
 ### `order`
 
-The order as the API returns it, with two changes: decimal strings (amounts
-and prices, including the quote's) are doubles, and hex strings are
-lowercase. `fullAppData` stays text. An unset `receiver` is the zero
-address, not `null`.
+The order as the API returns it, with three changes: decimal strings
+(amounts and prices, including the quote's) are doubles, hex strings are
+lowercase, and `fastPath` is always present (the API omits it when false).
+`fullAppData` stays text. An unset `receiver` is the zero address, not
+`null`. Optional fields such as `quote` are absent when unset, not `null`:
+test them with `has(order.quote)`.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21

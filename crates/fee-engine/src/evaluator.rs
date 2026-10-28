@@ -400,6 +400,26 @@ mod tests {
     }
 
     #[test]
+    fn absent_optional_fields_are_tested_with_has() {
+        let rules = rule_set(vec![
+            rule("Quoted", "has(order.quote)", "volume(1)"),
+            rule("Fast path", "order.fastPath", "volume(2)"),
+            rule("Default", "true", "volume(3)"),
+        ]);
+        let evaluator = rules.evaluator(after_launch());
+
+        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        assert_eq!(names(&evaluation), ["Default"]);
+        assert!(evaluation.skipped.is_empty());
+
+        let mut quoted = order(WETH, USDT);
+        quoted.metadata.quote = Some(Default::default());
+        quoted.metadata.fast_path = true;
+        let evaluation = evaluator.evaluate(&quoted);
+        assert_eq!(names(&evaluation), ["Quoted", "Fast path", "Default"]);
+    }
+
+    #[test]
     fn no_rules_means_no_fee() {
         let rules = rule_set(vec![]);
         let evaluator = rules.evaluator(after_launch());

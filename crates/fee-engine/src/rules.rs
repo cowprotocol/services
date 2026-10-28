@@ -335,6 +335,7 @@ mod tests {
         preflight(vec![
             rule("Quoted", "order.quote.sellAmount > 0", "volume(1)"),
             rule("Ethflow", "order.ethflowData.userValidTo > 0", "no_fee()"),
+            rule("Fast path", "order.fastPath", "no_fee()"),
             rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
         ])
         .unwrap();
