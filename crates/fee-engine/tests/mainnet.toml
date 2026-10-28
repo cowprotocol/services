@@ -1,6 +1,8 @@
 # The mainnet protocol-fee policy as rules. The bucket lists are trimmed to a
 # few tokens; prod uses the full `volume-fee-bucket-overrides` from infra.
 # Partner fees from app-data are not rules, the host appends them.
+# `order.class` is "limit" for every order until M2 sets it, so the
+# `price_improvement` branches never match yet.
 
 [lists]
 jit_owners = []

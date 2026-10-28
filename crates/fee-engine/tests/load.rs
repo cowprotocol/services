@@ -57,6 +57,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     assert!(evaluation.skipped.is_empty());
     let Match { rule, fees } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Stablecoin bucket: 0.3 bps");
+    // Surplus, not price improvement: `order.class` is always "limit".
     assert!(matches!(
         fees[..],
         [Fee::Surplus { .. }, Fee::Volume { factor }] if factor.to_high_precision() == 30
@@ -101,8 +102,14 @@ fn refuses_bad_files() {
         error("[lists]\norder = []"),
         LoadError::Rules(CompileError::ReservedList { .. })
     ));
-    assert!(matches!(
-        error(&(rule("x", "false", "volume(0.001)") + &rule("y", "order.sellAmount", "no_fee()"))),
-        LoadError::Preflight(ref errors) if errors.len() == 2
-    ));
+    let LoadError::Preflight(errors) =
+        error(&(rule("x", "false", "volume(0.001)") + &rule("y", "order.sellAmount", "no_fee()")))
+    else {
+        panic!("expected a preflight error");
+    };
+    let failed: Vec<_> = errors
+        .iter()
+        .map(|error| (error.rule.as_str(), error.field))
+        .collect();
+    assert_eq!(failed, [("x", Field::Fee), ("y", Field::When)]);
 }

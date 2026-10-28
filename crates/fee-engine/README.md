@@ -34,10 +34,12 @@ fee:  surplus(50, 1)
 
 `load_rules(source)` reads a set from TOML: `[lists]` holds named lists of
 strings and each `[[rule]]` table is a rule, tried in file order. Unknown
-keys anywhere are refused. The file goes through `RuleSet::new` and
-`RuleSet::preflight`; any failure refuses the whole file as a `LoadError`:
-`Toml` (does not parse, unknown key or missing field; names the line and
-column), `Rules` (a `CompileError`) or `Preflight` (a `PreflightError`).
+top-level and rule keys are refused; any key under `[lists]` is a list
+name, so a list that no rule names loads without error. The file goes
+through `RuleSet::new` and `RuleSet::preflight`; any failure refuses the
+whole file as a `LoadError`: `Toml` (does not parse, unknown key or missing
+field; names the line and column), `Rules` (a `CompileError`) or
+`Preflight` (every `PreflightError`).
 
 ```toml
 [lists]

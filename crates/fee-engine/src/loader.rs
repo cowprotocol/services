@@ -13,12 +13,12 @@ pub enum LoadError {
     Toml(#[from] toml::de::Error),
     #[error(transparent)]
     Rules(#[from] CompileError),
-    #[error("preflight: {}", list(.0))]
+    #[error("preflight: {}", join_preflight_errors(.0))]
     Preflight(Vec<PreflightError>),
 }
 
 /// Every preflight failure on one line.
-fn list(errors: &[PreflightError]) -> String {
+fn join_preflight_errors(errors: &[PreflightError]) -> String {
     errors
         .iter()
         .map(ToString::to_string)
@@ -27,7 +27,7 @@ fn list(errors: &[PreflightError]) -> String {
 }
 
 /// The on-disk shape of a rules file; unknown keys are refused.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RulesFile {
     #[serde(default)]
