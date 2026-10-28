@@ -164,6 +164,11 @@ impl Competition {
                 ])
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
+            let orders = solution
+                .trades
+                .iter()
+                .map(|trade| trade.order_uid.to_string())
+                .collect::<Vec<_>>();
             match &verdict {
                 // Compared with the slot of a later failing `/settle`
                 // simulation, this separates a lagging bundle endpoint from
@@ -173,6 +178,7 @@ impl Competition {
                     solution_id = solution.id,
                     slot = %slot,
                     ?units_consumed,
+                    ?orders,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -182,6 +188,7 @@ impl Competition {
                         solver = %self.solver.name(),
                         solution_id = solution.id,
                         ?error,
+                        ?orders,
                         elapsed_ms,
                         window_ms,
                         "dropping solution, its settlement fails in simulation"
@@ -192,6 +199,7 @@ impl Competition {
                     solver = %self.solver.name(),
                     solution_id = solution.id,
                     ?error,
+                    ?orders,
                     elapsed_ms,
                     window_ms,
                     "solution simulation inconclusive"
@@ -232,6 +240,10 @@ impl Competition {
     ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
+        let order_uids = orders
+            .iter()
+            .map(|order| order.uid.to_string())
+            .collect::<Vec<_>>();
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
@@ -254,6 +266,7 @@ impl Competition {
         }
         tracing::debug!(
             solution_id = solution.id,
+            orders = ?order_uids,
             creations = ?creation_uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
             bytes = bundle.iter().filter_map(encoded_size).sum::<u64>(),
             "simulating settlement bundle"
@@ -271,6 +284,7 @@ impl Competition {
                 tracing::debug!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     leg,
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
                     program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
@@ -364,12 +378,18 @@ impl Competition {
         let orders = orders_by_uid(&auction.orders);
         let mut charged = Vec::with_capacity(solutions.len());
         for mut solution in solutions {
+            let order_uids = solution
+                .trades
+                .iter()
+                .map(|trade| trade.order_uid.to_string())
+                .collect::<Vec<_>>();
             if let Some(fee) = self.solver.solver_fee()
                 && let Err(reason) = fee.apply(&mut solution, &orders)
             {
                 tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     %reason,
                     "dropping solution the solver fee cannot be applied to"
                 );
@@ -383,6 +403,7 @@ impl Competition {
                         tracing::warn!(
                             solver = %self.solver.name(),
                             solution_id = solution.id,
+                            orders = ?order_uids,
                             %reason,
                             "dropping solution, its network fee is over budget"
                         );
@@ -396,6 +417,7 @@ impl Competition {
                 Err(reason) => tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     %reason,
                     "dropping solution the execution costs cannot be cut from"
                 ),

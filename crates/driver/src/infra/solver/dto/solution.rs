@@ -230,7 +230,6 @@ impl Solutions {
                             })
                         })
                         .transpose()?,
-                    solver.config().fee_handler,
                     auction.surplus_capturing_jit_order_owners(),
                     solution.flashloans
                         // convert the flashloan info provided by the solver

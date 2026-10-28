@@ -29,9 +29,9 @@ use {
         orders::{Order, insert_quotes},
     },
     eth_domain_types::Receiver,
-    ethrpc::{Web3, block_stream::timestamp_of_block_in_seconds},
+    ethrpc::{AlloyProvider, Web3, block_stream::timestamp_of_block_in_seconds},
     event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
-    futures::{StreamExt, stream},
+    futures::{StreamExt, future, stream},
     itertools::{izip, multiunzip},
     model::{
         DomainSeparator,
@@ -61,7 +61,10 @@ use {
         },
     },
     sqlx::PgConnection,
-    std::{collections::HashMap, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
@@ -233,7 +236,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         Vec<TxHash>,
     )> {
         let block_number_timestamp_hashmap =
-            get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
+            get_block_numbers_of_events(&self.web3.provider, &order_placement_events).await?;
         let custom_event_data = self
             .custom_onchain_data_parser
             .parse_custom_event_data(&order_placement_events)?;
@@ -389,31 +392,46 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
     }
 }
 
+/// Returns the timestamp of every block that emitted one of the events.
+///
+/// Logs usually carry their block's timestamp already, but the field is
+/// optional in the JSON-RPC spec and not every node returns it. Only blocks
+/// whose timestamp is missing get fetched.
+#[tracing::instrument(skip_all)]
 async fn get_block_numbers_of_events(
-    web3: &Web3,
+    provider: &AlloyProvider,
     events: &[(ContractEvent, Log)],
 ) -> Result<HashMap<u64, u32>> {
-    let mut event_block_numbers: Vec<u64> = events
-        .iter()
-        .map(|(_, log)| {
-            log.block_number
-                .ok_or_else(|| anyhow!("event without metadata"))
-        })
-        .collect::<Result<Vec<u64>>>()?;
-    event_block_numbers.dedup();
-    let futures = event_block_numbers
+    let mut timestamps = HashMap::new();
+    let mut missing_timestamps = HashSet::new();
+    for (_, log) in events {
+        let block_number = log
+            .block_number
+            .ok_or_else(|| anyhow!("event without metadata"))?;
+        let Some(timestamp) = log.block_timestamp else {
+            missing_timestamps.insert(block_number);
+            continue;
+        };
+        let timestamp = u32::try_from(timestamp)
+            .with_context(|| format!("block {block_number} timestamp is not u32"))?;
+        timestamps.insert(block_number, timestamp);
+    }
+    missing_timestamps.retain(|block_number| !timestamps.contains_key(block_number));
+    if missing_timestamps.is_empty() {
+        return Ok(timestamps);
+    }
+
+    tracing::debug!(blocks = ?missing_timestamps, "logs are missing block timestamps");
+    let futures = missing_timestamps
         .into_iter()
         .map(|block_number| async move {
-            let timestamp = timestamp_of_block_in_seconds(
-                &web3.provider,
-                BlockNumberOrTag::Number(block_number),
-            )
-            .await?;
-            Ok((block_number, timestamp))
+            let timestamp =
+                timestamp_of_block_in_seconds(provider, BlockNumberOrTag::Number(block_number))
+                    .await?;
+            anyhow::Ok((block_number, timestamp))
         });
-    let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =
-        stream::iter(futures).buffer_unordered(10).collect().await;
-    block_number_timestamp_pair.into_iter().collect()
+    timestamps.extend(future::try_join_all(futures).await?);
+    Ok(timestamps)
 }
 
 fn get_invalidation_events(
@@ -1469,5 +1487,57 @@ mod test {
                 .unwrap();
             assert_eq!(placement.placement_error, expected);
         }
+    }
+
+    fn event_log(block_number: u64, block_timestamp: Option<u64>) -> (ContractEvent, Log) {
+        let event = ContractEvent::OrderInvalidation(OrderInvalidation {
+            orderUid: Default::default(),
+        });
+        let log = Log {
+            block_number: Some(block_number),
+            block_timestamp,
+            ..Default::default()
+        };
+        (event, log)
+    }
+
+    #[tokio::test]
+    async fn block_timestamps_are_taken_from_logs() {
+        // An empty asserter fails every request, so any RPC call fails the
+        // test.
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(Asserter::new())
+            .erased();
+        let events = [event_log(1, Some(100)), event_log(2, Some(200))];
+
+        let timestamps = get_block_numbers_of_events(&provider, &events)
+            .await
+            .unwrap();
+
+        assert_eq!(timestamps, HashMap::from([(1, 100), (2, 200)]));
+    }
+
+    #[tokio::test]
+    async fn missing_block_timestamps_are_fetched_once_per_block() {
+        let asserter = Asserter::new();
+        let mut block: alloy::rpc::types::Block = Default::default();
+        block.header.inner.timestamp = 200;
+        asserter.push_success(&block);
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter)
+            .erased();
+        let events = [
+            event_log(1, Some(100)),
+            // timestamp already known from another log of the same block
+            event_log(1, None),
+            event_log(2, None),
+            event_log(2, None),
+        ];
+
+        let timestamps = get_block_numbers_of_events(&provider, &events)
+            .await
+            .unwrap();
+
+        assert_eq!(timestamps, HashMap::from([(1, 100), (2, 200)]));
     }
 }
