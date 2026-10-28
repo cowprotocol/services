@@ -846,6 +846,14 @@ fn preparation_step(
                     "the created sell token account must belong to the order owner",
                 ));
             }
+            // The rent of the sell account is never charged back, and
+            // closing the account refunds it to the owner, so the owner
+            // pays for it.
+            if payer != intent.owner {
+                return Err(PlacementError::InvalidTransaction(
+                    "the sell token account creation must be paid by the order owner",
+                ));
+            }
             Ok((WRAP_CREATE, Some((mint, token_program))))
         } else if let Asset::TokenProgram(buy) = &intent.buy
             && account == buy.token_account
