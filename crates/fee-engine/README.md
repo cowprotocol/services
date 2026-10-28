@@ -64,8 +64,8 @@ fee  = 'surplus(50, 1)'
 ```
 
 `tests/mainnet.toml` is the mainnet policy translated into rules. A fee
-decision is identified by `Match::rule.name()` plus the file version the
-host logs at startup; the pair resolves to the rule text in git.
+decision is identified by `Match::rule.name()`. To resolve that name to the
+rule text in git, the host must log which rules file it loaded.
 
 ## Names bound once
 
