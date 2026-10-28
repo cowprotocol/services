@@ -1,8 +1,9 @@
 # fee-engine
 
 Rule-based protocol fees. A `RuleSet` holds named lists and an ordered list
-of rules. For every order the rules run top to bottom. The first `when` that
-is true picks the fee.
+of rules. For every order every rule runs; the engine reports each rule whose
+`when` is true, in rule order, with its fee. The caller picks which matches
+to act on, e.g. the first.
 
 ## Rules
 
@@ -10,7 +11,7 @@ A rule is a `RuleDefinition`: a name and two [CEL](https://cel.dev)
 expressions. `when` must return a bool. `fee` must return one fee or a list
 of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
 list takes a reserved name or an expression does not compile. A rule whose
-expression fails at run time is skipped and logged at debug level.
+expression fails at run time is skipped and reported to the caller.
 
 ```
 name: Stablecoin swaps
@@ -128,8 +129,12 @@ matter.
 
 ## Outcome
 
-`Evaluator::evaluate` returns:
+`Evaluator::evaluate` returns an `Evaluation` with the matches and the
+diagnostics, and logs nothing itself:
 
-- `Some(Match { rule, fees })`: the first rule whose `when` held, and its
-  fees.
-- `None`: no rule matched, so the order pays no protocol fee.
+- `matched`: a `Match { rule, fees }` for every rule whose `when` held, in
+  rule order. Empty means no rule matched, so the order pays no protocol
+  fee. The caller decides which matches to act on.
+- `skipped`: every rule that failed to evaluate, in rule order, each with
+  the field (`when` or `fee`) and the `RuleError`. The caller decides how to
+  log or count them.

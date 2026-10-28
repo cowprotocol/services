@@ -2,8 +2,8 @@
 //!
 //! A [`RuleSet`] is an ordered list of rules plus named lists. A rule is a
 //! name, a CEL `when` condition and a CEL `fee` expression. For every order
-//! the rules run top to bottom and the first `when` that is true picks the
-//! fee.
+//! the engine reports each rule whose `when` is true, in rule order, with its
+//! fee; the caller picks which to act on.
 //!
 //! A rule sees `order` (the API order with decimal strings as doubles and
 //! hex in lowercase), `now` and every list. `README.md` documents every name a
@@ -15,7 +15,7 @@ mod order_view;
 mod rules;
 
 pub use {
-    evaluator::{Evaluator, Match},
+    evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
     rules::{CompileError, Field, Rule, RuleDefinition, RuleSet},
 };

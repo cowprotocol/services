@@ -4,7 +4,7 @@ use {
     alloy_primitives::{Address, U256, address},
     chrono::{TimeZone, Utc},
     configs::fee_factor::FeeFactor,
-    fee_engine::{Fee, Match, RuleDefinition, RuleSet},
+    fee_engine::{Evaluation, Fee, Match, RuleDefinition, RuleSet},
     model::order::{Order, OrderData, OrderMetadata},
     std::collections::BTreeMap,
 };
@@ -64,19 +64,32 @@ fn order(owner: Address, sell: Address, buy: Address) -> Order {
     }
 }
 
-fn matched(evaluation: Option<Match<'_>>) -> (String, Vec<Fee>) {
-    let Match { rule, fees } = evaluation.expect("expected a match");
-    (rule.name().to_owned(), fees)
+/// The names of the matched rules, and the fees of the first.
+fn matched(evaluation: Evaluation<'_>) -> (Vec<String>, Vec<Fee>) {
+    let names = evaluation
+        .matched
+        .iter()
+        .map(|Match { rule, .. }| rule.name().to_owned())
+        .collect();
+    let Match { fees, .. } = evaluation
+        .matched
+        .into_iter()
+        .next()
+        .expect("expected a match");
+    (names, fees)
 }
 
 #[test]
-fn picks_the_first_matching_rule_per_order() {
+fn reports_the_matching_rules_per_order() {
     let rules = rules();
     let user = address!("0x2222222222222222222222222222222222222222");
 
     let before_launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
     let (rule, fees) = matched(before_launch.evaluate(&order(user, USDC, USDT)));
-    assert_eq!(rule, "Stablecoin launch month");
+    assert_eq!(
+        rule,
+        ["Stablecoin launch month", "Stablecoin swaps", "Default"]
+    );
     assert_eq!(
         fees,
         vec![Fee::Volume {
@@ -86,7 +99,7 @@ fn picks_the_first_matching_rule_per_order() {
 
     let after_launch = rules.evaluator(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
     let (rule, fees) = matched(after_launch.evaluate(&order(user, USDC, USDT)));
-    assert_eq!(rule, "Stablecoin swaps");
+    assert_eq!(rule, ["Stablecoin swaps", "Default"]);
     assert_eq!(
         fees,
         vec![Fee::Volume {
@@ -95,7 +108,7 @@ fn picks_the_first_matching_rule_per_order() {
     );
 
     let (rule, fees) = matched(after_launch.evaluate(&order(user, WETH, USDT)));
-    assert_eq!(rule, "Default");
+    assert_eq!(rule, ["Default"]);
     assert_eq!(
         fees,
         vec![Fee::Surplus {
@@ -105,7 +118,7 @@ fn picks_the_first_matching_rule_per_order() {
     );
 
     let (rule, fees) = matched(after_launch.evaluate(&order(MAKER, USDC, USDT)));
-    assert_eq!(rule, "JIT makers");
+    assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
     assert_eq!(fees, vec![]);
 }
 
@@ -117,5 +130,5 @@ fn no_matching_rule_means_no_fee() {
     )
     .unwrap();
     let evaluator = rules.evaluator(Utc::now());
-    assert!(evaluator.evaluate(&Order::default()).is_none());
+    assert!(evaluator.evaluate(&Order::default()).matched.is_empty());
 }

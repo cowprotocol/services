@@ -4,17 +4,61 @@ use {
     crate::{
         fee::{self, Fee},
         order_view,
-        rules::{Rule, RuleSet},
+        rules::{Field, Rule, RuleSet},
     },
-    cel::{Context, Value},
+    cel::{Context, Value, objects::ValueType},
     model::order::Order,
+    std::fmt,
 };
 
-/// The first rule whose `when` held for an order, and its fees.
+/// What the rules said about one order. The evaluator only matches: the
+/// caller picks which matches to act on (e.g. the first) and how to report
+/// `skipped`.
+#[derive(Debug)]
+pub struct Evaluation<'r> {
+    /// Every rule whose `when` held, in rule order, with its fees. Empty means
+    /// no fee applies (check `skipped` to ensure no fees were ignored).
+    pub matched: Vec<Match<'r>>,
+    /// Rules that failed to evaluate, in rule order.
+    pub skipped: Vec<Skipped<'r>>,
+}
+
+/// A rule whose `when` held for an order, and its fees.
 #[derive(Debug)]
 pub struct Match<'r> {
     pub rule: &'r Rule,
     pub fees: Vec<Fee>,
+}
+
+/// A rule the evaluator passed over, and the expression that failed.
+#[derive(Debug)]
+pub struct Skipped<'r> {
+    pub rule: &'r Rule,
+    pub field: Field,
+    pub error: RuleError,
+}
+
+impl fmt::Display for Skipped<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "rule `{}`: `{}` {}",
+            self.rule.name(),
+            self.field,
+            self.error
+        )
+    }
+}
+
+/// Why an expression yielded no usable value for an order.
+#[derive(Debug, thiserror::Error)]
+pub enum RuleError {
+    #[error("failed: {0}")]
+    Execution(#[from] cel::ExecutionError),
+    #[error("returned {0}, not a bool")]
+    NotABool(ValueType),
+    #[error("{0}")]
+    NotAFee(String),
 }
 
 /// A [`RuleSet`] with `now` and its lists bound, ready to evaluate orders.
@@ -28,51 +72,48 @@ impl<'r> Evaluator<'r> {
         Self { rules, context }
     }
 
-    /// Runs the rules top to bottom against `order`. A rule that fails to
-    /// evaluate is skipped and logged at debug level, as this runs once per
-    /// order per rule. `None` means the order pays no protocol fee.
-    pub fn evaluate(&self, order: &Order) -> Option<Match<'r>> {
+    /// Runs every rule against `order`. A rule that fails to evaluate is
+    /// skipped and reported; it never blocks the others.
+    pub fn evaluate(&self, order: &Order) -> Evaluation<'r> {
         let mut context = self.context.new_inner_scope();
         context
             .add_variable("order", order_view::order_view(order))
             .expect("JSON converts to CEL values");
 
+        let mut evaluation = Evaluation {
+            matched: Vec::new(),
+            skipped: Vec::new(),
+        };
         for rule in self.rules.rules() {
-            let matched = match rule.when.execute(&context) {
-                Ok(Value::Bool(matched)) => matched,
-                Ok(other) => {
-                    tracing::debug!(
-                        rule = %rule.name(),
-                        returned = %other.type_of(),
-                        "fee rule `when` is not a bool, skipping rule"
-                    );
-                    false
-                }
-                Err(err) => {
-                    tracing::debug!(rule = %rule.name(), ?err, "fee rule `when` failed, skipping rule");
-                    false
-                }
-            };
-            if !matched {
-                continue;
+            match Self::evaluate_rule(rule, &context) {
+                Ok(Some(fees)) => evaluation.matched.push(Match { rule, fees }),
+                Ok(None) => {}
+                Err((field, error)) => evaluation.skipped.push(Skipped { rule, field, error }),
             }
-            let value = match rule.fee.execute(&context) {
-                Ok(value) => value,
-                Err(err) => {
-                    tracing::debug!(rule = %rule.name(), ?err, "fee rule `fee` failed, skipping rule");
-                    continue;
-                }
-            };
-            let fees = match fee::fees_from_value(&value) {
-                Ok(fees) => fees,
-                Err(err) => {
-                    tracing::debug!(rule = %rule.name(), %err, "fee rule `fee` is not a fee, skipping rule");
-                    continue;
-                }
-            };
-            return Some(Match { rule, fees });
         }
-        None
+        evaluation
+    }
+
+    /// `Ok(None)` when `when` is false, `Ok(Some(fees))` when it is true.
+    fn evaluate_rule(
+        rule: &Rule,
+        context: &Context<'_, '_>,
+    ) -> Result<Option<Vec<Fee>>, (Field, RuleError)> {
+        let matched = match rule.when.execute(context) {
+            Ok(Value::Bool(matched)) => matched,
+            Ok(other) => return Err((Field::When, RuleError::NotABool(other.type_of()))),
+            Err(err) => return Err((Field::When, err.into())),
+        };
+        if !matched {
+            return Ok(None);
+        }
+        let value = rule
+            .fee
+            .execute(context)
+            .map_err(|err| (Field::Fee, err.into()))?;
+        fee::fees_from_value(&value)
+            .map(Some)
+            .map_err(|message| (Field::Fee, RuleError::NotAFee(message)))
     }
 }
 
@@ -154,8 +195,12 @@ mod tests {
         Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap()
     }
 
-    fn matched<'r>(evaluation: &Option<Match<'r>>) -> (&'r str, Vec<Fee>) {
-        let Match { rule, fees } = evaluation.as_ref().expect("expected a match");
+    fn names<'r>(evaluation: &Evaluation<'r>) -> Vec<&'r str> {
+        evaluation.matched.iter().map(|m| m.rule.name()).collect()
+    }
+
+    fn matched<'r>(evaluation: &Evaluation<'r>) -> (&'r str, Vec<Fee>) {
+        let Match { rule, fees } = evaluation.matched.first().expect("expected a match");
         (rule.name(), fees.clone())
     }
 
@@ -166,15 +211,19 @@ mod tests {
     }
 
     #[test]
-    fn first_matching_rule_wins() {
+    fn reports_every_matching_rule_in_order() {
         let rules = rule_set(sample_rules());
         let evaluator = rules.evaluator(after_launch());
 
-        let (rule, fees) = matched(&evaluator.evaluate(&order(USDC, USDT)));
+        let evaluation = evaluator.evaluate(&order(USDC, USDT));
+        assert_eq!(names(&evaluation), ["Stablecoin swaps", "Default"]);
+        let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Stablecoin swaps");
         assert_eq!(fees, vec![volume(10.)]);
 
-        let (rule, fees) = matched(&evaluator.evaluate(&order(WETH, USDT)));
+        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        assert_eq!(names(&evaluation), ["Default"]);
+        let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Default");
         assert_eq!(
             fees,
@@ -186,7 +235,12 @@ mod tests {
 
         let mut jit = order(USDC, USDT);
         jit.metadata.owner = MAKER;
-        let (rule, fees) = matched(&evaluator.evaluate(&jit));
+        let evaluation = evaluator.evaluate(&jit);
+        assert_eq!(
+            names(&evaluation),
+            ["JIT makers", "Stablecoin swaps", "Default"]
+        );
+        let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "JIT makers");
         assert_eq!(fees, vec![]);
     }
@@ -206,20 +260,19 @@ mod tests {
         let mut jit = order(WETH, USDT);
         jit.metadata.owner = MAKER;
 
-        let outcome = |order: &Order| matched(&evaluator.evaluate(order)).0;
         let sequence: Vec<_> = [&large, &small, &jit, &small, &large, &jit]
             .into_iter()
-            .map(outcome)
+            .map(|order| names(&evaluator.evaluate(order)))
             .collect();
         assert_eq!(
             sequence,
             [
-                "Large",
-                "Small",
-                "JIT makers",
-                "Small",
-                "Large",
-                "JIT makers"
+                vec!["Large", "Small"],
+                vec!["Small"],
+                vec!["JIT makers", "Large", "Small"],
+                vec!["Small"],
+                vec!["Large", "Small"],
+                vec!["JIT makers", "Large", "Small"],
             ]
         );
     }
@@ -260,11 +313,40 @@ mod tests {
             rule("Not a bool", "order.sellAmount", "volume(1)"),
             rule("Broken fee", "true", r#"volume("ten")"#),
             rule("Default", "true", "volume(2)"),
+            rule("Broken below", "true", "volume(0.001)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
-        let (rule, fees) = matched(&evaluator.evaluate(&order(WETH, USDT)));
-        assert_eq!(rule, "Default");
+        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        assert_eq!(names(&evaluation), ["Default"]);
+        let (_, fees) = matched(&evaluation);
         assert_eq!(fees, vec![volume(2.)]);
+
+        let skipped: Vec<_> = evaluation
+            .skipped
+            .iter()
+            .map(|skipped| (skipped.rule.name(), skipped.field, skipped.to_string()))
+            .collect();
+        assert!(matches!(
+            skipped[..],
+            [
+                ("Broken when", Field::When, _),
+                ("Not a bool", Field::When, _),
+                ("Broken fee", Field::Fee, _),
+                ("Broken below", Field::Fee, _),
+            ]
+        ));
+        assert!(matches!(
+            evaluation.skipped[0].error,
+            RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
+        ));
+        assert!(matches!(
+            evaluation.skipped[1].error,
+            RuleError::NotABool(ValueType::Float)
+        ));
+        assert_eq!(
+            skipped[2].2,
+            "rule `Broken fee`: `fee` `volume` argument `bps` is string instead of a number"
+        );
     }
 
     #[test]
@@ -295,6 +377,8 @@ mod tests {
     fn no_rules_means_no_fee() {
         let rules = rule_set(vec![]);
         let evaluator = rules.evaluator(after_launch());
-        assert!(evaluator.evaluate(&order(WETH, USDT)).is_none());
+        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        assert!(evaluation.matched.is_empty());
+        assert!(evaluation.skipped.is_empty());
     }
 }
