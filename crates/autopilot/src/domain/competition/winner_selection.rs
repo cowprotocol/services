@@ -125,8 +125,7 @@ impl From<&domain::Auction> for winsel::AuctionContext {
                     let policies = order
                         .protocol_fees
                         .iter()
-                        .copied()
-                        .map(winsel::primitives::FeePolicy::from)
+                        .map(|fee| winsel::primitives::FeePolicy::from(fee.policy))
                         .collect();
                     (uid, policies)
                 })

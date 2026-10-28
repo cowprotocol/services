@@ -6,7 +6,7 @@ use {
 pub async fn insert_batch(
     ex: &mut PgConnection,
     auction_id: domain::auction::Id,
-    fee_policies: impl IntoIterator<Item = (domain::OrderUid, Vec<domain::fee::Policy>)>,
+    fee_policies: impl IntoIterator<Item = (domain::OrderUid, Vec<domain::fee::PolicyWithOrigin>)>,
 ) -> Result<(), sqlx::Error> {
     let fee_policies = fee_policies.into_iter().flat_map(|(order_uid, policies)| {
         policies
