@@ -257,9 +257,9 @@ impl Competition {
                     .inc();
                 // A failed or late fetch is no verdict on the solution: its
                 // cut falls back to the reserve's cluster-wide fees, which
-                // floor what the route's accounts pay, so the budget check
-                // stays sound and the trader keeps the difference. `settle`
-                // re-prices the route's accounts before the send.
+                // floor what the route's accounts pay, so the trader keeps
+                // the difference. A route whose own accounts price it over
+                // the budget passes here and is refused at `settle`.
                 let fees: &[RpcPrioritizationFee] = match &fees {
                     Ok(Ok(fees)) => fees,
                     Ok(Err(error)) => {
@@ -533,7 +533,9 @@ impl Competition {
     /// floor what any route's accounts pay, so a fill priced at the same
     /// units, see [`Self::network_fee_at`], pays at least this much, and a
     /// fill on the moved limit whose route pays more is dropped. The fees
-    /// also price the cut of a solution whose own fee read failed.
+    /// also price the cut of a solution whose own fee read failed: such a
+    /// fill is kept when its route pays more, and only `settle` checks the
+    /// route against the budget.
     fn network_fee_reserve(&self, fees: &[RpcPrioritizationFee]) -> u64 {
         self.priority_fee.estimate(fees, None).map_or_else(
             |_| self.priority_fee.max_network_fee(),
