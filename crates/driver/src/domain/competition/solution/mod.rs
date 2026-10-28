@@ -219,7 +219,7 @@ impl Solution {
             return Err(error::Solution::InvalidClearingPrices);
         }
 
-        // Apply the protocol fees to every fulfillment.
+        // Apply the protocol and partner fees to every fulfillment.
         let mut trades = Vec::with_capacity(solution.trades.len());
         for trade in solution.trades {
             match &trade {

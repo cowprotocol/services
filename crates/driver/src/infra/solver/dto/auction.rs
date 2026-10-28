@@ -154,8 +154,6 @@ pub fn new(
                     buy_token_destination: buy_token_destination_from_domain(
                         order.buy_token_balance.into(),
                     ),
-                    // The driver applies the fee policies itself.
-                    fee_policies: None,
                     penalty_cap_native: order.penalty_cap_native.map(Into::into),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
                     flashloan_hint: flashloan_hints.get(&order.uid).map(Into::into),
