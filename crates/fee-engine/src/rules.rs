@@ -5,6 +5,7 @@ use {
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
     model::order::{EthflowData, OnchainOrderData, Order, OrderMetadata, OrderQuote},
+    serde::Deserialize,
     std::{
         collections::{BTreeMap, HashSet},
         fmt,
@@ -13,7 +14,8 @@ use {
 };
 
 /// A rule as written: a name and two CEL expressions.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuleDefinition {
     pub name: String,
     pub when: String,

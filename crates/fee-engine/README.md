@@ -30,6 +30,43 @@ when: true
 fee:  surplus(50, 1)
 ```
 
+## The rules file
+
+`load_rules(source)` reads a set from TOML: `[lists]` holds named lists of
+strings and each `[[rule]]` table is a rule, tried in file order. Unknown
+keys anywhere are refused. The file goes through `RuleSet::new` and
+`RuleSet::preflight`; any failure refuses the whole file as a `LoadError`:
+`Toml` (does not parse, unknown key or missing field; names the line and
+column), `Rules` (a `CompileError`) or `Preflight` (a `PreflightError`).
+
+```toml
+[lists]
+stablecoins = [
+  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
+  "0xdAC17F958D2ee523a2206206994597C13D831ec7", # USDT
+]
+jit_makers = ["0x1111111111111111111111111111111111111111"]
+
+[[rule]]
+name = "JIT makers"
+when = 'order.owner in jit_makers'
+fee  = 'no_fee()'
+
+[[rule]]
+name = "Stablecoin swaps"
+when = 'order.sellToken in stablecoins && order.buyToken in stablecoins'
+fee  = 'volume(10)'
+
+[[rule]]
+name = "Default"
+when = 'true'
+fee  = 'surplus(50, 1)'
+```
+
+`tests/mainnet.toml` is the mainnet policy translated into rules. A fee
+decision is identified by `Match::rule.name()` plus the file version the
+host logs at startup; the pair resolves to the rule text in git.
+
 ## Names bound once
 
 `RuleSet::evaluator` binds the names in this section once. Each order is

@@ -7,15 +7,17 @@
 //!
 //! A rule sees `order` (the API order with decimal strings as doubles and
 //! hex in lowercase), `now` and every list. `README.md` documents every name a
-//! rule can use, with an example each.
+//! rule can use, with an example each, and the TOML file [`load_rules`] reads.
 
 mod evaluator;
 mod fee;
+mod loader;
 mod order_view;
 mod rules;
 
 pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
+    loader::{LoadError, load_rules},
     rules::{CompileError, Field, PreflightError, Rule, RuleDefinition, RuleSet},
 };
