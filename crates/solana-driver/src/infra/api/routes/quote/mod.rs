@@ -39,7 +39,7 @@ pub(crate) async fn quote(
 
     let competition = state.competition();
     let span = tracing::info_span!("/quote", solver = %competition.solver_name());
-    let solutions = competition
+    let (solutions, _) = competition
         .compute_solutions(&auction, None)
         .instrument(span.clone())
         .await?;

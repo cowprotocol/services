@@ -1094,10 +1094,11 @@ async fn solve_declares_the_larger_of_the_engines_estimate_and_the_simulated_uni
 
 /// The reserve fetch before the engine is asked takes the one queued fee
 /// answer. Of the two solutions' own fetches, one gets the `null` and fails,
-/// the other the mock's default. The failed one is dropped like a timed out
-/// one, and the solve answers with the other instead of failing whole.
+/// the other the mock's default. The failed one's cut is priced at the
+/// reserve's cluster-wide fees instead, same 10_000 micro-lamports here, so
+/// both solutions come back, cut the same way.
 #[tokio::test]
-async fn solve_drops_only_the_solution_whose_fee_fetch_fails() {
+async fn solve_prices_the_cut_at_the_reserve_fees_when_the_fee_fetch_fails() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000"), (2, "3000")])).await;
     let (solver, _) = solver_with_fee(engine, 0).await;
     let mocks = MocksMap::from_iter([
@@ -1113,7 +1114,9 @@ async fn solve_drops_only_the_solution_whose_fee_fetch_fails() {
     let addr = spawn_server_with_mocks(vec![solver], mocks).await;
 
     let body = call_solve_with(addr, solve_request_priced_for_a_cut_of(100)).await;
-    assert_eq!(response_ids(&body).len(), 1);
+    assert_eq!(response_ids(&body), vec![1, 2]);
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2900");
+    assert_eq!(body["solutions"][1]["orders"][uid()]["executedBuy"], "2900");
 }
 
 /// A route paying exactly the 2000 limit undercuts it once the cut applies
