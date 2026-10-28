@@ -178,6 +178,12 @@ impl Competition {
         let orders = orders_by_uid(&auction.orders);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
+        let count_solution = |outcome: &str| {
+            metrics()
+                .solve_solutions
+                .with_label_values(&[outcome, self.solver.name()])
+                .inc()
+        };
         for (mut solution, (verdict, elapsed, fees)) in solutions.into_iter().zip(simulations) {
             metrics()
                 .solve_simulations
@@ -216,6 +222,7 @@ impl Competition {
                         window_ms,
                         "dropping solution, its settlement fails in simulation"
                     );
+                    count_solution(error_label(error));
                     continue;
                 }
                 Err(error) => tracing::info!(
@@ -235,6 +242,15 @@ impl Competition {
                 solution.cu_estimate = Some(measured.max(solution.cu_estimate.unwrap_or(0)));
             }
             if let Some(fees) = fees {
+                let outcome = match &fees {
+                    Ok(Ok(_)) => "read",
+                    Ok(Err(error)) => error_label(error),
+                    Err(_) => "timed_out",
+                };
+                metrics()
+                    .solve_fee_reads
+                    .with_label_values(&[outcome, self.solver.name()])
+                    .inc();
                 // A failed or late fetch is no verdict on the solution: its
                 // cut falls back to the reserve's cluster-wide fees, which
                 // floor what the route's accounts pay, so the budget check
@@ -279,6 +295,7 @@ impl Competition {
                             %reason,
                             "dropping solution, its network fee is over budget"
                         );
+                        count_solution("priority_fee_too_high");
                         continue;
                     }
                 };
@@ -290,6 +307,7 @@ impl Competition {
                         %reason,
                         "dropping solution the execution costs cannot be cut from"
                     );
+                    count_solution("cut_rejected");
                     continue;
                 }
             }
@@ -303,6 +321,7 @@ impl Competition {
                     solution: solution.clone(),
                 },
             );
+            count_solution("kept");
             kept.push(solution);
         }
         Ok(kept)
@@ -1025,6 +1044,15 @@ struct Metrics {
     /// Solve-time settlement simulations by outcome and solver.
     #[metric(labels("outcome", "solver"))]
     solve_simulations: prometheus::IntCounterVec,
+    /// Solve-time solutions by outcome and solver: kept, or the reason they
+    /// were dropped.
+    #[metric(labels("outcome", "solver"))]
+    solve_solutions: prometheus::IntCounterVec,
+    /// Solve-time reads of a solution's route prioritization fees by outcome
+    /// and solver. A failed or timed out read prices the cut at the
+    /// reserve's fees instead.
+    #[metric(labels("outcome", "solver"))]
+    solve_fee_reads: prometheus::IntCounterVec,
     /// Serialized settlement transaction size in bytes. The network rejects a
     /// v1 transaction over 4096 bytes.
     #[metric(buckets(1000., 1500., 2000., 2500., 3000., 3500., 4096.))]
