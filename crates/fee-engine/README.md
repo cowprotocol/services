@@ -13,12 +13,12 @@ of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
 list takes a reserved name or an expression does not compile. A rule whose
 expression fails at run time is skipped and reported to the caller.
 
-`RuleSet::preflight` is a separate pass: it runs both expressions of every
-rule against a sample order (a default order with every optional field
-present) and reports every `when` that does not return a bool and every
-`fee` that does not return valid fees, so one run shows all the mistakes.
-This catches a misspelt name or a bad fee argument such as `volume(0.001)`
-at load time instead of on the first order.
+`RuleSet::validate_on_sample_order` is a separate pass: it runs both
+expressions of every rule against a sample order (a default order with
+every optional field present) and reports every `when` that does not return
+a bool and every `fee` that does not return valid fees, so one run shows all
+the mistakes. This catches a misspelt name or a bad fee argument such as
+`volume(0.001)` at load time instead of on the first order.
 
 A ternary, `&&` or `||` runs only what the sample order reaches. The
 sample is out of market, so the bad argument in `order.inMarket ?
@@ -41,10 +41,10 @@ fee:  surplus(50, 1)
 strings and each `[[rule]]` table is a rule, tried in file order. Unknown
 top-level and rule keys are refused; any key under `[lists]` is a list
 name, so a list that no rule names loads without error. The file goes
-through `RuleSet::new` and `RuleSet::preflight`; any failure refuses the
-whole file as a `LoadError`: `Toml` (does not parse, unknown key or missing
-field; names the line and column), `Rules` (a `CompileError`) or
-`Preflight` (every `PreflightError`).
+through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
+refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown key
+or missing field; names the line and column), `Rules` (a `CompileError`) or
+`SampleOrder` (every `SampleOrderError`).
 
 ```toml
 [lists]
@@ -189,8 +189,8 @@ quote. Execution state (`executed*`, `status`, `invalidated`,
 `availableBalance`, `gasCost`), settlement fields (`signature`,
 `interactions`, `settlementContract`) and legacy fields (`class`,
 `isLiquidityOrder`) are not in the view. An unset `receiver` is the zero
-address. Other optional fields are absent when unset, not `null`: test them
-with `has(order.quote)`.
+address. Other optional fields, and `fastPath` when false, are absent, not
+`null`: test them with `has(order.quote)`.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21

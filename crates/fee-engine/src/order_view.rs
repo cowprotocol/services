@@ -36,7 +36,7 @@ pub(crate) fn order_view(Order { order, in_market }: Order) -> Value {
         "validFrom": meta.valid_from,
         "appData": hex(&data.app_data.0),
         "fullAppData": meta.full_app_data,
-        "fastPath": meta.fast_path,
+        "fastPath": meta.fast_path.then_some(true),
         "inMarket": in_market,
         "quote": meta.quote.as_ref().map(|quote| json!({
             "sellAmount": number(quote.sell_amount),
@@ -137,7 +137,7 @@ mod tests {
         assert!(view.get("class").is_none());
         assert_eq!(view["signingScheme"], "eip712");
         assert_eq!(view["appData"], format!("0x{}", "0".repeat(64)));
-        assert_eq!(view["fastPath"], false);
+        assert!(view.get("fastPath").is_none());
         assert!(view.get("quote").is_none());
         assert!(view.get("fullAppData").is_none());
     }
@@ -167,6 +167,7 @@ mod tests {
                 onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
                 valid_from: Some(4),
                 full_app_data: Some("123".to_owned()),
+                fast_path: true,
                 ..Default::default()
             },
             ..Default::default()

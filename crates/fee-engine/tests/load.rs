@@ -117,10 +117,10 @@ fn refuses_bad_files() {
         error("[lists]\norder = []"),
         LoadError::Rules(CompileError::ReservedList { .. })
     ));
-    let LoadError::Preflight(errors) =
+    let LoadError::SampleOrder(errors) =
         error(&(rule("x", "false", "volume(0.001)") + &rule("y", "order.sellAmount", "no_fee()")))
     else {
-        panic!("expected a preflight error");
+        panic!("expected a sample order error");
     };
     let failed: Vec<_> = errors
         .iter()

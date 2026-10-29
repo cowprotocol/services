@@ -21,5 +21,5 @@ pub use {
     fee::Fee,
     loader::{LoadError, load_rules},
     order_view::Order,
-    rules::{CompileError, Field, PreflightError, Rule, RuleDefinition, RuleSet},
+    rules::{CompileError, Field, Rule, RuleDefinition, RuleSet, SampleOrderError},
 };
