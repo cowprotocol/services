@@ -246,21 +246,13 @@ mod tests {
         let rules = rule_set(sample_rules());
         let evaluator = rules.evaluator(after_launch());
 
-        let evaluation = evaluator.evaluate(Order {
-            order: &order(USDC, USDT),
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&order(USDC, USDT), false));
         assert_eq!(names(&evaluation), ["Stablecoin swaps", "Default"]);
         let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Stablecoin swaps");
         assert_eq!(fees, vec![volume(10.)]);
 
-        let evaluation = evaluator.evaluate(Order {
-            order: &order(WETH, USDT),
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&order(WETH, USDT), false));
         assert_eq!(names(&evaluation), ["Default"]);
         let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Default");
@@ -274,11 +266,7 @@ mod tests {
 
         let mut jit = order(USDC, USDT);
         jit.metadata.owner = MAKER;
-        let evaluation = evaluator.evaluate(Order {
-            order: &jit,
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&jit, false));
         assert_eq!(
             names(&evaluation),
             ["JIT makers", "Stablecoin swaps", "Default"]
@@ -305,13 +293,7 @@ mod tests {
 
         let sequence: Vec<_> = [&large, &small, &jit, &small, &large, &jit]
             .into_iter()
-            .map(|order| {
-                names(&evaluator.evaluate(Order {
-                    order,
-                    app_data: &Default::default(),
-                    in_market: false,
-                }))
-            })
+            .map(|order| names(&evaluator.evaluate(Order::without_app_data(order, false))))
             .collect();
         assert_eq!(
             sequence,
@@ -330,11 +312,8 @@ mod tests {
     fn now_is_the_evaluator_time() {
         let rules = rule_set(sample_rules());
         let launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
-        let (rule, fees) = matched(&launch.evaluate(Order {
-            order: &order(USDC, USDT),
-            app_data: &Default::default(),
-            in_market: false,
-        }));
+        let (rule, fees) =
+            matched(&launch.evaluate(Order::without_app_data(&order(USDC, USDT), false)));
         assert_eq!(rule, "Stablecoin launch month");
         assert_eq!(fees, vec![volume(1.)]);
     }
@@ -355,11 +334,8 @@ mod tests {
         )
         .unwrap();
         let evaluator = rules.evaluator(after_launch());
-        let (rule, _) = matched(&evaluator.evaluate(Order {
-            order: &order(USDC, WETH),
-            app_data: &Default::default(),
-            in_market: false,
-        }));
+        let (rule, _) =
+            matched(&evaluator.evaluate(Order::without_app_data(&order(USDC, WETH), false)));
         assert_eq!(rule, "Stable sells");
     }
 
@@ -373,11 +349,7 @@ mod tests {
             rule("Broken below", "true", "volume(0.001)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
-        let evaluation = evaluator.evaluate(Order {
-            order: &order(WETH, USDT),
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&order(WETH, USDT), false));
         assert_eq!(names(&evaluation), ["Default"]);
         let (_, fees) = matched(&evaluation);
         assert_eq!(fees, vec![volume(2.)]);
@@ -418,11 +390,8 @@ mod tests {
             "volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e5)))",
         )]);
         let evaluator = rules.evaluator(after_launch());
-        let (_, fees) = matched(&evaluator.evaluate(Order {
-            order: &order(WETH, USDT),
-            app_data: &Default::default(),
-            in_market: false,
-        }));
+        let (_, fees) =
+            matched(&evaluator.evaluate(Order::without_app_data(&order(WETH, USDT), false)));
         assert_eq!(fees, vec![volume(10.)]);
     }
 
@@ -434,11 +403,8 @@ mod tests {
             "volume(1)",
         )]);
         let evaluator = rules.evaluator(after_launch());
-        let (rule, _) = matched(&evaluator.evaluate(Order {
-            order: &order(USDC, WETH),
-            app_data: &Default::default(),
-            in_market: false,
-        }));
+        let (rule, _) =
+            matched(&evaluator.evaluate(Order::without_app_data(&order(USDC, WETH), false)));
         assert_eq!(rule, "Checksummed literal");
     }
 
@@ -451,22 +417,14 @@ mod tests {
         ]);
         let evaluator = rules.evaluator(after_launch());
 
-        let evaluation = evaluator.evaluate(Order {
-            order: &order(WETH, USDT),
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&order(WETH, USDT), false));
         assert_eq!(names(&evaluation), ["Default"]);
         assert!(evaluation.skipped.is_empty());
 
         let mut quoted = order(WETH, USDT);
         quoted.metadata.quote = Some(Default::default());
         quoted.metadata.fast_path = true;
-        let evaluation = evaluator.evaluate(Order {
-            order: &quoted,
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&quoted, false));
         assert_eq!(names(&evaluation), ["Quoted", "Fast path", "Default"]);
     }
 
@@ -490,11 +448,7 @@ mod tests {
         let mut onchain = order(WETH, USDT);
         onchain.metadata.ethflow_data = Some(Default::default());
         onchain.metadata.onchain_order_data = Some(Default::default());
-        let evaluation = evaluator.evaluate(Order {
-            order: &onchain,
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&onchain, false));
         assert_eq!(names(&evaluation), ["Default"]);
         assert!(evaluation.skipped.is_empty());
 
@@ -506,11 +460,7 @@ mod tests {
             placement_error: Some(OnchainOrderPlacementError::InvalidQuote),
             ..Default::default()
         });
-        let evaluation = evaluator.evaluate(Order {
-            order: &onchain,
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&onchain, false));
         assert_eq!(
             names(&evaluation),
             ["Refunded", "Placement error", "Default"]
@@ -527,11 +477,7 @@ mod tests {
         let evaluator = rules.evaluator(after_launch());
 
         let order = order(WETH, USDT);
-        let evaluation = evaluator.evaluate(Order {
-            order: &order,
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&order, false));
         assert!(evaluation.matched.is_empty());
         assert!(evaluation.skipped.is_empty());
 
@@ -557,19 +503,11 @@ mod tests {
         let evaluator = rules.evaluator(after_launch());
         let order = order(WETH, USDT);
         assert_eq!(
-            names(&evaluator.evaluate(Order {
-                order: &order,
-                app_data: &Default::default(),
-                in_market: true
-            })),
+            names(&evaluator.evaluate(Order::without_app_data(&order, true))),
             ["Inside"]
         );
         assert_eq!(
-            names(&evaluator.evaluate(Order {
-                order: &order,
-                app_data: &Default::default(),
-                in_market: false
-            })),
+            names(&evaluator.evaluate(Order::without_app_data(&order, false))),
             ["Outside"]
         );
     }
@@ -578,11 +516,7 @@ mod tests {
     fn no_rules_means_no_fee() {
         let rules = rule_set(vec![]);
         let evaluator = rules.evaluator(after_launch());
-        let evaluation = evaluator.evaluate(Order {
-            order: &order(WETH, USDT),
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let evaluation = evaluator.evaluate(Order::without_app_data(&order(WETH, USDT), false));
         assert!(evaluation.matched.is_empty());
         assert!(evaluation.skipped.is_empty());
     }

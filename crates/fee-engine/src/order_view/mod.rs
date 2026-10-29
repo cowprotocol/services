@@ -20,6 +20,24 @@ pub struct Order<'a> {
     pub in_market: bool,
 }
 
+#[cfg(test)]
+impl<'a> Order<'a> {
+    /// `order` with no app data.
+    pub(crate) fn without_app_data(order: &'a model::order::Order, in_market: bool) -> Self {
+        static NO_APP_DATA: AppData = AppData {
+            app_code: None,
+            signer: None,
+            replaced_order: None,
+            flashloan: None,
+        };
+        Self {
+            order,
+            app_data: &NO_APP_DATA,
+            in_market,
+        }
+    }
+}
+
 /// The order as rules see it: every field a rule can read, with amounts and
 /// prices as doubles and hex in lowercase. Unset optional fields are absent,
 /// not `null`. Execution state, settlement and legacy fields are left out.
@@ -138,11 +156,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(Order {
-            order: &order,
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let view = order_view(Order::without_app_data(&order, false));
 
         assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
         assert_eq!(view["sellAmount"], 1e21);
@@ -340,11 +354,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(Order {
-            order: &order,
-            app_data: &Default::default(),
-            in_market: false,
-        });
+        let view = order_view(Order::without_app_data(&order, false));
 
         assert_eq!(
             view["ethflowData"],
