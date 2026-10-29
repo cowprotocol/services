@@ -3,7 +3,7 @@
 use {
     alloy_primitives::{Address, U256, address},
     chrono::Utc,
-    fee_engine::{CompileError, Fee, Field, LoadError, Match, load_rules},
+    fee_engine::{AppData, CompileError, Fee, Field, LoadError, Match, load_rules},
     model::order::{Order, OrderData},
 };
 
@@ -24,6 +24,21 @@ fn order(sell: Address, buy: Address) -> Order {
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+/// `order` with no app data.
+fn without_app_data(order: &Order, in_market: bool) -> fee_engine::Order<'_> {
+    static NO_APP_DATA: AppData = AppData {
+        app_code: None,
+        signer: None,
+        replaced_order: None,
+        flashloan: None,
+    };
+    fee_engine::Order {
+        order,
+        app_data: &NO_APP_DATA,
+        in_market,
     }
 }
 
@@ -53,10 +68,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     let rules = load_rules(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
 
-    let evaluation = evaluator.evaluate(fee_engine::Order {
-        order: &order(USDC, USDT),
-        in_market: false,
-    });
+    let evaluation = evaluator.evaluate(without_app_data(&order(USDC, USDT), false));
     assert!(evaluation.skipped.is_empty());
     let Match { rule, fees } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Stablecoin bucket: 0.3 bps");
@@ -67,20 +79,14 @@ fn mainnet_sample_lists_reach_the_rules() {
 
     let mut quoted = order(USDC, USDT);
     quoted.metadata.quote = Some(Default::default());
-    let evaluation = evaluator.evaluate(fee_engine::Order {
-        order: &quoted,
-        in_market: true,
-    });
+    let evaluation = evaluator.evaluate(without_app_data(&quoted, true));
     let Match { fees, .. } = evaluation.matched.first().unwrap();
     assert!(matches!(
         fees[..],
         [Fee::PriceImprovement { .. }, Fee::Volume { .. }]
     ));
 
-    let evaluation = evaluator.evaluate(fee_engine::Order {
-        order: &order(WETH, USDC),
-        in_market: false,
-    });
+    let evaluation = evaluator.evaluate(without_app_data(&order(WETH, USDC), false));
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
 }

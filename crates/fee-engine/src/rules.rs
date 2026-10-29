@@ -1,8 +1,8 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::{Evaluator, evaluator::RuleError, fee, order_view},
-    alloy_primitives::U256,
+    crate::{AppData, Evaluator, Flashloan, evaluator::RuleError, fee, order_view},
+    alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
     model::order::{
@@ -183,6 +183,7 @@ impl RuleSet {
             .evaluator(Utc::now())
             .evaluate_all_expressions(crate::Order {
                 order: &sample_order(),
+                app_data: &sample_app_data(),
                 in_market: false,
             })
             .into_iter()
@@ -213,6 +214,22 @@ impl RuleSet {
         }
         context.add_variable_from_value("now", now.fixed_offset());
         Evaluator::new(self, context)
+    }
+}
+
+/// App data with every field set.
+pub(crate) fn sample_app_data() -> AppData {
+    AppData {
+        app_code: Some("sample".to_owned()),
+        signer: Some(Address::ZERO),
+        replaced_order: Some([0; 56]),
+        flashloan: Some(Flashloan {
+            liquidity_provider: Address::ZERO,
+            protocol_adapter: Address::ZERO,
+            receiver: Address::ZERO,
+            token: Address::ZERO,
+            amount: U256::ONE,
+        }),
     }
 }
 
@@ -375,6 +392,7 @@ mod tests {
                 "order.onchainOrderData.placementError == 'other'",
                 "no_fee()",
             ),
+            rule("App code", "order.appData.appCode == 'sample'", "no_fee()"),
             rule(
                 "Ratio",
                 "order.quote.buyAmount / order.quote.sellAmount > 0.0",

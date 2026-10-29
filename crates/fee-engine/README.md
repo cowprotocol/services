@@ -172,10 +172,10 @@ order.
 
 ### `order`
 
-The fields of the API order that a fee can depend on, under the API names,
-built field by field in `order_view.rs`. Amounts and prices are doubles and
-hex is lowercase. An order with every field set looks like this (hashes
-shortened):
+The fields of the API order that a fee can depend on, under the API names
+except for the app data (see `order.appData`), built field by field in
+`order_view/mod.rs`. Amounts and prices are doubles and hex is lowercase. An
+order with every field set looks like this (hashes shortened):
 
 ```json
 {
@@ -195,7 +195,20 @@ shortened):
   "signingScheme": "eip712",
   "validTo": 1793284991,
   "validFrom": 1793281391,
-  "appData": "0x3a8f…09bc",
+  "appData": {
+    "appCode": "CoW Swap",
+    "metadata": {
+      "signer": "0x40a50cf069e992aa4536211b23f286ef88752187",
+      "replacedOrder": { "uid": "0x9b4c…e1f0" },
+      "flashloan": {
+        "liquidityProvider": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+        "protocolAdapter": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
+        "receiver": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
+        "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "amount": 2.5e9
+      }
+    }
+  },
   "fastPath": false,
   "inMarket": true,
   "quote": {
@@ -226,10 +239,9 @@ check it: the host must pass false when the order has no quote.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
-`settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
-app-data document (`fullAppData`) are not in the view. An unset `receiver`
-is the zero address. Other optional fields are absent when unset, not
-`null`: test them with `has(order.quote)`.
+`settlementContract`) and legacy fields (`class`, `isLiquidityOrder`) are
+not in the view. An unset `receiver` is the zero address. Other optional
+fields are absent when unset, not `null`: test them with `has(order.quote)`.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
@@ -239,6 +251,27 @@ fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
 A hex literal compares equal to the view only in lowercase: write it so, or
 call `lowerAscii()` on it. Addresses belong in lists, where case does not
 matter.
+
+### `order.appData`
+
+`Order::app_data`: the app data a fee can depend on, which the host copies
+from the protocol's parsed document, plus its `appCode`. The engine reads no
+app-data text. In the order the API returns, `appData` is the hash and
+`fullAppData` is the document as text; the view has the parsed document as
+`appData`, and no hash.
+
+The order above shows every field. No other key of the document is here,
+hooks, wrappers and partner fees included; the host appends the partner
+fees after the rule's fees. The host passes `AppData::default()` when the
+order has no document or the protocol cannot parse it.
+
+`metadata.enableFastPath` and `metadata.validFrom` are not here: read
+`order.fastPath` and `order.validFrom`, which hold the values in effect.
+
+```
+when: has(order.appData.appCode) && order.appData.appCode == "CoW Swap"
+when: has(order.appData.metadata.flashloan)
+```
 
 ## Outcome
 

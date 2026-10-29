@@ -20,6 +20,6 @@ pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
     loader::{LoadError, load_rules},
-    order_view::Order,
+    order_view::{AppData, Flashloan, Order},
     rules::{CompileError, Field, Rule, RuleDefinition, RuleSet, SampleOrderError},
 };
