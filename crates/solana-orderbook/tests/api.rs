@@ -1160,9 +1160,8 @@ fn state_pda() -> solana_sdk::pubkey::Pubkey {
 
 /// The full whitelisted preparation prefix for a native-sell intent: create
 /// the wSOL account (the owner pays its rent, as placement requires), fund
-/// it, sync it, delegate it, create the buy account.
+/// it, sync it, delegate it.
 fn full_preparations(
-    funder: solana_sdk::pubkey::Pubkey,
     owner: solana_sdk::pubkey::Pubkey,
     intent: &cow_settlement_interface::data::intent::OrderIntent,
 ) -> Vec<solana_sdk::instruction::Instruction> {
@@ -1188,12 +1187,6 @@ fn full_preparations(
             1_000,
         )
         .unwrap(),
-        spl_associated_token_account_interface::instruction::create_associated_token_account(
-            &funder,
-            &owner,
-            &buy_mint(intent),
-            &spl_token_interface::ID,
-        ),
     ]
 }
 
@@ -1297,16 +1290,15 @@ fn buy_mint(
     buy.mint
 }
 
-/// A sponsored creation transaction with an arbitrary SPL sell and only the
-/// buy-account creation in front of `CreateOrder`.
+/// A sponsored creation transaction with an arbitrary SPL sell and no
+/// preparation steps in front of `CreateOrder`.
 fn sponsored_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
     sign: bool,
 ) -> String {
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    creation_tx(funder, owner, &intent, vec![destination], sign)
+    creation_tx(funder, owner, &intent, vec![], sign)
 }
 
 /// A well-formed bundle whose priority fee is above the sponsored ceiling.
@@ -1317,12 +1309,11 @@ fn overpriced_creation_tx(
     owner: &solana_sdk::signer::keypair::Keypair,
 ) -> String {
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
     creation_tx_wrapped(
         funder,
         owner,
         &intent,
-        vec![destination],
+        vec![],
         vec![
             solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
                 500_000,
@@ -1343,10 +1334,7 @@ fn v1_creation_tx(
 ) -> String {
     use solana_sdk::message::{VersionedMessage, v1};
     let intent = sponsored_intent(owner.pubkey(), false);
-    let instructions = [
-        destination_creation(funder, owner.pubkey(), &intent),
-        create_order(funder, owner.pubkey(), &intent),
-    ];
+    let instructions = [create_order(funder, owner.pubkey(), &intent)];
     let message = VersionedMessage::V1(
         v1::Message::try_compile_with_config(
             &funder,
@@ -1397,12 +1385,11 @@ fn lighthouse_memory_creation_tx(
     owner: &solana_sdk::signer::keypair::Keypair,
 ) -> String {
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
     creation_tx_wrapped(
         funder,
         owner,
         &intent,
-        vec![destination],
+        vec![],
         // Discriminator 0 is `MemoryWrite`.
         vec![lighthouse(0, owner.pubkey())],
         true,
@@ -1503,8 +1490,7 @@ async fn create_order_rejects_invalid_submissions() {
         (expiring, "InsufficientValidTo"),
         (distant, "ExcessiveValidTo"),
     ] {
-        let destination = destination_creation(funder, owner.pubkey(), &intent);
-        let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
             (status, kind.as_str()),
@@ -1519,8 +1505,7 @@ async fn create_order_rejects_invalid_submissions() {
         - cow_settlement_interface::data::intent::EncodedOrderIntent::SIZE
         + cow_settlement_interface::data::intent::fixtures::SELL_AMOUNT_OFFSET;
     create.data[sell_amount..sell_amount + size_of::<u64>()].fill(0);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = signed_creation_tx(funder, &owner, vec![destination, create], true);
+    let transaction = signed_creation_tx(funder, &owner, vec![create], true);
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
         (status, kind.as_str()),
@@ -1567,12 +1552,10 @@ async fn create_order_checks_the_app_data() {
     let zero_hex = format!("0x{}", "00".repeat(32));
     let mut intent = sponsored_intent(owner.pubkey(), false);
     intent.app_data = hash;
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let mut zero_intent = sponsored_intent(owner.pubkey(), false);
     zero_intent.app_data = [0; 32];
-    let destination = destination_creation(funder, owner.pubkey(), &zero_intent);
-    let zero_transaction = creation_tx(funder, &owner, &zero_intent, vec![destination], true);
+    let zero_transaction = creation_tx(funder, &owner, &zero_intent, vec![], true);
     let body = |transaction: &str, app_data: Option<&str>, app_data_hash: Option<&str>| {
         let mut body = serde_json::json!({ "partiallySignedTx": transaction });
         if let Some(app_data) = app_data {
@@ -1711,12 +1694,14 @@ async fn create_order_checks_the_native_buy_wallet() {
     }
 }
 
-/// Without the creation step in the bundle, the buy token account must
-/// already receive the buy mint, or be the owner's associated token account
-/// under the buy mint's token program, which the settlement creates when
-/// missing. A custom receiver's missing account needs the creation step.
+/// The buy token account must be one the settlement can pay out to as is,
+/// or the owner's associated token account under the buy mint's token
+/// program, which the settlement creates when missing. A custom receiver's
+/// missing account cannot be placed. A passing order moves on to the
+/// blockhash check. The lookup answers the sell and buy mints, the Clock
+/// sysvar, then the buy token account.
 #[tokio::test]
-async fn create_order_checks_an_uncreated_buy_token_account() {
+async fn create_order_checks_the_buy_token_account() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let receiver = solana_sdk::pubkey::Pubkey::new_unique();
@@ -1730,7 +1715,6 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
             token_account: ata(receiver, mint),
         },
     );
-    let create_receiver_account = destination_creation(funder, receiver, &paid_to_receiver);
 
     let receiver_token_account = solana_testlib::token_account_json(&mint, &receiver);
     let lamports_only = solana_testlib::account_json(&solana_sdk::account::Account {
@@ -1752,18 +1736,16 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
     let spl_token = spl_token_interface::ID;
     let token_2022 = spl_token_2022_interface::ID;
 
-    for (name, intent, preparations, accounts, expected) in [
+    for (name, intent, accounts, expected) in [
         (
             "owner's missing ATA: the settlement creates it",
             &paid_to_owner,
-            vec![],
             lookup(spl_token, None),
             PASSED_ACCOUNT_CHECKS,
         ),
         (
             "owner's ATA holding only lamports: the idempotent create allocates over it",
             &paid_to_owner,
-            vec![],
             lookup(spl_token, Some(lamports_only)),
             PASSED_ACCOUNT_CHECKS,
         ),
@@ -1771,28 +1753,18 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
             "owner's SPL Token ATA on a Token-2022 mint: the settlement would create the \
              Token-2022 one",
             &paid_to_owner,
-            vec![],
             lookup(token_2022, None),
             "InvalidTransaction",
         ),
         (
-            "receiver's missing ATA without the creation step",
+            "receiver's missing ATA: nothing can derive whose wallet to create it for",
             &paid_to_receiver,
-            vec![],
             lookup(spl_token, None),
             "InvalidTransaction",
         ),
         (
-            "receiver's missing ATA with the creation step",
-            &paid_to_receiver,
-            vec![create_receiver_account],
-            lookup(spl_token, None),
-            PASSED_ACCOUNT_CHECKS,
-        ),
-        (
             "receiver's existing token account",
             &paid_to_receiver,
-            vec![],
             lookup(spl_token, Some(receiver_token_account)),
             PASSED_ACCOUNT_CHECKS,
         ),
@@ -1803,12 +1775,131 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
             sponsored_mocks(false, accounts),
         )
         .await;
-        let transaction = creation_tx(funder, &owner, intent, preparations, true);
+        let transaction = creation_tx(funder, &owner, intent, vec![], true);
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
             (status, kind.as_str()),
             (reqwest::StatusCode::BAD_REQUEST, expected),
             "{name}"
+        );
+    }
+}
+
+/// A bundle that creates the buy token account is rejected, whoever pays
+/// for it, whichever creation variant and token program it uses, whoever
+/// owns the account, and wherever it sits in the template. Validation
+/// rejects it, so no RPC probe is consumed.
+#[tokio::test]
+async fn create_order_rejects_creating_the_buy_token_account() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::new_unique();
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+    let owned = sponsored_intent(owner.pubkey(), false);
+    let mint = buy_mint(&owned);
+    let with_buy_account = |token_account| {
+        let mut intent = sponsored_intent(owner.pubkey(), false);
+        intent.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+            cow_settlement_interface::data::intent::TokenAsset {
+                mint,
+                token_account,
+            },
+        );
+        intent
+    };
+    let received = with_buy_account(ata(receiver, mint));
+    let token_2022 = with_buy_account(
+        spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+            &owner.pubkey(),
+            &mint,
+            &spl_token_2022_interface::ID,
+        ),
+    );
+    let approve = spl_token_interface::instruction::approve(
+        &spl_token_interface::ID,
+        &owned.sell.token_account,
+        &state_pda(),
+        &owner.pubkey(),
+        &[],
+        owned.sell_amount.get(),
+    )
+    .unwrap();
+
+    for (index, (intent, preparations)) in [
+        // Paid by the funder.
+        (&owned, vec![destination_creation(funder, owner.pubkey(), &owned)]),
+        // Paid by the owner.
+        (
+            &owned,
+            vec![
+                spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                    &owner.pubkey(),
+                    &owner.pubkey(),
+                    &mint,
+                    &spl_token_interface::ID,
+                ),
+            ],
+        ),
+        // The non-idempotent creation.
+        (
+            &owned,
+            vec![
+                spl_associated_token_account_interface::instruction::create_associated_token_account(
+                    &funder,
+                    &owner.pubkey(),
+                    &mint,
+                    &spl_token_interface::ID,
+                ),
+            ],
+        ),
+        // Under Token-2022.
+        (
+            &token_2022,
+            vec![
+                spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                    &funder,
+                    &owner.pubkey(),
+                    &mint,
+                    &spl_token_2022_interface::ID,
+                ),
+            ],
+        ),
+        // For a custom receiver.
+        (&received, vec![destination_creation(funder, receiver, &received)]),
+        // After a valid delegation.
+        (
+            &owned,
+            vec![
+                approve,
+                destination_creation(funder, owner.pubkey(), &owned),
+            ],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let transaction = creation_tx(funder, &owner, intent, preparations, true);
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/orders"))
+            .json(&serde_json::json!({ "partiallySignedTx": transaction }))
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(
+            (
+                status,
+                json["errorType"].as_str(),
+                json["description"].as_str()
+            ),
+            (
+                reqwest::StatusCode::BAD_REQUEST,
+                Some("InvalidTransaction"),
+                Some("the bundle must not create the buy token account"),
+            ),
+            "case {index}"
         );
     }
 }
@@ -1823,7 +1914,6 @@ async fn create_order_requires_the_owner_as_signer() {
     let addr =
         spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
     let instruction: solana_sdk::instruction::Instruction =
         cow_settlement_client::instruction::CreateOrder {
             program_id: program_id(),
@@ -1833,7 +1923,7 @@ async fn create_order_requires_the_owner_as_signer() {
         }
         .into();
     let mut message = solana_sdk::message::Message::new_with_blockhash(
-        &[destination, instruction],
+        &[instruction],
         Some(&funder),
         &solana_sdk::hash::Hash::new_unique(),
     );
@@ -1955,7 +2045,7 @@ async fn create_order_checks_the_preparation_template() {
     );
 
     // A wrapped sell account owned by a stranger is rejected even when the
-    // intent names it. Only the buy account may belong to someone else.
+    // intent names it.
     let stranger = solana_sdk::pubkey::Pubkey::new_unique();
     let mut foreign_sell = sponsored_intent(owner, true);
     foreign_sell.sell.token_account = ata(stranger, foreign_sell.sell.mint);
@@ -1966,7 +2056,6 @@ async fn create_order_checks_the_preparation_template() {
             &foreign_sell.sell.mint,
             &spl_token_interface::ID,
         ),
-        destination_creation(funder, owner, &foreign_sell),
     ];
     let transaction = creation_tx(funder, &owner_keypair, &foreign_sell, preparations, true);
     let (status, kind) = post_order(addr, transaction).await;
@@ -1986,7 +2075,7 @@ async fn create_order_rejects_a_funder_paid_sell_account_creation() {
     let addr =
         spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
     let intent = sponsored_intent(owner.pubkey(), true);
-    let mut preparations = full_preparations(funder, owner.pubkey(), &intent);
+    let mut preparations = full_preparations(owner.pubkey(), &intent);
     preparations[0] = spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
         &funder,
         &owner.pubkey(),
@@ -2002,17 +2091,16 @@ async fn create_order_rejects_a_funder_paid_sell_account_creation() {
 }
 
 /// Placement reads the order's mints: one the settlement program cannot move
-/// answers `UnsupportedToken`, and a token program other than the mint's
-/// owner is an invalid transaction. Every case gets a fresh server, since the
-/// mock answers the mint lookup once.
+/// answers `UnsupportedToken`, and a delegation through a token program other
+/// than the mint's owner is an invalid transaction. Every case gets a fresh
+/// server, since the mock answers the mint lookup once.
 #[tokio::test]
 async fn create_order_checks_the_mints_on_chain() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let intent = sponsored_intent(owner.pubkey(), false);
     let classic = Some(mint_account(spl_token_interface::ID));
-    let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
-    // Only the buy account creation, under SPL Token.
+    // No preparation steps.
     let plain = sponsored_creation_tx(funder, &owner, true);
     let token_2022_approve = creation_tx(
         funder,
@@ -2028,17 +2116,13 @@ async fn create_order_checks_the_mints_on_chain() {
                 1_000,
             )
             .unwrap(),
-            destination_creation(funder, owner.pubkey(), &intent),
         ],
         true,
     );
 
     for (transaction, mints, expected) in [
         // The sell mint does not exist.
-        (plain.clone(), [None, classic.clone()], "UnsupportedToken"),
-        // The buy mint lives under Token-2022 but its account is created
-        // under SPL Token.
-        (plain, [classic.clone(), token_2022], "InvalidTransaction"),
+        (plain, [None, classic.clone()], "UnsupportedToken"),
         // The sell mint lives under SPL Token but its delegation goes
         // through Token-2022.
         (
@@ -2087,7 +2171,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         lighthouse(6, owner.pubkey()),
         lighthouse(6, funder),
     ];
-    preparations.extend(full_preparations(funder, owner.pubkey(), &intent));
+    preparations.extend(full_preparations(owner.pubkey(), &intent));
     let transaction = creation_tx_wrapped(
         funder,
         &owner,
@@ -2173,8 +2257,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     )
     .await
     .unwrap();
-    let destination = destination_creation(funder, other_owner.pubkey(), &other);
-    let transaction = creation_tx(funder, &other_owner, &other, vec![destination], true);
+    let transaction = creation_tx(funder, &other_owner, &other, vec![], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
         .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": mismatched }))
@@ -2206,8 +2289,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     )
     .await
     .unwrap();
-    let destination = destination_creation(funder, late_owner.pubkey(), &late);
-    let transaction = creation_tx(funder, &late_owner, &late, vec![destination], true);
+    let transaction = creation_tx(funder, &late_owner, &late, vec![], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
         .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": expired }))
@@ -2222,8 +2304,10 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     assert_eq!(copies, 1, "the expired quote must not be copied");
 }
 
-/// The buy account may belong to a wallet other than the owner: the bundle
-/// creates it for the receiver and the order stores that account.
+/// The buy account may belong to a wallet other than the owner: the
+/// receiver's existing account receives the payout and the order stores it.
+/// The lookup answers the sell and buy mints, the Clock sysvar, then the
+/// receiver's account.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_a_custom_receiver() {
@@ -2246,9 +2330,22 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
             token_account: ata(receiver, buy_mint),
         },
     );
-    let destination = destination_creation(funder, receiver, &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
-    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let classic = solana_testlib::account_json(&mint_account(spl_token_interface::ID));
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            solana_testlib::multiple_accounts_json([
+                classic.clone(),
+                classic,
+                serde_json::Value::Null,
+                solana_testlib::token_account_json(&buy_mint, &receiver),
+            ]),
+        ),
+    )
+    .await;
 
     let (status, _) = post_order(addr, transaction).await;
     assert_eq!(status, reqwest::StatusCode::CREATED);
@@ -2259,9 +2356,11 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
     assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
 }
 
-/// Token-2022 mints place like classic ones: the delegation and the buy
-/// account creation go through Token-2022, and the buy account is the
-/// owner's Token-2022 associated token account.
+/// Token-2022 mints place like classic ones: the delegation goes through
+/// Token-2022, and the buy account is the owner's missing Token-2022
+/// associated token account, which the settlement creates. The lookup
+/// answers the sell and buy mints, the Clock sysvar, then the buy token
+/// account.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_token_2022_mints() {
@@ -2298,19 +2397,16 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
             intent.sell_amount.get(),
         )
         .unwrap(),
-        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
-            &funder,
-            &owner.pubkey(),
-            &buy_mint,
-            &spl_token_2022_interface::ID,
-        ),
     ];
     let transaction = creation_tx(funder, &owner, &intent, preparations, true);
     let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
     let addr = spawn_sponsored_server_with(
         pool.clone(),
         funder,
-        sponsored_mocks(true, accounts_response(&[token_2022.clone(), token_2022])),
+        sponsored_mocks(
+            true,
+            accounts_response(&[token_2022.clone(), token_2022, None, None]),
+        ),
     )
     .await;
 
@@ -2386,8 +2482,7 @@ async fn solana_db_create_order_stores_the_app_data() {
     let hash_hex = const_hex::encode_prefixed(hash);
     let mut intent = sponsored_intent(owner.pubkey(), false);
     intent.app_data = hash;
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -2414,8 +2509,7 @@ async fn solana_db_create_order_stores_the_app_data() {
 
     // Each sponsored server answers its chain probes once.
     intent.valid_to += 1;
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -2428,8 +2522,7 @@ async fn solana_db_create_order_stores_the_app_data() {
     assert_eq!(get_order(addr, &uid).await["fullAppData"], document);
 
     intent.app_data = [0x77; 32];
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let addr = spawn_sponsored_server(pool, funder, true).await;
     for body in [
         serde_json::json!({ "partiallySignedTx": transaction }),
