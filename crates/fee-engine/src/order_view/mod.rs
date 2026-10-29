@@ -1,14 +1,20 @@
 //! The order as a rule sees it.
 
-mod full_app_data;
+mod app_data;
 
-use serde_json::{Value, json};
+pub use app_data::{AppData, Flashloan, Hook, Hooks, PartnerFee, PartnerFeePolicy, WrapperCall};
+use {
+    app_data::app_data_view,
+    serde_json::{Value, json},
+};
 
 /// An order as the host hands it to the engine: the API order plus the facts
 /// the host computes for it.
 #[derive(Debug, Clone, Copy)]
 pub struct Order<'a> {
     pub order: &'a model::order::Order,
+    /// The order's app data, which the host copies from the parsed document.
+    pub app_data: &'a AppData,
     /// Whether the limit price is inside the market price of the order's quote;
     /// false when the order has no quote. The engine trusts it as given.
     pub in_market: bool,
@@ -17,7 +23,13 @@ pub struct Order<'a> {
 /// The order as rules see it: every field a rule can read, with amounts and
 /// prices as doubles and hex in lowercase. Unset optional fields are absent,
 /// not `null`. Execution state, settlement and legacy fields are left out.
-pub(crate) fn order_view(Order { order, in_market }: Order) -> Value {
+pub(crate) fn order_view(
+    Order {
+        order,
+        app_data,
+        in_market,
+    }: Order,
+) -> Value {
     let (data, meta) = (&order.data, &order.metadata);
     let mut view = json!({
         "uid": hex(&meta.uid.0),
@@ -37,7 +49,7 @@ pub(crate) fn order_view(Order { order, in_market }: Order) -> Value {
         "validTo": data.valid_to,
         "validFrom": meta.valid_from,
         "appDataHash": hex(&data.app_data.0),
-        "appData": full_app_data::full_app_data(meta.full_app_data.as_deref()),
+        "appData": app_data_view(app_data),
         "fastPath": meta.fast_path,
         "inMarket": in_market,
         "quote": meta.quote.as_ref().map(|quote| json!({
@@ -129,6 +141,7 @@ mod tests {
         };
         let view = order_view(Order {
             order: &order,
+            app_data: &Default::default(),
             in_market: false,
         });
 
@@ -171,7 +184,6 @@ mod tests {
                 }),
                 onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
                 valid_from: Some(4),
-                full_app_data: Some(crate::rules::SAMPLE_FULL_APP_DATA.to_owned()),
                 fast_path: true,
                 ..Default::default()
             },
@@ -212,6 +224,7 @@ mod tests {
         let order = fully_set_order();
         let mut view = order_view(Order {
             order: &order,
+            app_data: &crate::rules::sample_app_data(),
             in_market: true,
         });
         let fields = view.as_object_mut().unwrap();
@@ -251,6 +264,7 @@ mod tests {
     fn view_holds_only_rule_fields() {
         let view = order_view(Order {
             order: &fully_set_order(),
+            app_data: &crate::rules::sample_app_data(),
             in_market: true,
         });
 
@@ -318,6 +332,7 @@ mod tests {
         let view = |order| {
             order_view(Order {
                 order,
+                app_data: &crate::rules::sample_app_data(),
                 in_market: false,
             })
         };
@@ -339,6 +354,7 @@ mod tests {
         };
         let view = order_view(Order {
             order: &order,
+            app_data: &Default::default(),
             in_market: false,
         });
 
@@ -361,6 +377,7 @@ mod tests {
         let sample: Value = serde_json::from_str(sample.split("```").next().unwrap()).unwrap();
         let view = order_view(Order {
             order: &fully_set_order(),
+            app_data: &crate::rules::sample_app_data(),
             in_market: true,
         });
         assert_eq!(field_paths(&sample), field_paths(&view));

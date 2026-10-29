@@ -7,7 +7,6 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 alloy-primitives = { workspace = true }
-app-data = { workspace = true }
 cel = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 configs = { workspace = true }

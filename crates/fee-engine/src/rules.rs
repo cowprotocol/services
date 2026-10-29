@@ -1,8 +1,20 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::{Evaluator, evaluator::RuleError, fee, order_view},
-    alloy_primitives::U256,
+    crate::{
+        AppData,
+        Evaluator,
+        Flashloan,
+        Hook,
+        Hooks,
+        PartnerFee,
+        PartnerFeePolicy,
+        WrapperCall,
+        evaluator::RuleError,
+        fee,
+        order_view,
+    },
+    alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
     model::order::{
@@ -183,6 +195,7 @@ impl RuleSet {
             .evaluator(Utc::now())
             .evaluate_all_expressions(crate::Order {
                 order: &sample_order(),
+                app_data: &sample_app_data(),
                 in_market: false,
             })
             .into_iter()
@@ -216,33 +229,50 @@ impl RuleSet {
     }
 }
 
-/// Every field the app-data view types, each partner-fee kind once.
-pub(crate) const SAMPLE_FULL_APP_DATA: &str = r#"{
-    "appCode": "sample",
-    "environment": "sample",
-    "version": "1.0.0",
-    "metadata": {
-        "hooks": {
-            "pre": [{ "target": "0x0000000000000000000000000000000000000001", "callData": "0x", "gasLimit": "1" }],
-            "post": [{ "target": "0x0000000000000000000000000000000000000001", "callData": "0x", "gasLimit": "1" }]
+/// App data with every field set, each partner-fee kind once.
+pub(crate) fn sample_app_data() -> AppData {
+    let hook = Hook {
+        target: Address::ZERO,
+        call_data: Vec::new(),
+        gas_limit: 1,
+    };
+    let partner_fee = |policy| PartnerFee {
+        policy,
+        recipient: Address::ZERO,
+    };
+    AppData {
+        app_code: Some("sample".to_owned()),
+        hooks: Hooks {
+            pre: vec![hook.clone()],
+            post: vec![hook],
         },
-        "signer": "0x0000000000000000000000000000000000000001",
-        "replacedOrder": { "uid": "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101" },
-        "partnerFee": [
-            { "volumeBps": 1, "recipient": "0x0000000000000000000000000000000000000001" },
-            { "surplusBps": 1, "maxVolumeBps": 1, "recipient": "0x0000000000000000000000000000000000000001" },
-            { "priceImprovementBps": 1, "maxVolumeBps": 1, "recipient": "0x0000000000000000000000000000000000000001" }
+        signer: Some(Address::ZERO),
+        replaced_order: Some([0; 56]),
+        partner_fees: vec![
+            partner_fee(PartnerFeePolicy::Volume { bps: 1 }),
+            partner_fee(PartnerFeePolicy::Surplus {
+                bps: 1,
+                max_volume_bps: 1,
+            }),
+            partner_fee(PartnerFeePolicy::PriceImprovement {
+                bps: 1,
+                max_volume_bps: 1,
+            }),
         ],
-        "flashloan": {
-            "liquidityProvider": "0x0000000000000000000000000000000000000001",
-            "protocolAdapter": "0x0000000000000000000000000000000000000001",
-            "receiver": "0x0000000000000000000000000000000000000001",
-            "token": "0x0000000000000000000000000000000000000001",
-            "amount": "1"
-        },
-        "wrappers": [{ "address": "0x0000000000000000000000000000000000000001", "data": "0x" }]
+        flashloan: Some(Flashloan {
+            liquidity_provider: Address::ZERO,
+            protocol_adapter: Address::ZERO,
+            receiver: Address::ZERO,
+            token: Address::ZERO,
+            amount: U256::ONE,
+        }),
+        wrappers: vec![WrapperCall {
+            address: Address::ZERO,
+            data: Vec::new(),
+            is_omittable: false,
+        }],
     }
-}"#;
+}
 
 /// An order with every optional field present, so that a rule can reach any
 /// name the view may hold. Amounts and prices are 1, so a ratio of two is
@@ -264,7 +294,6 @@ pub(crate) fn sample_order() -> Order {
                 ..Default::default()
             }),
             onchain_user: Some(Default::default()),
-            full_app_data: Some(SAMPLE_FULL_APP_DATA.to_owned()),
             valid_from: Some(Default::default()),
             quote: Some(OrderQuote {
                 sell_amount: U256::ONE,
@@ -435,19 +464,6 @@ mod tests {
         ));
         assert!(matches!(
             errors(vec![rule("Misspelt", "order.sellAmout > 0", "volume(1)")])[..],
-            [SampleOrderError {
-                field: Field::When,
-                error: RuleError::Execution(_),
-                ..
-            }]
-        ));
-        // The sample holds no non-standard app-data key: guard it with `has`.
-        assert!(matches!(
-            errors(vec![rule(
-                "Unguarded",
-                "order.appData.metadata.quote.slippageBips > 0",
-                "no_fee()"
-            )])[..],
             [SampleOrderError {
                 field: Field::When,
                 error: RuleError::Execution(_),

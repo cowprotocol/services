@@ -87,6 +87,7 @@ fn reports_the_matching_rules_per_order() {
     let before_launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
     let (rule, fees) = matched(before_launch.evaluate(fee_engine::Order {
         order: &order(user, USDC, USDT),
+        app_data: &Default::default(),
         in_market: false,
     }));
     assert_eq!(
@@ -103,6 +104,7 @@ fn reports_the_matching_rules_per_order() {
     let after_launch = rules.evaluator(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
     let (rule, fees) = matched(after_launch.evaluate(fee_engine::Order {
         order: &order(user, USDC, USDT),
+        app_data: &Default::default(),
         in_market: false,
     }));
     assert_eq!(rule, ["Stablecoin swaps", "Default"]);
@@ -115,6 +117,7 @@ fn reports_the_matching_rules_per_order() {
 
     let (rule, fees) = matched(after_launch.evaluate(fee_engine::Order {
         order: &order(user, WETH, USDT),
+        app_data: &Default::default(),
         in_market: false,
     }));
     assert_eq!(rule, ["Default"]);
@@ -128,6 +131,7 @@ fn reports_the_matching_rules_per_order() {
 
     let (rule, fees) = matched(after_launch.evaluate(fee_engine::Order {
         order: &order(MAKER, USDC, USDT),
+        app_data: &Default::default(),
         in_market: false,
     }));
     assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
@@ -146,6 +150,7 @@ fn no_matching_rule_means_no_fee() {
         evaluator
             .evaluate(fee_engine::Order {
                 order: &Order::default(),
+                app_data: &Default::default(),
                 in_market: false
             })
             .matched

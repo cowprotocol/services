@@ -55,6 +55,7 @@ fn mainnet_sample_lists_reach_the_rules() {
 
     let evaluation = evaluator.evaluate(fee_engine::Order {
         order: &order(USDC, USDT),
+        app_data: &Default::default(),
         in_market: false,
     });
     assert!(evaluation.skipped.is_empty());
@@ -69,6 +70,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     quoted.metadata.quote = Some(Default::default());
     let evaluation = evaluator.evaluate(fee_engine::Order {
         order: &quoted,
+        app_data: &Default::default(),
         in_market: true,
     });
     let Match { fees, .. } = evaluation.matched.first().unwrap();
@@ -79,6 +81,7 @@ fn mainnet_sample_lists_reach_the_rules() {
 
     let evaluation = evaluator.evaluate(fee_engine::Order {
         order: &order(WETH, USDC),
+        app_data: &Default::default(),
         in_market: false,
     });
     let Match { rule, .. } = evaluation.matched.first().unwrap();

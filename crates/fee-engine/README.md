@@ -199,8 +199,6 @@ shortened):
   "appDataHash": "0x3a8f…09bc",
   "appData": {
     "appCode": "CoW Swap",
-    "environment": "production",
-    "version": "1.14.0",
     "metadata": {
       "hooks": {
         "pre": [
@@ -286,40 +284,25 @@ matter.
 
 ### `order.appData`
 
-The app-data document, parsed. The names are those of an order-creation
-request: the document is `appData` and its hash is `appDataHash`. The order
-the API returns calls the hash `appData` and has the document as
-`fullAppData` text.
+`Order::app_data`: the app data the host copies from the protocol's parsed
+document, plus its `appCode`. The engine reads no app-data text. The names
+are those of an order-creation request: the document is `appData` and its
+hash is `appDataHash`. The order the API returns calls the hash `appData`
+and has the document as `fullAppData` text.
 
-The fields the protocol reads are typed like the rest of the view
-(`order_view/full_app_data.rs` is the reference); every other key is kept as
-the user wrote it, with no hex or number conversion. A `null` field is
-absent, as elsewhere in the view, but a `null` in a list stays. The order
-above shows the typed fields.
-
-`appCode`, `environment` and `version` are absent when unset or not a
-string. `hooks`, `partnerFee` and `wrappers` are always present, empty when
-unset. `partnerFee` is a list even for one fee, and each entry has one of
-`volumeBps`, `surplusBps` or `priceImprovementBps`; a bare `bps` reads as
-`volumeBps`.
+The order above shows every field; no other key of the document is here.
+`hooks`, `partnerFee` and `wrappers` are always present, empty when unset.
+Each `partnerFee` entry has one of `volumeBps`, `surplusBps` or
+`priceImprovementBps`. The host passes `AppData::default()` when the order
+has no document or the protocol cannot parse it.
 
 `metadata.enableFastPath` and `metadata.validFrom` are not here: read
-`order.fastPath` and `order.validFrom`. `backend` is not here: it is the
-deprecated home of the hooks, and its hooks appear under `metadata.hooks`
-when the document has no `metadata`. An order with no document, or one the
-protocol cannot parse, sees only the empty `hooks`, `partnerFee` and
-`wrappers`. Typed sub-objects keep only the fields in the sample, so a hook's
-`dappId` is gone.
+`order.fastPath` and `order.validFrom`, which hold the values in effect.
 
 ```
 when: has(order.appData.appCode) && order.appData.appCode == "CoW Swap"
 when: order.appData.metadata.partnerFee.exists(f, has(f.volumeBps) && f.volumeBps > 10)
-when: has(order.appData.metadata.quote) && order.appData.metadata.quote.slippageBips > 100
 ```
-
-The sample order of `RuleSet::validate_on_sample_order` holds every typed
-field but no other key, so a rule must test a non-standard key with `has`
-before it reads it, as it must for real orders that lack it.
 
 ## Outcome
 
