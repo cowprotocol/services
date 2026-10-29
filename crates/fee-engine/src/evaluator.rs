@@ -92,15 +92,15 @@ impl<'r> Evaluator<'r> {
 
     /// Runs both expressions of every rule against `order`, whatever `when`
     /// says, and reports every one that fails, in rule order.
-    pub(crate) fn check(&self, order: &Order) -> Vec<Skipped<'r>> {
+    pub(crate) fn evaluate_all_expressions(&self, order: &Order) -> Vec<Skipped<'r>> {
         let context = self.scope(order);
         let mut skipped = Vec::new();
         for rule in self.rules.rules() {
-            let results = [
-                Self::matched(rule, &context).map(drop),
-                Self::fees(rule, &context).map(drop),
+            let errors = [
+                Self::matched(rule, &context).err(),
+                Self::fees(rule, &context).err(),
             ];
-            for (field, error) in results.into_iter().filter_map(Result::err) {
+            for (field, error) in errors.into_iter().flatten() {
                 skipped.push(Skipped { rule, field, error });
             }
         }
@@ -403,7 +403,7 @@ mod tests {
     fn absent_optional_fields_are_tested_with_has() {
         let rules = rule_set(vec![
             rule("Quoted", "has(order.quote)", "volume(1)"),
-            rule("Fast path", "order.fastPath", "volume(2)"),
+            rule("Fast path", "has(order.fastPath)", "volume(2)"),
             rule("Default", "true", "volume(3)"),
         ]);
         let evaluator = rules.evaluator(after_launch());

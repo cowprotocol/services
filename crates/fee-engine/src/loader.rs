@@ -1,7 +1,7 @@
 //! A [`RuleSet`] from a TOML rules file.
 
 use {
-    crate::{CompileError, PreflightError, RuleDefinition, RuleSet},
+    crate::{CompileError, RuleDefinition, RuleSet, SampleOrderError},
     serde::Deserialize,
     std::collections::BTreeMap,
 };
@@ -13,12 +13,12 @@ pub enum LoadError {
     Toml(#[from] toml::de::Error),
     #[error(transparent)]
     Rules(#[from] CompileError),
-    #[error("preflight: {}", join_preflight_errors(.0))]
-    Preflight(Vec<PreflightError>),
+    #[error("sample order: {}", join_sample_order_errors(.0))]
+    SampleOrder(Vec<SampleOrderError>),
 }
 
-/// Every preflight failure on one line.
-fn join_preflight_errors(errors: &[PreflightError]) -> String {
+/// Every sample order failure on one line.
+fn join_sample_order_errors(errors: &[SampleOrderError]) -> String {
     errors
         .iter()
         .map(ToString::to_string)
@@ -36,11 +36,13 @@ struct RulesFile {
     rules: Vec<RuleDefinition>,
 }
 
-/// Parses `source`, compiles the rules and runs the preflight. Any failure
-/// refuses the whole file.
+/// Parses `source`, compiles the rules and validates them on a sample
+/// order. Any failure refuses the whole file.
 pub fn load_rules(source: &str) -> Result<RuleSet, LoadError> {
     let file: RulesFile = toml::from_str(source)?;
     let rules = RuleSet::new(file.rules, file.lists)?;
-    rules.preflight().map_err(LoadError::Preflight)?;
+    rules
+        .validate_on_sample_order()
+        .map_err(LoadError::SampleOrder)?;
     Ok(rules)
 }

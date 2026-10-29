@@ -19,5 +19,5 @@ pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
     loader::{LoadError, load_rules},
-    rules::{CompileError, Field, PreflightError, Rule, RuleDefinition, RuleSet},
+    rules::{CompileError, Field, Rule, RuleDefinition, RuleSet, SampleOrderError},
 };

@@ -8,15 +8,11 @@ use {
 /// The app-data document as text; never a number even when it looks like one.
 const FULL_APP_DATA: &str = "fullAppData";
 
-/// The order as rules see it: the API JSON with decimal strings as doubles,
-/// hex strings in lowercase and `fastPath` always present. The model
-/// serializes every amount and price as a decimal string, so no field list
-/// is kept here.
+/// The order as rules see it: the API JSON with decimal strings as doubles
+/// and hex strings in lowercase. The model serializes every amount and price
+/// as a decimal string, so no field list is kept here.
 pub(crate) fn order_view(order: &Order) -> Value {
     let mut view = serde_json::to_value(order).expect("orders serialize");
-    // The model omits `fastPath` when false; a rule reading it must not fail
-    // on every ordinary order.
-    view["fastPath"] = order.metadata.fast_path.into();
     if let Some(quote) = &order.metadata.quote {
         // `BigDecimal` displays small values as `1E-7`; the plain form is
         // what `convert` reads.
@@ -98,7 +94,6 @@ mod tests {
         assert_eq!(view["class"], "limit");
         assert_eq!(view["signingScheme"], "eip712");
         assert_eq!(view["appData"], format!("0x{}", "0".repeat(64)));
-        assert_eq!(view["fastPath"], false);
     }
 
     /// Every field the model emits as a decimal string is an amount or a
