@@ -6,6 +6,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+alloy-primitives = { workspace = true }
 cel = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 configs = { workspace = true }
@@ -16,9 +17,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
-
-[dev-dependencies]
-alloy-primitives = { workspace = true }
 
 [lints]
 workspace = true

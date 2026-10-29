@@ -150,7 +150,13 @@ mod tests {
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
         configs::fee_factor::FeeFactor,
-        model::order::{OrderData, OrderMetadata},
+        model::order::{
+            EthflowData,
+            OnchainOrderData,
+            OnchainOrderPlacementError,
+            OrderData,
+            OrderMetadata,
+        },
         std::collections::BTreeMap,
     };
 
@@ -431,7 +437,7 @@ mod tests {
     fn absent_optional_fields_are_tested_with_has() {
         let rules = rule_set(vec![
             rule("Quoted", "has(order.quote)", "volume(1)"),
-            rule("Fast path", "has(order.fastPath)", "volume(2)"),
+            rule("Fast path", "order.fastPath", "volume(2)"),
             rule("Default", "true", "volume(3)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
@@ -451,6 +457,51 @@ mod tests {
             in_market: false,
         });
         assert_eq!(names(&evaluation), ["Quoted", "Fast path", "Default"]);
+    }
+
+    #[test]
+    fn absent_nested_fields_are_tested_with_has() {
+        let rules = rule_set(vec![
+            rule(
+                "Refunded",
+                "has(order.ethflowData.refundTxHash)",
+                "volume(1)",
+            ),
+            rule(
+                "Placement error",
+                "has(order.onchainOrderData.placementError)",
+                "volume(2)",
+            ),
+            rule("Default", "true", "volume(3)"),
+        ]);
+        let evaluator = rules.evaluator(after_launch());
+
+        let mut onchain = order(WETH, USDT);
+        onchain.metadata.ethflow_data = Some(Default::default());
+        onchain.metadata.onchain_order_data = Some(Default::default());
+        let evaluation = evaluator.evaluate(Order {
+            order: &onchain,
+            in_market: false,
+        });
+        assert_eq!(names(&evaluation), ["Default"]);
+        assert!(evaluation.skipped.is_empty());
+
+        onchain.metadata.ethflow_data = Some(EthflowData {
+            refund_tx_hash: Some(Default::default()),
+            ..Default::default()
+        });
+        onchain.metadata.onchain_order_data = Some(OnchainOrderData {
+            placement_error: Some(OnchainOrderPlacementError::InvalidQuote),
+            ..Default::default()
+        });
+        let evaluation = evaluator.evaluate(Order {
+            order: &onchain,
+            in_market: false,
+        });
+        assert_eq!(
+            names(&evaluation),
+            ["Refunded", "Placement error", "Default"]
+        );
     }
 
     #[test]

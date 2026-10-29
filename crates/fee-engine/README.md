@@ -20,10 +20,17 @@ a bool and every `fee` that does not return valid fees, so one run shows all
 the mistakes. This catches a misspelt name or a bad fee argument such as
 `volume(0.001)` at load time instead of on the first order.
 
-A ternary, `&&` or `||` runs only what the sample order reaches. The
-sample is out of market, so the bad argument in `order.inMarket ?
-volume(0.001) : volume(1)` is not found; a static check of every branch is
-planned.
+The pass has limits:
+
+- A ternary, `&&` or `||` runs only what the sample order reaches. The
+  sample is out of market, so the bad argument in `order.inMarket ?
+  volume(0.001) : volume(1)` is not found; a static check of every branch is
+  planned.
+- Every amount and price in the sample is 1, except `feeAmount`, which is 0
+  as on every order the API accepts. A fee computed from the order is
+  checked only at those values: `volume(order.buyAmount / order.sellAmount)`
+  passes, but on a real order it can give an out-of-range argument, and the
+  rule is then skipped and reported.
 
 ```
 name: Stablecoin swaps
@@ -177,19 +184,21 @@ Trade      sellToken, buyToken, receiver, sellAmount, buyAmount,
            feeAmount, kind, partiallyFillable, sellTokenBalance,
            buyTokenBalance
 Signing    signingScheme, validTo, validFrom
-App data   appData (hash), fullAppData (text)
+App data   appData (hash)
 Pricing    inMarket, fastPath, quote { sellAmount, buyAmount, feeAmount,
            gasAmount, gasPrice, sellTokenPrice, solver, verified }
 On-chain   ethflowData { userValidTo, refundTxHash, isRefunded },
            onchainOrderData { sender, placementError }, onchainUser
 ```
 
-`inMarket` is the host's `Order::in_market`, false when the order has no
-quote. Execution state (`executed*`, `status`, `invalidated`,
-`availableBalance`, `gasCost`), settlement fields (`signature`,
-`interactions`, `settlementContract`) and legacy fields (`class`,
-`isLiquidityOrder`) are not in the view. An unset `receiver` is the zero
-address. Other optional fields, and `fastPath` when false, are absent, not
+`inMarket` is `Order::in_market` as the host passes it. The engine does not
+check it: the host must pass false when the order has no quote.
+
+Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
+`gasCost`), settlement fields (`signature`, `interactions`,
+`settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
+app-data document (`fullAppData`) are not in the view. An unset `receiver`
+is the zero address. Other optional fields are absent when unset, not
 `null`: test them with `has(order.quote)`.
 
 ```

@@ -2,9 +2,18 @@
 
 use {
     crate::{Evaluator, evaluator::RuleError, fee, order_view},
+    alloy_primitives::U256,
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
-    model::order::{EthflowData, OnchainOrderData, Order, OrderMetadata, OrderQuote},
+    model::order::{
+        EthflowData,
+        OnchainOrderData,
+        OnchainOrderPlacementError,
+        Order,
+        OrderData,
+        OrderMetadata,
+        OrderQuote,
+    },
     serde::Deserialize,
     std::{
         collections::{BTreeMap, HashSet},
@@ -207,20 +216,36 @@ impl RuleSet {
     }
 }
 
-/// A default order with every optional field present, so that a rule can
-/// reach any name the view may hold.
-fn sample_order() -> Order {
+/// An order with every optional field present, so that a rule can reach any
+/// name the view may hold. Amounts and prices are 1, so a ratio of two is
+/// defined; `feeAmount` stays 0, as the API refuses any other.
+pub(crate) fn sample_order() -> Order {
     Order {
+        data: OrderData {
+            sell_amount: U256::ONE,
+            buy_amount: U256::ONE,
+            ..Default::default()
+        },
         metadata: OrderMetadata {
             ethflow_data: Some(EthflowData {
                 refund_tx_hash: Some(Default::default()),
                 ..Default::default()
             }),
-            onchain_order_data: Some(OnchainOrderData::default()),
+            onchain_order_data: Some(OnchainOrderData {
+                placement_error: Some(OnchainOrderPlacementError::Other),
+                ..Default::default()
+            }),
             onchain_user: Some(Default::default()),
-            full_app_data: Some(Default::default()),
             valid_from: Some(Default::default()),
-            quote: Some(OrderQuote::default()),
+            quote: Some(OrderQuote {
+                sell_amount: U256::ONE,
+                buy_amount: U256::ONE,
+                fee_amount: U256::ONE,
+                gas_amount: 1.into(),
+                gas_price: 1.into(),
+                sell_token_price: 1.into(),
+                ..Default::default()
+            }),
             fast_path: true,
             ..Default::default()
         },
@@ -340,6 +365,21 @@ mod tests {
             rule("Quoted", "order.quote.sellAmount > 0", "volume(1)"),
             rule("Ethflow", "order.ethflowData.userValidTo > 0", "no_fee()"),
             rule("Fast path", "order.fastPath", "no_fee()"),
+            rule(
+                "Refunded",
+                "order.ethflowData.refundTxHash != ''",
+                "no_fee()",
+            ),
+            rule(
+                "Placement error",
+                "order.onchainOrderData.placementError == 'other'",
+                "no_fee()",
+            ),
+            rule(
+                "Ratio",
+                "order.quote.buyAmount / order.quote.sellAmount > 0.0",
+                "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
+            ),
             rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
         ])
         .unwrap();

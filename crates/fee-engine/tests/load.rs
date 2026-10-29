@@ -65,8 +65,10 @@ fn mainnet_sample_lists_reach_the_rules() {
         [Fee::Surplus { .. }, Fee::Volume { factor }] if factor.to_high_precision() == 30
     ));
 
+    let mut quoted = order(USDC, USDT);
+    quoted.metadata.quote = Some(Default::default());
     let evaluation = evaluator.evaluate(fee_engine::Order {
-        order: &order(USDC, USDT),
+        order: &quoted,
         in_market: true,
     });
     let Match { fees, .. } = evaluation.matched.first().unwrap();

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 pub struct Order<'a> {
     pub order: &'a model::order::Order,
     /// Whether the limit price is inside the market price of the order's quote;
-    /// false when the order has no quote.
+    /// false when the order has no quote. The engine trusts it as given.
     pub in_market: bool,
 }
 
@@ -35,8 +35,7 @@ pub(crate) fn order_view(Order { order, in_market }: Order) -> Value {
         "validTo": data.valid_to,
         "validFrom": meta.valid_from,
         "appData": hex(&data.app_data.0),
-        "fullAppData": meta.full_app_data,
-        "fastPath": meta.fast_path.then_some(true),
+        "fastPath": meta.fast_path,
         "inMarket": in_market,
         "quote": meta.quote.as_ref().map(|quote| json!({
             "sellAmount": number(quote.sell_amount),
@@ -137,20 +136,23 @@ mod tests {
         assert!(view.get("class").is_none());
         assert_eq!(view["signingScheme"], "eip712");
         assert_eq!(view["appData"], format!("0x{}", "0".repeat(64)));
-        assert!(view.get("fastPath").is_none());
+        assert_eq!(view["fastPath"], false);
         assert!(view.get("quote").is_none());
         assert!(view.get("fullAppData").is_none());
     }
 
-    /// The view holds the rule fields and nothing else: no execution state,
-    /// settlement or legacy field, and unset options are absent.
-    #[test]
-    fn view_holds_only_rule_fields() {
-        let order = model::order::Order {
+    /// An order with every option set, the view's fields at their fullest.
+    fn fully_set_order() -> model::order::Order {
+        model::order::Order {
             metadata: OrderMetadata {
+                owner: address!("0xAbCdEf0000000000000000000000000000000001"),
                 quote: Some(OrderQuote {
+                    sell_amount: U256::from(10).pow(U256::from(21)),
+                    gas_amount: "21000".parse().unwrap(),
                     gas_price: "1234.5".parse().unwrap(),
                     sell_token_price: "0.0000001".parse().unwrap(),
+                    solver: address!("0x00000000000000000000000000000000000000aB"),
+                    verified: true,
                     ..Default::default()
                 }),
                 available_balance: Some(U256::from(7)),
@@ -166,14 +168,74 @@ mod tests {
                 }),
                 onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
                 valid_from: Some(4),
-                full_app_data: Some("123".to_owned()),
+                full_app_data: Some(r#"{"metadata":{"partnerFee":{"bps":5}}}"#.to_owned()),
                 fast_path: true,
                 ..Default::default()
             },
+            data: OrderData {
+                sell_token: address!("0x00000000000000000000000000000000000000aA"),
+                receiver: address!("0x00000000000000000000000000000000000000bB").into(),
+                sell_amount: U256::from(10).pow(U256::from(21)),
+                buy_amount: U256::from(123_456_789),
+                partially_fillable: true,
+                ..Default::default()
+            },
             ..Default::default()
-        };
-        let view = order_view(Order {
+        }
+    }
+
+    /// Fails unless `view` equals `api` up to the view's two conversions:
+    /// decimal strings become doubles and hex strings become lowercase.
+    fn assert_matches_api(view: &Value, api: &Value, path: &str) {
+        match (view, api) {
+            (Value::Object(fields), _) => {
+                for (name, field) in fields {
+                    assert_matches_api(field, &api[name], &format!("{path}.{name}"));
+                }
+            }
+            (Value::Number(number), Value::String(text)) => {
+                assert_eq!(number.as_f64(), text.parse().ok(), "{path}");
+            }
+            (_, Value::String(text)) => assert_eq!(*view, normalize(text), "{path}"),
+            _ => assert_eq!(view, api, "{path}"),
+        }
+    }
+
+    /// Every view field is the API field of the same name, so a rule author
+    /// can read the API docs; `inMarket` is the one field the API lacks.
+    #[test]
+    fn view_matches_the_api_json() {
+        let order = fully_set_order();
+        let mut view = order_view(Order {
             order: &order,
+            in_market: true,
+        });
+        view.as_object_mut().unwrap().remove("inMarket");
+        assert_matches_api(&view, &serde_json::to_value(&order).unwrap(), "");
+    }
+
+    /// Every field of `view` as a dotted path, nested objects included.
+    fn field_paths(view: &Value) -> BTreeSet<String> {
+        let mut paths = BTreeSet::new();
+        if let Value::Object(fields) = view {
+            for (name, field) in fields {
+                paths.insert(name.clone());
+                paths.extend(
+                    field_paths(field)
+                        .into_iter()
+                        .map(|path| format!("{name}.{path}")),
+                );
+            }
+        }
+        paths
+    }
+
+    /// The view holds the rule fields and nothing else: no execution state,
+    /// settlement or legacy field, and unset options are absent.
+    #[test]
+    fn view_holds_only_rule_fields() {
+        let view = order_view(Order {
+            order: &fully_set_order(),
             in_market: true,
         });
 
@@ -203,7 +265,6 @@ mod tests {
                 "validTo",
                 "validFrom",
                 "appData",
-                "fullAppData",
                 "fastPath",
                 "inMarket",
                 "quote",
@@ -214,8 +275,7 @@ mod tests {
         );
         assert_eq!(view["quote"]["gasPrice"], 1234.5);
         assert_eq!(view["quote"]["sellTokenPrice"], 1e-7);
-        assert_eq!(view["quote"]["sellAmount"], 0.0);
-        assert_eq!(view["fullAppData"], "123");
+        assert_eq!(view["quote"]["sellAmount"], 1e21);
         assert_eq!(
             view["ethflowData"],
             json!({
@@ -233,6 +293,47 @@ mod tests {
         );
         assert_eq!(view["onchainUser"], format!("0x{}ef", "0".repeat(38)));
         assert_eq!(view["validFrom"], 4);
+    }
+
+    /// The sample order that validates rules reaches every field, nested ones
+    /// included, so that no valid rule fails on a missing key.
+    #[test]
+    fn sample_order_view_has_every_field() {
+        let view = |order| {
+            order_view(Order {
+                order,
+                in_market: false,
+            })
+        };
+        assert_eq!(
+            field_paths(&view(&crate::rules::sample_order())),
+            field_paths(&view(&fully_set_order())),
+        );
+    }
+
+    #[test]
+    fn unset_nested_options_are_absent() {
+        let order = model::order::Order {
+            metadata: OrderMetadata {
+                ethflow_data: Some(EthflowData::default()),
+                onchain_order_data: Some(OnchainOrderData::default()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let view = order_view(Order {
+            order: &order,
+            in_market: false,
+        });
+
+        assert_eq!(
+            view["ethflowData"],
+            json!({ "userValidTo": 0, "isRefunded": false })
+        );
+        assert_eq!(
+            view["onchainOrderData"],
+            json!({ "sender": format!("0x{}", "0".repeat(40)) })
+        );
     }
 
     #[test]
