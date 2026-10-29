@@ -146,7 +146,7 @@ impl<'r> Evaluator<'r> {
 mod tests {
     use {
         super::*,
-        crate::{AppData, Hook, Hooks, PartnerFee, PartnerFeePolicy, rules::RuleDefinition},
+        crate::{AppData, PartnerFee, PartnerFeePolicy, rules::RuleDefinition},
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
         configs::fee_factor::FeeFactor,
@@ -531,11 +531,6 @@ mod tests {
                  fee.volumeBps > 10)",
                 "volume(2)",
             ),
-            rule(
-                "Pre-hooks",
-                "size(order.appData.metadata.hooks.pre) > 0",
-                "volume(3)",
-            ),
         ]);
         let evaluator = rules.evaluator(after_launch());
 
@@ -550,14 +545,6 @@ mod tests {
 
         let app_data = AppData {
             app_code: Some("CoW Swap".to_owned()),
-            hooks: Hooks {
-                pre: vec![Hook {
-                    target: MAKER,
-                    call_data: Vec::new(),
-                    gas_limit: 1,
-                }],
-                post: Vec::new(),
-            },
             partner_fees: vec![PartnerFee {
                 policy: PartnerFeePolicy::Volume { bps: 25 },
                 recipient: MAKER,
@@ -570,10 +557,7 @@ mod tests {
             in_market: false,
         });
         assert!(evaluation.skipped.is_empty());
-        assert_eq!(
-            names(&evaluation),
-            ["CoW Swap", "Partner volume fee", "Pre-hooks"]
-        );
+        assert_eq!(names(&evaluation), ["CoW Swap", "Partner volume fee"]);
     }
 
     #[test]

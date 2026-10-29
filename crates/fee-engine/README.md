@@ -200,22 +200,6 @@ shortened):
   "appData": {
     "appCode": "CoW Swap",
     "metadata": {
-      "hooks": {
-        "pre": [
-          {
-            "target": "0x01148b2b4e84e11b0a8a8bd5b8a3d2a3c19a6f9e",
-            "callData": "0x095e…0000",
-            "gasLimit": 60000
-          }
-        ],
-        "post": [
-          {
-            "target": "0x01148b2b4e84e11b0a8a8bd5b8a3d2a3c19a6f9e",
-            "callData": "0x",
-            "gasLimit": 21000
-          }
-        ]
-      },
       "signer": "0x40a50cf069e992aa4536211b23f286ef88752187",
       "replacedOrder": { "uid": "0x9b4c…e1f0" },
       "partnerFee": [
@@ -229,14 +213,7 @@ shortened):
         "receiver": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
         "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
         "amount": 2.5e9
-      },
-      "wrappers": [
-        {
-          "address": "0x9e7ae8bdba9aa346739792d219a808884996db67",
-          "data": "0x",
-          "isOmittable": true
-        }
-      ]
+      }
     }
   },
   "fastPath": false,
@@ -284,15 +261,16 @@ matter.
 
 ### `order.appData`
 
-`Order::app_data`: the app data the host copies from the protocol's parsed
-document, plus its `appCode`. The engine reads no app-data text. The names
+`Order::app_data`: the app data a fee can depend on, which the host copies
+from the protocol's parsed document, plus its `appCode`. The engine reads no
+app-data text. The names
 are those of an order-creation request: the document is `appData` and its
 hash is `appDataHash`. The order the API returns calls the hash `appData`
 and has the document as `fullAppData` text.
 
-The order above shows every field; no other key of the document is here.
-`hooks`, `partnerFee` and `wrappers` are always present, empty when unset.
-Each `partnerFee` entry has one of `volumeBps`, `surplusBps` or
+The order above shows every field. No other key of the document is here,
+hooks and wrappers included. `partnerFee` is always present, empty when
+unset; each entry has one of `volumeBps`, `surplusBps` or
 `priceImprovementBps`. The host passes `AppData::default()` when the order
 has no document or the protocol cannot parse it.
 

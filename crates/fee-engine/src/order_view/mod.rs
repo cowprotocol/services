@@ -2,7 +2,7 @@
 
 mod app_data;
 
-pub use app_data::{AppData, Flashloan, Hook, Hooks, PartnerFee, PartnerFeePolicy, WrapperCall};
+pub use app_data::{AppData, Flashloan, PartnerFee, PartnerFeePolicy};
 use {
     app_data::app_data_view,
     serde_json::{Value, json},
@@ -236,7 +236,7 @@ mod tests {
 
     /// Every field of `view` as a path, nested objects and list items
     /// included, e.g. `.quote.sellAmount` or
-    /// `.appData.metadata.wrappers[]`.
+    /// `.appData.metadata.partnerFee[]`.
     fn field_paths(view: &Value) -> BTreeSet<String> {
         let children: Vec<(String, &Value)> = match view {
             Value::Object(fields) => fields

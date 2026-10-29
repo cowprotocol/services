@@ -5,11 +5,8 @@ use {
         AppData,
         Evaluator,
         Flashloan,
-        Hook,
-        Hooks,
         PartnerFee,
         PartnerFeePolicy,
-        WrapperCall,
         evaluator::RuleError,
         fee,
         order_view,
@@ -231,21 +228,12 @@ impl RuleSet {
 
 /// App data with every field set, each partner-fee kind once.
 pub(crate) fn sample_app_data() -> AppData {
-    let hook = Hook {
-        target: Address::ZERO,
-        call_data: Vec::new(),
-        gas_limit: 1,
-    };
     let partner_fee = |policy| PartnerFee {
         policy,
         recipient: Address::ZERO,
     };
     AppData {
         app_code: Some("sample".to_owned()),
-        hooks: Hooks {
-            pre: vec![hook.clone()],
-            post: vec![hook],
-        },
         signer: Some(Address::ZERO),
         replaced_order: Some([0; 56]),
         partner_fees: vec![
@@ -266,11 +254,6 @@ pub(crate) fn sample_app_data() -> AppData {
             token: Address::ZERO,
             amount: U256::ONE,
         }),
-        wrappers: vec![WrapperCall {
-            address: Address::ZERO,
-            data: Vec::new(),
-            is_omittable: false,
-        }],
     }
 }
 
@@ -437,11 +420,6 @@ mod tests {
             rule(
                 "Partner fee",
                 "order.appData.metadata.partnerFee[1].surplusBps > 0",
-                "no_fee()",
-            ),
-            rule(
-                "Hooks",
-                "order.appData.metadata.hooks.post[0].gasLimit > 0",
                 "no_fee()",
             ),
             rule(

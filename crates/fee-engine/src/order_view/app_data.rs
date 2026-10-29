@@ -11,26 +11,11 @@ use {
 #[derive(Debug, Clone, Default)]
 pub struct AppData {
     pub app_code: Option<String>,
-    pub hooks: Hooks,
     pub signer: Option<Address>,
     /// The uid of the order this one replaces.
     pub replaced_order: Option<[u8; 56]>,
     pub partner_fees: Vec<PartnerFee>,
     pub flashloan: Option<Flashloan>,
-    pub wrappers: Vec<WrapperCall>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Hooks {
-    pub pre: Vec<Hook>,
-    pub post: Vec<Hook>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Hook {
-    pub target: Address,
-    pub call_data: Vec<u8>,
-    pub gas_limit: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -55,23 +40,12 @@ pub struct Flashloan {
     pub amount: U256,
 }
 
-#[derive(Debug, Clone)]
-pub struct WrapperCall {
-    pub address: Address,
-    pub data: Vec<u8>,
-    pub is_omittable: bool,
-}
-
 /// The app data under the app-data schema's names, typed like the rest of
 /// the view.
 pub(super) fn app_data_view(app_data: &AppData) -> Value {
     json!({
         "appCode": app_data.app_code,
         "metadata": {
-            "hooks": {
-                "pre": app_data.hooks.pre.iter().map(hook).collect::<Vec<_>>(),
-                "post": app_data.hooks.post.iter().map(hook).collect::<Vec<_>>(),
-            },
             "signer": app_data.signer.map(|signer| hex(signer.as_slice())),
             "replacedOrder": app_data.replaced_order.map(|uid| json!({ "uid": hex(&uid) })),
             "partnerFee": app_data.partner_fees.iter().map(partner_fee).collect::<Vec<_>>(),
@@ -82,20 +56,7 @@ pub(super) fn app_data_view(app_data: &AppData) -> Value {
                 "token": hex(flashloan.token.as_slice()),
                 "amount": number(flashloan.amount),
             })),
-            "wrappers": app_data.wrappers.iter().map(|wrapper| json!({
-                "address": hex(wrapper.address.as_slice()),
-                "data": hex(&wrapper.data),
-                "isOmittable": wrapper.is_omittable,
-            })).collect::<Vec<_>>(),
         },
-    })
-}
-
-fn hook(hook: &Hook) -> Value {
-    json!({
-        "target": hex(hook.target.as_slice()),
-        "callData": hex(&hook.call_data),
-        "gasLimit": hook.gas_limit,
     })
 }
 
@@ -132,14 +93,6 @@ mod tests {
         let aa = address!("0x00000000000000000000000000000000000000Aa");
         let app_data = AppData {
             app_code: Some("CoW Swap".to_owned()),
-            hooks: Hooks {
-                pre: vec![Hook {
-                    target: aa,
-                    call_data: vec![0xab],
-                    gas_limit: 21000,
-                }],
-                post: Vec::new(),
-            },
             signer: Some(aa),
             replaced_order: Some([0xab; 56]),
             partner_fees: vec![
@@ -169,11 +122,6 @@ mod tests {
                 token: aa,
                 amount: U256::from(6136714),
             }),
-            wrappers: vec![WrapperCall {
-                address: aa,
-                data: vec![0xab],
-                is_omittable: true,
-            }],
         };
         let aa = "0x00000000000000000000000000000000000000aa";
         assert_eq!(
@@ -181,10 +129,6 @@ mod tests {
             json!({
                 "appCode": "CoW Swap",
                 "metadata": {
-                    "hooks": {
-                        "pre": [{ "target": aa, "callData": "0xab", "gasLimit": 21000 }],
-                        "post": [],
-                    },
                     "signer": aa,
                     "replacedOrder": { "uid": format!("0x{}", "ab".repeat(56)) },
                     "partnerFee": [
@@ -199,22 +143,17 @@ mod tests {
                         "token": aa,
                         "amount": 6136714.0,
                     },
-                    "wrappers": [{ "address": aa, "data": "0xab", "isOmittable": true }],
                 },
             })
         );
     }
 
     #[test]
-    fn default_app_data_has_only_the_empty_lists() {
-        // The lists are there to read without `has`.
+    fn default_app_data_has_only_the_empty_partner_fees() {
+        // The list is there to read without `has`.
         assert_eq!(
             view(&AppData::default()),
-            json!({ "metadata": {
-                "hooks": { "pre": [], "post": [] },
-                "partnerFee": [],
-                "wrappers": [],
-            } })
+            json!({ "metadata": { "partnerFee": [] } })
         );
     }
 }
