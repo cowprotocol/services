@@ -174,9 +174,8 @@ order.
 
 The fields of the API order that a fee can depend on, under the API names
 except for the app data (see `order.appData`), built field by field in
-`order_view/mod.rs`. Amounts and prices are doubles
-and hex is lowercase. An order with every field set looks like this (hashes
-shortened):
+`order_view/mod.rs`. Amounts and prices are doubles and hex is lowercase. An
+order with every field set looks like this (hashes shortened):
 
 ```json
 {
@@ -196,7 +195,6 @@ shortened):
   "signingScheme": "eip712",
   "validTo": 1793284991,
   "validFrom": 1793281391,
-  "appDataHash": "0x3a8f…09bc",
   "appData": {
     "appCode": "CoW Swap",
     "metadata": {
@@ -258,10 +256,9 @@ matter.
 
 `Order::app_data`: the app data a fee can depend on, which the host copies
 from the protocol's parsed document, plus its `appCode`. The engine reads no
-app-data text. The names
-are those of an order-creation request: the document is `appData` and its
-hash is `appDataHash`. The order the API returns calls the hash `appData`
-and has the document as `fullAppData` text.
+app-data text. In the order the API returns, `appData` is the hash and
+`fullAppData` is the document as text; the view has the parsed document as
+`appData`, and no hash.
 
 The order above shows every field. No other key of the document is here,
 hooks, wrappers and partner fees included; the host appends the partner

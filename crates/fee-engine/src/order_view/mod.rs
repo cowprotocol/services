@@ -48,7 +48,6 @@ pub(crate) fn order_view(
         "signingScheme": order.signature.scheme(),
         "validTo": data.valid_to,
         "validFrom": meta.valid_from,
-        "appDataHash": hex(&data.app_data.0),
         "appData": app_data_view(app_data),
         "fastPath": meta.fast_path,
         "inMarket": in_market,
@@ -151,7 +150,6 @@ mod tests {
         assert_eq!(view["inMarket"], false);
         assert!(view.get("class").is_none());
         assert_eq!(view["signingScheme"], "eip712");
-        assert_eq!(view["appDataHash"], format!("0x{}", "0".repeat(64)));
         assert_eq!(view["fastPath"], false);
         assert!(view.get("quote").is_none());
     }
@@ -216,8 +214,8 @@ mod tests {
     }
 
     /// Every view field is the API field of the same name, so a rule author
-    /// can read the API docs. The API lacks `inMarket`, and its order calls
-    /// the hash `appData` and has the document as `fullAppData` text.
+    /// can read the API docs. The API lacks `inMarket`, and its `appData` is
+    /// the hash, not the document.
     #[test]
     fn view_matches_the_api_json() {
         let order = fully_set_order();
@@ -228,8 +226,7 @@ mod tests {
         });
         let fields = view.as_object_mut().unwrap();
         fields.remove("inMarket");
-        let hash = fields.remove("appDataHash").unwrap();
-        fields.insert("appData".to_owned(), hash);
+        fields.remove("appData");
         assert_matches_api(&view, &serde_json::to_value(&order).unwrap(), "");
     }
 
@@ -285,7 +282,6 @@ mod tests {
                 "signingScheme",
                 "validTo",
                 "validFrom",
-                "appDataHash",
                 "appData",
                 "fastPath",
                 "inMarket",
