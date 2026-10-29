@@ -43,6 +43,7 @@ use {
             BuyTokenDestination,
             EthflowData,
             OnchainOrderData,
+            OnchainOrderPlacementError,
             Order,
             OrderBuilder,
             OrderCreationAppData,
@@ -64,6 +65,7 @@ use {
     number::{nonzero::NonZeroU256, units::EthUnit},
     refunder::RefundStatus,
     reqwest::Client,
+    serde_json::json,
     signature_validator::check_erc1271_result,
     std::ops::DerefMut,
 };
@@ -103,6 +105,12 @@ async fn local_node_eth_flow_indexing_after_refund() {
 #[ignore]
 async fn local_node_eth_flow_zero_buy_amount() {
     run_test(eth_flow_zero_buy_amount).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn local_node_eth_flow_invalid_wrapper() {
+    run_test(eth_flow_invalid_wrapper).await;
 }
 
 async fn eth_flow_tx(web3: Web3) {
@@ -1122,4 +1130,72 @@ async fn eth_flow_zero_buy_amount(web3: Web3) {
     // still settle good orders.
     tracing::info!("waiting for trade");
     test_order_was_settled(&order_b, &onchain).await;
+}
+
+/// On-chain orders can't be rejected when they get placed, so an ethflow order
+/// whose app-data names a wrapper that can't be trusted to settle it has to be
+/// indexed as invalid instead.
+async fn eth_flow_invalid_wrapper(web3: Web3) {
+    let mut onchain = OnchainComponents::deploy(web3.clone()).await;
+
+    let [solver] = onchain.make_solvers(2u64.eth()).await;
+    let [trader] = onchain.make_accounts(2u64.eth()).await;
+    let [dai] = onchain
+        .deploy_tokens_with_weth_uni_v2_pools((DAI_PER_ETH * 1_000).eth(), 1_000u64.eth())
+        .await;
+
+    // The solver is authorized to call `settle()` but isn't a wrapper contract.
+    let wrapper = solver.address();
+    let services = Services::new(&onchain).await;
+    services.start_protocol(solver).await;
+
+    let app_data = services
+        .put_app_data(
+            None,
+            &json!({
+                "metadata": {
+                    "wrappers": [{"address": wrapper, "data": "0x"}],
+                },
+            })
+            .to_string(),
+        )
+        .await
+        .unwrap();
+
+    let valid_to = chrono::offset::Utc::now().timestamp() as u32
+        + timestamp_of_current_block_in_seconds(&web3.provider)
+            .await
+            .unwrap()
+        + 3600;
+    let ethflow_order = ExtendedEthFlowOrder(CoWSwapEthFlow::EthFlowOrder::Data {
+        buyToken: *dai.address(),
+        sellAmount: 1u64.eth(),
+        buyAmount: U256::ONE,
+        validTo: valid_to,
+        partiallyFillable: false,
+        quoteId: 0,
+        feeAmount: U256::ZERO,
+        receiver: trader.address(),
+        appData: app_data.parse().unwrap(),
+    });
+    let ethflow_contract = onchain.contracts().ethflows.first().unwrap();
+    submit_order(
+        &ethflow_order,
+        trader.address(),
+        onchain.contracts(),
+        ethflow_contract,
+    )
+    .await;
+
+    let uid = ethflow_order
+        .uid(onchain.contracts(), ethflow_contract)
+        .await;
+    wait_for_condition(TIMEOUT, || async { services.get_order(&uid).await.is_ok() })
+        .await
+        .unwrap();
+    let order = services.get_order(&uid).await.unwrap();
+    assert_eq!(
+        order.metadata.onchain_order_data.unwrap().placement_error,
+        Some(OnchainOrderPlacementError::InvalidOrderData),
+    );
 }

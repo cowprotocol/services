@@ -47,6 +47,7 @@ bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
 cached = { version = "0.55.1", default-features = false }
+cel = { version = "0.15.0", default-features = false, features = ["chrono", "regex"] }
 chain = { path = "crates/chain" }
 chain-types = { path = "crates/chain-types" }
 chrono = { version = "0.4.38", default-features = false, features = ["serde"] }

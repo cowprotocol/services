@@ -14,7 +14,6 @@ use {
         },
         infra::{
             blockchain::Ethereum,
-            config::file::FeeHandler,
             persistence::{Persistence, S3},
         },
         util,
@@ -200,8 +199,6 @@ pub struct Config {
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
     pub request_headers: HashMap<String, String>,
-    /// Determines whether the `solver` or the `driver` handles the fees
-    pub fee_handler: FeeHandler,
     /// Whether this solver supports fast-path (out-of-competition) execution.
     pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
@@ -416,7 +413,6 @@ impl Solver {
             auction,
             liquidity,
             weth,
-            self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
             &wrappers,
@@ -644,7 +640,6 @@ mod tests {
                 solving_share_of_deadline: 1.0.try_into().unwrap(),
             },
             request_headers: Default::default(),
-            fee_handler: FeeHandler::Driver,
             fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,

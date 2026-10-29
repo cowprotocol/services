@@ -2,7 +2,7 @@
 //! during a test.
 
 use {
-    database::{Address, byte_array::ByteArray, order_events},
+    database::{Address, byte_array::ByteArray, fee_policies, order_events},
     e2e::setup::Db,
     model::order::OrderUid,
     sqlx::PgConnection,
@@ -34,6 +34,20 @@ WHERE order_uids @> ARRAY[$1::bytea]
         .await
         .unwrap();
     rows.into_iter().filter_map(|(cap,)| cap).collect()
+}
+
+/// Returns the fee policies stored for that order in the latest auction it was
+/// part of, in application order.
+pub async fn latest_fee_policies_of_order(db: &Db, uid: &OrderUid) -> Vec<fee_policies::FeePolicy> {
+    let mut db = db.acquire().await.unwrap();
+    let policies = fee_policies::fetch_by_order_uid(db.deref_mut(), &ByteArray(uid.0))
+        .await
+        .unwrap();
+    let latest_auction = policies.iter().map(|policy| policy.auction_id).max();
+    policies
+        .into_iter()
+        .filter(|policy| Some(policy.auction_id) == latest_auction)
+        .collect()
 }
 
 /// Returns the quote a fast-path auction settled, or `None` for a regular one.

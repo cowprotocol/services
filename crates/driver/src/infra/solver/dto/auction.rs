@@ -9,7 +9,7 @@ use {
             },
             liquidity,
         },
-        infra::{config::file::FeeHandler, solver::ManageNativeToken},
+        infra::solver::ManageNativeToken,
     },
     app_data::AppDataHash,
     eth_domain_types as eth,
@@ -20,12 +20,10 @@ use {
 
 pub type WrapperCalls = HashMap<order::Uid, Vec<solvers_dto::auction::WrapperCall>>;
 
-#[expect(clippy::too_many_arguments)]
 pub fn new(
     auction: &competition::Auction,
     liquidity: &[liquidity::Liquidity],
     weth: eth::WrappedNativeToken,
-    fee_handler: FeeHandler,
     solver_native_token: ManageNativeToken,
     flashloan_hints: &HashMap<order::Uid, Flashloan>,
     wrappers: &WrapperCalls,
@@ -99,30 +97,28 @@ pub fn new(
                 // to cover the fee.
                 //
                 // https://github.com/cowprotocol/services/issues/2440
-                if fee_handler == FeeHandler::Driver {
-                    order.protocol_fees.iter().for_each(|protocol_fee| {
-                        if let fees::FeePolicy::Volume { factor, .. } = protocol_fee {
-                            match order.side {
-                                Side::Buy => {
-                                    // reduce sell amount by factor
-                                    available.sell.amount = available
-                                        .sell
-                                        .amount
-                                        .apply_factor(1.0 / (1.0 + factor))
-                                        .unwrap_or_default();
-                                }
-                                Side::Sell => {
-                                    // increase buy amount by factor
-                                    available.buy.amount = available
-                                        .buy
-                                        .amount
-                                        .apply_factor(1.0 / (1.0 - factor))
-                                        .unwrap_or_default();
-                                }
+                order.protocol_fees.iter().for_each(|protocol_fee| {
+                    if let fees::FeePolicy::Volume { factor, .. } = protocol_fee {
+                        match order.side {
+                            Side::Buy => {
+                                // reduce sell amount by factor
+                                available.sell.amount = available
+                                    .sell
+                                    .amount
+                                    .apply_factor(1.0 / (1.0 + factor))
+                                    .unwrap_or_default();
+                            }
+                            Side::Sell => {
+                                // increase buy amount by factor
+                                available.buy.amount = available
+                                    .buy
+                                    .amount
+                                    .apply_factor(1.0 / (1.0 - factor))
+                                    .unwrap_or_default();
                             }
                         }
-                    })
-                }
+                    }
+                });
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),
                     sell_token: *available.sell.token,
@@ -157,14 +153,6 @@ pub fn new(
                     ),
                     buy_token_destination: buy_token_destination_from_domain(
                         order.buy_token_balance.into(),
-                    ),
-                    fee_policies: (fee_handler == FeeHandler::Solver).then_some(
-                        order
-                            .protocol_fees
-                            .iter()
-                            .cloned()
-                            .map(fee_policy_from_domain)
-                            .collect(),
                     ),
                     penalty_cap_native: order.penalty_cap_native.map(Into::into),
                     app_data: AppDataHash(order.app_data.hash().0.into()),
@@ -336,34 +324,6 @@ pub fn new(
             .iter()
             .cloned()
             .collect::<Vec<_>>(),
-    }
-}
-
-fn fee_policy_from_domain(value: fees::FeePolicy) -> solvers_dto::auction::FeePolicy {
-    match value {
-        order::FeePolicy::Surplus {
-            factor,
-            max_volume_factor,
-        } => solvers_dto::auction::FeePolicy::Surplus {
-            factor,
-            max_volume_factor,
-        },
-        order::FeePolicy::PriceImprovement {
-            factor,
-            max_volume_factor,
-            quote,
-        } => solvers_dto::auction::FeePolicy::PriceImprovement {
-            factor,
-            max_volume_factor,
-            quote: solvers_dto::auction::Quote {
-                sell_amount: quote.sell.amount.into(),
-                buy_amount: quote.buy.amount.into(),
-                fee: quote.fee.amount.into(),
-            },
-        },
-        order::FeePolicy::Volume { factor, .. } => {
-            solvers_dto::auction::FeePolicy::Volume { factor }
-        }
     }
 }
 

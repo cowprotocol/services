@@ -1,6 +1,6 @@
 use {
     crate::{
-        infra::config::file::{FeeHandler, OrderPriorityStrategy},
+        infra::config::file::OrderPriorityStrategy,
         tests::{
             cases::EtherExt,
             setup::{Order, OrderQuote, ab_order, ab_pool, ab_solution, setup, test_solver},
@@ -20,7 +20,7 @@ use {
 #[ignore]
 async fn default_sorting() {
     let now = Utc::now().timestamp() as u32;
-    let solver = test_solver().fee_handler(FeeHandler::Driver);
+    let solver = test_solver();
     let test = setup()
         .solvers(vec![solver.clone()])
         .pool(ab_pool())
@@ -94,7 +94,7 @@ async fn default_sorting() {
 #[ignore]
 async fn creation_timestamp_sorting() {
     let now = Utc::now().timestamp() as u32;
-    let solver = test_solver().fee_handler(FeeHandler::Driver);
+    let solver = test_solver();
     let test = setup()
         .solvers(vec![solver.clone()])
         .pool(ab_pool())
@@ -131,7 +131,7 @@ async fn creation_timestamp_sorting() {
 #[ignore]
 async fn external_price_sorting() {
     let now = Utc::now().timestamp() as u32;
-    let solver = test_solver().fee_handler(FeeHandler::Driver);
+    let solver = test_solver();
     let test = setup()
         .solvers(vec![solver.clone()])
         .pool(ab_pool())
@@ -163,7 +163,7 @@ async fn external_price_sorting() {
 #[ignore]
 async fn own_quotes_sorting() {
     let now = Utc::now().timestamp() as u32;
-    let solver = test_solver().fee_handler(FeeHandler::Driver);
+    let solver = test_solver();
     let test = setup()
         .solvers(vec![solver.clone()])
         .pool(ab_pool())
@@ -198,7 +198,7 @@ async fn own_quotes_sorting() {
 #[ignore]
 async fn mixed_custom_sorting() {
     let now = Utc::now().timestamp() as u32;
-    let solver = test_solver().fee_handler(FeeHandler::Driver);
+    let solver = test_solver();
     let test = setup()
         .solvers(vec![solver.clone()])
         .pool(ab_pool())
