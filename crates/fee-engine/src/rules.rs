@@ -404,19 +404,15 @@ mod tests {
                 "order.onchainOrderData.placementError == 'other'",
                 "no_fee()",
             ),
-            rule(
-                "App code",
-                "order.fullAppData.appCode == 'sample'",
-                "no_fee()",
-            ),
+            rule("App code", "order.appData.appCode == 'sample'", "no_fee()"),
             rule(
                 "Partner fee",
-                "order.fullAppData.metadata.partnerFee[1].surplusBps > 0",
+                "order.appData.metadata.partnerFee[1].surplusBps > 0",
                 "no_fee()",
             ),
             rule(
                 "Hooks",
-                "order.fullAppData.metadata.hooks.post[0].gasLimit > 0",
+                "order.appData.metadata.hooks.post[0].gasLimit > 0",
                 "no_fee()",
             ),
             rule(
@@ -449,7 +445,7 @@ mod tests {
         assert!(matches!(
             errors(vec![rule(
                 "Unguarded",
-                "order.fullAppData.metadata.quote.slippageBips > 0",
+                "order.appData.metadata.quote.slippageBips > 0",
                 "no_fee()"
             )])[..],
             [SampleOrderError {

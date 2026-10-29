@@ -36,8 +36,8 @@ pub(crate) fn order_view(Order { order, in_market }: Order) -> Value {
         "signingScheme": order.signature.scheme(),
         "validTo": data.valid_to,
         "validFrom": meta.valid_from,
-        "appData": hex(&data.app_data.0),
-        "fullAppData": full_app_data::full_app_data(meta.full_app_data.as_deref()),
+        "appDataHash": hex(&data.app_data.0),
+        "appData": full_app_data::full_app_data(meta.full_app_data.as_deref()),
         "fastPath": meta.fast_path,
         "inMarket": in_market,
         "quote": meta.quote.as_ref().map(|quote| json!({
@@ -138,10 +138,10 @@ mod tests {
         assert_eq!(view["inMarket"], false);
         assert!(view.get("class").is_none());
         assert_eq!(view["signingScheme"], "eip712");
-        assert_eq!(view["appData"], format!("0x{}", "0".repeat(64)));
+        assert_eq!(view["appDataHash"], format!("0x{}", "0".repeat(64)));
         assert_eq!(view["fastPath"], false);
         assert!(view.get("quote").is_none());
-        assert_eq!(view["fullAppData"]["metadata"]["partnerFee"], json!([]));
+        assert_eq!(view["appData"]["metadata"]["partnerFee"], json!([]));
     }
 
     /// An order with every option set, the view's fields at their fullest.
@@ -233,8 +233,8 @@ mod tests {
     }
 
     /// Every view field is the API field of the same name, so a rule author
-    /// can read the API docs. The API lacks `inMarket` and has `fullAppData`
-    /// as text, not parsed.
+    /// can read the API docs. The API lacks `inMarket`, and its order calls
+    /// the hash `appData` and has the document as `fullAppData` text.
     #[test]
     fn view_matches_the_api_json() {
         let order = fully_set_order();
@@ -244,13 +244,14 @@ mod tests {
         });
         let fields = view.as_object_mut().unwrap();
         fields.remove("inMarket");
-        fields.remove("fullAppData");
+        let hash = fields.remove("appDataHash").unwrap();
+        fields.insert("appData".to_owned(), hash);
         assert_matches_api(&view, &serde_json::to_value(&order).unwrap(), "");
     }
 
     /// Every field of `view` as a path, nested objects and list items
     /// included, e.g. `.quote.sellAmount` or
-    /// `.fullAppData.metadata.wrappers[]`.
+    /// `.appData.metadata.wrappers[]`.
     fn field_paths(view: &Value) -> BTreeSet<String> {
         let children: Vec<(String, &Value)> = match view {
             Value::Object(fields) => fields
@@ -306,8 +307,8 @@ mod tests {
                 "signingScheme",
                 "validTo",
                 "validFrom",
+                "appDataHash",
                 "appData",
-                "fullAppData",
                 "fastPath",
                 "inMarket",
                 "quote",
@@ -382,7 +383,7 @@ mod tests {
     /// The README's sample order has every field of the view, no more.
     #[test]
     fn readme_sample_has_every_field() {
-        let readme = include_str!("../README.md");
+        let readme = include_str!("../../README.md");
         let section = &readme[readme.find("### `order`").unwrap()..];
         let sample = section.split("```json\n").nth(1).unwrap();
         let sample: Value = serde_json::from_str(sample.split("```").next().unwrap()).unwrap();

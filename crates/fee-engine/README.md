@@ -173,8 +173,8 @@ order.
 ### `order`
 
 The fields of the API order that a fee can depend on, under the API names,
-built field by field in `order_view.rs`. Amounts and prices are doubles and
-hex is lowercase. An order with every field set looks like this (hashes
+built field by field in `order_view/mod.rs`. Amounts and prices are doubles
+and hex is lowercase. An order with every field set looks like this (hashes
 shortened):
 
 ```json
@@ -195,8 +195,8 @@ shortened):
   "signingScheme": "eip712",
   "validTo": 1793284991,
   "validFrom": 1793281391,
-  "appData": "0x3a8f…09bc",
-  "fullAppData": {
+  "appDataHash": "0x3a8f…09bc",
+  "appData": {
     "appCode": "CoW Swap",
     "environment": "production",
     "version": "1.14.0",
@@ -283,9 +283,11 @@ A hex literal compares equal to the view only in lowercase: write it so, or
 call `lowerAscii()` on it. Addresses belong in lists, where case does not
 matter.
 
-### `order.fullAppData`
+### `order.appData`
 
-The app-data document, parsed. The fields the protocol reads are typed like
+The app-data document, parsed. The names follow order creation, not the
+API order: the document is `appData` and its hash is `appDataHash`.
+The fields the protocol reads are typed like
 the rest of the view (`order_view/full_app_data.rs` is the reference); every
 other key is kept as the user wrote it, with no hex or number conversion.
 The sample order above shows the typed fields.
@@ -303,9 +305,9 @@ document, or one the protocol cannot parse, sees the empty document `{}`.
 Typed sub-objects keep only the fields above, so a hook's `dappId` is gone.
 
 ```
-when: has(order.fullAppData.appCode) && order.fullAppData.appCode == "CoW Swap"
-when: order.fullAppData.metadata.partnerFee.exists(f, has(f.volumeBps) && f.volumeBps > 10)
-when: has(order.fullAppData.metadata.quote) && order.fullAppData.metadata.quote.slippageBips > 100
+when: has(order.appData.appCode) && order.appData.appCode == "CoW Swap"
+when: order.appData.metadata.partnerFee.exists(f, has(f.volumeBps) && f.volumeBps > 10)
+when: has(order.appData.metadata.quote) && order.appData.metadata.quote.slippageBips > 100
 ```
 
 The sample order of `RuleSet::validate_on_sample_order` holds every typed

@@ -509,24 +509,24 @@ mod tests {
         let rules = rule_set(vec![
             rule(
                 "CoW Swap",
-                r#"has(order.fullAppData.appCode) && order.fullAppData.appCode == "CoW Swap""#,
+                r#"has(order.appData.appCode) && order.appData.appCode == "CoW Swap""#,
                 "volume(1)",
             ),
             rule(
                 "Partner volume fee",
-                "order.fullAppData.metadata.partnerFee.exists(fee, has(fee.volumeBps) && \
+                "order.appData.metadata.partnerFee.exists(fee, has(fee.volumeBps) && \
                  fee.volumeBps > 10)",
                 "volume(2)",
             ),
             rule(
                 "Pre-hooks",
-                "size(order.fullAppData.metadata.hooks.pre) > 0",
+                "size(order.appData.metadata.hooks.pre) > 0",
                 "volume(3)",
             ),
             rule(
                 "High slippage",
-                "has(order.fullAppData.metadata.quote) && \
-                 order.fullAppData.metadata.quote.slippageBips > 100",
+                "has(order.appData.metadata.quote) && order.appData.metadata.quote.slippageBips > \
+                 100",
                 "volume(4)",
             ),
         ]);
