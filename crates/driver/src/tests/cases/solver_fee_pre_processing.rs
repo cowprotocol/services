@@ -1,13 +1,12 @@
 //! Parameterized tests for the "make-room" pre-processing of the solver fee.
 //!
-//! The solver fee is injected as a volume fee policy, so in
-//! `FeeHandler::Driver` mode the driver tightens each order's limits before
-//! sending the auction to the solver exactly like it does for protocol volume
-//! fees: any bid the solver returns at the tightened limit still respects the
-//! user's signed limit price after the fee is taken. These tests prove that
-//! round-trip closes: the solver bids exactly at the tightened limit it sees,
-//! the driver takes the fee, and the reported amounts land on the user's signed
-//! limit.
+//! The solver fee is injected as a volume fee policy, so the driver tightens
+//! each order's limits before sending the auction to the solver exactly like
+//! it does for protocol volume fees: any bid the solver returns at the
+//! tightened limit still respects the user's signed limit price after the fee
+//! is taken. These tests prove that round-trip closes: the solver bids exactly
+//! at the tightened limit it sees, the driver takes the fee, and the reported
+//! amounts land on the user's signed limit.
 //!
 //! Modelled on the `volume_protocol_fee_*_at_limit_price` cases in
 //! [`super::protocol_fees`], which exercise the same code path for protocol
@@ -149,7 +148,8 @@ async fn sell_order_at_limit_price() {
                 sell: 50.ether().into_wei(),
                 buy: 50.ether().into_wei(),
             },
-            // Driver subtracts the 20% solver fee, landing exactly on the signed limit.
+            // Driver subtracts the 20% solver fee, landing exactly on the
+            // signed limit.
             driver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -181,7 +181,8 @@ async fn buy_order_at_limit_price() {
                 sell: 40.ether().into_wei(),
                 buy: 40.ether().into_wei(),
             },
-            // Driver adds the 25% solver fee, landing exactly on the signed limit.
+            // Driver adds the 25% solver fee, landing exactly on the signed
+            // limit.
             driver: Amounts {
                 sell: 50.ether().into_wei(),
                 buy: 40.ether().into_wei(),
@@ -206,12 +207,14 @@ async fn partial_sell_order_at_limit_price() {
         },
         solver_fee_bps: 2000,
         execution: Execution {
-            // 40% partial fill at the tightened limit (20 / (1 - 0.2) = 25 buy).
+            // 40% partial fill at the tightened limit (20 / (1 - 0.2) = 25
+            // buy).
             solver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 25.ether().into_wei(),
             },
-            // 20% solver fee on the partial buy lands on the partial signed limit.
+            // 20% solver fee on the partial buy lands on the partial signed
+            // limit.
             driver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 20.ether().into_wei(),
@@ -236,12 +239,14 @@ async fn partial_buy_order_at_limit_price() {
         },
         solver_fee_bps: 2500,
         execution: Execution {
-            // 40% partial fill at the tightened limit (20 / (1 + 0.25) = 16 sell).
+            // 40% partial fill at the tightened limit (20 / (1 + 0.25) = 16
+            // sell).
             solver: Amounts {
                 sell: 16.ether().into_wei(),
                 buy: 20.ether().into_wei(),
             },
-            // 25% solver fee on the partial sell lands on the partial signed limit.
+            // 25% solver fee on the partial sell lands on the partial signed
+            // limit.
             driver: Amounts {
                 sell: 20.ether().into_wei(),
                 buy: 20.ether().into_wei(),

@@ -1,7 +1,15 @@
 //! Orderbook entry-point logic.
 
 use {
-    crate::infra::{Api, api::Sponsoring, config, observe as infra_observe, quoter::Quoter},
+    crate::infra::{
+        Api,
+        api::Sponsoring,
+        config,
+        db,
+        observe as infra_observe,
+        prices::NativePrices,
+        quoter::Quoter,
+    },
     clap::Parser,
     configs::database::DatabasePoolConfig,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
@@ -51,7 +59,7 @@ struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+        db::ping(&self.pool).await.is_ok()
     }
 }
 
@@ -98,6 +106,7 @@ pub async fn run(args: Args) {
                 &rpc.endpoint,
                 rpc.request_timeout,
                 CommitmentConfig::confirmed(),
+                "sponsoring",
             ),
             max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
             mints: solana_token::MintVerdicts::default(),
@@ -107,9 +116,11 @@ pub async fn run(args: Args) {
         addr: config.http.bind_address,
         pool,
         quoter: Quoter::new(config.quoting.drivers.clone(), config.quoting.timeout),
+        prices: NativePrices::new(config.quoting.autopilot.clone(), config.quoting.timeout),
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
         sponsoring,
+        app_data_size_limit: config.app_data_size_limit,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

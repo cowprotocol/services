@@ -34,6 +34,7 @@ use {
             OrderData,
             OrderKind,
             OrderMetadata,
+            OrderUid,
             SellTokenSource,
             VerificationError,
         },
@@ -44,6 +45,7 @@ use {
     price_estimation::{PriceEstimationError, Verification},
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     std::{
+        collections::HashSet,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -51,12 +53,16 @@ use {
     tracing::instrument,
 };
 
-/// Order simulation paired with the EIP-1271 signature check. The
-/// simulation result is logged but does not affect order acceptance.
+/// Order simulation paired with the EIP-1271 signature check. The result is
+/// logged, and for flashloan orders from an allowlisted lender a passing
+/// simulation accepts the order (see [`accept_by_simulation`]).
 #[derive(Clone)]
 pub struct OrderSimulator {
     pub simulator: Arc<dyn OrderSimulating>,
     pub timeout: Duration,
+    /// Flashloan lenders whose orders a passing simulation may accept.
+    // TODO(jmg-duarte): checks must be fully migrated or the configuration should be reworked
+    pub ignore_legacy_checks_for_lenders: HashSet<Address>,
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -108,6 +114,16 @@ impl OrderSimulator {
             .observe(start.elapsed().as_secs_f64());
 
         result
+    }
+
+    /// Whether a passing simulation may accept this order despite failing
+    /// legacy checks: it must carry a flashloan hint from an allowlisted
+    /// lender.
+    fn ignores_legacy_checks_for(&self, app_data: &ValidatedAppData) -> bool {
+        app_data.protocol.flashloan.as_ref().is_some_and(|loan| {
+            self.ignore_legacy_checks_for_lenders
+                .contains(&loan.liquidity_provider)
+        })
     }
 }
 
@@ -168,6 +184,42 @@ fn log_simulation_outcome(
             "order simulation infra error",
         ),
         _ => {}
+    }
+}
+
+/// Lets a passing settlement simulation accept a flashloan order that the
+/// signature or transfer check rejected. Every other simulation outcome keeps
+/// the checks result, so a failed simulation never skips checks.
+fn accept_by_simulation(
+    simulation: Result<SimulationSuccess, OrderSimulationError>,
+    checks_res: Result<u64, ValidationError>,
+    order_uid: &OrderUid,
+) -> Result<u64, ValidationError> {
+    match (simulation, checks_res) {
+        (Ok(success), checks_res) => {
+            if let Err(err) = &checks_res {
+                tracing::info!(%order_uid, ?err, "flashloan order accepted by simulation");
+            }
+            Ok(success.eip1271_signature_verification_gas)
+        }
+        (
+            Err(OrderSimulationError::Reverted {
+                reason,
+                tenderly_url,
+                ..
+            }),
+            Err(err),
+        ) => {
+            tracing::warn!(
+                %order_uid,
+                ?err,
+                ?reason,
+                ?tenderly_url,
+                "flashloan order rejected by legacy checks and simulation"
+            );
+            Err(err)
+        }
+        (Err(_), checks_res) => checks_res,
     }
 }
 
@@ -288,6 +340,8 @@ pub enum ValidationError {
     TooManyLimitOrders,
     TooMuchGas,
     QuoteNotVerified,
+    /// The app-data names a wrapper that can't be trusted to settle the order.
+    InvalidWrapper(Address),
     Other(anyhow::Error),
 }
 
@@ -403,6 +457,7 @@ pub struct OrderValidator {
     /// volume-fee factor from an order's app-data. `None` disables partner
     /// fees entirely for the fast-path limit-price check.
     max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+    wrapper_validator: order_validation::wrappers::Validator,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -473,6 +528,7 @@ impl OrderValidator {
         // `fee_policies.max_partner_fee`. `None` disables partner fees for
         // the check.
         max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+        wrapper_validator: order_validation::wrappers::Validator,
     ) -> Self {
         Self {
             native_token,
@@ -492,6 +548,7 @@ impl OrderValidator {
             same_tokens_policy,
             protocol_volume_fee_policy,
             max_partner_fee,
+            wrapper_validator,
         }
     }
 
@@ -686,8 +743,9 @@ impl OrderValidator {
             // passes we consider the token transferable. If all transfers fail
             // we return the last error.
             match simulate_transfers([1, 10, 100].map(U256::from).as_slice()).await {
-                // A zero/low balance is acceptable as long as the owner has already set a
-                // real on-chain approval that covers the order (spam protection).
+                // A zero/low balance is acceptable as long as the owner has
+                // already set a real on-chain approval that covers the order
+                // (spam protection).
                 Err(ValidationError::InsufficientBalance) => {
                     let data = order.data();
                     let approval = self
@@ -915,6 +973,22 @@ impl OrderValidating for OrderValidator {
             .await
             .map_err(ValidationError::Partial)?;
 
+        let wrappers: Vec<_> = app_data
+            .inner
+            .protocol
+            .wrappers
+            .iter()
+            .map(|w| w.address)
+            .collect();
+        if let Some(wrapper) = self
+            .wrapper_validator
+            .find_invalid(&wrappers)
+            .await
+            .map_err(|err| ValidationError::Other(err.into()))?
+        {
+            return Err(ValidationError::InvalidWrapper(wrapper));
+        }
+
         let preview_order = Order {
             metadata: OrderMetadata {
                 owner,
@@ -973,14 +1047,26 @@ impl OrderValidating for OrderValidator {
                     );
                 }
 
-                let gas_limit = signature_res.map_err(|err| match err {
+                let signature_res = signature_res.map_err(|err| match err {
                     SignatureValidationError::Invalid => {
                         ValidationError::InvalidEip1271Signature(hash)
                     }
                     SignatureValidationError::Other(err) => ValidationError::Other(err),
-                })?;
-                transfer_res?;
-                gas_limit
+                });
+                let checks_res = match (signature_res, transfer_res) {
+                    (Ok(gas_limit), Ok(())) => Ok(gas_limit),
+                    (Err(err), _) | (Ok(_), Err(err)) => Err(err),
+                };
+                let ignore_legacy_checks = self
+                    .order_simulator
+                    .as_ref()
+                    .is_some_and(|simulator| simulator.ignores_legacy_checks_for(&app_data.inner));
+                match simulation_opt {
+                    Some(simulation) if ignore_legacy_checks => {
+                        accept_by_simulation(simulation, checks_res, &preview_order.metadata.uid)?
+                    }
+                    _ => checks_res?,
+                }
             }
             None => {
                 let (simulation_opt, transfer_res) = tokio::join!(simulation_fut, transfer_fut);
@@ -1043,8 +1129,8 @@ impl OrderValidating for OrderValidator {
                 }
                 Some(quote)
             }
-            // If there is not enough liquidity, it's still possible to place this order (as
-            // an implicit out of market order)
+            // If there is not enough liquidity, it's still possible to place
+            // this order (as an implicit out of market order)
             Err(ValidationError::PriceForQuote(PriceEstimationError::NoLiquidity)) => {
                 tracing::debug!("placing order without quote");
                 None
@@ -1161,7 +1247,8 @@ pub async fn get_or_create_quote(
             tracing::debug!(quote_id =? quote.id, "found quote for order creation");
             quote
         }
-        // We couldn't find a quote, so try computing a fresh quote to use instead.
+        // We couldn't find a quote, so try computing a fresh quote to use
+        // instead.
         Err(err) => {
             tracing::debug!(?err, "failed to find quote for order creation");
             let parameters = QuoteParameters {
@@ -1311,6 +1398,20 @@ mod tests {
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 
+    /// Wrapper validator whose RPC calls all fail, so it's only usable with
+    /// orders that don't specify any wrappers.
+    fn wrapper_validator() -> order_validation::wrappers::Validator {
+        order_validation::wrappers::Validator::new(
+            contracts::GPv2AllowListAuthentication::Instance::new(
+                Address::repeat_byte(0xaa),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Address::repeat_byte(0x90),
+        )
+    }
+
     #[test]
     fn hash_app_data_keeps_full_document_for_simulation() {
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
@@ -1344,6 +1445,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         // App data with a pre-hook (a gasless approval, the shape that surfaced
@@ -1413,6 +1515,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
         std::assert_matches!(
             validator
@@ -1544,6 +1647,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
         let order = || PreOrderData {
             valid_to: time::now_in_epoch_seconds()
@@ -1611,6 +1715,7 @@ mod tests {
             SameTokensPolicy::AllowSell,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = || PreOrderData {
@@ -1710,6 +1815,7 @@ mod tests {
             SameTokensPolicy::Allow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let valid_to =
@@ -1786,6 +1892,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let now = time::now_in_epoch_seconds();
@@ -1914,6 +2021,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2126,6 +2234,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2201,6 +2310,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2264,6 +2374,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
         let order = OrderCreation {
             valid_to: time::now_in_epoch_seconds() + 2,
@@ -2320,6 +2431,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2380,6 +2492,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2446,6 +2559,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2513,6 +2627,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let order = OrderCreation {
@@ -2574,6 +2689,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -2646,6 +2762,7 @@ mod tests {
                 SameTokensPolicy::Disallow,
                 None,
                 None,
+                wrapper_validator(),
             );
 
             let order = OrderCreation {
@@ -2742,6 +2859,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         // Test with flashloan hint that covers the sell amount
@@ -3160,6 +3278,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         );
 
         let creation = OrderCreation {
@@ -3212,6 +3331,7 @@ mod tests {
         OrderSimulator {
             simulator: Arc::new(sim),
             timeout: DEFAULT_ORDER_SIM_TIMEOUT,
+            ignore_legacy_checks_for_lenders: Default::default(),
         }
     }
 
@@ -3220,9 +3340,9 @@ mod tests {
         order_simulator: Option<OrderSimulator>,
         eip1271_skip_creation_validation: bool,
     ) -> OrderValidator {
-        // The quote lookup, balance fetch, and limit-order count are off the
-        // path under test here. Stub them to always succeed so every test
-        // reaches the EIP-1271 block without tripping earlier validation.
+        // The quote lookup and balance fetch are off the path under test
+        // here. Stub them to always succeed so every test reaches the
+        // EIP-1271 block without tripping earlier validation.
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
@@ -3231,6 +3351,22 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _| Ok(()));
+        build_1271_validator_with(
+            signature_validator,
+            balance_fetcher,
+            order_quoter,
+            order_simulator,
+            eip1271_skip_creation_validation,
+        )
+    }
+
+    fn build_1271_validator_with(
+        signature_validator: MockSignatureValidating,
+        balance_fetcher: MockBalanceFetching,
+        order_quoter: MockOrderQuoting,
+        order_simulator: Option<OrderSimulator>,
+        eip1271_skip_creation_validation: bool,
+    ) -> OrderValidator {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token =
@@ -3258,6 +3394,7 @@ mod tests {
             SameTokensPolicy::Disallow,
             None,
             None,
+            wrapper_validator(),
         )
     }
 
@@ -3440,5 +3577,227 @@ mod tests {
             matches!(err, ValidationError::InvalidEip1271Signature(_)),
             "got {err:?}"
         );
+    }
+
+    const LENDER: Address = Address::repeat_byte(0xaa);
+
+    /// EIP-1271 order with a flashloan hint from `LENDER` that covers the
+    /// sell amount, i.e. an order a passing simulation may accept on its own.
+    fn make_flashloan_1271_order_creation() -> OrderCreation {
+        let base = make_1271_order_creation();
+        OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: format!(
+                    r#"{{"metadata":{{"flashloan":{{"liquidityProvider":"{LENDER}","protocolAdapter":"0x2222222222222222222222222222222222222222","receiver":"0x2222222222222222222222222222222222222222","token":"{}","amount":"{}"}}}}}}"#,
+                    base.sell_token, base.sell_amount
+                ),
+            },
+            ..base
+        }
+    }
+
+    fn order_simulator_ignoring_legacy_checks(sim: MockOrderSimulating) -> OrderSimulator {
+        OrderSimulator {
+            ignore_legacy_checks_for_lenders: HashSet::from([LENDER]),
+            ..order_simulator(sim)
+        }
+    }
+
+    const SIGNATURE_GAS: u64 = 10;
+    const SIMULATION_GAS: u64 = 20;
+
+    fn simulation_passes() -> Result<SimulationSuccess, OrderSimulationError> {
+        Ok(SimulationSuccess {
+            eip1271_signature_verification_gas: SIMULATION_GAS,
+        })
+    }
+
+    fn simulation_reverts() -> Result<SimulationSuccess, OrderSimulationError> {
+        Err(OrderSimulationError::Reverted {
+            reason: "hook reverted".into(),
+            tenderly_url: None,
+            tenderly_request: None,
+            summary: vec![],
+        })
+    }
+
+    fn simulation_fails_to_run() -> Result<SimulationSuccess, OrderSimulationError> {
+        Err(OrderSimulationError::Infra(anyhow!("RPC down")))
+    }
+
+    /// Validates a flashloan order from an allowlisted lender with the given
+    /// legacy check and simulation outcomes. Also returns the EIP-1271 gas
+    /// that reached the quote lookup.
+    async fn validate_flashloan_order(
+        signature: Result<u64, SignatureValidationError>,
+        sufficient_allowance: bool,
+        simulation: Result<SimulationSuccess, OrderSimulationError>,
+    ) -> (Result<(Order, Option<Quote>), ValidationError>, Option<u64>) {
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature_and_get_additional_gas()
+            .return_once(move |_| signature);
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(move |_, _| match sufficient_allowance {
+                true => Ok(()),
+                false => Err(TransferSimulationError::InsufficientAllowance),
+            });
+        let quoted_gas = Arc::new(std::sync::Mutex::new(None));
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter.expect_find_quote().returning({
+            let quoted_gas = quoted_gas.clone();
+            move |_, parameters| {
+                *quoted_gas.lock().unwrap() =
+                    Some(parameters.signing_scheme.additional_gas_amount());
+                Ok(Default::default())
+            }
+        });
+        let mut sim = MockOrderSimulating::new();
+        sim.expect_simulate()
+            .times(1)
+            .return_once(move |_, _, _| simulation);
+        let validator = build_1271_validator_with(
+            signature_validator,
+            balance_fetcher,
+            order_quoter,
+            Some(order_simulator_ignoring_legacy_checks(sim)),
+            false,
+        );
+
+        let result = validator
+            .validate_and_construct_order(
+                make_flashloan_1271_order_creation(),
+                &DomainSeparator::default(),
+                Default::default(),
+                None,
+            )
+            .await;
+        let quoted_gas = *quoted_gas.lock().unwrap();
+        (result, quoted_gas)
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_passing_all_checks_uses_simulation_gas() {
+        let (result, gas) =
+            validate_flashloan_order(Ok(SIGNATURE_GAS), true, simulation_passes()).await;
+        assert!(result.is_ok(), "got {result:?}");
+        assert_eq!(gas, Some(SIMULATION_GAS));
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_with_invalid_signature_accepted_by_passing_simulation() {
+        let (result, gas) = validate_flashloan_order(
+            Err(SignatureValidationError::Invalid),
+            true,
+            simulation_passes(),
+        )
+        .await;
+        assert!(result.is_ok(), "got {result:?}");
+        assert_eq!(gas, Some(SIMULATION_GAS));
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_with_insufficient_allowance_accepted_by_passing_simulation() {
+        let (result, gas) =
+            validate_flashloan_order(Ok(SIGNATURE_GAS), false, simulation_passes()).await;
+        assert!(result.is_ok(), "got {result:?}");
+        assert_eq!(gas, Some(SIMULATION_GAS));
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_passing_legacy_checks_accepted_when_simulation_reverts() {
+        let (result, gas) =
+            validate_flashloan_order(Ok(SIGNATURE_GAS), true, simulation_reverts()).await;
+        assert!(result.is_ok(), "got {result:?}");
+        assert_eq!(gas, Some(SIGNATURE_GAS));
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_with_invalid_signature_rejected_when_simulation_reverts() {
+        let (result, _) = validate_flashloan_order(
+            Err(SignatureValidationError::Invalid),
+            true,
+            simulation_reverts(),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(ValidationError::InvalidEip1271Signature(_))),
+            "got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_with_insufficient_allowance_rejected_when_simulation_reverts() {
+        let (result, _) =
+            validate_flashloan_order(Ok(SIGNATURE_GAS), false, simulation_reverts()).await;
+        assert!(
+            matches!(result, Err(ValidationError::InsufficientAllowance)),
+            "got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_passing_legacy_checks_accepted_when_simulation_fails_to_run() {
+        let (result, gas) =
+            validate_flashloan_order(Ok(SIGNATURE_GAS), true, simulation_fails_to_run()).await;
+        assert!(result.is_ok(), "got {result:?}");
+        assert_eq!(gas, Some(SIGNATURE_GAS));
+    }
+
+    #[tokio::test]
+    async fn flashloan_order_with_invalid_signature_rejected_when_simulation_fails_to_run() {
+        let (result, _) = validate_flashloan_order(
+            Err(SignatureValidationError::Invalid),
+            true,
+            simulation_fails_to_run(),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(ValidationError::InvalidEip1271Signature(_))),
+            "got {result:?}"
+        );
+    }
+
+    /// The simulation only overrules the legacy checks for orders that carry
+    /// a flashloan hint from an allowlisted lender.
+    #[tokio::test]
+    async fn simulation_does_not_overrule_legacy_checks_without_allowlisted_lender() {
+        let cases = [
+            (make_flashloan_1271_order_creation(), HashSet::new()),
+            (make_1271_order_creation(), HashSet::from([LENDER])),
+        ];
+        for (order, ignore_legacy_checks_for_lenders) in cases {
+            let mut signature_validator = MockSignatureValidating::new();
+            signature_validator
+                .expect_validate_signature_and_get_additional_gas()
+                .returning(|_| Err(SignatureValidationError::Invalid));
+            let mut sim = MockOrderSimulating::new();
+            sim.expect_simulate().times(1).returning(|_, _, _| {
+                Ok(SimulationSuccess {
+                    eip1271_signature_verification_gas: 0,
+                })
+            });
+            let simulator = OrderSimulator {
+                ignore_legacy_checks_for_lenders,
+                ..order_simulator(sim)
+            };
+            let validator = build_1271_validator(signature_validator, Some(simulator), false);
+
+            let result = validator
+                .validate_and_construct_order(
+                    order,
+                    &DomainSeparator::default(),
+                    Default::default(),
+                    None,
+                )
+                .await;
+
+            assert!(
+                matches!(result, Err(ValidationError::InvalidEip1271Signature(_))),
+                "got {result:?}"
+            );
+        }
     }
 }

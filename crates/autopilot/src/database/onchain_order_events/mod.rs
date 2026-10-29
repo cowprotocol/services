@@ -18,6 +18,7 @@ use {
             OrderInvalidation,
             OrderPlacement as ContractOrderPlacement,
         },
+        GPv2AllowListAuthentication,
         HooksTrampoline::{self, HooksTrampoline::Hook},
     },
     database::{
@@ -28,9 +29,9 @@ use {
         orders::{Order, insert_quotes},
     },
     eth_domain_types::Receiver,
-    ethrpc::{Web3, block_stream::timestamp_of_block_in_seconds},
+    ethrpc::{AlloyProvider, Web3, block_stream::timestamp_of_block_in_seconds},
     event_indexing::{block_retriever::RangeInclusive, event_handler::EventStoring},
-    futures::{StreamExt, stream},
+    futures::{StreamExt, future, stream},
     itertools::{izip, multiunzip},
     model::{
         DomainSeparator,
@@ -60,7 +61,10 @@ use {
         },
     },
     sqlx::PgConnection,
-    std::{collections::HashMap, sync::Arc},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Arc,
+    },
 };
 
 pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
@@ -72,6 +76,7 @@ pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     settlement_contract: Address,
     metrics: &'static Metrics,
     trampoline: HooksTrampoline::Instance,
+    wrapper_validator: order_validation::wrappers::Validator,
 }
 
 impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
@@ -79,6 +84,7 @@ where
     EventData: Send + Sync,
     EventRow: Send + Sync,
 {
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         db: Postgres,
         web3: Web3,
@@ -87,6 +93,7 @@ where
         domain_separator: DomainSeparator,
         settlement_contract: Address,
         trampoline: HooksTrampoline::Instance,
+        authenticator: GPv2AllowListAuthentication::Instance,
     ) -> Self {
         OnchainOrderParser {
             db,
@@ -97,6 +104,10 @@ where
             settlement_contract,
             metrics: Metrics::get(),
             trampoline,
+            wrapper_validator: order_validation::wrappers::Validator::new(
+                authenticator,
+                settlement_contract,
+            ),
         }
     }
 }
@@ -225,7 +236,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         Vec<TxHash>,
     )> {
         let block_number_timestamp_hashmap =
-            get_block_numbers_of_events(&self.web3, &order_placement_events).await?;
+            get_block_numbers_of_events(&self.web3.provider, &order_placement_events).await?;
         let custom_event_data = self
             .custom_onchain_data_parser
             .parse_custom_event_data(&order_placement_events)?;
@@ -357,9 +368,14 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         .await
         .context("appending quotes for onchain orders failed")?;
 
-        handle_app_data(transaction, &mut orders, &self.trampoline)
-            .await
-            .context("failed to handle app data")?;
+        handle_app_data(
+            transaction,
+            &mut orders,
+            &self.trampoline,
+            &self.wrapper_validator,
+        )
+        .await
+        .context("failed to handle app data")?;
 
         database::orders::insert_orders_and_ignore_conflicts(transaction, orders.as_slice())
             .await
@@ -376,31 +392,46 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
     }
 }
 
+/// Returns the timestamp of every block that emitted one of the events.
+///
+/// Logs usually carry their block's timestamp already, but the field is
+/// optional in the JSON-RPC spec and not every node returns it. Only blocks
+/// whose timestamp is missing get fetched.
+#[tracing::instrument(skip_all)]
 async fn get_block_numbers_of_events(
-    web3: &Web3,
+    provider: &AlloyProvider,
     events: &[(ContractEvent, Log)],
 ) -> Result<HashMap<u64, u32>> {
-    let mut event_block_numbers: Vec<u64> = events
-        .iter()
-        .map(|(_, log)| {
-            log.block_number
-                .ok_or_else(|| anyhow!("event without metadata"))
-        })
-        .collect::<Result<Vec<u64>>>()?;
-    event_block_numbers.dedup();
-    let futures = event_block_numbers
+    let mut timestamps = HashMap::new();
+    let mut missing_timestamps = HashSet::new();
+    for (_, log) in events {
+        let block_number = log
+            .block_number
+            .ok_or_else(|| anyhow!("event without metadata"))?;
+        let Some(timestamp) = log.block_timestamp else {
+            missing_timestamps.insert(block_number);
+            continue;
+        };
+        let timestamp = u32::try_from(timestamp)
+            .with_context(|| format!("block {block_number} timestamp is not u32"))?;
+        timestamps.insert(block_number, timestamp);
+    }
+    missing_timestamps.retain(|block_number| !timestamps.contains_key(block_number));
+    if missing_timestamps.is_empty() {
+        return Ok(timestamps);
+    }
+
+    tracing::debug!(blocks = ?missing_timestamps, "logs are missing block timestamps");
+    let futures = missing_timestamps
         .into_iter()
         .map(|block_number| async move {
-            let timestamp = timestamp_of_block_in_seconds(
-                &web3.provider,
-                BlockNumberOrTag::Number(block_number),
-            )
-            .await?;
-            Ok((block_number, timestamp))
+            let timestamp =
+                timestamp_of_block_in_seconds(provider, BlockNumberOrTag::Number(block_number))
+                    .await?;
+            anyhow::Ok((block_number, timestamp))
         });
-    let block_number_timestamp_pair: Vec<anyhow::Result<(u64, u32)>> =
-        stream::iter(futures).buffer_unordered(10).collect().await;
-    block_number_timestamp_pair.into_iter().collect()
+    timestamps.extend(future::try_join_all(futures).await?);
+    Ok(timestamps)
 }
 
 fn get_invalidation_events(
@@ -563,13 +594,14 @@ async fn get_quote(
         kind: order_data.kind,
         signing_scheme: quote_signing_scheme,
         hook_gas: 0,
-        // Verified quotes always have prices that are at most as good as unverified quotes but can
-        // be lower.
-        // If the best quote we can find or compute on the fly for this order suggests a worse
-        // price than the order was created with it will cause a `QuoteNotFound` or other error.
-        // Orders indexed with errors are not eligible for automatic refunding.
-        // Because we want to be generous with refunding EthFlow orders we therefore don't request a
-        // verified quote here on purpose.
+        // Verified quotes always have prices that are at most as good as
+        // unverified quotes but can be lower.
+        // If the best quote we can find or compute on the fly for this order
+        // suggests a worse price than the order was created with it will cause
+        // a `QuoteNotFound` or other error. Orders indexed with errors are not
+        // eligible for automatic refunding. Because we want to be generous with
+        // refunding EthFlow orders we therefore don't request a verified quote
+        // here on purpose.
         verification: Default::default(),
         fast_path: false,
     };
@@ -684,8 +716,9 @@ fn extract_order_data_from_onchain_order_placement_event(
 /// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
 /// backfills `valid_from` for non-fast-path orders that requested one,
 /// and indexes pre/post hook interactions. Must run before the orders
-/// are inserted (it mutates them). Orders whose app-data is unknown or
-/// unparseable are left unchanged.
+/// are inserted (it mutates them). Orders whose app-data is unknown are
+/// left unchanged. Orders whose app-data is unparseable or names a wrapper
+/// that can't be trusted to settle the order are marked invalid.
 ///
 /// For fast-path orders `valid_from` is intentionally left `NULL`: the
 /// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
@@ -696,6 +729,7 @@ async fn handle_app_data(
     db: &mut PgConnection,
     orders: &mut [Order],
     trampoline: &HooksTrampoline::Instance,
+    wrapper_validator: &order_validation::wrappers::Validator,
 ) -> Result<()> {
     for order in orders.iter_mut() {
         let appdata_json = database::app_data::fetch(db, &order.app_data)
@@ -719,6 +753,23 @@ async fn handle_app_data(
             .context("failed to mark order invalid")?;
             continue;
         };
+
+        let wrappers: Vec<_> = parsed.wrappers.iter().map(|w| w.address).collect();
+        if let Some(wrapper) = wrapper_validator
+            .find_invalid(&wrappers)
+            .await
+            .with_context(|| format!("failed to validate wrappers of order {:?}", order.uid))?
+        {
+            tracing::debug!(order = ?order.uid, ?wrapper, "marking order invalid: invalid wrapper");
+            database::onchain_broadcasted_orders::set_placement_error(
+                db,
+                &order.uid,
+                OnchainOrderPlacementError::InvalidOrderData,
+            )
+            .await
+            .context("failed to mark order invalid")?;
+            continue;
+        }
 
         store_hooks(db, order, &parsed, trampoline).await?;
         // `validFrom` is only honoured for non-fast-path orders; fast-path
@@ -821,7 +872,11 @@ mod test {
 
     use {
         super::*,
-        alloy::primitives::U256,
+        alloy::{
+            primitives::{Bytes, U256},
+            providers::{Provider, ProviderBuilder, mock::Asserter},
+            sol_types::SolCall,
+        },
         contracts::CoWSwapOnchainOrders,
         database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement},
         ethrpc::Web3,
@@ -831,6 +886,7 @@ mod test {
             signature::SigningScheme,
         },
         number::conversions::u256_to_big_decimal,
+        serde_json::json,
         shared::{
             db_order_conversions::{
                 buy_token_destination_into,
@@ -1295,6 +1351,10 @@ mod test {
             trampoline: HooksTrampoline::Instance::deployed(&web3.provider)
                 .await
                 .unwrap(),
+            wrapper_validator: order_validation::wrappers::Validator::new(
+                GPv2AllowListAuthentication::Instance::new(Address::ZERO, web3.provider.clone()),
+                Address::ZERO,
+            ),
             web3,
             quoter: Arc::new(order_quoter),
             custom_onchain_data_parser: Box::new(custom_onchain_order_parser),
@@ -1352,5 +1412,132 @@ mod test {
                 },
             )]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_handle_app_data_marks_orders_with_invalid_wrappers_invalid() {
+        let db = Postgres::with_defaults().await.unwrap();
+        let mut ex = db.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+
+        let settlement = Address::repeat_byte(0x90);
+        let unauthorized = Address::repeat_byte(1);
+        let wrapper = Address::repeat_byte(2);
+        let mut orders = Vec::new();
+        for (i, wrapper) in [unauthorized, wrapper].into_iter().enumerate() {
+            let app_data = ByteArray([i as u8; 32]);
+            let document = json!({"metadata": {"wrappers": [{"address": wrapper, "data": "0x"}]}});
+            database::app_data::insert(&mut ex, &app_data, document.to_string().as_bytes())
+                .await
+                .unwrap();
+            let order = Order {
+                uid: ByteArray([i as u8; 56]),
+                app_data,
+                ..Default::default()
+            };
+            database::onchain_broadcasted_orders::insert_onchain_order(
+                &mut ex,
+                &EventIndex::default(),
+                &OnchainOrderPlacement {
+                    order_uid: order.uid,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            orders.push(order);
+        }
+
+        // Orders get processed sequentially so the responses are consumed in
+        // the same order.
+        let asserter = Asserter::new();
+        let is_solver = |is_solver: bool| {
+            Bytes::from(
+                GPv2AllowListAuthentication::GPv2AllowListAuthentication::isSolverCall::abi_encode_returns(
+                    &is_solver,
+                ),
+            )
+        };
+        asserter.push_success(&is_solver(false));
+        asserter.push_success(&is_solver(true));
+        asserter.push_success(&Bytes::from(
+            contracts::ICowWrapper::ICowWrapper::SETTLEMENTCall::abi_encode_returns(&settlement),
+        ));
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter)
+            .erased();
+        handle_app_data(
+            &mut ex,
+            &mut orders,
+            &HooksTrampoline::Instance::new(Address::ZERO, provider.clone()),
+            &order_validation::wrappers::Validator::new(
+                GPv2AllowListAuthentication::Instance::new(Address::ZERO, provider),
+                settlement,
+            ),
+        )
+        .await
+        .unwrap();
+
+        let expected = [Some(OnchainOrderPlacementError::InvalidOrderData), None];
+        for (order, expected) in orders.iter().zip(expected) {
+            let placement = database::onchain_broadcasted_orders::read_order(&mut ex, &order.uid)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(placement.placement_error, expected);
+        }
+    }
+
+    fn event_log(block_number: u64, block_timestamp: Option<u64>) -> (ContractEvent, Log) {
+        let event = ContractEvent::OrderInvalidation(OrderInvalidation {
+            orderUid: Default::default(),
+        });
+        let log = Log {
+            block_number: Some(block_number),
+            block_timestamp,
+            ..Default::default()
+        };
+        (event, log)
+    }
+
+    #[tokio::test]
+    async fn block_timestamps_are_taken_from_logs() {
+        // An empty asserter fails every request, so any RPC call fails the
+        // test.
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(Asserter::new())
+            .erased();
+        let events = [event_log(1, Some(100)), event_log(2, Some(200))];
+
+        let timestamps = get_block_numbers_of_events(&provider, &events)
+            .await
+            .unwrap();
+
+        assert_eq!(timestamps, HashMap::from([(1, 100), (2, 200)]));
+    }
+
+    #[tokio::test]
+    async fn missing_block_timestamps_are_fetched_once_per_block() {
+        let asserter = Asserter::new();
+        let mut block: alloy::rpc::types::Block = Default::default();
+        block.header.inner.timestamp = 200;
+        asserter.push_success(&block);
+        let provider = ProviderBuilder::new()
+            .connect_mocked_client(asserter)
+            .erased();
+        let events = [
+            event_log(1, Some(100)),
+            // timestamp already known from another log of the same block
+            event_log(1, None),
+            event_log(2, None),
+            event_log(2, None),
+        ];
+
+        let timestamps = get_block_numbers_of_events(&provider, &events)
+            .await
+            .unwrap();
+
+        assert_eq!(timestamps, HashMap::from([(1, 100), (2, 200)]));
     }
 }

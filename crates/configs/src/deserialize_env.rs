@@ -96,7 +96,8 @@ where
         return Ok(None);
     };
     let raw_url = match env_var_name.strip_prefix(ENV_VAR_PREFIX) {
-        // In the case of optional variables, we assume a missing env var as empty
+        // In the case of optional variables, we assume a missing env var as
+        // empty
         Some(env_var_name) => match std::env::var(env_var_name).ok() {
             Some(raw_url) => raw_url,
             None => return Ok(None),

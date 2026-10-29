@@ -1,6 +1,7 @@
 //! Wire shape of the quote endpoint, mirroring the EVM orderbook.
 
 use {
+    app_data::OrderCreationAppData,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -20,7 +21,7 @@ pub struct Request {
     pub sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     pub buy_token: Pubkey,
-    /// The buy token account proceeds would land in. Echoed back untouched.
+    /// Account or wallet the proceeds would land in. Echoed back untouched.
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
     pub receiver: Option<Pubkey>,
@@ -28,9 +29,10 @@ pub struct Request {
     pub side: Side,
     #[serde(flatten, default)]
     pub validity: Option<Validity>,
-    /// `0x`-prefixed 32 bytes, echoed back untouched.
-    #[serde(default)]
-    pub app_data: Option<String>,
+    /// The order's app data, the document or its hash, checked like at
+    /// placement. The zero hash when absent.
+    #[serde(flatten, deserialize_with = "app_data::deserialize_optional_app_data")]
+    pub app_data: OrderCreationAppData,
 }
 
 /// Which side the quote fixes, and the amount that side names.
@@ -135,12 +137,41 @@ pub struct Quote {
     pub buy_amount: u64,
     /// Unix seconds.
     pub valid_to: u32,
-    pub app_data: Option<String>,
+    /// The request's app data, a document with its hash alongside.
+    #[serde(flatten)]
+    pub app_data: OrderCreationAppData,
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
+    pub costs: Costs,
     pub kind: Kind,
     pub partially_fillable: bool,
+}
+
+/// The execution cost taken out of the quoted amounts, in the token it comes
+/// out of.
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Costs {
+    /// The buy token of a sell order, the sell token of a buy order. The
+    /// amounts below are in its atoms.
+    #[serde_as(as = "DisplayFromStr")]
+    pub token: Pubkey,
+    /// The network fee of settling the quoted route, as the winning driver
+    /// reported it, zero when it reported none.
+    #[serde_as(as = "DisplayFromStr")]
+    pub network_fees: u64,
+    /// Rent of the buy token account when the settlement must create it.
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_token_ata_costs: u64,
+    /// Always zero: no component charges a fee.
+    #[serde_as(as = "DisplayFromStr")]
+    pub protocol_fee: u64,
+    /// The sum: a sell order's `buy_amount` is lower by it, a buy order's
+    /// `sell_amount` higher.
+    #[serde_as(as = "DisplayFromStr")]
+    pub total: u64,
 }
 
 #[cfg(test)]

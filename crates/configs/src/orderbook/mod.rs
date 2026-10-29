@@ -13,11 +13,12 @@ use {
         price_estimation::PriceEstimation,
         shared::SharedConfig,
     },
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     anyhow::anyhow,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     std::{
+        collections::HashSet,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         path::Path,
         time::Duration,
@@ -34,6 +35,10 @@ const fn default_bind_address() -> SocketAddr {
 
 const fn default_app_data_size_limit() -> usize {
     8192
+}
+
+const fn default_app_data_cache_max_bytes() -> u64 {
+    32 * 1024 * 1024 // 32 MiB
 }
 
 const fn default_active_order_competition_threshold() -> u32 {
@@ -87,6 +92,11 @@ pub struct Configuration {
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
 
+    /// Approximate maximum memory (in bytes) of the in-memory app-data cache,
+    /// per-entry overhead included.
+    #[serde(default = "default_app_data_cache_max_bytes")]
+    pub app_data_cache_max_bytes: u64,
+
     /// Missed auctions threshold after which an order is no longer "active".
     #[serde(default = "default_active_order_competition_threshold")]
     pub active_order_competition_threshold: u32,
@@ -121,6 +131,11 @@ pub struct Configuration {
     /// Per-call timeout for order-creation simulation.
     #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
     pub order_simulation_timeout: Duration,
+
+    /// Flashloan lenders whose orders a passing order-creation simulation
+    /// accepts even when the EIP-1271 signature or transfer check fails.
+    #[serde(default)]
+    pub order_simulation_ignore_legacy_checks_for_lenders: HashSet<Address>,
 
     /// When enabled, solver competition endpoints return 404 until the
     /// auction's submission deadline block has been reached.
@@ -157,6 +172,7 @@ pub mod test_util {
             orderbook::{
                 Configuration,
                 default_active_order_competition_threshold,
+                default_app_data_cache_max_bytes,
                 default_app_data_size_limit,
                 default_bind_address,
                 native_price::NativePriceConfig,
@@ -204,17 +220,19 @@ pub mod test_util {
                 ipfs: Default::default(),
                 volume_fee: Default::default(),
                 app_data_size_limit: default_app_data_size_limit(),
+                app_data_cache_max_bytes: default_app_data_cache_max_bytes(),
                 active_order_competition_threshold: default_active_order_competition_threshold(),
                 unsupported_tokens: Default::default(),
                 eip1271_skip_creation_validation: Default::default(),
-                // NOTE: NativePriceConfig needs to be moved to the config crate and then it can
-                // have the test_default trait impl
+                // NOTE: NativePriceConfig needs to be moved to the config crate
+                // and then it can have the test_default trait impl
                 native_price_estimation: NativePriceConfig::test_default(),
                 database: TestDefault::test_default(),
                 http_client: Default::default(),
                 order_quoting: TestDefault::test_default(),
                 price_estimation: PriceEstimation::test_default(),
                 order_simulation_timeout: Duration::from_secs(2),
+                order_simulation_ignore_legacy_checks_for_lenders: Default::default(),
                 hide_competition_before_deadline: false,
             }
         }
@@ -230,6 +248,7 @@ mod tests {
             orderbook::order_validation::SameTokensPolicy,
             test_util::TestDefault,
         },
+        alloy_primitives::address,
         std::time::Duration,
     };
 
@@ -237,11 +256,13 @@ mod tests {
     fn deserialize_full_configuration() {
         let toml = r#"
         app-data-size-limit = 4096
+        app-data-cache-max-bytes = 1048576
         active-order-competition-threshold = 10
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
         hide-competition-before-deadline = true
         order-simulation-timeout = "3s"
+        order-simulation-ignore-legacy-checks-for-lenders = ["0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"]
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
@@ -271,12 +292,17 @@ mod tests {
         let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 4096);
+        assert_eq!(config.app_data_cache_max_bytes, 1_048_576);
         assert_eq!(config.active_order_competition_threshold, 10);
         assert_eq!(config.unsupported_tokens.len(), 1);
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
         assert!(config.hide_competition_before_deadline);
         assert_eq!(config.order_simulation_timeout, Duration::from_secs(3));
+        assert_eq!(
+            config.order_simulation_ignore_legacy_checks_for_lenders,
+            HashSet::from([address!("87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2")])
+        );
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
@@ -314,6 +340,7 @@ mod tests {
         let config: Configuration = toml::from_str(toml).unwrap();
 
         assert_eq!(config.app_data_size_limit, 8192);
+        assert_eq!(config.app_data_cache_max_bytes, 32 * 1024 * 1024);
         assert_eq!(config.active_order_competition_threshold, 5);
 
         assert_eq!(
@@ -331,6 +358,11 @@ mod tests {
         assert!(config.banned_users.addresses.is_empty());
         assert!(!config.eip1271_skip_creation_validation);
         assert!(!config.hide_competition_before_deadline);
+        assert!(
+            config
+                .order_simulation_ignore_legacy_checks_for_lenders
+                .is_empty()
+        );
     }
 
     #[test]
@@ -350,6 +382,7 @@ mod tests {
                 auth_token: Some("secret".to_string()),
             }),
             app_data_size_limit: 4096,
+            app_data_cache_max_bytes: 1_048_576,
             active_order_competition_threshold: 10,
             volume_fee: Some(VolumeFeeConfig {
                 factor: Some(0.0002.try_into().unwrap()),
@@ -373,6 +406,9 @@ mod tests {
             http_client: Default::default(),
             price_estimation: Default::default(),
             order_simulation_timeout: default_simulation_timeout(),
+            order_simulation_ignore_legacy_checks_for_lenders: HashSet::from([address!(
+                "87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+            )]),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -406,6 +442,10 @@ mod tests {
         assert_eq!(
             config.hide_competition_before_deadline,
             deserialized.hide_competition_before_deadline
+        );
+        assert_eq!(
+            config.order_simulation_ignore_legacy_checks_for_lenders,
+            deserialized.order_simulation_ignore_legacy_checks_for_lenders
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
     }

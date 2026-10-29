@@ -131,8 +131,8 @@ pub fn tx(
             super::Trade::Jit(trade) => {
                 (
                     Price {
-                        // Jit orders are matched at limit price, so the sell token is worth
-                        // buy.amount and vice versa
+                        // Jit orders are matched at limit price, so the sell
+                        // token is worth buy.amount and vice versa
                         sell_token: trade.order().sell.token.into(),
                         sell_price: trade.order().buy.amount.into(),
                         buy_token: trade.order().buy.token.into(),
@@ -324,7 +324,8 @@ pub fn approve(allowance: &Allowance) -> domain::Interaction {
     domain::Interaction {
         target: allowance.token.0.into(),
         value: Ether::zero(),
-        // selector (4 bytes) + spender (20 byte address padded to 32 bytes) + amount (32 bytes)
+        // selector (4 bytes) + spender (20 byte address padded to 32 bytes) +
+        // amount (32 bytes)
         call_data: [
             selector.as_slice(),
             [0; 12].as_slice(),

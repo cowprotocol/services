@@ -168,6 +168,103 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/{auction_id}:
+    get:
+      operationId: getSolverCompetitionByAuctionIdV2
+      description: |
+        The competition of one auction: the auction snapshot, every proposed
+        solution ranked, and the settlements. A competition is hidden until
+        the indexer passes the auction's deadline slot, the last slot in
+        which the winners may submit their settlements. A transaction they
+        sent before it may still land afterwards.
+      parameters:
+        - name: auction_id
+          in: path
+          required: true
+          description: The auction id the solvers were given.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: |
+            The auction id is not a non-negative integer
+            (`InvalidAuctionId`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: |
+            No competition for this auction id, or its deadline slot has not
+            passed yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/by_tx_hash/{tx_hash}:
+    get:
+      operationId: getSolverCompetitionByTxHashV2
+      description: |
+        The competition one settlement transaction executed. The path keeps
+        the EVM orderbook's name, the parameter is the transaction's
+        signature.
+      parameters:
+        - name: tx_hash
+          in: path
+          required: true
+          description: The signature of a settlement transaction.
+          schema:
+            $ref: "#/components/schemas/Signature"
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "400":
+          description: |
+            The parameter is not a base58-encoded signature
+            (`InvalidTransactionSignature`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: |
+            No settlement with this signature attributed to a solution, or
+            its auction's deadline slot has not passed yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v2/solver_competition/latest:
+    get:
+      operationId: getSolverCompetitionLatestV2
+      description: |
+        The most recent competition whose deadline slot the indexer has
+        passed.
+      responses:
+        "200":
+          description: The competition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        "404":
+          description: No competition has passed its deadline slot yet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/orders:
     post:
       operationId: createOrder
@@ -176,11 +273,15 @@ paths:
         creation transaction (owner signed, the deployment's funder as its
         unsigned fee payer), and every order field derives from its trailing
         `CreateOrder` instruction. In front of it the transaction carries the
-        preparation steps, in this order: create the wSOL account, fund it,
-        sync it, and approve the settlement delegate, each omittable (the
-        wrap steps only for native SOL sells), followed by the mandatory buy
-        token account creation (idempotent, a no-op when the account already
-        exists). An order buying native SOL skips the creation, its payout
+        preparation steps, in this order: create the wSOL account (the owner
+        pays for it, a funder-paid creation is refused), fund it,
+        sync it, approve the settlement delegate, and create the buy token
+        account (idempotent, a no-op when the account already exists), each
+        omittable (the wrap steps only for native SOL sells). Without the
+        creation, the buy token account must already receive the buy mint or
+        be the owner's associated token account, which the settlement
+        creates when missing: a custom receiver's missing account needs the
+        creation. An order buying native SOL skips the creation, its payout
         goes to the wallet. The order competes in auctions until the
         transaction's blockhash expires (about a minute) or it settles.
       requestBody:
@@ -220,6 +321,24 @@ paths:
                   type: integer
                   format: int64
                   nullable: true
+                appData:
+                  description: |
+                    AppData which will be assigned to the order: the full
+                    `appData` document whose keccak256 hash the `CreateOrder`
+                    intent carries in `app_data`, stored with the order and
+                    served as its `fullAppData`, or that hash once the document
+                    is registered through `PUT /api/v1/app_data`. The intent's
+                    hash when omitted.
+                  oneOf:
+                    - $ref: "#/components/schemas/AppData"
+                    - $ref: "#/components/schemas/AppDataHash"
+                appDataHash:
+                  description: |
+                    The hash of the stringified JSON `appData` doc. If present,
+                    `appData` must be the document this hash is derived from.
+                    In case they differ, the call will fail.
+                  allOf:
+                    - $ref: "#/components/schemas/AppDataHash"
       responses:
         "201":
           description: The order uid.
@@ -230,7 +349,8 @@ paths:
         "400":
           description: |
             Sponsoring disabled on this deployment (`SponsoringDisabled`), an
-            undecodable or wrongly shaped transaction (`InvalidTransaction`),
+            undecodable or wrongly shaped transaction, or a wSOL sell account
+            creation paid by anyone but the order owner (`InvalidTransaction`),
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
@@ -240,7 +360,12 @@ paths:
             whose payout can leave the wallet under its rent-exempt minimum,
             890880 lamports for an empty wallet (`InvalidNativeBuy`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
-            validity (`InsufficientValidTo`), a mint the settlement program
+            or above the maximum validity (`InsufficientValidTo`,
+            `ExcessiveValidTo`), an `appData` document that is not a JSON
+            object or exceeds the size limit, or a hash with no registered
+            document (`InvalidAppData`), an `appData` document or hash
+            disagreeing with its `appDataHash` or the intent's `app_data`
+            (`AppDataHashMismatch`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:
@@ -253,7 +378,8 @@ paths:
       description: |
         What one order would trade for right now. Indicative: no component
         simulates the settlement, so `verified` is always false and the
-        amounts are not a commitment.
+        amounts are not a commitment. The amounts are net of the execution
+        cost, see `costs`.
       requestBody:
         required: true
         content:
@@ -272,19 +398,140 @@ paths:
             The body could not be parsed (`InvalidRequestBody`), buy and sell
             token are the same, wSOL for native SOL included
             (`SameBuyAndSellToken`), the amount is zero
-            (`ZeroAmount`), a native SOL buy would leave its wallet under the
+            (`ZeroAmount`), an `appData` document that is not a JSON object
+            or exceeds the size limit, or a hash with no registered document
+            (`InvalidAppData`), an `appDataHash` the document does not hash
+            to (`AppDataHashMismatch`), a native SOL buy would leave its
+            wallet under the
             rent-exempt minimum, 890880 lamports for an empty wallet
             (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
-            (default two minutes) or further than the configured maximum
-            (default two hours) (`InsufficientValidTo`, `ExcessiveValidTo`),
-            or a mint the settlement program cannot move (`UnsupportedToken`).
+            (default one minute) or further than the configured maximum
+            (default one year) (`InsufficientValidTo`, `ExcessiveValidTo`),
+            a mint the settlement program cannot move (`UnsupportedToken`),
+            a buy token account that exists but cannot take the payout,
+            frozen, another mint's, or refusing plain credits
+            (`InvalidBuyTokenAccount`), or no quoted amount covers the
+            execution cost (`SellAmountDoesNotCoverFee`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "404":
-          description: No driver returned a route for the pair (`NoLiquidity`).
+          description: |
+            No driver returned a route for the pair, or a token has no native
+            price (`NoLiquidity`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/app_data/{app_data_hash}:
+    get:
+      operationId: getAppDataByHash
+      summary: Get the full `appData` from its `appDataHash`.
+      parameters:
+        - in: path
+          name: app_data_hash
+          schema:
+            $ref: "#/components/schemas/AppDataHash"
+          required: true
+      responses:
+        "200":
+          description: Full `appData`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataObject"
+        "400":
+          description: Invalid app data hash (`InvalidAppDataHash`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No full `appData` stored for this hash (`NotFound`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      operationId: registerAppDataByHash
+      summary: Registers a full `appData` so it can be referenced by `appDataHash`.
+      description: |
+        Uploads a full `appData` to the orderbook so that orders created with
+        the corresponding `appDataHash` can be linked to the original full
+        `appData`.
+      parameters:
+        - in: path
+          name: app_data_hash
+          schema:
+            $ref: "#/components/schemas/AppDataHash"
+          required: true
+      requestBody:
+        description: The `appData` document to upload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataObject"
+      responses:
+        "200":
+          description: The full `appData` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "201":
+          description: The full `appData` was successfully registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "400":
+          description: |
+            A document that is not a JSON object or exceeds the size limit
+            (`AppDataInvalid`), a document not hashing to the path's hash
+            (`AppDataHashMismatch`), a different document already stored
+            under the hash (`AppDataMismatch`), a malformed hash
+            (`InvalidAppDataHash`), or a body that is not an `AppDataObject`
+            (`InvalidRequestBody`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/app_data:
+    put:
+      operationId: registerAppData
+      summary: Registers a full `appData` and returns `appDataHash`.
+      description: |
+        Uploads a full `appData` to the orderbook and returns the
+        corresponding `appDataHash`.
+      requestBody:
+        description: The `appData` document to upload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataObject"
+      responses:
+        "200":
+          description: The full `appData` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "201":
+          description: The full `appData` was successfully registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "400":
+          description: |
+            A document that is not a JSON object or exceeds the size limit
+            (`AppDataInvalid`), a different document already stored under
+            its hash (`AppDataMismatch`), or a body that is not an
+            `AppDataObject` (`InvalidRequestBody`).
           content:
             application/json:
               schema:
@@ -316,6 +563,29 @@ components:
       description: A token amount in base units as a decimal string.
       type: string
       example: "1000000"
+    AppData:
+      description: |
+        The string encoding of a JSON object representing some `appData`. The
+        format of the JSON expected in the `appData` field is defined
+        [here](https://github.com/cowprotocol/app-data). The protocol
+        `metadata` is stored, not interpreted.
+      type: string
+      example: '{"version":"0.9.0","metadata":{}}'
+    AppDataHash:
+      description: |
+        32 bytes encoded as hex with `0x` prefix: the keccak256 hash of the
+        stringified JSON object representing the `appData`, as the
+        `CreateOrder` intent carries it in `app_data`.
+      type: string
+      example: "0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d"
+    AppDataObject:
+      description: An `appData` document that is registered with the API.
+      type: object
+      properties:
+        fullAppData:
+          $ref: "#/components/schemas/AppData"
+      required:
+        - fullAppData
     OrderKind:
       description: Which amount the order fixes.
       type: string
@@ -345,6 +615,7 @@ components:
         - kind
         - partiallyFillable
         - appData
+        - fullAppData
         - orderPda
         - creationDate
         - executedSellAmount
@@ -388,8 +659,12 @@ components:
         partiallyFillable:
           type: boolean
         appData:
-          description: The 32-byte app-data hash as hex.
-          type: string
+          $ref: "#/components/schemas/AppDataHash"
+        fullAppData:
+          description: The document `appData` is the hash of, null until registered.
+          allOf:
+            - $ref: "#/components/schemas/AppData"
+          nullable: true
         orderPda:
           description: The order's on-chain account.
           allOf:
@@ -515,6 +790,147 @@ components:
           type: integer
           format: int64
           nullable: true
+    SolverCompetitionResponse:
+      description: |
+        The solutions every solver proposed for one auction. The `auctionId`
+        is the id the solvers were given.
+      type: object
+      required:
+        - auctionId
+        - auctionStartSlot
+        - auctionDeadlineSlot
+        - transactionSignatures
+        - referenceScores
+        - auction
+        - solutions
+      properties:
+        auctionId:
+          type: integer
+          format: int64
+        auctionStartSlot:
+          description: The slot the auction was cut at.
+          type: integer
+          format: int64
+        auctionDeadlineSlot:
+          description: The slot by which the winners had to submit their settlements.
+          type: integer
+          format: int64
+        transactionSignatures:
+          description: |
+            The transactions that settled the auction, attributed to a
+            solution.
+          type: array
+          items:
+            $ref: "#/components/schemas/Signature"
+        referenceScores:
+          description: |
+            Per winning solver, keyed by its address: the winners' total
+            score with that solver's solutions removed, the rewards baseline
+            of [CIP-67](https://forum.cow.fi/t/cip-67-moving-from-batch-auction-to-the-fair-combinatorial-auction/2967).
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
+        auction:
+          $ref: "#/components/schemas/CompetitionAuction"
+        solutions:
+          description: Every proposed solution, worst to best, the winner last.
+          type: array
+          items:
+            $ref: "#/components/schemas/SolverSettlement"
+    CompetitionAuction:
+      description: The auction the solutions competed on.
+      type: object
+      required:
+        - orders
+        - prices
+      properties:
+        orders:
+          description: The orders in the auction.
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderUid"
+        prices:
+          description: |
+            The native price of every mint the auction trades, keyed by mint,
+            in lamports per 10^9 base units.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TokenAmount"
+    SolverSettlement:
+      description: One proposed solution.
+      type: object
+      required:
+        - solverAddress
+        - score
+        - ranking
+        - orders
+        - isWinner
+        - filteredOut
+      properties:
+        solverAddress:
+          description: The solver that proposed the solution.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        score:
+          description: The solution's score.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        ranking:
+          description: |
+            The solution's position in the competition, 1 the best. Solutions
+            the fairness filter excluded rank after every ranked one.
+          type: integer
+          format: int64
+        referenceScore:
+          description: The solver's reference score, winners only.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+          nullable: true
+        txSignature:
+          description: |
+            The transaction that executed the solution, once the autopilot
+            attributes the landed settlement to it.
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+          nullable: true
+        orders:
+          description: The order executions the solution proposes.
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - sellAmount
+              - buyAmount
+              - sellToken
+              - buyToken
+            properties:
+              id:
+                $ref: "#/components/schemas/OrderUid"
+              sellAmount:
+                description: Sell tokens the solution takes from the order.
+                allOf:
+                  - $ref: "#/components/schemas/TokenAmount"
+              buyAmount:
+                description: Buy tokens the solution pays the order.
+                allOf:
+                  - $ref: "#/components/schemas/TokenAmount"
+              sellToken:
+                description: The mint of the token sold.
+                allOf:
+                  - $ref: "#/components/schemas/Pubkey"
+              buyToken:
+                description: The mint of the token bought.
+                allOf:
+                  - $ref: "#/components/schemas/Pubkey"
+        isWinner:
+          description: Whether the solution won the right to settle.
+          type: boolean
+        filteredOut:
+          description: |
+            Whether the fairness filter of [CIP-67](https://forum.cow.fi/t/cip-67-moving-from-batch-auction-to-the-fair-combinatorial-auction/2967)
+            excluded the solution from the ranking.
+          type: boolean
     QuoteRequest:
       description: |
         A quote request. Fields with no Solana meaning (`signingScheme`,
@@ -536,7 +952,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         receiver:
-          description: The buy token account proceeds land in. Echoed back untouched.
+          description: >-
+            Optional recipient of the proceeds, in place of `from`. Either a
+            wallet, paid into its associated token account for the buy mint (or
+            directly, for native SOL), or a token account of the buy mint
+            itself. Echoed back untouched.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         kind:
@@ -560,8 +980,20 @@ components:
           description: Seconds from now the quoted order would expire after.
           type: integer
         appData:
-          description: The 32-byte app-data hash as hex.
-          type: string
+          description: |
+            The order's app data, the full document or its hash, checked like
+            at placement: a hash must have its document registered, the zero
+            hash names the empty document. The zero hash when omitted.
+          oneOf:
+            - $ref: "#/components/schemas/AppData"
+            - $ref: "#/components/schemas/AppDataHash"
+        appDataHash:
+          description: |
+            The hash of the `appData` document. If present, `appData` must be
+            the document this hash is derived from.
+          allOf:
+            - $ref: "#/components/schemas/AppDataHash"
+          nullable: true
     QuoteResponse:
       type: object
       required:
@@ -604,7 +1036,9 @@ components:
         - sellAmount
         - buyAmount
         - validTo
+        - appData
         - feeAmount
+        - costs
         - kind
         - partiallyFillable
       properties:
@@ -624,17 +1058,70 @@ components:
           description: Unix timestamp (`uint32`) the quoted order expires at.
           type: integer
         appData:
-          description: The 32-byte app-data hash as hex.
-          type: string
-          nullable: true
+          description: |
+            The request's `appData`, the full document or its hash, the zero
+            hash when the request named none.
+          oneOf:
+            - $ref: "#/components/schemas/AppData"
+            - $ref: "#/components/schemas/AppDataHash"
+        appDataHash:
+          description: The hash of `appData`, present when it is a document.
+          allOf:
+            - $ref: "#/components/schemas/AppDataHash"
         feeAmount:
           description: Always zero. No component charges a fee.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        costs:
+          $ref: "#/components/schemas/Costs"
         kind:
           $ref: "#/components/schemas/OrderKind"
         partiallyFillable:
           type: boolean
+    Costs:
+      description: >-
+        The execution cost taken out of the quoted amounts, in the token it
+        comes out of: a sell order's `buyAmount` is lower by `total`, a buy
+        order's `sellAmount` higher. Each cost converts from lamports at the
+        autopilot's native price on its own, rounded up against the trader.
+        Drivers are ranked on the amounts after the cut.
+      type: object
+      required:
+        - token
+        - networkFees
+        - buyTokenAtaCosts
+        - protocolFee
+        - total
+      properties:
+        token:
+          description: >-
+            The buy token of a sell order, the sell token of a buy order.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+        networkFees:
+          description: >-
+            The network fee of settling the quoted route, as the winning
+            driver reported it. Zero when the driver reports none.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        buyTokenAtaCosts:
+          description: >-
+            Rent, at the cluster's rent, of the buy token account when the
+            settlement must create it. Zero when the payout lands in an
+            existing one and for native SOL buys. An anonymous quote, `from`
+            zero without a `receiver`, names no account to read and is priced
+            as if it were missing. An upper bound when the account cannot be
+            read, without sponsoring included.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        protocolFee:
+          description: Always zero. No component charges a fee.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        total:
+          description: The sum of the costs above.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
     Error:
       description: A machine-readable error type and a human-readable description.
       type: object

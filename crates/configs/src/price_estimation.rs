@@ -1,6 +1,6 @@
 use {
     crate::rate_limit::Strategy,
-    alloy::primitives::{Address, U256, map::HashSet},
+    alloy_primitives::{Address, U256, map::HashSet},
     bigdecimal::BigDecimal,
     serde::Deserialize,
     std::{str::FromStr, time::Duration},
@@ -150,7 +150,7 @@ impl Default for PriceEstimation {
 impl crate::test_util::TestDefault for PriceEstimation {
     fn test_default() -> Self {
         Self {
-            amount_to_estimate_prices_with: Some(alloy::primitives::U256::from(
+            amount_to_estimate_prices_with: Some(alloy_primitives::U256::from(
                 1_000_000_000_000_000_000u64,
             )),
             quote_timeout: Duration::from_secs(10),
@@ -376,7 +376,7 @@ mod tests {
         assert!(config.price_estimation_rate_limiter.is_some());
         assert_eq!(
             config.amount_to_estimate_prices_with,
-            Some(alloy::primitives::U256::from(1_000_000_000_000_000_000u64))
+            Some(alloy_primitives::U256::from(1_000_000_000_000_000_000u64))
         );
         let one_inch = config.one_inch.as_ref().unwrap();
         assert_eq!(one_inch.api_key, "my-1inch-key");

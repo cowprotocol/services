@@ -8,21 +8,21 @@ use {
     crate::{
         domain::{
             self,
-            order_uid::OrderUid,
+            execution_cost::Charge,
             settlement::MaxNativeShortfall,
             solver_fee::SolverFee,
         },
-        infra::{blockchain::associated_token_address, config, solver::dto::auction::Auction},
+        infra::{
+            blockchain::associated_token_address,
+            config::{self, FeeHandler},
+            solver::dto::auction::Auction,
+        },
     },
     cow_settlement_interface::token_program::TokenProgram,
     cow_solana_signer::Signer,
     solana_sdk::pubkey::Pubkey,
     spl_token_interface::native_mint,
-    std::{
-        collections::{HashMap, HashSet},
-        num::NonZero,
-        sync::Arc,
-    },
+    std::{collections::HashMap, num::NonZero, sync::Arc},
     thiserror::Error,
 };
 
@@ -36,6 +36,7 @@ pub struct Solver {
     client: reqwest::Client,
     base_url: reqwest::Url,
     solve_every_nth_auction: Option<NonZero<u64>>,
+    fee_handler: FeeHandler,
     solver_fee: Option<SolverFee>,
     max_native_shortfall: Option<MaxNativeShortfall>,
 }
@@ -59,6 +60,11 @@ impl Solver {
     /// The auction-id stride this solver participates at, when throttled.
     pub fn solve_every_nth_auction(&self) -> Option<NonZero<u64>> {
         self.solve_every_nth_auction
+    }
+
+    /// Who prices the execution costs into this solver's fills.
+    pub fn fee_handler(&self) -> FeeHandler {
+        self.fee_handler
     }
 
     /// The volume-based solver fee, `None` when no fee is configured.
@@ -90,32 +96,27 @@ impl Solver {
             client: reqwest::Client::new(),
             base_url: config.endpoint.clone(),
             solve_every_nth_auction: config.solve_every_nth_auction,
+            fee_handler: config.fee_handler,
             solver_fee: config.solver_fee_bps,
             max_native_shortfall: config.max_native_shortfall_bps,
         })
     }
 
     /// POST the auction to this engine's `/solve` endpoint and return the
-    /// domain solutions it produced.
+    /// domain solutions it produced. An auction with no order left to send
+    /// after `charge` is not posted.
     ///
     /// `program_id` is the settlement program the swap instructions are built
-    /// for. `missing_buy_token_accounts` marks the orders whose payout account
-    /// the settlement creates.
+    /// for.
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
     pub async fn solve(
         &self,
         auction: &domain::Auction,
         program_id: Pubkey,
-        missing_buy_token_accounts: &HashSet<OrderUid>,
+        charge: &Charge,
         buy_programs: &HashMap<Pubkey, TokenProgram>,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let mut auction_dto = Auction::new(
-            auction,
-            self.pubkey(),
-            program_id,
-            self.solver_fee,
-            missing_buy_token_accounts,
-        );
+        let mut auction_dto = Auction::new(auction, self.pubkey(), program_id, charge);
         auction_dto.orders.retain_mut(|order| {
             let Some(program) = buy_programs
                 .get(&order.buy_mint)
@@ -128,6 +129,10 @@ impl Solver {
                 associated_token_address(&self.pubkey(), &order.buy_mint, program);
             true
         });
+        if auction_dto.orders.is_empty() {
+            tracing::debug!("no order to send; skipping the engine");
+            return Ok(Default::default());
+        }
         let body = serde_json::to_string(&auction_dto)?;
 
         let solve_url = self.base_url.join("solve").expect("valid /solve path");
@@ -212,6 +217,7 @@ mod tests {
             endpoint: "http://127.0.0.1:1".parse().unwrap(),
             signer: cow_solana_signer::Config::Keypair(keypair_path),
             solve_every_nth_auction: None,
+            fee_handler: FeeHandler::default(),
             solver_fee_bps: None,
             max_native_shortfall_bps: None,
         })
@@ -231,7 +237,7 @@ mod tests {
             .solve(
                 &auction,
                 Pubkey::default(),
-                &Default::default(),
+                &Charge::default(),
                 &Default::default(),
             )
             .await

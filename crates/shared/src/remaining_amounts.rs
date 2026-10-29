@@ -116,8 +116,8 @@ pub struct Order {
     pub buy_amount: U256,
     pub sell_amount: U256,
     pub fee_amount: U256,
-    // For a buy order this is in the buy token and for a sell order in the sell token and
-    // excluding the fee amount.
+    // For a buy order this is in the buy token and for a sell order in the sell
+    // token and excluding the fee amount.
     pub executed_amount: U256,
     pub partially_fillable: bool,
 }
@@ -130,8 +130,9 @@ impl From<&ModelOrder> for Order {
             sell_amount: o.data.sell_amount,
             fee_amount: o.data.fee_amount,
             executed_amount: match o.data.kind {
-                // A real buy order cannot execute more than U256::MAX so in order to make this
-                // function infallible we treat a larger amount as a full execution.
+                // A real buy order cannot execute more than U256::MAX so in
+                // order to make this function infallible we treat a larger
+                // amount as a full execution.
                 OrderKind::Buy => {
                     big_uint_to_u256(&o.metadata.executed_buy_amount).unwrap_or(o.data.buy_amount)
                 }

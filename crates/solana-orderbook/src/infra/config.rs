@@ -4,7 +4,7 @@ use {
     crate::infra::api::ValidationParameters,
     configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
-    serde_ext::deserialize_solana_pubkey_b58,
+    serde_ext::{deserialize_solana_pubkey_b58, deserialize_url_with_trailing_slash},
     solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, path::Path, time::Duration},
     tokio::fs,
@@ -49,6 +49,9 @@ pub struct Config {
     pub rpc: Option<Rpc>,
     /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
     pub sponsoring: Option<Sponsoring>,
+    /// Most bytes an app data document may have.
+    #[serde(default = "default_app_data_size_limit")]
+    pub app_data_size_limit: usize,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -76,6 +79,10 @@ pub struct Quoting {
     /// last path segment would be replaced rather than extended.
     #[serde(deserialize_with = "deserialize_urls_with_trailing_slash")]
     pub drivers: Vec<Url>,
+    /// Base URL of the autopilot, whose native price cache gates quotes: a
+    /// pair with a token no estimator prices answers `NoLiquidity`.
+    #[serde(deserialize_with = "deserialize_url_with_trailing_slash")]
+    pub autopilot: Url,
     /// How long the driver has to answer before the quote fails.
     #[serde(with = "humantime_serde", default = "default_quote_timeout")]
     pub timeout: Duration,
@@ -83,7 +90,8 @@ pub struct Quoting {
     /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_min_validity")]
     pub min_validity: Duration,
-    /// Furthest in the future a quoted order's `validTo` may lie.
+    /// Furthest in the future an order's `validTo` may lie, for quotes and
+    /// sponsored placement alike.
     #[serde(with = "humantime_serde", default = "default_max_validity")]
     pub max_validity: Duration,
     /// How long the quoted amounts are honored.
@@ -149,6 +157,11 @@ fn default_rpc_timeout() -> Duration {
     Duration::from_secs(5)
 }
 
+/// The EVM orderbook's default.
+fn default_app_data_size_limit() -> usize {
+    8192
+}
+
 /// Appends the trailing slash `Url::join` needs to every URL in the list.
 fn deserialize_urls_with_trailing_slash<'de, D>(deserializer: D) -> Result<Vec<Url>, D::Error>
 where
@@ -202,16 +215,18 @@ mod tests {
         assert_eq!(config.http.bind_address, "0.0.0.0:8080".parse().unwrap());
         assert_eq!(config.logging.filter, "info,solana_orderbook=debug");
         assert_eq!(config.quoting.drivers[0].as_str(), "http://localhost:8000/");
+        assert_eq!(config.quoting.autopilot.as_str(), "http://localhost:12088/");
         assert_eq!(config.quoting.timeout, Duration::from_secs(5));
-        assert_eq!(config.quoting.min_validity, Duration::from_secs(120));
-        assert_eq!(config.quoting.max_validity, Duration::from_secs(7200));
+        assert_eq!(config.quoting.min_validity, Duration::from_secs(60));
+        assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
+        assert_eq!(config.app_data_size_limit, 8192);
     }
 
-    /// Routes resolve relative to the driver URLs, so a base URL with a path
-    /// keeps it instead of having its last segment replaced.
+    /// Routes resolve relative to the driver and autopilot URLs, so a base
+    /// URL with a path keeps it instead of having its last segment replaced.
     #[test]
-    fn driver_urls_get_a_trailing_slash() {
+    fn urls_get_a_trailing_slash() {
         #[derive(Debug, Deserialize)]
         struct Wrapper {
             quoting: Quoting,
@@ -220,6 +235,7 @@ mod tests {
             r#"
             [quoting]
             drivers = ["http://driver/baseline"]
+            autopilot = "http://autopilot/base"
             "#,
         )
         .unwrap();
@@ -231,5 +247,6 @@ mod tests {
             wrapper.quoting.drivers[0].join("quote").unwrap().as_str(),
             "http://driver/baseline/quote"
         );
+        assert_eq!(wrapper.quoting.autopilot.as_str(), "http://autopilot/base/");
     }
 }

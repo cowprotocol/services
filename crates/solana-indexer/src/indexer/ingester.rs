@@ -78,9 +78,8 @@ where
     pub tx: Sender<StreamUpdate>,
 
     /// Latest chain slot seen on the slot filter. The ingester is the sole
-    /// writer. The `Arc` is taken from the caller so other components
-    /// can share it as a read handle once it is wired up; it doesn't read it
-    /// yet. Cold start is zero (`AtomicU64::default`).
+    /// writer, and the liveness probe reads it. Cold start is zero
+    /// (`AtomicU64::default`).
     pub latest_chain_slot: Arc<AtomicU64>,
 }
 
@@ -152,12 +151,12 @@ where
             UpdateOneof::Transaction(tx_msg) => Self::handle_transaction(tx, tx_msg).await,
             UpdateOneof::Slot(slot) => Self::handle_slot(tx, latest_chain_slot, slot).await,
 
-            // Ping/Pong frames carry no data the ingester needs; the library passes them through,
-            // and we drop them here.
+            // Ping/Pong frames carry no data the ingester needs; the library
+            // passes them through, and we drop them here.
             UpdateOneof::Ping(_) | UpdateOneof::Pong(_) => ControlFlow::Continue(()),
 
-            // Not part of our subscription; irrelevant to the ingester even if the provider sends
-            // them.
+            // Not part of our subscription; irrelevant to the ingester even if
+            // the provider sends them.
             UpdateOneof::Account(_)
             | UpdateOneof::TransactionStatus(_)
             | UpdateOneof::Block(_)

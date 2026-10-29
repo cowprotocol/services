@@ -2,6 +2,7 @@
 
 use {
     super::error,
+    app_data::AppDataHash,
     axum::{
         extract::{FromRequest, FromRequestParts, Request},
         http::{StatusCode, request::Parts},
@@ -15,21 +16,48 @@ impl<S: Send + Sync> FromRequestParts<S> for PathUid {
     type Rejection = error::Reply;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let invalid = || {
-            error::reply(
-                StatusCode::BAD_REQUEST,
-                "InvalidOrderUid",
-                "orderUid must be 32 bytes of hex",
-            )
-        };
-        let axum::extract::Path(raw) =
-            axum::extract::Path::<String>::from_request_parts(parts, state)
-                .await
-                .map_err(|_| invalid())?;
-        const_hex::decode_to_array(&raw)
-            .map(Self)
-            .map_err(|_| invalid())
+        path_bytes32(
+            parts,
+            state,
+            "InvalidOrderUid",
+            "orderUid must be 32 bytes of hex",
+        )
+        .await
+        .map(Self)
     }
+}
+
+/// The app data hash path parameter: 32 bytes as hex.
+pub struct PathAppDataHash(pub AppDataHash);
+
+impl<S: Send + Sync> FromRequestParts<S> for PathAppDataHash {
+    type Rejection = error::Reply;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        path_bytes32(
+            parts,
+            state,
+            "InvalidAppDataHash",
+            "appDataHash must be 32 bytes of hex",
+        )
+        .await
+        .map(|hash| Self(AppDataHash(hash)))
+    }
+}
+
+/// The path parameter as 32 bytes of hex, `0x` prefix optional, or the named
+/// rejection.
+async fn path_bytes32<S: Send + Sync>(
+    parts: &mut Parts,
+    state: &S,
+    error_type: &'static str,
+    description: &'static str,
+) -> Result<[u8; 32], error::Reply> {
+    let invalid = || error::reply(StatusCode::BAD_REQUEST, error_type, description);
+    let axum::extract::Path(raw) = axum::extract::Path::<String>::from_request_parts(parts, state)
+        .await
+        .map_err(|_| invalid())?;
+    const_hex::decode_to_array(&raw).map_err(|_| invalid())
 }
 
 /// A JSON body. Rejects a malformed or incomplete body in the API's error

@@ -42,11 +42,12 @@ balance-overrides = { path = "crates/balance-overrides" }
 base64 = "0.22.1"
 bigdecimal = "0.4"
 bincode = "1.3.3"
-brotli = "8"
+brotli = "9.1"
 bs58 = "0.5"
 bytes = "1.11.1"
 bytes-hex = { path = "crates/bytes-hex" }
 cached = { version = "0.55.1", default-features = false }
+cel = { version = "0.15.0", default-features = false, features = ["chrono", "regex"] }
 chain = { path = "crates/chain" }
 chain-types = { path = "crates/chain-types" }
 chrono = { version = "0.4.38", default-features = false, features = ["serde"] }
@@ -91,10 +92,10 @@ multibase = "0.9"
 num = "0.4.3"
 number = { path = "crates/number" }
 observe = { path = "crates/observe" }
-opentelemetry = { version = "0.32", features = ["tracing"] }
-opentelemetry-http = { version = "0.32", default-features = false }  # disable internal-logging
-opentelemetry-otlp = "0.32"
-opentelemetry_sdk = "0.32"
+opentelemetry = { version = "0.33.1", features = ["tracing"] }
+opentelemetry-http = { version = "0.33.1", default-features = false }  # disable internal-logging
+opentelemetry-otlp = "0.33.1"
+opentelemetry_sdk = "0.33.1"
 order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
 pin-project-lite = "0.2.14"
@@ -103,6 +104,7 @@ prettyplease = "0.2.37"
 price-estimation = { path = "crates/price-estimation" }
 proc-macro2 = "1.0.103"
 prometheus = "0.14"
+prometheus-client = "0.25"
 prometheus-metric-storage = "0.6"
 quote = "1.0.41"
 rand = "0.9.4"
@@ -127,13 +129,14 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
-solana-address-lookup-table-interface = "3"
 solana-client = "4"
 solana-commitment-config = "3"
 solana-compute-budget-interface = "3"
 solana-driver = { path = "crates/solana-driver" }
+solana-fee-structure = "3"
 solana-indexer = { path = "crates/solana-indexer" }
-solana-rpc-client = "4"
+solana-pubkey = "4"
+solana-rpc-client = "4.2.2"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
 solana-system-interface = "3"
@@ -160,7 +163,7 @@ tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 time = "0.3.47"
 token-info = { path = "crates/token-info" }
-tokio = { version = "1.38.0", features = ["tracing"] }
+tokio = { version = "1.54.1", features = ["tracing"] }
 tokio-stream = { version = "0.1.15", features = ["sync"] }
 tokio-tungstenite = { version = "0.28", default-features = false }
 tokio-util = "0.7"
@@ -168,10 +171,11 @@ toml = "0.8.14"
 tower = "0.5"
 tower-http = "0.6"
 tracing = "0.1.41"
-tracing-opentelemetry = "0.33.0"
+tracing-opentelemetry = "0.34.0"
 tracing-serde = "0.2"
 tracing-subscriber = { version = "0.3.22", features = ["json"] }
 url = "2.5.0"
+wincode = "0.5.5"
 winner-selection = { path = "crates/winner-selection" }
 yellowstone-grpc-client = "13.4.0"
 yellowstone-grpc-proto = { version = "12.4.0", default-features = false }
@@ -181,3 +185,6 @@ clippy.cast_possible_wrap = "deny"
 
 [workspace.lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tokio_unstable)"] }
+
+[profile.dev]
+debug = "line-tables-only"

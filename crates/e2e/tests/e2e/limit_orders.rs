@@ -18,10 +18,7 @@ use {
     },
     contracts::ERC20,
     database::byte_array::ByteArray,
-    e2e::setup::{
-        proxy::{OnRequest, ReverseProxy},
-        *,
-    },
+    e2e::setup::*,
     eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
     model::{
@@ -31,15 +28,7 @@ use {
     },
     number::{conversions::big_decimal_to_big_uint, units::EthUnit},
     shared::web3::Web3,
-    std::{
-        collections::HashMap,
-        ops::DerefMut,
-        str::FromStr,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
-        },
-    },
+    std::{collections::HashMap, ops::DerefMut, str::FromStr},
     url::Url,
 };
 
@@ -223,12 +212,9 @@ async fn single_limit_order_test(web3: Web3) {
     let balance_before = token_b.balanceOf(trader_a.address()).call().await.unwrap();
     let order_id = services.create_order(&order).await.unwrap();
 
-    // we hide the quote's execution plan while the order is still fillable
+    // we hide the quote until the order got at least partially filled
     let order = services.get_order(&order_id).await.unwrap();
-    assert_eq!(
-        order.metadata.quote.unwrap().metadata,
-        serde_json::Value::default()
-    );
+    assert!(order.metadata.quote.is_none());
 
     onchain.mint_block().await;
     services.get_order(&order_id).await.unwrap();
@@ -243,11 +229,9 @@ async fn single_limit_order_test(web3: Web3) {
     .unwrap();
 
     wait_for_condition(TIMEOUT, || async {
-        // after the order got filled we are able to see the quote's execution
-        // plan
+        // after the order got filled we are able to see the quote
         let order = services.get_order(&order_id).await.unwrap();
-        tracing::error!(?order);
-        order.metadata.quote.unwrap().metadata != serde_json::Value::default()
+        order.metadata.quote.is_some()
     })
     .await
     .unwrap();
@@ -334,45 +318,7 @@ async fn two_limit_orders_test(web3: Web3) {
     // Place Orders
     let services = Services::new(&onchain).await;
 
-    // Start a reverse proxy between autopilot and the driver to inspect
-    // requests and assert that /solve requests are brotli-compressed.
-    let saw_compressed_solve = Arc::new(AtomicBool::new(false));
-    let flag = saw_compressed_solve.clone();
-    let on_request: OnRequest = Arc::new(move |parts, _body| {
-        let path = parts.uri.path();
-        let has_br = parts
-            .headers
-            .get("content-encoding")
-            .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
-            .is_some_and(|v| v == "br");
-        if path.contains("/solve") && has_br {
-            flag.store(true, Ordering::Release);
-        }
-    });
-    let proxy_addr: std::net::SocketAddr = "0.0.0.0:11089".parse().unwrap();
-    let backend: Url = "http://0.0.0.0:11088".parse().unwrap();
-    let _proxy = ReverseProxy::start_with_callback(proxy_addr, &[backend], on_request);
-
-    let config = Configuration::test_no_drivers();
-    let config = Configuration {
-        drivers: vec![Solver::new(
-            "test_solver".to_string(),
-            "http://localhost:11089/test_solver".parse().unwrap(),
-            Account::Address(solver.address()),
-        )],
-        run_loop: RunLoopConfig {
-            compress_solve_request: true,
-            ..config.run_loop
-        },
-        ..config
-    };
-    services
-        .start_protocol_with_args(
-            config,
-            configs::orderbook::Configuration::test_default(),
-            solver,
-        )
-        .await;
+    services.start_protocol(solver).await;
 
     let order_a = OrderCreation {
         sell_token: *token_a.address(),
@@ -426,11 +372,6 @@ async fn two_limit_orders_test(web3: Web3) {
     })
     .await
     .unwrap();
-
-    assert!(
-        saw_compressed_solve.load(Ordering::Acquire),
-        "expected /solve requests to be brotli-compressed"
-    );
 }
 
 async fn two_limit_orders_multiple_winners_test(web3: Web3) {

@@ -35,6 +35,7 @@ pub async fn store(
     if uids.is_empty() {
         return Ok(());
     }
+    let _timer = super::db::query_timer("store_order_events");
     let mut tx = pool.begin().await.context("begin order event write")?;
     // The dedup below compares against committed rows only, so writers that
     // overlap both append. Keyed per label because writers carrying different

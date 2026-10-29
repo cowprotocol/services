@@ -83,67 +83,75 @@ impl Trade {
         }
     }
 
-    pub fn new(
-        trade: transaction::EncodedTrade,
-        auction: &super::Auction,
-        created: u32,
-    ) -> Result<Self, super::Error> {
-        let uniform = trade
-            .uniform_prices
-            .ok_or(super::Error::MissingUniformPrice(trade.uid));
+    pub fn new(trade: transaction::EncodedTrade, auction: &super::Auction, created: u32) -> Self {
+        // Without a uniform price the fee can't be derived, so book none.
+        // Protocol fees only need the custom prices.
+        let uniform = || {
+            trade.uniform_prices.unwrap_or_else(|| {
+                tracing::warn!(uid = %trade.uid, "settlement lists no uniform price for trade");
+                // NOTE: this will lead to the fee being shown in FE as 0
+                // because it's calculated as:
+                // 1. `surplus(uniform) - surplus(custom)`
+                // 2. `surplus(custom) - surplus(custom) = 0`
+                trade.custom_prices
+            })
+        };
         if auction.orders.contains_key(&trade.uid) {
-            Ok(Trade::Fulfillment(Fulfillment {
+            return Trade::Fulfillment(Fulfillment {
                 uid: trade.uid,
                 sell: trade.sell,
                 buy: trade.buy,
                 side: trade.side,
                 executed: trade.executed,
                 prices: Prices {
-                    uniform: uniform?,
+                    uniform: uniform(),
                     custom: trade.custom_prices,
                 },
-            }))
-        } else {
-            // All orders that were settled outside of the auction are JIT
-            // orders. This includes regular JIT orders that the
-            // protocol is not aware of upfront, as well as user
-            // orders that were not listed in the auction during competition.
-            let surplus_capturing = auction
-                .surplus_capturing_jit_order_owners
-                .contains(&trade.uid.owner());
-            Ok(Trade::Jit(Jit {
-                uid: trade.uid,
-                sell: trade.sell,
-                buy: trade.buy,
-                side: trade.side,
-                receiver: trade.receiver,
-                valid_to: trade.valid_to,
-                app_data: trade.app_data,
-                fee_amount: trade.fee_amount,
-                sell_token_balance: trade.sell_token_balance,
-                buy_token_balance: trade.buy_token_balance,
-                partially_fillable: trade.partially_fillable,
-                signature: trade.signature,
-                executed: trade.executed,
-                prices: if surplus_capturing {
-                    Prices {
-                        uniform: uniform?,
-                        custom: trade.custom_prices,
-                    }
-                } else {
-                    // for non-surplus capturing jit orders (AKA liquidity JIT
-                    // orders) the expectation is that the
-                    // trade was executed at its limit price, without
-                    // incurred fees.
-                    Prices {
-                        uniform: trade.custom_prices,
-                        custom: trade.custom_prices,
-                    }
-                },
-                created,
-                surplus_capturing,
-            }))
+            });
         }
+
+        // All orders that were settled outside of the auction are JIT
+        // orders. This includes regular JIT orders that the
+        // protocol is not aware of upfront, as well as user
+        // orders that were not listed in the auction during competition.
+        let surplus_capturing = auction
+            .surplus_capturing_jit_order_owners
+            .contains(&trade.uid.owner());
+
+        let prices = if surplus_capturing {
+            Prices {
+                uniform: uniform(),
+                custom: trade.custom_prices,
+            }
+        } else {
+            // for non-surplus capturing jit orders (AKA liquidity JIT
+            // orders) the expectation is that the
+            // trade was executed at its limit price, without
+            // incurred fees.
+            Prices {
+                uniform: trade.custom_prices,
+                custom: trade.custom_prices,
+            }
+        };
+
+        Trade::Jit(Jit {
+            uid: trade.uid,
+            sell: trade.sell,
+            buy: trade.buy,
+            side: trade.side,
+            receiver: trade.receiver,
+            valid_to: trade.valid_to,
+            app_data: trade.app_data,
+            fee_amount: trade.fee_amount,
+            sell_token_balance: trade.sell_token_balance,
+            buy_token_balance: trade.buy_token_balance,
+            partially_fillable: trade.partially_fillable,
+            signature: trade.signature,
+            executed: trade.executed,
+            prices,
+            created,
+            surplus_capturing,
+        })
     }
 }
 

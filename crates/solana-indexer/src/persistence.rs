@@ -75,6 +75,7 @@ impl Postgres {
     /// The last fully indexed slot, the stream resumes one past it. `None`
     /// before the first write.
     pub(crate) async fn last_indexed_slot(&self) -> Result<Option<Slot>, PersistenceError> {
+        let _timer = query_timer("last_indexed_slot");
         let slot: Option<i64> = sqlx::query_scalar("SELECT slot FROM solana.indexer_state")
             .fetch_optional(&self.pool)
             .await?;
@@ -384,6 +385,7 @@ WHERE indexer_state.slot < EXCLUDED.slot
         events: Vec<DecodedEvent>,
         last_indexed_slot: Slot,
     ) -> Result<(), PersistenceError> {
+        let _timer = query_timer("persist_events");
         let mut tx = self.pool.begin().await?;
         for event in events {
             Self::apply(&mut tx, event, last_indexed_slot).await?;
@@ -395,6 +397,7 @@ WHERE indexer_state.slot < EXCLUDED.slot
     /// The finalized watermark, `None` before the first flush writes the
     /// state row.
     pub(crate) async fn finalized_slot(&self) -> Result<Option<Slot>, PersistenceError> {
+        let _timer = query_timer("finalized_slot");
         let slot: Option<i64> =
             sqlx::query_scalar("SELECT finalized_slot FROM solana.indexer_state")
                 .fetch_optional(&self.pool)
@@ -409,6 +412,7 @@ WHERE indexer_state.slot < EXCLUDED.slot
         after: Slot,
         through: Slot,
     ) -> Result<Vec<Signature>, PersistenceError> {
+        let _timer = query_timer("unfinalized_signatures");
         let rows: Vec<Vec<u8>> = sqlx::query_scalar(
             r#"
 SELECT tx_signature FROM solana.settlements WHERE slot > $1 AND slot <= $2
@@ -440,6 +444,7 @@ SELECT created_by_tx FROM solana.order_pda
         finalized: Slot,
         vanished: &[Signature],
     ) -> Result<(), PersistenceError> {
+        let _timer = query_timer("finalize_through");
         let mut tx = self.pool.begin().await?;
         for signature in vanished {
             let signature = signature.as_ref();
@@ -493,6 +498,7 @@ WHERE pda.order_uid = deltas.order_uid
         &self,
         limit: i64,
     ) -> Result<Vec<(Signature, Slot)>, PersistenceError> {
+        let _timer = query_timer("claim_dead_letters");
         let rows: Vec<(Vec<u8>, i64)> = sqlx::query_as(
             r#"
 UPDATE solana.dead_letter SET last_attempt_at = now()
@@ -527,6 +533,7 @@ RETURNING tx_signature, slot
         events: Vec<DecodedEvent>,
         slot: Slot,
     ) -> Result<(), PersistenceError> {
+        let _timer = query_timer("replay_events");
         let mut tx = self.pool.begin().await?;
         sqlx::query("DELETE FROM solana.dead_letter WHERE tx_signature = $1")
             .bind(signature.as_ref())
@@ -542,6 +549,7 @@ RETURNING tx_signature, slot
     /// there is no state row and nothing indexed to finalize. A backward
     /// write is a no-op.
     pub(crate) async fn write_finalized_slot(&self, slot: Slot) -> Result<(), PersistenceError> {
+        let _timer = query_timer("write_finalized_slot");
         sqlx::query(
             "UPDATE solana.indexer_state SET finalized_slot = GREATEST(finalized_slot, $1)",
         )
@@ -553,6 +561,7 @@ RETURNING tx_signature, slot
 
     /// Record a slot as fully indexed. A backward write is a no-op.
     pub(crate) async fn write_last_indexed_slot(&self, slot: Slot) -> Result<(), PersistenceError> {
+        let _timer = query_timer("write_last_indexed_slot");
         Self::upsert_last_indexed_slot(&self.pool, slot).await
     }
 
@@ -563,6 +572,7 @@ RETURNING tx_signature, slot
         signature: Signature,
         slot: Slot,
     ) -> Result<(), PersistenceError> {
+        let _timer = query_timer("record_decode_failure");
         Self::insert_dead_letter(&self.pool, signature, slot, DeadLetterReason::DecoderError).await
     }
 
@@ -588,6 +598,22 @@ ON CONFLICT (tx_signature) DO NOTHING
         .await?;
         Ok(())
     }
+}
+
+/// Starts timing a query, recorded under `query` when the timer drops.
+fn query_timer(query: &str) -> prometheus::HistogramTimer {
+    Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .database_queries
+        .with_label_values(&[query])
+        .start_timer()
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Query durations, by query.
+    #[metric(name = "indexer_database_queries", labels("type"))]
+    database_queries: prometheus::HistogramVec,
 }
 
 #[cfg(test)]
