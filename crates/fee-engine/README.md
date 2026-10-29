@@ -13,12 +13,12 @@ of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
 list takes a reserved name or an expression does not compile. A rule whose
 expression fails at run time is skipped and reported to the caller.
 
-`RuleSet::preflight` is a separate pass: it runs both expressions of every
-rule against a sample order (a default order with every optional field
-present) and reports every `when` that does not return a bool and every
-`fee` that does not return valid fees, so one run shows all the mistakes.
-This catches a misspelt name or a bad fee argument such as `volume(0.001)`
-at load time instead of on the first order.
+`RuleSet::validate_on_sample_order` is a separate pass: it runs both
+expressions of every rule against a sample order (a default order with
+every optional field present) and reports every `when` that does not return
+a bool and every `fee` that does not return valid fees, so one run shows all
+the mistakes. This catches a misspelt name or a bad fee argument such as
+`volume(0.001)` at load time instead of on the first order.
 
 ```
 name: Stablecoin swaps
@@ -121,12 +121,11 @@ order.
 
 ### `order`
 
-The order as the API returns it, with three changes: decimal strings
-(amounts and prices, including the quote's) are doubles, hex strings are
-lowercase, and `fastPath` is always present (the API omits it when false).
-`fullAppData` stays text. An unset `receiver` is the zero address, not
-`null`. Optional fields such as `quote` are absent when unset, not `null`:
-test them with `has(order.quote)`.
+The order as the API returns it, with two changes: decimal strings (amounts
+and prices, including the quote's) are doubles, and hex strings are
+lowercase. `fullAppData` stays text. An unset `receiver` is the zero
+address, not `null`. Fields the API omits, such as an unset `quote` or a
+false `fastPath`, are absent, not `null`: test them with `has(order.quote)`.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21

@@ -39,10 +39,10 @@ pub enum CompileError {
     },
 }
 
-/// One expression that gave no usable value on the preflight's sample order.
+/// One expression that gave no usable value on the sample order.
 #[derive(Debug, thiserror::Error)]
 #[error("rule `{rule}`: `{field}` {error} on a sample order")]
-pub struct PreflightError {
+pub struct SampleOrderError {
     pub rule: String,
     pub field: Field,
     pub error: RuleError,
@@ -167,12 +167,12 @@ impl RuleSet {
     /// Runs both expressions of every rule against a sample order, whatever
     /// `when` says, and reports every one that yields no bool or no fee. This
     /// catches bad fee arguments and misspelt names before any real order.
-    pub fn preflight(&self) -> Result<(), Vec<PreflightError>> {
+    pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
         let errors: Vec<_> = self
             .evaluator(Utc::now())
-            .check(&sample_order())
+            .evaluate_all_expressions(&sample_order())
             .into_iter()
-            .map(|skipped| PreflightError {
+            .map(|skipped| SampleOrderError {
                 rule: skipped.rule.name().to_owned(),
                 field: skipped.field,
                 error: skipped.error,
@@ -218,6 +218,7 @@ fn sample_order() -> Order {
             full_app_data: Some(Default::default()),
             valid_from: Some(Default::default()),
             quote: Some(OrderQuote::default()),
+            fast_path: true,
             ..Default::default()
         },
         ..Default::default()
@@ -325,14 +326,14 @@ mod tests {
     }
 
     #[test]
-    fn preflight_runs_every_expression_on_a_sample_order() {
-        let preflight = |definitions| {
+    fn validates_every_expression_on_a_sample_order() {
+        let validate = |definitions| {
             RuleSet::new(definitions, BTreeMap::new())
                 .unwrap()
-                .preflight()
+                .validate_on_sample_order()
         };
 
-        preflight(vec![
+        validate(vec![
             rule("Quoted", "order.quote.sellAmount > 0", "volume(1)"),
             rule("Ethflow", "order.ethflowData.userValidTo > 0", "no_fee()"),
             rule("Fast path", "order.fastPath", "no_fee()"),
@@ -340,10 +341,10 @@ mod tests {
         ])
         .unwrap();
 
-        let errors = |definitions| preflight(definitions).unwrap_err();
+        let errors = |definitions| validate(definitions).unwrap_err();
         assert!(matches!(
             errors(vec![rule("Not a bool", "order.sellAmount", "volume(1)")])[..],
-            [PreflightError {
+            [SampleOrderError {
                 ref rule,
                 field: Field::When,
                 error: RuleError::NotABool(_),
@@ -351,7 +352,7 @@ mod tests {
         ));
         assert!(matches!(
             errors(vec![rule("Misspelt", "order.sellAmout > 0", "volume(1)")])[..],
-            [PreflightError {
+            [SampleOrderError {
                 field: Field::When,
                 error: RuleError::Execution(_),
                 ..
@@ -359,7 +360,7 @@ mod tests {
         ));
         assert!(matches!(
             errors(vec![rule("Never matches", "false", "volume(0.001)")])[..],
-            [PreflightError {
+            [SampleOrderError {
                 field: Field::Fee,
                 error: RuleError::NotAFee(_),
                 ..
@@ -373,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn preflight_reports_every_failure() {
+    fn sample_order_validation_reports_every_failure() {
         let rules = RuleSet::new(
             vec![
                 rule("Both", "order.sellAmount", "volume(0.001)"),
@@ -384,7 +385,7 @@ mod tests {
         )
         .unwrap();
         let failed: Vec<_> = rules
-            .preflight()
+            .validate_on_sample_order()
             .unwrap_err()
             .iter()
             .map(|error| (error.rule.clone(), error.field))
