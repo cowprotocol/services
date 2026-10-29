@@ -1,5 +1,7 @@
 //! The order as a rule sees it.
 
+mod full_app_data;
+
 use serde_json::{Value, json};
 
 /// An order as the host hands it to the engine: the API order plus the facts
@@ -35,6 +37,7 @@ pub(crate) fn order_view(Order { order, in_market }: Order) -> Value {
         "validTo": data.valid_to,
         "validFrom": meta.valid_from,
         "appData": hex(&data.app_data.0),
+        "fullAppData": full_app_data::full_app_data(meta.full_app_data.as_deref()),
         "fastPath": meta.fast_path,
         "inMarket": in_market,
         "quote": meta.quote.as_ref().map(|quote| json!({
@@ -138,7 +141,7 @@ mod tests {
         assert_eq!(view["appData"], format!("0x{}", "0".repeat(64)));
         assert_eq!(view["fastPath"], false);
         assert!(view.get("quote").is_none());
-        assert!(view.get("fullAppData").is_none());
+        assert_eq!(view["fullAppData"]["metadata"]["partnerFee"], json!([]));
     }
 
     /// An order with every option set, the view's fields at their fullest.
@@ -168,7 +171,35 @@ mod tests {
                 }),
                 onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
                 valid_from: Some(4),
-                full_app_data: Some(r#"{"metadata":{"partnerFee":{"bps":5}}}"#.to_owned()),
+                full_app_data: Some(
+                    r#"{
+                        "appCode": "CoW Swap",
+                        "environment": "production",
+                        "version": "1.14.0",
+                        "metadata": {
+                            "hooks": {
+                                "pre": [{ "target": "0x00000000000000000000000000000000000000Ab", "callData": "0xAB", "gasLimit": "21000" }],
+                                "post": [{ "target": "0x00000000000000000000000000000000000000Ab", "callData": "0x", "gasLimit": "1" }]
+                            },
+                            "signer": "0x00000000000000000000000000000000000000Ab",
+                            "replacedOrder": { "uid": "0xAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAb" },
+                            "partnerFee": [
+                                { "bps": 25, "recipient": "0x00000000000000000000000000000000000000Ab" },
+                                { "surplusBps": 50, "maxVolumeBps": 100, "recipient": "0x00000000000000000000000000000000000000Ab" },
+                                { "priceImprovementBps": 30, "maxVolumeBps": 90, "recipient": "0x00000000000000000000000000000000000000Ab" }
+                            ],
+                            "flashloan": {
+                                "liquidityProvider": "0x00000000000000000000000000000000000000Ab",
+                                "protocolAdapter": "0x00000000000000000000000000000000000000Ab",
+                                "receiver": "0x00000000000000000000000000000000000000Ab",
+                                "token": "0x00000000000000000000000000000000000000Ab",
+                                "amount": "6136714"
+                            },
+                            "wrappers": [{ "address": "0x00000000000000000000000000000000000000Ab", "data": "0xAB", "isOmittable": true }]
+                        }
+                    }"#
+                    .to_owned(),
+                ),
                 fast_path: true,
                 ..Default::default()
             },
@@ -202,7 +233,8 @@ mod tests {
     }
 
     /// Every view field is the API field of the same name, so a rule author
-    /// can read the API docs; `inMarket` is the one field the API lacks.
+    /// can read the API docs. The API lacks `inMarket` and has `fullAppData`
+    /// as text, not parsed.
     #[test]
     fn view_matches_the_api_json() {
         let order = fully_set_order();
@@ -210,22 +242,32 @@ mod tests {
             order: &order,
             in_market: true,
         });
-        view.as_object_mut().unwrap().remove("inMarket");
+        let fields = view.as_object_mut().unwrap();
+        fields.remove("inMarket");
+        fields.remove("fullAppData");
         assert_matches_api(&view, &serde_json::to_value(&order).unwrap(), "");
     }
 
-    /// Every field of `view` as a dotted path, nested objects included.
+    /// Every field of `view` as a path, nested objects and list items
+    /// included, e.g. `.quote.sellAmount` or
+    /// `.fullAppData.metadata.wrappers[]`.
     fn field_paths(view: &Value) -> BTreeSet<String> {
+        let children: Vec<(String, &Value)> = match view {
+            Value::Object(fields) => fields
+                .iter()
+                .map(|(name, field)| (format!(".{name}"), field))
+                .collect(),
+            Value::Array(items) => items.iter().map(|item| ("[]".to_owned(), item)).collect(),
+            _ => Vec::new(),
+        };
         let mut paths = BTreeSet::new();
-        if let Value::Object(fields) = view {
-            for (name, field) in fields {
-                paths.insert(name.clone());
-                paths.extend(
-                    field_paths(field)
-                        .into_iter()
-                        .map(|path| format!("{name}.{path}")),
-                );
-            }
+        for (step, child) in children {
+            paths.extend(
+                field_paths(child)
+                    .into_iter()
+                    .map(|path| format!("{step}{path}")),
+            );
+            paths.insert(step);
         }
         paths
     }
@@ -265,6 +307,7 @@ mod tests {
                 "validTo",
                 "validFrom",
                 "appData",
+                "fullAppData",
                 "fastPath",
                 "inMarket",
                 "quote",

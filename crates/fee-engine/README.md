@@ -196,6 +196,50 @@ shortened):
   "validTo": 1793284991,
   "validFrom": 1793281391,
   "appData": "0x3a8f…09bc",
+  "fullAppData": {
+    "appCode": "CoW Swap",
+    "environment": "production",
+    "version": "1.14.0",
+    "metadata": {
+      "hooks": {
+        "pre": [
+          {
+            "target": "0x01148b2b4e84e11b0a8a8bd5b8a3d2a3c19a6f9e",
+            "callData": "0x095e…0000",
+            "gasLimit": 60000
+          }
+        ],
+        "post": [
+          {
+            "target": "0x01148b2b4e84e11b0a8a8bd5b8a3d2a3c19a6f9e",
+            "callData": "0x",
+            "gasLimit": 21000
+          }
+        ]
+      },
+      "signer": "0x40a50cf069e992aa4536211b23f286ef88752187",
+      "replacedOrder": { "uid": "0x9b4c…e1f0" },
+      "partnerFee": [
+        { "volumeBps": 25, "recipient": "0x63695eee2c3141bde314c5a6f89b98e62808d716" },
+        { "surplusBps": 50, "maxVolumeBps": 100, "recipient": "0x63695eee2c3141bde314c5a6f89b98e62808d716" },
+        { "priceImprovementBps": 30, "maxVolumeBps": 90, "recipient": "0x63695eee2c3141bde314c5a6f89b98e62808d716" }
+      ],
+      "flashloan": {
+        "liquidityProvider": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+        "protocolAdapter": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
+        "receiver": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
+        "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "amount": 2.5e9
+      },
+      "wrappers": [
+        {
+          "address": "0x9e7ae8bdba9aa346739792d219a808884996db67",
+          "data": "0x",
+          "isOmittable": true
+        }
+      ]
+    }
+  },
   "fastPath": false,
   "inMarket": true,
   "quote": {
@@ -226,10 +270,9 @@ check it: the host must pass false when the order has no quote.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
-`settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
-app-data document (`fullAppData`) are not in the view. An unset `receiver`
-is the zero address. Other optional fields are absent when unset, not
-`null`: test them with `has(order.quote)`.
+`settlementContract`) and legacy fields (`class`, `isLiquidityOrder`) are
+not in the view. An unset `receiver` is the zero address. Other optional
+fields are absent when unset, not `null`: test them with `has(order.quote)`.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
@@ -239,6 +282,35 @@ fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
 A hex literal compares equal to the view only in lowercase: write it so, or
 call `lowerAscii()` on it. Addresses belong in lists, where case does not
 matter.
+
+### `order.fullAppData`
+
+The app-data document, parsed. The fields the protocol reads are typed like
+the rest of the view (`order_view/full_app_data.rs` is the reference); every
+other key is kept as the user wrote it, with no hex or number conversion.
+The sample order above shows the typed fields.
+
+`appCode`, `environment` and `version` are absent when unset or not a
+string. `hooks`, `partnerFee` and `wrappers` are always present, empty when
+unset. `partnerFee` is a list even for one fee, and each entry has one of
+`volumeBps`, `surplusBps` or `priceImprovementBps`; a bare `bps` reads as
+`volumeBps`.
+
+`metadata.enableFastPath` and `metadata.validFrom` are not here: read
+`order.fastPath` and `order.validFrom`. Keys under `backend`, the deprecated
+home of the protocol fields, appear under `metadata`. An order with no
+document, or one the protocol cannot parse, sees the empty document `{}`.
+Typed sub-objects keep only the fields above, so a hook's `dappId` is gone.
+
+```
+when: has(order.fullAppData.appCode) && order.fullAppData.appCode == "CoW Swap"
+when: order.fullAppData.metadata.partnerFee.exists(f, has(f.volumeBps) && f.volumeBps > 10)
+when: has(order.fullAppData.metadata.quote) && order.fullAppData.metadata.quote.slippageBips > 100
+```
+
+The sample order of `RuleSet::validate_on_sample_order` holds every typed
+field but no other key, so a rule must test a non-standard key with `has`
+before it reads it, as it must for real orders that lack it.
 
 ## Outcome
 

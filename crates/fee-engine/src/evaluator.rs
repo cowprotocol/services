@@ -505,6 +505,76 @@ mod tests {
     }
 
     #[test]
+    fn rules_read_the_app_data() {
+        let rules = rule_set(vec![
+            rule(
+                "CoW Swap",
+                r#"has(order.fullAppData.appCode) && order.fullAppData.appCode == "CoW Swap""#,
+                "volume(1)",
+            ),
+            rule(
+                "Partner volume fee",
+                "order.fullAppData.metadata.partnerFee.exists(fee, has(fee.volumeBps) && \
+                 fee.volumeBps > 10)",
+                "volume(2)",
+            ),
+            rule(
+                "Pre-hooks",
+                "size(order.fullAppData.metadata.hooks.pre) > 0",
+                "volume(3)",
+            ),
+            rule(
+                "High slippage",
+                "has(order.fullAppData.metadata.quote) && \
+                 order.fullAppData.metadata.quote.slippageBips > 100",
+                "volume(4)",
+            ),
+        ]);
+        let evaluator = rules.evaluator(after_launch());
+
+        let mut plain = order(WETH, USDT);
+        let evaluation = evaluator.evaluate(Order {
+            order: &plain,
+            in_market: false,
+        });
+        assert!(evaluation.matched.is_empty());
+        assert!(evaluation.skipped.is_empty());
+
+        plain.metadata.full_app_data = Some(
+            r#"{
+                "appCode": "CoW Swap",
+                "metadata": {
+                    "quote": { "slippageBips": 150 },
+                    "hooks": { "pre": [{
+                        "target": "0x0000000000000000000000000000000000000001",
+                        "callData": "0x",
+                        "gasLimit": "1"
+                    }] },
+                    "partnerFee": {
+                        "volumeBps": 25,
+                        "recipient": "0x0000000000000000000000000000000000000001"
+                    }
+                }
+            }"#
+            .to_owned(),
+        );
+        let evaluation = evaluator.evaluate(Order {
+            order: &plain,
+            in_market: false,
+        });
+        assert!(evaluation.skipped.is_empty());
+        assert_eq!(
+            names(&evaluation),
+            [
+                "CoW Swap",
+                "Partner volume fee",
+                "Pre-hooks",
+                "High slippage"
+            ]
+        );
+    }
+
+    #[test]
     fn in_market_is_the_one_passed_in() {
         let rules = rule_set(vec![
             rule("Inside", "order.inMarket", "volume(1)"),

@@ -4925,6 +4925,7 @@ name = "fee-engine"
 version = "0.1.0"
 dependencies = [
  "alloy-primitives",
+ "app-data",
  "cel",
  "chrono",
  "configs",

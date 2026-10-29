@@ -216,6 +216,34 @@ impl RuleSet {
     }
 }
 
+/// Every field the app-data view types, each partner-fee kind once.
+const SAMPLE_FULL_APP_DATA: &str = r#"{
+    "appCode": "sample",
+    "environment": "sample",
+    "version": "1.0.0",
+    "metadata": {
+        "hooks": {
+            "pre": [{ "target": "0x0000000000000000000000000000000000000001", "callData": "0x", "gasLimit": "1" }],
+            "post": [{ "target": "0x0000000000000000000000000000000000000001", "callData": "0x", "gasLimit": "1" }]
+        },
+        "signer": "0x0000000000000000000000000000000000000001",
+        "replacedOrder": { "uid": "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101" },
+        "partnerFee": [
+            { "volumeBps": 1, "recipient": "0x0000000000000000000000000000000000000001" },
+            { "surplusBps": 1, "maxVolumeBps": 1, "recipient": "0x0000000000000000000000000000000000000001" },
+            { "priceImprovementBps": 1, "maxVolumeBps": 1, "recipient": "0x0000000000000000000000000000000000000001" }
+        ],
+        "flashloan": {
+            "liquidityProvider": "0x0000000000000000000000000000000000000001",
+            "protocolAdapter": "0x0000000000000000000000000000000000000001",
+            "receiver": "0x0000000000000000000000000000000000000001",
+            "token": "0x0000000000000000000000000000000000000001",
+            "amount": "1"
+        },
+        "wrappers": [{ "address": "0x0000000000000000000000000000000000000001", "data": "0x" }]
+    }
+}"#;
+
 /// An order with every optional field present, so that a rule can reach any
 /// name the view may hold. Amounts and prices are 1, so a ratio of two is
 /// defined; `feeAmount` stays 0, as the API refuses any other.
@@ -236,6 +264,7 @@ pub(crate) fn sample_order() -> Order {
                 ..Default::default()
             }),
             onchain_user: Some(Default::default()),
+            full_app_data: Some(SAMPLE_FULL_APP_DATA.to_owned()),
             valid_from: Some(Default::default()),
             quote: Some(OrderQuote {
                 sell_amount: U256::ONE,
@@ -376,6 +405,21 @@ mod tests {
                 "no_fee()",
             ),
             rule(
+                "App code",
+                "order.fullAppData.appCode == 'sample'",
+                "no_fee()",
+            ),
+            rule(
+                "Partner fee",
+                "order.fullAppData.metadata.partnerFee[1].surplusBps > 0",
+                "no_fee()",
+            ),
+            rule(
+                "Hooks",
+                "order.fullAppData.metadata.hooks.post[0].gasLimit > 0",
+                "no_fee()",
+            ),
+            rule(
                 "Ratio",
                 "order.quote.buyAmount / order.quote.sellAmount > 0.0",
                 "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
@@ -395,6 +439,19 @@ mod tests {
         ));
         assert!(matches!(
             errors(vec![rule("Misspelt", "order.sellAmout > 0", "volume(1)")])[..],
+            [SampleOrderError {
+                field: Field::When,
+                error: RuleError::Execution(_),
+                ..
+            }]
+        ));
+        // The sample holds no non-standard app-data key: guard it with `has`.
+        assert!(matches!(
+            errors(vec![rule(
+                "Unguarded",
+                "order.fullAppData.metadata.quote.slippageBips > 0",
+                "no_fee()"
+            )])[..],
             [SampleOrderError {
                 field: Field::When,
                 error: RuleError::Execution(_),
