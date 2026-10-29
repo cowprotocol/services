@@ -17,5 +17,5 @@ mod rules;
 pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
-    rules::{CompileError, Field, Rule, RuleDefinition, RuleSet},
+    rules::{CompileError, Field, Rule, RuleDefinition, RuleSet, SampleOrderError},
 };

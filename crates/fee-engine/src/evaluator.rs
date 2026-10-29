@@ -75,11 +75,7 @@ impl<'r> Evaluator<'r> {
     /// Runs every rule against `order`. A rule that fails to evaluate is
     /// skipped and reported; it never blocks the others.
     pub fn evaluate(&self, order: &Order) -> Evaluation<'r> {
-        let mut context = self.context.new_inner_scope();
-        context
-            .add_variable("order", order_view::order_view(order))
-            .expect("JSON converts to CEL values");
-
+        let context = self.scope(order);
         let mut evaluation = Evaluation {
             matched: Vec::new(),
             skipped: Vec::new(),
@@ -94,26 +90,56 @@ impl<'r> Evaluator<'r> {
         evaluation
     }
 
+    /// Runs both expressions of every rule against `order`, whatever `when`
+    /// says, and reports every one that fails, in rule order.
+    pub(crate) fn evaluate_all_expressions(&self, order: &Order) -> Vec<Skipped<'r>> {
+        let context = self.scope(order);
+        let mut skipped = Vec::new();
+        for rule in self.rules.rules() {
+            let errors = [
+                Self::matched(rule, &context).err(),
+                Self::fees(rule, &context).err(),
+            ];
+            for (field, error) in errors.into_iter().flatten() {
+                skipped.push(Skipped { rule, field, error });
+            }
+        }
+        skipped
+    }
+
+    fn scope(&self, order: &Order) -> Context<'_, '_> {
+        let mut context = self.context.new_inner_scope();
+        context
+            .add_variable("order", order_view::order_view(order))
+            .expect("JSON converts to CEL values");
+        context
+    }
+
     /// `Ok(None)` when `when` is false, `Ok(Some(fees))` when it is true.
     fn evaluate_rule(
         rule: &Rule,
         context: &Context<'_, '_>,
     ) -> Result<Option<Vec<Fee>>, (Field, RuleError)> {
-        let matched = match rule.when.execute(context) {
-            Ok(Value::Bool(matched)) => matched,
-            Ok(other) => return Err((Field::When, RuleError::NotABool(other.type_of()))),
-            Err(err) => return Err((Field::When, err.into())),
-        };
-        if !matched {
+        if !Self::matched(rule, context)? {
             return Ok(None);
         }
+        Self::fees(rule, context).map(Some)
+    }
+
+    fn matched(rule: &Rule, context: &Context<'_, '_>) -> Result<bool, (Field, RuleError)> {
+        match rule.when.execute(context) {
+            Ok(Value::Bool(matched)) => Ok(matched),
+            Ok(other) => Err((Field::When, RuleError::NotABool(other.type_of()))),
+            Err(err) => Err((Field::When, err.into())),
+        }
+    }
+
+    fn fees(rule: &Rule, context: &Context<'_, '_>) -> Result<Vec<Fee>, (Field, RuleError)> {
         let value = rule
             .fee
             .execute(context)
             .map_err(|err| (Field::Fee, err.into()))?;
-        fee::fees_from_value(&value)
-            .map(Some)
-            .map_err(|message| (Field::Fee, RuleError::NotAFee(message)))
+        fee::fees_from_value(&value).map_err(|message| (Field::Fee, RuleError::NotAFee(message)))
     }
 }
 
@@ -371,6 +397,26 @@ mod tests {
         let evaluator = rules.evaluator(after_launch());
         let (rule, _) = matched(&evaluator.evaluate(&order(USDC, WETH)));
         assert_eq!(rule, "Checksummed literal");
+    }
+
+    #[test]
+    fn absent_optional_fields_are_tested_with_has() {
+        let rules = rule_set(vec![
+            rule("Quoted", "has(order.quote)", "volume(1)"),
+            rule("Fast path", "has(order.fastPath)", "volume(2)"),
+            rule("Default", "true", "volume(3)"),
+        ]);
+        let evaluator = rules.evaluator(after_launch());
+
+        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        assert_eq!(names(&evaluation), ["Default"]);
+        assert!(evaluation.skipped.is_empty());
+
+        let mut quoted = order(WETH, USDT);
+        quoted.metadata.quote = Some(Default::default());
+        quoted.metadata.fast_path = true;
+        let evaluation = evaluator.evaluate(&quoted);
+        assert_eq!(names(&evaluation), ["Quoted", "Fast path", "Default"]);
     }
 
     #[test]
