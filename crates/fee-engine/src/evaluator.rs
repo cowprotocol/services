@@ -96,11 +96,11 @@ impl<'r> Evaluator<'r> {
         let context = self.scope(order);
         let mut skipped = Vec::new();
         for rule in self.rules.rules() {
-            let results = [
-                Self::matched(rule, &context).map(drop),
-                Self::fees(rule, &context).map(drop),
+            let errors = [
+                Self::matched(rule, &context).err(),
+                Self::fees(rule, &context).err(),
             ];
-            for (field, error) in results.into_iter().filter_map(Result::err) {
+            for (field, error) in errors.into_iter().flatten() {
                 skipped.push(Skipped { rule, field, error });
             }
         }
