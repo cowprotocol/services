@@ -14,21 +14,7 @@ pub struct AppData {
     pub signer: Option<Address>,
     /// The uid of the order this one replaces.
     pub replaced_order: Option<[u8; 56]>,
-    pub partner_fees: Vec<PartnerFee>,
     pub flashloan: Option<Flashloan>,
-}
-
-#[derive(Debug, Clone)]
-pub struct PartnerFee {
-    pub policy: PartnerFeePolicy,
-    pub recipient: Address,
-}
-
-#[derive(Debug, Clone)]
-pub enum PartnerFeePolicy {
-    Volume { bps: u64 },
-    Surplus { bps: u64, max_volume_bps: u64 },
-    PriceImprovement { bps: u64, max_volume_bps: u64 },
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +34,6 @@ pub(super) fn app_data_view(app_data: &AppData) -> Value {
         "metadata": {
             "signer": app_data.signer.map(|signer| hex(signer.as_slice())),
             "replacedOrder": app_data.replaced_order.map(|uid| json!({ "uid": hex(&uid) })),
-            "partnerFee": app_data.partner_fees.iter().map(partner_fee).collect::<Vec<_>>(),
             "flashloan": app_data.flashloan.as_ref().map(|flashloan| json!({
                 "liquidityProvider": hex(flashloan.liquidity_provider.as_slice()),
                 "protocolAdapter": hex(flashloan.protocol_adapter.as_slice()),
@@ -58,23 +43,6 @@ pub(super) fn app_data_view(app_data: &AppData) -> Value {
             })),
         },
     })
-}
-
-/// One partner fee under the app-data schema's names.
-fn partner_fee(fee: &PartnerFee) -> Value {
-    let mut view = match fee.policy {
-        PartnerFeePolicy::Volume { bps } => json!({ "volumeBps": bps }),
-        PartnerFeePolicy::Surplus {
-            bps,
-            max_volume_bps,
-        } => json!({ "surplusBps": bps, "maxVolumeBps": max_volume_bps }),
-        PartnerFeePolicy::PriceImprovement {
-            bps,
-            max_volume_bps,
-        } => json!({ "priceImprovementBps": bps, "maxVolumeBps": max_volume_bps }),
-    };
-    view["recipient"] = hex(fee.recipient.as_slice()).into();
-    view
 }
 
 #[cfg(test)]
@@ -95,26 +63,6 @@ mod tests {
             app_code: Some("CoW Swap".to_owned()),
             signer: Some(aa),
             replaced_order: Some([0xab; 56]),
-            partner_fees: vec![
-                PartnerFee {
-                    policy: PartnerFeePolicy::Volume { bps: 25 },
-                    recipient: aa,
-                },
-                PartnerFee {
-                    policy: PartnerFeePolicy::Surplus {
-                        bps: 50,
-                        max_volume_bps: 100,
-                    },
-                    recipient: aa,
-                },
-                PartnerFee {
-                    policy: PartnerFeePolicy::PriceImprovement {
-                        bps: 30,
-                        max_volume_bps: 90,
-                    },
-                    recipient: aa,
-                },
-            ],
             flashloan: Some(Flashloan {
                 liquidity_provider: aa,
                 protocol_adapter: aa,
@@ -131,11 +79,6 @@ mod tests {
                 "metadata": {
                     "signer": aa,
                     "replacedOrder": { "uid": format!("0x{}", "ab".repeat(56)) },
-                    "partnerFee": [
-                        { "volumeBps": 25, "recipient": aa },
-                        { "surplusBps": 50, "maxVolumeBps": 100, "recipient": aa },
-                        { "priceImprovementBps": 30, "maxVolumeBps": 90, "recipient": aa },
-                    ],
                     "flashloan": {
                         "liquidityProvider": aa,
                         "protocolAdapter": aa,
@@ -149,11 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn default_app_data_has_only_the_empty_partner_fees() {
-        // The list is there to read without `has`.
-        assert_eq!(
-            view(&AppData::default()),
-            json!({ "metadata": { "partnerFee": [] } })
-        );
+    fn default_app_data_has_an_empty_metadata() {
+        assert_eq!(view(&AppData::default()), json!({ "metadata": {} }));
     }
 }

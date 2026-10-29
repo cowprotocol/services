@@ -2,7 +2,7 @@
 
 mod app_data;
 
-pub use app_data::{AppData, Flashloan, PartnerFee, PartnerFeePolicy};
+pub use app_data::{AppData, Flashloan};
 use {
     app_data::app_data_view,
     serde_json::{Value, json},
@@ -154,7 +154,6 @@ mod tests {
         assert_eq!(view["appDataHash"], format!("0x{}", "0".repeat(64)));
         assert_eq!(view["fastPath"], false);
         assert!(view.get("quote").is_none());
-        assert_eq!(view["appData"]["metadata"]["partnerFee"], json!([]));
     }
 
     /// An order with every option set, the view's fields at their fullest.
@@ -234,26 +233,19 @@ mod tests {
         assert_matches_api(&view, &serde_json::to_value(&order).unwrap(), "");
     }
 
-    /// Every field of `view` as a path, nested objects and list items
-    /// included, e.g. `.quote.sellAmount` or
-    /// `.appData.metadata.partnerFee[]`.
+    /// Every field of `view` as a dotted path, nested objects included, e.g.
+    /// `quote.sellAmount`.
     fn field_paths(view: &Value) -> BTreeSet<String> {
-        let children: Vec<(String, &Value)> = match view {
-            Value::Object(fields) => fields
-                .iter()
-                .map(|(name, field)| (format!(".{name}"), field))
-                .collect(),
-            Value::Array(items) => items.iter().map(|item| ("[]".to_owned(), item)).collect(),
-            _ => Vec::new(),
-        };
         let mut paths = BTreeSet::new();
-        for (step, child) in children {
-            paths.extend(
-                field_paths(child)
-                    .into_iter()
-                    .map(|path| format!("{step}{path}")),
-            );
-            paths.insert(step);
+        if let Value::Object(fields) = view {
+            for (name, field) in fields {
+                paths.insert(name.clone());
+                paths.extend(
+                    field_paths(field)
+                        .into_iter()
+                        .map(|path| format!("{name}.{path}")),
+                );
+            }
         }
         paths
     }

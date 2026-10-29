@@ -1,16 +1,7 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::{
-        AppData,
-        Evaluator,
-        Flashloan,
-        PartnerFee,
-        PartnerFeePolicy,
-        evaluator::RuleError,
-        fee,
-        order_view,
-    },
+    crate::{AppData, Evaluator, Flashloan, evaluator::RuleError, fee, order_view},
     alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
@@ -226,27 +217,12 @@ impl RuleSet {
     }
 }
 
-/// App data with every field set, each partner-fee kind once.
+/// App data with every field set.
 pub(crate) fn sample_app_data() -> AppData {
-    let partner_fee = |policy| PartnerFee {
-        policy,
-        recipient: Address::ZERO,
-    };
     AppData {
         app_code: Some("sample".to_owned()),
         signer: Some(Address::ZERO),
         replaced_order: Some([0; 56]),
-        partner_fees: vec![
-            partner_fee(PartnerFeePolicy::Volume { bps: 1 }),
-            partner_fee(PartnerFeePolicy::Surplus {
-                bps: 1,
-                max_volume_bps: 1,
-            }),
-            partner_fee(PartnerFeePolicy::PriceImprovement {
-                bps: 1,
-                max_volume_bps: 1,
-            }),
-        ],
         flashloan: Some(Flashloan {
             liquidity_provider: Address::ZERO,
             protocol_adapter: Address::ZERO,
@@ -417,11 +393,6 @@ mod tests {
                 "no_fee()",
             ),
             rule("App code", "order.appData.appCode == 'sample'", "no_fee()"),
-            rule(
-                "Partner fee",
-                "order.appData.metadata.partnerFee[1].surplusBps > 0",
-                "no_fee()",
-            ),
             rule(
                 "Ratio",
                 "order.quote.buyAmount / order.quote.sellAmount > 0.0",

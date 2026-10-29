@@ -202,11 +202,6 @@ shortened):
     "metadata": {
       "signer": "0x40a50cf069e992aa4536211b23f286ef88752187",
       "replacedOrder": { "uid": "0x9b4c…e1f0" },
-      "partnerFee": [
-        { "volumeBps": 25, "recipient": "0x63695eee2c3141bde314c5a6f89b98e62808d716" },
-        { "surplusBps": 50, "maxVolumeBps": 100, "recipient": "0x63695eee2c3141bde314c5a6f89b98e62808d716" },
-        { "priceImprovementBps": 30, "maxVolumeBps": 90, "recipient": "0x63695eee2c3141bde314c5a6f89b98e62808d716" }
-      ],
       "flashloan": {
         "liquidityProvider": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
         "protocolAdapter": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
@@ -269,17 +264,16 @@ hash is `appDataHash`. The order the API returns calls the hash `appData`
 and has the document as `fullAppData` text.
 
 The order above shows every field. No other key of the document is here,
-hooks and wrappers included. `partnerFee` is always present, empty when
-unset; each entry has one of `volumeBps`, `surplusBps` or
-`priceImprovementBps`. The host passes `AppData::default()` when the order
-has no document or the protocol cannot parse it.
+hooks, wrappers and partner fees included; the host appends the partner
+fees after the rule's fees. The host passes `AppData::default()` when the
+order has no document or the protocol cannot parse it.
 
 `metadata.enableFastPath` and `metadata.validFrom` are not here: read
 `order.fastPath` and `order.validFrom`, which hold the values in effect.
 
 ```
 when: has(order.appData.appCode) && order.appData.appCode == "CoW Swap"
-when: order.appData.metadata.partnerFee.exists(f, has(f.volumeBps) && f.volumeBps > 10)
+when: has(order.appData.metadata.flashloan)
 ```
 
 ## Outcome

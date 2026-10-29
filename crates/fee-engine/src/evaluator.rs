@@ -146,7 +146,7 @@ impl<'r> Evaluator<'r> {
 mod tests {
     use {
         super::*,
-        crate::{AppData, PartnerFee, PartnerFeePolicy, rules::RuleDefinition},
+        crate::{AppData, rules::RuleDefinition},
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
         configs::fee_factor::FeeFactor,
@@ -519,19 +519,11 @@ mod tests {
 
     #[test]
     fn rules_read_the_app_data() {
-        let rules = rule_set(vec![
-            rule(
-                "CoW Swap",
-                r#"has(order.appData.appCode) && order.appData.appCode == "CoW Swap""#,
-                "volume(1)",
-            ),
-            rule(
-                "Partner volume fee",
-                "order.appData.metadata.partnerFee.exists(fee, has(fee.volumeBps) && \
-                 fee.volumeBps > 10)",
-                "volume(2)",
-            ),
-        ]);
+        let rules = rule_set(vec![rule(
+            "CoW Swap",
+            r#"has(order.appData.appCode) && order.appData.appCode == "CoW Swap""#,
+            "volume(1)",
+        )]);
         let evaluator = rules.evaluator(after_launch());
 
         let order = order(WETH, USDT);
@@ -545,10 +537,6 @@ mod tests {
 
         let app_data = AppData {
             app_code: Some("CoW Swap".to_owned()),
-            partner_fees: vec![PartnerFee {
-                policy: PartnerFeePolicy::Volume { bps: 25 },
-                recipient: MAKER,
-            }],
             ..Default::default()
         };
         let evaluation = evaluator.evaluate(Order {
@@ -557,7 +545,7 @@ mod tests {
             in_market: false,
         });
         assert!(evaluation.skipped.is_empty());
-        assert_eq!(names(&evaluation), ["CoW Swap", "Partner volume fee"]);
+        assert_eq!(names(&evaluation), ["CoW Swap"]);
     }
 
     #[test]
