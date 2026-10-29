@@ -336,6 +336,20 @@ mod tests {
         );
     }
 
+    /// The README's sample order has every field of the view, no more.
+    #[test]
+    fn readme_sample_has_every_field() {
+        let readme = include_str!("../README.md");
+        let section = &readme[readme.find("### `order`").unwrap()..];
+        let sample = section.split("```json\n").nth(1).unwrap();
+        let sample: Value = serde_json::from_str(sample.split("```").next().unwrap()).unwrap();
+        let view = order_view(Order {
+            order: &fully_set_order(),
+            in_market: true,
+        });
+        assert_eq!(field_paths(&sample), field_paths(&view));
+    }
+
     #[test]
     fn normalizes_only_hex() {
         assert_eq!(normalize("0xAB"), "0xab");

@@ -172,23 +172,53 @@ order.
 
 ### `order`
 
-The fields of the API order that a fee can depend on, built field by field
-in `order_view.rs`, which is the reference. Amounts and prices are doubles,
-addresses and hashes are lowercase hex, and the API names are kept:
+The fields of the API order that a fee can depend on, under the API names,
+built field by field in `order_view.rs`. Amounts and prices are doubles and
+hex is lowercase. An order with every field set looks like this (hashes
+shortened):
 
-```
-Group      Fields
-────────   ─────────────────────────────────────────────────────────────
-Identity   uid, owner, creationDate
-Trade      sellToken, buyToken, receiver, sellAmount, buyAmount,
-           feeAmount, kind, partiallyFillable, sellTokenBalance,
-           buyTokenBalance
-Signing    signingScheme, validTo, validFrom
-App data   appData (hash)
-Pricing    inMarket, fastPath, quote { sellAmount, buyAmount, feeAmount,
-           gasAmount, gasPrice, sellTokenPrice, solver, verified }
-On-chain   ethflowData { userValidTo, refundTxHash, isRefunded },
-           onchainOrderData { sender, placementError }, onchainUser
+```json
+{
+  "uid": "0x5f2a…d1e6",
+  "owner": "0x40a50cf069e992aa4536211b23f286ef88752187",
+  "creationDate": "2026-10-28T14:03:11.520Z",
+  "sellToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "buyToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+  "receiver": "0x0000000000000000000000000000000000000000",
+  "sellAmount": 2.5e9,
+  "buyAmount": 6.21e17,
+  "feeAmount": 0.0,
+  "kind": "sell",
+  "partiallyFillable": false,
+  "sellTokenBalance": "erc20",
+  "buyTokenBalance": "erc20",
+  "signingScheme": "eip712",
+  "validTo": 1793284991,
+  "validFrom": 1793281391,
+  "appData": "0x3a8f…09bc",
+  "fastPath": false,
+  "inMarket": true,
+  "quote": {
+    "sellAmount": 2.5e9,
+    "buyAmount": 6.24e17,
+    "feeAmount": 1.83e6,
+    "gasAmount": 145000.0,
+    "gasPrice": 1.2e9,
+    "sellTokenPrice": 2.5e8,
+    "solver": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+    "verified": true
+  },
+  "ethflowData": {
+    "userValidTo": 1793284991,
+    "refundTxHash": "0x7c1e…aa04",
+    "isRefunded": true
+  },
+  "onchainOrderData": {
+    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187",
+    "placementError": "invalidQuote"
+  },
+  "onchainUser": "0x40a50cf069e992aa4536211b23f286ef88752187"
+}
 ```
 
 `inMarket` is `Order::in_market` as the host passes it. The engine does not
