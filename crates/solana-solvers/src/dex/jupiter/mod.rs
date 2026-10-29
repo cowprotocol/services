@@ -58,12 +58,7 @@ impl Jupiter {
             Side::Buy => return Err(Error::OrderNotSupported),
         };
         let raw = self.fetch_quote(order, swap_mode).await?;
-        Ok(Quote {
-            in_amount: amount_field(&raw, "inAmount")?,
-            out_amount: amount_field(&raw, "outAmount")?,
-            destination: order.buy_destination,
-            raw,
-        })
+        parse_quote(raw, swap_mode, order.buy_destination)
     }
 
     /// Build the swap for `quote` that the settlement signer `taker`
@@ -160,6 +155,30 @@ fn amount_field(quote: &serde_json::Value, field: &str) -> Result<u64, Error> {
         .ok_or_else(|| Error::BadResponse(format!("missing or non-numeric {field}")))
 }
 
+/// Jupiter's `inAmount` and `outAmount` are what it expects the route to
+/// move; its swap instruction enforces only `otherAmountThreshold`, that
+/// expectation moved by `slippageBps`. The settlement program pays the
+/// promised amount out of what the swap delivered, so a promise above the
+/// enforced bound reverts the payout whenever the pool moves between the
+/// quote and the landing.
+fn parse_quote(
+    raw: serde_json::Value,
+    swap_mode: SwapMode,
+    destination: Pubkey,
+) -> Result<Quote, Error> {
+    let threshold = amount_field(&raw, "otherAmountThreshold")?;
+    let (in_amount, out_amount) = match swap_mode {
+        SwapMode::ExactIn => (amount_field(&raw, "inAmount")?, threshold),
+        SwapMode::ExactOut => (threshold, amount_field(&raw, "outAmount")?),
+    };
+    Ok(Quote {
+        in_amount,
+        out_amount,
+        destination,
+        raw,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, std::str::FromStr};
@@ -198,6 +217,31 @@ mod tests {
         let jupiter = Jupiter::new(&config(false)).unwrap();
         let result = jupiter.quote(&order(Side::Buy)).await;
         assert!(matches!(result, Err(Error::OrderNotSupported)));
+    }
+
+    #[test]
+    fn sell_quote_commits_to_the_output_threshold() {
+        let raw = serde_json::json!({
+            "inAmount": "5000000",
+            "outAmount": "483111998",
+            "otherAmountThreshold": "480696439",
+        });
+        let quote = parse_quote(raw, SwapMode::ExactIn, Pubkey::from_str(WSOL).unwrap()).unwrap();
+        assert_eq!(
+            (quote.in_amount, quote.out_amount),
+            (5_000_000, 480_696_439)
+        );
+    }
+
+    #[test]
+    fn buy_quote_commits_to_the_input_threshold() {
+        let raw = serde_json::json!({
+            "inAmount": "1000",
+            "outAmount": "1000000",
+            "otherAmountThreshold": "1005",
+        });
+        let quote = parse_quote(raw, SwapMode::ExactOut, Pubkey::from_str(WSOL).unwrap()).unwrap();
+        assert_eq!((quote.in_amount, quote.out_amount), (1_005, 1_000_000));
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`

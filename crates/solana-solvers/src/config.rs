@@ -87,7 +87,8 @@ pub struct JupiterConfig {
     pub api_key: Option<String>,
 
     /// Slippage tolerance in basis points, sent to Jupiter as `slippageBps`.
-    /// 50 = 0.5%.
+    /// We bid Jupiter's `otherAmountThreshold`, so this is how far below its
+    /// expected output the bids land. 50 = 0.5%.
     pub slippage_bps: u16,
 
     /// Serve buy orders via ExactOut swaps. Off by default.
