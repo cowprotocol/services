@@ -544,13 +544,10 @@ async fn check_accounts(
         )
         .into());
     }
-    let held = holds_token(accounts.get(&sell_account), &sell)
-        || sol.is_some_and(|owner| {
-            accounts
-                .get(&owner)
-                .is_some_and(|wallet| wallet.lamports > 0)
-        });
-    if !held {
+    let wallet = sol.and_then(|owner| accounts.get(&owner));
+    if !holds_token(accounts.get(&sell_account), &sell)
+        && !wallet.is_some_and(|wallet| wallet.lamports > 0)
+    {
         return Err(PlacementError::InsufficientBalance.into());
     }
     Ok(())
