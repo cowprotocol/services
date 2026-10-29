@@ -42,7 +42,7 @@ use {
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::SystemInstruction,
-    solana_token::receivable_or_creatable,
+    solana_token::{holds_token, receivable_or_creatable},
     spl_token_interface::instruction::TokenInstruction,
 };
 
@@ -84,6 +84,7 @@ enum PlacementError {
     SameBuyAndSellToken,
     ZeroAmount,
     InvalidNativeBuy(&'static str),
+    InsufficientBalance,
     InsufficientValidTo,
     ExcessiveValidTo,
     InvalidSignature,
@@ -119,6 +120,10 @@ impl From<PlacementError> for error::Reply {
             }
             PlacementError::ZeroAmount => ("ZeroAmount", "order amounts must not be zero"),
             PlacementError::InvalidNativeBuy(description) => ("InvalidNativeBuy", description),
+            PlacementError::InsufficientBalance => (
+                "InsufficientBalance",
+                "the order owner must hold the sell token",
+            ),
             PlacementError::InsufficientValidTo => (
                 "InsufficientValidTo",
                 "validTo lies closer than the minimum validity",
@@ -455,25 +460,37 @@ fn validate(
 /// buy token account the settlement can neither pay out to nor create.
 /// Lamports paid to a program or a sysvar revert the settlement, and a
 /// program-owned account strands them. The payout creates a missing wallet.
+/// An owner holding none of the sell token is refused as on EVM, where one
+/// unit places an order: a SOL sell may hold it as wSOL already or as SOL in
+/// the wallet the bundle wraps from.
 async fn check_accounts(
     sponsoring: &Sponsoring,
     order: &db::SponsoredOrder,
     token_programs: &[(Pubkey, Pubkey)],
 ) -> Result<(), Failure> {
-    let [sell, buy, buy_account, owner] = [
+    let [sell, buy, buy_account, owner, sell_account] = [
         order.sell_token,
         order.buy_token,
         order.buy_token_account,
         order.owner,
+        order.sell_token_account,
     ]
     .map(|key| Pubkey::new_from_array(key.0));
     let wallet = (buy == ENCODED_NATIVE_SOL_TRANSFER).then_some(buy_account);
     let token_account = wallet.is_none().then_some(buy_account);
+    let sol = (sell == spl_token_interface::native_mint::ID).then_some(owner);
     let mints: Vec<Pubkey> = token_mints(sell, buy).collect();
     let lookup = sponsoring.mints.lookup(mints.iter().copied());
     let accounts = sponsoring
         .rpc
-        .multiple_accounts(lookup.unread().chain(wallet).chain(token_account))
+        .multiple_accounts(
+            lookup
+                .unread()
+                .chain(wallet)
+                .chain(token_account)
+                .chain(Some(sell_account))
+                .chain(sol),
+        )
         .await
         .map_err(|err| Failure::internal(err, "order account lookup"))?;
     let verdicts = lookup.resolve(&accounts);
@@ -526,6 +543,15 @@ async fn check_accounts(
             "a preparation step names a token program that does not own its mint",
         )
         .into());
+    }
+    let held = holds_token(accounts.get(&sell_account), &sell)
+        || sol.is_some_and(|owner| {
+            accounts
+                .get(&owner)
+                .is_some_and(|wallet| wallet.lamports > 0)
+        });
+    if !held {
+        return Err(PlacementError::InsufficientBalance.into());
     }
     Ok(())
 }

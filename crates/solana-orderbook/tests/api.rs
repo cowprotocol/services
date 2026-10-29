@@ -1061,6 +1061,39 @@ fn mint_account(program: solana_sdk::pubkey::Pubkey) -> solana_sdk::account::Acc
     }
 }
 
+/// The owner's sell token account under `program` holding one unit of the
+/// intent's sell mint, the least a placement accepts.
+fn sell_token_account(
+    intent: &cow_settlement_interface::data::intent::OrderIntent,
+    program: solana_sdk::pubkey::Pubkey,
+) -> solana_sdk::account::Account {
+    use solana_sdk::program_pack::Pack;
+    let mut data = vec![0; spl_token_interface::state::Account::LEN];
+    spl_token_interface::state::Account {
+        mint: intent.sell.mint,
+        owner: intent.owner,
+        amount: 1,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..Default::default()
+    }
+    .pack_into_slice(&mut data);
+    solana_sdk::account::Account {
+        lamports: 2_039_280,
+        owner: program,
+        data,
+        ..Default::default()
+    }
+}
+
+/// A wallet holding one lamport, the least a SOL sell accepts.
+fn funded_wallet() -> solana_sdk::account::Account {
+    solana_sdk::account::Account {
+        lamports: 1,
+        owner: solana_system_interface::program::ID,
+        ..Default::default()
+    }
+}
+
 /// A `getMultipleAccounts` response listing `accounts` in request order,
 /// `None` for a missing account.
 fn accounts_response(accounts: &[Option<solana_sdk::account::Account>]) -> serde_json::Value {
@@ -1071,10 +1104,21 @@ fn accounts_response(accounts: &[Option<solana_sdk::account::Account>]) -> serde
     }))
 }
 
-/// The account lookup of an order selling and buying classic SPL Token mints.
+/// The account lookup of an order selling and buying classic SPL Token mints:
+/// the mints, nothing for the Clock sysvar and the buy token account, the
+/// sell token account holding one unit, then the funded wallet a SOL sell
+/// reads after it.
 fn classic_mints() -> serde_json::Value {
     let mint = Some(mint_account(spl_token_interface::ID));
-    accounts_response(&[mint.clone(), mint])
+    let intent = sponsored_intent(solana_sdk::pubkey::Pubkey::default(), false);
+    accounts_response(&[
+        mint.clone(),
+        mint,
+        None,
+        None,
+        Some(sell_token_account(&intent, spl_token_interface::ID)),
+        Some(funded_wallet()),
+    ])
 }
 
 /// The order intent a sponsored transaction carries. `native` sells SOL
@@ -1680,7 +1724,12 @@ async fn create_order_checks_the_native_buy_wallet() {
             funder,
             sponsored_mocks(
                 false,
-                accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, account]),
+                accounts_response(&[
+                    Some(mint_account(spl_token_interface::ID)),
+                    None,
+                    account,
+                    Some(sell_token_account(&intent, spl_token_interface::ID)),
+                ]),
             ),
         )
         .await;
@@ -1699,7 +1748,7 @@ async fn create_order_checks_the_native_buy_wallet() {
 /// program, which the settlement creates when missing. A custom receiver's
 /// missing account cannot be placed. A passing order moves on to the
 /// blockhash check. The lookup answers the sell and buy mints, the Clock
-/// sysvar, then the buy token account.
+/// sysvar, the buy token account, then the sell token account.
 #[tokio::test]
 async fn create_order_checks_the_buy_token_account() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
@@ -1722,8 +1771,8 @@ async fn create_order_checks_the_buy_token_account() {
         owner: solana_system_interface::program::ID,
         ..Default::default()
     });
-    // The lookup reads the sell mint, the buy mint, the Clock sysvar, then
-    // the buy token account.
+    // The lookup reads the sell mint, the buy mint, the Clock sysvar, the
+    // buy token account, then the sell token account.
     let lookup = |token_program, buy_account: Option<serde_json::Value>| {
         let mint = solana_testlib::account_json(&mint_account(token_program));
         solana_testlib::multiple_accounts_json([
@@ -1731,6 +1780,7 @@ async fn create_order_checks_the_buy_token_account() {
             mint,
             serde_json::Value::Null,
             buy_account.unwrap_or(serde_json::Value::Null),
+            solana_testlib::account_json(&sell_token_account(&paid_to_owner, token_program)),
         ])
     };
     let spl_token = spl_token_interface::ID;
@@ -1776,6 +1826,127 @@ async fn create_order_checks_the_buy_token_account() {
         )
         .await;
         let transaction = creation_tx(funder, &owner, intent, vec![], true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected),
+            "{name}"
+        );
+    }
+}
+
+/// The owner must hold the sell token to place, one unit at least, as on
+/// EVM: a missing, empty or frozen sell token account, or one of another
+/// mint, is refused. A SOL sell holds it as wSOL already or as SOL in the
+/// wallet the bundle wraps from. The lookup answers the sell and buy mints,
+/// the Clock sysvar, the buy token account, the sell token account, then
+/// the wallet of a SOL sell.
+#[tokio::test]
+async fn create_order_checks_the_sell_funds() {
+    use spl_token_interface::state::AccountState;
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let token = sponsored_intent(owner.pubkey(), false);
+    let native = sponsored_intent(owner.pubkey(), true);
+    let holding = |amount, state| {
+        use solana_sdk::program_pack::Pack;
+        let mut account = sell_token_account(&token, spl_token_interface::ID);
+        let mut held = spl_token_interface::state::Account::unpack(&account.data).unwrap();
+        held.amount = amount;
+        held.state = state;
+        held.pack_into_slice(&mut account.data);
+        Some(account)
+    };
+    let wsol = Some(sell_token_account(&native, spl_token_interface::ID));
+    let approve_only = vec![
+        spl_token_interface::instruction::approve(
+            &spl_token_interface::ID,
+            &native.sell.token_account,
+            &state_pda(),
+            &owner.pubkey(),
+            &[],
+            1_000,
+        )
+        .unwrap(),
+    ];
+
+    for (name, intent, preparations, sell_account, wallet, expected) in [
+        (
+            "a sell token account holding one unit",
+            &token,
+            vec![],
+            holding(1, AccountState::Initialized),
+            None,
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "a missing sell token account",
+            &token,
+            vec![],
+            None,
+            None,
+            "InsufficientBalance",
+        ),
+        (
+            "an empty sell token account",
+            &token,
+            vec![],
+            holding(0, AccountState::Initialized),
+            None,
+            "InsufficientBalance",
+        ),
+        (
+            "a frozen sell token account",
+            &token,
+            vec![],
+            holding(1, AccountState::Frozen),
+            None,
+            "InsufficientBalance",
+        ),
+        (
+            "a sell token account of another mint",
+            &token,
+            vec![],
+            wsol.clone(),
+            None,
+            "InsufficientBalance",
+        ),
+        (
+            "a SOL sell wrapped from a funded wallet",
+            &native,
+            full_preparations(owner.pubkey(), &native),
+            None,
+            Some(funded_wallet()),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "a SOL sell with neither wallet nor wSOL",
+            &native,
+            full_preparations(owner.pubkey(), &native),
+            None,
+            None,
+            "InsufficientBalance",
+        ),
+        (
+            "a SOL sell holding wSOL already",
+            &native,
+            approve_only,
+            wsol,
+            None,
+            PASSED_ACCOUNT_CHECKS,
+        ),
+    ] {
+        let classic = Some(mint_account(spl_token_interface::ID));
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            sponsored_mocks(
+                false,
+                accounts_response(&[classic.clone(), classic, None, None, sell_account, wallet]),
+            ),
+        )
+        .await;
+        let transaction = creation_tx(funder, &owner, intent, preparations, true);
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
             (status, kind.as_str()),
@@ -2342,6 +2513,7 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
                 classic,
                 serde_json::Value::Null,
                 solana_testlib::token_account_json(&buy_mint, &receiver),
+                solana_testlib::account_json(&sell_token_account(&intent, spl_token_interface::ID)),
             ]),
         ),
     )
@@ -2359,8 +2531,8 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
 /// Token-2022 mints place like classic ones: the delegation goes through
 /// Token-2022, and the buy account is the owner's missing Token-2022
 /// associated token account, which the settlement creates. The lookup
-/// answers the sell and buy mints, the Clock sysvar, then the buy token
-/// account.
+/// answers the sell and buy mints, the Clock sysvar, the buy token account,
+/// then the sell token account.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_token_2022_mints() {
@@ -2405,7 +2577,13 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
         funder,
         sponsored_mocks(
             true,
-            accounts_response(&[token_2022.clone(), token_2022, None, None]),
+            accounts_response(&[
+                token_2022.clone(),
+                token_2022,
+                None,
+                None,
+                Some(sell_token_account(&intent, spl_token_2022_interface::ID)),
+            ]),
         ),
     )
     .await;
@@ -2421,8 +2599,8 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
 
 /// A native SOL buy lands without a buy account creation: the payout goes
 /// to the wallet itself, and creates it when the lookup finds none. The
-/// lookup answers the sell mint, then nothing for the Clock sysvar and the
-/// wallet.
+/// lookup answers the sell mint, nothing for the Clock sysvar and the
+/// wallet, then the sell token account.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_a_native_buy() {
@@ -2443,7 +2621,12 @@ async fn solana_db_create_order_accepts_a_native_buy() {
         funder,
         sponsored_mocks(
             true,
-            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, None]),
+            accounts_response(&[
+                Some(mint_account(spl_token_interface::ID)),
+                None,
+                None,
+                Some(sell_token_account(&intent, spl_token_interface::ID)),
+            ]),
         ),
     )
     .await;
