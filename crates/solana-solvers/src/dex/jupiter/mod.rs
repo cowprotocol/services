@@ -58,7 +58,8 @@ impl Jupiter {
             Side::Buy => return Err(Error::OrderNotSupported),
         };
         let raw = self.fetch_quote(order, swap_mode).await?;
-        // Jupiter bakes slippage bounds into the swap, so use the guaranteed amounts.
+        // Jupiter bakes slippage bounds into the swap, so use the guaranteed
+        // amounts.
         let (in_field, out_field) = match swap_mode {
             SwapMode::ExactIn => ("inAmount", "otherAmountThreshold"),
             SwapMode::ExactOut => ("otherAmountThreshold", "outAmount"),

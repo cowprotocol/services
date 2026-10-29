@@ -13,6 +13,13 @@ of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
 list takes a reserved name or an expression does not compile. A rule whose
 expression fails at run time is skipped and reported to the caller.
 
+`RuleSet::validate_on_sample_order` is a separate pass: it runs both
+expressions of every rule against a sample order (a default order with
+every optional field present) and reports every `when` that does not return
+a bool and every `fee` that does not return valid fees, so one run shows all
+the mistakes. This catches a misspelt name or a bad fee argument such as
+`volume(0.001)` at load time instead of on the first order.
+
 ```
 name: Stablecoin swaps
 when: order.sellToken in stablecoins && order.buyToken in stablecoins
@@ -44,13 +51,13 @@ fee:  surplus(order.partiallyFillable ? 40 : 50, 1)
 ### Fee functions
 
 The only values a `fee` expression may return. Arguments are CEL expressions,
-so a fee can depend on the order. A list stacks several fees. A value with
-more decimal places than its argument allows is rejected, not rounded.
+so a fee can depend on the order. A list stacks several fees. Every argument
+must land on a grid of 1e-6 of the volume (two decimal places for `bps`,
+four for a percent); a finer value is rejected, not rounded.
 
-- `volume(bps)` — `bps / 10000` of the volume; up to two decimal places.
+- `volume(bps)` — `bps / 10000` of the volume.
 - `surplus(share, max_volume)` — `share` percent of the surplus over the limit
-  price, at most `max_volume` percent of the volume. `share` is a whole
-  number; `max_volume` has up to two decimal places.
+  price, at most `max_volume` percent of the volume.
 - `price_improvement(share, max_volume)` — `share` percent of the improvement
   over the quote, with the same cap.
 - `no_fee()` — no protocol fee.
@@ -117,7 +124,8 @@ order.
 The order as the API returns it, with two changes: decimal strings (amounts
 and prices, including the quote's) are doubles, and hex strings are
 lowercase. `fullAppData` stays text. An unset `receiver` is the zero
-address, not `null`.
+address, not `null`. Fields the API omits, such as an unset `quote` or a
+false `fastPath`, are absent, not `null`: test them with `has(order.quote)`.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21

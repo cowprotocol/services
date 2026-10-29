@@ -1,9 +1,10 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::{Evaluator, fee, order_view},
+    crate::{Evaluator, evaluator::RuleError, fee, order_view},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
+    model::order::{EthflowData, OnchainOrderData, Order, OrderMetadata, OrderQuote},
     std::{
         collections::{BTreeMap, HashSet},
         fmt,
@@ -36,6 +37,15 @@ pub enum CompileError {
         field: Field,
         message: String,
     },
+}
+
+/// One expression that gave no usable value on the sample order.
+#[derive(Debug, thiserror::Error)]
+#[error("rule `{rule}`: `{field}` {error} on a sample order")]
+pub struct SampleOrderError {
+    pub rule: String,
+    pub field: Field,
+    pub error: RuleError,
 }
 
 /// The two expressions of a rule.
@@ -154,6 +164,26 @@ impl RuleSet {
         })
     }
 
+    /// Runs both expressions of every rule against a sample order, whatever
+    /// `when` says, and reports every one that yields no bool or no fee. This
+    /// catches bad fee arguments and misspelt names before any real order.
+    pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
+        let errors: Vec<_> = self
+            .evaluator(Utc::now())
+            .evaluate_all_expressions(&sample_order())
+            .into_iter()
+            .map(|skipped| SampleOrderError {
+                rule: skipped.rule.name().to_owned(),
+                field: skipped.field,
+                error: skipped.error,
+            })
+            .collect();
+        if errors.is_empty() {
+            return Ok(());
+        }
+        Err(errors)
+    }
+
     /// The rules in the order they are tried.
     pub fn rules(&self) -> &[Rule] {
         &self.rules
@@ -169,6 +199,29 @@ impl RuleSet {
         }
         context.add_variable_from_value("now", now.fixed_offset());
         Evaluator::new(self, context)
+    }
+}
+
+/// A default order with every optional field present, so that a rule can
+/// reach any name the view may hold.
+fn sample_order() -> Order {
+    Order {
+        metadata: OrderMetadata {
+            available_balance: Some(Default::default()),
+            gas_cost: Some(Default::default()),
+            ethflow_data: Some(EthflowData {
+                refund_tx_hash: Some(Default::default()),
+                ..Default::default()
+            }),
+            onchain_order_data: Some(OnchainOrderData::default()),
+            onchain_user: Some(Default::default()),
+            full_app_data: Some(Default::default()),
+            valid_from: Some(Default::default()),
+            quote: Some(OrderQuote::default()),
+            fast_path: true,
+            ..Default::default()
+        },
+        ..Default::default()
     }
 }
 
@@ -270,5 +323,80 @@ mod tests {
                 CompileError::ReservedList { name: found } if found == name
             ));
         }
+    }
+
+    #[test]
+    fn validates_every_expression_on_a_sample_order() {
+        let validate = |definitions| {
+            RuleSet::new(definitions, BTreeMap::new())
+                .unwrap()
+                .validate_on_sample_order()
+        };
+
+        validate(vec![
+            rule("Quoted", "order.quote.sellAmount > 0", "volume(1)"),
+            rule("Ethflow", "order.ethflowData.userValidTo > 0", "no_fee()"),
+            rule("Fast path", "order.fastPath", "no_fee()"),
+            rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
+        ])
+        .unwrap();
+
+        let errors = |definitions| validate(definitions).unwrap_err();
+        assert!(matches!(
+            errors(vec![rule("Not a bool", "order.sellAmount", "volume(1)")])[..],
+            [SampleOrderError {
+                ref rule,
+                field: Field::When,
+                error: RuleError::NotABool(_),
+            }] if rule == "Not a bool"
+        ));
+        assert!(matches!(
+            errors(vec![rule("Misspelt", "order.sellAmout > 0", "volume(1)")])[..],
+            [SampleOrderError {
+                field: Field::When,
+                error: RuleError::Execution(_),
+                ..
+            }]
+        ));
+        assert!(matches!(
+            errors(vec![rule("Never matches", "false", "volume(0.001)")])[..],
+            [SampleOrderError {
+                field: Field::Fee,
+                error: RuleError::NotAFee(_),
+                ..
+            }]
+        ));
+        assert_eq!(
+            errors(vec![rule("x", "true", "volume('ten')")])[0].to_string(),
+            "rule `x`: `fee` `volume` argument `bps` is string instead of a number on a sample \
+             order"
+        );
+    }
+
+    #[test]
+    fn sample_order_validation_reports_every_failure() {
+        let rules = RuleSet::new(
+            vec![
+                rule("Both", "order.sellAmount", "volume(0.001)"),
+                rule("Fine", "true", "volume(1)"),
+                rule("Fee", "true", "volume('ten')"),
+            ],
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let failed: Vec<_> = rules
+            .validate_on_sample_order()
+            .unwrap_err()
+            .iter()
+            .map(|error| (error.rule.clone(), error.field))
+            .collect();
+        assert_eq!(
+            failed,
+            [
+                ("Both".to_owned(), Field::When),
+                ("Both".to_owned(), Field::Fee),
+                ("Fee".to_owned(), Field::Fee),
+            ]
+        );
     }
 }
