@@ -171,35 +171,7 @@ mod tests {
                 }),
                 onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
                 valid_from: Some(4),
-                full_app_data: Some(
-                    r#"{
-                        "appCode": "CoW Swap",
-                        "environment": "production",
-                        "version": "1.14.0",
-                        "metadata": {
-                            "hooks": {
-                                "pre": [{ "target": "0x00000000000000000000000000000000000000Ab", "callData": "0xAB", "gasLimit": "21000" }],
-                                "post": [{ "target": "0x00000000000000000000000000000000000000Ab", "callData": "0x", "gasLimit": "1" }]
-                            },
-                            "signer": "0x00000000000000000000000000000000000000Ab",
-                            "replacedOrder": { "uid": "0xAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAbAb" },
-                            "partnerFee": [
-                                { "bps": 25, "recipient": "0x00000000000000000000000000000000000000Ab" },
-                                { "surplusBps": 50, "maxVolumeBps": 100, "recipient": "0x00000000000000000000000000000000000000Ab" },
-                                { "priceImprovementBps": 30, "maxVolumeBps": 90, "recipient": "0x00000000000000000000000000000000000000Ab" }
-                            ],
-                            "flashloan": {
-                                "liquidityProvider": "0x00000000000000000000000000000000000000Ab",
-                                "protocolAdapter": "0x00000000000000000000000000000000000000Ab",
-                                "receiver": "0x00000000000000000000000000000000000000Ab",
-                                "token": "0x00000000000000000000000000000000000000Ab",
-                                "amount": "6136714"
-                            },
-                            "wrappers": [{ "address": "0x00000000000000000000000000000000000000Ab", "data": "0xAB", "isOmittable": true }]
-                        }
-                    }"#
-                    .to_owned(),
-                ),
+                full_app_data: Some(crate::rules::SAMPLE_FULL_APP_DATA.to_owned()),
                 fast_path: true,
                 ..Default::default()
             },

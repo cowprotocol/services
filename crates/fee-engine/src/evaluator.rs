@@ -532,7 +532,7 @@ mod tests {
         ]);
         let evaluator = rules.evaluator(after_launch());
 
-        let mut plain = order(WETH, USDT);
+        let plain = order(WETH, USDT);
         let evaluation = evaluator.evaluate(Order {
             order: &plain,
             in_market: false,
@@ -540,7 +540,8 @@ mod tests {
         assert!(evaluation.matched.is_empty());
         assert!(evaluation.skipped.is_empty());
 
-        plain.metadata.full_app_data = Some(
+        let mut with_app_data = plain.clone();
+        with_app_data.metadata.full_app_data = Some(
             r#"{
                 "appCode": "CoW Swap",
                 "metadata": {
@@ -559,7 +560,7 @@ mod tests {
             .to_owned(),
         );
         let evaluation = evaluator.evaluate(Order {
-            order: &plain,
+            order: &with_app_data,
             in_market: false,
         });
         assert!(evaluation.skipped.is_empty());

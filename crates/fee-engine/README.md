@@ -172,8 +172,9 @@ order.
 
 ### `order`
 
-The fields of the API order that a fee can depend on, under the API names,
-built field by field in `order_view/mod.rs`. Amounts and prices are doubles
+The fields of the API order that a fee can depend on, under the API names
+except for the app data (see `order.appData`), built field by field in
+`order_view/mod.rs`. Amounts and prices are doubles
 and hex is lowercase. An order with every field set looks like this (hashes
 shortened):
 
@@ -285,12 +286,16 @@ matter.
 
 ### `order.appData`
 
-The app-data document, parsed. The names follow order creation, not the
-API order: the document is `appData` and its hash is `appDataHash`.
-The fields the protocol reads are typed like
-the rest of the view (`order_view/full_app_data.rs` is the reference); every
-other key is kept as the user wrote it, with no hex or number conversion.
-The sample order above shows the typed fields.
+The app-data document, parsed. The names are those of an order-creation
+request: the document is `appData` and its hash is `appDataHash`. The order
+the API returns calls the hash `appData` and has the document as
+`fullAppData` text.
+
+The fields the protocol reads are typed like the rest of the view
+(`order_view/full_app_data.rs` is the reference); every other key is kept as
+the user wrote it, with no hex or number conversion. A `null` field is
+absent, as elsewhere in the view, but a `null` in a list stays. The order
+above shows the typed fields.
 
 `appCode`, `environment` and `version` are absent when unset or not a
 string. `hooks`, `partnerFee` and `wrappers` are always present, empty when
@@ -299,10 +304,12 @@ unset. `partnerFee` is a list even for one fee, and each entry has one of
 `volumeBps`.
 
 `metadata.enableFastPath` and `metadata.validFrom` are not here: read
-`order.fastPath` and `order.validFrom`. Keys under `backend`, the deprecated
-home of the protocol fields, appear under `metadata`. An order with no
-document, or one the protocol cannot parse, sees the empty document `{}`.
-Typed sub-objects keep only the fields above, so a hook's `dappId` is gone.
+`order.fastPath` and `order.validFrom`. `backend` is not here: it is the
+deprecated home of the hooks, and its hooks appear under `metadata.hooks`
+when the document has no `metadata`. An order with no document, or one the
+protocol cannot parse, sees only the empty `hooks`, `partnerFee` and
+`wrappers`. Typed sub-objects keep only the fields in the sample, so a hook's
+`dappId` is gone.
 
 ```
 when: has(order.appData.appCode) && order.appData.appCode == "CoW Swap"

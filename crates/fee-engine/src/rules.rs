@@ -217,7 +217,7 @@ impl RuleSet {
 }
 
 /// Every field the app-data view types, each partner-fee kind once.
-const SAMPLE_FULL_APP_DATA: &str = r#"{
+pub(crate) const SAMPLE_FULL_APP_DATA: &str = r#"{
     "appCode": "sample",
     "environment": "sample",
     "version": "1.0.0",
