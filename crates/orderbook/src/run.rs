@@ -3,6 +3,7 @@ use {
         api,
         arguments::Arguments,
         database::Postgres,
+        fee_engine_shadow::FeeEngineShadow,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
@@ -427,6 +428,17 @@ pub async fn run(config: Configuration) {
         .iter()
         .map(Into::into)
         .collect();
+    // Without a volume fee there is nothing to compare.
+    let fee_engine_shadow = config.volume_fee.is_some().then(|| {
+        Arc::new(
+            FeeEngineShadow::new(
+                &volume_fee_bucket_overrides,
+                *native_token.address(),
+                config.order_quoting.max_partner_fee,
+            )
+            .expect("fee engine shadow rules must load"),
+        )
+    });
     // Shared between the fast-path limit-price check in `OrderValidator` and
     // the quote-time volume fee adjustment in `QuoteHandler` so a single
     // configuration change propagates everywhere.
@@ -437,7 +449,7 @@ pub async fn run(config: Configuration) {
         *native_token.address(),
     ));
 
-    let order_validator = Arc::new(OrderValidator::new(
+    let order_validator = OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
@@ -467,7 +479,13 @@ pub async fn run(config: Configuration) {
         Some(volume_fee_policy.clone()),
         config.order_quoting.max_partner_fee,
         order_validation::wrappers::Validator::new(authenticator, *settlement_contract.address()),
-    ));
+    )
+    .with_fast_path_fee_shadow(
+        fee_engine_shadow
+            .clone()
+            .map(|shadow| shadow as Arc<dyn shared::order_validation::FastPathFeeShadow>),
+    );
+    let order_validator = Arc::new(order_validator);
     let ipfs = config
         .ipfs
         .map(|ipfs| {
@@ -506,7 +524,8 @@ pub async fn run(config: Configuration) {
     )
     .with_verified_quoter(verified_quoter.clone())
     .with_fast_quoter(fast_quoter)
-    .with_streaming_quoters(optimal_quoter, verified_quoter);
+    .with_streaming_quoters(optimal_quoter, verified_quoter)
+    .with_fee_engine_shadow(fee_engine_shadow);
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(

@@ -3,6 +3,7 @@ pub mod app_data;
 pub mod arguments;
 pub mod database;
 pub mod dto;
+mod fee_engine_shadow;
 mod ipfs;
 mod ipfs_app_data;
 pub mod orderbook;

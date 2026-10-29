@@ -69,6 +69,7 @@ eth-domain-types = { path = "crates/eth-domain-types" }
 ethrpc = { path = "crates/ethrpc" }
 event-bus-dto = { path = "crates/event-bus-dto" }
 event-indexing = { path = "crates/event-indexing" }
+fee-engine = { path = "crates/fee-engine" }
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-price-estimation = { path = "crates/gas-price-estimation" }

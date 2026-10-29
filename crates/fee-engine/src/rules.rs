@@ -128,9 +128,9 @@ impl Rule {
 
 /// A checked, immutable set of rules.
 pub struct RuleSet {
-    pub(crate) env: Arc<Env>,
     rules: Vec<Rule>,
-    pub(crate) lists: Vec<(String, Value)>,
+    /// The fee functions and the lists, bound once for every evaluation.
+    pub(crate) context: Context<'static, 'static>,
     max_partner_fee: FeeFactor,
 }
 
@@ -173,10 +173,14 @@ impl RuleSet {
             }
             rules.push(Rule::compile(&env, definition)?);
         }
+        let mut context = Context::with_env(env);
+        fee::register_fee_functions(&mut context);
+        for (name, list) in list_values(&lists) {
+            context.add_variable_from_value(name, list);
+        }
         Ok(Self {
-            env,
             rules,
-            lists: list_values(&lists),
+            context,
             max_partner_fee,
         })
     }
@@ -216,16 +220,10 @@ impl RuleSet {
         self.max_partner_fee
     }
 
-    /// Binds lists, functions and `now` once; each order evaluated through
-    /// the result gets a cheap child scope on top.
+    /// Evaluates orders at `now`. Cheap: lists and functions are bound
+    /// once, in [`RuleSet::new`].
     pub fn evaluator(&self, now: DateTime<Utc>) -> Evaluator<'_> {
-        let mut context = Context::with_env(self.env.clone());
-        fee::register_fee_functions(&mut context);
-        for (name, list) in &self.lists {
-            context.add_variable_from_value(name.clone(), list.clone());
-        }
-        context.add_variable_from_value("now", now.fixed_offset());
-        Evaluator::new(self, context)
+        Evaluator::new(self, now)
     }
 }
 
@@ -329,20 +327,27 @@ mod tests {
     }
 
     #[test]
+    fn rule_set_is_shared_across_threads() {
+        fn shared<T: Send + Sync>() {}
+        shared::<RuleSet>();
+    }
+
+    #[test]
     fn lowercases_hex_list_members() {
         let lists = BTreeMap::from([(
             "tokens".to_owned(),
             vec!["0xAbC".to_owned(), "Acme".to_owned()],
         )]);
-        let rules = RuleSet::new(vec![], lists, default_max_partner_fee()).unwrap();
-        let [(name, members)] = &rules.lists[..] else {
-            panic!("expected one list");
+        let definition = RuleDefinition {
+            name: "Lowercase".to_owned(),
+            when: "tokens == ['0xabc', 'Acme']".to_owned(),
+            fee: "no_fee()".to_owned(),
         };
-        assert_eq!(name, "tokens");
-        assert_eq!(
-            *members,
-            Value::from(vec!["0xabc".to_owned(), "Acme".to_owned()])
-        );
+        let rules = RuleSet::new(vec![definition], lists, default_max_partner_fee()).unwrap();
+        let evaluation = rules
+            .evaluator(Utc::now())
+            .evaluate(crate::Order::without_app_data(&Order::default(), false));
+        assert_eq!(evaluation.matched.len(), 1);
     }
 
     #[test]

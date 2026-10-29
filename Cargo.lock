@@ -6979,6 +6979,7 @@ dependencies = [
  "eth-domain-types",
  "ethrpc",
  "event-bus-dto",
+ "fee-engine",
  "futures",
  "gas-price-estimation",
  "hex-literal",

@@ -8,6 +8,7 @@ use {
         rules::{Field, Rule, RuleSet},
     },
     cel::{Context, Value, objects::ValueType},
+    chrono::{DateTime, Utc},
     std::fmt,
 };
 
@@ -64,14 +65,17 @@ pub enum RuleError {
     NotAFee(String),
 }
 
-/// A [`RuleSet`] with `now` and its lists bound, ready to evaluate orders.
+/// A [`RuleSet`] at a fixed `now`, ready to evaluate orders.
 pub struct Evaluator<'r> {
     rules: &'r RuleSet,
-    context: Context<'static, 'static>,
+    /// The rule set's context with `now` bound.
+    context: Context<'r, 'static>,
 }
 
 impl<'r> Evaluator<'r> {
-    pub fn new(rules: &'r RuleSet, context: Context<'static, 'static>) -> Self {
+    pub(crate) fn new(rules: &'r RuleSet, now: DateTime<Utc>) -> Self {
+        let mut context = rules.context.new_inner_scope();
+        context.add_variable_from_value("now", now.fixed_offset());
         Self { rules, context }
     }
 
@@ -114,7 +118,7 @@ impl<'r> Evaluator<'r> {
         skipped
     }
 
-    fn scope(&self, order: Order) -> Context<'_, '_> {
+    fn scope(&self, order: Order) -> Context<'_, 'static> {
         let mut context = self.context.new_inner_scope();
         context
             .add_variable("order", order_view::order_view(order))

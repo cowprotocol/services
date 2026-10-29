@@ -458,6 +458,19 @@ pub struct OrderValidator {
     /// fees entirely for the fast-path limit-price check.
     max_partner_fee: Option<configs::fee_factor::FeeFactor>,
     wrapper_validator: order_validation::wrappers::Validator,
+    fast_path_fee_shadow: Option<Arc<dyn FastPathFeeShadow>>,
+}
+
+/// Sees the volume fee factors the fast-path limit check applied to an order
+/// it accepted, e.g. to compare them with another fee source.
+pub trait FastPathFeeShadow: Send + Sync {
+    fn compare_fast_path(
+        &self,
+        order: &Order,
+        quote: &Quote,
+        app_data: &ValidatedAppData,
+        volume_fees: &[configs::fee_factor::FeeFactor],
+    );
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -549,7 +562,13 @@ impl OrderValidator {
             protocol_volume_fee_policy,
             max_partner_fee,
             wrapper_validator,
+            fast_path_fee_shadow: None,
         }
+    }
+
+    pub fn with_fast_path_fee_shadow(mut self, shadow: Option<Arc<dyn FastPathFeeShadow>>) -> Self {
+        self.fast_path_fee_shadow = shadow;
+        self
     }
 
     /// Validates that a fast-path order's signed sell/buy amounts leave
@@ -563,6 +582,24 @@ impl OrderValidator {
         quote: &Quote,
         app_data: &ValidatedAppData,
     ) -> Result<(), ValidationError> {
+        crate::fee::check_fast_path_limit_fits(
+            data.kind,
+            data.sell_amount,
+            data.buy_amount,
+            quote.sell_amount,
+            quote.buy_amount,
+            self.fast_path_volume_factors(data, app_data),
+        )
+        .map_err(|_| ValidationError::FastPathLimitTooTight)
+    }
+
+    /// The protocol volume factor, then the capped partner volume factors, in
+    /// the order the autopilot compounds them.
+    fn fast_path_volume_factors(
+        &self,
+        data: &OrderData,
+        app_data: &ValidatedAppData,
+    ) -> Vec<configs::fee_factor::FeeFactor> {
         let protocol_factor = self.protocol_volume_fee_policy.as_ref().and_then(|policy| {
             policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
         });
@@ -570,16 +607,7 @@ impl OrderValidator {
             .max_partner_fee
             .map(|cap| crate::fee::capped_partner_volume_factors(&app_data.protocol, cap))
             .unwrap_or_default();
-
-        crate::fee::check_fast_path_limit_fits(
-            data.kind,
-            data.sell_amount,
-            data.buy_amount,
-            quote.sell_amount,
-            quote.buy_amount,
-            protocol_factor.into_iter().chain(partner_factors),
-        )
-        .map_err(|_| ValidationError::FastPathLimitTooTight)
+        protocol_factor.into_iter().chain(partner_factors).collect()
     }
 
     async fn check_max_limit_orders(&self, owner: Address) -> Result<(), ValidationError> {
@@ -1177,6 +1205,11 @@ impl OrderValidating for OrderValidator {
             data,
             interactions: app_data.interactions,
         };
+
+        if let (Some(shadow), Some(quote), true) = (&self.fast_path_fee_shadow, &quote, fast_path) {
+            let volume_fees = self.fast_path_volume_factors(&order.data, &app_data.inner);
+            shadow.compare_fast_path(&order, quote, &app_data.inner, &volume_fees);
+        }
 
         Ok((order, quote))
     }
