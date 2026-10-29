@@ -15,6 +15,9 @@ pub struct Order<'a> {
     pub order: &'a model::order::Order,
     /// The order's app data, which the host copies from the parsed document.
     pub app_data: &'a AppData,
+    /// The partner fees of the app data. Rules do not see them; the engine
+    /// caps them and returns them apart (`Evaluation::partner_fees`).
+    pub partner_fees: &'a [crate::PartnerFee],
     /// Whether the limit price is inside the market price of the order's quote;
     /// false when the order has no quote. The engine trusts it as given.
     pub in_market: bool,
@@ -22,7 +25,7 @@ pub struct Order<'a> {
 
 #[cfg(test)]
 impl<'a> Order<'a> {
-    /// `order` with no app data.
+    /// `order` with no app data and no partner fees.
     pub(crate) fn without_app_data(order: &'a model::order::Order, in_market: bool) -> Self {
         static NO_APP_DATA: AppData = AppData {
             app_code: None,
@@ -33,6 +36,7 @@ impl<'a> Order<'a> {
         Self {
             order,
             app_data: &NO_APP_DATA,
+            partner_fees: &[],
             in_market,
         }
     }
@@ -46,6 +50,7 @@ pub(crate) fn order_view(
         order,
         app_data,
         in_market,
+        ..
     }: Order,
 ) -> Value {
     let (data, meta) = (&order.data, &order.metadata);
@@ -236,6 +241,7 @@ mod tests {
         let mut view = order_view(Order {
             order: &order,
             app_data: &crate::rules::sample_app_data(),
+            partner_fees: &[],
             in_market: true,
         });
         let fields = view.as_object_mut().unwrap();
@@ -268,6 +274,7 @@ mod tests {
         let view = order_view(Order {
             order: &fully_set_order(),
             app_data: &crate::rules::sample_app_data(),
+            partner_fees: &[],
             in_market: true,
         });
 
@@ -335,6 +342,7 @@ mod tests {
             order_view(Order {
                 order,
                 app_data: &crate::rules::sample_app_data(),
+                partner_fees: &[],
                 in_market: false,
             })
         };
@@ -376,6 +384,7 @@ mod tests {
         let view = order_view(Order {
             order: &fully_set_order(),
             app_data: &crate::rules::sample_app_data(),
+            partner_fees: &[],
             in_market: true,
         });
         assert_eq!(field_paths(&sample), field_paths(&view));

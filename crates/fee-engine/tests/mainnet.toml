@@ -1,7 +1,11 @@
 # The mainnet protocol-fee policy as rules. The bucket lists are trimmed to a
 # few tokens; prod uses the full `volume-fee-bucket-overrides` from infra.
-# Partner fees from app-data are not rules, the host appends them.
+# Partner fees from app-data are not rules; `[partner_fees]` caps them.
 # `order.inMarket` is what the host passes to `evaluate`.
+
+[partner_fees]
+# Percent: 1 is 1%, the autopilot's `max-partner-fee = 0.01`.
+max_volume = 1
 
 [lists]
 jit_owners = []

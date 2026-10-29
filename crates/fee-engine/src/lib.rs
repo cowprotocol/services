@@ -14,6 +14,7 @@ mod evaluator;
 mod fee;
 mod loader;
 mod order_view;
+mod partner_fee;
 mod rules;
 
 pub use {
@@ -21,5 +22,6 @@ pub use {
     fee::Fee,
     loader::{LoadError, load_rules},
     order_view::{AppData, Flashloan, Order},
+    partner_fee::PartnerFee,
     rules::{CompileError, Field, Rule, RuleDefinition, RuleSet, SampleOrderError},
 };

@@ -3,7 +3,7 @@
 use {
     alloy_primitives::{Address, U256, address},
     chrono::Utc,
-    fee_engine::{AppData, CompileError, Fee, Field, LoadError, Match, load_rules},
+    fee_engine::{AppData, CompileError, Fee, Field, LoadError, Match, PartnerFee, load_rules},
     model::order::{Order, OrderData},
 };
 
@@ -27,7 +27,7 @@ fn order(sell: Address, buy: Address) -> Order {
     }
 }
 
-/// `order` with no app data.
+/// `order` with no app data and no partner fees.
 fn without_app_data(order: &Order, in_market: bool) -> fee_engine::Order<'_> {
     static NO_APP_DATA: AppData = AppData {
         app_code: None,
@@ -38,6 +38,7 @@ fn without_app_data(order: &Order, in_market: bool) -> fee_engine::Order<'_> {
     fee_engine::Order {
         order,
         app_data: &NO_APP_DATA,
+        partner_fees: &[],
         in_market,
     }
 }
@@ -91,6 +92,30 @@ fn mainnet_sample_lists_reach_the_rules() {
     assert_eq!(rule.name(), "Default: 2 bps");
 }
 
+/// The partner fees of an order asking for one 2% volume fee, under `source`.
+fn partner_fee_under(source: &str) -> Vec<Fee> {
+    load_rules(source)
+        .unwrap()
+        .evaluator(Utc::now())
+        .evaluate(fee_engine::Order {
+            partner_fees: &[PartnerFee::Volume { bps: 200 }],
+            ..without_app_data(&order(WETH, USDC), false)
+        })
+        .partner_fees
+}
+
+#[test]
+fn partner_fee_cap_is_in_percent_and_1_by_default() {
+    let volume = |percent: f64| Fee::Volume {
+        factor: (percent / 100.).try_into().unwrap(),
+    };
+    assert_eq!(partner_fee_under(""), [volume(1.)]);
+    assert_eq!(
+        partner_fee_under("[partner_fees]\nmax_volume = 0.5"),
+        [volume(0.5)]
+    );
+}
+
 #[test]
 fn empty_file_has_no_rules() {
     assert!(load_rules("").unwrap().rules().is_empty());
@@ -102,6 +127,18 @@ fn refuses_bad_files() {
 
     assert!(matches!(error("[lists"), LoadError::Toml(_)));
     assert!(matches!(error("[caps]\nvolume = 1"), LoadError::Toml(_)));
+    for partner_fees in [
+        "[partner_fees]",
+        "[partner_fees]\nmax = 1",
+        "[partner_fees]\nmax_volume = 100",
+        "[partner_fees]\nmax_volume = -1",
+        "[partner_fees]\nmax_volume = 0.00001",
+    ] {
+        assert!(
+            matches!(error(partner_fees), LoadError::Toml(_)),
+            "{partner_fees}"
+        );
+    }
     assert!(matches!(
         error(&(rule("x", "true", "no_fee()") + "extra = 1\n")),
         LoadError::Toml(_)
