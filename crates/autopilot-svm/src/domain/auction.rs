@@ -44,9 +44,10 @@ pub struct Order {
     /// The owner-signed creation transaction of a pending sponsored order,
     /// serialized. `None` for an order created on chain.
     pub creation: Option<Vec<u8>>,
-    /// What the sell token account can fund at the cut: the held amount
-    /// capped by the delegated one. `None` for a pending sponsored order,
-    /// whose creation funds it.
+    /// What the sell side can fund at the cut: the held amount capped by the
+    /// delegated one, or for a pending sponsored order, whose creation
+    /// approves the delegate, the held amount plus the owner's lamports when
+    /// the creation wraps SOL. `None` before the cut reads the accounts.
     pub sell_balance: Option<u64>,
 }
 
