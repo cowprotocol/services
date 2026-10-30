@@ -295,8 +295,8 @@ mod tests {
         assert_eq!(view["validFrom"], 4);
     }
 
-    /// The sample order that validates rules reaches every field, nested ones
-    /// included, so that no valid rule fails on a missing key.
+    /// The full sample order that validates rules reaches every field, nested
+    /// ones included, so that no valid rule fails on a missing key.
     #[test]
     fn sample_order_view_has_every_field() {
         let view = |order| {
@@ -306,7 +306,7 @@ mod tests {
             })
         };
         assert_eq!(
-            field_paths(&view(&crate::rules::sample_order(chrono::Utc::now()))),
+            field_paths(&view(&crate::rules::full_sample_order(chrono::Utc::now()))),
             field_paths(&view(&fully_set_order())),
         );
     }

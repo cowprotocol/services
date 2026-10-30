@@ -14,12 +14,16 @@ repeats, a list takes a reserved name or an expression does not compile. A
 rule whose expression fails at run time is skipped and reported to the
 caller.
 
-`RuleSet::validate_on_sample_order` is a separate pass: it runs both
-expressions of every rule against a sample order (a default order with
-every optional field present) and reports every `when` that does not return
-a bool and every `fee` that does not return valid fees, so one run shows all
-the mistakes. This catches a misspelt name or a bad fee argument such as
-`volume(0.001)` at load time instead of on the first order.
+`RuleSet::validate_on_sample_order` is a separate pass over two sample
+orders, so one run shows all the mistakes. On the full sample (every
+optional field present) both expressions of every rule run, whatever `when`
+says, and every `when` that does not return a bool and every `fee` that does
+not return valid fees is reported. This catches a misspelt name or a bad fee
+argument such as `volume(0.001)` at load time instead of on the first order.
+On the bare sample (no optional field present) the rules run as on a real
+order, and every rule that is skipped is reported. This catches a rule that
+reads `order.quote.sellAmount` without `has(order.quote)` first, which would
+be skipped on every order without a quote.
 
 The pass has limits:
 
@@ -27,7 +31,7 @@ The pass has limits:
   sample is out of market, so the bad argument in `order.inMarket ?
   volume(0.001) : volume(1)` is not found; a static check of every branch is
   planned.
-- Every amount and price in the sample is 1, except `feeAmount`, which is 0
+- Every amount and price in the samples is 1, except `feeAmount`, which is 0
   as on every order the API accepts, and every timestamp is `now`. A fee
   computed from the order is checked only at those values:
   `volume(order.buyAmount / order.sellAmount)` passes, but on a real order

@@ -28,6 +28,7 @@ pub use {
         RuleDefinition,
         RuleSet,
         RuleSetDefinition,
+        Sample,
         SampleOrderError,
     },
 };

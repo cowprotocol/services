@@ -1,7 +1,13 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::{Evaluator, evaluator::RuleError, fee, order_view},
+    crate::{
+        Evaluator,
+        OrderView,
+        evaluator::{RuleError, Skipped},
+        fee,
+        order_view,
+    },
     alloy_primitives::U256,
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
@@ -78,13 +84,33 @@ pub enum CompileError {
     },
 }
 
-/// One expression that gave no usable value on the sample order.
+/// One expression that gave no usable value on a sample order.
 #[derive(Debug, thiserror::Error)]
-#[error("rule `{rule}`: `{field}` {error} on a sample order")]
+#[error("rule `{rule}`: `{field}` {error} on {sample}")]
 pub struct SampleOrderError {
     pub rule: String,
     pub field: Field,
     pub error: RuleError,
+    pub sample: Sample,
+}
+
+/// The sample order an expression failed on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sample {
+    /// Every optional field present, every timestamp `now`, amounts and
+    /// prices 1.
+    Full,
+    /// No optional field present; otherwise the same.
+    Bare,
+}
+
+impl fmt::Display for Sample {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Sample::Full => "a sample order",
+            Sample::Bare => "a sample order with no optional field",
+        })
+    }
 }
 
 /// The two expressions of a rule.
@@ -208,24 +234,43 @@ impl RuleSet {
         })
     }
 
-    /// Runs both expressions of every rule against a sample order, whatever
-    /// `when` says, and reports every one that yields no bool or no fee. This
-    /// catches bad fee arguments and misspelt names before any real order.
+    /// Runs every rule against two sample orders and reports each expression
+    /// that yields no bool or no fee: every expression on the full sample,
+    /// then the rules a real order would skip on the bare one. See the README.
     pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
         let now = Utc::now();
-        let errors: Vec<_> = self
-            .evaluator(now)
-            .evaluate_all_expressions(crate::OrderView {
-                order: &sample_order(now),
-                in_market: false,
-            })
-            .into_iter()
-            .map(|skipped| SampleOrderError {
+        let evaluator = self.evaluator(now);
+        let error = |sample| {
+            move |skipped: Skipped<'_>| SampleOrderError {
                 rule: skipped.rule.name().to_owned(),
                 field: skipped.field,
                 error: skipped.error,
+                sample,
+            }
+        };
+        let mut errors: Vec<_> = evaluator
+            .evaluate_all_expressions(OrderView {
+                order: &full_sample_order(now),
+                in_market: false,
             })
+            .into_iter()
+            .map(error(Sample::Full))
             .collect();
+        let on_bare: Vec<_> = evaluator
+            .evaluate(OrderView {
+                order: &bare_sample_order(now),
+                in_market: false,
+            })
+            .skipped
+            .into_iter()
+            .filter(|skipped| {
+                !errors
+                    .iter()
+                    .any(|found| found.rule == skipped.rule.name() && found.field == skipped.field)
+            })
+            .map(error(Sample::Bare))
+            .collect();
+        errors.extend(on_bare);
         if errors.is_empty() {
             return Ok(());
         }
@@ -250,11 +295,10 @@ impl RuleSet {
     }
 }
 
-/// An order with every optional field present, so that a rule can reach any
-/// name the view may hold. Amounts and prices are 1, so a ratio of two is
-/// defined; `feeAmount` stays 0, as the API refuses any other. Every
-/// timestamp is `now`, so that time arithmetic does not underflow.
-pub(crate) fn sample_order(now: DateTime<Utc>) -> Order {
+/// An order with no optional field present and every timestamp `now`, so
+/// that time arithmetic does not underflow. Amounts are 1, so a ratio of two
+/// is defined; `feeAmount` stays 0, as the API refuses any other.
+pub(crate) fn bare_sample_order(now: DateTime<Utc>) -> Order {
     Order {
         data: OrderData {
             sell_amount: U256::ONE,
@@ -264,30 +308,40 @@ pub(crate) fn sample_order(now: DateTime<Utc>) -> Order {
         },
         metadata: OrderMetadata {
             creation_date: now,
-            ethflow_data: Some(EthflowData {
-                user_valid_to: now.timestamp(),
-                refund_tx_hash: Some(Default::default()),
-            }),
-            onchain_order_data: Some(OnchainOrderData {
-                placement_error: Some(OnchainOrderPlacementError::Other),
-                ..Default::default()
-            }),
-            onchain_user: Some(Default::default()),
-            valid_from: Some(now.timestamp() as u32),
-            quote: Some(OrderQuote {
-                sell_amount: U256::ONE,
-                buy_amount: U256::ONE,
-                fee_amount: U256::ONE,
-                gas_amount: 1.into(),
-                gas_price: 1.into(),
-                sell_token_price: 1.into(),
-                ..Default::default()
-            }),
-            fast_path: true,
             ..Default::default()
         },
         ..Default::default()
     }
+}
+
+/// The bare sample with every optional field present, so that a rule can
+/// reach any name the view may hold. Prices are 1, like the amounts.
+pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
+    let mut order = bare_sample_order(now);
+    order.metadata = OrderMetadata {
+        ethflow_data: Some(EthflowData {
+            user_valid_to: now.timestamp(),
+            refund_tx_hash: Some(Default::default()),
+        }),
+        onchain_order_data: Some(OnchainOrderData {
+            placement_error: Some(OnchainOrderPlacementError::Other),
+            ..Default::default()
+        }),
+        onchain_user: Some(Default::default()),
+        valid_from: Some(now.timestamp() as u32),
+        quote: Some(OrderQuote {
+            sell_amount: U256::ONE,
+            buy_amount: U256::ONE,
+            fee_amount: U256::ONE,
+            gas_amount: 1.into(),
+            gas_price: 1.into(),
+            sell_token_price: 1.into(),
+            ..Default::default()
+        }),
+        fast_path: true,
+        ..order.metadata
+    };
+    order
 }
 
 /// Each list as the CEL list rules test with `in`, e.g.
@@ -417,34 +471,44 @@ mod tests {
         }
     }
 
+    fn validate(rules: Vec<RuleDefinition>) -> Result<(), Vec<SampleOrderError>> {
+        RuleSet::new(RuleSetDefinition {
+            rules,
+            ..Default::default()
+        })
+        .unwrap()
+        .validate_on_sample_order()
+    }
+
     #[test]
     fn validates_every_expression_on_a_sample_order() {
-        let validate = |rules| {
-            RuleSet::new(RuleSetDefinition {
-                rules,
-                ..Default::default()
-            })
-            .unwrap()
-            .validate_on_sample_order()
-        };
-
         validate(vec![
-            rule("Quoted", "order.quote.sellAmount > 0", "volume(1)"),
-            rule("Ethflow", "order.ethflowData.userValidTo > 0", "no_fee()"),
+            rule(
+                "Quoted",
+                "has(order.quote) && order.quote.sellAmount > 0",
+                "volume(1)",
+            ),
+            rule(
+                "Ethflow",
+                "has(order.ethflowData) && order.ethflowData.userValidTo > 0",
+                "no_fee()",
+            ),
             rule("Fast path", "order.fastPath", "no_fee()"),
             rule(
                 "Refunded",
-                "order.ethflowData.refundTxHash != ''",
+                "has(order.ethflowData) && has(order.ethflowData.refundTxHash) && \
+                 order.ethflowData.refundTxHash != ''",
                 "no_fee()",
             ),
             rule(
                 "Placement error",
-                "order.onchainOrderData.placementError == 'other'",
+                "has(order.onchainOrderData) && has(order.onchainOrderData.placementError) && \
+                 order.onchainOrderData.placementError == 'other'",
                 "no_fee()",
             ),
             rule(
                 "Ratio",
-                "order.quote.buyAmount / order.quote.sellAmount > 0.0",
+                "has(order.quote) && order.quote.buyAmount / order.quote.sellAmount > 0.0",
                 "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
             ),
             rule(
@@ -453,7 +517,11 @@ mod tests {
                  duration('1h')",
                 "no_fee()",
             ),
-            rule("Valid from", "order.validFrom + 1u > 0u", "no_fee()"),
+            rule(
+                "Valid from",
+                "has(order.validFrom) && order.validFrom + 1u > 0u",
+                "no_fee()",
+            ),
             rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
         ])
         .unwrap();
@@ -465,6 +533,7 @@ mod tests {
                 ref rule,
                 field: Field::When,
                 error: RuleError::NotABool(_),
+                sample: Sample::Full,
             }] if rule == "Not a bool"
         ));
         assert!(matches!(
@@ -487,6 +556,60 @@ mod tests {
             errors(vec![rule("x", "true", "volume('ten')")])[0].to_string(),
             "rule `x`: `fee` `volume` argument `bps` is string instead of a number on a sample \
              order"
+        );
+    }
+
+    #[test]
+    fn reports_fields_a_real_order_may_lack() {
+        validate(vec![
+            rule(
+                "Guarded",
+                "has(order.quote) && order.quote.sellAmount > 0",
+                "volume(1)",
+            ),
+            rule(
+                "Fee behind its guard",
+                "has(order.quote)",
+                "volume(order.quote.feeAmount)",
+            ),
+            rule(
+                "Nested",
+                "has(order.ethflowData) && has(order.ethflowData.refundTxHash)",
+                "no_fee()",
+            ),
+        ])
+        .unwrap();
+
+        let errors = validate(vec![
+            rule("Unguarded", "order.quote.sellAmount > 0", "volume(1)"),
+            rule(
+                "Last field only",
+                "has(order.ethflowData.refundTxHash)",
+                "no_fee()",
+            ),
+            rule("Misspelt", "order.sellAmout > 0", "volume(1)"),
+        ])
+        .unwrap_err();
+        let reported: Vec<_> = errors
+            .iter()
+            .map(|error| (error.rule.as_str(), error.field, error.sample))
+            .collect();
+        assert_eq!(
+            reported,
+            [
+                ("Misspelt", Field::When, Sample::Full),
+                ("Unguarded", Field::When, Sample::Bare),
+                ("Last field only", Field::When, Sample::Bare),
+            ]
+        );
+        assert!(errors.iter().all(|error| matches!(
+            error.error,
+            RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
+        )));
+        assert!(
+            errors[1]
+                .to_string()
+                .ends_with("on a sample order with no optional field")
         );
     }
 
