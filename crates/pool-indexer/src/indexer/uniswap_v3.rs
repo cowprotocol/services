@@ -7,7 +7,7 @@ use {
     alloy_provider::Provider,
     alloy_rpc_types_eth::{BlockNumberOrTag, Filter, FilterSet, Log},
     alloy_sol_types::SolEvent,
-    alloy_transport::{RpcError, TransportErrorKind},
+    alloy_transport::RpcError,
     anyhow::{Context, Result},
     contracts::{
         ERC20,
@@ -367,7 +367,6 @@ impl UniswapV3Indexer {
         Ok(true)
     }
 
-
     async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<bool> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
         if !db::advance_checkpoint(&mut tx, &self.factory, chunk.start - 1, chunk.end).await? {
@@ -677,7 +676,8 @@ async fn fetch_symbol(provider: &AlloyProvider, token: Address) -> Option<String
 /// cap / hitting the server's query timeout. Substrings cover the
 /// rejections empirically seen on OVH and Alchemy mainnet. Transport-level
 /// errors (HTTP timeouts, DNS, connection resets) live in other `RpcError`
-/// variants and short-circuit to false.
+/// variants and short-circuit to false, so client-side noise can't trigger
+/// pointless bisection.
 pub(crate) fn is_range_too_large(err: &alloy_transport::TransportError) -> bool {
     let RpcError::ErrorResp(payload) = err else {
         return false;
@@ -701,14 +701,14 @@ const MAX_BISECTION_DEPTH: u32 = 8;
 /// Retry transient `eth_getLogs` failures (timeout, reset, throttle) with
 /// backoff, capped by a per-call timeout, so one blip can't abort a long
 /// cold-seed scan. Range-size rejections are bisected, not retried, and so are
-/// replies that break off while the range can still shrink.
+/// cut-off replies while the range can still shrink.
 const GETLOGS_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_GETLOGS_RETRIES: u32 = 6;
 const GETLOGS_RETRY_BACKOFF: Duration = Duration::from_secs(2);
 
 /// Fetches logs for `[from, to]` filtered by the given contract addresses
 /// and `topic0` event signatures, sequentially bisecting the block range on
-/// "too large" rejections or broken-off replies until each sub-range is
+/// "too large" rejections or cut-off replies until each sub-range is
 /// tractable. An empty `addresses` list means "any contract". Bisection depth
 /// is capped by [`MAX_BISECTION_DEPTH`].
 pub(crate) fn bisecting_get_logs(
@@ -750,12 +750,15 @@ fn bisecting_get_logs_with_depth(
                     }
                     break;
                 }
-                // The reply broke off, e.g. a proxy dropped an oversized one:
-                // bisect while the range can still shrink.
-                Ok(Err(err @ RpcError::Transport(TransportErrorKind::Custom(_))))
-                    if to > from && depth < MAX_BISECTION_DEPTH =>
+                // Reply cut off, e.g. by a proxy whose buffer it overflowed:
+                // bisect while the range can still shrink. The batching layer
+                // flattens transport errors into strings, hence the name match.
+                Ok(Err(err))
+                    if format!("{err:?}").contains("IncompleteMessage")
+                        && to > from
+                        && depth < MAX_BISECTION_DEPTH =>
                 {
-                    tracing::warn!(?err, from, to, "get_logs reply failed, bisecting");
+                    tracing::warn!(?err, from, to, "get_logs reply cut off, bisecting");
                     break;
                 }
                 Ok(Err(err)) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
@@ -1465,9 +1468,9 @@ mod tests {
         assert!(c.tick_deltas.is_empty());
     }
 
-    /// Fails `eth_getLogs` over more than `max_blocks` with a transport
-    /// error; otherwise returns one log per block.
-    fn capped_get_logs_provider(max_blocks: u64) -> AlloyProvider {
+    /// Fails `eth_getLogs` over more than `max_blocks` with `error` as a
+    /// transport error; otherwise returns one log per block.
+    fn capped_get_logs_provider(max_blocks: u64, error: &'static str) -> AlloyProvider {
         use alloy_json_rpc::{RequestPacket, Response, ResponsePacket, ResponsePayload};
 
         let transport = tower::service_fn(
@@ -1481,7 +1484,7 @@ mod tests {
                     let from = filter.get_from_block().unwrap();
                     let to = filter.get_to_block().unwrap();
                     if to - from + 1 > max_blocks {
-                        return Err(TransportErrorKind::custom_str("IncompleteMessage"));
+                        return Err(alloy_transport::TransportErrorKind::custom_str(error));
                     }
                     let logs: Vec<Log> = (from..=to)
                         .map(|block| Log {
@@ -1504,18 +1507,24 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn get_logs_bisects_broken_off_replies() {
-        let logs = bisecting_get_logs(&capped_get_logs_provider(100), 1, 1000, vec![], vec![])
+    async fn get_logs_bisects_only_cut_off_replies() {
+        const CUT: &str = "batch call failed: hyper::Error(IncompleteMessage)";
+        const THROTTLED: &str = "batch call failed: HttpError(429)";
+
+        let logs = bisecting_get_logs(&capped_get_logs_provider(100, CUT), 1, 1000, vec![], vec![])
             .await
             .unwrap();
         let blocks: Vec<u64> = logs.iter().map(|log| log.block_number.unwrap()).collect();
         assert_eq!(blocks, (1..=1000).collect::<Vec<_>>());
 
-        assert!(
-            bisecting_get_logs(&capped_get_logs_provider(0), 1, 1000, vec![], vec![])
-                .await
-                .is_err()
-        );
+        for (max_blocks, error) in [(0, CUT), (100, THROTTLED)] {
+            let provider = capped_get_logs_provider(max_blocks, error);
+            assert!(
+                bisecting_get_logs(&provider, 1, 1000, vec![], vec![])
+                    .await
+                    .is_err()
+            );
+        }
     }
 
     #[tokio::test]
