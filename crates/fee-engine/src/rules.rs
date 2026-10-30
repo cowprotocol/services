@@ -214,7 +214,7 @@ impl RuleSet {
     pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
         let errors: Vec<_> = self
             .evaluator(Utc::now())
-            .evaluate_all_expressions(crate::Order {
+            .evaluate_all_expressions(crate::OrderView {
                 order: &sample_order(),
                 in_market: false,
             })

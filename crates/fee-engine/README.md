@@ -231,7 +231,7 @@ shortened):
 }
 ```
 
-`inMarket` is `Order::in_market` as the host passes it. The engine does not
+`inMarket` is `OrderView::in_market` as the host passes it. The engine does not
 check it: the host must pass false when the order has no quote.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,

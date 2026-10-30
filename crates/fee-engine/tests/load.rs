@@ -63,7 +63,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     let rules = load_rules_from_str(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
 
-    let evaluation = evaluator.evaluate(fee_engine::Order {
+    let evaluation = evaluator.evaluate(fee_engine::OrderView {
         order: &order(USDC, USDT),
         in_market: false,
     });
@@ -77,7 +77,7 @@ fn mainnet_sample_lists_reach_the_rules() {
 
     let mut quoted = order(USDC, USDT);
     quoted.metadata.quote = Some(Default::default());
-    let evaluation = evaluator.evaluate(fee_engine::Order {
+    let evaluation = evaluator.evaluate(fee_engine::OrderView {
         order: &quoted,
         in_market: true,
     });
@@ -87,7 +87,7 @@ fn mainnet_sample_lists_reach_the_rules() {
         [Fee::PriceImprovement { .. }, Fee::Volume { .. }]
     ));
 
-    let evaluation = evaluator.evaluate(fee_engine::Order {
+    let evaluation = evaluator.evaluate(fee_engine::OrderView {
         order: &order(WETH, USDC),
         in_market: false,
     });

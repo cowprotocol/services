@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 /// An order as the host hands it to the engine: the API order plus the facts
 /// the host computes for it.
 #[derive(Debug, Clone, Copy)]
-pub struct Order<'a> {
+pub struct OrderView<'a> {
     pub order: &'a model::order::Order,
     /// Whether the limit price is inside the market price of the order's quote;
     /// false when the order has no quote. The engine trusts it as given.
@@ -15,7 +15,7 @@ pub struct Order<'a> {
 /// The order as rules see it: every field a rule can read, with amounts and
 /// prices as doubles and hex in lowercase. Unset optional fields are absent,
 /// not `null`. Execution state, settlement and legacy fields are left out.
-pub(crate) fn order_view(Order { order, in_market }: Order) -> Value {
+pub(crate) fn order_view(OrderView { order, in_market }: OrderView) -> Value {
     let (data, meta) = (&order.data, &order.metadata);
     let mut view = json!({
         "uid": hex(&meta.uid.0),
@@ -124,7 +124,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(Order {
+        let view = order_view(OrderView {
             order: &order,
             in_market: false,
         });
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn view_matches_the_api_json() {
         let order = fully_set_order();
-        let mut view = order_view(Order {
+        let mut view = order_view(OrderView {
             order: &order,
             in_market: true,
         });
@@ -234,7 +234,7 @@ mod tests {
     /// settlement or legacy field, and unset options are absent.
     #[test]
     fn view_holds_only_rule_fields() {
-        let view = order_view(Order {
+        let view = order_view(OrderView {
             order: &fully_set_order(),
             in_market: true,
         });
@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn sample_order_view_has_every_field() {
         let view = |order| {
-            order_view(Order {
+            order_view(OrderView {
                 order,
                 in_market: false,
             })
@@ -321,7 +321,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(Order {
+        let view = order_view(OrderView {
             order: &order,
             in_market: false,
         });
@@ -343,7 +343,7 @@ mod tests {
         let section = &readme[readme.find("### `order`").unwrap()..];
         let sample = section.split("```json\n").nth(1).unwrap();
         let sample: Value = serde_json::from_str(sample.split("```").next().unwrap()).unwrap();
-        let view = order_view(Order {
+        let view = order_view(OrderView {
             order: &fully_set_order(),
             in_market: true,
         });
