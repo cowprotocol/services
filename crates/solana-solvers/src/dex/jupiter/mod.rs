@@ -61,16 +61,16 @@ impl Jupiter {
         Ok(Quote {
             in_amount: amount_field(&raw, "inAmount")?,
             out_amount: amount_field(&raw, "outAmount")?,
-            destination: order.buy_destination,
+            order: order.clone(),
             raw,
         })
     }
 
     /// Build the swap for `quote` that the settlement signer `taker`
     /// executes inside the settlement transaction: one `/swap-instructions`
-    /// request, at the quote's amounts.
+    /// request, at the quote's amounts, paying the taker's buy-mint ATA.
     pub async fn swap(&self, quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
-        self.swap_instructions(&quote.raw, taker, &quote.destination)
+        self.swap_instructions(&quote.raw, taker)
             .await?
             .into_swap(quote.in_amount, quote.out_amount)
     }
@@ -93,10 +93,7 @@ impl Jupiter {
             .append_pair("swapMode", swap_mode.as_str())
             // Jupiter bakes the resulting bounds into the returned instruction
             // data; nothing downstream re-applies slippage.
-            .append_pair("slippageBps", &self.slippage_bps.to_string())
-            // The swap pays into the settlement's buffer, which the taker does
-            // not own, and GoonFi V2 fails that with `InvalidAccountOwner`.
-            .append_pair("excludeDexes", "GoonFi V2");
+            .append_pair("slippageBps", &self.slippage_bps.to_string());
         self.send(self.with_key(self.client.get(url))).await
     }
 
@@ -105,13 +102,12 @@ impl Jupiter {
         &self,
         quote: &serde_json::Value,
         taker: &Pubkey,
-        destination: &Pubkey,
     ) -> Result<dto::SwapInstructionsResponse, Error> {
         let url = self
             .endpoint
             .join(SWAP_INSTRUCTIONS_PATH)
             .map_err(|_| Error::RequestBuildFailed)?;
-        let payload = dto::SwapInstructionsRequest::new(quote, taker, destination);
+        let payload = dto::SwapInstructionsRequest::new(quote, taker);
         let body = serde_json::to_string(&payload).map_err(|_| Error::RequestBuildFailed)?;
         let request = self.with_key(
             self.client
@@ -189,6 +185,8 @@ mod tests {
         Order {
             sell_mint: Pubkey::from_str(USDC).unwrap(),
             buy_mint: Pubkey::from_str(WSOL).unwrap(),
+            buy_token_program: spl_token_2022_interface::inline_spl_token::ID,
+            buy_decimals: 9,
             buy_destination: Pubkey::from_str(WSOL).unwrap(),
             sell_amount,
             buy_amount,

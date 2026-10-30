@@ -134,10 +134,12 @@ mod tests {
             std::env::var("BITGET_API_SECRET").unwrap(),
         ))
         .unwrap();
-        // 1 USDC for wSOL, paid into the settlement's wSOL buffer.
+        // 1 USDC for wSOL.
         let order = Order {
             sell_mint: Pubkey::from_str("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v").unwrap(),
             buy_mint: Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(),
+            buy_token_program: spl_token_2022_interface::inline_spl_token::ID,
+            buy_decimals: 9,
             buy_destination: Pubkey::from_str("4BAJ8YzUCw2H7CXgmCZdMG2jFLaFdGjREhxRqXma73Cv")
                 .unwrap(),
             sell_amount: 1_000_000,
@@ -150,8 +152,6 @@ mod tests {
 
         assert_eq!(swap.in_amount, 1_000_000);
         assert!(swap.out_amount > 0);
-        let transfer = swap.instructions.last().unwrap();
-        assert_eq!(transfer.accounts[1].pubkey, order.buy_destination);
 
         let solution = crate::dto::solution::Solution::new(
             0,

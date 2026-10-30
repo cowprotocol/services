@@ -66,10 +66,16 @@ pub struct Order {
     pub sell_mint: Pubkey,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_mint: Pubkey,
-    /// The account the swap output lands in: the buy-mint buffer, or the
-    /// taker's wSOL ATA for an order buying native SOL. The route must leave
-    /// that ATA open: the settlement closes it after the swap to unwrap the
-    /// payouts.
+    /// The token program of `buy_mint`.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub buy_token_program: Pubkey,
+    /// The decimals of `buy_mint`, for the `TransferChecked` that moves the
+    /// output on to `buy_destination`.
+    pub buy_decimals: u8,
+    /// The account the swap output must end up in: the buy-mint buffer, or
+    /// the taker's wSOL ATA for an order buying native SOL. The route must
+    /// leave that ATA open: the settlement closes it after the swap to unwrap
+    /// the payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
     /// Sell-mint units left to fill: for a sell order the amount to fill,
@@ -118,6 +124,8 @@ impl Order {
         dex::Order {
             sell_mint: self.sell_mint,
             buy_mint: self.buy_mint,
+            buy_token_program: self.buy_token_program,
+            buy_decimals: self.buy_decimals,
             buy_destination: self.buy_destination,
             sell_amount: self.sell_amount,
             buy_amount: self.buy_amount,
@@ -144,6 +152,8 @@ mod tests {
                 "uid": format!("0x{}", "08".repeat(32)),
                 "sellMint": pubkey(1).to_string(),
                 "buyMint": pubkey(2).to_string(),
+                "buyTokenProgram": pubkey(5).to_string(),
+                "buyDecimals": 6,
                 "buyDestination": pubkey(4).to_string(),
                 "sellAmount": "1000",
                 "buyAmount": "2000",
@@ -166,6 +176,10 @@ mod tests {
         let order = &auction.orders[0];
         assert_eq!(order.uid, OrderUid([8; 32]));
         assert_eq!((order.sell_mint, order.buy_mint), (pubkey(1), pubkey(2)));
+        assert_eq!(
+            (order.buy_token_program, order.buy_decimals),
+            (pubkey(5), 6)
+        );
         assert_eq!(order.buy_destination, pubkey(4));
         assert_eq!((order.sell_amount, order.buy_amount), (1_000, 2_000));
         assert_eq!(order.amount, 1_000);

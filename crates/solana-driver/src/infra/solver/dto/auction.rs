@@ -5,7 +5,7 @@
 use {
     crate::{
         domain::{self, Side, execution_cost::Charge, order_uid::OrderUid, solver_fee::SolverFee},
-        infra::blockchain::associated_token_address,
+        infra::blockchain::{MintInfo, associated_token_address},
     },
     cow_settlement_interface::{
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
@@ -56,10 +56,15 @@ pub struct Order {
     pub sell_mint: Pubkey,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_mint: Pubkey,
-    /// The account the swap output lands in: the buy-mint buffer, or the
-    /// taker's wSOL ATA for an order buying native SOL. The route must leave
-    /// that ATA open: the settlement closes it after the swap to unwrap the
-    /// payouts.
+    /// The token program of `buy_mint`.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub buy_token_program: Pubkey,
+    /// The decimals of `buy_mint`, for a `TransferChecked` of the output.
+    pub buy_decimals: u8,
+    /// The account the swap output must end up in: the buy-mint buffer, or
+    /// the taker's wSOL ATA for an order buying native SOL. The route must
+    /// leave that ATA open: the settlement closes it after the swap to unwrap
+    /// the payouts.
     #[serde_as(as = "serde_with::DisplayFromStr")]
     pub buy_destination: Pubkey,
     /// Sell-mint units a fill may take now, what prior fills left scaled to
@@ -108,10 +113,12 @@ impl Order {
     /// a buy order's maximum sell falls by it. A minimum buy past `u64::MAX`
     /// saturates: no fill can meet it.
     ///
-    /// The swap output must land in the buy-mint buffer PDA so that
+    /// The swap output must end up in the buy-mint buffer PDA so that
     /// `FinalizeSettle` can push it to the user's buy token account. Solvers
     /// swap into token accounts, so a native SOL buy goes out as a wSOL buy
-    /// into the taker's wSOL ATA.
+    /// into the taker's wSOL ATA. `mints` is what the chain says about every
+    /// token buy's mint. An order whose mint is not in it goes unsent: no
+    /// settlement can pay it out.
     ///
     /// The wire format does not specify how the sell tokens are ultimately
     /// used, so the driver defaults `BeginSettle` to pull sell tokens into the
@@ -125,7 +132,8 @@ impl Order {
         cut: u64,
         fee: Option<SolverFee>,
         missing_buy_token_account: bool,
-    ) -> Self {
+        mints: &HashMap<Pubkey, MintInfo>,
+    ) -> Option<Self> {
         let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
         let available = order.available();
         let (sell_amount, buy_amount) = match order.side {
@@ -138,21 +146,29 @@ impl Order {
                 available.buy,
             ),
         };
-        let (buy_mint, buy_destination) = if order.buys_native_sol() {
-            (
-                native_mint::ID,
-                associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken),
-            )
-        } else {
-            (
-                order.buy_token,
-                find_buffer_pda(&program_id, &order.buy_token).0,
-            )
-        };
-        Self {
+        let (buy_mint, buy_token_program, buy_decimals, buy_destination) =
+            if order.buys_native_sol() {
+                (
+                    native_mint::ID,
+                    TokenProgram::SplToken,
+                    native_mint::DECIMALS,
+                    associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken),
+                )
+            } else {
+                let mint = mints.get(&order.buy_token)?;
+                (
+                    order.buy_token,
+                    mint.program,
+                    mint.decimals,
+                    find_buffer_pda(&program_id, &order.buy_token).0,
+                )
+            };
+        Some(Self {
             uid: order.uid,
             sell_mint: order.sell_token,
             buy_mint,
+            buy_token_program: buy_token_program.address(),
+            buy_decimals,
             buy_destination,
             sell_amount,
             buy_amount,
@@ -165,7 +181,7 @@ impl Order {
             side: order.side,
             partially_fillable: order.partially_fillable,
             missing_buy_token_account,
-        }
+        })
     }
 }
 
@@ -175,12 +191,14 @@ impl Auction {
     /// The `taker` is the solver that signs the settlement transaction, and its
     /// wSOL ATA receives native SOL buys. `program_id` derives the buy-mint
     /// buffer PDA that every other order swaps into. `charge` decides each
-    /// order's limit leg and flag, see [`Charge`].
+    /// order's limit leg and flag, see [`Charge`]. `mints` describes the
+    /// token buys' mints, see [`Order::new`].
     pub fn new(
         auction: &domain::Auction,
         taker: Pubkey,
         program_id: Pubkey,
         charge: &Charge,
+        mints: &HashMap<Pubkey, MintInfo>,
     ) -> Self {
         Self {
             id: auction.id.map(|id| id.get()),
@@ -195,14 +213,15 @@ impl Auction {
                         } => (0, None, missing_buy_token_accounts.contains(&order.uid)),
                         Charge::Driver { cuts, fee } => (*cuts.get(&order.uid)?, *fee, false),
                     };
-                    Some(Order::new(
+                    Order::new(
                         order,
                         taker,
                         program_id,
                         cut,
                         fee,
                         missing_buy_token_account,
-                    ))
+                        mints,
+                    )
                 })
                 .collect(),
             deadline: auction.deadline,
@@ -230,7 +249,13 @@ fn tokens(native_prices: &HashMap<Pubkey, u64>) -> HashMap<Pubkey, Token> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::domain::Side, serde_json::json};
+    use {
+        super::*,
+        crate::domain::Side,
+        serde_json::json,
+        solana_sdk::program_pack::Pack,
+        spl_token_2022_interface::state::Account as TokenAccount,
+    };
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -250,6 +275,8 @@ mod tests {
                 "uid": format!("0x{}", "08".repeat(32)),
                 "sellMint": pubkey(1).to_string(),
                 "buyMint": buy_mint.to_string(),
+                "buyTokenProgram": TokenProgram::SplToken.address().to_string(),
+                "buyDecimals": 6,
                 "buyDestination": find_buffer_pda(&program_id, &buy_mint).0.to_string(),
                 "sellAmount": "1000",
                 "buyAmount": "2000",
@@ -272,6 +299,8 @@ mod tests {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint,
+                buy_token_program: TokenProgram::SplToken.address(),
+                buy_decimals: 6,
                 buy_destination: find_buffer_pda(&program_id, &buy_mint).0,
                 sell_amount: 1_000,
                 buy_amount: 2_000,
@@ -317,6 +346,19 @@ mod tests {
         }
     }
 
+    /// `pubkey(2)`, the buy mint of [`domain_order`], as a six-decimal SPL
+    /// Token mint.
+    fn mints() -> HashMap<Pubkey, MintInfo> {
+        HashMap::from([(
+            pubkey(2),
+            MintInfo {
+                program: TokenProgram::SplToken,
+                decimals: 6,
+                ata_len: TokenAccount::LEN,
+            },
+        )])
+    }
+
     /// A partially fillable order whose account holds less than its remainder
     /// goes out scaled to the balance: 500 of 1000 held sells 500 for 500.
     #[test]
@@ -326,7 +368,7 @@ mod tests {
             sell_balance: Some(500),
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&order, pubkey(3), pubkey(0xaa), 0, None, false);
+        let order = Order::new(&order, pubkey(3), pubkey(0xaa), 0, None, false, &mints()).unwrap();
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (500, 500, 500)
@@ -346,7 +388,9 @@ mod tests {
             0,
             None,
             false,
-        );
+            &mints(),
+        )
+        .unwrap();
         assert_eq!((order.sell_amount, order.buy_amount), (1_000, 1_000));
         assert_eq!(
             (order.full_sell_amount, order.full_buy_amount),
@@ -364,7 +408,9 @@ mod tests {
             0,
             fee,
             false,
-        );
+            &mints(),
+        )
+        .unwrap();
         assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_053));
         assert_eq!(
             (sell.full_sell_amount, sell.full_buy_amount),
@@ -378,7 +424,9 @@ mod tests {
             0,
             fee,
             false,
-        );
+            &mints(),
+        )
+        .unwrap();
         assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
         assert_eq!((buy.full_sell_amount, buy.full_buy_amount), (1_000, 1_000));
     }
@@ -396,7 +444,7 @@ mod tests {
             executed: 400,
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), 0, fee, false);
+        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), 0, fee, false, &mints()).unwrap();
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (600, 632, 600)
@@ -411,7 +459,7 @@ mod tests {
             side: Side::Buy,
             ..sell
         };
-        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), 0, fee, false);
+        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), 0, fee, false, &mints()).unwrap();
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (571, 600, 600)
@@ -427,12 +475,16 @@ mod tests {
         let (taker, program_id) = (pubkey(3), pubkey(0xaa));
         let order = domain_order(Side::Sell);
 
-        let flagged =
-            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, true)).unwrap();
+        let flagged = serde_json::to_value(
+            Order::new(&order, taker, program_id, 0, None, true, &mints()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(flagged["missingBuyTokenAccount"], json!(true));
 
-        let unflagged =
-            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, false)).unwrap();
+        let unflagged = serde_json::to_value(
+            Order::new(&order, taker, program_id, 0, None, false, &mints()).unwrap(),
+        )
+        .unwrap();
         assert!(unflagged.get("missingBuyTokenAccount").is_none());
     }
 
@@ -451,7 +503,9 @@ mod tests {
                 cut,
                 fee,
                 false,
-            );
+                &mints(),
+            )
+            .unwrap();
             (order.sell_amount, order.buy_amount)
         };
         assert_eq!(legs(Side::Sell, 50, None), (1_000, 1_050));
@@ -488,7 +542,7 @@ mod tests {
         let engine = Charge::Engine {
             missing_buy_token_accounts: [order.uid].into(),
         };
-        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine);
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine, &mints());
         assert_eq!(sent.orders.len(), 2);
         assert_eq!(sent.orders[0].buy_amount, 1_000);
         assert!(sent.orders[0].missing_buy_token_account);
@@ -498,21 +552,48 @@ mod tests {
             cuts: [(order.uid, 50)].into(),
             fee: Some(SolverFee::try_from(500).unwrap()),
         };
-        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &driver);
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &driver, &mints());
         assert_eq!(sent.orders.len(), 1);
         assert_eq!(sent.orders[0].uid, order.uid);
         assert_eq!(sent.orders[0].buy_amount, 1_106);
         assert!(!sent.orders[0].missing_buy_token_account);
     }
 
+    /// Nothing can pay an order out whose buy mint the chain does not know.
+    #[test]
+    fn an_order_whose_buy_mint_is_unknown_goes_unsent() {
+        let auction = domain_auction(vec![domain_order(Side::Sell)]);
+        let sent = Auction::new(
+            &auction,
+            pubkey(3),
+            pubkey(0xaa),
+            &Charge::default(),
+            &HashMap::new(),
+        );
+        assert!(sent.orders.is_empty());
+    }
+
     #[test]
     fn a_token_buy_lands_in_the_buffer_pda() {
         let (taker, program_id) = (pubkey(3), pubkey(0xaa));
-        let order = Order::new(&domain_order(Side::Sell), taker, program_id, 0, None, false);
+        let order = Order::new(
+            &domain_order(Side::Sell),
+            taker,
+            program_id,
+            0,
+            None,
+            false,
+            &mints(),
+        )
+        .unwrap();
         assert_eq!(order.buy_mint, pubkey(2));
         assert_eq!(
             order.buy_destination,
             find_buffer_pda(&program_id, &pubkey(2)).0
+        );
+        assert_eq!(
+            (order.buy_token_program, order.buy_decimals),
+            (TokenProgram::SplToken.address(), 6)
         );
     }
 
@@ -523,11 +604,15 @@ mod tests {
             buy_token: ENCODED_NATIVE_SOL_TRANSFER,
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&native_buy, taker, program_id, 0, None, false);
+        let order = Order::new(&native_buy, taker, program_id, 0, None, false, &mints()).unwrap();
         assert_eq!(order.buy_mint, native_mint::ID);
         assert_eq!(
             order.buy_destination,
             associated_token_address(&taker, &native_mint::ID, TokenProgram::SplToken)
+        );
+        assert_eq!(
+            (order.buy_token_program, order.buy_decimals),
+            (TokenProgram::SplToken.address(), native_mint::DECIMALS)
         );
     }
 

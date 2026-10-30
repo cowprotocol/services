@@ -7,14 +7,25 @@ pub mod bitget;
 mod dto;
 pub mod jupiter;
 
-use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use {
+    solana_sdk::{instruction::Instruction, pubkey::Pubkey},
+    spl_associated_token_account_interface::{
+        address::get_associated_token_address_with_program_id,
+        instruction::create_associated_token_account_idempotent,
+    },
+    spl_token_2022_interface::instruction::transfer_checked,
+};
 
 /// A single order to quote, distilled from the auction.
 #[derive(Debug, Clone)]
 pub struct Order {
     pub sell_mint: Pubkey,
     pub buy_mint: Pubkey,
-    /// Where the swap sends its output: the settlement's buy-mint buffer,
+    /// The token program of `buy_mint`.
+    pub buy_token_program: Pubkey,
+    /// The decimals of `buy_mint`.
+    pub buy_decimals: u8,
+    /// Where the output must end up: the settlement's buy-mint buffer,
     /// resolved upstream (driver or autopilot). `FinalizeSettle` then pushes
     /// to the user.
     pub buy_destination: Pubkey,
@@ -48,9 +59,8 @@ pub enum Side {
 pub struct Quote {
     pub in_amount: u64,
     pub out_amount: u64,
-    /// Where the swap sends its output, the quoted order's
-    /// `buy_destination`.
-    pub destination: Pubkey,
+    /// The order the quote prices. Its buy side says where the output goes.
+    pub order: Order,
     /// The backend's own quote, passed back verbatim to build the swap.
     pub(crate) raw: serde_json::Value,
 }
@@ -152,13 +162,71 @@ impl Dex {
     ///
     /// The route spends its input from the sell-mint ATA of the solver. The
     /// sell funds must already be in that ATA. The caller must make sure that
-    /// the ATA exists before the pull instructions of the swap run.
+    /// the ATA exists before the pull instructions of the swap run. The route
+    /// pays the solver's buy-mint ATA, and the swap moves the output on from
+    /// there, see [`route_payout`].
     pub async fn swap(&self, quote: &Quote, user: &Pubkey) -> Result<Swap, Error> {
-        match self {
-            Dex::Jupiter(jupiter) => jupiter.swap(quote, user).await,
-            Dex::Bitget(bitget) => bitget.swap(quote, user).await,
-        }
+        let swap = match self {
+            Dex::Jupiter(jupiter) => jupiter.swap(quote, user).await?,
+            Dex::Bitget(bitget) => bitget.swap(quote, user).await?,
+        };
+        route_payout(swap, &quote.order, user)
     }
+}
+
+/// Move the output of `swap`, a route paying `taker`'s buy-mint ATA, on to
+/// the order's `buy_destination`: the ATA is created up front in case it is
+/// missing, and a `TransferChecked` of the promised output follows the route.
+/// Positive slippage stays in the ATA. An order whose destination is that ATA
+/// already, a native SOL buy, needs no transfer.
+///
+/// Some venues pay only the swapper's own account, GoonFi V2 for PAXG among
+/// them, so no route is asked to pay the destination itself.
+fn route_payout(swap: Swap, order: &Order, taker: &Pubkey) -> Result<Swap, Error> {
+    let ata = get_associated_token_address_with_program_id(
+        taker,
+        &order.buy_mint,
+        &order.buy_token_program,
+    );
+    if !swap
+        .instructions
+        .iter()
+        .flat_map(|instruction| &instruction.accounts)
+        .any(|account| account.pubkey == ata)
+    {
+        return Err(Error::BadResponse(
+            "route doesn't pay the taker's buy-mint ATA".into(),
+        ));
+    }
+    if ata == order.buy_destination {
+        return Ok(swap);
+    }
+    let transfer = transfer_checked(
+        &order.buy_token_program,
+        &ata,
+        &order.buy_mint,
+        &order.buy_destination,
+        taker,
+        &[],
+        swap.out_amount,
+        order.buy_decimals,
+    )
+    .map_err(|_| Error::UnsupportedTokenProgram(order.buy_token_program))?;
+    let create = create_associated_token_account_idempotent(
+        taker,
+        taker,
+        &order.buy_mint,
+        &order.buy_token_program,
+    );
+    let mut instructions = Vec::with_capacity(swap.instructions.len() + 2);
+    instructions.push(create);
+    instructions.extend(swap.instructions);
+    instructions.push(transfer);
+    Ok(Swap {
+        in_amount: swap.in_amount,
+        out_amount: swap.out_amount,
+        instructions,
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -169,6 +237,8 @@ pub enum Error {
     NotFound,
     #[error("order type is not supported")]
     OrderNotSupported,
+    #[error("unsupported token program {0}")]
+    UnsupportedTokenProgram(Pubkey),
     #[error("rate limited")]
     RateLimited,
     #[error("dex api error {status}: {body}")]
@@ -183,17 +253,106 @@ pub enum Error {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, solana_sdk::instruction::AccountMeta};
+
+    const TAKER: Pubkey = Pubkey::new_from_array([7; 32]);
 
     fn order(side: Side, sell_amount: u64, buy_amount: u64) -> Order {
         Order {
             sell_mint: Pubkey::new_from_array([1; 32]),
             buy_mint: Pubkey::new_from_array([2; 32]),
+            buy_token_program: Pubkey::new_from_array([4; 32]),
+            buy_decimals: 6,
             buy_destination: Pubkey::new_from_array([3; 32]),
             sell_amount,
             buy_amount,
             side,
         }
+    }
+
+    /// A one-instruction route of 1000 for 990 that touches `account`.
+    fn route_paying(account: Pubkey) -> Swap {
+        Swap {
+            in_amount: 1_000,
+            out_amount: 990,
+            instructions: vec![Instruction::new_with_bytes(
+                Pubkey::new_from_array([9; 32]),
+                &[1],
+                vec![AccountMeta::new(account, false)],
+            )],
+        }
+    }
+
+    fn takers_ata(order: &Order) -> Pubkey {
+        get_associated_token_address_with_program_id(
+            &TAKER,
+            &order.buy_mint,
+            &order.buy_token_program,
+        )
+    }
+
+    /// Under either token program the ATA is created first, the route runs,
+    /// and a `TransferChecked` of the output moves it on to the destination.
+    #[test]
+    fn routes_the_output_through_the_takers_ata() {
+        for program in [
+            spl_token_2022_interface::inline_spl_token::ID,
+            spl_token_2022_interface::ID,
+        ] {
+            let order = Order {
+                buy_token_program: program,
+                ..order(Side::Sell, 1_000, 2_000)
+            };
+            let ata = takers_ata(&order);
+            let swap = route_payout(route_paying(ata), &order, &TAKER).unwrap();
+
+            assert_eq!((swap.in_amount, swap.out_amount), (1_000, 990));
+            assert_eq!(swap.instructions.len(), 3);
+            let create = &swap.instructions[0];
+            assert_eq!(
+                create.program_id,
+                spl_associated_token_account_interface::program::ID
+            );
+            let accounts: Vec<_> = create.accounts.iter().map(|meta| meta.pubkey).collect();
+            assert_eq!(
+                (accounts[1], accounts[2], accounts[3]),
+                (ata, TAKER, order.buy_mint)
+            );
+            assert_eq!(accounts[5], program);
+            let transfer = &swap.instructions[2];
+            assert_eq!(transfer.program_id, program);
+            let accounts: Vec<_> = transfer.accounts.iter().map(|meta| meta.pubkey).collect();
+            assert_eq!(
+                accounts,
+                [ata, order.buy_mint, order.buy_destination, TAKER]
+            );
+            assert_eq!(transfer.data[1..9], 990u64.to_le_bytes());
+            assert_eq!(transfer.data[9], 6);
+        }
+    }
+
+    /// A native SOL buy's destination is the taker's wSOL ATA, which the
+    /// route pays itself.
+    #[test]
+    fn a_route_paying_the_destination_needs_no_transfer() {
+        let mut order = order(Side::Sell, 1_000, 2_000);
+        order.buy_destination = takers_ata(&order);
+        let swap = route_payout(route_paying(order.buy_destination), &order, &TAKER).unwrap();
+        assert_eq!(swap.instructions.len(), 1);
+    }
+
+    #[test]
+    fn rejects_a_route_paying_elsewhere() {
+        let order = order(Side::Sell, 1_000, 2_000);
+        let swap = route_payout(route_paying(order.buy_destination), &order, &TAKER);
+        assert!(matches!(swap, Err(Error::BadResponse(_))));
+    }
+
+    #[test]
+    fn rejects_an_unknown_token_program() {
+        let order = order(Side::Sell, 1_000, 2_000);
+        let swap = route_payout(route_paying(takers_ata(&order)), &order, &TAKER);
+        assert!(matches!(swap, Err(Error::UnsupportedTokenProgram(_))));
     }
 
     fn swap_of(in_amount: u64) -> Swap {
