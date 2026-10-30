@@ -93,8 +93,8 @@ pub struct Order {
     /// The autopilot's fast-path handler owns `valid_from` once this is
     /// `true`; `false` orders never go through that pipeline.
     pub fast_path: bool,
-    /// Set at placement when the order is not fast-path and its
-    /// `valid_from` sits on a 15-minute slot. Only feeds fee rules.
+    /// Set at placement from `model::order::is_wait_for_cow`. Only feeds fee
+    /// rules.
     pub wait_for_cow: bool,
 }
 
