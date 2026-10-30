@@ -30,8 +30,26 @@ pub struct Auction {
 pub enum Id {
     /// A competition auction.
     Auction(i64),
-    /// A quote. `fast_path` marks a fast-path quote.
-    Quote { id: i64, fast_path: bool },
+    /// A quote. `fast_path` marks a fast-path quote; `price_quality` is the
+    /// quality the orderbook was asked for.
+    Quote {
+        id: i64,
+        fast_path: bool,
+        price_quality: PriceQuality,
+    },
+}
+
+/// How the orderbook picks the winning quote among the solvers' answers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PriceQuality {
+    /// The best of the first few quotes to arrive wins; nothing is simulated.
+    Fast,
+    /// The best promised price wins; nothing is simulated.
+    Optimal,
+    /// Quotes are simulated where possible and a quote that passes simulation
+    /// is preferred over one that doesn't, even at a worse price.
+    Verified,
 }
 
 impl Id {
@@ -56,6 +74,8 @@ struct RawAuction {
     quote_id: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     fast_path: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    price_quality: Option<PriceQuality>,
     tokens: HashMap<Address, Token>,
     orders: Vec<Order>,
     liquidity: Vec<Liquidity>,
@@ -73,10 +93,14 @@ impl TryFrom<RawAuction> for Auction {
             (Some(_), Some(_)) => return Err("`id` and `quoteId` are mutually exclusive"),
             (None, None) => return Err("either `id` or `quoteId` must be set"),
             (Some(_), None) if raw.fast_path => return Err("`fastPath` is only valid for quotes"),
+            (Some(_), None) if raw.price_quality.is_some() => {
+                return Err("`priceQuality` is only valid for quotes");
+            }
             (Some(id), None) => Id::Auction(id),
             (None, Some(id)) => Id::Quote {
                 id,
                 fast_path: raw.fast_path,
+                price_quality: raw.price_quality.ok_or("quotes carry a `priceQuality`")?,
             },
         };
         Ok(Auction {
@@ -93,14 +117,19 @@ impl TryFrom<RawAuction> for Auction {
 
 impl From<Auction> for RawAuction {
     fn from(auction: Auction) -> Self {
-        let (id, quote_id, fast_path) = match auction.id {
-            Id::Auction(id) => (Some(id), None, false),
-            Id::Quote { id, fast_path } => (None, Some(id), fast_path),
+        let (id, quote_id, fast_path, price_quality) = match auction.id {
+            Id::Auction(id) => (Some(id), None, false, None),
+            Id::Quote {
+                id,
+                fast_path,
+                price_quality,
+            } => (None, Some(id), fast_path, Some(price_quality)),
         };
         RawAuction {
             id,
             quote_id,
             fast_path,
+            price_quality,
             tokens: auction.tokens,
             orders: auction.orders,
             liquidity: auction.liquidity,
@@ -408,30 +437,34 @@ mod tests {
     }
 
     // `id` is always present (`null` for quotes, which external solvers rely on
-    // to tell a quote from an auction); `quoteId`/`fastPath` only appear for
-    // (fast-path) quotes. Pins the wire shape and the round-trip so the typed
-    // enum can never silently change either.
+    // to tell a quote from an auction); `quoteId` and `priceQuality` appear for
+    // every quote, `fastPath` only for fast-path quotes. Pins the wire shape
+    // and the round-trip so the typed enum can never silently change either.
     #[test]
     fn wire_format_and_roundtrip() {
-        for (id, id_json, quote_id, fast_path) in [
-            (Id::Auction(1), serde_json::json!("1"), None, false),
+        for (id, id_json, quote_id, fast_path, price_quality) in [
+            (Id::Auction(1), serde_json::json!("1"), None, false, None),
             (
                 Id::Quote {
                     id: 2,
                     fast_path: false,
+                    price_quality: PriceQuality::Verified,
                 },
                 serde_json::Value::Null,
                 Some("2"),
                 false,
+                Some("verified"),
             ),
             (
                 Id::Quote {
                     id: 3,
                     fast_path: true,
+                    price_quality: PriceQuality::Optimal,
                 },
                 serde_json::Value::Null,
                 Some("3"),
                 true,
+                Some("optimal"),
             ),
         ] {
             let v = serde_json::to_value(auction(id)).unwrap();
@@ -444,6 +477,10 @@ mod tests {
                 v.get("fastPath"),
                 fast_path.then_some(serde_json::json!(true)).as_ref()
             );
+            assert_eq!(
+                v.get("priceQuality"),
+                price_quality.map(|q| serde_json::json!(q)).as_ref()
+            );
             assert_eq!(serde_json::from_value::<Auction>(v).unwrap().id, id);
         }
     }
@@ -452,9 +489,11 @@ mod tests {
     fn rejects_invalid_states() {
         let rest = r#""tokens":{},"orders":[],"liquidity":[],"effectiveGasPrice":"1","deadline":"1970-01-01T00:00:00Z","surplusCapturingJitOrderOwners":[]"#;
         for head in [
-            r#""id":"1","quoteId":"2""#,   // auction and quote
-            r#""id":"1","fastPath":true"#, // auction with fast path
-            "",                            // neither id nor quoteId
+            r#""id":"1","quoteId":"2""#,             // auction and quote
+            r#""id":"1","fastPath":true"#,           // auction with fast path
+            r#""id":"1","priceQuality":"verified""#, // auction with price quality
+            r#""quoteId":"2""#,                      // quote without price quality
+            "",                                      // neither id nor quoteId
         ] {
             let json = format!("{{{head}{}{rest}}}", if head.is_empty() { "" } else { "," });
             assert!(serde_json::from_str::<Auction>(&json).is_err(), "{json}");

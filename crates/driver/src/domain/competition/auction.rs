@@ -43,6 +43,8 @@ pub enum Kind {
         /// Whether the quote opted into fast-path (out-of-competition)
         /// execution.
         fast_path: bool,
+        /// The price quality the quote was requested with.
+        price_quality: crate::domain::quote::PriceQuality,
     },
 }
 
