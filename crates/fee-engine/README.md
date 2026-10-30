@@ -28,10 +28,11 @@ The pass has limits:
   volume(0.001) : volume(1)` is not found; a static check of every branch is
   planned.
 - Every amount and price in the sample is 1, except `feeAmount`, which is 0
-  as on every order the API accepts. A fee computed from the order is
-  checked only at those values: `volume(order.buyAmount / order.sellAmount)`
-  passes, but on a real order it can give an out-of-range argument, and the
-  rule is then skipped and reported.
+  as on every order the API accepts, and every timestamp is `now`. A fee
+  computed from the order is checked only at those values:
+  `volume(order.buyAmount / order.sellAmount)` passes, but on a real order
+  it can give an out-of-range argument, and the rule is then skipped and
+  reported.
 
 ```
 name: Stablecoin swaps
@@ -183,9 +184,10 @@ order.
 ### `order`
 
 The fields of the API order that a fee can depend on, under the API names,
-built field by field in `order_view.rs`. Amounts and prices are doubles and
-hex is lowercase. An order with every field set looks like this (hashes
-shortened):
+built field by field in `order_view.rs`. Amounts and prices are doubles,
+whole numbers (`validTo`, `validFrom`, `ethflowData.userValidTo`) are
+`uint`s and hex is lowercase. An order with every field set looks like this
+(hashes shortened):
 
 ```json
 {
@@ -241,8 +243,14 @@ app-data document (`fullAppData`) are not in the view. An unset `receiver`
 is the zero address. Other optional fields are absent when unset, not
 `null`: test them with `has(order.quote)`.
 
+A `uint` compares with any number, but arithmetic needs `uint` operands,
+so write `order.validTo - 3600u` or `int(order.validTo) - 3600`, not
+`order.validTo - 3600`. `timestamp(int(order.validTo))` makes a timestamp
+of it.
+
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
+when: timestamp(int(order.validTo)) - now > duration("1h")
 fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
 ```
 

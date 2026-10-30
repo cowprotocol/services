@@ -306,7 +306,7 @@ mod tests {
             })
         };
         assert_eq!(
-            field_paths(&view(&crate::rules::sample_order())),
+            field_paths(&view(&crate::rules::sample_order(chrono::Utc::now()))),
             field_paths(&view(&fully_set_order())),
         );
     }

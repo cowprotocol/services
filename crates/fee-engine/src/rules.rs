@@ -212,10 +212,11 @@ impl RuleSet {
     /// `when` says, and reports every one that yields no bool or no fee. This
     /// catches bad fee arguments and misspelt names before any real order.
     pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
+        let now = Utc::now();
         let errors: Vec<_> = self
-            .evaluator(Utc::now())
+            .evaluator(now)
             .evaluate_all_expressions(crate::OrderView {
-                order: &sample_order(),
+                order: &sample_order(now),
                 in_market: false,
             })
             .into_iter()
@@ -251,25 +252,28 @@ impl RuleSet {
 
 /// An order with every optional field present, so that a rule can reach any
 /// name the view may hold. Amounts and prices are 1, so a ratio of two is
-/// defined; `feeAmount` stays 0, as the API refuses any other.
-pub(crate) fn sample_order() -> Order {
+/// defined; `feeAmount` stays 0, as the API refuses any other. Every
+/// timestamp is `now`, so that time arithmetic does not underflow.
+pub(crate) fn sample_order(now: DateTime<Utc>) -> Order {
     Order {
         data: OrderData {
             sell_amount: U256::ONE,
             buy_amount: U256::ONE,
+            valid_to: now.timestamp() as u32,
             ..Default::default()
         },
         metadata: OrderMetadata {
+            creation_date: now,
             ethflow_data: Some(EthflowData {
+                user_valid_to: now.timestamp(),
                 refund_tx_hash: Some(Default::default()),
-                ..Default::default()
             }),
             onchain_order_data: Some(OnchainOrderData {
                 placement_error: Some(OnchainOrderPlacementError::Other),
                 ..Default::default()
             }),
             onchain_user: Some(Default::default()),
-            valid_from: Some(Default::default()),
+            valid_from: Some(now.timestamp() as u32),
             quote: Some(OrderQuote {
                 sell_amount: U256::ONE,
                 buy_amount: U256::ONE,
@@ -443,6 +447,13 @@ mod tests {
                 "order.quote.buyAmount / order.quote.sellAmount > 0.0",
                 "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
             ),
+            rule(
+                "Expiry",
+                "order.validTo - 3600u > 0u && now - timestamp(int(order.validTo)) < \
+                 duration('1h')",
+                "no_fee()",
+            ),
+            rule("Valid from", "order.validFrom + 1u > 0u", "no_fee()"),
             rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
         ])
         .unwrap();
