@@ -494,6 +494,7 @@ impl Solver {
                     if config.quote {
                         expected["quoteId"] =
                             config.quote_id.expect("quotes carry a quote id").to_string().into();
+                        expected["priceQuality"] = super::QUOTE_PRICE_QUALITY.into();
                     }
                     if config.fast_path {
                         expected["fastPath"] = true.into();

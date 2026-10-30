@@ -52,6 +52,20 @@ paths:
             type: boolean
           required: false
         - in: query
+          name: priceQuality
+          description: >-
+            The price quality the orderbook was asked for. For `verified` the orderbook
+            simulates the quotes it collects whenever possible and prefers one
+            that passes simulation over one that doesn't.
+            Native price estimation asks for `optimal`.
+          schema:
+            type: string
+            enum:
+              - fast
+              - optimal
+              - verified
+          required: true
+        - in: query
           name: quoteId
           description: >-
             Id of the quote being computed, allocated by the orderbook for

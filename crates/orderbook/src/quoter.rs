@@ -331,6 +331,7 @@ impl QuoteHandler {
                     app_data.inner.protocol.execution_mode,
                     ::app_data::ExecutionMode::FastPath
                 ),
+                price_quality: request.price_quality,
                 timeout: request.timeout,
             },
             valid_to,
