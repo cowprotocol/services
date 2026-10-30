@@ -75,7 +75,11 @@ pub async fn quote(
     let buy_program = check_mints(state.sponsoring(), &request).await?;
 
     let (kind, amount) = request.side.kind_and_amount();
-    let verifier = state.verifier();
+    // Only a verified quote is simulated.
+    let verifier = match request.price_quality {
+        dto::PriceQuality::Verified => state.verifier(),
+        dto::PriceQuality::Fast | dto::PriceQuality::Optimal => None,
+    };
     // A fresh wallet owns the quoted order, so no real balance or existing
     // account sways the simulation.
     let owner = verifier.map(|_| Keypair::new().pubkey());
@@ -93,9 +97,15 @@ pub async fn quote(
         // Every driver failure answers as no liquidity, the EVM mapping for
         // estimator errors.
         let no_liquidity = || error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found");
+        // A fast quote takes the first drivers to answer, the others wait
+        // for every driver.
+        let early_return = match request.price_quality {
+            dto::PriceQuality::Fast => Some(state.fast_results_required()),
+            dto::PriceQuality::Optimal | dto::PriceQuality::Verified => None,
+        };
         let quotes = state
             .quoter()
-            .quotes(&order)
+            .quotes(&order, early_return)
             .await
             .map_err(|quoter::Error::NoQuotes| no_liquidity())?;
         let quotes = match (verifier, owner) {
@@ -130,7 +140,14 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
-    let expiration = now + state.quote_expiry();
+    // A fast quote is not accurate enough to honor or store, so it expires
+    // at once.
+    let fast = matches!(request.price_quality, dto::PriceQuality::Fast);
+    let expiration = if fast {
+        DateTime::<Utc>::UNIX_EPOCH
+    } else {
+        now + state.quote_expiry()
+    };
     let prefer_verified = verifier.is_some_and(Verifier::prefers_verified);
     let ranked = rank(quotes, kind, buy_token_ata_costs, price, prefer_verified);
     // Built before the winner is taken, so a competition without one is on the
@@ -166,28 +183,32 @@ pub async fn quote(
     // A failed insert answers without an id instead of failing the quote,
     // since the fees are not yet implemented and stored quote are not mandatory
     // at the moment.
-    let quote = db::Quote {
-        sell_token: ByteArray(request.sell_token.to_bytes()),
-        buy_token: ByteArray(request.buy_token.to_bytes()),
-        sell_amount: quoted.sell_amount,
-        buy_amount: quoted.buy_amount,
-        kind: match kind {
-            dto::Kind::Sell => OrderKind::Sell,
-            dto::Kind::Buy => OrderKind::Buy,
-        },
-        solver: ByteArray(quoted.solver.to_bytes()),
-        expiration,
-    };
-    let save = db::save_quote(state.pool(), &quote);
-    let id = match tokio::time::timeout(SAVE_TIMEOUT, save).await {
-        Ok(Ok(id)) => Some(id),
-        Ok(Err(err)) => {
-            tracing::error!(?err, "quote insert failed");
-            None
-        }
-        Err(_) => {
-            tracing::error!("quote insert timed out");
-            None
+    let id = if fast {
+        None
+    } else {
+        let quote = db::Quote {
+            sell_token: ByteArray(request.sell_token.to_bytes()),
+            buy_token: ByteArray(request.buy_token.to_bytes()),
+            sell_amount: quoted.sell_amount,
+            buy_amount: quoted.buy_amount,
+            kind: match kind {
+                dto::Kind::Sell => OrderKind::Sell,
+                dto::Kind::Buy => OrderKind::Buy,
+            },
+            solver: ByteArray(quoted.solver.to_bytes()),
+            expiration,
+        };
+        let save = db::save_quote(state.pool(), &quote);
+        match tokio::time::timeout(SAVE_TIMEOUT, save).await {
+            Ok(Ok(id)) => Some(id),
+            Ok(Err(err)) => {
+                tracing::error!(?err, "quote insert failed");
+                None
+            }
+            Err(_) => {
+                tracing::error!("quote insert timed out");
+                None
+            }
         }
     };
     competition.metadata.quote_id = id;
@@ -292,6 +313,7 @@ struct CompetitionRequest {
     #[serde_as(as = "DisplayFromStr")]
     amount: u64,
     kind: dto::Kind,
+    price_quality: dto::PriceQuality,
 }
 
 /// What the execution cost was taken with, so the netted amounts can be
@@ -355,6 +377,7 @@ fn competition(
             buy_token: request.buy_token,
             amount,
             kind,
+            price_quality: request.price_quality,
         },
         metadata,
         quotes: ranked
@@ -725,6 +748,7 @@ mod tests {
             },
             validity: None,
             app_data: Default::default(),
+            price_quality: Default::default(),
         }
     }
 

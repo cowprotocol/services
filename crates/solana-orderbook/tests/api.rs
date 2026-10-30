@@ -21,7 +21,7 @@ use {
         transfer_fee::TransferFeeConfig,
     },
     sqlx::PgPool,
-    std::{net::SocketAddr, time::Duration},
+    std::{net::SocketAddr, num::NonZero, time::Duration},
     tokio_util::sync::CancellationToken,
 };
 
@@ -35,6 +35,7 @@ async fn mock_api() -> Api {
         prices: spawn_mock_autopilot(Some(1_000_000_000)).await,
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
+        fast_results_required: NonZero::new(2).unwrap(),
         sponsoring: None,
         verifier: None,
         app_data_size_limit: 8192,
@@ -94,11 +95,19 @@ async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
 /// A tiny axum server that answers `/quote` with a fixed response. It stands
 /// in for the driver.
 async fn spawn_mock_driver(response: serde_json::Value) -> SocketAddr {
+    spawn_mock_driver_after(Duration::ZERO, response).await
+}
+
+/// Like [`spawn_mock_driver`], answering after `delay`.
+async fn spawn_mock_driver_after(delay: Duration, response: serde_json::Value) -> SocketAddr {
     let app = axum::Router::new().route(
         "/quote",
         axum::routing::post(move || {
             let response = response.clone();
-            async move { axum::Json(response) }
+            async move {
+                tokio::time::sleep(delay).await;
+                axum::Json(response)
+            }
         }),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -672,6 +681,47 @@ async fn quote_picks_the_best_driver_answer() {
     assert_eq!(json["quote"]["costs"]["networkFees"], "0");
 }
 
+/// A `fast` quote answers with the best of the first `fast_results_required`
+/// drivers to quote while a slower driver with a better price is still
+/// running, is not stored and expires at once. The default quality waits for
+/// every driver, so the slow one wins there.
+#[tokio::test]
+async fn quote_fast_answers_from_the_first_drivers() {
+    let answer = |buy_amount: &str| {
+        serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": buy_amount,
+            "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        })
+    };
+    let worse = spawn_mock_driver(answer("5000000")).await;
+    let better = spawn_mock_driver(answer("5100000")).await;
+    let best_but_slow =
+        spawn_mock_driver_after(Duration::from_millis(500), answer("9000000")).await;
+    let addr = spawn_server_with(Quoter::new(
+        [worse, better, best_but_slow]
+            .iter()
+            .map(|driver| format!("http://{driver}/").parse().unwrap())
+            .collect(),
+        Duration::from_secs(3),
+    ))
+    .await;
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body["priceQuality"] = serde_json::json!("fast");
+    let (status, json) = quote_json(addr, body).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["quote"]["buyAmount"], "2879760");
+    assert_eq!(json["id"], serde_json::Value::Null);
+    assert_eq!(json["expiration"], "1970-01-01T00:00:00Z");
+    assert_eq!(json["verified"], false);
+
+    let body = quote_body(serde_json::json!({"validFor": 1800}));
+    let (status, json) = quote_json(addr, body).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["quote"]["buyAmount"], "6779760");
+}
+
 /// A driver answer for the `quote_body` sell, settling it for `buy_amount`
 /// with the unsigned settlement transaction `signers` sign, the first as
 /// the fee payer and the solver.
@@ -852,16 +902,25 @@ async fn spawn_verifying_server(drivers: Vec<SocketAddr>, verifier: Verifier) ->
     addr
 }
 
-/// Post the `quote_body` sell and return the HTTP status and the parsed body.
-async fn quote_verified(addr: SocketAddr) -> (reqwest::StatusCode, serde_json::Value) {
+/// Post `body` to the quote route and return the HTTP status and the parsed
+/// body.
+async fn quote_json(
+    addr: SocketAddr,
+    body: serde_json::Value,
+) -> (reqwest::StatusCode, serde_json::Value) {
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/quote"))
-        .json(&quote_body(serde_json::json!({"validFor": 1800})))
+        .json(&body)
         .send()
         .await
         .unwrap();
     let status = response.status();
     (status, response.json().await.unwrap())
+}
+
+/// Post the `quote_body` sell and return the HTTP status and the parsed body.
+async fn quote_verified(addr: SocketAddr) -> (reqwest::StatusCode, serde_json::Value) {
+    quote_json(addr, quote_body(serde_json::json!({"validFor": 1800}))).await
 }
 
 /// The sell mint's authority mints the sell amount in the creation leg, the
@@ -959,6 +1018,30 @@ async fn quote_prefers_a_verified_answer_in_prefer_mode() {
     assert_eq!(status, reqwest::StatusCode::OK);
     assert_eq!(json["quote"]["buyAmount"], "1779760");
     assert_eq!(json["verified"], true);
+}
+
+/// With a verifier configured, `fast` and `optimal` quotes skip the
+/// simulation: the answer stays unverified although the mocked settlement
+/// would pass.
+#[tokio::test]
+async fn quote_fast_and_optimal_skip_verification() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+        None,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    for quality in ["fast", "optimal"] {
+        let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+        body["priceQuality"] = serde_json::json!(quality);
+        let (status, json) = quote_json(addr, body).await;
+        assert_eq!(status, reqwest::StatusCode::OK, "{quality}");
+        assert_eq!(json["verified"], false, "{quality}");
+        assert_eq!(json["quote"]["buyAmount"], "1240967", "{quality}");
+    }
 }
 
 /// A sell mint nobody can mint is funded by its largest wallet-owned holder,
