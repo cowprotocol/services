@@ -241,7 +241,10 @@ Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
 app-data document (`fullAppData`) are not in the view. An unset `receiver`
 is the zero address. Other optional fields are absent when unset, not
-`null`: test them with `has(order.quote)`.
+`null`: test them with `has(order.quote)`. `has` checks only its last
+field, so `has(order.ethflowData.refundTxHash)` fails on an order without
+`ethflowData`; write `has(order.ethflowData) &&
+has(order.ethflowData.refundTxHash)`.
 
 A `uint` compares with any number, but arithmetic needs `uint` operands,
 so write `order.validTo - 3600u` or `int(order.validTo) - 3600`, not

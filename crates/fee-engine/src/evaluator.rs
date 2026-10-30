@@ -476,9 +476,32 @@ mod tests {
                 "has(order.onchainOrderData.placementError)",
                 "volume(2)",
             ),
-            rule("Default", "true", "volume(3)"),
+            rule(
+                "Guarded",
+                "has(order.ethflowData) && has(order.ethflowData.refundTxHash)",
+                "volume(3)",
+            ),
+            rule("Default", "true", "volume(4)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
+
+        // `has()` checks only its last field: without `ethflowData` the
+        // unguarded rules fail, as they do on most orders.
+        let evaluation = evaluator.evaluate(OrderView {
+            order: &order(WETH, USDT),
+            in_market: false,
+        });
+        assert_eq!(names(&evaluation), ["Default"]);
+        let skipped: Vec<_> = evaluation
+            .skipped
+            .iter()
+            .map(|skipped| skipped.rule.name())
+            .collect();
+        assert_eq!(skipped, ["Refunded", "Placement error"]);
+        assert!(evaluation.skipped.iter().all(|skipped| matches!(
+            skipped.error,
+            RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
+        )));
 
         let mut onchain = order(WETH, USDT);
         onchain.metadata.ethflow_data = Some(Default::default());
@@ -504,7 +527,7 @@ mod tests {
         });
         assert_eq!(
             names(&evaluation),
-            ["Refunded", "Placement error", "Default"]
+            ["Refunded", "Placement error", "Guarded", "Default"]
         );
     }
 
