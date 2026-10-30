@@ -67,10 +67,6 @@ pub struct BundleSimulation {
 /// The Solana blockchain adapter.
 pub struct Solana {
     rpc: SolanaRPC,
-    /// Serves `simulateBundle`, which `rpc` need not support.
-    /// TODO: temporary; collapse into `rpc` once a single endpoint serves
-    /// every method, see `config::Rpc::bundle_endpoint`.
-    bundle_rpc: SolanaRPC,
     program_id: Pubkey,
     /// The facts of each mint looked up so far. Entries never expire: a
     /// mint's owner and extensions change only if the mint is closed and
@@ -79,10 +75,9 @@ pub struct Solana {
 }
 
 impl Solana {
-    pub fn new(rpc: SolanaRPC, bundle_rpc: SolanaRPC, program_id: Pubkey) -> Self {
+    pub fn new(rpc: SolanaRPC, program_id: Pubkey) -> Self {
         Self {
             rpc,
-            bundle_rpc,
             program_id,
             mints: Cache::new(MINT_CACHE_CAPACITY),
         }
@@ -191,7 +186,7 @@ impl Solana {
         &self,
         transactions: &[VersionedTransaction],
     ) -> Result<BundleSimulation, Error> {
-        let response = self.bundle_rpc.simulate_bundle(transactions).await?;
+        let response = self.rpc.simulate_bundle(transactions).await?;
         Ok(BundleSimulation {
             slot: Slot(response.context.slot),
             results: response.value,
@@ -328,11 +323,7 @@ mod tests {
                     }),
                 ),
             ]);
-            Solana::new(
-                SolanaRPC::new_mock_with_mocks(mocks.clone()),
-                SolanaRPC::new_mock_with_mocks(mocks),
-                Pubkey::new_unique(),
-            )
+            Solana::new(SolanaRPC::new_mock_with_mocks(mocks), Pubkey::new_unique())
         };
 
         assert_eq!(block_below(&slots, 1000, 125), Some(874));
@@ -363,10 +354,9 @@ mod tests {
         ]);
         let solana = Solana::new(
             SolanaRPC::new_mock_with_failures(
-                slots.clone(),
+                slots,
                 [(RpcRequest::GetSlot, TransactionError::AccountInUse)],
             ),
-            SolanaRPC::new_mock_with_mocks_map(slots),
             Pubkey::new_unique(),
         );
         assert_eq!(
@@ -415,7 +405,6 @@ mod tests {
             ),
         ]);
         let solana = Solana::new(
-            SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
             SolanaRPC::new_mock_with_mocks_map(mocks),
             Pubkey::new_unique(),
         );
@@ -443,11 +432,7 @@ mod tests {
             RpcRequest::GetMultipleAccounts,
             multiple_accounts_json([mint_account_json(), serde_json::Value::Null]),
         )]);
-        let solana = Solana::new(
-            SolanaRPC::new_mock_with_mocks(mocks.clone()),
-            SolanaRPC::new_mock_with_mocks(mocks),
-            Pubkey::new_unique(),
-        );
+        let solana = Solana::new(SolanaRPC::new_mock_with_mocks(mocks), Pubkey::new_unique());
 
         let expected = HashMap::from([
             (mint, Ok(TokenProgram::SplToken)),

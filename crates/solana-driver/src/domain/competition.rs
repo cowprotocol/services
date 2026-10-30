@@ -1143,7 +1143,6 @@ mod tests {
                 (RpcRequest::GetSignatureStatuses, landed.clone()),
             ]);
             let solana = Solana::new(
-                SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
                 SolanaRPC::new_mock_with_mocks_map(mocks),
                 Pubkey::new_unique(),
             );
