@@ -16,7 +16,7 @@ use {
         solution::Solution,
     },
     crate::infra::{
-        blockchain::{BundleSimulation, Solana},
+        blockchain::{BundleSimulation, MintInfo, Solana},
         config::FeeHandler,
         solver::Solver,
     },
@@ -313,6 +313,26 @@ impl Competition {
         ))
     }
 
+    /// What the chain says about every token buy's mint, which the engine
+    /// needs to move the output on to the buffer. A mint the lookup rejects
+    /// is left out, which drops its orders from the request.
+    async fn buy_mints(&self, auction: &Auction) -> Result<HashMap<Pubkey, MintInfo>, Error> {
+        let token_buys = auction
+            .orders
+            .iter()
+            .filter(|order| !order.buys_native_sol())
+            .map(|order| order.buy_token);
+        let mints = self
+            .blockchain
+            .mints(token_buys)
+            .await
+            .map_err(Error::Rpc)?;
+        Ok(mints
+            .into_iter()
+            .filter_map(|(mint, info)| Some((mint, info.ok()?)))
+            .collect())
+    }
+
     /// Send the auction to the solver engine and return its deduplicated
     /// solutions without caching them. When the solver's fee handler is the
     /// driver, every fill is tightened by the solver fee, and a solve fill is
@@ -353,9 +373,10 @@ impl Competition {
                 )
             }
         };
+        let mints = self.buy_mints(auction).await?;
         let solutions = self
             .solver
-            .solve(auction, self.blockchain.program_id(), &charge)
+            .solve(auction, self.blockchain.program_id(), &charge, &mints)
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and

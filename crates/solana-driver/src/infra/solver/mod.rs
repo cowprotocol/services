@@ -13,13 +13,14 @@ use {
             solver_fee::SolverFee,
         },
         infra::{
+            blockchain::MintInfo,
             config::{self, FeeHandler},
             solver::dto::auction::Auction,
         },
     },
     cow_solana_signer::Signer,
     solana_sdk::pubkey::Pubkey,
-    std::{num::NonZero, sync::Arc},
+    std::{collections::HashMap, num::NonZero, sync::Arc},
     thiserror::Error,
 };
 
@@ -104,15 +105,17 @@ impl Solver {
     /// after `charge` is not posted.
     ///
     /// `program_id` is the settlement program the swap instructions are built
-    /// for.
+    /// for, `mints` what the chain says about the token buys' mints, see
+    /// [`Auction::new`].
     #[tracing::instrument(name = "solver_engine", skip_all, fields(solver = %self.name))]
     pub async fn solve(
         &self,
         auction: &domain::Auction,
         program_id: Pubkey,
         charge: &Charge,
+        mints: &HashMap<Pubkey, MintInfo>,
     ) -> Result<Vec<domain::Solution>, Error> {
-        let auction_dto = Auction::new(auction, self.pubkey(), program_id, charge);
+        let auction_dto = Auction::new(auction, self.pubkey(), program_id, charge, mints);
         if auction_dto.orders.is_empty() {
             tracing::debug!("no order to send; skipping the engine");
             return Ok(Default::default());
@@ -218,7 +221,12 @@ mod tests {
         };
 
         let solutions = solver
-            .solve(&auction, Pubkey::default(), &Charge::default())
+            .solve(
+                &auction,
+                Pubkey::default(),
+                &Charge::default(),
+                &HashMap::new(),
+            )
             .await
             .expect("solve should succeed with no solutions");
         assert!(

@@ -266,6 +266,8 @@ mod tests {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
+                buy_token_program: TokenProgram::SplToken.address(),
+                buy_decimals: 6,
                 buy_destination: associated_token_address(
                     &pubkey(3),
                     &pubkey(2),
@@ -420,6 +422,8 @@ mod tests {
                 uid: OrderUid([8; 32]),
                 sell_mint: pubkey(1),
                 buy_mint: pubkey(2),
+                buy_token_program: TokenProgram::SplToken.address(),
+                buy_decimals: 6,
                 buy_destination: associated_token_address(
                     &pubkey(3),
                     &pubkey(2),

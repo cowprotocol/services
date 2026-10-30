@@ -5,8 +5,6 @@ use {
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::pubkey::Pubkey,
-    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
-    spl_token_2022_interface::inline_spl_token,
 };
 
 /// Bitget's aggregator. Naming it lets `/swap` skip the `/quote` call.
@@ -108,71 +106,34 @@ impl SwapResponse {
         Quote {
             in_amount: order.sell_amount,
             out_amount: self.min_amount,
-            destination: order.buy_destination,
-            raw: serde_json::to_value(Quoted {
-                buy_mint: order.buy_mint,
-                response: self,
-            })
-            .expect("a quote serializes"),
+            order: order.clone(),
+            raw: serde_json::to_value(self).expect("a quote serializes"),
         }
     }
 }
 
-/// What a quote keeps to build its swap: the route, and the buy mint the
-/// response doesn't name.
-#[serde_as]
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Quoted {
-    #[serde_as(as = "DisplayFromStr")]
-    buy_mint: Pubkey,
-    response: SwapResponse,
-}
-
-/// Bitget pays the taker's buy-mint ATA, so a transfer of `minAmount` moves
-/// the output on to the quote's destination and positive slippage stays with
-/// the taker. ComputeBudget instructions are dropped: the driver sets its own.
+/// The route, its ComputeBudget instructions dropped: the driver sets its
+/// own. Bitget pays the taker's buy-mint ATA, as [`crate::dex::Dex::swap`]
+/// expects.
 pub fn swap(quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
-    let Quoted { buy_mint, response } = Quoted::deserialize(&quote.raw)
+    let response = SwapResponse::deserialize(&quote.raw)
         .map_err(|err| Error::BadResponse(format!("quote: {err}")))?;
-    let mut instructions = Vec::with_capacity(response.instruction_lists.len() + 1);
+    let mut instructions = Vec::with_capacity(response.instruction_lists.len());
     for instruction in response.instruction_lists {
         let instruction = instruction.into_instruction()?;
         if instruction.program_id != solana_compute_budget_interface::ID {
             instructions.push(instruction);
         }
     }
-    let atas = [inline_spl_token::ID, spl_token_2022_interface::ID].map(|program| {
-        let ata = get_associated_token_address_with_program_id(taker, &buy_mint, &program);
-        (program, ata)
-    });
-    let mut paid = None;
-    for account in instructions
+    if instructions
         .iter()
         .flat_map(|instruction| &instruction.accounts)
+        .any(|account| account.is_signer && account.pubkey != *taker)
     {
-        if account.is_signer && account.pubkey != *taker {
-            return Err(Error::BadResponse(
-                "route needs a signer besides the taker".into(),
-            ));
-        }
-        paid = paid.or_else(|| atas.into_iter().find(|(_, ata)| *ata == account.pubkey));
+        return Err(Error::BadResponse(
+            "route needs a signer besides the taker".into(),
+        ));
     }
-    let (token_program, output) =
-        paid.ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
-    // Unchecked because the auction carries no decimals. Token-2022 mints with
-    // a transfer fee or hook reject it, and simulation drops them.
-    #[allow(deprecated)]
-    let transfer = spl_token_2022_interface::instruction::transfer(
-        &token_program,
-        &output,
-        &quote.destination,
-        taker,
-        &[],
-        response.min_amount,
-    )
-    .expect("both token programs pass the program check");
-    instructions.push(transfer);
     Ok(Swap {
         in_amount: quote.in_amount,
         out_amount: response.min_amount,
@@ -182,12 +143,19 @@ pub fn swap(quote: &Quote, taker: &Pubkey) -> Result<Swap, Error> {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::dex::Side};
+    use {
+        super::*,
+        crate::dex::Side,
+        spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
+        spl_token_2022_interface::inline_spl_token,
+    };
 
     fn order() -> Order {
         Order {
             sell_mint: Pubkey::new_unique(),
             buy_mint: Pubkey::new_unique(),
+            buy_token_program: inline_spl_token::ID,
+            buy_decimals: 6,
             buy_destination: Pubkey::new_unique(),
             sell_amount: 1_000,
             buy_amount: 1,
@@ -221,26 +189,19 @@ mod tests {
     }
 
     #[test]
-    fn moves_the_minimum_output_into_the_buffer() {
+    fn keeps_the_route_and_drops_the_compute_budget() {
         let taker = Pubkey::new_unique();
         let order = order();
-        for program in [inline_spl_token::ID, spl_token_2022_interface::ID] {
-            let quote = response(&order, &taker, &program, None).into_quote(&order);
-            let swap = swap(&quote, &taker).unwrap();
+        let quote = response(&order, &taker, &inline_spl_token::ID, None).into_quote(&order);
+        let swap = swap(&quote, &taker).unwrap();
 
-            assert_eq!((quote.in_amount, quote.out_amount), (1_000, 990));
-            assert_eq!((swap.in_amount, swap.out_amount), (1_000, 990));
-            // ComputeBudget dropped: the route, then the transfer.
-            assert_eq!(swap.instructions.len(), 2);
-            let transfer = &swap.instructions[1];
-            assert_eq!(transfer.program_id, program);
-            let paid =
-                get_associated_token_address_with_program_id(&taker, &order.buy_mint, &program);
-            assert_eq!(transfer.accounts[0].pubkey, paid);
-            assert_eq!(transfer.accounts[1].pubkey, order.buy_destination);
-            assert_eq!(transfer.accounts[2].pubkey, taker);
-            assert_eq!(transfer.data[1..], 990u64.to_le_bytes());
-        }
+        assert_eq!((quote.in_amount, quote.out_amount), (1_000, 990));
+        assert_eq!((swap.in_amount, swap.out_amount), (1_000, 990));
+        assert_eq!(swap.instructions.len(), 1);
+        assert_ne!(
+            swap.instructions[0].program_id,
+            solana_compute_budget_interface::ID
+        );
     }
 
     #[test]

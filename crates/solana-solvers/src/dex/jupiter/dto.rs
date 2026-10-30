@@ -17,8 +17,6 @@ pub struct SwapInstructionsRequest<'a> {
     quote_response: &'a serde_json::Value,
     #[serde_as(as = "serde_with::DisplayFromStr")]
     user_public_key: Pubkey,
-    #[serde_as(as = "serde_with::DisplayFromStr")]
-    destination_token_account: Pubkey,
     wrap_and_unwrap_sol: bool,
     skip_user_accounts_rpc_calls: bool,
     use_shared_accounts: bool,
@@ -26,22 +24,16 @@ pub struct SwapInstructionsRequest<'a> {
 
 impl<'a> SwapInstructionsRequest<'a> {
     /// The swap rides inside the settlement tx, so SOL wrapping is left off and
-    /// Jupiter skips its account RPC probes.
-    pub fn new(
-        quote_response: &'a serde_json::Value,
-        taker: &Pubkey,
-        destination: &Pubkey,
-    ) -> Self {
+    /// Jupiter skips its account RPC probes. With no destination named, the
+    /// swap pays the taker's own ATA of the output mint.
+    pub fn new(quote_response: &'a serde_json::Value, taker: &Pubkey) -> Self {
         Self {
             quote_response,
             user_public_key: *taker,
-            destination_token_account: *destination,
             wrap_and_unwrap_sol: false,
             skip_user_accounts_rpc_calls: true,
-            // Use direct Route mode while we investigate errors with
-            // SharedAccountsRoute. Its instructions ignored the buy-token
-            // destination, leaving the buy-buffer PDAs empty and
-            // causing settlement transactions to revert.
+            // Direct Route mode: every token account in the route is the
+            // taker's own.
             use_shared_accounts: false,
         }
     }

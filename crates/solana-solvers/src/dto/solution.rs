@@ -247,6 +247,8 @@ mod tests {
         dex::Order {
             sell_mint: pubkey(1),
             buy_mint: pubkey(2),
+            buy_token_program: pubkey(4),
+            buy_decimals: 6,
             buy_destination: pubkey(3),
             sell_amount: 1_000,
             buy_amount: 2_000,

@@ -64,10 +64,14 @@ impl AccountsSnapshot {
             .ok_or(InvalidMintReason::AccountNotFound)?;
         let program =
             TokenProgram::try_from(&account.owner).map_err(|_| InvalidMintReason::NotAMint)?;
-        StateWithExtensions::<Mint>::unpack(&account.data)
+        let mint = StateWithExtensions::<Mint>::unpack(&account.data)
             .map_err(|_| InvalidMintReason::NotAMint)?;
         let ata_len = ata_len(account).ok_or(InvalidMintReason::NotAMint)?;
-        Ok(MintInfo { program, ata_len })
+        Ok(MintInfo {
+            program,
+            decimals: mint.base.decimals,
+            ata_len,
+        })
     }
 
     /// Classify the state of the token account at `address` for a caller that
@@ -118,12 +122,13 @@ impl AccountsSnapshot {
     }
 }
 
-/// What the driver keeps of a mint: its token program and the size of its
-/// associated token accounts, which the mint's extensions fix at its
-/// creation.
+/// What the driver keeps of a mint: its token program, its decimals and the
+/// size of its associated token accounts, which the mint's extensions fix at
+/// its creation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MintInfo {
     pub program: TokenProgram,
+    pub decimals: u8,
     /// The data length of a new associated token account of the mint.
     pub ata_len: usize,
 }
@@ -389,6 +394,7 @@ mod tests {
             snapshot.mint_info(&spl),
             Ok(MintInfo {
                 program: TokenProgram::SplToken,
+                decimals: 6,
                 ata_len: TokenAccount::LEN,
             })
         );
@@ -396,6 +402,7 @@ mod tests {
             snapshot.mint_info(&token_2022),
             Ok(MintInfo {
                 program: TokenProgram::Token2022,
+                decimals: 6,
                 ata_len: ExtensionType::try_calculate_account_len::<TokenAccount>(&[
                     ExtensionType::ImmutableOwner,
                 ])

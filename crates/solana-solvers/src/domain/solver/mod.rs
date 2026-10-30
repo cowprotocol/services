@@ -444,6 +444,8 @@ mod tests {
             uid: OrderUid([uid; 32]),
             sell_mint,
             buy_mint: pubkey(2),
+            buy_token_program: pubkey(4),
+            buy_decimals: 6,
             buy_destination: pubkey(3),
             sell_amount: 1_000,
             buy_amount: 0,
@@ -503,7 +505,7 @@ mod tests {
         dex::Quote {
             in_amount,
             out_amount,
-            destination: pubkey(3),
+            order: sell(0).to_dex_order(),
             raw: serde_json::Value::Null,
         }
     }
