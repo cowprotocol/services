@@ -18,6 +18,7 @@ use {
     contracts::{
         ChainalysisOracle,
         FlashLoanRouter,
+        GPv2AllowListAuthentication,
         GPv2Settlement,
         HooksTrampoline,
         WETH9,
@@ -139,6 +140,14 @@ pub async fn run(config: Configuration) {
         .call()
         .await
         .expect("Couldn't get vault relayer address");
+    let authenticator = GPv2AllowListAuthentication::Instance::new(
+        settlement_contract
+            .authenticator()
+            .call()
+            .await
+            .expect("failed to query solver authenticator address"),
+        web3.provider.clone(),
+    );
     let signatures_contract = match config.shared.contracts.signatures {
         Some(address) => {
             contracts::support::Signatures::Instance::new(address, web3.provider.clone())
@@ -252,11 +261,7 @@ pub async fn run(config: Configuration) {
             chain,
             settlement: *settlement_contract.address(),
             native_token: *native_token.address(),
-            authenticator: settlement_contract
-                .authenticator()
-                .call()
-                .await
-                .expect("failed to query solver authenticator address"),
+            authenticator: *authenticator.address(),
             block_stream: current_block_stream.clone(),
             flash_loan_router: flashloan_router_address,
             hooks_trampoline: hooks_trampoline_address,
@@ -461,6 +466,7 @@ pub async fn run(config: Configuration) {
         config.order_validation.same_tokens_policy,
         Some(volume_fee_policy.clone()),
         config.order_quoting.max_partner_fee,
+        order_validation::wrappers::Validator::new(authenticator, *settlement_contract.address()),
     ));
     let ipfs = config
         .ipfs

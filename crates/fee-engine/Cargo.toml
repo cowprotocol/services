@@ -1,0 +1,22 @@
+[package]
+name = "fee-engine"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+cel = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+configs = { workspace = true }
+const-hex = { workspace = true }
+model = { workspace = true }
+rust_decimal = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+alloy-primitives = { workspace = true }
+
+[lints]
+workspace = true

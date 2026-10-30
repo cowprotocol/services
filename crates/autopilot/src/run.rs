@@ -615,6 +615,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
             *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
+            eth.contracts().authenticator().clone(),
         );
 
         let ethflow_start_block = determine_ethflow_indexing_start(

@@ -110,6 +110,7 @@ pub async fn run(args: Args) {
             ),
             max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
             mints: solana_token::MintVerdicts::default(),
+            blockhash_catch_up: Duration::from_secs(2),
         }
     });
     let api = Api {

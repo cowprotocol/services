@@ -35,6 +35,16 @@ impl FeeFactor {
         (self.0 * Self::HIGH_PRECISION_SCALE as f64).round() as u64
     }
 
+    /// The inverse of [`Self::to_high_precision`]: builds the factor from an
+    /// integer on the high precision grid, so 30 -> 0.00003.
+    pub fn from_high_precision(scaled: u64) -> anyhow::Result<Self> {
+        ensure!(
+            scaled < Self::HIGH_PRECISION_SCALE,
+            "Factor must be in the range [0, 1)"
+        );
+        Ok(Self(scaled as f64 / Self::HIGH_PRECISION_SCALE as f64))
+    }
+
     /// Get the inner value
     pub fn get(&self) -> f64 {
         self.0
@@ -104,6 +114,17 @@ mod test {
         assert_eq!(FeeFactor::new(0.001).to_high_precision(), 1000);
         assert_eq!(FeeFactor::new(0.01).to_high_precision(), 10_000);
         assert_eq!(FeeFactor::new(0.1).to_high_precision(), 100_000);
+    }
+
+    #[test]
+    fn fee_factor_from_high_precision() {
+        for (scaled, factor) in [(0, 0.0), (30, 0.00003), (100, 0.0001), (999_999, 0.999999)] {
+            assert_eq!(
+                FeeFactor::from_high_precision(scaled).unwrap(),
+                FeeFactor::new(factor)
+            );
+        }
+        assert!(FeeFactor::from_high_precision(1_000_000).is_err());
     }
 
     #[test]
