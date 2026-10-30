@@ -32,11 +32,13 @@ use {
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::STATE_PDA_SEEDS},
     },
+    cow_solana_rpc::SolanaRPC,
     database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
+        hash::Hash,
         message::{VersionedMessage, compiled_instruction::CompiledInstruction},
         pubkey::Pubkey,
         transaction::VersionedTransaction,
@@ -44,6 +46,7 @@ use {
     solana_system_interface::instruction::SystemInstruction,
     solana_token::receivable_or_creatable,
     spl_token_interface::instruction::TokenInstruction,
+    std::time::{Duration, Instant},
 };
 
 /// Request body: the user's partially signed creation transaction,
@@ -244,9 +247,7 @@ async fn place(
     // be an upper bound: the tip cannot have moved past the blockhash's own
     // last valid height by more than the maximum age.
     let blockhash = transaction.message.recent_blockhash();
-    let valid = sponsoring
-        .rpc
-        .is_blockhash_valid(blockhash)
+    let valid = blockhash_valid(&sponsoring.rpc, blockhash, sponsoring.blockhash_catch_up)
         .await
         .map_err(|err| Failure::internal(err, "blockhash validity check"))?;
     if !valid {
@@ -296,6 +297,38 @@ async fn place(
         .map(|quote| Pubkey::new_from_array(quote.solver.0));
     tracing::info!(order_uid = %uid, ?quote_id, ?quote_solver, "order created");
     Ok((StatusCode::CREATED, Json(uid)))
+}
+
+/// How often placement asks the node again about a blockhash it has not
+/// confirmed, about one slot.
+const BLOCKHASH_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Whether `blockhash` is usable, waiting up to `catch_up` for the node to
+/// confirm it. The node reports a blockhash from a slot it has not confirmed
+/// yet as invalid, and the client may read one from a node ahead of ours. A
+/// blockhash the node does not know even at processed commitment is expired,
+/// or newer than anything the node has seen, so it is refused without waiting.
+async fn blockhash_valid(
+    rpc: &SolanaRPC,
+    blockhash: &Hash,
+    catch_up: Duration,
+) -> Result<bool, cow_solana_rpc::Error> {
+    if rpc.is_blockhash_valid(blockhash).await? {
+        return Ok(true);
+    }
+    if catch_up.is_zero() || !rpc.is_blockhash_valid_at_processed(blockhash).await? {
+        return Ok(false);
+    }
+    let deadline = Instant::now() + catch_up;
+    loop {
+        tokio::time::sleep(BLOCKHASH_POLL_INTERVAL).await;
+        if rpc.is_blockhash_valid(blockhash).await? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+    }
 }
 
 /// Check the transaction is exactly the sponsored-creation shape and derive
@@ -912,7 +945,52 @@ fn build_order(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, cow_solana_rpc::RpcRequest};
+
+    /// A mock RPC answering the blockhash probes with `answers`, in order.
+    fn validity_answers<const N: usize>(answers: [bool; N]) -> SolanaRPC {
+        SolanaRPC::new_mock_with_mocks_map(
+            answers
+                .into_iter()
+                .map(|valid| {
+                    (
+                        RpcRequest::IsBlockhashValid,
+                        serde_json::json!({
+                            "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+                            "value": valid,
+                        }),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// A client reading a node ahead of ours signs a blockhash our node has
+    /// processed and confirms a moment later, so placement waits for it.
+    #[tokio::test]
+    async fn a_blockhash_the_node_confirms_within_the_catch_up_is_valid() {
+        let rpc = validity_answers([false, true, false, true]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
+        assert!(valid.unwrap());
+    }
+
+    /// The wait is bounded: a blockhash the node processed but still has not
+    /// confirmed when the window closes is refused.
+    #[tokio::test]
+    async fn a_blockhash_unconfirmed_after_the_catch_up_is_refused() {
+        let rpc = validity_answers([false, true, false, false, false, false]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_millis(300)).await;
+        assert!(!valid.unwrap());
+    }
+
+    /// A blockhash the node does not know even at processed commitment is
+    /// refused at once. The mock has no third answer, so a poll would fail.
+    #[tokio::test]
+    async fn a_blockhash_unknown_at_processed_is_refused_without_waiting() {
+        let rpc = validity_answers([false, false]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
+        assert!(!valid.unwrap());
+    }
 
     fn set_limit(units: u32) -> Vec<u8> {
         std::iter::once(2u8)

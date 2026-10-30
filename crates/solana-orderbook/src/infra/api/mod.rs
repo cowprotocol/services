@@ -183,6 +183,9 @@ pub struct Sponsoring {
     pub max_priority_fee_lamports: u64,
     /// The verdicts on the mints placement and quoting read so far.
     pub mints: solana_token::MintVerdicts,
+    /// How long placement waits for the node to confirm a blockhash it does
+    /// not know.
+    pub blockhash_catch_up: Duration,
 }
 
 impl State {
