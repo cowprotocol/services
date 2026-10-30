@@ -368,6 +368,16 @@ impl SolanaRPC {
         })
     }
 
+    /// The addresses of `mint`'s largest token accounts, up to 20, largest
+    /// first. Needs a node with the `spl-token-mint` account index.
+    pub async fn token_largest_accounts(&self, mint: &Pubkey) -> Result<Vec<Pubkey>, Error> {
+        let holdings = self.inner.get_token_largest_accounts(mint).await?;
+        Ok(holdings
+            .into_iter()
+            .filter_map(|holding| holding.address.parse().ok())
+            .collect())
+    }
+
     /// Whether the blockhash is still usable for a new transaction at
     /// confirmed commitment.
     pub async fn is_blockhash_valid(&self, blockhash: &Hash) -> Result<bool, Error> {

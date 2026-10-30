@@ -33,17 +33,24 @@ use {
     spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent,
     spl_token_2022_interface::{
         extension::StateWithExtensions,
-        instruction::{approve, mint_to},
-        state::{Account as TokenAccount, Mint, Multisig},
+        instruction::{approve, mint_to, transfer_checked},
+        state::{Account as TokenAccount, AccountState, Mint, Multisig},
     },
-    std::time::Duration,
+    std::time::{Duration, Instant},
 };
 
-/// How long a pair's funding is reused: its mints and the sell mint's
-/// authority. A failed creation leg drops it early.
+/// How long a pair's funding is reused: its mints, the sell mint's authority
+/// and its holders' balances. A failed creation leg drops it early.
 const FUNDING_TTL: Duration = Duration::from_secs(2 * 60);
 
-/// How many pairs the funding cache keeps.
+/// How long a mint's largest holder accounts are kept.
+const HOLDERS_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// The least time between two lookups of a mint's largest holders. Holders
+/// that fund no quoted amount are looked up again once it passed.
+const HOLDERS_REFRESH: Duration = Duration::from_secs(10 * 60);
+
+/// How many entries each cache keeps.
 const CACHE_CAPACITY: u64 = 10_000;
 
 /// Settles quotes in simulation.
@@ -52,6 +59,9 @@ pub struct Verifier {
     rpc: SolanaRPC,
     /// Simulates the bundle, a node with the Jito `simulateBundle` extension.
     bundle: SolanaRPC,
+    /// Lists a mint's largest holders, a node with the account index. `None`
+    /// leaves a mint nobody can mint unfunded, its quotes unverified.
+    holders: Option<SolanaRPC>,
     program_id: Pubkey,
     /// The share of the sell or buy amount the buffers may pay before the
     /// quote is dropped.
@@ -59,6 +69,23 @@ pub struct Verifier {
     mode: QuoteVerificationMode,
     /// Each pair's funding, keyed by sell and buy mint.
     fundings: Cache<(Pubkey, Pubkey), Funding>,
+    /// Each mint's largest token accounts as the holders node listed them.
+    holder_accounts: Cache<Pubkey, HolderAccounts>,
+}
+
+/// A mint's largest token accounts, largest first, and when they were listed.
+#[derive(Clone, Debug)]
+struct HolderAccounts {
+    accounts: Vec<Pubkey>,
+    listed_at: Instant,
+}
+
+/// A token account of a mint that can give its tokens away in simulation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Holder {
+    account: Pubkey,
+    owner: Pubkey,
+    amount: u64,
 }
 
 /// What a quote's verification found.
@@ -89,6 +116,7 @@ impl Verdict {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Funding {
     sell_program: TokenProgram,
+    decimals: u8,
     /// `None` for a native SOL buy.
     buy_program: Option<TokenProgram>,
     source: Source,
@@ -104,13 +132,21 @@ enum Source {
         authority: Pubkey,
         signers: Vec<Pubkey>,
     },
-    /// The mint authority is revoked, so nobody mints them.
-    Revoked,
+    /// The largest holders transfer them, the first holding the amount.
+    Holders(Vec<Holder>),
 }
 
 impl Funding {
+    /// Whether the source can fund a sell of `amount`.
+    fn covers(&self, amount: u64) -> bool {
+        match &self.source {
+            Source::Authority { .. } => true,
+            Source::Holders(holders) => holders.iter().any(|holder| holder.amount >= amount),
+        }
+    }
+
     /// The instruction filling `order`'s sell token account with its sell
-    /// amount. `None` when nothing funds it.
+    /// amount. `None` when no holder holds that much.
     fn instruction(&self, order: &QuoteOrder) -> Option<Instruction> {
         let token_program = self.sell_program.address();
         let destination = order.sell_token_account();
@@ -123,7 +159,21 @@ impl Funding {
                 &signers.iter().collect::<Vec<_>>(),
                 order.sell_amount,
             ),
-            Source::Revoked => return None,
+            Source::Holders(holders) => {
+                let holder = holders
+                    .iter()
+                    .find(|holder| holder.amount >= order.sell_amount)?;
+                transfer_checked(
+                    &token_program,
+                    &holder.account,
+                    &order.sell_mint,
+                    &destination,
+                    &holder.owner,
+                    &[],
+                    order.sell_amount,
+                    self.decimals,
+                )
+            }
         };
         Some(instruction.expect("a token program id passes the program check"))
     }
@@ -132,6 +182,7 @@ impl Funding {
 /// A mint as the verification reads it.
 struct MintInfo {
     program: TokenProgram,
+    decimals: u8,
     /// `None` once revoked.
     authority: Option<Pubkey>,
 }
@@ -157,6 +208,7 @@ impl Verifier {
     pub fn new(
         rpc: SolanaRPC,
         bundle: SolanaRPC,
+        holders: Option<SolanaRPC>,
         program_id: Pubkey,
         inaccuracy_limit: f64,
         mode: QuoteVerificationMode,
@@ -164,11 +216,16 @@ impl Verifier {
         Self {
             rpc,
             bundle,
+            holders,
             program_id,
             inaccuracy_limit,
             mode,
             fundings: Cache::builder()
                 .time_to_live(FUNDING_TTL)
+                .max_capacity(CACHE_CAPACITY)
+                .build(),
+            holder_accounts: Cache::builder()
+                .time_to_live(HOLDERS_TTL)
                 .max_capacity(CACHE_CAPACITY)
                 .build(),
         }
@@ -183,8 +240,13 @@ impl Verifier {
     /// owns: a verified quote is marked, an inaccurate one dropped, the rest
     /// stay as the drivers gave them.
     pub async fn verify(&self, order: &Order, owner: Pubkey, quotes: Vec<Quote>) -> Vec<Quote> {
+        let largest_sell = quotes
+            .iter()
+            .map(|quote| quote.sell_amount)
+            .max()
+            .unwrap_or(0);
         let funding = self
-            .funding(order)
+            .funding(order, largest_sell)
             .await
             .inspect_err(|err| tracing::debug!(?err, "quote funding not read"))
             .ok();
@@ -375,21 +437,25 @@ impl Verifier {
         Verdict::Verified
     }
 
-    /// What funds a simulated sell of the order's sell mint, the pair's cached
-    /// read while it lasts.
-    async fn funding(&self, order: &Order) -> Result<Funding, Error> {
+    /// What funds a simulated sell of the order's sell mint: the pair's cached
+    /// read, unless its holders fund no sell of `needed` and their lookup is
+    /// due.
+    async fn funding(&self, order: &Order, needed: u64) -> Result<Funding, Error> {
         let key = (order.sell_token, order.buy_token);
-        if let Some(funding) = self.fundings.get(&key) {
+        if let Some(funding) = self.fundings.get(&key)
+            && (funding.covers(needed) || !self.holders_due(&order.sell_token))
+        {
             return Ok(funding);
         }
-        let funding = self.read_funding(order).await?;
+        let funding = self.read_funding(order, needed).await?;
         self.fundings.insert(key, funding.clone());
         Ok(funding)
     }
 
     /// What funds a simulated sell of the order's sell mint, read from the
-    /// chain: its authority, unless revoked.
-    async fn read_funding(&self, order: &Order) -> Result<Funding, Error> {
+    /// chain: its authority, or its largest holders once the authority is
+    /// revoked.
+    async fn read_funding(&self, order: &Order, needed: u64) -> Result<Funding, Error> {
         let buy_mint = (order.buy_token != ENCODED_NATIVE_SOL_TRANSFER).then_some(order.buy_token);
         let accounts = self
             .rpc
@@ -403,10 +469,11 @@ impl Verifier {
                 authority,
                 signers: self.multisig_signers(authority).await?,
             },
-            None => Source::Revoked,
+            None => Source::Holders(self.holders(order.sell_token, needed).await?),
         };
         Ok(Funding {
             sell_program: sell.program,
+            decimals: sell.decimals,
             buy_program,
             source,
         })
@@ -431,6 +498,77 @@ impl Verifier {
             })
             .unwrap_or_default())
     }
+
+    /// Whether `mint`'s largest holders may be looked up again.
+    fn holders_due(&self, mint: &Pubkey) -> bool {
+        self.holders.is_some()
+            && self
+                .holder_accounts
+                .get(mint)
+                .is_none_or(|listed| listed.listed_at.elapsed() >= HOLDERS_REFRESH)
+    }
+
+    /// `mint`'s largest unfrozen, wallet-owned holders and their balances,
+    /// largest first. They are looked up again when none holds `needed` and
+    /// the lookup is due.
+    async fn holders(&self, mint: Pubkey, needed: u64) -> Result<Vec<Holder>, Error> {
+        if let Some(listed) = self.holder_accounts.get(&mint) {
+            let holders = self.read_holders(&listed.accounts).await?;
+            if holders.iter().any(|holder| holder.amount >= needed) || !self.holders_due(&mint) {
+                return Ok(holders);
+            }
+        }
+        let accounts = self.list_holders(mint).await;
+        self.read_holders(&accounts).await
+    }
+
+    /// `mint`'s largest token accounts from the holders node. A lookup that
+    /// fails, or has no node to ask, lists none until the next one is due.
+    async fn list_holders(&self, mint: Pubkey) -> Vec<Pubkey> {
+        let accounts = match &self.holders {
+            Some(node) => node
+                .token_largest_accounts(&mint)
+                .await
+                .inspect_err(|err| tracing::warn!(%mint, ?err, "largest holders not listed"))
+                .unwrap_or_default(),
+            None => {
+                tracing::debug!(%mint, "no holders node, a mint nobody can mint stays unfunded");
+                Vec::new()
+            }
+        };
+        self.holder_accounts.insert(
+            mint,
+            HolderAccounts {
+                accounts: accounts.clone(),
+                listed_at: Instant::now(),
+            },
+        );
+        accounts
+    }
+
+    /// The unfrozen, wallet-owned token accounts among `accounts`, in order,
+    /// with their owners and balances.
+    async fn read_holders(&self, accounts: &[Pubkey]) -> Result<Vec<Holder>, Error> {
+        if accounts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let read = self.rpc.multiple_accounts(accounts.iter().copied()).await?;
+        Ok(accounts
+            .iter()
+            .filter_map(|account| {
+                let state =
+                    StateWithExtensions::<TokenAccount>::unpack(&read.get(account)?.data).ok()?;
+                // A PDA owner may be a pool on the route. Draining its vault
+                // would move the pool's price.
+                (state.base.state != AccountState::Frozen && state.base.owner.is_on_curve())
+                    .then_some(Holder {
+                        account: *account,
+                        owner: state.base.owner,
+                        amount: state.base.amount,
+                    })
+            })
+            .collect())
+    }
 }
 
 /// The accounts a transaction requires signatures from.
@@ -446,6 +584,7 @@ fn mint_info(account: Option<&Account>) -> Option<MintInfo> {
     let mint = StateWithExtensions::<Mint>::unpack(&account.data).ok()?;
     Some(MintInfo {
         program,
+        decimals: mint.base.decimals,
         authority: mint.base.mint_authority.into(),
     })
 }
@@ -543,6 +682,7 @@ mod tests {
     fn funding(source: Source) -> Funding {
         Funding {
             sell_program: TokenProgram::SplToken,
+            decimals: 6,
             buy_program: Some(TokenProgram::SplToken),
             source,
         }
@@ -622,8 +762,30 @@ mod tests {
         assert_eq!(accounts(&leg, 3)[..2], [order.owner, payer]);
     }
 
-    /// A mint reads as its program and authority, a revoked one as none, and
-    /// anything else as no mint.
+    /// The first holder holding the amount transfers it, and none holding it
+    /// leaves the sell unfunded.
+    #[test]
+    fn the_first_holder_holding_the_amount_funds_the_sell() {
+        let order = quoted();
+        let holder = |byte: u8, amount| Holder {
+            account: pubkey(byte),
+            owner: pubkey(byte + 1),
+            amount,
+        };
+        let (poor, rich) = (holder(0xe1, 999), holder(0xe3, 1_000));
+        let fund = funding(Source::Holders(vec![poor.clone(), rich.clone()]))
+            .instruction(&order)
+            .unwrap();
+        assert_eq!(fund.accounts[0].pubkey, rich.account);
+        assert!(
+            funding(Source::Holders(vec![poor]))
+                .instruction(&order)
+                .is_none()
+        );
+    }
+
+    /// A mint reads as its program, decimals and authority, a revoked one as
+    /// none, and anything else as no mint.
     #[test]
     fn a_mint_reads_as_its_authority() {
         let authority = pubkey(0x13);
@@ -642,6 +804,7 @@ mod tests {
         };
         let info = mint_info(Some(&minted)).unwrap();
         assert_eq!(info.program, TokenProgram::Token2022);
+        assert_eq!(info.decimals, 9);
         assert_eq!(info.authority, Some(authority));
         let revoked = Account {
             owner: spl_token_interface::ID,
