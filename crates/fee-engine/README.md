@@ -9,9 +9,10 @@ to act on, e.g. the first.
 
 A rule is a `RuleDefinition`: a name and two [CEL](https://cel.dev)
 expressions. `when` must return a bool. `fee` must return one fee or a list
-of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
-list takes a reserved name or an expression does not compile. A rule whose
-expression fails at run time is skipped and reported to the caller.
+of fees. `RuleSet::new` refuses the whole set when a rule name is empty or
+repeats, a list takes a reserved name or an expression does not compile. A
+rule whose expression fails at run time is skipped and reported to the
+caller.
 
 `RuleSet::validate_on_sample_order` is a separate pass: it runs both
 expressions of every rule against a sample order (a default order with
@@ -32,14 +33,21 @@ fee:  surplus(50, 1)
 
 ## The rules file
 
-`load_rules(source)` reads a set from TOML: `[lists]` holds named lists of
-strings and each `[[rule]]` table is a rule, tried in file order. Unknown
+`load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
+`[lists]` holds named lists of strings and each `[[rule]]` table is a rule,
+tried in file order. Unknown
 top-level and rule keys are refused; any key under `[lists]` is a list
 name, so a list that no rule names loads without error. The file goes
 through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
-refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown key
-or missing field; names the line and column), `Rules` (a `CompileError`) or
-`SampleOrder` (every `SampleOrderError`).
+refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown key,
+missing field or a rule field that is empty; names the line and column), `Rules` (a `CompileError`) or
+`SampleOrder` (every `SampleOrderError`). A file without rules loads: no
+order pays a protocol fee.
+
+`load_rules_toml(RulesToml { lists, rules })` loads the same two tables as
+raw `toml::Value`s, e.g. from a section of a host config, so the host need
+not know their shape. It refuses them as `load_rules_from_str` does, but a
+`Toml` error has no line or column.
 
 ```toml
 [lists]
