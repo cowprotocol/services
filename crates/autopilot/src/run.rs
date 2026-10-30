@@ -275,6 +275,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         eth.current_block().clone(),
         config.balance_cache.eviction_time,
         config.balance_cache.refresh_cooldown,
+        config.balance_cache.batch_size,
     );
 
     let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config
