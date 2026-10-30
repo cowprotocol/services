@@ -1,0 +1,45 @@
+# The mainnet protocol-fee policy as rules. The bucket lists are trimmed to a
+# few tokens; prod uses the full `volume-fee-bucket-overrides` from infra.
+# Partner fees from app-data are not rules, the host appends them.
+# `order.class` is "limit" for every order until M2 sets it, so the
+# `price_improvement` branches never match yet.
+
+[lists]
+jit_owners = []
+wrapped_native = [
+  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+]
+stablecoins = [
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "0xdac17f958d2ee523a2206206994597c13d831ec7",
+]
+eth_correlated = [
+  "0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0",
+  "0xae7ab96520de3a18e5e111b5eaab095312d7fe84",
+  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+]
+
+[[rule]]
+name = "JIT makers pay no protocol fee"
+when = "order.owner in jit_owners"
+fee = "no_fee()"
+
+[[rule]]
+name = "Same token (incl. WETH -> ETH): no volume fee"
+when = 'order.sellToken == order.buyToken || (order.sellToken in wrapped_native && order.buyToken == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")'
+fee = 'order.class == "market" ? price_improvement(50, 0.98) : surplus(50, 0.98)'
+
+[[rule]]
+name = "Stablecoin bucket: 0.3 bps"
+when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
+fee = '[order.class == "market" ? price_improvement(50, 0.98) : surplus(50, 0.98), volume(0.3)]'
+
+[[rule]]
+name = "ETH-correlated bucket: 0.3 bps"
+when = 'order.sellToken in eth_correlated && (order.buyToken in eth_correlated || order.buyToken == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")'
+fee = '[order.class == "market" ? price_improvement(50, 0.98) : surplus(50, 0.98), volume(0.3)]'
+
+[[rule]]
+name = "Default: 2 bps"
+when = "true"
+fee = '[order.class == "market" ? price_improvement(50, 0.98) : surplus(50, 0.98), volume(2)]'
