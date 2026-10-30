@@ -290,8 +290,8 @@ impl UniswapV3Indexer {
         logs: Vec<Log>,
         target_block: u64,
     ) -> Result<bool> {
-        // Not redundant with the compare-and-set in `persist_chunk`: the reads
-        // below must see exactly the state this chunk applies on top of.
+        // Skip the reads below if another writer already moved the checkpoint.
+        // `persist_chunk` checks it again, so this only saves work.
         if self.last_indexed_block().await? != chunk.start - 1 {
             tracing::warn!(?chunk, "checkpoint moved by another writer, re-reading it");
             return Ok(false);
