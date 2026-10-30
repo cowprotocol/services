@@ -127,11 +127,26 @@ pub struct Order {
     pub side: order::Side,
     pub deadline: chrono::DateTime<chrono::Utc>,
     pub enable_fast_path: bool,
+    pub price_quality: PriceQuality,
     pub quote_id: Id,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub i64);
+
+/// How the orderbook ranks the quotes it collects for a request, which tells a
+/// solver whether its quote will be simulated. Mirrors the `priceQuality` of
+/// the orderbook's quote API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PriceQuality {
+    /// The best of the first few quotes to arrive wins; nothing is simulated.
+    Fast,
+    /// The best promised price wins; nothing is simulated.
+    Optimal,
+    /// Quotes are simulated where possible and a quote that passes simulation
+    /// is preferred over one that doesn't, even at a worse price.
+    Verified,
+}
 
 impl Order {
     /// Generate a quote for this order. This calls `/solve` on the solver with
@@ -229,6 +244,7 @@ impl Order {
             auction::Kind::Quote {
                 id: self.quote_id,
                 fast_path: self.enable_fast_path,
+                price_quality: self.price_quality,
             },
             vec![competition::Order {
                 data: std::sync::Arc::new(competition::order::OrderData {

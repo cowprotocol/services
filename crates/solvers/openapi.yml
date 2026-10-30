@@ -655,6 +655,15 @@ components:
             Absent otherwise.
           type: boolean
           default: false
+        priceQuality:
+          description: |
+            The price quality the orderbook was asked for. Set for every quote
+            request and absent for auctions.
+          type: string
+          enum:
+            - fast
+            - optimal
+            - verified
         tokens:
           description: |
             A map of token addresses to token information.

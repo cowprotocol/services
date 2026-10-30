@@ -1,5 +1,5 @@
 use {
-    super::{Partial, Solver, Test, blockchain::Blockchain},
+    super::{Partial, QUOTE_PRICE_QUALITY, Solver, Test, blockchain::Blockchain},
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
@@ -223,6 +223,7 @@ pub fn quote_req(test: &Test) -> serde_json::Value {
     // The orderbook allocates the quote id before quoting and sends it with
     // every quote request.
     req["quoteId"] = json!(test.quote_id);
+    req["priceQuality"] = json!(QUOTE_PRICE_QUALITY);
     if test.quote_fast_path {
         req["enableFastPath"] = json!(true);
     }

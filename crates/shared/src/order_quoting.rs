@@ -13,7 +13,14 @@ use {
     model::{
         interaction::InteractionData,
         order::OrderKind,
-        quote::{OrderQuoteRequest, OrderQuoteSide, QuoteId, QuoteSigningScheme, SellAmount},
+        quote::{
+            OrderQuoteRequest,
+            OrderQuoteSide,
+            PriceQuality,
+            QuoteId,
+            QuoteSigningScheme,
+            SellAmount,
+        },
     },
     num::FromPrimitive,
     number::conversions::big_decimal_to_u256,
@@ -45,6 +52,10 @@ pub struct QuoteParameters {
     /// Whether this quote is intended for fast-path (out-of-competition)
     /// execution.
     pub fast_path: bool,
+    /// The price quality the quote was requested with. Does not select the
+    /// estimators (the quoter serving the request does); it is passed on to
+    /// the solvers so they know whether their quote will be verified.
+    pub price_quality: PriceQuality,
     pub timeout: Option<std::time::Duration>,
 }
 
@@ -69,6 +80,7 @@ impl QuoteParameters {
             kind,
             block_dependent: true,
             fast_path: self.fast_path,
+            price_quality: self.price_quality,
             timeout,
         }
     }
@@ -1170,6 +1182,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1192,6 +1205,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: true,
                     fast_path: false,
+                    price_quality: PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -1331,6 +1345,7 @@ mod tests {
             },
             hook_gas: 2,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1353,6 +1368,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: true,
                     fast_path: false,
+                    price_quality: PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -1487,6 +1503,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1509,6 +1526,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     block_dependent: true,
                     fast_path: false,
+                    price_quality: PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 }
             })
@@ -1644,6 +1662,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -1723,6 +1742,7 @@ mod tests {
             signing_scheme: QuoteSigningScheme::Eip712,
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let gas_price = Eip1559Estimation {
@@ -2223,6 +2243,7 @@ mod tests {
             verification: Default::default(),
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let estimate = price_estimation::Estimate {
@@ -2282,6 +2303,7 @@ mod tests {
             verification: Default::default(),
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let estimate = price_estimation::Estimate {
@@ -2353,6 +2375,7 @@ mod tests {
             verification: Default::default(),
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         }
     }
@@ -2540,6 +2563,7 @@ mod tests {
             verification: Default::default(),
             hook_gas: 0,
             fast_path: false,
+            price_quality: PriceQuality::Verified,
             timeout: None,
         };
         let gas_price = alloy::eips::eip1559::Eip1559Estimation {
@@ -2603,6 +2627,7 @@ mod tests {
                 verification: Default::default(),
                 hook_gas: 0,
                 fast_path: false,
+                price_quality: PriceQuality::Verified,
                 timeout: None,
             }
         }

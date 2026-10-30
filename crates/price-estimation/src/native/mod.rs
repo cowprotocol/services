@@ -3,7 +3,7 @@ use {
     alloy::primitives::Address,
     bigdecimal::{BigDecimal, ToPrimitive},
     futures::FutureExt,
-    model::order::OrderKind,
+    model::{order::OrderKind, quote::PriceQuality},
     number::nonzero::NonZeroU256,
     std::{
         sync::{Arc, LazyLock},
@@ -96,6 +96,7 @@ impl NativePriceEstimator {
             verification: Default::default(),
             block_dependent: false,
             fast_path: false,
+            price_quality: PriceQuality::Optimal,
             timeout,
         }
     }

@@ -218,6 +218,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -243,6 +244,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -267,6 +269,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
@@ -285,6 +288,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -310,6 +314,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -333,6 +338,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -356,6 +362,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -381,6 +388,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -405,6 +413,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
@@ -422,6 +431,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Err(PriceEstimationError::UnsupportedToken {
@@ -556,6 +566,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {
@@ -577,6 +588,7 @@ mod tests {
                     kind: OrderKind::Sell,
                     block_dependent: false,
                     fast_path: false,
+                    price_quality: model::quote::PriceQuality::Verified,
                     timeout: HEALTHY_PRICE_ESTIMATION_TIME,
                 },
                 Ok(Estimate {

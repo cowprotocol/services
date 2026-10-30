@@ -787,6 +787,9 @@ pub fn eth_solution() -> Solution {
 pub const TRADER_ADDRESS: Address = address!("d2525C68A663295BBE347B65C87c8e17De936a0a");
 /// Quote id the tests pretend the orderbook minted for fast-path quotes.
 pub const QUOTE_ID: i64 = 7;
+/// The `priceQuality` every /quote request of a test carries, and which the
+/// mock solver expects back in the `/solve` request.
+pub const QUOTE_PRICE_QUALITY: &str = "verified";
 
 impl Setup {
     /// Set an explicit name for this test. If a name is set, it will be logged
