@@ -41,7 +41,7 @@ serde-ext = { workspace = true, features = ["solana"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }
-solana-system-interface = { workspace = true }
+solana-system-interface = { workspace = true, features = ["bincode", "serde"] }
 solana-token = { workspace = true }
 spl-associated-token-account-interface = { workspace = true }
 spl-token-2022-interface = { workspace = true }
