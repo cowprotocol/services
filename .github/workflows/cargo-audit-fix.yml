@@ -1,0 +1,53 @@
+name: cargo audit fix
+
+# Audits main every four hours and opens one pull request that bumps the
+# vulnerable crates, or ignores the advisories that no semver-compatible bump
+# patches.
+on:
+  schedule:
+    - cron: "23 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BRANCH: bot/cargo-audit-fix
+
+jobs:
+  cargo-audit-fix:
+    runs-on: ubuntu-latest
+    steps:
+      # A pull request opened with GITHUB_TOKEN triggers no workflows, so CI
+      # would never run on it.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ secrets.GH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GH_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The prebuilt cargo-audit binaries ship without the `fix` subcommand.
+      - run: cargo install cargo-audit --locked --features fix
+      - id: fix
+        run: .github/scripts/cargo-audit-fix.sh "$RUNNER_TEMP/body.md"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+      # When main no longer needs a fix, this closes the pull request of an
+      # earlier run.
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: ${{ env.BRANCH }}
+          delete-branch: true
+          sign-commits: true
+          add-paths: |
+            Cargo.lock
+            .cargo/audit.toml
+          commit-message: ${{ steps.fix.outputs.title || 'Fix cargo audit' }}
+          title: ${{ steps.fix.outputs.title || 'Fix cargo audit' }}
+          body-path: ${{ runner.temp }}/body.md
