@@ -14,12 +14,29 @@ repeats, a list takes a reserved name or an expression does not compile. A
 rule whose expression fails at run time is skipped and reported to the
 caller.
 
-`RuleSet::validate_on_sample_order` is a separate pass: it runs both
-expressions of every rule against a sample order (a default order with
-every optional field present) and reports every `when` that does not return
-a bool and every `fee` that does not return valid fees, so one run shows all
-the mistakes. This catches a misspelt name or a bad fee argument such as
-`volume(0.001)` at load time instead of on the first order.
+`RuleSet::validate_on_sample_order` is a separate pass over two sample
+orders, so one run shows all the mistakes. On the full sample (every
+optional field present) both expressions of every rule run, whatever `when`
+says, and every `when` that does not return a bool and every `fee` that does
+not return valid fees is reported. This catches a misspelt name or a bad fee
+argument such as `volume(0.001)` at load time instead of on the first order.
+On the bare sample (no optional field present) the rules run as on a real
+order, and every rule that is skipped is reported. This catches a rule that
+reads `order.quote.sellAmount` without `has(order.quote)` first, which would
+be skipped on every order without a quote.
+
+The pass has limits:
+
+- A ternary, `&&` or `||` runs only what the sample order reaches. The
+  sample is out of market, so the bad argument in `order.inMarket ?
+  volume(0.001) : volume(1)` is not found; a static check of every branch is
+  planned.
+- Every amount and price in the samples is 1, except `feeAmount`, which is 0
+  as on every order the API accepts, and every timestamp is `now`. A fee
+  computed from the order is checked only at those values:
+  `volume(order.buyAmount / order.sellAmount)` passes, but on a real order
+  it can give an out-of-range argument, and the rule is then skipped and
+  reported.
 
 ```
 name: Stablecoin swaps
@@ -170,14 +187,78 @@ order.
 
 ### `order`
 
-The order as the API returns it, with two changes: decimal strings (amounts
-and prices, including the quote's) are doubles, and hex strings are
-lowercase. `fullAppData` stays text. An unset `receiver` is the zero
-address, not `null`. Fields the API omits, such as an unset `quote` or a
-false `fastPath`, are absent, not `null`: test them with `has(order.quote)`.
+The fields of the API order that a fee can depend on, under the API names,
+built field by field in `order_view.rs`. Amounts and prices are doubles,
+whole numbers (`validTo`, `validFrom`, `ethflowData.userValidTo`) are
+`uint`s and hex is lowercase. An order with every field set looks like this
+(hashes shortened):
+
+```json
+{
+  "uid": "0x5f2a…d1e6",
+  "owner": "0x40a50cf069e992aa4536211b23f286ef88752187",
+  "creationDate": "2026-10-28T14:03:11.520Z",
+  "sellToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+  "buyToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+  "receiver": "0x0000000000000000000000000000000000000000",
+  "sellAmount": 2.5e9,
+  "buyAmount": 6.21e17,
+  "feeAmount": 0.0,
+  "kind": "sell",
+  "partiallyFillable": false,
+  "sellTokenBalance": "erc20",
+  "buyTokenBalance": "erc20",
+  "signingScheme": "eip712",
+  "validTo": 1793284991,
+  "validFrom": 1793281391,
+  "appData": "0x3a8f…09bc",
+  "fastPath": false,
+  "inMarket": true,
+  "quote": {
+    "sellAmount": 2.5e9,
+    "buyAmount": 6.24e17,
+    "feeAmount": 1.83e6,
+    "gasAmount": 145000.0,
+    "gasPrice": 1.2e9,
+    "sellTokenPrice": 2.5e8,
+    "solver": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
+    "verified": true
+  },
+  "ethflowData": {
+    "userValidTo": 1793284991,
+    "refundTxHash": "0x7c1e…aa04",
+    "isRefunded": true
+  },
+  "onchainOrderData": {
+    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187",
+    "placementError": "invalidQuote"
+  },
+  "onchainUser": "0x40a50cf069e992aa4536211b23f286ef88752187"
+}
+```
+
+`inMarket` is `OrderView::in_market` as the host passes it. The engine does not
+check it: the host must pass false when the order has no quote.
+
+Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
+`gasCost`), settlement fields (`signature`, `interactions`,
+`settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
+app-data document (`fullAppData`) are not in the view. An unset `receiver`
+is the zero address. Other optional fields are absent when unset, not
+`null`: test them with `has(order.quote)`. `has` checks only its last
+field, so `has(order.ethflowData.refundTxHash)` fails on an order without
+`ethflowData`; write `has(order.ethflowData) &&
+has(order.ethflowData.refundTxHash)`.
+
+A `uint` compares with any number, but arithmetic needs `uint` operands,
+so write `order.validTo - 3600u` or `int(order.validTo) - 3600`, not
+`order.validTo - 3600`. `timestamp(int(order.validTo))` makes a timestamp
+of it.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
+when: timestamp(int(order.validTo)) - now > duration("1h")
+fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
 ```
 
 A hex literal compares equal to the view only in lowercase: write it so, or

@@ -1,55 +1,85 @@
 //! The order as a rule sees it.
 
-use {
-    model::order::Order,
-    serde_json::{Number, Value},
-};
+use serde_json::{Value, json};
 
-/// The app-data document as text; never a number even when it looks like one.
-const FULL_APP_DATA: &str = "fullAppData";
+/// An order as the host hands it to the engine: the API order plus the facts
+/// the host computes for it.
+#[derive(Debug, Clone, Copy)]
+pub struct OrderView<'a> {
+    pub order: &'a model::order::Order,
+    /// Whether the limit price is inside the market price of the order's quote;
+    /// false when the order has no quote. The engine trusts it as given.
+    pub in_market: bool,
+}
 
-/// The order as rules see it: the API JSON with decimal strings as doubles
-/// and hex strings in lowercase. The model serializes every amount and price
-/// as a decimal string, so no field list is kept here.
-pub(crate) fn order_view(order: &Order) -> Value {
-    let mut view = serde_json::to_value(order).expect("orders serialize");
-    if let Some(quote) = &order.metadata.quote {
-        // `BigDecimal` displays small values as `1E-7`; the plain form is
-        // what `convert` reads.
-        view["quote"]["gasAmount"] = quote.gas_amount.to_plain_string().into();
-        view["quote"]["gasPrice"] = quote.gas_price.to_plain_string().into();
-        view["quote"]["sellTokenPrice"] = quote.sell_token_price.to_plain_string().into();
-    }
-    convert(&mut view);
+/// The order as rules see it: every field a rule can read, with amounts and
+/// prices as doubles and hex in lowercase. Unset optional fields are absent,
+/// not `null`. Execution state, settlement and legacy fields are left out.
+pub(crate) fn order_view(OrderView { order, in_market }: OrderView) -> Value {
+    let (data, meta) = (&order.data, &order.metadata);
+    let mut view = json!({
+        "uid": hex(&meta.uid.0),
+        "owner": hex(meta.owner.as_slice()),
+        "creationDate": meta.creation_date,
+        "sellToken": hex(data.sell_token.as_slice()),
+        "buyToken": hex(data.buy_token.as_slice()),
+        "receiver": hex(data.receiver.raw_bytes()),
+        "sellAmount": number(data.sell_amount),
+        "buyAmount": number(data.buy_amount),
+        "feeAmount": number(data.fee_amount),
+        "kind": data.kind,
+        "partiallyFillable": data.partially_fillable,
+        "sellTokenBalance": data.sell_token_balance,
+        "buyTokenBalance": data.buy_token_balance,
+        "signingScheme": order.signature.scheme(),
+        "validTo": data.valid_to,
+        "validFrom": meta.valid_from,
+        "appData": hex(&data.app_data.0),
+        "fastPath": meta.fast_path,
+        "inMarket": in_market,
+        "quote": meta.quote.as_ref().map(|quote| json!({
+            "sellAmount": number(quote.sell_amount),
+            "buyAmount": number(quote.buy_amount),
+            "feeAmount": number(quote.fee_amount),
+            "gasAmount": number(quote.gas_amount.to_plain_string()),
+            "gasPrice": number(quote.gas_price.to_plain_string()),
+            "sellTokenPrice": number(quote.sell_token_price.to_plain_string()),
+            "solver": hex(quote.solver.as_slice()),
+            "verified": quote.verified,
+        })),
+        "ethflowData": meta.ethflow_data.as_ref().map(|ethflow| json!({
+            "userValidTo": ethflow.user_valid_to,
+            "refundTxHash": ethflow.refund_tx_hash.map(|hash| hex(hash.as_slice())),
+            "isRefunded": ethflow.refund_tx_hash.is_some(),
+        })),
+        "onchainOrderData": meta.onchain_order_data.as_ref().map(|onchain| json!({
+            "sender": hex(onchain.sender.as_slice()),
+            "placementError": onchain.placement_error,
+        })),
+        "onchainUser": meta.onchain_user.map(|user| hex(user.as_slice())),
+    });
+    remove_nulls(&mut view);
     view
 }
 
-/// Walks the JSON in place: decimal strings become numbers, hex strings are
-/// lowercased, and `fullAppData` is left as written.
-fn convert(value: &mut Value) {
-    match value {
-        Value::String(text) if is_decimal(text) => {
-            if let Some(number) = text.parse::<f64>().ok().and_then(Number::from_f64) {
-                *value = Value::Number(number);
-            }
-        }
-        Value::String(text) if is_hex(text) => text.make_ascii_lowercase(),
-        Value::Array(items) => items.iter_mut().for_each(convert),
-        Value::Object(fields) => fields
-            .iter_mut()
-            .filter(|(key, _)| key.as_str() != FULL_APP_DATA)
-            .for_each(|(_, value)| convert(value)),
-        _ => {}
-    }
+fn hex(bytes: &[u8]) -> String {
+    const_hex::encode_prefixed(bytes)
 }
 
-/// Digits with at most one `.` inside, as `U256`, `BigUint` and a plain
-/// `BigDecimal` display. Narrower than `f64::from_str`, which also takes
-/// `inf`, `1e5` and `.5`.
-fn is_decimal(text: &str) -> bool {
-    let (int, frac) = text.split_once('.').unwrap_or((text, "0"));
-    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
-    digits(int) && digits(frac)
+/// A decimal amount or price as a double, rounded once from its plain text.
+fn number(decimal: impl ToString) -> f64 {
+    decimal
+        .to_string()
+        .parse()
+        .expect("decimals parse as doubles")
+}
+
+/// Drops `null` fields, so that an unset option is absent, as `has()` expects.
+fn remove_nulls(value: &mut Value) {
+    if let Value::Object(fields) = value {
+        fields.retain(|_, field| !field.is_null());
+        fields.values_mut().for_each(remove_nulls);
+    }
 }
 
 fn is_hex(text: &str) -> bool {
@@ -69,13 +99,21 @@ pub(crate) fn normalize(text: &str) -> String {
 mod tests {
     use {
         super::*,
-        alloy_primitives::{U256, address},
-        model::order::{OrderData, OrderMetadata, OrderQuote},
+        alloy_primitives::{B256, U256, address},
+        model::order::{
+            EthflowData,
+            OnchainOrderData,
+            OnchainOrderPlacementError,
+            OrderData,
+            OrderMetadata,
+            OrderQuote,
+        },
+        std::collections::BTreeSet,
     };
 
     #[test]
     fn order_view_uses_api_names_numbers_and_lowercase_hex() {
-        let order = Order {
+        let order = model::order::Order {
             metadata: OrderMetadata {
                 owner: address!("0xAbCdEf0000000000000000000000000000000001"),
                 ..Default::default()
@@ -86,78 +124,230 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(&order);
+        let view = order_view(OrderView {
+            order: &order,
+            in_market: false,
+        });
 
         assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
         assert_eq!(view["sellAmount"], 1e21);
         assert_eq!(view["kind"], "buy");
-        assert_eq!(view["class"], "limit");
+        assert_eq!(view["inMarket"], false);
+        assert!(view.get("class").is_none());
         assert_eq!(view["signingScheme"], "eip712");
         assert_eq!(view["appData"], format!("0x{}", "0".repeat(64)));
+        assert_eq!(view["fastPath"], false);
+        assert!(view.get("quote").is_none());
+        assert!(view.get("fullAppData").is_none());
     }
 
-    /// Every field the model emits as a decimal string is an amount or a
-    /// price; a digit-only string that is not one must stay a string.
-    #[test]
-    fn every_decimal_string_is_a_number_and_nothing_else_is() {
-        let order = Order {
+    /// An order with every option set, the view's fields at their fullest.
+    fn fully_set_order() -> model::order::Order {
+        model::order::Order {
             metadata: OrderMetadata {
+                owner: address!("0xAbCdEf0000000000000000000000000000000001"),
                 quote: Some(OrderQuote {
+                    sell_amount: U256::from(10).pow(U256::from(21)),
+                    gas_amount: "21000".parse().unwrap(),
                     gas_price: "1234.5".parse().unwrap(),
                     sell_token_price: "0.0000001".parse().unwrap(),
+                    solver: address!("0x00000000000000000000000000000000000000aB"),
+                    verified: true,
                     ..Default::default()
                 }),
                 available_balance: Some(U256::from(7)),
                 gas_cost: Some(U256::from(8)),
                 executed_sell_amount: 9u64.into(),
-                ethflow_data: Some(Default::default()),
-                onchain_order_data: Some(Default::default()),
-                full_app_data: Some("123".to_owned()),
+                ethflow_data: Some(EthflowData {
+                    user_valid_to: 5,
+                    refund_tx_hash: Some(B256::repeat_byte(0xab)),
+                }),
+                onchain_order_data: Some(OnchainOrderData {
+                    sender: address!("0x00000000000000000000000000000000000000Cd"),
+                    placement_error: Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture),
+                }),
+                onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
+                valid_from: Some(4),
+                full_app_data: Some(r#"{"metadata":{"partnerFee":{"bps":5}}}"#.to_owned()),
+                fast_path: true,
+                ..Default::default()
+            },
+            data: OrderData {
+                sell_token: address!("0x00000000000000000000000000000000000000aA"),
+                receiver: address!("0x00000000000000000000000000000000000000bB").into(),
+                sell_amount: U256::from(10).pow(U256::from(21)),
+                buy_amount: U256::from(123_456_789),
+                partially_fillable: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Fails unless `view` equals `api` up to the view's two conversions:
+    /// decimal strings become doubles and hex strings become lowercase.
+    fn assert_matches_api(view: &Value, api: &Value, path: &str) {
+        match (view, api) {
+            (Value::Object(fields), _) => {
+                for (name, field) in fields {
+                    assert_matches_api(field, &api[name], &format!("{path}.{name}"));
+                }
+            }
+            (Value::Number(number), Value::String(text)) => {
+                assert_eq!(number.as_f64(), text.parse().ok(), "{path}");
+            }
+            (_, Value::String(text)) => assert_eq!(*view, normalize(text), "{path}"),
+            _ => assert_eq!(view, api, "{path}"),
+        }
+    }
+
+    /// Every view field is the API field of the same name, so a rule author
+    /// can read the API docs; `inMarket` is the one field the API lacks.
+    #[test]
+    fn view_matches_the_api_json() {
+        let order = fully_set_order();
+        let mut view = order_view(OrderView {
+            order: &order,
+            in_market: true,
+        });
+        view.as_object_mut().unwrap().remove("inMarket");
+        assert_matches_api(&view, &serde_json::to_value(&order).unwrap(), "");
+    }
+
+    /// Every field of `view` as a dotted path, nested objects included.
+    fn field_paths(view: &Value) -> BTreeSet<String> {
+        let mut paths = BTreeSet::new();
+        if let Value::Object(fields) = view {
+            for (name, field) in fields {
+                paths.insert(name.clone());
+                paths.extend(
+                    field_paths(field)
+                        .into_iter()
+                        .map(|path| format!("{name}.{path}")),
+                );
+            }
+        }
+        paths
+    }
+
+    /// The view holds the rule fields and nothing else: no execution state,
+    /// settlement or legacy field, and unset options are absent.
+    #[test]
+    fn view_holds_only_rule_fields() {
+        let view = order_view(OrderView {
+            order: &fully_set_order(),
+            in_market: true,
+        });
+
+        let fields: BTreeSet<&str> = view
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            fields,
+            BTreeSet::from([
+                "uid",
+                "owner",
+                "creationDate",
+                "sellToken",
+                "buyToken",
+                "receiver",
+                "sellAmount",
+                "buyAmount",
+                "feeAmount",
+                "kind",
+                "partiallyFillable",
+                "sellTokenBalance",
+                "buyTokenBalance",
+                "signingScheme",
+                "validTo",
+                "validFrom",
+                "appData",
+                "fastPath",
+                "inMarket",
+                "quote",
+                "ethflowData",
+                "onchainOrderData",
+                "onchainUser",
+            ])
+        );
+        assert_eq!(view["quote"]["gasPrice"], 1234.5);
+        assert_eq!(view["quote"]["sellTokenPrice"], 1e-7);
+        assert_eq!(view["quote"]["sellAmount"], 1e21);
+        assert_eq!(
+            view["ethflowData"],
+            json!({
+                "userValidTo": 5,
+                "refundTxHash": format!("0x{}", "ab".repeat(32)),
+                "isRefunded": true,
+            })
+        );
+        assert_eq!(
+            view["onchainOrderData"],
+            json!({
+                "sender": format!("0x{}cd", "0".repeat(38)),
+                "placementError": "validToTooFarInTheFuture",
+            })
+        );
+        assert_eq!(view["onchainUser"], format!("0x{}ef", "0".repeat(38)));
+        assert_eq!(view["validFrom"], 4);
+    }
+
+    /// The full sample order that validates rules reaches every field, nested
+    /// ones included, so that no valid rule fails on a missing key.
+    #[test]
+    fn sample_order_view_has_every_field() {
+        let view = |order| {
+            order_view(OrderView {
+                order,
+                in_market: false,
+            })
+        };
+        assert_eq!(
+            field_paths(&view(&crate::rules::full_sample_order(chrono::Utc::now()))),
+            field_paths(&view(&fully_set_order())),
+        );
+    }
+
+    #[test]
+    fn unset_nested_options_are_absent() {
+        let order = model::order::Order {
+            metadata: OrderMetadata {
+                ethflow_data: Some(EthflowData::default()),
+                onchain_order_data: Some(OnchainOrderData::default()),
                 ..Default::default()
             },
             ..Default::default()
         };
-        let view = order_view(&order);
+        let view = order_view(OrderView {
+            order: &order,
+            in_market: false,
+        });
 
-        assert_eq!(view["quote"]["gasPrice"], 1234.5);
-        assert_eq!(view["quote"]["sellTokenPrice"], 1e-7);
-        assert_eq!(view["quote"]["sellAmount"], 0.0);
-        assert_eq!(view["availableBalance"], 7.0);
-        assert_eq!(view["gasCost"], 8.0);
-        assert_eq!(view["executedSellAmount"], 9.0);
-        assert_eq!(view["fullAppData"], "123");
-
-        let mut decimal_strings = vec![];
-        collect_decimal_strings("order", &view, &mut decimal_strings);
-        assert_eq!(decimal_strings, Vec::<String>::new());
+        assert_eq!(
+            view["ethflowData"],
+            json!({ "userValidTo": 0, "isRefunded": false })
+        );
+        assert_eq!(
+            view["onchainOrderData"],
+            json!({ "sender": format!("0x{}", "0".repeat(40)) })
+        );
     }
 
-    fn collect_decimal_strings(path: &str, value: &Value, found: &mut Vec<String>) {
-        match value {
-            Value::String(text) if is_decimal(text) => found.push(path.to_owned()),
-            Value::Array(items) => items.iter().enumerate().for_each(|(i, item)| {
-                collect_decimal_strings(&format!("{path}[{i}]"), item, found)
-            }),
-            Value::Object(fields) => fields
-                .iter()
-                .filter(|(key, _)| key.as_str() != FULL_APP_DATA)
-                .for_each(|(key, value)| {
-                    collect_decimal_strings(&format!("{path}.{key}"), value, found)
-                }),
-            _ => {}
-        }
-    }
-
+    /// The README's sample order has every field of the view, no more.
     #[test]
-    fn decimal_is_narrower_than_f64() {
-        for text in ["0", "42", "1234.5", "0.5", "0.0000001"] {
-            assert!(is_decimal(text), "{text}");
-        }
-        for text in [
-            "", ".", "1.", ".5", "1e5", "1E-7", "inf", "nan", "-1", "0x1", "1.2.3", "1_000",
-        ] {
-            assert!(!is_decimal(text), "{text}");
-        }
+    fn readme_sample_has_every_field() {
+        let readme = include_str!("../README.md");
+        let section = &readme[readme.find("### `order`").unwrap()..];
+        let sample = section.split("```json\n").nth(1).unwrap();
+        let sample: Value = serde_json::from_str(sample.split("```").next().unwrap()).unwrap();
+        let view = order_view(OrderView {
+            order: &fully_set_order(),
+            in_market: true,
+        });
+        assert_eq!(field_paths(&sample), field_paths(&view));
     }
 
     #[test]
