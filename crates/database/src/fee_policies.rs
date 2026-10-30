@@ -17,6 +17,8 @@ pub struct FeePolicy {
     pub volume_factor: Option<f64>,
     pub price_improvement_factor: Option<f64>,
     pub price_improvement_max_volume_factor: Option<f64>,
+    /// `None` for policies stored before the origin was recorded.
+    pub origin: Option<FeePolicyOrigin>,
 }
 
 #[derive(Debug, Clone, PartialEq, sqlx::Type)]
@@ -25,6 +27,13 @@ pub enum FeePolicyKind {
     Surplus,
     Volume,
     PriceImprovement,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "PolicyOrigin", rename_all = "lowercase")]
+pub enum FeePolicyOrigin {
+    Protocol,
+    Partner,
 }
 
 #[instrument(skip_all)]
@@ -40,7 +49,7 @@ pub async fn insert_batch(
     let mut query_builder = QueryBuilder::new(
         "INSERT INTO fee_policies (auction_id, order_uid, kind, surplus_factor, \
          surplus_max_volume_factor, volume_factor, price_improvement_factor, \
-         price_improvement_max_volume_factor)",
+         price_improvement_max_volume_factor, origin)",
     );
 
     query_builder.push_values(fee_policies, |mut b, fee_policy| {
@@ -51,7 +60,8 @@ pub async fn insert_batch(
             .push_bind(fee_policy.surplus_max_volume_factor)
             .push_bind(fee_policy.volume_factor)
             .push_bind(fee_policy.price_improvement_factor)
-            .push_bind(fee_policy.price_improvement_max_volume_factor);
+            .push_bind(fee_policy.price_improvement_max_volume_factor)
+            .push_bind(fee_policy.origin);
     });
 
     query_builder.build().execute(ex).await.map(|_| ())
@@ -136,8 +146,9 @@ mod tests {
             volume_factor: None,
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
+            origin: Some(FeePolicyOrigin::Protocol),
         };
-        // surplus fee policy with caps
+        // surplus fee policy with caps, stored without an origin
         let fee_policy_2 = FeePolicy {
             auction_id: auction_id_b,
             order_uid: order_uid_b,
@@ -147,6 +158,7 @@ mod tests {
             volume_factor: None,
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
+            origin: None,
         };
         // volume based fee policy
         let fee_policy_3 = FeePolicy {
@@ -158,6 +170,7 @@ mod tests {
             volume_factor: Some(0.06),
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
+            origin: Some(FeePolicyOrigin::Partner),
         };
         // price improvement fee policy
         let fee_policy_4 = FeePolicy {
@@ -169,6 +182,7 @@ mod tests {
             volume_factor: None,
             price_improvement_factor: Some(0.1),
             price_improvement_max_volume_factor: Some(0.99999),
+            origin: Some(FeePolicyOrigin::Partner),
         };
 
         let fee_policies = vec![

@@ -365,6 +365,14 @@ impl SolanaRPC {
             .await
     }
 
+    /// Whether the blockhash is still usable for a new transaction at
+    /// processed commitment, which includes slots the node has not confirmed.
+    pub async fn is_blockhash_valid_at_processed(&self, blockhash: &Hash) -> Result<bool, Error> {
+        self.inner
+            .is_blockhash_valid(blockhash, CommitmentConfig::processed())
+            .await
+    }
+
     /// Send a versioned transaction once, after the preflight simulation at
     /// the client's commitment level. The node keeps no copy to rebroadcast,
     /// so the caller resends it. A rejected preflight is an
