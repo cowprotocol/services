@@ -7259,8 +7259,10 @@ name = "pool-indexer"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",
+ "alloy-json-rpc",
  "alloy-primitives",
  "alloy-provider",
+ "alloy-rpc-client",
  "alloy-rpc-types-eth",
  "alloy-sol-types",
  "alloy-transport",
