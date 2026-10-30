@@ -311,6 +311,7 @@ fn build_module() -> Module {
             BNB => "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
             OPTIMISM => "0x0c3c1c532F1e39EdF36BE9Fe0bE1410313E074Bf",
             POLYGON => "0x9e5A52f57b3038F1B8EeE45F28b3C1967e22799C",
+            ROBINHOOD => "0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f",
         ]))
         .add_contract(Contract::new("UniswapV2Router02").with_networks(networks![
             MAINNET => "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
@@ -322,6 +323,7 @@ fn build_module() -> Module {
             BNB => "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24",
             OPTIMISM => "0x4A7b5Da61326A6379179b40d00F57E5bbDC962c2",
             POLYGON => "0xedf6066a2b290C185783862C7F4776A2C8077AD1",
+            ROBINHOOD => "0x89e5db8b5aa49aa85ac63f691524311aeb649eba",
         ]))
         .add_contract(Contract::new("IUniswapLikeRouter"))
         .add_contract(Contract::new("IUniswapLikePair"))
@@ -338,6 +340,7 @@ fn build_module() -> Module {
             LINEA => "0x42bE4D6527829FeFA1493e1fb9F3676d2425C3C1",
             PLASMA => "0xaa52bB8110fE38D0d2d2AF0B85C3A3eE622CA455",
             INK => "0x96b572D2d880cf2Fa2563651BD23ADE6f5516652",
+            ROBINHOOD => "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
         ]))
         .add_contract(
             Contract::new("UniswapV3SwapRouterV2").with_networks(networks![
@@ -352,6 +355,7 @@ fn build_module() -> Module {
                 LINEA => "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
                 PLASMA => "0x807F4E281B7A3B324825C64ca53c69F0b418dE40",
                 INK => "0x177778F19E89dD1012BdBe603F144088A95C4B53",
+                ROBINHOOD => "0xcaf681a66d020601342297493863e78c959e5cb2",
             ]),
         )
         .add_contract(Contract::new("IUniswapV3Factory").with_networks(networks![
@@ -367,6 +371,7 @@ fn build_module() -> Module {
             LINEA => "0x31FAfd4889FA1269F7a13A66eE0fB458f27D72A9",
             PLASMA => "0xcb2436774C3e191c85056d248EF4260ce5f27A9D",
             INK => "0x640887A9ba3A9C53Ed27D0F7e8246A4F933f3424",
+            ROBINHOOD => "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
         ]))
         .add_contract(Contract::new("HooksTrampoline").with_networks(networks![
             MAINNET => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
@@ -381,6 +386,7 @@ fn build_module() -> Module {
             LINEA => "0x60bf78233f48ec42ee3f101b9a05ec7878728006",
             PLASMA => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
             INK => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
+            ROBINHOOD => "0x60Bf78233f48eC42eE3F101b9a05eC7878728006",
         ]))
         .add_contract(Contract::new("CoWSwapEthFlow").with_networks(networks![
             MAINNET => ("0x40a50cf069e992aa4536211b23f286ef88752187", 16169866),
@@ -425,6 +431,7 @@ fn build_module() -> Module {
             LINEA => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
             PLASMA => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
             INK => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
+            ROBINHOOD => "0x9da8b48441583a2b93e2ef8213aad0ec0b392c69",
         ]))
         .add_contract(Contract::new("Solver7702Delegate"))
         .add_contract(Contract::new("ICowWrapper"))
@@ -449,6 +456,7 @@ fn build_module() -> Module {
             POLYGON => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 35701901),
             PLASMA => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 7808),
             INK => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 0),
+            ROBINHOOD => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 0),
         ]))
         .add_contract(
             Contract::new("GPv2AllowListAuthentication").with_networks(networks![
@@ -464,6 +472,7 @@ fn build_module() -> Module {
                 LINEA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 24333100),
                 PLASMA => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 3439709),
                 INK => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 34436840),
+                ROBINHOOD => ("0x2c4c28DDBdAc9C5E7055b4C863b72eA0149D8aFE", 94383767),
             ]),
         )
         .add_contract(Contract::new("GPv2Settlement").with_networks(networks![
@@ -479,6 +488,7 @@ fn build_module() -> Module {
             LINEA => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 24333100),
             PLASMA => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 3439711),
             INK => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 34436849),
+            ROBINHOOD => ("0x9008D19f58AAbD9eD0D60971565AA8510560ab41", 94383793),
         ]))
         .add_contract(Contract::new("WETH9").with_networks(networks![
             MAINNET => "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
@@ -493,6 +503,7 @@ fn build_module() -> Module {
             LINEA => "0xe5d7c2a44ffddf6b295a15c148167daaaf5cf34f",
             PLASMA => "0x6100E367285b01F48D07953803A2d8dCA5D19873",
             INK => "0x4200000000000000000000000000000000000006",
+            ROBINHOOD => "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
         ]))
         .add_submodule(
             Submodule::new("test")
@@ -528,6 +539,7 @@ fn build_module() -> Module {
                     LINEA => "0xf6E57e72F7dB3D9A51a8B4c149C00475b94A37e4",
                     PLASMA => "0x8262d639c38470F38d2eff15926F7071c28057Af",
                     INK => "0x8262d639c38470F38d2eff15926F7071c28057Af",
+                    ROBINHOOD => "0x49EFD31621DB3aeF29df2e588840D3c38c9ce5dB",
                 ]))
                 .add_contract(Contract::new("Balances").with_networks(networks![
                     MAINNET => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
@@ -542,6 +554,7 @@ fn build_module() -> Module {
                     PLASMA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     LINEA => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
                     INK => "0x88b4B74082BffB2976C306CB3f7E9093AE48B94F",
+                    ROBINHOOD => "0xd37631880976Ba6cf580d24e6A7D4D7b9C2be887",
                 ]))
                 .add_contract(Contract::new("DeadlineCheck").with_networks(networks! {
                     MAINNET => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
@@ -557,6 +570,7 @@ fn build_module() -> Module {
                     PLASMA => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                     LINEA => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                     INK => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
+                    ROBINHOOD => "0x8Aa2E182D2a9D5F44a20CF2b3CC1c16468BceC8C",
                 })),
         )
 }
