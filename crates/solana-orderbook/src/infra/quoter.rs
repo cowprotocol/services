@@ -1,12 +1,15 @@
 //! Client for the drivers' quote routes.
 
 use {
-    futures::future::join_all,
+    futures::{StreamExt, stream::FuturesUnordered},
     reqwest::Client,
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, base64::Base64, serde_as},
     solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
-    std::time::{Duration, Instant},
+    std::{
+        num::NonZero,
+        time::{Duration, Instant},
+    },
     url::Url,
 };
 
@@ -138,16 +141,25 @@ impl Quoter {
     }
 
     /// Quote `order` on every driver concurrently and return every answer.
-    pub async fn quotes(&self, order: &Order) -> Result<Vec<Quote>, Error> {
-        let quotes: Vec<Quote> = join_all(
-            self.endpoints
-                .iter()
-                .map(|endpoint| self.quote_one(endpoint, order)),
-        )
-        .await
-        .into_iter()
-        .flatten()
-        .collect();
+    /// With `early_return`, return as soon as that many drivers answered and
+    /// cancel the requests still running.
+    pub async fn quotes(
+        &self,
+        order: &Order,
+        early_return: Option<NonZero<usize>>,
+    ) -> Result<Vec<Quote>, Error> {
+        let mut pending: FuturesUnordered<_> = self
+            .endpoints
+            .iter()
+            .map(|endpoint| self.quote_one(endpoint, order))
+            .collect();
+        let mut quotes = Vec::new();
+        while let Some(quote) = pending.next().await {
+            quotes.extend(quote);
+            if early_return.is_some_and(|required| quotes.len() >= required.get()) {
+                break;
+            }
+        }
         if quotes.is_empty() {
             return Err(Error::NoQuotes);
         }

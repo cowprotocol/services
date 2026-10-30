@@ -10,7 +10,7 @@ use {
     serde::Deserialize,
     serde_ext::{deserialize_solana_pubkey_b58, deserialize_url_with_trailing_slash},
     solana_sdk::pubkey::Pubkey,
-    std::{fmt, net::SocketAddr, path::Path, time::Duration},
+    std::{fmt, net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
     url::Url,
 };
@@ -103,6 +103,11 @@ pub struct Quoting {
     /// How long the quoted amounts are honored.
     #[serde(with = "humantime_serde", default = "default_quote_expiry")]
     pub quote_expiry: Duration,
+    /// How many drivers a `priceQuality: fast` quote waits for before it
+    /// answers with the best of them. As this grows, a fast quote approaches
+    /// an `optimal` one. More than the configured drivers waits for all.
+    #[serde(default = "default_fast_results_required")]
+    pub fast_results_required: NonZero<usize>,
 }
 
 impl Quoting {
@@ -252,6 +257,11 @@ fn default_quote_expiry() -> Duration {
     Duration::from_secs(60)
 }
 
+/// The EVM orderbook's default.
+fn default_fast_results_required() -> NonZero<usize> {
+    NonZero::new(2).expect("two is not zero")
+}
+
 /// HTTP API server configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -277,6 +287,7 @@ mod tests {
         assert_eq!(config.quoting.min_validity, Duration::from_secs(60));
         assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
+        assert_eq!(config.quoting.fast_results_required.get(), 2);
         assert_eq!(config.app_data_size_limit, 8192);
     }
 

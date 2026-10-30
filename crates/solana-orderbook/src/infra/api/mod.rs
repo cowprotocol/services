@@ -12,6 +12,7 @@ use {
     std::{
         io,
         net::SocketAddr,
+        num::NonZero,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -48,6 +49,8 @@ pub struct Api {
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     pub quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
     /// Settles quotes in simulation, absent when every quote is unverified.
@@ -107,6 +110,7 @@ impl Api {
             self.prices,
             self.validation,
             self.quote_expiry,
+            self.fast_results_required,
             self.sponsoring,
             self.verifier,
             self.app_data_size_limit,
@@ -196,6 +200,7 @@ impl State {
         prices: NativePrices,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
+        fast_results_required: NonZero<usize>,
         sponsoring: Option<Sponsoring>,
         verifier: Option<Verifier>,
         app_data_size_limit: usize,
@@ -206,6 +211,7 @@ impl State {
             prices,
             validation,
             quote_expiry,
+            fast_results_required,
             sponsoring,
             verifier,
             app_data_size_limit,
@@ -237,6 +243,11 @@ impl State {
     /// How long the quoted amounts are honored.
     pub fn quote_expiry(&self) -> std::time::Duration {
         self.0.quote_expiry
+    }
+
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fn fast_results_required(&self) -> NonZero<usize> {
+        self.0.fast_results_required
     }
 
     /// Sponsored placement dependencies, absent when the feature is off.
@@ -296,6 +307,8 @@ struct Inner {
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
     /// Settles quotes in simulation, absent when every quote is unverified.

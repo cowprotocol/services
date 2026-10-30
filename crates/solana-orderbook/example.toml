@@ -22,6 +22,9 @@ autopilot = "http://localhost:12088"
 # min-validity = "1m"
 # max-validity = "1y"
 # quote-expiry = "1m"
+# Drivers a priceQuality: fast quote waits for before it answers with the
+# best of them. Defaults to 2.
+# fast-results-required = 2
 
 [logging]
 filter = "info,solana_orderbook=debug"
