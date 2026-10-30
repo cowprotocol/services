@@ -1,13 +1,12 @@
 //! Parameterized tests for the "make-room" pre-processing of the solver fee.
 //!
-//! The solver fee is injected as a volume fee policy, so in
-//! `FeeHandler::Driver` mode the driver tightens each order's limits before
-//! sending the auction to the solver exactly like it does for protocol volume
-//! fees: any bid the solver returns at the tightened limit still respects the
-//! user's signed limit price after the fee is taken. These tests prove that
-//! round-trip closes: the solver bids exactly at the tightened limit it sees,
-//! the driver takes the fee, and the reported amounts land on the user's signed
-//! limit.
+//! The solver fee is injected as a volume fee policy, so the driver tightens
+//! each order's limits before sending the auction to the solver exactly like
+//! it does for protocol volume fees: any bid the solver returns at the
+//! tightened limit still respects the user's signed limit price after the fee
+//! is taken. These tests prove that round-trip closes: the solver bids exactly
+//! at the tightened limit it sees, the driver takes the fee, and the reported
+//! amounts land on the user's signed limit.
 //!
 //! Modelled on the `volume_protocol_fee_*_at_limit_price` cases in
 //! [`super::protocol_fees`], which exercise the same code path for protocol

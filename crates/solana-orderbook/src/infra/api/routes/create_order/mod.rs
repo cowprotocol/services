@@ -4,13 +4,12 @@
 //!
 //! The funder countersigns as fee payer, so only the whitelisted
 //! preparation steps may precede the mandatory trailing `CreateOrder`: wrap
-//! SOL, delegate the sell account, create the buy token account. Without
-//! the creation, placement looks the buy token account up: the settlement
-//! creates a missing one only at the owner's associated token address, as
-//! no other address reveals the wallet to create it for, so any other
-//! account must already receive the buy mint. A native SOL buy has no buy
-//! token account: its payout goes to the wallet and creates it when
-//! missing, so placement looks the wallet up instead.
+//! SOL and delegate the sell account. The bundle must not create the buy
+//! token account; placement looks it up instead: the settlement creates a
+//! missing one only at the owner's associated token address, so a custom
+//! receiver's account must already exist and receive the buy mint. A native
+//! SOL buy has no buy token account: its payout goes to the wallet and
+//! creates it when missing, so placement looks the wallet up instead.
 
 use {
     super::mint::{ensure_settleable, is_token_program, token_mints},
@@ -211,7 +210,7 @@ async fn place(
         .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
-    let (mut order, preparations) = validate(sponsoring, &transaction, state.validation())?;
+    let (mut order, token_programs) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
     // The intent signed the hash, so whatever the request names must agree
     // with it, and the hash alone needs its document registered already.
@@ -242,7 +241,7 @@ async fn place(
         state.app_data_size_limit(),
     )
     .map_err(|err| Failure::Replied(err.into()))?;
-    check_accounts(sponsoring, &order, &preparations).await?;
+    check_accounts(sponsoring, &order, &token_programs).await?;
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
@@ -272,8 +271,8 @@ async fn place(
     }
 
     // The link is best-effort: a quote that is missing, expired, or not the
-    // one this order came from is dropped with a warning instead of
-    // rejecting an otherwise valid order.
+    // one this order came from is dropped instead of rejecting an otherwise
+    // valid order.
     let quote = match params.quote_id {
         Some(id) => link_quote(state.pool(), id, &order).await,
         None => None,
@@ -292,7 +291,11 @@ async fn place(
         }
         return Err(Failure::internal(err, "sponsored order insert"));
     }
-    tracing::info!(order_uid = %uid, "order created");
+    let quote_id = quote.as_ref().map(|quote| quote.quote_id);
+    let quote_solver = quote
+        .as_ref()
+        .map(|quote| Pubkey::new_from_array(quote.solver.0));
+    tracing::info!(order_uid = %uid, ?quote_id, ?quote_solver, "order created");
     Ok((StatusCode::CREATED, Json(uid)))
 }
 
@@ -328,23 +331,15 @@ async fn blockhash_valid(
     }
 }
 
-/// What the preparation steps of a creation transaction name, for the
-/// caller to check against the chain.
-struct Preparations {
-    /// The `(mint, token program)` pairs the steps name.
-    token_programs: Vec<(Pubkey, Pubkey)>,
-    /// Whether the steps create the buy token account.
-    creates_buy_account: bool,
-}
-
 /// Check the transaction is exactly the sponsored-creation shape and derive
-/// the order from it. The expiry and transaction bytes are filled by the
-/// caller.
+/// the order from it, returning also the `(mint, token program)` pairs the
+/// preparation steps name, for the caller to check against the chain. The
+/// expiry and transaction bytes are filled by the caller.
 fn validate(
     sponsoring: &Sponsoring,
     transaction: &VersionedTransaction,
     validation: ValidationParameters,
-) -> Result<(db::SponsoredOrder, Preparations), PlacementError> {
+) -> Result<(db::SponsoredOrder, Vec<(Pubkey, Pubkey)>), PlacementError> {
     let message = &transaction.message;
     // A v1 message carries its priority fee in its config, out of reach of
     // the compute-budget pricing below, and the funder would pay it.
@@ -457,8 +452,7 @@ fn validate(
     let mut last_step = 0;
     let mut token_programs = Vec::new();
     for preparation in preparations {
-        let (step, token_program) =
-            preparation_step(sponsoring, &state_pda, &intent, keys, preparation)?;
+        let (step, token_program) = preparation_step(&state_pda, &intent, keys, preparation)?;
         if step <= last_step {
             return Err(PlacementError::InvalidTransaction(
                 "the instructions do not follow the sponsored template order",
@@ -484,25 +478,20 @@ fn validate(
         }
     }
 
-    let preparations = Preparations {
-        token_programs,
-        creates_buy_account: last_step == CREATE_DESTINATION,
-    };
-    Ok((build_order(intent, uid, order_pda), preparations))
+    Ok((build_order(intent, uid, order_pda), token_programs))
 }
 
 /// Reject an order on a mint the settlement program cannot move, a
 /// preparation step naming a token program that does not own its mint, a
 /// native SOL buy paying an account the System Program does not own or
 /// leaving its wallet under the rent-exempt minimum, and a token buy whose
-/// bundle does not create a buy token account the settlement can neither pay
-/// out to nor create. Lamports paid to a program or a sysvar revert the
-/// settlement, and a program-owned account strands them. The payout creates
-/// a missing wallet.
+/// buy token account the settlement can neither pay out to nor create.
+/// Lamports paid to a program or a sysvar revert the settlement, and a
+/// program-owned account strands them. The payout creates a missing wallet.
 async fn check_accounts(
     sponsoring: &Sponsoring,
     order: &db::SponsoredOrder,
-    preparations: &Preparations,
+    token_programs: &[(Pubkey, Pubkey)],
 ) -> Result<(), Failure> {
     let [sell, buy, buy_account, owner] = [
         order.sell_token,
@@ -512,12 +501,12 @@ async fn check_accounts(
     ]
     .map(|key| Pubkey::new_from_array(key.0));
     let wallet = (buy == ENCODED_NATIVE_SOL_TRANSFER).then_some(buy_account);
-    let uncreated = (wallet.is_none() && !preparations.creates_buy_account).then_some(buy_account);
+    let token_account = wallet.is_none().then_some(buy_account);
     let mints: Vec<Pubkey> = token_mints(sell, buy).collect();
     let lookup = sponsoring.mints.lookup(mints.iter().copied());
     let accounts = sponsoring
         .rpc
-        .multiple_accounts(lookup.unread().chain(wallet).chain(uncreated))
+        .multiple_accounts(lookup.unread().chain(wallet).chain(token_account))
         .await
         .map_err(|err| Failure::internal(err, "order account lookup"))?;
     let verdicts = lookup.resolve(&accounts);
@@ -544,7 +533,7 @@ async fn check_accounts(
         )
         .into());
     }
-    if let Some(account) = uncreated
+    if let Some(account) = token_account
         && !receivable_or_creatable(
             accounts.get(&account),
             &account,
@@ -554,13 +543,13 @@ async fn check_accounts(
         )
     {
         return Err(PlacementError::InvalidTransaction(
-            "the buy token account cannot receive the payout and the bundle does not create it",
+            "the buy token account cannot receive the payout",
         )
         .into());
     }
-    // The parser matched every preparation step to the sell or buy mint, both
-    // read above, so each pair has a verdict.
-    let owned = preparations.token_programs.iter().all(|(mint, program)| {
+    // The parser matched every preparation step to the sell mint, read
+    // above, so each pair has a verdict.
+    let owned = token_programs.iter().all(|(mint, program)| {
         verdicts
             .get(mint)
             .is_some_and(|verdict| verdict.is_ok_and(|owner| owner.address() == *program))
@@ -588,14 +577,15 @@ async fn link_quote(
     id: i64,
     order: &db::SponsoredOrder,
 ) -> Option<db::OrderQuote> {
+    let order_uid = const_hex::encode_prefixed(order.uid.0);
     let quote = match db::read_quote(pool, id).await {
         Ok(Some(quote)) => quote,
         Ok(None) => {
-            tracing::warn!(id, "quote link dropped, no such quote");
+            tracing::debug!(id, %order_uid, "quote link dropped, no such quote");
             return None;
         }
         Err(err) => {
-            tracing::warn!(id, ?err, "quote link dropped, lookup failed");
+            tracing::warn!(id, %order_uid, ?err, "quote link dropped, lookup failed");
             return None;
         }
     };
@@ -605,13 +595,26 @@ async fn link_quote(
         OrderKind::Sell => quote.sell_amount.to_u64() == Some(order.sell_amount),
         OrderKind::Buy => quote.buy_amount.to_u64() == Some(order.buy_amount),
     };
-    let matches = quote.sell_token == order.sell_token
-        && quote.buy_token == order.buy_token
-        && quote.kind == order.kind
+    let sell_token_matches = quote.sell_token == order.sell_token;
+    let buy_token_matches = quote.buy_token == order.buy_token;
+    let kind_matches = quote.kind == order.kind;
+    let unexpired = quote.expiration > chrono::Utc::now();
+    let matches = sell_token_matches
+        && buy_token_matches
+        && kind_matches
         && fixed_amount_matches
-        && quote.expiration > chrono::Utc::now();
+        && unexpired;
     if !matches {
-        tracing::warn!(id, "quote link dropped, the quote does not match the order");
+        tracing::debug!(
+            id,
+            %order_uid,
+            sell_token_matches,
+            buy_token_matches,
+            kind_matches,
+            fixed_amount_matches,
+            unexpired,
+            "quote link dropped, the quote does not match the order"
+        );
         return None;
     }
     Some(db::OrderQuote {
@@ -646,7 +649,6 @@ const WRAP_CREATE: u8 = 1;
 const WRAP_TRANSFER: u8 = 2;
 const WRAP_SYNC: u8 = 3;
 const APPROVE: u8 = 4;
-const CREATE_DESTINATION: u8 = 5;
 
 /// The compute units a transaction can consume at most, whatever it declares.
 /// A transaction that names no limit is priced against this, since the units
@@ -739,7 +741,6 @@ impl ComputeBudget {
 /// the step's template position and, for a token step, its mint with the
 /// token program it names.
 fn preparation_step(
-    sponsoring: &Sponsoring,
     state_pda: &Pubkey,
     intent: &OrderIntent,
     keys: &[Pubkey],
@@ -849,11 +850,6 @@ fn preparation_step(
                 "the account creation must reference the system and token programs",
             ));
         }
-        if payer != sponsoring.funder && payer != intent.owner {
-            return Err(PlacementError::InvalidTransaction(
-                "the account creation must be paid by the funder or the owner",
-            ));
-        }
         if wrapped_sell && account == intent.sell.token_account && mint == intent.sell.mint {
             // An order sells its owner's funds, so the wSOL account is theirs.
             if owner != intent.owner {
@@ -861,14 +857,26 @@ fn preparation_step(
                     "the created sell token account must belong to the order owner",
                 ));
             }
+            // The rent of the sell account is never charged back, and
+            // closing the account refunds it to the owner, so the owner
+            // pays for it.
+            if payer != intent.owner {
+                return Err(PlacementError::InvalidTransaction(
+                    "the sell token account creation must be paid by the order owner",
+                ));
+            }
             Ok((WRAP_CREATE, Some((mint, token_program))))
         } else if let Asset::TokenProgram(buy) = &intent.buy
             && account == buy.token_account
             && mint == buy.mint
         {
-            // Any wallet may receive the proceeds: settlement pays out to the
-            // account the intent names, whoever owns it.
-            Ok((CREATE_DESTINATION, Some((mint, token_program))))
+            // The settlement creates a missing account itself at the owner's
+            // associated address and charges the rent out of the fill; a
+            // bundle creating it bills the funder instead, and a custom
+            // receiver's account must exist already.
+            Err(PlacementError::InvalidTransaction(
+                "the bundle must not create the buy token account",
+            ))
         } else {
             Err(PlacementError::InvalidTransaction(
                 "the created account does not belong to the order",
