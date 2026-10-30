@@ -366,7 +366,9 @@ paths:
             object or exceeds the size limit, or a hash with no registered
             document (`InvalidAppData`), an `appData` document or hash
             disagreeing with its `appDataHash` or the intent's `app_data`
-            (`AppDataHashMismatch`), a mint the settlement program
+            (`AppDataHashMismatch`), an owner holding none of the sell
+            token, for a SOL sell neither wSOL nor SOL
+            (`InsufficientBalance`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:

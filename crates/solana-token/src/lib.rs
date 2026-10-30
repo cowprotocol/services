@@ -265,6 +265,22 @@ pub fn receivable_token_account(account: &Account, mint: &Pubkey) -> bool {
         })
 }
 
+/// Whether the token account read from the chain as `account` holds any of
+/// `mint` for an order to sell: initialized, unfrozen, under either token
+/// program, with a balance above zero. A missing account holds nothing. One
+/// unit is the EVM orderbook's placement rule, so the full amount may arrive
+/// after placing.
+pub fn holds_token(account: Option<&Account>, mint: &Pubkey) -> bool {
+    account.is_some_and(|account| {
+        TokenProgram::try_from(&account.owner).is_ok()
+            && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
+                state.base.state == AccountState::Initialized
+                    && state.base.mint == *mint
+                    && state.base.amount > 0
+            })
+    })
+}
+
 /// Whether the settlement's payout of `mint` lands in the token account at
 /// `account`, read from the chain as `found`: the account receives the mint,
 /// or the settlement creates it, which it does only at `owner`'s associated
@@ -684,6 +700,73 @@ mod tests {
         assert!(!receivable_token_account(&with_memos(true), &mint));
         assert!(receivable_token_account(&with_confidential(true), &mint));
         assert!(!receivable_token_account(&with_confidential(false), &mint));
+    }
+
+    /// A token account holds the mint while initialized with a positive
+    /// balance, under either token program. A missing account, an empty or
+    /// frozen one, one of another mint, or one outside the token programs
+    /// holds nothing.
+    #[test]
+    fn holds_the_mint_with_a_positive_balance() {
+        let mint = Pubkey::new_unique();
+        let account = |mint: &Pubkey, amount, state, program| {
+            let mut data = vec![0; TokenAccount::LEN];
+            TokenAccount {
+                mint: *mint,
+                amount,
+                state,
+                ..TokenAccount::default()
+            }
+            .pack_into_slice(&mut data);
+            Account {
+                owner: program,
+                data,
+                ..Account::default()
+            }
+        };
+        let (classic, token_2022) = (
+            TokenProgram::SplToken.address(),
+            TokenProgram::Token2022.address(),
+        );
+        for (account, holds) in [
+            (None, false),
+            (
+                Some(account(&mint, 1, AccountState::Initialized, classic)),
+                true,
+            ),
+            (
+                Some(account(&mint, 1, AccountState::Initialized, token_2022)),
+                true,
+            ),
+            (
+                Some(account(&mint, 0, AccountState::Initialized, classic)),
+                false,
+            ),
+            (
+                Some(account(&mint, 1, AccountState::Frozen, classic)),
+                false,
+            ),
+            (
+                Some(account(
+                    &Pubkey::new_unique(),
+                    1,
+                    AccountState::Initialized,
+                    classic,
+                )),
+                false,
+            ),
+            (
+                Some(account(
+                    &mint,
+                    1,
+                    AccountState::Initialized,
+                    Pubkey::new_unique(),
+                )),
+                false,
+            ),
+        ] {
+            assert_eq!(holds_token(account.as_ref(), &mint), holds, "{account:?}");
+        }
     }
 
     /// The payout lands in an account receiving the mint wherever it sits,
