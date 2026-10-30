@@ -35,19 +35,21 @@ fee:  surplus(50, 1)
 
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
 `[lists]` holds named lists of strings and each `[[rule]]` table is a rule,
-tried in file order. Unknown
-top-level and rule keys are refused; any key under `[lists]` is a list
-name, so a list that no rule names loads without error. The file goes
-through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
-refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown key,
-missing field or a rule field that is empty; names the line and column), `Rules` (a `CompileError`) or
-`SampleOrder` (every `SampleOrderError`). A file without rules loads: no
+tried in file order. Unknown top-level and rule keys are refused; any key
+under `[lists]` is a list name, so a list that no rule names loads without
+error. The file goes through `RuleSet::new` and
+`RuleSet::validate_on_sample_order`; any failure refuses the whole file as a
+`LoadError`: `Toml` (does not parse, unknown key, missing field or a rule
+field that is empty; names the line and column), `Rules` (a `CompileError`)
+or `SampleOrder` (every `SampleOrderError`). A file without rules loads: no
 order pays a protocol fee.
 
 `load_rules_toml(RulesToml { lists, rules })` loads the same two tables as
 raw `toml::Value`s, e.g. from a section of a host config, so the host need
-not know their shape. It refuses them as `load_rules_from_str` does, but a
-`Toml` error has no line or column.
+not know their shape. `None` is an empty table, like an absent one in a
+file. It refuses them as `load_rules_from_str` does, but without a line or
+column: a malformed rule is a `MalformedRule` error that names the rule by
+its number, and any other malformed value is a `Toml` error.
 
 ```toml
 [lists]

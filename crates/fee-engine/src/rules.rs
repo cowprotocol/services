@@ -185,7 +185,7 @@ impl RuleSet {
             if definition.name.trim().is_empty() {
                 return Err(CompileError::EmptyRuleName { number: index + 1 });
             }
-            if !names.insert(definition.name.clone()) {
+            if !names.insert(definition.name.trim().to_owned()) {
                 return Err(CompileError::DuplicateRule {
                     name: definition.name,
                 });
@@ -356,6 +356,10 @@ mod tests {
                 rule("x", "true", "volume(1)")
             ]),
             CompileError::DuplicateRule { .. }
+        ));
+        assert!(matches!(
+            error(vec![rule("x", "true", "volume(1)"), rule("x ", "true", "volume(1)")]),
+            CompileError::DuplicateRule { ref name } if name == "x "
         ));
         for name in ["", " "] {
             assert!(matches!(

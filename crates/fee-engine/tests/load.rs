@@ -87,8 +87,8 @@ fn empty_file_has_no_rules() {
 fn loads_the_tables_of_a_host_config() {
     let mut config: toml::Table = toml::from_str(RULES).unwrap();
     let tables = RulesToml {
-        lists: config.remove("lists").unwrap(),
-        rules: config.remove("rule").unwrap(),
+        lists: config.remove("lists"),
+        rules: config.remove("rule"),
     };
     let names = |rules: RuleSet| -> Vec<String> {
         rules
@@ -108,22 +108,68 @@ fn loads_the_tables_of_a_host_config() {
             .rules()
             .is_empty()
     );
-    let extra_key: toml::Table =
-        toml::from_str(&(rule("x", "true", "no_fee()") + "extra = 1\n")).unwrap();
-    assert!(matches!(
+    let lists_only = RulesToml {
+        rules: None,
+        ..tables
+    };
+    assert!(load_rules_toml(lists_only).unwrap().rules().is_empty());
+}
+
+#[test]
+fn refuses_bad_host_config_tables() {
+    let error = |source: &str| {
+        let mut config: toml::Table = toml::from_str(source).unwrap();
         load_rules_toml(RulesToml {
-            rules: extra_key["rule"].clone(),
-            ..tables.clone()
-        }),
-        Err(LoadError::Toml(_))
+            lists: config.remove("lists"),
+            rules: config.remove("rule"),
+        })
+        .unwrap_err()
+    };
+    let fine = rule("x", "true", "no_fee()");
+
+    assert!(matches!(error("lists = []"), LoadError::Toml(_)));
+    assert!(matches!(error("rule = 1"), LoadError::Toml(_)));
+    assert!(matches!(
+        error(&(fine.clone() + "[[rule]]\nname = 'y'\nwhen = 'true'\n")),
+        LoadError::MalformedRule { number: 2, .. }
     ));
     assert!(matches!(
-        load_rules_toml(RulesToml {
-            lists: toml::Value::Array(vec![]),
-            ..tables
-        }),
-        Err(LoadError::Toml(_))
+        error(&(fine.clone() + &rule("y", "true", "no_fee()") + "extra = 1\n")),
+        LoadError::MalformedRule { number: 2, .. }
     ));
+    for empty in ["", " "] {
+        for definition in [
+            rule(empty, "true", "no_fee()"),
+            rule("y", empty, "no_fee()"),
+            rule("y", "true", empty),
+        ] {
+            assert!(matches!(
+                error(&(fine.clone() + &definition)),
+                LoadError::MalformedRule { number: 2, .. }
+            ));
+        }
+    }
+    assert!(matches!(
+        error(&rule("x", "order.sellToken in", "no_fee()")),
+        LoadError::Rules(CompileError::Expression {
+            field: Field::When,
+            ..
+        })
+    ));
+    assert!(matches!(
+        error(&(fine.clone() + &fine)),
+        LoadError::Rules(CompileError::DuplicateRule { .. })
+    ));
+    assert!(matches!(
+        error(&rule("x", "false", "volume(0.001)")),
+        LoadError::SampleOrder(_)
+    ));
+    assert_eq!(
+        error(&(fine.clone() + "[[rule]]\nname = 'y'\nwhen = 'true'\n"))
+            .to_string()
+            .trim_end(),
+        "rule number 2 is malformed: missing field `fee`"
+    );
 }
 
 #[test]
