@@ -240,10 +240,10 @@ impl Competition {
                 ),
             }
             if let Ok((_, Some(units))) = verdict {
-                // An engine's estimate over the measured usage is its margin
-                // to keep; one under it would fail the settlement.
-                let measured = self.priority_fee.compute_unit_limit(units);
-                solution.cu_estimate = Some(measured.max(solution.cu_estimate.unwrap_or(0)));
+                // The trader pays for the declared limit, so an engine's
+                // estimate over the usage would only pad their fee, and one
+                // under it would fail the settlement.
+                solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
             if let Some(fees) = fees {
                 let outcome = match &fees {

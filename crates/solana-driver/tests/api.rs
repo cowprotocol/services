@@ -1060,13 +1060,13 @@ async fn solve_cuts_at_the_simulated_compute_units() {
     assert_eq!(request["orders"][0]["buyAmount"], "3000");
 }
 
-/// The settlement declares the larger of the engine's estimate and the
-/// simulated units plus the headroom, and the cut is priced at it. 100_000
-/// simulated units declare 110_000 over an engine's 50_000: 1_100 lamports
-/// at the mock's 10_000 micro-lamports, kept at a 1_100 budget and dropped
-/// at 1_099. An engine's 200_000 stays over the 110_000: dropped at 1_999.
+/// The settlement declares the simulated units plus the headroom and the cut
+/// is priced at it, whatever the engine estimated. 100_000 simulated units
+/// declare 110_000: 1_100 lamports at the mock's 10_000 micro-lamports, kept
+/// at a 1_100 budget and dropped at 1_099 under an engine's 50_000, and kept
+/// at 1_100 under an engine's 200_000 too.
 #[tokio::test]
-async fn solve_declares_the_larger_of_the_engines_estimate_and_the_simulated_units() {
+async fn solve_declares_the_simulated_units_whatever_the_engine_estimated() {
     async fn solve_ids(cu_estimate: u32, max_priority_fee_lamports: u64) -> Vec<u64> {
         let mut response = engine_response(&[(1, "3000")]);
         response["solutions"][0]["cuEstimate"] = serde_json::json!(cu_estimate);
@@ -1089,7 +1089,7 @@ async fn solve_declares_the_larger_of_the_engines_estimate_and_the_simulated_uni
 
     assert_eq!(solve_ids(50_000, 1_100).await, vec![1]);
     assert!(solve_ids(50_000, 1_099).await.is_empty());
-    assert!(solve_ids(200_000, 1_999).await.is_empty());
+    assert_eq!(solve_ids(200_000, 1_100).await, vec![1]);
 }
 
 /// The reserve fetch before the engine is asked takes the one queued fee
