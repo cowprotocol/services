@@ -8,15 +8,17 @@ mod dto;
 use {
     super::{Error, Order, Quote, Side, Swap},
     crate::config::JupiterConfig,
+    serde::Deserialize,
     solana_sdk::pubkey::Pubkey,
 };
 
 const QUOTE_PATH: &str = "swap/v1/quote";
 const SWAP_INSTRUCTIONS_PATH: &str = "swap/v1/swap-instructions";
 
-/// Jupiter's quote direction, rendered as the `swapMode` query value.
-#[derive(Clone, Copy)]
-enum SwapMode {
+/// Jupiter's quote direction: the `swapMode` query value, echoed back in the
+/// response.
+#[derive(Clone, Copy, Deserialize)]
+pub enum SwapMode {
     ExactIn,
     ExactOut,
 }
@@ -58,7 +60,7 @@ impl Jupiter {
             Side::Buy => return Err(Error::OrderNotSupported),
         };
         let raw = self.fetch_quote(order, swap_mode).await?;
-        parse_quote(raw, swap_mode, order.buy_destination)
+        parse_quote(raw, order.buy_destination)
     }
 
     /// Build the swap for `quote` that the settlement signer `taker`
@@ -147,29 +149,18 @@ impl Jupiter {
     }
 }
 
-fn amount_field(quote: &serde_json::Value, field: &str) -> Result<u64, Error> {
-    quote
-        .get(field)
-        .and_then(serde_json::Value::as_str)
-        .and_then(|amount| amount.parse().ok())
-        .ok_or_else(|| Error::BadResponse(format!("missing or non-numeric {field}")))
-}
-
 /// Jupiter's `inAmount` and `outAmount` are what it expects the route to
 /// move; its swap instruction enforces only `otherAmountThreshold`, that
 /// expectation moved by `slippageBps`. The settlement program pays the
 /// promised amount out of what the swap delivered, so a promise above the
 /// enforced bound reverts the payout whenever the pool moves between the
 /// quote and the landing.
-fn parse_quote(
-    raw: serde_json::Value,
-    swap_mode: SwapMode,
-    destination: Pubkey,
-) -> Result<Quote, Error> {
-    let threshold = amount_field(&raw, "otherAmountThreshold")?;
-    let (in_amount, out_amount) = match swap_mode {
-        SwapMode::ExactIn => (amount_field(&raw, "inAmount")?, threshold),
-        SwapMode::ExactOut => (threshold, amount_field(&raw, "outAmount")?),
+fn parse_quote(raw: serde_json::Value, destination: Pubkey) -> Result<Quote, Error> {
+    let amounts = dto::QuoteAmounts::deserialize(&raw)
+        .map_err(|err| Error::BadResponse(format!("quote: {err}")))?;
+    let (in_amount, out_amount) = match amounts.swap_mode {
+        SwapMode::ExactIn => (amounts.in_amount, amounts.other_amount_threshold),
+        SwapMode::ExactOut => (amounts.other_amount_threshold, amounts.out_amount),
     };
     Ok(Quote {
         in_amount,
@@ -225,8 +216,9 @@ mod tests {
             "inAmount": "5000000",
             "outAmount": "483111998",
             "otherAmountThreshold": "480696439",
+            "swapMode": "ExactIn",
         });
-        let quote = parse_quote(raw, SwapMode::ExactIn, Pubkey::from_str(WSOL).unwrap()).unwrap();
+        let quote = parse_quote(raw, Pubkey::from_str(WSOL).unwrap()).unwrap();
         assert_eq!(
             (quote.in_amount, quote.out_amount),
             (5_000_000, 480_696_439)
@@ -239,8 +231,9 @@ mod tests {
             "inAmount": "1000",
             "outAmount": "1000000",
             "otherAmountThreshold": "1005",
+            "swapMode": "ExactOut",
         });
-        let quote = parse_quote(raw, SwapMode::ExactOut, Pubkey::from_str(WSOL).unwrap()).unwrap();
+        let quote = parse_quote(raw, Pubkey::from_str(WSOL).unwrap()).unwrap();
         assert_eq!((quote.in_amount, quote.out_amount), (1_005, 1_000_000));
     }
 
