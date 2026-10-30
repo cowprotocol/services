@@ -93,11 +93,7 @@ async fn blockchain_with(mut mocks: Mocks) -> Arc<Solana> {
         RpcRequest::GetMultipleAccounts,
         multiple_accounts_json([mint_account_json(), mint_account_json()]),
     );
-    let blockchain = Solana::new(
-        SolanaRPC::new_mock_with_mocks(mocks.clone()),
-        SolanaRPC::new_mock_with_mocks(mocks),
-        program_id(),
-    );
+    let blockchain = Solana::new(SolanaRPC::new_mock_with_mocks(mocks), program_id());
     blockchain
         .token_programs([pubkey(0x33), pubkey(0x44)])
         .await
