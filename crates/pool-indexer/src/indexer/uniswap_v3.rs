@@ -684,16 +684,17 @@ const MAX_BISECTION_DEPTH: u32 = 8;
 
 /// Retry transient `eth_getLogs` failures (timeout, reset, throttle) with
 /// backoff, capped by a per-call timeout, so one blip can't abort a long
-/// cold-seed scan. Range-size rejections are bisected, not retried.
+/// cold-seed scan. Range-size rejections are bisected, not retried, and so are
+/// cut-off replies while the range can still shrink.
 const GETLOGS_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_GETLOGS_RETRIES: u32 = 6;
 const GETLOGS_RETRY_BACKOFF: Duration = Duration::from_secs(2);
 
 /// Fetches logs for `[from, to]` filtered by the given contract addresses
 /// and `topic0` event signatures, sequentially bisecting the block range on
-/// "too large" rejections until each sub-range is tractable. An empty
-/// `addresses` list means "any contract". Bisection depth is capped by
-/// [`MAX_BISECTION_DEPTH`].
+/// "too large" rejections or cut-off replies until each sub-range is
+/// tractable. An empty `addresses` list means "any contract". Bisection depth
+/// is capped by [`MAX_BISECTION_DEPTH`].
 pub(crate) fn bisecting_get_logs(
     provider: &AlloyProvider,
     from: u64,
@@ -731,6 +732,17 @@ fn bisecting_get_logs_with_depth(
                             anyhow::Error::new(err).context(format!("get_logs({from}..={to})"))
                         );
                     }
+                    break;
+                }
+                // Reply cut off, e.g. by a proxy whose buffer it overflowed:
+                // bisect while the range can still shrink. The batching layer
+                // flattens transport errors into strings, hence the name match.
+                Ok(Err(err))
+                    if format!("{err:?}").contains("IncompleteMessage")
+                        && to > from
+                        && depth < MAX_BISECTION_DEPTH =>
+                {
+                    tracing::warn!(?err, from, to, "get_logs reply cut off, bisecting");
                     break;
                 }
                 Ok(Err(err)) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
@@ -1132,6 +1144,65 @@ mod tests {
     /// committed yet — only in-chunk PoolCreateds are accepted."
     fn known(pools: &[Address]) -> HashSet<Address> {
         pools.iter().copied().collect()
+    }
+
+    /// Fails `eth_getLogs` over more than `max_blocks` with `error` as a
+    /// transport error; otherwise returns one log per block.
+    fn capped_get_logs_provider(max_blocks: u64, error: &'static str) -> AlloyProvider {
+        use alloy_json_rpc::{RequestPacket, Response, ResponsePacket, ResponsePayload};
+
+        let transport = tower::service_fn(
+            move |req: RequestPacket| -> alloy_transport::TransportFut<'static> {
+                Box::pin(async move {
+                    let RequestPacket::Single(req) = req else {
+                        unreachable!("no batching")
+                    };
+                    let (filter,): (Filter,) =
+                        serde_json::from_str(req.params().unwrap().get()).unwrap();
+                    let from = filter.get_from_block().unwrap();
+                    let to = filter.get_to_block().unwrap();
+                    if to - from + 1 > max_blocks {
+                        return Err(alloy_transport::TransportErrorKind::custom_str(error));
+                    }
+                    let logs: Vec<Log> = (from..=to)
+                        .map(|block| Log {
+                            block_number: Some(block),
+                            ..Default::default()
+                        })
+                        .collect();
+                    Ok(ResponsePacket::Single(Response {
+                        id: req.id().clone(),
+                        payload: ResponsePayload::Success(
+                            serde_json::value::to_raw_value(&logs).unwrap(),
+                        ),
+                    }))
+                })
+            },
+        );
+        alloy_provider::ProviderBuilder::new()
+            .connect_client(alloy_rpc_client::RpcClient::new(transport, true))
+            .erased()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn get_logs_bisects_only_cut_off_replies() {
+        const CUT: &str = "batch call failed: hyper::Error(IncompleteMessage)";
+        const THROTTLED: &str = "batch call failed: HttpError(429)";
+
+        let logs = bisecting_get_logs(&capped_get_logs_provider(100, CUT), 1, 1000, vec![], vec![])
+            .await
+            .unwrap();
+        let blocks: Vec<u64> = logs.iter().map(|log| log.block_number.unwrap()).collect();
+        assert_eq!(blocks, (1..=1000).collect::<Vec<_>>());
+
+        for (max_blocks, error) in [(0, CUT), (100, THROTTLED)] {
+            let provider = capped_get_logs_provider(max_blocks, error);
+            assert!(
+                bisecting_get_logs(&provider, 1, 1000, vec![], vec![])
+                    .await
+                    .is_err()
+            );
+        }
     }
 
     #[test]
