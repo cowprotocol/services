@@ -9,6 +9,7 @@ use {
         observe as infra_observe,
         prices::NativePrices,
         quoter::Quoter,
+        verifier::Verifier,
     },
     clap::Parser,
     configs::database::DatabasePoolConfig,
@@ -113,6 +114,27 @@ pub async fn run(args: Args) {
             blockhash_catch_up: Duration::from_secs(2),
         }
     });
+    let verifier = config.quote_verification.as_ref().map(|verification| {
+        let rpc = config
+            .rpc
+            .as_ref()
+            .expect("the [quote-verification] section requires the [rpc] section");
+        let client = |endpoint, component| {
+            SolanaRPC::new_with_timeout_and_commitment(
+                endpoint,
+                rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+                component,
+            )
+        };
+        Verifier::new(
+            client(&rpc.endpoint, "verification"),
+            client(&verification.bundle_endpoint, "verification_bundle"),
+            verification.settlement_program,
+            verification.quote_inaccuracy_limit,
+            verification.mode,
+        )
+    });
     let api = Api {
         addr: config.http.bind_address,
         pool,
@@ -121,6 +143,7 @@ pub async fn run(args: Args) {
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
         sponsoring,
+        verifier,
         app_data_size_limit: config.app_data_size_limit,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
