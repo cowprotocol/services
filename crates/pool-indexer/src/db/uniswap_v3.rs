@@ -33,7 +33,7 @@ pub async fn get_checkpoint(pool: &PgPool, contract: &Address) -> Result<Option<
     Ok(row.map(|r| r.get::<i64, _>("block_number").cast_unsigned()))
 }
 
-pub async fn set_checkpoint(
+pub async fn insert_checkpoint(
     tx: &mut Transaction<'_, Postgres>,
     contract: &Address,
     block_number: u64,
@@ -41,14 +41,33 @@ pub async fn set_checkpoint(
     sqlx::query(
         "INSERT INTO pool_indexer_checkpoints (contract_address, block_number)
          VALUES ($1, $2)
-         ON CONFLICT (contract_address) DO UPDATE SET block_number = EXCLUDED.block_number",
+         ON CONFLICT (contract_address) DO NOTHING",
     )
     .bind(contract.as_slice())
     .bind(block_number.cast_signed())
     .execute(&mut **tx)
     .await
-    .context("set_checkpoint")?;
+    .context("insert_checkpoint")?;
     Ok(())
+}
+
+pub async fn advance_checkpoint(
+    tx: &mut Transaction<'_, Postgres>,
+    contract: &Address,
+    from: u64,
+    to: u64,
+) -> Result<bool> {
+    let result = sqlx::query(
+        "UPDATE pool_indexer_checkpoints SET block_number = $3
+         WHERE contract_address = $1 AND block_number = $2",
+    )
+    .bind(contract.as_slice())
+    .bind(from.cast_signed())
+    .bind(to.cast_signed())
+    .execute(&mut **tx)
+    .await
+    .context("advance_checkpoint")?;
+    Ok(result.rows_affected() == 1)
 }
 
 pub async fn insert_pools(

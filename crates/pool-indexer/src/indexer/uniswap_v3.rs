@@ -161,7 +161,7 @@ impl UniswapV3Indexer {
             );
         }
         let mut tx = self.db.begin().await.context("begin checkpoint tx")?;
-        db::set_checkpoint(&mut tx, &self.factory, from_block).await?;
+        db::insert_checkpoint(&mut tx, &self.factory, from_block).await?;
         tx.commit().await.context("commit checkpoint tx")?;
 
         self.catch_up_to_finalized().await
@@ -199,14 +199,18 @@ impl UniswapV3Indexer {
         }
 
         // Fetch chunks in parallel, commit in order.
-        futures::stream::iter(self.pending_chunks(last_indexed_block, finalized_block))
-            .map(|chunk| async move {
-                let logs = self.fetch_logs_bisecting(chunk.start, chunk.end).await?;
-                Ok::<_, anyhow::Error>((chunk, logs))
-            })
-            .buffered(self.fetch_concurrency)
-            .try_for_each(|(chunk, logs)| self.commit_chunk(chunk, logs, finalized_block))
-            .await?;
+        let mut chunks =
+            futures::stream::iter(self.pending_chunks(last_indexed_block, finalized_block))
+                .map(|chunk| async move {
+                    let logs = self.fetch_logs_bisecting(chunk.start, chunk.end).await?;
+                    Ok::<_, anyhow::Error>((chunk, logs))
+                })
+                .buffered(self.fetch_concurrency);
+        while let Some((chunk, logs)) = chunks.try_next().await? {
+            if !self.commit_chunk(chunk, logs, finalized_block).await? {
+                return Ok(());
+            }
+        }
 
         tracing::info!(
             block = finalized_block,
@@ -285,7 +289,14 @@ impl UniswapV3Indexer {
         chunk: ChunkRange,
         logs: Vec<Log>,
         target_block: u64,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        // Skip the reads below if another writer already moved the checkpoint.
+        // `persist_chunk` checks it again, so this only saves work.
+        if self.last_indexed_block().await? != chunk.start - 1 {
+            tracing::warn!(?chunk, "checkpoint moved by another writer, re-reading it");
+            return Ok(false);
+        }
+
         // Pre-fetch decimals + load base states + known pools in parallel
         // before opening the chunk tx. Symbols are deliberately excluded:
         // a hung `symbol()` call must never block pool inserts, so the
@@ -337,7 +348,9 @@ impl UniswapV3Indexer {
                 .inc_by(count as u64);
         }
 
-        self.persist_chunk(chunk, changes).await?;
+        if !self.persist_chunk(chunk, changes).await? {
+            return Ok(false);
+        }
 
         metrics
             .indexed_block
@@ -351,19 +364,22 @@ impl UniswapV3Indexer {
             .indexer_lag_blocks
             .with_label_values(&[network, factory])
             .set(i64::try_from(lag).unwrap_or(i64::MAX));
-        Ok(())
+        Ok(true)
     }
 
-    async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<()> {
+    async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<bool> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
+        if !db::advance_checkpoint(&mut tx, &self.factory, chunk.start - 1, chunk.end).await? {
+            tracing::warn!(?chunk, "checkpoint moved by another writer, re-reading it");
+            return Ok(false);
+        }
         db::insert_pools(&mut tx, &self.factory, &changes.new_pools).await?;
         db::upsert_pool_states(&mut tx, &self.factory, &changes.pool_states).await?;
         db::batch_update_pool_liquidity(&mut tx, &self.factory, &changes.liquidity_updates).await?;
         db::batch_update_ticks(&mut tx, &self.factory, &changes.tick_deltas).await?;
-        db::set_checkpoint(&mut tx, &self.factory, chunk.end).await?;
         tx.commit().await.context("commit transaction")?;
 
-        Ok(())
+        Ok(true)
     }
 
     /// Concurrent `decimals()` fetches for tokens in this chunk's
@@ -1438,5 +1454,72 @@ mod tests {
             "foreign-emitter Swap must be dropped"
         );
         assert!(c.tick_deltas.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_concurrent_writers_apply_chunk_once() {
+        let pg = PgPool::connect("postgresql:///pool_indexer").await.unwrap();
+        sqlx::query(
+            "TRUNCATE uniswap_v3_ticks, uniswap_v3_pool_states, uniswap_v3_pools, \
+             pool_indexer_checkpoints",
+        )
+        .execute(&pg)
+        .await
+        .unwrap();
+        let mut tx = pg.begin().await.unwrap();
+        db::insert_checkpoint(&mut tx, &FACTORY, 99).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let provider = alloy_provider::ProviderBuilder::new()
+            .connect_mocked_client(Default::default())
+            .erased();
+        let indexer = UniswapV3Indexer::new(
+            provider,
+            pg.clone(),
+            &IndexerConfig {
+                network: NetworkName::new("test"),
+                chain_id: 1,
+                factory_address: FACTORY,
+                chunk_size: 100,
+                use_latest: true,
+                fetch_concurrency: 1,
+                prefetch_concurrency: 1,
+            },
+        );
+        let chunk = ChunkRange {
+            start: 100,
+            end: 199,
+        };
+        let changes = || ChunkChanges {
+            new_pools: vec![NewPoolData {
+                address: POOL,
+                token0: TOKEN0,
+                token1: TOKEN1,
+                fee: 500,
+                token0_decimals: None,
+                token1_decimals: None,
+                token0_symbol: None,
+                token1_symbol: None,
+                created_block: 100,
+            }],
+            pool_states: vec![],
+            liquidity_updates: vec![],
+            tick_deltas: vec![TickDeltaData {
+                pool_address: POOL,
+                tick_idx: 0,
+                delta: 1000,
+            }],
+        };
+        let (a, b) = tokio::join!(
+            indexer.persist_chunk(chunk, changes()),
+            indexer.persist_chunk(chunk, changes()),
+        );
+        assert!(a.unwrap() ^ b.unwrap(), "exactly one writer commits");
+
+        let ticks = db::get_ticks(&pg, &POOL).await.unwrap();
+        assert_eq!(ticks.len(), 1);
+        assert_eq!(ticks[0].liquidity_net, bigdecimal::BigDecimal::from(1000));
+        assert_eq!(db::get_checkpoint(&pg, &FACTORY).await.unwrap(), Some(199));
     }
 }
