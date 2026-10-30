@@ -146,7 +146,7 @@ impl<'r> Evaluator<'r> {
 mod tests {
     use {
         super::*,
-        crate::rules::RuleDefinition,
+        crate::rules::{RuleDefinition, RuleSetDefinition},
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
         configs::fee_factor::FeeFactor,
@@ -201,7 +201,11 @@ mod tests {
     }
 
     fn rule_set(definitions: Vec<RuleDefinition>) -> RuleSet {
-        RuleSet::new(definitions, sample_lists()).unwrap()
+        RuleSet::new(RuleSetDefinition {
+            lists: sample_lists(),
+            rules: definitions,
+        })
+        .unwrap()
     }
 
     fn order(sell: Address, buy: Address) -> model::order::Order {
@@ -340,14 +344,14 @@ mod tests {
             "stablecoins".to_owned(),
             vec![USDC.to_string().to_uppercase().replace("0X", "0x")],
         )]);
-        let rules = RuleSet::new(
-            vec![rule(
+        let rules = RuleSet::new(RuleSetDefinition {
+            lists,
+            rules: vec![rule(
                 "Stable sells",
                 "order.sellToken in stablecoins",
                 "volume(1)",
             )],
-            lists,
-        )
+        })
         .unwrap();
         let evaluator = rules.evaluator(after_launch());
         let (rule, _) = matched(&evaluator.evaluate(Order {

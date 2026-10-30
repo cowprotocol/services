@@ -8,7 +8,7 @@
 //! A rule sees `order` (the fee-relevant fields of the API order, amounts as
 //! doubles and hex in lowercase), `now` and every list. `README.md` documents
 //! every name a rule can use, with an example each, and the TOML file
-//! [`load_rules`] reads.
+//! [`load_rules_from_str`] reads.
 
 mod evaluator;
 mod fee;
@@ -19,7 +19,15 @@ mod rules;
 pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
-    loader::{LoadError, load_rules},
+    loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
     order_view::Order,
-    rules::{CompileError, Field, Rule, RuleDefinition, RuleSet, SampleOrderError},
+    rules::{
+        CompileError,
+        Field,
+        Rule,
+        RuleDefinition,
+        RuleSet,
+        RuleSetDefinition,
+        SampleOrderError,
+    },
 };

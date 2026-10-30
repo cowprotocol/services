@@ -11,6 +11,7 @@ fn readme_examples_load() {
         .collect();
     assert!(!blocks.is_empty());
     for (index, block) in blocks.iter().enumerate() {
-        fee_engine::load_rules(block).unwrap_or_else(|err| panic!("README block {index}: {err}"));
+        fee_engine::load_rules_from_str(block)
+            .unwrap_or_else(|err| panic!("README block {index}: {err}"));
     }
 }

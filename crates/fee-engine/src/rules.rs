@@ -14,7 +14,7 @@ use {
         OrderMetadata,
         OrderQuote,
     },
-    serde::Deserialize,
+    serde::{Deserialize, Deserializer, de},
     std::{
         collections::{BTreeMap, HashSet},
         fmt,
@@ -26,9 +26,35 @@ use {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleDefinition {
+    #[serde(deserialize_with = "non_empty")]
     pub name: String,
+    #[serde(deserialize_with = "non_empty")]
     pub when: String,
+    #[serde(deserialize_with = "non_empty")]
     pub fee: String,
+}
+
+/// A string with more than whitespace in it.
+fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if value.trim().is_empty() {
+        return Err(de::Error::invalid_value(
+            de::Unexpected::Str(&value),
+            &"a non-empty string",
+        ));
+    }
+    Ok(value)
+}
+
+/// A rule set as written: named lists and the rules in the order they are
+/// tried. In TOML, `[lists]` and one `[[rule]]` table per rule.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuleSetDefinition {
+    #[serde(default)]
+    pub lists: BTreeMap<String, Vec<String>>,
+    #[serde(default, rename = "rule")]
+    pub rules: Vec<RuleDefinition>,
 }
 
 /// Names the evaluator binds itself; a list under one of them would be
@@ -38,6 +64,8 @@ const RESERVED_NAMES: [&str; 3] = ["order", "now", "math"];
 /// Why a set of rule definitions was refused.
 #[derive(Debug, thiserror::Error)]
 pub enum CompileError {
+    #[error("rule number {number} has an empty name")]
+    EmptyRuleName { number: usize },
     #[error("rule `{name}` is defined twice")]
     DuplicateRule { name: String },
     #[error("list `{name}` takes a name the engine binds itself")]
@@ -145,8 +173,10 @@ impl RuleSet {
     /// stdlib plus its math and strings extensions. Each list becomes a CEL
     /// list under its name. Any failure refuses the whole set.
     pub fn new(
-        definitions: Vec<RuleDefinition>,
-        lists: BTreeMap<String, Vec<String>>,
+        RuleSetDefinition {
+            lists,
+            rules: definitions,
+        }: RuleSetDefinition,
     ) -> Result<Self, CompileError> {
         let mut env = Env::stdlib().with_optional_support(false);
         cel::extensions::math(&mut env).expect("math names are free in the stdlib");
@@ -160,8 +190,11 @@ impl RuleSet {
             return Err(CompileError::ReservedList { name: name.clone() });
         }
         let mut names = HashSet::new();
-        for definition in definitions {
-            if !names.insert(definition.name.clone()) {
+        for (index, definition) in definitions.into_iter().enumerate() {
+            if definition.name.trim().is_empty() {
+                return Err(CompileError::EmptyRuleName { number: index + 1 });
+            }
+            if !names.insert(definition.name.trim().to_owned()) {
                 return Err(CompileError::DuplicateRule {
                     name: definition.name,
                 });
@@ -284,13 +317,13 @@ mod tests {
 
     #[test]
     fn keeps_rule_order_and_sources() {
-        let rules = RuleSet::new(
-            vec![
+        let rules = RuleSet::new(RuleSetDefinition {
+            rules: vec![
                 rule("First", "order.kind == 'sell'", "volume(1)"),
                 rule("Second", "true", "no_fee()"),
             ],
-            BTreeMap::new(),
-        )
+            ..Default::default()
+        })
         .unwrap();
         let names: Vec<_> = rules.rules().iter().map(Rule::name).collect();
         assert_eq!(names, ["First", "Second"]);
@@ -304,7 +337,11 @@ mod tests {
             "tokens".to_owned(),
             vec!["0xAbC".to_owned(), "Acme".to_owned()],
         )]);
-        let rules = RuleSet::new(vec![], lists).unwrap();
+        let rules = RuleSet::new(RuleSetDefinition {
+            lists,
+            ..Default::default()
+        })
+        .unwrap();
         let [(name, members)] = &rules.lists[..] else {
             panic!("expected one list");
         };
@@ -317,7 +354,13 @@ mod tests {
 
     #[test]
     fn refuses_bad_definitions() {
-        let error = |definitions| RuleSet::new(definitions, BTreeMap::new()).unwrap_err();
+        let error = |rules| {
+            RuleSet::new(RuleSetDefinition {
+                rules,
+                ..Default::default()
+            })
+            .unwrap_err()
+        };
 
         assert!(matches!(
             error(vec![rule("x", "order.sellToken in", "volume(1)")]),
@@ -340,6 +383,19 @@ mod tests {
             ]),
             CompileError::DuplicateRule { .. }
         ));
+        assert!(matches!(
+            error(vec![rule("x", "true", "volume(1)"), rule("x ", "true", "volume(1)")]),
+            CompileError::DuplicateRule { ref name } if name == "x "
+        ));
+        for name in ["", " "] {
+            assert!(matches!(
+                error(vec![
+                    rule("x", "true", "volume(1)"),
+                    rule(name, "true", "volume(1)")
+                ]),
+                CompileError::EmptyRuleName { number: 2 }
+            ));
+        }
     }
 
     #[test]
@@ -347,7 +403,11 @@ mod tests {
         for name in RESERVED_NAMES {
             let lists = BTreeMap::from([(name.to_owned(), vec![])]);
             assert!(matches!(
-                RuleSet::new(vec![], lists).unwrap_err(),
+                RuleSet::new(RuleSetDefinition {
+                    lists,
+                    ..Default::default()
+                })
+                .unwrap_err(),
                 CompileError::ReservedList { name: found } if found == name
             ));
         }
@@ -355,10 +415,13 @@ mod tests {
 
     #[test]
     fn validates_every_expression_on_a_sample_order() {
-        let validate = |definitions| {
-            RuleSet::new(definitions, BTreeMap::new())
-                .unwrap()
-                .validate_on_sample_order()
+        let validate = |rules| {
+            RuleSet::new(RuleSetDefinition {
+                rules,
+                ..Default::default()
+            })
+            .unwrap()
+            .validate_on_sample_order()
         };
 
         validate(vec![
@@ -418,14 +481,14 @@ mod tests {
 
     #[test]
     fn sample_order_validation_reports_every_failure() {
-        let rules = RuleSet::new(
-            vec![
+        let rules = RuleSet::new(RuleSetDefinition {
+            rules: vec![
                 rule("Both", "order.sellAmount", "volume(0.001)"),
                 rule("Fine", "true", "volume(1)"),
                 rule("Fee", "true", "volume('ten')"),
             ],
-            BTreeMap::new(),
-        )
+            ..Default::default()
+        })
         .unwrap();
         let failed: Vec<_> = rules
             .validate_on_sample_order()

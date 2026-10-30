@@ -3,7 +3,17 @@
 use {
     alloy_primitives::{Address, U256, address},
     chrono::Utc,
-    fee_engine::{CompileError, Fee, Field, LoadError, Match, load_rules},
+    fee_engine::{
+        CompileError,
+        Fee,
+        Field,
+        LoadError,
+        Match,
+        RuleSet,
+        RulesToml,
+        load_rules_from_str,
+        load_rules_toml,
+    },
     model::order::{Order, OrderData},
 };
 
@@ -34,7 +44,7 @@ fn rule(name: &str, when: &str, fee: &str) -> String {
 
 #[test]
 fn mainnet_sample_loads_in_file_order() {
-    let rules = load_rules(RULES).unwrap();
+    let rules = load_rules_from_str(RULES).unwrap();
     let names: Vec<_> = rules.rules().iter().map(|rule| rule.name()).collect();
     assert_eq!(
         names,
@@ -50,7 +60,7 @@ fn mainnet_sample_loads_in_file_order() {
 
 #[test]
 fn mainnet_sample_lists_reach_the_rules() {
-    let rules = load_rules(RULES).unwrap();
+    let rules = load_rules_from_str(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
 
     let evaluation = evaluator.evaluate(fee_engine::Order {
@@ -87,12 +97,101 @@ fn mainnet_sample_lists_reach_the_rules() {
 
 #[test]
 fn empty_file_has_no_rules() {
-    assert!(load_rules("").unwrap().rules().is_empty());
+    assert!(load_rules_from_str("").unwrap().rules().is_empty());
+}
+
+#[test]
+fn loads_the_tables_of_a_host_config() {
+    let mut config: toml::Table = toml::from_str(RULES).unwrap();
+    let tables = RulesToml {
+        lists: config.remove("lists"),
+        rules: config.remove("rule"),
+    };
+    let names = |rules: RuleSet| -> Vec<String> {
+        rules
+            .rules()
+            .iter()
+            .map(|rule| rule.name().to_owned())
+            .collect()
+    };
+    assert_eq!(
+        names(load_rules_toml(tables.clone()).unwrap()),
+        names(load_rules_from_str(RULES).unwrap())
+    );
+
+    assert!(
+        load_rules_toml(RulesToml::default())
+            .unwrap()
+            .rules()
+            .is_empty()
+    );
+    let lists_only = RulesToml {
+        rules: None,
+        ..tables
+    };
+    assert!(load_rules_toml(lists_only).unwrap().rules().is_empty());
+}
+
+#[test]
+fn refuses_bad_host_config_tables() {
+    let error = |source: &str| {
+        let mut config: toml::Table = toml::from_str(source).unwrap();
+        load_rules_toml(RulesToml {
+            lists: config.remove("lists"),
+            rules: config.remove("rule"),
+        })
+        .unwrap_err()
+    };
+    let fine = rule("x", "true", "no_fee()");
+
+    assert!(matches!(error("lists = []"), LoadError::Toml(_)));
+    assert!(matches!(error("rule = 1"), LoadError::Toml(_)));
+    assert!(matches!(
+        error(&(fine.clone() + "[[rule]]\nname = 'y'\nwhen = 'true'\n")),
+        LoadError::MalformedRule { number: 2, .. }
+    ));
+    assert!(matches!(
+        error(&(fine.clone() + &rule("y", "true", "no_fee()") + "extra = 1\n")),
+        LoadError::MalformedRule { number: 2, .. }
+    ));
+    for empty in ["", " "] {
+        for definition in [
+            rule(empty, "true", "no_fee()"),
+            rule("y", empty, "no_fee()"),
+            rule("y", "true", empty),
+        ] {
+            assert!(matches!(
+                error(&(fine.clone() + &definition)),
+                LoadError::MalformedRule { number: 2, .. }
+            ));
+        }
+    }
+    assert!(matches!(
+        error(&rule("x", "order.sellToken in", "no_fee()")),
+        LoadError::Rules(CompileError::Expression {
+            field: Field::When,
+            ..
+        })
+    ));
+    assert!(matches!(
+        error(&(fine.clone() + &fine)),
+        LoadError::Rules(CompileError::DuplicateRule { .. })
+    ));
+    assert!(matches!(
+        error(&rule("x", "false", "volume(0.001)")),
+        LoadError::SampleOrder(_)
+    ));
+    assert_eq!(
+        error(&(fine.clone() + "[[rule]]\nname = 'y'\nwhen = 'true'\n"))
+            .to_string()
+            .trim_end(),
+        "rule number 2 is malformed: missing field `fee`"
+    );
 }
 
 #[test]
 fn refuses_bad_files() {
-    let error = |source: &str| load_rules(source).unwrap_err();
+    let error = |source: &str| load_rules_from_str(source).unwrap_err();
 
     assert!(matches!(error("[lists"), LoadError::Toml(_)));
     assert!(matches!(error("[caps]\nvolume = 1"), LoadError::Toml(_)));
@@ -115,13 +214,28 @@ fn refuses_bad_files() {
         error(&(rule("x", "true", "no_fee()") + &rule("x", "true", "no_fee()"))),
         LoadError::Rules(CompileError::DuplicateRule { .. })
     ));
+    for empty in ["", " "] {
+        for definition in [
+            rule(empty, "true", "no_fee()"),
+            rule("x", empty, "no_fee()"),
+            rule("x", "true", empty),
+        ] {
+            assert!(matches!(error(&definition), LoadError::Toml(_)));
+        }
+    }
     assert!(matches!(
         error("[lists]\norder = []"),
         LoadError::Rules(CompileError::ReservedList { .. })
     ));
-    let LoadError::SampleOrder(errors) =
-        error(&(rule("x", "false", "volume(0.001)") + &rule("y", "order.sellAmount", "no_fee()")))
-    else {
+    let sample_order_error =
+        error(&(rule("x", "false", "volume(0.001)") + &rule("y", "order.sellAmount", "no_fee()")));
+    assert_eq!(
+        sample_order_error.to_string(),
+        "rule `x`: `fee` `volume` argument `bps` = 0.001 is finer than the fee precision (1e-6 of \
+         the volume) on a sample order; rule `y`: `when` returned float, not a bool on a sample \
+         order"
+    );
+    let LoadError::SampleOrder(errors) = sample_order_error else {
         panic!("expected a sample order error");
     };
     let failed: Vec<_> = errors
