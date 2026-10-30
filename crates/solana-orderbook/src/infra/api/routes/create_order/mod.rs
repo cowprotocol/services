@@ -4,13 +4,12 @@
 //!
 //! The funder countersigns as fee payer, so only the whitelisted
 //! preparation steps may precede the mandatory trailing `CreateOrder`: wrap
-//! SOL, delegate the sell account, create the buy token account. Without
-//! the creation, placement looks the buy token account up: the settlement
-//! creates a missing one only at the owner's associated token address, as
-//! no other address reveals the wallet to create it for, so any other
-//! account must already receive the buy mint. A native SOL buy has no buy
-//! token account: its payout goes to the wallet and creates it when
-//! missing, so placement looks the wallet up instead.
+//! SOL and delegate the sell account. The bundle must not create the buy
+//! token account; placement looks it up instead: the settlement creates a
+//! missing one only at the owner's associated token address, so a custom
+//! receiver's account must already exist and receive the buy mint. A native
+//! SOL buy has no buy token account: its payout goes to the wallet and
+//! creates it when missing, so placement looks the wallet up instead.
 
 use {
     super::mint::{ensure_settleable, is_token_program, token_mints},
@@ -33,11 +32,13 @@ use {
         instruction::{InstructionInputParsing, create_order::CreateOrderInput},
         pda::{order::find_order_pda, state::STATE_PDA_SEEDS},
     },
+    cow_solana_rpc::SolanaRPC,
     database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
     serde_with::{base64::Base64, serde_as},
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
+        hash::Hash,
         message::{VersionedMessage, compiled_instruction::CompiledInstruction},
         pubkey::Pubkey,
         transaction::VersionedTransaction,
@@ -45,6 +46,7 @@ use {
     solana_system_interface::instruction::SystemInstruction,
     solana_token::receivable_or_creatable,
     spl_token_interface::instruction::TokenInstruction,
+    std::time::{Duration, Instant},
 };
 
 /// Request body: the user's partially signed creation transaction,
@@ -208,7 +210,7 @@ async fn place(
         .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
-    let (mut order, preparations) = validate(sponsoring, &transaction, state.validation())?;
+    let (mut order, token_programs) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
     // The intent signed the hash, so whatever the request names must agree
     // with it, and the hash alone needs its document registered already.
@@ -239,15 +241,13 @@ async fn place(
         state.app_data_size_limit(),
     )
     .map_err(|err| Failure::Replied(err.into()))?;
-    check_accounts(sponsoring, &order, &preparations).await?;
+    check_accounts(sponsoring, &order, &token_programs).await?;
 
     // The countersign re-checks freshness, so the stored expiry only has to
     // be an upper bound: the tip cannot have moved past the blockhash's own
     // last valid height by more than the maximum age.
     let blockhash = transaction.message.recent_blockhash();
-    let valid = sponsoring
-        .rpc
-        .is_blockhash_valid(blockhash)
+    let valid = blockhash_valid(&sponsoring.rpc, blockhash, sponsoring.blockhash_catch_up)
         .await
         .map_err(|err| Failure::internal(err, "blockhash validity check"))?;
     if !valid {
@@ -295,27 +295,62 @@ async fn place(
     let quote_solver = quote
         .as_ref()
         .map(|quote| Pubkey::new_from_array(quote.solver.0));
-    tracing::info!(order_uid = %uid, ?quote_id, ?quote_solver, "order created");
+    let position = MarketPosition::of(order.sell_amount, order.buy_amount, quote.as_ref());
+    metrics()
+        .orders
+        .with_label_values(&[position.as_str(), "created"])
+        .inc();
+    tracing::info!(
+        order_uid = %uid,
+        ?quote_id,
+        ?quote_solver,
+        in_market = position == MarketPosition::InMarket,
+        "order created"
+    );
     Ok((StatusCode::CREATED, Json(uid)))
 }
 
-/// What the preparation steps of a creation transaction name, for the
-/// caller to check against the chain.
-struct Preparations {
-    /// The `(mint, token program)` pairs the steps name.
-    token_programs: Vec<(Pubkey, Pubkey)>,
-    /// Whether the steps create the buy token account.
-    creates_buy_account: bool,
+/// How often placement asks the node again about a blockhash it has not
+/// confirmed, about one slot.
+const BLOCKHASH_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Whether `blockhash` is usable, waiting up to `catch_up` for the node to
+/// confirm it. The node reports a blockhash from a slot it has not confirmed
+/// yet as invalid, and the client may read one from a node ahead of ours. A
+/// blockhash the node does not know even at processed commitment is expired,
+/// or newer than anything the node has seen, so it is refused without waiting.
+async fn blockhash_valid(
+    rpc: &SolanaRPC,
+    blockhash: &Hash,
+    catch_up: Duration,
+) -> Result<bool, cow_solana_rpc::Error> {
+    if rpc.is_blockhash_valid(blockhash).await? {
+        return Ok(true);
+    }
+    if catch_up.is_zero() || !rpc.is_blockhash_valid_at_processed(blockhash).await? {
+        return Ok(false);
+    }
+    let deadline = Instant::now() + catch_up;
+    loop {
+        tokio::time::sleep(BLOCKHASH_POLL_INTERVAL).await;
+        if rpc.is_blockhash_valid(blockhash).await? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+    }
 }
 
 /// Check the transaction is exactly the sponsored-creation shape and derive
-/// the order from it. The expiry and transaction bytes are filled by the
-/// caller.
+/// the order from it, returning also the `(mint, token program)` pairs the
+/// preparation steps name, for the caller to check against the chain. The
+/// expiry and transaction bytes are filled by the caller.
 fn validate(
     sponsoring: &Sponsoring,
     transaction: &VersionedTransaction,
     validation: ValidationParameters,
-) -> Result<(db::SponsoredOrder, Preparations), PlacementError> {
+) -> Result<(db::SponsoredOrder, Vec<(Pubkey, Pubkey)>), PlacementError> {
     let message = &transaction.message;
     // A v1 message carries its priority fee in its config, out of reach of
     // the compute-budget pricing below, and the funder would pay it.
@@ -428,8 +463,7 @@ fn validate(
     let mut last_step = 0;
     let mut token_programs = Vec::new();
     for preparation in preparations {
-        let (step, token_program) =
-            preparation_step(sponsoring, &state_pda, &intent, keys, preparation)?;
+        let (step, token_program) = preparation_step(&state_pda, &intent, keys, preparation)?;
         if step <= last_step {
             return Err(PlacementError::InvalidTransaction(
                 "the instructions do not follow the sponsored template order",
@@ -455,25 +489,20 @@ fn validate(
         }
     }
 
-    let preparations = Preparations {
-        token_programs,
-        creates_buy_account: last_step == CREATE_DESTINATION,
-    };
-    Ok((build_order(intent, uid, order_pda), preparations))
+    Ok((build_order(intent, uid, order_pda), token_programs))
 }
 
 /// Reject an order on a mint the settlement program cannot move, a
 /// preparation step naming a token program that does not own its mint, a
 /// native SOL buy paying an account the System Program does not own or
 /// leaving its wallet under the rent-exempt minimum, and a token buy whose
-/// bundle does not create a buy token account the settlement can neither pay
-/// out to nor create. Lamports paid to a program or a sysvar revert the
-/// settlement, and a program-owned account strands them. The payout creates
-/// a missing wallet.
+/// buy token account the settlement can neither pay out to nor create.
+/// Lamports paid to a program or a sysvar revert the settlement, and a
+/// program-owned account strands them. The payout creates a missing wallet.
 async fn check_accounts(
     sponsoring: &Sponsoring,
     order: &db::SponsoredOrder,
-    preparations: &Preparations,
+    token_programs: &[(Pubkey, Pubkey)],
 ) -> Result<(), Failure> {
     let [sell, buy, buy_account, owner] = [
         order.sell_token,
@@ -483,12 +512,12 @@ async fn check_accounts(
     ]
     .map(|key| Pubkey::new_from_array(key.0));
     let wallet = (buy == ENCODED_NATIVE_SOL_TRANSFER).then_some(buy_account);
-    let uncreated = (wallet.is_none() && !preparations.creates_buy_account).then_some(buy_account);
+    let token_account = wallet.is_none().then_some(buy_account);
     let mints: Vec<Pubkey> = token_mints(sell, buy).collect();
     let lookup = sponsoring.mints.lookup(mints.iter().copied());
     let accounts = sponsoring
         .rpc
-        .multiple_accounts(lookup.unread().chain(wallet).chain(uncreated))
+        .multiple_accounts(lookup.unread().chain(wallet).chain(token_account))
         .await
         .map_err(|err| Failure::internal(err, "order account lookup"))?;
     let verdicts = lookup.resolve(&accounts);
@@ -515,7 +544,7 @@ async fn check_accounts(
         )
         .into());
     }
-    if let Some(account) = uncreated
+    if let Some(account) = token_account
         && !receivable_or_creatable(
             accounts.get(&account),
             &account,
@@ -525,13 +554,13 @@ async fn check_accounts(
         )
     {
         return Err(PlacementError::InvalidTransaction(
-            "the buy token account cannot receive the payout and the bundle does not create it",
+            "the buy token account cannot receive the payout",
         )
         .into());
     }
-    // The parser matched every preparation step to the sell or buy mint, both
-    // read above, so each pair has a verdict.
-    let owned = preparations.token_programs.iter().all(|(mint, program)| {
+    // The parser matched every preparation step to the sell mint, read
+    // above, so each pair has a verdict.
+    let owned = token_programs.iter().all(|(mint, program)| {
         verdicts
             .get(mint)
             .is_some_and(|verdict| verdict.is_ok_and(|owner| owner.address() == *program))
@@ -607,6 +636,67 @@ async fn link_quote(
     })
 }
 
+/// Whether an order's limit sat within its quote when it was placed, the EVM
+/// `is_order_outside_market_price` check. The quote's execution cost is
+/// already netted into its amounts, so the comparison is the plain cross
+/// product. An order without a quote, or with a quote amount past `u64`, is
+/// out of market.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MarketPosition {
+    InMarket,
+    OutOfMarket,
+}
+
+impl MarketPosition {
+    fn of(sell_amount: u64, buy_amount: u64, quote: Option<&db::OrderQuote>) -> Self {
+        let in_market = quote.is_some_and(|quote| {
+            let (Some(quote_sell), Some(quote_buy)) =
+                (quote.sell_amount.to_u64(), quote.buy_amount.to_u64())
+            else {
+                return false;
+            };
+            u128::from(sell_amount) * u128::from(quote_buy)
+                >= u128::from(quote_sell) * u128::from(buy_amount)
+        });
+        if in_market {
+            Self::InMarket
+        } else {
+            Self::OutOfMarket
+        }
+    }
+
+    /// The metric label values keep the EVM `market`/`limit` naming.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InMarket => "market",
+            Self::OutOfMarket => "limit",
+        }
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Placed orders by market position, `market` or `limit`, and operation.
+    #[metric(name = "orderbook_orders", labels("kind", "operation"))]
+    orders: prometheus::IntCounterVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
+
+/// Create every placement series at zero, so a query over one reads 0
+/// instead of no data before its first order.
+pub fn initialize_metrics() {
+    let metrics = metrics();
+    for position in [MarketPosition::InMarket, MarketPosition::OutOfMarket] {
+        metrics
+            .orders
+            .with_label_values(&[position.as_str(), "created"])
+            .reset();
+    }
+}
+
 /// Resolve an instruction's account indexes into the transaction's keys.
 fn resolve_accounts(
     instruction: &CompiledInstruction,
@@ -631,7 +721,6 @@ const WRAP_CREATE: u8 = 1;
 const WRAP_TRANSFER: u8 = 2;
 const WRAP_SYNC: u8 = 3;
 const APPROVE: u8 = 4;
-const CREATE_DESTINATION: u8 = 5;
 
 /// The compute units a transaction can consume at most, whatever it declares.
 /// A transaction that names no limit is priced against this, since the units
@@ -724,7 +813,6 @@ impl ComputeBudget {
 /// the step's template position and, for a token step, its mint with the
 /// token program it names.
 fn preparation_step(
-    sponsoring: &Sponsoring,
     state_pda: &Pubkey,
     intent: &OrderIntent,
     keys: &[Pubkey],
@@ -834,11 +922,6 @@ fn preparation_step(
                 "the account creation must reference the system and token programs",
             ));
         }
-        if payer != sponsoring.funder && payer != intent.owner {
-            return Err(PlacementError::InvalidTransaction(
-                "the account creation must be paid by the funder or the owner",
-            ));
-        }
         if wrapped_sell && account == intent.sell.token_account && mint == intent.sell.mint {
             // An order sells its owner's funds, so the wSOL account is theirs.
             if owner != intent.owner {
@@ -859,9 +942,13 @@ fn preparation_step(
             && account == buy.token_account
             && mint == buy.mint
         {
-            // Any wallet may receive the proceeds: settlement pays out to the
-            // account the intent names, whoever owns it.
-            Ok((CREATE_DESTINATION, Some((mint, token_program))))
+            // The settlement creates a missing account itself at the owner's
+            // associated address and charges the rent out of the fill; a
+            // bundle creating it bills the funder instead, and a custom
+            // receiver's account must exist already.
+            Err(PlacementError::InvalidTransaction(
+                "the bundle must not create the buy token account",
+            ))
         } else {
             Err(PlacementError::InvalidTransaction(
                 "the created account does not belong to the order",
@@ -930,7 +1017,52 @@ fn build_order(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, cow_solana_rpc::RpcRequest};
+
+    /// A mock RPC answering the blockhash probes with `answers`, in order.
+    fn validity_answers<const N: usize>(answers: [bool; N]) -> SolanaRPC {
+        SolanaRPC::new_mock_with_mocks_map(
+            answers
+                .into_iter()
+                .map(|valid| {
+                    (
+                        RpcRequest::IsBlockhashValid,
+                        serde_json::json!({
+                            "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+                            "value": valid,
+                        }),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// A client reading a node ahead of ours signs a blockhash our node has
+    /// processed and confirms a moment later, so placement waits for it.
+    #[tokio::test]
+    async fn a_blockhash_the_node_confirms_within_the_catch_up_is_valid() {
+        let rpc = validity_answers([false, true, false, true]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
+        assert!(valid.unwrap());
+    }
+
+    /// The wait is bounded: a blockhash the node processed but still has not
+    /// confirmed when the window closes is refused.
+    #[tokio::test]
+    async fn a_blockhash_unconfirmed_after_the_catch_up_is_refused() {
+        let rpc = validity_answers([false, true, false, false, false, false]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_millis(300)).await;
+        assert!(!valid.unwrap());
+    }
+
+    /// A blockhash the node does not know even at processed commitment is
+    /// refused at once. The mock has no third answer, so a poll would fail.
+    #[tokio::test]
+    async fn a_blockhash_unknown_at_processed_is_refused_without_waiting() {
+        let rpc = validity_answers([false, false]);
+        let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
+        assert!(!valid.unwrap());
+    }
 
     fn set_limit(units: u32) -> Vec<u8> {
         std::iter::once(2u8)
@@ -991,6 +1123,41 @@ mod tests {
         assert!(budget.read(&[2, 1]).is_err());
         // Variants that cost the funder nothing are ignored, not parsed.
         assert!(budget.read(&[1, 0, 0, 4, 0]).is_ok());
+    }
+
+    fn quote(sell_amount: u64, buy_amount: u64) -> db::OrderQuote {
+        db::OrderQuote {
+            quote_id: 1,
+            sell_amount: sell_amount.into(),
+            buy_amount: buy_amount.into(),
+            solver: ByteArray([0; 32]),
+        }
+    }
+
+    /// At the quote, or asking less buy for the sell (slippage), the order
+    /// is in market. Asking more buy, or offering less sell, it is not. No
+    /// quote, or a quote amount past `u64`, is never in market.
+    #[test]
+    fn an_order_is_in_market_when_it_asks_no_better_than_its_quote() {
+        let quote_1000_for_2000 = quote(1_000, 2_000);
+        let position = |sell, buy| MarketPosition::of(sell, buy, Some(&quote_1000_for_2000));
+        assert_eq!(position(1_000, 2_000), MarketPosition::InMarket);
+        assert_eq!(position(1_000, 1_900), MarketPosition::InMarket);
+        assert_eq!(position(1_100, 2_000), MarketPosition::InMarket);
+        assert_eq!(position(1_000, 2_001), MarketPosition::OutOfMarket);
+        assert_eq!(position(999, 2_000), MarketPosition::OutOfMarket);
+        assert_eq!(
+            MarketPosition::of(1_000, 2_000, None),
+            MarketPosition::OutOfMarket
+        );
+        let past_u64 = db::OrderQuote {
+            sell_amount: "18446744073709551616".parse().unwrap(),
+            ..quote(1_000, 2_000)
+        };
+        assert_eq!(
+            MarketPosition::of(1_000, 2_000, Some(&past_u64)),
+            MarketPosition::OutOfMarket
+        );
     }
 
     #[test]

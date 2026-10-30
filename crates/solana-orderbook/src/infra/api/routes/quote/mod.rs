@@ -471,7 +471,7 @@ impl BuyProgram {
 
 /// The rent of the quoted order's buy token account, zero when the payout
 /// lands in an existing one. An existing account that cannot take the payout
-/// is refused: the placement's idempotent creation leaves it as is, so the
+/// is refused: the settlement's idempotent creation leaves it as is, so the
 /// order would never fill. A native SOL buy pays out to a wallet. An
 /// anonymous quote without a `receiver` names no account to read and is
 /// priced as if it were missing, as an unverified EVM quote keeps the full
@@ -713,6 +713,7 @@ mod tests {
             )])),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
         }
     }
 
