@@ -5,6 +5,7 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
+    chrono::{DateTime, Utc},
     database::{byte_array::ByteArray, solana::OrderEventLabel},
     sqlx::{PgExecutor, PgPool, Postgres, QueryBuilder},
     std::time::Duration,
@@ -683,6 +684,33 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
         .with_context(|| format!("amount {value} does not fit u64"))
 }
 
+/// Deletes the quotes that expired by `now`. Returns how many.
+pub async fn remove_expired_quotes(ex: impl PgExecutor<'_>, now: DateTime<Utc>) -> Result<u64> {
+    let _timer = query_timer("remove_expired_quotes");
+    const QUERY: &str = r#"DELETE FROM solana.quotes WHERE expiration_timestamp < $1"#;
+    let result = sqlx::query(QUERY)
+        .bind(now)
+        .execute(ex)
+        .await
+        .context("delete expired quotes")?;
+    Ok(result.rows_affected())
+}
+
+/// Deletes the order events recorded before `timestamp`. Returns how many.
+pub async fn delete_order_events_before(
+    ex: impl PgExecutor<'_>,
+    timestamp: DateTime<Utc>,
+) -> Result<u64> {
+    let _timer = query_timer("delete_order_events_before");
+    const QUERY: &str = r#"DELETE FROM solana.order_events WHERE timestamp < $1"#;
+    let result = sqlx::query(QUERY)
+        .bind(timestamp)
+        .execute(ex)
+        .await
+        .context("delete old order events")?;
+    Ok(result.rows_affected())
+}
+
 /// Starts timing a query, recorded under `query` when the timer drops.
 pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
     Metrics::instance(observe::metrics::get_storage_registry())
@@ -748,15 +776,18 @@ struct Metrics {
 mod tests {
     use {
         super::{
+            delete_order_events_before,
             in_flight_orders,
             last_indexed_slot,
             open_orders,
+            remove_expired_quotes,
             revert_settlement_window,
             skip_settlement_window,
             unrecorded_dead_creations,
         },
         bigdecimal::{BigDecimal, ToPrimitive},
         chain_types::solana::Pubkey,
+        chrono::Utc,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
     };
@@ -1225,5 +1256,58 @@ VALUES ($1, now(), $2)
             .await
             .unwrap();
         assert_eq!(last_indexed_slot(&mut *tx).await.unwrap(), Some(42));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_cleanup_deletes_only_expired_rows() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query(r#"DELETE FROM solana.quotes"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(r#"DELETE FROM solana.order_events"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.quotes (sell_token, buy_token, sell_amount, buy_amount, kind, solver, expiration_timestamp)
+VALUES ($1, $1, 1, 2, 'sell', $1, now() - interval '1 minute'),
+       ($1, $1, 1, 2, 'sell', $1, now() + interval '1 hour')
+            "#,
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.order_events (order_uid, timestamp, label)
+VALUES ($1, now() - interval '40 days', 'created'),
+       ($1, now(), 'created')
+            "#,
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        assert_eq!(remove_expired_quotes(&mut *tx, now).await.unwrap(), 1);
+        assert_eq!(
+            delete_order_events_before(&mut *tx, now - chrono::Duration::days(30))
+                .await
+                .unwrap(),
+            1
+        );
+        let left: (i64, i64) = sqlx::query_as(
+            r#"SELECT (SELECT count(*) FROM solana.quotes), (SELECT count(*) FROM solana.order_events)"#,
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(left, (1, 1));
     }
 }
