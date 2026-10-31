@@ -262,6 +262,12 @@ struct Competition {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CompetitionRequest {
+    /// Who asked. The only field here that is not about the trade, and the
+    /// one that ties a competition to the order it was quoted for: the EVM
+    /// orderbook logs the owner too, and without it a quote cannot be found
+    /// by the trader who asked for it.
+    #[serde_as(as = "DisplayFromStr")]
+    from: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
@@ -327,6 +333,7 @@ fn competition(
 ) -> Competition {
     Competition {
         request: CompetitionRequest {
+            from: request.from,
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             amount,
