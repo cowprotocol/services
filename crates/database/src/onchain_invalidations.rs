@@ -6,7 +6,8 @@ use {
         order_events::{OrderEvent, OrderEventLabel, insert_order_event},
     },
     chrono::Utc,
-    sqlx::{Executor, PgConnection},
+    sqlx::PgConnection,
+    std::ops::DerefMut,
     tracing::instrument,
 };
 
@@ -47,9 +48,29 @@ pub async fn delete_invalidations(
     block_number: i64,
 ) -> Result<(), sqlx::Error> {
     const QUERY_INVALIDATION: &str =
-        "DELETE FROM onchain_order_invalidations WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_INVALIDATION).bind(block_number))
+        "DELETE FROM onchain_order_invalidations WHERE block_number >= $1 RETURNING uid;";
+    let deleted_uids: Vec<OrderUid> = sqlx::query_scalar(QUERY_INVALIDATION)
+        .bind(block_number)
+        .fetch_all(ex.deref_mut())
         .await?;
+
+    if !deleted_uids.is_empty() {
+        const DELETE_ORDER_EVENTS: &str = r#"
+            DELETE FROM order_events
+            WHERE order_uid = ANY($1)
+              AND label = 'cancelled'
+              AND NOT EXISTS (
+                  SELECT 1 FROM orders
+                  WHERE orders.uid = order_events.order_uid
+                    AND orders.cancellation_timestamp IS NOT NULL
+              );
+        "#;
+        sqlx::query(DELETE_ORDER_EVENTS)
+            .bind(&deleted_uids)
+            .execute(ex.deref_mut())
+            .await?;
+    }
+
     Ok(())
 }
 
@@ -151,6 +172,68 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(None, row);
+
+        let event_1 = crate::order_events::get_latest(&mut db, &order_uid_1)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(event_1.label, OrderEventLabel::Cancelled);
+
+        let event_2 = crate::order_events::get_latest(&mut db, &order_uid_2)
+            .await
+            .unwrap();
+        assert_eq!(None, event_2);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_reorg_invalidation_restores_prior_order_event_status() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order_uid: OrderUid = ByteArray([3; 56]);
+        let event_index = EventIndex {
+            block_number: 5,
+            log_index: 0,
+        };
+
+        insert_order_event(
+            &mut db,
+            &OrderEvent {
+                label: OrderEventLabel::Created,
+                timestamp: Utc::now(),
+                order_uid,
+                reason: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let latest = crate::order_events::get_latest(&mut db, &order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(latest.label, OrderEventLabel::Created);
+
+        insert_onchain_invalidations(&mut db, &[(event_index, order_uid)])
+            .await
+            .unwrap();
+
+        let latest = crate::order_events::get_latest(&mut db, &order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(latest.label, OrderEventLabel::Cancelled);
+
+        delete_invalidations(&mut db, 5).await.unwrap();
+
+        assert_eq!(read_onchain_invalidation(&mut db, &order_uid).await.unwrap(), None);
+        let restored = crate::order_events::get_latest(&mut db, &order_uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.label, OrderEventLabel::Created);
     }
 
     #[tokio::test]
