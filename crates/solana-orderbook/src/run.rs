@@ -146,6 +146,7 @@ pub async fn run(args: Args) {
         prices: NativePrices::new(config.quoting.autopilot.clone(), config.quoting.timeout),
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
+        fast_results_required: config.quoting.fast_results_required,
         sponsoring,
         verifier,
         app_data_size_limit: config.app_data_size_limit,

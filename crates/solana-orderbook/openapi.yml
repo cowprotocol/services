@@ -591,6 +591,26 @@ components:
       description: Which amount the order fixes.
       type: string
       enum: [sell, buy]
+    PriceQuality:
+      description: |-
+        How good should the price estimate be?
+
+        Fast: The price estimate is chosen among the fastest N drivers.
+        Estimates do not get verified by simulation. The estimate is not
+        stored and expires at once.
+        Optimal: The price estimate is chosen among all drivers, ranked
+        purely by the promised price. Estimates do not get verified by
+        simulation.
+        Verified: All price estimates get verified by simulation whenever
+        possible and verified estimates are preferred over unverified ones,
+        even when an unverified estimate promises a better price. The
+        response's `verified` flag indicates whether the returned estimate
+        was actually verified.
+
+        **NOTE**: Orders are supposed to be created from `verified` or `optimal`
+        price estimates.
+      type: string
+      enum: [fast, optimal, verified]
     OrderStatus:
       description: |
         Lifecycle of the order. A full fill wins over cancellation because
@@ -935,8 +955,8 @@ components:
     QuoteRequest:
       description: |
         A quote request. Fields with no Solana meaning (`signingScheme`,
-        `priceQuality`, `sellTokenBalance`, `buyTokenBalance`) are accepted
-        and ignored, so the EVM request body works unchanged.
+        `sellTokenBalance`, `buyTokenBalance`) are accepted and ignored, so
+        the EVM request body works unchanged.
       type: object
       required:
         - from
@@ -995,6 +1015,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
           nullable: true
+        priceQuality:
+          allOf:
+            - $ref: "#/components/schemas/PriceQuality"
+          default: verified
     QuoteResponse:
       type: object
       required:
@@ -1008,11 +1032,15 @@ components:
         from:
           $ref: "#/components/schemas/Pubkey"
         expiration:
-          description: When the quoted amounts stop being honored.
+          description: >-
+            When the quoted amounts stop being honored. The epoch for a `fast`
+            quote, which expires at once.
           type: string
           format: date-time
         id:
-          description: The stored quote's id. Null when storing the quote failed.
+          description: >-
+            The stored quote's id. Null for a `fast` quote, which is not
+            stored, and when storing the quote failed.
           type: integer
           format: int64
           nullable: true

@@ -33,6 +33,24 @@ pub struct Request {
     /// placement. The zero hash when absent.
     #[serde(flatten, deserialize_with = "app_data::deserialize_optional_app_data")]
     pub app_data: OrderCreationAppData,
+    /// How much of the quote competition to wait for, `verified` when absent.
+    #[serde(default)]
+    pub price_quality: PriceQuality,
+}
+
+/// How good the quote should be, the EVM `priceQuality`.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PriceQuality {
+    /// The best quote of the fastest `n` drivers, unverified and not stored.
+    Fast,
+    /// The best quote of every driver, ranked purely by the promised price
+    /// without verifying quotes by simulation.
+    Optimal,
+    /// Quotes get verified by simulation whenever possible and verified
+    /// quotes are preferred over unverified ones, even at a worse price.
+    #[default]
+    Verified,
 }
 
 /// Which side the quote fixes, and the amount that side names.
@@ -179,7 +197,7 @@ mod tests {
 
     #[test]
     fn accepts_the_evm_request_body() {
-        // Fields with no Solana meaning.
+        // The EVM body, with fields that have no Solana meaning.
         let raw = serde_json::json!({
             "from": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
             "sellToken": "So11111111111111111111111111111111111111112",
@@ -195,6 +213,7 @@ mod tests {
         assert_eq!(request.side.kind_and_amount(), (Kind::Sell, 10_000_000));
         assert!(matches!(request.validity, Some(Validity::ValidFor(1800))));
         assert!(request.receiver.is_none());
+        assert_eq!(request.price_quality, PriceQuality::Optimal);
     }
 
     #[test]
@@ -213,6 +232,7 @@ mod tests {
             request.validity,
             Some(Validity::ValidTo(1787740563))
         ));
+        assert_eq!(request.price_quality, PriceQuality::Verified);
     }
 
     /// Both spellings of the sell amount name the same number.
