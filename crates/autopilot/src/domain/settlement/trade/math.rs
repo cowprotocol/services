@@ -27,10 +27,10 @@ pub struct Trade {
 }
 
 impl Trade {
-    /// The fill as the generic fee math sees it: the signed limit and the
-    /// legs `prices` settle it at. The settlement contract rounds the bought
-    /// amount up.
-    pub fn fill_at(&self, prices: &ClearingPrices) -> Result<protocol_fees::Order, Math> {
+    /// The fill as `protocol_fees` sees it: the signed limit and the legs
+    /// `prices` settle it at. The settlement contract rounds the bought amount
+    /// up.
+    pub(crate) fn fill_at(&self, prices: &ClearingPrices) -> Result<protocol_fees::Order, Math> {
         let (executed_sell, executed_buy) = match self.side {
             order::Side::Sell => (
                 self.executed.0,
@@ -326,8 +326,8 @@ mod tests {
         assert_eq!(fee.0, eth::U256::from(999999986666666844_u64));
     }
 
-    /// The autopilot's own fee formulas, kept verbatim as the oracle for the
-    /// equality test below.
+    /// The fee formulas written directly over the trade and its clearing
+    /// prices, the oracle for the equality test below.
     mod legacy {
         use {
             super::*,
@@ -635,7 +635,7 @@ mod tests {
                     quote: fee::Quote {
                         sell_amount: eth::U256::from(sell_amount),
                         buy_amount: eth::U256::from(rng.random_range(1..=1u64 << 48)),
-                        fee: eth::U256::from(rng.random_range(0..=sell_amount / 2)),
+                        fee: eth::U256::from(rng.random_range(0..=2 * sell_amount)),
                         solver: eth::Address::repeat_byte(9),
                     },
                 }
@@ -645,7 +645,8 @@ mod tests {
 
     /// A trade on either side with both price vectors at or over the limit,
     /// the uniform one at least as good for the user as the custom one, each
-    /// as its legs scaled by a random factor.
+    /// as its legs scaled by a random factor plus a jitter below that factor,
+    /// so deriving the legs back has to round.
     fn random_trade(rng: &mut StdRng) -> Trade {
         let side = if rng.random_bool(0.5) {
             order::Side::Sell
@@ -673,10 +674,14 @@ mod tests {
         let custom_surplus = rng.random_range(0..=1u64 << 47);
         let uniform_surplus = custom_surplus + rng.random_range(0..=1u64 << 47);
         let mut prices = |(executed_sell, executed_buy): (u64, u64)| {
-            let scale = eth::U256::from(rng.random_range(1..=1_000u64));
+            let scale = rng.random_range(1..=1_000u64);
+            let sell = u128::from(executed_buy) * u128::from(scale)
+                + u128::from(rng.random_range(0..scale));
+            let buy = u128::from(executed_sell) * u128::from(scale)
+                + u128::from(rng.random_range(0..scale));
             ClearingPrices {
-                sell: eth::U256::from(executed_buy) * scale,
-                buy: eth::U256::from(executed_sell) * scale,
+                sell: eth::U256::from(sell),
+                buy: eth::U256::from(buy),
             }
         };
         Trade {
@@ -692,43 +697,70 @@ mod tests {
         }
     }
 
+    /// A sell order's quote whose fee, at the quote's rate, is worth more than
+    /// the quote buys. It cannot be scaled to the order's limits.
+    fn has_unscalable_quote(trade: &Trade, policies: &[fee::Policy]) -> bool {
+        trade.side == order::Side::Sell
+            && policies.iter().any(|policy| match policy {
+                fee::Policy::PriceImprovement { quote, .. } => {
+                    quote.buy_amount < quote.fee * quote.buy_amount / quote.sell_amount
+                }
+                _ => false,
+            })
+    }
+
     /// The generic math gives the legacy formulas' numbers wherever those
-    /// produce one.
+    /// produce one, except for an unscalable quote, which legacy turned into
+    /// a zero fee and the generic math refuses.
     #[test]
     fn fees_and_surplus_match_the_legacy_formulas() {
         let mut rng = StdRng::seed_from_u64(0x5eed);
         let mut compared = Vec::new();
+        let mut refused = 0;
         for _ in 0..5_000 {
             let trade = random_trade(&mut rng);
             let policies: Vec<fee::Policy> = (0..rng.random_range(0..=3))
                 .map(|_| random_policy(&mut rng))
                 .collect();
             let fee_policies = HashMap::from([(trade.uid, policies.clone())]);
-            let (Ok(fees), Ok(after_fees), Ok(before_fees)) = (
+            match (
                 legacy::protocol_fees(&trade, &fee_policies),
-                legacy::surplus_over_limit_price(&trade),
-                legacy::surplus_over_limit_price_before_fee(&trade),
-            ) else {
-                continue;
-            };
-            compared.push((trade.side, policies.is_empty()));
-            let actual = trade.protocol_fees(&fee_policies).unwrap();
-            assert_eq!(actual.len(), fees.len(), "{trade:?}");
-            for (actual, expected) in actual.iter().zip(&fees) {
-                assert_eq!(actual.policy, expected.policy, "{trade:?}");
-                assert_eq!(actual.fee, expected.fee, "{trade:?}");
+                trade.protocol_fees(&fee_policies),
+            ) {
+                (Ok(expected), Ok(actual)) => {
+                    assert_eq!(actual.len(), expected.len(), "{trade:?}");
+                    for (actual, expected) in actual.iter().zip(&expected) {
+                        assert_eq!(actual.policy, expected.policy, "{trade:?}");
+                        assert_eq!(actual.fee, expected.fee, "{trade:?}");
+                    }
+                    compared.push((trade.side, policies.is_empty()));
+                }
+                (Ok(_), Err(err)) => {
+                    assert!(
+                        matches!(err, Error::Math(Math::Negative))
+                            && has_unscalable_quote(&trade, &policies),
+                        "{err:?} {trade:?} {policies:?}"
+                    );
+                    refused += 1;
+                }
+                (Err(_), _) => {}
             }
-            assert_eq!(
-                trade.surplus_over_limit_price().unwrap(),
-                after_fees,
-                "{trade:?}"
-            );
-            assert_eq!(
-                trade.surplus_over_limit_price_before_fee().unwrap(),
-                before_fees,
-                "{trade:?}"
-            );
+            for (expected, actual) in [
+                (
+                    legacy::surplus_over_limit_price(&trade),
+                    trade.surplus_over_limit_price(),
+                ),
+                (
+                    legacy::surplus_over_limit_price_before_fee(&trade),
+                    trade.surplus_over_limit_price_before_fee(),
+                ),
+            ] {
+                if let Ok(expected) = expected {
+                    assert_eq!(actual.unwrap(), expected, "{trade:?}");
+                }
+            }
         }
+        assert!(refused > 0, "no unscalable quote was generated");
         for side in [order::Side::Sell, order::Side::Buy] {
             for with_policies in [true, false] {
                 let count = compared
@@ -741,5 +773,67 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A sell order's quote whose fee is worth more than the quote buys cannot
+    /// be scaled to the order's limits, so the fee breakdown is an error
+    /// rather than a zero price improvement fee.
+    #[test]
+    fn unscalable_quote_fails_the_fee_breakdown() {
+        let prices = ClearingPrices {
+            sell: eth::U256::from(950_000),
+            buy: eth::U256::from(1_000_000),
+        };
+        let trade = Trade {
+            uid: domain::OrderUid([0; 56]),
+            sell: asset(1_000_000),
+            buy: asset(900_000),
+            side: order::Side::Sell,
+            executed: order::TargetAmount(eth::U256::from(1_000_000)),
+            prices: Prices {
+                uniform: prices,
+                custom: prices,
+            },
+        };
+        let policy = fee::Policy::PriceImprovement {
+            factor: FeeFactor::try_from(0.5).unwrap(),
+            max_volume_factor: FeeFactor::try_from(0.01).unwrap(),
+            quote: fee::Quote {
+                sell_amount: eth::U256::from(1_000_000),
+                buy_amount: eth::U256::from(950_000),
+                fee: eth::U256::from(2_000_000),
+                solver: eth::Address::ZERO,
+            },
+        };
+        let fee_policies = HashMap::from([(trade.uid, vec![policy])]);
+        assert!(matches!(
+            trade.protocol_fees(&fee_policies),
+            Err(Error::Math(Math::Negative))
+        ));
+    }
+
+    /// A trade settled with a zero executed amount has no legs to derive its
+    /// prices from, so its surplus is an error rather than zero.
+    #[test]
+    fn zero_executed_amount_has_no_surplus() {
+        let prices = ClearingPrices {
+            sell: eth::U256::from(1),
+            buy: eth::U256::from(1),
+        };
+        let trade = Trade {
+            uid: domain::OrderUid([0; 56]),
+            sell: asset(1_000),
+            buy: asset(1_000),
+            side: order::Side::Sell,
+            executed: order::TargetAmount(eth::U256::ZERO),
+            prices: Prices {
+                uniform: prices,
+                custom: prices,
+            },
+        };
+        assert!(matches!(
+            trade.surplus_over_limit_price(),
+            Err(Math::DivisionByZero)
+        ));
     }
 }
