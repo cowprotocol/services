@@ -65,6 +65,8 @@ impl FeePolicy {
     }
 }
 
+/// The policy as the generic fee math sees it. The score flag of a volume
+/// fee is read by the driver's scoring, not by the fee math.
 impl From<&FeePolicy> for protocol_fees::FeePolicy {
     fn from(policy: &FeePolicy) -> Self {
         match policy {
