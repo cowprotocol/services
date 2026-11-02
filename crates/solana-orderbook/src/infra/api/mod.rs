@@ -1,7 +1,7 @@
 //! HTTP API server.
 
 use {
-    super::{prices::NativePrices, quoter::Quoter},
+    super::{prices::NativePrices, quoter::Quoter, verifier::Verifier},
     axum::{
         Router,
         http,
@@ -12,6 +12,7 @@ use {
     std::{
         io,
         net::SocketAddr,
+        num::NonZero,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -48,8 +49,12 @@ pub struct Api {
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     pub quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     pub app_data_size_limit: usize,
 }
@@ -99,13 +104,16 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
+        routes::initialize_metrics();
         let state = State::new(
             self.pool,
             self.quoter,
             self.prices,
             self.validation,
             self.quote_expiry,
+            self.fast_results_required,
             self.sponsoring,
+            self.verifier,
             self.app_data_size_limit,
         );
 
@@ -189,13 +197,16 @@ pub struct Sponsoring {
 }
 
 impl State {
+    #[expect(clippy::too_many_arguments)]
     fn new(
         pool: PgPool,
         quoter: Quoter,
         prices: NativePrices,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
+        fast_results_required: NonZero<usize>,
         sponsoring: Option<Sponsoring>,
+        verifier: Option<Verifier>,
         app_data_size_limit: usize,
     ) -> Self {
         Self(Arc::new(Inner {
@@ -204,7 +215,9 @@ impl State {
             prices,
             validation,
             quote_expiry,
+            fast_results_required,
             sponsoring,
+            verifier,
             app_data_size_limit,
             block_height: Mutex::default(),
         }))
@@ -236,9 +249,19 @@ impl State {
         self.0.quote_expiry
     }
 
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fn fast_results_required(&self) -> NonZero<usize> {
+        self.0.fast_results_required
+    }
+
     /// Sponsored placement dependencies, absent when the feature is off.
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
+    }
+
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub fn verifier(&self) -> Option<&Verifier> {
+        self.0.verifier.as_ref()
     }
 
     /// Most bytes an app data document may have.
@@ -288,8 +311,12 @@ struct Inner {
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     app_data_size_limit: usize,
     /// The last block height read and when, see [`State::block_height`].

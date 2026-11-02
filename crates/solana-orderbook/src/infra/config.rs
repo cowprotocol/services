@@ -2,11 +2,15 @@
 
 use {
     crate::infra::api::ValidationParameters,
-    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
+    configs::{
+        database::DatabasePoolConfig,
+        price_estimation::QuoteVerificationMode,
+        shared::LoggingConfig,
+    },
     serde::Deserialize,
     serde_ext::{deserialize_solana_pubkey_b58, deserialize_url_with_trailing_slash},
     solana_sdk::pubkey::Pubkey,
-    std::{net::SocketAddr, path::Path, time::Duration},
+    std::{fmt, net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
     url::Url,
 };
@@ -49,6 +53,8 @@ pub struct Config {
     pub rpc: Option<Rpc>,
     /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
     pub sponsoring: Option<Sponsoring>,
+    /// Quote verification. Absent, every quote is unverified.
+    pub quote_verification: Option<QuoteVerification>,
     /// Most bytes an app data document may have.
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
@@ -97,6 +103,11 @@ pub struct Quoting {
     /// How long the quoted amounts are honored.
     #[serde(with = "humantime_serde", default = "default_quote_expiry")]
     pub quote_expiry: Duration,
+    /// How many drivers a `priceQuality: fast` quote waits for before it
+    /// answers with the best of them. As this grows, a fast quote approaches
+    /// an `optimal` one. More than the configured drivers waits for all.
+    #[serde(default = "default_fast_results_required")]
+    pub fast_results_required: NonZero<usize>,
 }
 
 impl Quoting {
@@ -140,6 +151,57 @@ pub struct Sponsoring {
     /// product this bounds, so it caps what a placement can spend.
     #[serde(default = "default_max_priority_fee_lamports")]
     pub max_priority_fee_lamports: u64,
+}
+
+/// Quote verification configuration: each driver's quoted settlement is
+/// simulated behind the quoted order's creation. Requires the `[rpc]`
+/// section, which reads the mints and their holders.
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct QuoteVerification {
+    /// Whether a verified quote outranks an unverified one. Every quote is
+    /// verified and reported either way.
+    #[serde(default)]
+    pub mode: QuoteVerificationMode,
+    /// HTTP endpoint of a node with the Jito `simulateBundle` extension.
+    pub bundle_endpoint: Url,
+    /// HTTP endpoint of a node serving `getTokenLargestAccounts`, which needs
+    /// the `spl-token-mint` account index. Absent, quotes selling a mint
+    /// without a mint authority stay unverified.
+    pub holders_endpoint: Option<Url>,
+    /// How inaccurate a quote must be before it is dropped, as the share of
+    /// the sell or buy amount the settlement program's buffers may pay.
+    /// Defaults to 1.
+    #[serde(default = "default_quote_inaccuracy_limit")]
+    pub quote_inaccuracy_limit: f64,
+    /// The settlement program the quoted settlements target. Defaults to the
+    /// official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
+    pub settlement_program: Pubkey,
+}
+
+impl fmt::Debug for QuoteVerification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QuoteVerification")
+            .field("mode", &self.mode)
+            .field("bundle_endpoint", &self.bundle_endpoint)
+            // Providers like Alchemy put the API key in the path.
+            .field(
+                "holders_endpoint",
+                &self.holders_endpoint.as_ref().map(|_| "<REDACTED>"),
+            )
+            .field("quote_inaccuracy_limit", &self.quote_inaccuracy_limit)
+            .field("settlement_program", &self.settlement_program)
+            .finish()
+    }
+}
+
+/// The EVM orderbook's default.
+fn default_quote_inaccuracy_limit() -> f64 {
+    1.0
 }
 
 /// Wallets commonly ask 75,000 to 100,000 lamports for a creation, so a
@@ -195,6 +257,11 @@ fn default_quote_expiry() -> Duration {
     Duration::from_secs(60)
 }
 
+/// The EVM orderbook's default.
+fn default_fast_results_required() -> NonZero<usize> {
+    NonZero::new(2).expect("two is not zero")
+}
+
 /// HTTP API server configuration.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -220,7 +287,20 @@ mod tests {
         assert_eq!(config.quoting.min_validity, Duration::from_secs(60));
         assert_eq!(config.quoting.max_validity, Duration::from_secs(31_536_000));
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
+        assert_eq!(config.quoting.fast_results_required.get(), 2);
         assert_eq!(config.app_data_size_limit, 8192);
+    }
+
+    #[test]
+    fn debug_redacts_the_holders_endpoint() {
+        let config: QuoteVerification = toml::from_str(
+            r#"
+            bundle-endpoint = "https://bundles.example.com"
+            holders-endpoint = "https://solana-mainnet.g.alchemy.com/v2/secret"
+            "#,
+        )
+        .unwrap();
+        assert!(!format!("{config:?}").contains("secret"));
     }
 
     /// Routes resolve relative to the driver and autopilot URLs, so a base
