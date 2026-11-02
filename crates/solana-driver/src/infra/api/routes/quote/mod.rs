@@ -23,7 +23,8 @@ use {
 };
 
 /// Handle `POST /quote`: solve a one-order auction and answer with the
-/// executed amounts and the network fee of settling them.
+/// executed amounts of its best route, the network fee of settling them and,
+/// for a request naming an owner, the settlement itself.
 pub(crate) async fn quote(
     state: axum::extract::State<State>,
     LoggingJson(request): LoggingJson<dto::QuoteRequest>,
@@ -57,18 +58,41 @@ pub(crate) async fn quote(
     let Some((solution, trade)) = best else {
         return Err(Kind::QuotingFailed.into());
     };
-    let network_fee = competition.network_fee(solution).instrument(span).await?;
+    let network_fee = competition
+        .network_fee(solution)
+        .instrument(span.clone())
+        .await?;
+    // A settlement that cannot be built leaves the quote unverifiable, not
+    // unanswered.
+    let transaction = match (request.owner, auction.orders.first()) {
+        (Some(owner), Some(order)) => competition
+            .quote_settlement(order, solution, trade, owner)
+            .instrument(span)
+            .await
+            .inspect_err(|err| {
+                tracing::warn!(
+                    solution_id = solution.id,
+                    ?err,
+                    "quote settlement not built"
+                )
+            })
+            .ok()
+            .and_then(|transaction| bincode::serialize(&transaction).ok()),
+        _ => None,
+    };
 
     Ok(Json(dto::QuoteResponse {
         sell_amount: trade.executed_sell,
         buy_amount: trade.executed_buy,
         solver: solution.solver,
         network_fee,
+        transaction,
     }))
 }
 
 /// The single-order auction a quote is solved in. Everything beyond the pair
-/// and the amount is a placeholder: a quoted solution is never settled.
+/// and the amount is a placeholder: the settlement answered fills an order of
+/// the executed amounts in its place, see `domain::quote`.
 fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
     let (sell_amount, buy_amount) = match side {
         // The counter amount is the quote's answer, so its limit stays
