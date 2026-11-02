@@ -115,8 +115,8 @@ pub fn protocol_fees_by_policy<C: ChainTypes>(
         let fee = protocol_fee(order, policy, &current_prices)?;
         fees.push(fee);
         total = total.try_add(fee)?;
-        // Nothing is measured before the first policy, so its prices are not
-        // rebuilt.
+        // No policy precedes the first one, so the prices before it are never
+        // read.
         if i != 0 {
             current_prices = calculate_custom_prices(order, total, &base_prices)?;
         }

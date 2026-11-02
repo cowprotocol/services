@@ -362,8 +362,8 @@ mod tests {
         assert_eq!(dropped.0, U256::from(80u128));
     }
 
-    /// The scoring formulas spelled out in full, independent of
-    /// winner-selection, as the oracle for the equality test below.
+    /// The driver's own scoring formulas, kept verbatim as the oracle for the
+    /// equality test below.
     mod legacy {
         use super::*;
 
@@ -666,17 +666,28 @@ mod tests {
     #[test]
     fn fees_and_surplus_match_the_legacy_formulas() {
         let mut rng = StdRng::seed_from_u64(0x5eed);
-        let mut compared = 0;
+        let mut compared = Vec::new();
         for _ in 0..5_000 {
             let trade = random_trade(&mut rng);
             let (Ok(fees), Ok(surplus)) = (legacy::fees(&trade), legacy::user_surplus(&trade))
             else {
                 continue;
             };
-            compared += 1;
+            compared.push((trade.side, trade.policies.is_empty()));
             assert_eq!(trade.fees().unwrap(), fees, "{trade:?}");
             assert_eq!(trade.user_surplus().unwrap(), surplus, "{trade:?}");
         }
-        assert!(compared > 2_500, "{compared} trades compared");
+        for side in [Side::Sell, Side::Buy] {
+            for with_policies in [true, false] {
+                let count = compared
+                    .iter()
+                    .filter(|(s, no_policies)| *s == side && *no_policies != with_policies)
+                    .count();
+                assert!(
+                    count > 200,
+                    "{side:?} with_policies={with_policies}: {count} trades compared"
+                );
+            }
+        }
     }
 }
