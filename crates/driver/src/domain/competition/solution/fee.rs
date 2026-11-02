@@ -53,17 +53,32 @@ impl Fulfillment {
         prices: ClearingPrices,
         protocol_fee: &FeePolicy,
     ) -> Result<Self, Error> {
-        let fee =
-            protocol_fees::fee_before_settlement(&self.fill_at(&prices)?, &protocol_fee.into())
-                .map_err(Math::from)?;
+        let surplus_fee = match protocol_fees::fee_before_settlement(
+            &self.fill_at(&prices)?,
+            &protocol_fee.into(),
+        ) {
+            Ok(fee) => fee,
+            // A fill under its limit price has no surplus, and a fill with
+            // nothing executed has no legs to measure its surplus or price
+            // improvement by. The settlement simulation rejects such fills.
+            Err(chain_types::MathError::Negative)
+                if matches!(protocol_fee, FeePolicy::Surplus { .. }) =>
+            {
+                eth::U256::ZERO
+            }
+            Err(chain_types::MathError::DivisionByZero) if self.executed().0.is_zero() => {
+                eth::U256::ZERO
+            }
+            Err(err) => return Err(Math::from(err).into()),
+        };
         tracing::debug!(
             uid = ?self.order().uid,
-            protocol_fee = ?fee,
+            protocol_fee = ?surplus_fee,
             executed = ?self.executed(),
             fee = ?self.fee(),
             "calculated protocol fee"
         );
-        let protocol_fee = self.fee_in_sell_token(prices, eth::TokenAmount(fee))?;
+        let protocol_fee = self.fee_in_sell_token(prices, eth::TokenAmount(surplus_fee))?;
 
         // Increase the fee by the protocol fee
         let fee = order::SellAmount(
@@ -617,7 +632,8 @@ mod tests {
     /// A partially filled fulfillment on either side with a fee already in it,
     /// at uniform prices that mostly put it over its limit and sometimes
     /// under, the legs scaled by a random factor plus a jitter below that
-    /// factor, so deriving the legs back has to round.
+    /// factor, so deriving the legs back has to round. A few buy fills
+    /// execute nothing.
     fn random_fulfillment(rng: &mut StdRng) -> (Fulfillment, ClearingPrices) {
         let side = if rng.random_bool(0.5) {
             Side::Sell
@@ -637,7 +653,11 @@ mod tests {
                 (total - fee, fee)
             }
             Side::Buy => (
-                rng.random_range(1..=buy_amount),
+                if rng.random_bool(0.02) {
+                    0
+                } else {
+                    rng.random_range(1..=buy_amount)
+                },
                 rng.random_range(0..=sell_amount / 10),
             ),
         };
@@ -662,7 +682,7 @@ mod tests {
                     .saturating_sub(wide(surplus))
                     .max(1);
                 ClearingPrices {
-                    sell: eth::U256::from(wide(executed) * wide(scale)),
+                    sell: eth::U256::from(wide(executed.max(1)) * wide(scale)),
                     buy: eth::U256::from(sold * wide(scale) + wide(jitter)),
                 }
             }
@@ -684,15 +704,22 @@ mod tests {
             .any(|policy| matches!(policy, FeePolicy::Surplus { .. }))
     }
 
+    /// Whether the settlement contract rejects the fill at these prices.
+    fn under_limit(fulfillment: &Fulfillment, prices: ClearingPrices) -> bool {
+        let order = fulfillment.order();
+        let sold = fulfillment.sell_amount(&prices).unwrap().0;
+        let bought = fulfillment.buy_amount(&prices).unwrap().0;
+        order.sell.amount.0 * bought < order.buy.amount.0 * sold
+    }
+
     /// The generic math gives the legacy formulas' numbers wherever those
-    /// produce one, except for a fill under its limit meeting a surplus
-    /// policy, which legacy let through with no fee and the generic math
-    /// refuses.
+    /// produce one.
     #[test]
     fn fees_match_the_legacy_formulas() {
         let mut rng = StdRng::seed_from_u64(0x5eed);
         let mut compared = Vec::new();
-        let mut refused = 0;
+        let mut under_limit_with_surplus_policy = 0;
+        let mut nothing_executed = 0;
         for _ in 0..5_000 {
             let (fulfillment, prices) = random_fulfillment(&mut rng);
             match (
@@ -702,23 +729,27 @@ mod tests {
                 (Ok(expected), Ok(actual)) => {
                     assert_eq!(actual.executed(), expected.executed(), "{fulfillment:?}");
                     assert_eq!(actual.fee(), expected.fee(), "{fulfillment:?}");
+                    if has_surplus_policy(&fulfillment) && under_limit(&fulfillment, prices) {
+                        under_limit_with_surplus_policy += 1;
+                    }
+                    if fulfillment.executed().0.is_zero() {
+                        nothing_executed += 1;
+                    }
                     compared.push((
                         fulfillment.order().side,
                         fulfillment.order().protocol_fees.is_empty(),
                     ));
                 }
-                (Ok(_), Err(err)) => {
-                    assert!(
-                        matches!(err, Error::Math(Math::Negative))
-                            && has_surplus_policy(&fulfillment),
-                        "{err:?} {fulfillment:?}"
-                    );
-                    refused += 1;
-                }
-                (Err(_), _) => {}
+                (Ok(_), Err(err)) => panic!("refused {err:?} {fulfillment:?}"),
+                (Err(err), Ok(_)) => panic!("legacy refused {err:?} {fulfillment:?}"),
+                (Err(_), Err(_)) => {}
             }
         }
-        assert!(refused > 0, "no fill under its limit met a surplus policy");
+        assert!(
+            under_limit_with_surplus_policy > 0,
+            "no fill under its limit met a surplus policy"
+        );
+        assert!(nothing_executed > 0, "no fill executed nothing");
         for side in [Side::Sell, Side::Buy] {
             for with_policies in [true, false] {
                 let count = compared
@@ -733,10 +764,10 @@ mod tests {
         }
     }
 
-    /// A fill under its limit price has no surplus to take a share of, so a
-    /// surplus policy fails the fee application instead of taking nothing.
+    /// A surplus policy takes nothing from a fill under its limit price. The
+    /// settlement simulation rejects the fill.
     #[test]
-    fn a_fill_under_its_limit_fails_a_surplus_policy() {
+    fn a_fill_under_its_limit_takes_no_surplus_fee() {
         let order = order(
             1_000,
             2_000,
@@ -756,9 +787,37 @@ mod tests {
             sell: eth::U256::from(1_900),
             buy: eth::U256::from(1_000),
         };
-        assert!(matches!(
-            fulfillment.with_protocol_fees(prices),
-            Err(Error::Math(Math::Negative))
-        ));
+        let applied = fulfillment.with_protocol_fees(prices).unwrap();
+        assert_eq!(applied.executed(), fulfillment.executed());
+        assert_eq!(applied.fee(), fulfillment.fee());
+    }
+
+    /// A fill with nothing executed has no legs to measure its surplus by, so
+    /// a surplus policy takes nothing. The settlement simulation rejects the
+    /// fill.
+    #[test]
+    fn a_fill_with_nothing_executed_takes_no_surplus_fee() {
+        let order = order(
+            1_000,
+            2_000,
+            Side::Buy,
+            vec![FeePolicy::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.1,
+            }],
+        );
+        let fulfillment = Fulfillment::new(
+            order,
+            order::TargetAmount(eth::U256::ZERO),
+            order::SellAmount(eth::U256::from(7)),
+        )
+        .unwrap();
+        let prices = ClearingPrices {
+            sell: eth::U256::from(2),
+            buy: eth::U256::from(1),
+        };
+        let applied = fulfillment.with_protocol_fees(prices).unwrap();
+        assert_eq!(applied.executed(), fulfillment.executed());
+        assert_eq!(applied.fee(), fulfillment.fee());
     }
 }

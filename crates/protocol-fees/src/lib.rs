@@ -163,8 +163,7 @@ fn protocol_fee<C: ChainTypes>(
 
 /// The fee `policy` takes from the fill `order` describes, in the surplus
 /// token, with the executed legs as the fee base. The inverse of
-/// [`protocol_fee`], which recovers the fee from the legs the fill settled
-/// at.
+/// `protocol_fee`, which recovers the fee from the legs the fill settled at.
 pub fn fee_before_settlement<C: ChainTypes>(
     order: &Order<C>,
     policy: &FeePolicy<C>,
