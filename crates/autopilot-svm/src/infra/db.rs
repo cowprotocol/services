@@ -696,15 +696,18 @@ pub async fn remove_expired_quotes(ex: impl PgExecutor<'_>, now: DateTime<Utc>) 
     Ok(result.rows_affected())
 }
 
-/// Deletes the order events recorded before `timestamp`. Returns how many.
+/// Deletes the order events recorded before `timestamp`, except `invalid`
+/// ones: [`unrecorded_dead_creations`] reads them to record each dead
+/// creation once. Returns how many.
 pub async fn delete_order_events_before(
     ex: impl PgExecutor<'_>,
     timestamp: DateTime<Utc>,
 ) -> Result<u64> {
     let _timer = query_timer("delete_order_events_before");
-    const QUERY: &str = r#"DELETE FROM solana.order_events WHERE timestamp < $1"#;
+    const QUERY: &str = r#"DELETE FROM solana.order_events WHERE timestamp < $1 AND label <> $2"#;
     let result = sqlx::query(QUERY)
         .bind(timestamp)
+        .bind(OrderEventLabel::Invalid)
         .execute(ex)
         .await
         .context("delete old order events")?;
@@ -1286,6 +1289,7 @@ VALUES ($1, $1, 1, 2, 'sell', $1, now() - interval '1 minute'),
             r#"
 INSERT INTO solana.order_events (order_uid, timestamp, label)
 VALUES ($1, now() - interval '40 days', 'created'),
+       ($1, now() - interval '40 days', 'invalid'),
        ($1, now(), 'created')
             "#,
         )
@@ -1308,6 +1312,6 @@ VALUES ($1, now() - interval '40 days', 'created'),
         .fetch_one(&mut *tx)
         .await
         .unwrap();
-        assert_eq!(left, (1, 1));
+        assert_eq!(left, (1, 2));
     }
 }
