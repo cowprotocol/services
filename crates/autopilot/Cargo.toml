@@ -27,6 +27,7 @@ brotli = { workspace = true }
 bytes = { workspace = true }
 bytes-hex = { workspace = true }  # may get marked as unused but it's used with serde
 chain = { workspace = true }
+chain-types = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 configs = { workspace = true, features = ["s3"] }
@@ -54,6 +55,7 @@ order-validation = { workspace = true }
 price-estimation = { workspace = true, features = ["test-util"] }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+protocol-fees = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["gzip", "json", "stream"] }
 rust_decimal = { workspace = true }
