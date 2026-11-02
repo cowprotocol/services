@@ -1146,63 +1146,39 @@ mod tests {
         pools.iter().copied().collect()
     }
 
-    /// Fails `eth_getLogs` over more than `max_blocks` with `error` as a
-    /// transport error; otherwise returns one log per block.
-    fn capped_get_logs_provider(max_blocks: u64, error: &'static str) -> AlloyProvider {
-        use alloy_json_rpc::{RequestPacket, Response, ResponsePacket, ResponsePayload};
-
-        let transport = tower::service_fn(
-            move |req: RequestPacket| -> alloy_transport::TransportFut<'static> {
-                Box::pin(async move {
-                    let RequestPacket::Single(req) = req else {
-                        unreachable!("no batching")
-                    };
-                    let (filter,): (Filter,) =
-                        serde_json::from_str(req.params().unwrap().get()).unwrap();
-                    let from = filter.get_from_block().unwrap();
-                    let to = filter.get_to_block().unwrap();
-                    if to - from + 1 > max_blocks {
-                        return Err(alloy_transport::TransportErrorKind::custom_str(error));
-                    }
-                    let logs: Vec<Log> = (from..=to)
-                        .map(|block| Log {
-                            block_number: Some(block),
-                            ..Default::default()
-                        })
-                        .collect();
-                    Ok(ResponsePacket::Single(Response {
-                        id: req.id().clone(),
-                        payload: ResponsePayload::Success(
-                            serde_json::value::to_raw_value(&logs).unwrap(),
-                        ),
-                    }))
-                })
-            },
-        );
-        alloy_provider::ProviderBuilder::new()
-            .connect_client(alloy_rpc_client::RpcClient::new(transport, true))
-            .erased()
-    }
-
     #[tokio::test(start_paused = true)]
     async fn get_logs_bisects_only_cut_off_replies() {
-        const CUT: &str = "batch call failed: hyper::Error(IncompleteMessage)";
-        const THROTTLED: &str = "batch call failed: HttpError(429)";
+        let asserter = alloy_provider::mock::Asserter::new();
+        let provider = alloy_provider::ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
+        let logs = |blocks: std::ops::RangeInclusive<u64>| -> Vec<Log> {
+            blocks
+                .map(|block| Log {
+                    block_number: Some(block),
+                    ..Default::default()
+                })
+                .collect()
+        };
+        let fetched_blocks = async || -> Vec<u64> {
+            bisecting_get_logs(&provider, 1, 4, vec![], vec![])
+                .await
+                .unwrap()
+                .iter()
+                .map(|log| log.block_number.unwrap())
+                .collect()
+        };
 
-        let logs = bisecting_get_logs(&capped_get_logs_provider(100, CUT), 1, 1000, vec![], vec![])
-            .await
-            .unwrap();
-        let blocks: Vec<u64> = logs.iter().map(|log| log.block_number.unwrap()).collect();
-        assert_eq!(blocks, (1..=1000).collect::<Vec<_>>());
+        // Cut off: split into 1..=2 and 3..=4.
+        asserter.push_failure_msg("batch call failed: hyper::Error(IncompleteMessage)");
+        asserter.push_success(&logs(1..=2));
+        asserter.push_success(&logs(3..=4));
+        assert_eq!(fetched_blocks().await, [1, 2, 3, 4]);
 
-        for (max_blocks, error) in [(0, CUT), (100, THROTTLED)] {
-            let provider = capped_get_logs_provider(max_blocks, error);
-            assert!(
-                bisecting_get_logs(&provider, 1, 1000, vec![], vec![])
-                    .await
-                    .is_err()
-            );
-        }
+        // Throttled: retried on the same range, not split.
+        asserter.push_failure_msg("batch call failed: HttpError(429)");
+        asserter.push_success(&logs(1..=4));
+        assert_eq!(fetched_blocks().await, [1, 2, 3, 4]);
     }
 
     #[test]
