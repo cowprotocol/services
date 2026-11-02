@@ -5,7 +5,6 @@ edition = "2024"
 description = "Protocol fee policies and the chain-generic fee math over a fill"
 
 [dependencies]
-anyhow = { workspace = true }
 chain-types = { workspace = true }
 
 [dev-dependencies]

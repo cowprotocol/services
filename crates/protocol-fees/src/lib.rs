@@ -4,10 +4,7 @@
 //! type defaults its chain parameter to [`Evm`], so bare type names mean the
 //! EVM instantiation.
 
-use {
-    anyhow::{Context, Result},
-    chain_types::{Amount, ChainTypes, MathError, MathResult, Zero, evm::Evm},
-};
+use chain_types::{Amount, ChainTypes, MathError, MathResult, Zero, evm::Evm};
 
 #[cfg(test)]
 mod tests;
@@ -86,7 +83,7 @@ pub struct Order<C: ChainTypes = Evm> {
 /// These can be either uniform (same for all orders) or custom (adjusted for
 /// protocol fees on a per-order basis).
 #[derive(Debug, Clone, Copy)]
-pub struct ClearingPrices<C: ChainTypes> {
+struct ClearingPrices<C: ChainTypes> {
     /// Price of sell token in terms of buy token.
     sell: C::Amount,
     /// Price of buy token in terms of sell token.
@@ -102,32 +99,36 @@ struct PriceLimits<C: ChainTypes> {
     buy: C::Amount,
 }
 
-/// Calculate total protocol fees for an order.
-///
-/// Returns the total fee in the surplus token.
-pub fn protocol_fees<C: ChainTypes>(
+/// The fee each of `policies` took from the fill `order` describes, in list
+/// order and in the surplus token, recovered from the settled legs. The last
+/// policy is measured at the settled legs, each earlier one at the legs its
+/// successors' fees rebuild.
+pub fn protocol_fees_by_policy<C: ChainTypes>(
     order: &Order<C>,
     policies: &[FeePolicy<C>],
-    base_prices: &ClearingPrices<C>,
-) -> Result<C::Amount> {
-    let mut total_fee = C::Amount::zero();
-    let mut current_prices = *base_prices;
-
-    // Process policies in reverse order, updating custom prices as we go
+) -> MathResult<Vec<C::Amount>> {
+    let base_prices = calculate_custom_prices_from_executed(order);
+    let mut current_prices = base_prices;
+    let mut total = C::Amount::zero();
+    let mut fees = Vec::with_capacity(policies.len());
     for (i, policy) in policies.iter().enumerate().rev() {
         let fee = protocol_fee(order, policy, &current_prices)?;
-
-        total_fee = total_fee
-            .try_add(fee)
-            .context("overflow adding protocol fees")?;
-
-        // Update custom prices for next iteration (except last iteration)
+        fees.push(fee);
+        total = total.try_add(fee)?;
+        // Nothing is measured before the first policy, so its prices are not
+        // rebuilt.
         if i != 0 {
-            current_prices = calculate_custom_prices(order, total_fee, base_prices)?;
+            current_prices = calculate_custom_prices(order, total, &base_prices)?;
         }
     }
+    fees.reverse();
+    Ok(fees)
+}
 
-    Ok(total_fee)
+/// Surplus of the fill `order` describes over its signed limit, scaled to the
+/// executed part, in the surplus token.
+pub fn surplus_over_limit<C: ChainTypes>(order: &Order<C>) -> MathResult<C::Amount> {
+    surplus_over_limit_price(order, &calculate_custom_prices_from_executed(order))
 }
 
 /// Calculate a single protocol fee based on policy type.
@@ -200,7 +201,7 @@ fn fee_before_settlement<C: ChainTypes>(
 /// Takes `policies` from the fill `fill` describes, in list order, each from
 /// the legs the one before left: a sell order delivers less buy token, a buy
 /// order pulls more sell token. Returns the total fee in the surplus token,
-/// which [`protocol_fees`] recovers from the settled legs.
+/// which [`protocol_fees_by_policy`] recovers from the settled legs.
 pub fn apply_protocol_fees<C: ChainTypes>(
     fill: &mut Order<C>,
     policies: &[FeePolicy<C>],
@@ -218,7 +219,7 @@ pub fn apply_protocol_fees<C: ChainTypes>(
 }
 
 /// Calculate surplus over limit price using custom clearing prices.
-pub fn surplus_over_limit_price<C: ChainTypes>(
+fn surplus_over_limit_price<C: ChainTypes>(
     order: &Order<C>,
     prices: &ClearingPrices<C>,
 ) -> MathResult<C::Amount> {
@@ -367,7 +368,7 @@ fn volume_fee<C: ChainTypes>(
 /// Calculate custom clearing prices from executed amounts.
 ///
 /// Custom prices are derived from what was actually executed.
-pub fn calculate_custom_prices_from_executed<C: ChainTypes>(order: &Order<C>) -> ClearingPrices<C> {
+fn calculate_custom_prices_from_executed<C: ChainTypes>(order: &Order<C>) -> ClearingPrices<C> {
     ClearingPrices {
         sell: order.executed_buy,
         buy: order.executed_sell,

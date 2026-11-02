@@ -7,15 +7,22 @@ use {
         Quote,
         Side,
         apply_protocol_fees,
-        calculate_custom_prices_from_executed,
-        protocol_fees,
+        protocol_fees_by_policy,
+        surplus_over_limit,
     },
     chain_types::{
         MathError,
+        evm::{Address, Evm, OrderUid, U256},
         solana::{IntentHash, Pubkey, Solana},
     },
     rand::{Rng, SeedableRng, rngs::StdRng},
 };
+
+fn evm_uid(digest: u8, owner: u8) -> OrderUid {
+    let mut bytes = [digest; 56];
+    bytes[32..52].copy_from_slice(&[owner; 20]);
+    OrderUid(bytes)
+}
 
 fn sol_uid(n: u8) -> IntentHash {
     IntentHash([n; 32])
@@ -218,16 +225,67 @@ fn backward_math_recovers_the_forward_fees() {
             continue;
         }
 
-        let backward = protocol_fees(
-            &settled,
-            &policies,
-            &calculate_custom_prices_from_executed(&settled),
-        )
-        .unwrap();
+        let backward: u64 = protocol_fees_by_policy(&settled, &policies)
+            .unwrap()
+            .into_iter()
+            .sum();
         let tolerance = (1u64 << policies.len()) - 1;
         assert!(
             forward.abs_diff(backward) <= tolerance,
             "{engine:?} {policies:?} forward {forward} backward {backward}"
         );
     }
+}
+
+/// A sell fill of 1000 for 2000 against a 1000/1800 limit, 200 over it.
+fn evm_sell_fill() -> Order<Evm> {
+    Order {
+        uid: evm_uid(1, 0xaa),
+        sell_token: Address::repeat_byte(1),
+        buy_token: Address::repeat_byte(2),
+        sell_amount: U256::from(1_000u64),
+        buy_amount: U256::from(1_800u64),
+        executed_sell: U256::from(1_000u64),
+        executed_buy: U256::from(2_000u64),
+        side: Side::Sell,
+    }
+}
+
+/// The last policy is measured at the settled legs, each earlier one at the
+/// legs its successors' fees rebuild, and the fees come back in list order.
+#[test]
+fn protocol_fees_by_policy_unwinds_from_the_last_policy() {
+    let volume = |factor| FeePolicy::<Evm>::Volume { factor };
+
+    let fees = protocol_fees_by_policy(&evm_sell_fill(), &[volume(0.1), volume(0.1)]).unwrap();
+
+    // Last: 2000 * 0.1 / 0.9 = 222. First: (2000 + 222) * 0.1 / 0.9 = 246.
+    assert_eq!(fees, vec![U256::from(246u64), U256::from(222u64)]);
+}
+
+#[test]
+fn no_policies_take_no_fees() {
+    assert!(
+        protocol_fees_by_policy(&evm_sell_fill(), &[])
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// The limit scales to the executed part of the fill.
+#[test]
+fn surplus_over_limit_scales_the_limit_to_the_fill() {
+    assert_eq!(
+        surplus_over_limit(&evm_sell_fill()).unwrap(),
+        U256::from(200u64)
+    );
+
+    // 900 of the 1800 buy limit for 450 sell: the scaled limit is 500.
+    let buy_fill = Order::<Evm> {
+        executed_sell: U256::from(450u64),
+        executed_buy: U256::from(900u64),
+        side: Side::Buy,
+        ..evm_sell_fill()
+    };
+    assert_eq!(surplus_over_limit(&buy_fill).unwrap(), U256::from(50u64));
 }
