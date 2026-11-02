@@ -208,6 +208,7 @@ impl UniswapV3Indexer {
                 .buffered(self.fetch_concurrency);
         while let Some((chunk, logs)) = chunks.try_next().await? {
             if !self.commit_chunk(chunk, logs, finalized_block).await? {
+                // Another writer is ahead; the next run picks up from there.
                 return Ok(());
             }
         }
@@ -1458,7 +1459,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_concurrent_writers_apply_chunk_once() {
+    async fn postgres_chunk_gets_applied_once() {
         let pg = PgPool::connect("postgresql:///pool_indexer").await.unwrap();
         sqlx::query(
             "TRUNCATE uniswap_v3_ticks, uniswap_v3_pool_states, uniswap_v3_pools, \
@@ -1515,7 +1516,10 @@ mod tests {
             indexer.persist_chunk(chunk, changes()),
             indexer.persist_chunk(chunk, changes()),
         );
-        assert!(a.unwrap() ^ b.unwrap(), "exactly one writer commits");
+        assert!(
+            matches!((a.unwrap(), b.unwrap()), (true, false) | (false, true)),
+            "exactly one writer commits"
+        );
 
         let ticks = db::get_ticks(&pg, &POOL).await.unwrap();
         assert_eq!(ticks.len(), 1);

@@ -51,6 +51,8 @@ pub async fn insert_checkpoint(
     Ok(())
 }
 
+/// Moves the checkpoint from `from` to `to`. Returns `false`, changing
+/// nothing, if it isn't at `from` because another writer already moved it.
 pub async fn advance_checkpoint(
     tx: &mut Transaction<'_, Postgres>,
     contract: &Address,
