@@ -1017,7 +1017,9 @@ components:
           format: int64
           nullable: true
         verified:
-          description: Whether the amounts were confirmed by simulation. Always false.
+          description: >-
+            Whether it was possible to verify that the quoted amounts are
+            accurate using a simulation.
           type: boolean
         funder:
           description: >-

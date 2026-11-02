@@ -4,8 +4,8 @@ use {
     futures::future::join_all,
     reqwest::Client,
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, serde_as},
-    solana_sdk::pubkey::Pubkey,
+    serde_with::{DisplayFromStr, base64::Base64, serde_as},
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     std::time::{Duration, Instant},
     url::Url,
 };
@@ -31,6 +31,9 @@ pub struct Order {
     pub buy_token: Pubkey,
     pub amount: u64,
     pub kind: Kind,
+    /// The wallet the quoted order belongs to, for the driver to build its
+    /// settlement against. `None` asks for no settlement.
+    pub owner: Option<Pubkey>,
 }
 
 /// Which amount the order fixes.
@@ -51,6 +54,11 @@ pub struct Quote {
     /// The network fee of settling the quoted route, in lamports. Zero when
     /// the driver reports none.
     pub network_fee: u64,
+    /// The settlement of the quoted route against the order's wallet,
+    /// unsigned. `None` when the driver answered none or a malformed one.
+    pub transaction: Option<VersionedTransaction>,
+    /// Whether the verification confirmed the amounts.
+    pub verified: bool,
     /// The driver that answered, as labelled in metrics.
     pub driver: String,
     /// How long the driver took to answer.
@@ -89,6 +97,9 @@ struct RequestBody {
     amount: u64,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner: Option<Pubkey>,
 }
 
 #[serde_as]
@@ -105,6 +116,11 @@ struct ResponseBody {
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
     network_fee: Option<u64>,
+    /// The bincode-serialized settlement, absent from a driver that answers
+    /// none.
+    #[serde_as(as = "Option<Base64>")]
+    #[serde(default)]
+    transaction: Option<Vec<u8>>,
 }
 
 #[derive(Deserialize)]
@@ -170,11 +186,20 @@ impl Quoter {
             "new price estimate"
         );
         let quoted = quoted.ok()?;
+        let transaction = quoted.transaction.as_deref().and_then(|bytes| {
+            bincode::deserialize(bytes)
+                .inspect_err(|err| {
+                    tracing::warn!(driver, ?err, "driver quote transaction malformed")
+                })
+                .ok()
+        });
         Some(Quote {
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             solver: quoted.solver,
             network_fee: quoted.network_fee.unwrap_or(0),
+            transaction,
+            verified: false,
             driver,
             elapsed,
         })
@@ -190,6 +215,7 @@ impl Quoter {
             amount: order.amount,
             kind: order.kind,
             deadline: chrono::Utc::now() + self.timeout.saturating_sub(RESPONSE_RESERVE),
+            owner: order.owner,
         };
         let response = self
             .client

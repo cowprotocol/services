@@ -2,7 +2,11 @@
 
 use {
     crate::infra::api::ValidationParameters,
-    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
+    configs::{
+        database::DatabasePoolConfig,
+        price_estimation::QuoteVerificationMode,
+        shared::LoggingConfig,
+    },
     serde::Deserialize,
     serde_ext::{deserialize_solana_pubkey_b58, deserialize_url_with_trailing_slash},
     solana_sdk::pubkey::Pubkey,
@@ -49,6 +53,8 @@ pub struct Config {
     pub rpc: Option<Rpc>,
     /// Sponsored order placement. Absent disables `POST /api/v1/orders`.
     pub sponsoring: Option<Sponsoring>,
+    /// Quote verification. Absent, every quote is unverified.
+    pub quote_verification: Option<QuoteVerification>,
     /// Most bytes an app data document may have.
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
@@ -140,6 +146,37 @@ pub struct Sponsoring {
     /// product this bounds, so it caps what a placement can spend.
     #[serde(default = "default_max_priority_fee_lamports")]
     pub max_priority_fee_lamports: u64,
+}
+
+/// Quote verification configuration: each driver's quoted settlement is
+/// simulated behind the quoted order's creation. Requires the `[rpc]`
+/// section, which reads the mints.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct QuoteVerification {
+    /// Whether a verified quote outranks an unverified one. Every quote is
+    /// verified and reported either way.
+    #[serde(default)]
+    pub mode: QuoteVerificationMode,
+    /// HTTP endpoint of a node with the Jito `simulateBundle` extension.
+    pub bundle_endpoint: Url,
+    /// How inaccurate a quote must be before it is dropped, as the share of
+    /// the sell or buy amount the settlement program's buffers may pay.
+    /// Defaults to 1.
+    #[serde(default = "default_quote_inaccuracy_limit")]
+    pub quote_inaccuracy_limit: f64,
+    /// The settlement program the quoted settlements target. Defaults to the
+    /// official deployment the interface crate exports.
+    #[serde(
+        default = "default_settlement_program_id",
+        deserialize_with = "deserialize_solana_pubkey_b58"
+    )]
+    pub settlement_program: Pubkey,
+}
+
+/// The EVM orderbook's default.
+fn default_quote_inaccuracy_limit() -> f64 {
+    1.0
 }
 
 /// Wallets commonly ask 75,000 to 100,000 lamports for a creation, so a

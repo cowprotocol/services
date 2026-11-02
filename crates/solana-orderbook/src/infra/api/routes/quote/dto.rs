@@ -111,8 +111,7 @@ pub struct Response {
     pub expiration: DateTime<Utc>,
     /// The stored quote's id, absent when the store was unavailable.
     pub id: Option<i64>,
-    /// Whether the amounts were confirmed by simulating the settlement. No
-    /// component simulates, so a quote is indicative.
+    /// Whether the amounts were confirmed by simulating the settlement.
     pub verified: bool,
     /// The account a sponsored creation transaction must name as its fee payer.
     /// Absent when the deployment does not sponsor placements.
