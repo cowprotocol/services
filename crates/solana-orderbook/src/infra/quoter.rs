@@ -187,9 +187,9 @@ impl Quoter {
             .price_estimates
             .with_label_values(&[driver.as_str(), result])
             .inc();
-        // Every driver, answered or not: a driver that fails never reaches the
-        // quote competition, and a request where they all fail logs no
-        // competition at all.
+        // Every driver that finishes, answered or failed: a driver that fails
+        // never reaches the quote competition, and a request where they all
+        // fail logs no competition at all.
         tracing::debug!(
             driver = %driver,
             result,
