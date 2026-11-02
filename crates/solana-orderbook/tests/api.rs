@@ -787,14 +787,24 @@ fn settled_json(pre: [u64; 3], post: [u64; 3]) -> serde_json::Value {
 
 /// A verifier preferring verified quotes, with a 1% inaccuracy limit, over
 /// mock nodes: `rpc` answers the account reads in queue order, `bundle` up to
-/// two bundle simulations.
-fn verifier(rpc: MocksMap, bundle: serde_json::Value) -> Verifier {
+/// two bundle simulations, `holders` the largest-holders lookup when given.
+fn verifier(
+    rpc: MocksMap,
+    bundle: serde_json::Value,
+    holders: Option<serde_json::Value>,
+) -> Verifier {
     Verifier::new(
         SolanaRPC::new_mock_with_mocks_map(rpc),
         SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
             (cow_solana_rpc::SIMULATE_BUNDLE, bundle.clone()),
             (cow_solana_rpc::SIMULATE_BUNDLE, bundle),
         ])),
+        holders.map(|largest| {
+            SolanaRPC::new_mock_with_mocks(Mocks::from([(
+                RpcRequest::GetTokenLargestAccounts,
+                largest,
+            )]))
+        }),
         program_id(),
         0.01,
         configs::price_estimation::QuoteVerificationMode::Prefer,
@@ -865,6 +875,7 @@ async fn quote_verified_by_a_passing_bundle_simulation() {
     let verifier = verifier(
         mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
         bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+        None,
     );
     let addr = spawn_verifying_server(vec![driver], verifier).await;
 
@@ -893,6 +904,7 @@ async fn quote_whose_settlement_fails_or_underdelivers_is_unverified() {
         let verifier = verifier(
             mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
             bundle_json(settlement.clone()),
+            None,
         );
         let addr = spawn_verifying_server(vec![driver], verifier).await;
 
@@ -915,6 +927,7 @@ async fn quote_the_buffers_pay_for_is_dropped() {
             [0, 1_000, 5_000_000],
             [3_461_207, 1_000, 4_900_000],
         )),
+        None,
     );
     let addr = spawn_verifying_server(vec![driver], verifier).await;
 
@@ -938,6 +951,7 @@ async fn quote_prefers_a_verified_answer_in_prefer_mode() {
     let verifier = verifier(
         mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
         bundle_json(settled_json([0, 1_000, 5_000], [4_000_000, 1_000, 5_000])),
+        None,
     );
     let addr = spawn_verifying_server(vec![unverifiable, verifiable], verifier).await;
 
@@ -947,28 +961,55 @@ async fn quote_prefers_a_verified_answer_in_prefer_mode() {
     assert_eq!(json["verified"], true);
 }
 
-/// A sell mint nobody can mint has nothing to fund its sell in simulation,
-/// so the quote stays unverified.
+/// A sell mint nobody can mint is funded by its largest wallet-owned holder,
+/// read from the holders node. A PDA-owned holder funds nothing, and neither
+/// does a missing holders node.
 #[tokio::test]
-async fn quote_selling_a_mint_nobody_can_mint_is_unverified() {
+async fn quote_selling_a_mint_nobody_can_mint_is_funded_by_its_largest_holder() {
     let solver = solana_sdk::pubkey::Pubkey::new_unique();
-    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
-    let reads = MocksMap::from_iter([(
-        RpcRequest::GetMultipleAccounts,
-        solana_testlib::multiple_accounts_json([
-            solana_testlib::mint_account_json(),
-            solana_testlib::mint_account_json(),
-        ]),
-    )]);
-    let verifier = verifier(
-        reads,
-        bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
-    );
-    let addr = spawn_verifying_server(vec![driver], verifier).await;
+    let holder = solana_sdk::pubkey::Pubkey::new_unique();
+    let largest = serde_json::json!({
+        "context": { "slot": 1 },
+        "value": [{
+            "address": holder.to_string(),
+            "amount": "20000000",
+            "decimals": 6,
+            "uiAmount": 20.0,
+            "uiAmountString": "20",
+        }],
+    });
+    let wallet = solana_sdk::signature::Keypair::new().pubkey();
+    let pool = solana_sdk::pubkey::Pubkey::find_program_address(&[b"pool"], &program_id()).0;
+    for (holders, owner, verified) in [
+        (Some(largest.clone()), wallet, true),
+        (Some(largest), pool, false),
+        (None, wallet, false),
+    ] {
+        let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+        let reads = MocksMap::from_iter([
+            (
+                RpcRequest::GetMultipleAccounts,
+                solana_testlib::multiple_accounts_json([
+                    solana_testlib::mint_account_json(),
+                    solana_testlib::mint_account_json(),
+                ]),
+            ),
+            (
+                RpcRequest::GetMultipleAccounts,
+                solana_testlib::multiple_accounts_json([holding_json(owner, 20_000_000)]),
+            ),
+        ]);
+        let verifier = verifier(
+            reads,
+            bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+            holders,
+        );
+        let addr = spawn_verifying_server(vec![driver], verifier).await;
 
-    let (status, json) = quote_verified(addr).await;
-    assert_eq!(status, reqwest::StatusCode::OK);
-    assert_eq!(json["verified"], false);
+        let (status, json) = quote_verified(addr).await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(json["verified"], verified);
+    }
 }
 
 /// A buy order keeps its buy amount and pulls the execution cost, priced in

@@ -130,6 +130,10 @@ pub async fn run(args: Args) {
         Verifier::new(
             client(&rpc.endpoint, "verification"),
             client(&verification.bundle_endpoint, "verification_bundle"),
+            verification
+                .holders_endpoint
+                .as_ref()
+                .map(|endpoint| client(endpoint, "verification_holders")),
             verification.settlement_program,
             verification.quote_inaccuracy_limit,
             verification.mode,
