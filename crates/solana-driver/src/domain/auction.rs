@@ -199,45 +199,43 @@ impl Auction {
     }
 
     /// Hand each sell token account's balance out to the orders selling from
-    /// it, in auction order, like the EVM driver's `update_orders`: a
-    /// fill-or-kill order takes its remaining sell amount or is dropped, a
-    /// partially fillable one takes what is left and scales to it. The
-    /// protocol does not pick which of an owner's orders fill, so each
-    /// solver's driver does. An order without a balance, or one whose
-    /// creation funds its account at settlement, stays out of the split.
+    /// it, in auction order, and drop the orders it runs out on. Each
+    /// solver's driver splits, as on EVM: the protocol does not pick which
+    /// of an owner's orders fill.
     pub(super) fn split_sell_balances(&mut self) {
-        let mut left = HashMap::new();
-        let creations = &self.creations;
+        let mut left_per_account = HashMap::new();
         self.orders.retain_mut(|order| {
             let Some(balance) = order.sell_balance else {
                 return true;
             };
-            if creations.contains_key(&order.uid) {
+            // The creation funds and approves the account at settlement.
+            if self.creations.contains_key(&order.uid) {
                 return true;
             }
-            let left = left.entry(order.sell_token_account).or_insert(balance);
+            let left = left_per_account
+                .entry(order.sell_token_account)
+                .or_insert(balance);
             let sell = order.remaining().sell;
-            if order.partially_fillable {
-                if *left < balance {
-                    tracing::debug!(
-                        order = %order.uid,
-                        account = %order.sell_token_account,
-                        balance,
-                        left = *left,
-                        "earlier orders take part of the sell balance, scaling the order down"
-                    );
-                }
-                order.sell_balance = Some(*left);
-            } else if *left < sell {
+            // A fill-or-kill order cannot shrink; `available` scales a
+            // partially fillable one down to what is left, to nothing when
+            // nothing is.
+            let kept = order.partially_fillable || *left >= sell;
+            if !kept || *left < balance {
                 tracing::debug!(
                     order = %order.uid,
                     account = %order.sell_token_account,
                     balance,
                     left = *left,
                     sell,
-                    "earlier orders take the sell balance, dropping the order"
+                    kept,
+                    "splitting the sell balance"
                 );
+            }
+            if !kept {
                 return false;
+            }
+            if order.partially_fillable {
+                order.sell_balance = Some(*left);
             }
             *left = left.saturating_sub(sell);
             true
@@ -875,7 +873,6 @@ mod tests {
     fn fill_or_kill(uid: u8, sell_amount: u64) -> Order {
         Order {
             sell_amount,
-            buy_amount: sell_amount * 2,
             sell_balance: Some(1_000),
             ..order(uid, pubkey(0x66))
         }
@@ -926,8 +923,8 @@ mod tests {
         assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
     }
 
-    /// An order without a balance, and one whose creation is yet to land,
-    /// neither take from the balance nor get dropped by it.
+    /// Order 3 is the probe: it survives only if neither the order without
+    /// a balance nor the one awaiting its creation took the account's 1000.
     #[test]
     fn an_order_without_a_balance_or_awaiting_its_creation_stays_out_of_the_split() {
         let unknown = Order {
