@@ -168,7 +168,6 @@ pub fn fee_before_settlement<C: ChainTypes>(
     order: &Order<C>,
     policy: &FeePolicy<C>,
 ) -> MathResult<C::Amount> {
-    let prices = calculate_custom_prices_from_executed(order);
     let volume = match order.side {
         Side::Sell => order.executed_buy,
         Side::Buy => order.executed_sell,
@@ -178,7 +177,13 @@ pub fn fee_before_settlement<C: ChainTypes>(
             factor,
             max_volume_factor,
         } => {
-            let surplus = surplus_over_limit_price(order, &prices)?;
+            let surplus = surplus_at_legs(
+                order,
+                PriceLimits {
+                    sell: order.sell_amount,
+                    buy: order.buy_amount,
+                },
+            )?;
             Ok(surplus
                 .try_mul_f64(*factor)?
                 .min(volume.try_mul_f64(*max_volume_factor)?))
@@ -188,7 +193,11 @@ pub fn fee_before_settlement<C: ChainTypes>(
             max_volume_factor,
             quote,
         } => {
-            let improvement = price_improvement_over_quote(order, &prices, quote)?;
+            let improvement =
+                match surplus_at_legs(order, adjust_quote_to_order_limits(order, quote)?) {
+                    Err(MathError::Negative) => C::Amount::zero(),
+                    improvement => improvement?,
+                };
             Ok(improvement
                 .try_mul_f64(*factor)?
                 .min(volume.try_mul_f64(*max_volume_factor)?))
@@ -267,6 +276,27 @@ fn surplus_over<C: ChainTypes>(
             let bought = executed.try_mul_div_ceil(prices.sell, prices.buy)?;
 
             bought.try_sub(limit_buy)
+        }
+    }
+}
+
+/// Surplus of the fill `order` describes over `limits`, measured on its
+/// executed legs. Equals `surplus_over` with the legs as prices, without
+/// multiplying the two legs, whose product can exceed the amount type.
+fn surplus_at_legs<C: ChainTypes>(
+    order: &Order<C>,
+    limits: PriceLimits<C>,
+) -> MathResult<C::Amount> {
+    match order.side {
+        Side::Buy => limits
+            .sell
+            .try_mul_div_floor(order.executed_buy, limits.buy)?
+            .try_sub(order.executed_sell),
+        Side::Sell => {
+            let limit_buy = order
+                .executed_sell
+                .try_mul_div_ceil(limits.buy, limits.sell)?;
+            order.executed_buy.try_sub(limit_buy)
         }
     }
 }

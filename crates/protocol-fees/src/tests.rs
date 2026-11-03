@@ -7,10 +7,12 @@ use {
         Quote,
         Side,
         apply_protocol_fees,
+        fee_before_settlement,
         protocol_fees_by_policy,
         surplus_over_limit,
     },
     chain_types::{
+        Amount,
         MathError,
         evm::{Address, Evm, OrderUid, U256},
         solana::{IntentHash, Pubkey, Solana},
@@ -308,4 +310,29 @@ fn surplus_over_limit_scales_the_limit_to_the_fill() {
         ..evm_sell_fill()
     };
     assert_eq!(surplus_over_limit(&buy_fill).unwrap(), U256::from(50u64));
+}
+
+/// Legs of 2^150 sold and 2^120 bought multiply past `U256`. The forward fee
+/// measures the surplus on the legs themselves, while the backward math
+/// overflows on their product.
+#[test]
+fn huge_legs_overflow_only_the_backward_math() {
+    let huge = Order::<Evm> {
+        sell_amount: U256::ONE << 150,
+        buy_amount: U256::ONE,
+        executed_sell: U256::ONE << 150,
+        executed_buy: U256::ONE << 120,
+        ..evm_sell_fill()
+    };
+    let policy = FeePolicy::Surplus {
+        factor: 0.5,
+        max_volume_factor: 1.0,
+    };
+
+    let surplus: U256 = (U256::ONE << 120) - U256::ONE;
+    assert_eq!(
+        fee_before_settlement(&huge, &policy),
+        surplus.try_mul_f64(0.5)
+    );
+    assert_eq!(surplus_over_limit(&huge), Err(MathError::Overflow));
 }

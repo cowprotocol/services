@@ -58,15 +58,11 @@ impl Fulfillment {
             &protocol_fee.into(),
         ) {
             Ok(fee) => fee,
-            // A fill under its limit price has no surplus, and a fill with
-            // nothing executed has no legs to measure its surplus or price
-            // improvement by. The settlement simulation rejects such fills.
+            // A fill under its limit price has no surplus. The settlement
+            // simulation rejects such fills.
             Err(chain_types::MathError::Negative)
                 if matches!(protocol_fee, FeePolicy::Surplus { .. }) =>
             {
-                eth::U256::ZERO
-            }
-            Err(chain_types::MathError::DivisionByZero) if self.executed().0.is_zero() => {
                 eth::U256::ZERO
             }
             Err(err) => return Err(Math::from(err).into()),
@@ -764,6 +760,51 @@ mod tests {
         }
     }
 
+    /// A fill whose legs multiply past `U256`, 2^150 sold at one sell atom per
+    /// 2^30 buy atoms, takes the legacy formulas' fee. Those multiply each leg
+    /// by a price, which stays in range.
+    #[test]
+    fn huge_legs_take_the_legacy_fee() {
+        let base = order(
+            1,
+            1,
+            Side::Sell,
+            vec![FeePolicy::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.01,
+            }],
+        );
+        let sold: eth::U256 = eth::U256::ONE << 150;
+        let data = order::OrderData {
+            sell: eth::Asset {
+                token: base.sell.token,
+                amount: sold.into(),
+            },
+            ..(*base.data).clone()
+        };
+        let order = competition::Order {
+            data: Arc::new(data),
+            partial: order::Partial::Yes {
+                available: order::TargetAmount(sold),
+            },
+            ..base
+        };
+        let fulfillment = Fulfillment::new(
+            order,
+            order::TargetAmount(sold),
+            order::SellAmount(eth::U256::ZERO),
+        )
+        .unwrap();
+        let prices = ClearingPrices {
+            sell: eth::U256::ONE,
+            buy: eth::U256::ONE << 30,
+        };
+        let expected = legacy::with_protocol_fees(&fulfillment, prices).unwrap();
+        let actual = fulfillment.with_protocol_fees(prices).unwrap();
+        assert_eq!(actual.executed(), expected.executed());
+        assert_eq!(actual.fee(), expected.fee());
+    }
+
     /// A surplus policy takes nothing from a fill under its limit price. The
     /// settlement simulation rejects the fill.
     #[test]
@@ -792,9 +833,8 @@ mod tests {
         assert_eq!(applied.fee(), fulfillment.fee());
     }
 
-    /// A fill with nothing executed has no legs to measure its surplus by, so
-    /// a surplus policy takes nothing. The settlement simulation rejects the
-    /// fill.
+    /// A fill with nothing executed has no surplus, so a surplus policy takes
+    /// nothing. The settlement simulation rejects the fill.
     #[test]
     fn a_fill_with_nothing_executed_takes_no_surplus_fee() {
         let order = order(
