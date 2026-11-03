@@ -10,8 +10,8 @@
 //! cannot absorb the solver fee.
 //!
 //! Only a volume policy moves the limit leg sent to the engine, see
-//! [`tighten_limit`]: a surplus kind takes a share of the surplus and cannot
-//! cross the limit.
+//! [`protocol_fees::tighten_limit`]: a surplus kind takes a share of the
+//! surplus and cannot cross the limit.
 
 use {
     super::{
@@ -22,7 +22,6 @@ use {
         solution::{Solution, Trade},
     },
     chain_types::{
-        Amount,
         MathError,
         solana::{IntentHash, Pubkey as ChainPubkey, Solana},
     },
@@ -100,59 +99,6 @@ fn fill(order: &Order, trade: &Trade) -> protocol_fees::Order<Solana> {
             Side::Sell => protocol_fees::Side::Sell,
             Side::Buy => protocol_fees::Side::Buy,
         },
-    }
-}
-
-/// The limit leg the engine has to beat for its fill to respect `limit` once
-/// the volume fees among `policies` are taken: a sell order's minimum buy
-/// rises, a buy order's maximum sell falls. The fill meets the last policy
-/// last, so the last policy tightens first. A minimum buy past `u64::MAX`
-/// saturates: no fill can meet it.
-pub fn tighten_limit(policies: &[FeePolicy], side: Side, limit: u64) -> u64 {
-    policies
-        .iter()
-        .rev()
-        .filter_map(|policy| match policy {
-            FeePolicy::Volume { factor } => Some(*factor),
-            FeePolicy::Surplus { .. } | FeePolicy::PriceImprovement { .. } => None,
-        })
-        .fold(limit, |limit, factor| tighten(side, factor, limit))
-}
-
-/// The boundary leg under one volume `factor`: the least buy leg whose
-/// remainder after the fee reaches `limit`, or the greatest sell leg that
-/// stays within `limit` with the fee on top. The fee rounds down, so the
-/// boundary is settled against the exact fee by stepping from an f64
-/// estimate. Exact up to `2^53` atoms, past which the fee itself rounds the
-/// leg and the boundary can be off by a few atoms.
-fn tighten(side: Side, factor: f64, limit: u64) -> u64 {
-    let fee = |leg: u64| leg.try_mul_f64(factor).unwrap_or(u64::MAX);
-    match side {
-        Side::Sell => {
-            let fits = |leg: u64| leg.checked_sub(fee(leg)).is_some_and(|left| left >= limit);
-            let mut leg = (limit as f64 / (1.0 - factor)).ceil() as u64;
-            while leg > 0 && fits(leg - 1) {
-                leg -= 1;
-            }
-            while leg < u64::MAX && !fits(leg) {
-                leg += 1;
-            }
-            leg
-        }
-        Side::Buy => {
-            let fits = |leg: u64| {
-                leg.checked_add(fee(leg))
-                    .is_some_and(|total| total <= limit)
-            };
-            let mut leg = (limit as f64 / (1.0 + factor)).floor() as u64;
-            while leg < u64::MAX && fits(leg + 1) {
-                leg += 1;
-            }
-            while leg > 0 && !fits(leg) {
-                leg -= 1;
-            }
-            leg
-        }
     }
 }
 
@@ -296,89 +242,5 @@ mod tests {
 
         assert_eq!(err, Rejected::LimitPrice(second.uid));
         assert_eq!(legs(&sol), (1_000, 2_000, 0));
-    }
-
-    #[test]
-    fn only_a_volume_policy_moves_the_limit() {
-        let surplus = FeePolicy::Surplus {
-            factor: 0.5,
-            max_volume_factor: 0.5,
-        };
-        assert_eq!(tighten_limit(&[], Side::Sell, 1_000), 1_000);
-        assert_eq!(tighten_limit(&[surplus], Side::Sell, 1_000), 1_000);
-        assert_eq!(tighten_limit(&[surplus], Side::Buy, 1_000), 1_000);
-        assert_eq!(tighten_limit(&[volume(0.0)], Side::Sell, 1_000), 1_000);
-        // 1000 / 0.9 = 1111.1 and 1000 / 1.1 = 909.1, each settled against
-        // the fee rounding down: 1111 - 111 reaches 1000, 909 + 90 stays
-        // within it.
-        assert_eq!(tighten_limit(&[volume(0.1)], Side::Sell, 1_000), 1_111);
-        assert_eq!(tighten_limit(&[volume(0.1)], Side::Buy, 1_000), 909);
-        assert_eq!(tighten_limit(&[volume(0.1)], Side::Sell, 0), 0);
-    }
-
-    /// The fill meets the last policy last, so it tightens the limit first:
-    /// 1000 under 20% needs 1249, and 1249 under 10% needs 1387. The other
-    /// order would need 1388.
-    #[test]
-    fn later_policies_tighten_first() {
-        let policies = [volume(0.1), volume(0.2)];
-        assert_eq!(tighten_limit(&policies, Side::Sell, 1_000), 1_387);
-        assert_eq!(
-            tighten_limit(&policies, Side::Sell, 1_000),
-            tighten_limit(
-                &policies[..1],
-                Side::Sell,
-                tighten_limit(&policies[1..], Side::Sell, 1_000)
-            )
-        );
-    }
-
-    #[test]
-    fn unrepresentable_minimum_buy_saturates() {
-        assert_eq!(
-            tighten_limit(&[volume(0.5)], Side::Sell, u64::MAX),
-            u64::MAX
-        );
-    }
-
-    #[test]
-    fn quote_placeholder_maximum_sell_fits_u64() {
-        let max_sell = tighten_limit(&[volume(0.5)], Side::Buy, u64::MAX);
-        let fee = max_sell.try_mul_f64(0.5).unwrap();
-        assert!(max_sell.checked_add(fee).is_some());
-    }
-
-    /// A fill at exactly the tightened limit survives the fees and one unit
-    /// worse does not, on both sides, across factors and limit magnitudes.
-    #[test]
-    fn tightened_limit_is_the_exact_boundary_of_apply() {
-        for factor in [0.0001, 0.001, 0.05, 0.25, 0.5] {
-            let volume = [volume(factor)];
-            for limit in [1u64, 3, 1_000, 12_345, 1_000_000_000_000] {
-                let sell = order(Side::Sell, 1_000, limit);
-                let fees = policies(&sell, &volume);
-                let min_buy = tighten_limit(&volume, Side::Sell, limit);
-                assert!(
-                    apply(&fees, &mut solution(1_000, min_buy), &orders(&sell)).is_ok(),
-                    "sell factor={factor} limit={limit}"
-                );
-                assert!(
-                    apply(&fees, &mut solution(1_000, min_buy - 1), &orders(&sell)).is_err(),
-                    "sell factor={factor} limit={limit}"
-                );
-
-                let buy = order(Side::Buy, limit, 1_000);
-                let fees = policies(&buy, &volume);
-                let max_sell = tighten_limit(&volume, Side::Buy, limit);
-                assert!(
-                    apply(&fees, &mut solution(max_sell, 1_000), &orders(&buy)).is_ok(),
-                    "buy factor={factor} limit={limit}"
-                );
-                assert!(
-                    apply(&fees, &mut solution(max_sell + 1, 1_000), &orders(&buy)).is_err(),
-                    "buy factor={factor} limit={limit}"
-                );
-            }
-        }
     }
 }
