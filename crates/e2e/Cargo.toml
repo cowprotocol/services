@@ -75,6 +75,7 @@ tracing = { workspace = true }
 url = { workspace = true }
 
 [dev-dependencies]
+brotli = { workspace = true }
 refunder = { workspace = true }
 rstest = { workspace = true }
 

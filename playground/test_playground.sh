@@ -93,7 +93,7 @@ docker exec playground-chain-1 cast send \
 
 print_settlement_tx() {
   trade_response=$(curl --retry 5 --fail-with-body -s --show-error -X 'GET' \
-    "http://$HOST/api/v1/trades?orderUid=$orderUid" \
+    "http://$HOST/api/v2/trades?orderUid=$orderUid" \
     -H 'accept: application/json')
   tx_hash=$(jq -r '.[0].txHash // empty' <<< "${trade_response}")
 

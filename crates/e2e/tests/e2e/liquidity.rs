@@ -196,16 +196,13 @@ async fn zero_ex_liquidity(web3: Web3) {
     );
 
     services
-        .start_autopilot(
-            None,
-            Configuration {
-                order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
-                    "test_quoter",
-                    "http://localhost:11088/test_solver",
-                )]),
-                ..Configuration::test("test_solver", solver.address())
-            },
-        )
+        .start_autopilot(Configuration {
+            order_quoting: OrderQuoting::test_with_drivers(vec![ExternalSolver::new(
+                "test_quoter",
+                "http://localhost:11088/test_solver",
+            )]),
+            ..Configuration::test("test_solver", solver.address())
+        })
         .await;
     services
         .start_api(configs::orderbook::Configuration {
@@ -308,8 +305,9 @@ fn create_zeroex_liquidity_orders(
         // fully covers execution costs
         maker_amount: u128::try_from(order_creation.buy_amount).unwrap() * 3,
         taker_amount: u128::try_from(order_creation.sell_amount).unwrap() * 2,
-        // makes 0x order partially filled, but the amount is higher than the cowswap order to
-        // make sure the 0x order is not overfilled in the end of the e2e test
+        // makes 0x order partially filled, but the amount is higher than the
+        // cowswap order to make sure the 0x order is not overfilled in the end
+        // of the e2e test
         remaining_fillable_taker_amount: (order_creation.sell_amount
             * alloy::primitives::U256::from(3)
             / alloy::primitives::U256::from(2))
@@ -328,8 +326,8 @@ fn create_zeroex_liquidity_orders(
     let usdt_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token: order_creation.buy_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config to provide
-        // sufficient liquidity
+        // the value comes from the `--amount-to-estimate-prices-with` config to
+        // provide sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
         taker_amount: order_creation.sell_amount.try_into().unwrap(),
         remaining_fillable_taker_amount: order_creation.sell_amount.try_into().unwrap(),
@@ -345,8 +343,8 @@ fn create_zeroex_liquidity_orders(
     let usdc_weth_order = Eip712TypedZeroExOrder {
         maker_token: weth_address,
         taker_token: order_creation.sell_token,
-        // the value comes from the `--amount-to-estimate-prices-with` config to provide
-        // sufficient liquidity
+        // the value comes from the `--amount-to-estimate-prices-with` config to
+        // provide sufficient liquidity
         maker_amount: 1_000_000_000_000_000_000u128,
         taker_amount: order_creation.sell_amount.try_into().unwrap(),
         remaining_fillable_taker_amount: order_creation.sell_amount.try_into().unwrap(),

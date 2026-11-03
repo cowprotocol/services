@@ -44,7 +44,6 @@ impl Request {
         auction: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
-        compress: bool,
     ) -> Self {
         let helper = FullRequestHelper {
             id: auction.id,
@@ -53,7 +52,7 @@ impl Request {
             deadline,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners.to_vec(),
         };
-        Self::from_body(RequestBody::Full(helper), compress).await
+        Self::from_body(RequestBody::Full(helper)).await
     }
 
     /// Builds a request containing the delta to the previously sent auction.
@@ -62,7 +61,6 @@ impl Request {
         current: &domain::Auction,
         trusted_tokens: &HashSet<Address>,
         deadline: chrono::DateTime<chrono::Utc>,
-        compress: bool,
     ) -> Self {
         let helper = DeltaRequestHelper {
             id: current.id,
@@ -72,46 +70,16 @@ impl Request {
             surplus_capturing_jit_order_owners: current.surplus_capturing_jit_order_owners.to_vec(),
         };
 
-        Self::from_body(RequestBody::Delta(helper), compress).await
+        Self::from_body(RequestBody::Delta(helper)).await
     }
 
-    async fn from_body(body: RequestBody, compress: bool) -> Self {
+    async fn from_body(body: RequestBody) -> Self {
         let _timer =
             observe::metrics::metrics().on_auction_overhead_start("autopilot", "serialize_request");
         let (auction_id, deadline) = (body.id(), body.deadline());
 
-        let (body, content_encoding) = tokio::task::spawn_blocking(move || {
-            let serialized = serde_json::to_vec(&body).expect("auction is JSON serializable");
-
-            if !compress {
-                return (Bytes::from(serialized), None);
-            }
-
-            // quality 1: fastest brotli level. Already beats gzip-3 on both
-            // ratio and speed for our JSON payloads.
-            //
-            // lgwin 22: LZ77 window = 2^22 - 16 ≈ 4 MB. How far back the
-            // compressor looks for repeated patterns. The decompressor must
-            // allocate up to this much memory. Aligns with our current auction
-            // size (~3-4mb).
-            //
-            // 4096: internal I/O buffer for flushing to the output Vec.
-            // Doesn't affect compression ratio. Tested 512 B to 256 KB with
-            // no meaningful difference; 4 KB is a standard default.
-            let mut encoder = CompressorWriter::new(Vec::new(), 4096, 1, 22);
-            match encoder.write_all(&serialized).and_then(|_| encoder.flush()) {
-                Ok(()) => (
-                    Bytes::from(encoder.into_inner()),
-                    Some(HeaderValue::from_static("br")),
-                ),
-                Err(err) => {
-                    tracing::error!(
-                        ?err,
-                        "brotli compression failed, falling back to uncompressed"
-                    );
-                    (Bytes::from(serialized), None)
-                }
-            }
+        let body = tokio::task::spawn_blocking(move || {
+            Bytes::from(serde_json::to_vec(&body).expect("auction is JSON serializable"))
         })
         .await
         .expect("inner task should not panic as serialization should work for the given type");
@@ -119,9 +87,27 @@ impl Request {
         Self {
             body,
             auction_id,
-            content_encoding,
+            content_encoding: None,
             deadline,
         }
+    }
+
+    /// Returns a compressed copy of this request, or `None` if
+    /// compression failed.
+    async fn compressed(&self) -> Option<Self> {
+        let _timer =
+            observe::metrics::metrics().on_auction_overhead_start("autopilot", "compress_request");
+        let json = self.body.clone();
+
+        let body = tokio::task::spawn_blocking(move || compress(&json))
+            .await
+            .expect("inner task should not panic")?;
+
+        Some(Self {
+            body,
+            content_encoding: Some(HeaderValue::from_static("br")),
+            ..self.clone()
+        })
     }
 
     pub fn body_size(&self) -> usize {
@@ -133,6 +119,71 @@ impl Request {
             .signed_duration_since(Utc::now())
             .to_std()
             .unwrap_or(Duration::ZERO)
+    }
+}
+
+/// A [`Request`] in the encodings the drivers receiving it accept. Each
+/// encoding is built once and shared by all those drivers.
+#[derive(Clone, Debug)]
+pub struct EncodedRequests {
+    plain: Request,
+    /// Compressed copy of `plain`. Only built if some driver accepts
+    /// compression and compression succeeded.
+    compressed: Option<Request>,
+}
+
+impl EncodedRequests {
+    pub async fn new(plain: Request, compress: bool) -> Self {
+        let compressed = if compress {
+            plain.compressed().await
+        } else {
+            None
+        };
+        Self { plain, compressed }
+    }
+
+    /// The request to send to a driver: compressed if the driver accepts
+    /// compression and a compressed copy exists, plain JSON otherwise.
+    pub fn for_driver(&self, accepts_compression: bool) -> Request {
+        accepts_compression
+            .then_some(self.compressed.as_ref())
+            .flatten()
+            .unwrap_or(&self.plain)
+            .clone()
+    }
+
+    pub fn body_size(&self) -> usize {
+        self.plain.body_size()
+    }
+
+    pub fn compressed_body_size(&self) -> Option<usize> {
+        self.compressed.as_ref().map(Request::body_size)
+    }
+}
+
+/// Compresses a serialized request body with brotli. Returns `None` if
+/// compression fails, in which case the plain body is sent instead.
+fn compress(json: &[u8]) -> Option<Bytes> {
+    // quality 1: fastest brotli level. Already beats gzip-3 on both
+    // ratio and speed for our JSON payloads.
+    //
+    // lgwin 22: LZ77 window = 2^22 - 16 ≈ 4 MB. How far back the
+    // compressor looks for repeated patterns. The decompressor must
+    // allocate up to this much memory, regardless of the body size.
+    //
+    // 4096: internal I/O buffer for flushing to the output Vec.
+    // Doesn't affect compression ratio. Tested 512 B to 256 KB with
+    // no meaningful difference; 4 KB is a standard default.
+    let mut encoder = CompressorWriter::new(Vec::new(), 4096, 1, 22);
+    match encoder.write_all(json).and_then(|_| encoder.flush()) {
+        Ok(()) => Some(Bytes::from(encoder.into_inner())),
+        Err(err) => {
+            tracing::error!(
+                ?err,
+                "brotli compression failed, falling back to uncompressed"
+            );
+            None
+        }
     }
 }
 
@@ -429,30 +480,6 @@ mod tests {
         serde_json::to_vec(&json_value).unwrap()
     }
 
-    fn uncompressed_request(json: Vec<u8>) -> Request {
-        Request {
-            auction_id: 1,
-            body: Bytes::from(json),
-            content_encoding: None,
-            deadline: Utc::now(),
-        }
-    }
-
-    fn compressed_request(json: &[u8]) -> Request {
-        use brotli::enc::writer::CompressorWriter;
-
-        let mut encoder = CompressorWriter::new(Vec::new(), 4096, 1, 22);
-        encoder.write_all(json).unwrap();
-        encoder.flush().unwrap();
-        let compressed = encoder.into_inner();
-        Request {
-            auction_id: 1,
-            body: Bytes::from(compressed),
-            content_encoding: Some(HeaderValue::from_static("br")),
-            deadline: Utc::now(),
-        }
-    }
-
     fn order_uid(byte: u8) -> String {
         const_hex::encode_prefixed([byte; 56])
     }
@@ -506,33 +533,60 @@ mod tests {
     }
 
     #[test]
-    fn compressed_request_round_trips() {
+    fn compression_round_trips() {
         let json = make_test_json();
 
-        let request = compressed_request(&json);
-        assert_eq!(
-            request.content_encoding.as_ref().map(|v| v.as_bytes()),
-            Some("br".as_bytes())
-        );
+        let compressed = compress(&json).unwrap();
         assert!(
-            request.body.len() < json.len(),
+            compressed.len() < json.len(),
             "compressed body {} should be smaller than original {}",
-            request.body.len(),
+            compressed.len(),
             json.len(),
         );
 
         let mut decompressed = Vec::new();
-        brotli::BrotliDecompress(&mut request.body.as_ref(), &mut decompressed).unwrap();
+        brotli::BrotliDecompress(&mut compressed.as_ref(), &mut decompressed).unwrap();
         assert_eq!(decompressed, json);
     }
 
-    #[test]
-    fn uncompressed_request_preserves_json() {
-        let json = make_test_json();
-        let request = uncompressed_request(json.clone());
+    /// The `content-encoding` header a driver receives for this request.
+    fn content_encoding(request: &Request) -> Option<String> {
+        let request = request
+            .inject(reqwest::Client::new().post("http://localhost"))
+            .build()
+            .unwrap();
+        request
+            .headers()
+            .get(reqwest::header::CONTENT_ENCODING)
+            .map(|value| value.to_str().unwrap().to_owned())
+    }
 
-        assert_eq!(request.content_encoding, None);
-        assert_eq!(request.body.as_ref(), json.as_slice());
+    #[tokio::test]
+    async fn encoding_is_chosen_per_driver() {
+        let auction = test_auction(1, vec![test_order(0x11, 0)]);
+        let plain = Request::new(&auction, &HashSet::new(), test_deadline()).await;
+        let requests = EncodedRequests::new(plain.clone(), true).await;
+
+        let request = requests.for_driver(false);
+        assert_eq!(content_encoding(&request), None);
+        assert_eq!(request.body, plain.body);
+
+        let request = requests.for_driver(true);
+        assert_eq!(content_encoding(&request), Some("br".to_owned()));
+        assert_eq!(request.body_to_string(), "<compressed>");
+        let mut decompressed = Vec::new();
+        brotli::BrotliDecompress(&mut request.body.as_ref(), &mut decompressed).unwrap();
+        assert_eq!(decompressed, plain.body);
+    }
+
+    #[tokio::test]
+    async fn compressed_request_is_only_built_when_asked_for() {
+        let auction = test_auction(1, vec![test_order(0x11, 0)]);
+        let plain = Request::new(&auction, &HashSet::new(), test_deadline()).await;
+        let requests = EncodedRequests::new(plain, false).await;
+
+        assert_eq!(requests.compressed_body_size(), None);
+        assert_eq!(content_encoding(&requests.for_driver(true)), None);
     }
 
     /// Uid with all 56 bytes set to `uid_byte`.
@@ -605,7 +659,7 @@ mod tests {
     #[tokio::test]
     async fn full_request_is_tagged() {
         let auction = test_auction(1, vec![test_order(0x11, 0)]);
-        let request = Request::new(&auction, &HashSet::new(), test_deadline(), false).await;
+        let request = Request::new(&auction, &HashSet::new(), test_deadline()).await;
         let body: serde_json::Value = serde_json::from_str(&request.body_to_string()).unwrap();
 
         // The `kind` tag is the only addition compared to the body drivers
@@ -628,7 +682,7 @@ mod tests {
         let previous = test_auction(1, vec![test_order(0x33, 0)]);
         let current = test_auction(2, vec![test_order(0x44, 0)]);
         let request =
-            Request::new_delta(&previous, &current, &HashSet::new(), test_deadline(), false).await;
+            Request::new_delta(&previous, &current, &HashSet::new(), test_deadline()).await;
 
         let actual: serde_json::Value = serde_json::from_str(&request.body_to_string()).unwrap();
         let expected = serde_json::json!({

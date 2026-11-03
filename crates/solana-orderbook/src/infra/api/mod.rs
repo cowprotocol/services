@@ -1,17 +1,18 @@
 //! HTTP API server.
 
 use {
-    super::quoter::Quoter,
+    super::{prices::NativePrices, quoter::Quoter, verifier::Verifier},
     axum::{
         Router,
         http,
-        routing::{get, post},
+        routing::{get, post, put},
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
     std::{
         io,
         net::SocketAddr,
+        num::NonZero,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -42,16 +43,24 @@ pub struct Api {
     pub pool: PgPool,
     /// The driver that quotes orders.
     pub quoter: Quoter,
+    /// The autopilot's native prices, which gate quotes.
+    pub prices: NativePrices,
     /// Bounds on a quoted order's `validTo`.
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     pub quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub verifier: Option<Verifier>,
+    /// Most bytes an app data document may have.
+    pub app_data_size_limit: usize,
 }
 
-/// Bounds on a quoted order's `validTo`. The defaults are the EVM
-/// orderbook's.
+/// Bounds on an order's `validTo`, for quotes and sponsored placement
+/// alike. The defaults are the EVM orderbook's.
 #[derive(Clone, Copy, Debug)]
 pub struct ValidationParameters {
     /// Least far in the future the `validTo` may lie.
@@ -63,8 +72,8 @@ pub struct ValidationParameters {
 impl Default for ValidationParameters {
     fn default() -> Self {
         Self {
-            min_validity: std::time::Duration::from_secs(2 * 60),
-            max_validity: std::time::Duration::from_secs(2 * 60 * 60),
+            min_validity: std::time::Duration::from_secs(60),
+            max_validity: std::time::Duration::from_secs(365 * 24 * 60 * 60),
         }
     }
 }
@@ -95,12 +104,17 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
+        routes::initialize_metrics();
         let state = State::new(
             self.pool,
             self.quoter,
+            self.prices,
             self.validation,
             self.quote_expiry,
+            self.fast_results_required,
             self.sponsoring,
+            self.verifier,
+            self.app_data_size_limit,
         );
 
         // Browsers call this API directly, so it answers cross-origin
@@ -110,6 +124,7 @@ impl Api {
             .allow_methods([
                 http::Method::GET,
                 http::Method::POST,
+                http::Method::PUT,
                 http::Method::OPTIONS,
                 http::Method::HEAD,
             ])
@@ -117,6 +132,8 @@ impl Api {
 
         let app = Router::new()
             .route("/healthz", get(routes::healthz))
+            .route("/api/v1/ready", get(routes::ready))
+            .route("/api/v1/version", get(routes::version))
             .route(
                 "/api/v1/account/{owner}/orders",
                 get(routes::account_orders),
@@ -124,8 +141,29 @@ impl Api {
             .route("/api/v1/orders/{uid}", get(routes::order))
             .route("/api/v1/orders/{uid}/status", get(routes::order_status))
             .route("/api/v2/trades", get(routes::trades))
+            .route(
+                "/api/v2/solver_competition/latest",
+                get(routes::solver_competition_latest),
+            )
+            .route(
+                "/api/v2/solver_competition/by_tx_hash/{tx_hash}",
+                get(routes::solver_competition_by_tx_hash),
+            )
+            .route(
+                "/api/v2/solver_competition/{auction_id}",
+                get(routes::solver_competition_by_id),
+            )
+            .route(
+                "/restricted/api/v2/solver_competition/{auction_id}",
+                get(routes::solver_competition_by_id_unfiltered),
+            )
             .route("/api/v1/orders", post(routes::create_order))
             .route("/api/v1/quote", post(routes::quote))
+            .route("/api/v1/app_data", put(routes::put_app_data))
+            .route(
+                "/api/v1/app_data/{hash}",
+                get(routes::get_app_data).put(routes::put_app_data_by_hash),
+            )
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
@@ -153,22 +191,34 @@ pub struct Sponsoring {
     pub max_priority_fee_lamports: u64,
     /// The verdicts on the mints placement and quoting read so far.
     pub mints: solana_token::MintVerdicts,
+    /// How long placement waits for the node to confirm a blockhash it does
+    /// not know.
+    pub blockhash_catch_up: Duration,
 }
 
 impl State {
+    #[expect(clippy::too_many_arguments)]
     fn new(
         pool: PgPool,
         quoter: Quoter,
+        prices: NativePrices,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
+        fast_results_required: NonZero<usize>,
         sponsoring: Option<Sponsoring>,
+        verifier: Option<Verifier>,
+        app_data_size_limit: usize,
     ) -> Self {
         Self(Arc::new(Inner {
             pool,
             quoter,
+            prices,
             validation,
             quote_expiry,
+            fast_results_required,
             sponsoring,
+            verifier,
+            app_data_size_limit,
             block_height: Mutex::default(),
         }))
     }
@@ -184,6 +234,11 @@ impl State {
         &self.0.quoter
     }
 
+    /// The autopilot's native prices, which gate quotes.
+    pub fn prices(&self) -> &NativePrices {
+        &self.0.prices
+    }
+
     /// Bounds on a quoted order's `validTo`.
     pub fn validation(&self) -> ValidationParameters {
         self.0.validation
@@ -194,9 +249,24 @@ impl State {
         self.0.quote_expiry
     }
 
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fn fast_results_required(&self) -> NonZero<usize> {
+        self.0.fast_results_required
+    }
+
     /// Sponsored placement dependencies, absent when the feature is off.
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
+    }
+
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub fn verifier(&self) -> Option<&Verifier> {
+        self.0.verifier.as_ref()
+    }
+
+    /// Most bytes an app data document may have.
+    pub fn app_data_size_limit(&self) -> usize {
+        self.0.app_data_size_limit
     }
 
     /// The chain's block height, which decides whether a pending sponsored
@@ -235,12 +305,20 @@ struct Inner {
     pool: PgPool,
     /// The driver that quotes orders.
     quoter: Quoter,
+    /// The autopilot's native prices, which gate quotes.
+    prices: NativePrices,
     /// Bounds on a quoted order's `validTo`.
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    verifier: Option<Verifier>,
+    /// Most bytes an app data document may have.
+    app_data_size_limit: usize,
     /// The last block height read and when, see [`State::block_height`].
     block_height: Mutex<Option<(Instant, i64)>>,
 }

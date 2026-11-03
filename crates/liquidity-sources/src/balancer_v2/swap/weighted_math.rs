@@ -172,8 +172,8 @@ mod tests {
                 Bfp::from_wei(U256::from(10_000_000_000_000_000_u128)),
             )
             .unwrap(),
-            // (await weightedMath["_calcInGivenOut"]("100000000000000000000000",
-            // "300000000000000", "10000000000000000000", "700000000000000",
+            // (await weightedMath["_calcInGivenOut"]("100000000000000000000000"
+            // , "300000000000000", "10000000000000000000", "700000000000000",
             // "10000000000000000")).toString()
             Bfp::from_wei(U256::from(233_722_784_701_541_000_000_u128)),
         );
@@ -319,25 +319,29 @@ mod tests {
         let largest_amount_in = deposit_in * 3 / 10;
         assert_eq!(
             calc_with_default_pool!(calc_out_given_in, U256::from(largest_amount_in)).unwrap(),
-            // > await calc_with_default_pool("_calcOutGivenIn", "6000000000000000000000")
+            // > await calc_with_default_pool("_calcOutGivenIn",
+            // > "6000000000000000000000")
             Bfp::from_wei(U256::from(2_307_692_307_692_230_750_000_u128))
         );
         assert_eq!(
             calc_with_default_pool!(calc_out_given_in, U256::from(largest_amount_in + 1))
                 .unwrap_err(),
-            // > await calc_with_default_pool("_calcOutGivenIn", "6000000000000000000001")
+            // > await calc_with_default_pool("_calcOutGivenIn",
+            // > "6000000000000000000001")
             Error::MaxInRatio
         );
         let largest_amount_out = deposit_out * 3 / 10;
         assert_eq!(
             calc_with_default_pool!(calc_in_given_out, U256::from(largest_amount_out)).unwrap(),
-            // > await calc_with_default_pool("_calcInGivenOut", "3000000000000000000000")
+            // > await calc_with_default_pool("_calcInGivenOut",
+            // > "3000000000000000000000")
             Bfp::from_wei(U256::from(8_571_428_571_428_857_160_000_u128))
         );
         assert_eq!(
             calc_with_default_pool!(calc_in_given_out, U256::from(largest_amount_out + 1))
                 .unwrap_err(),
-            // > await calc_with_default_pool("_calcInGivenOut", "3000000000000000000001")
+            // > await calc_with_default_pool("_calcInGivenOut",
+            // > "3000000000000000000001")
             Error::MaxOutRatio
         );
     }

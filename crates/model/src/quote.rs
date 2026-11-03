@@ -6,7 +6,7 @@ use {
     },
     alloy_primitives::{Address, U256},
     anyhow::bail,
-    app_data::AppDataHash,
+    app_data::deserialize_optional_app_data,
     bigdecimal::BigDecimal,
     chrono::{DateTime, Utc},
     eth_domain_types::Receiver,
@@ -251,35 +251,6 @@ impl Serialize for Validity {
     }
 }
 
-/// Manual `Deserialize` implementation for OrderCreationAppData that allows for
-/// `appData` to be omitted. This is needed because `#[serde(default, flatten)]`
-/// does not work as expected and will generate errors for quotes without
-/// `appData` specified.
-fn deserialize_optional_app_data<'de, D>(deserializer: D) -> Result<OrderCreationAppData, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(rename = "appData", rename_all = "camelCase")]
-    struct Helper {
-        app_data: Option<String>,
-        app_data_hash: Option<AppDataHash>,
-    }
-
-    let data = Helper::deserialize(deserializer)?;
-    let result = match (data.app_data, data.app_data_hash) {
-        (Some(app_data), None) => match app_data.parse() {
-            Ok(hash) => OrderCreationAppData::Hash { hash },
-            Err(_) => OrderCreationAppData::Full { full: app_data },
-        },
-        (Some(full), Some(expected)) => OrderCreationAppData::Both { full, expected },
-        (None, None) => OrderCreationAppData::default(),
-        _ => return Err(de::Error::custom("invalid app data")),
-    };
-
-    Ok(result)
-}
-
 fn serialize_timeout<S>(timeout: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -374,7 +345,7 @@ pub struct NativeTokenPrice {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, serde_json::json, testlib::assert_json_matches};
+    use {super::*, app_data::AppDataHash, serde_json::json, testlib::assert_json_matches};
 
     #[test]
     fn serialize_defaults() {

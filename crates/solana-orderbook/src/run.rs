@@ -1,7 +1,16 @@
 //! Orderbook entry-point logic.
 
 use {
-    crate::infra::{Api, api::Sponsoring, config, observe as infra_observe, quoter::Quoter},
+    crate::infra::{
+        Api,
+        api::Sponsoring,
+        config,
+        db,
+        observe as infra_observe,
+        prices::NativePrices,
+        quoter::Quoter,
+        verifier::Verifier,
+    },
     clap::Parser,
     configs::database::DatabasePoolConfig,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
@@ -51,7 +60,7 @@ struct Liveness {
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        sqlx::query("SELECT 1").execute(&self.pool).await.is_ok()
+        db::ping(&self.pool).await.is_ok()
     }
 }
 
@@ -98,18 +107,49 @@ pub async fn run(args: Args) {
                 &rpc.endpoint,
                 rpc.request_timeout,
                 CommitmentConfig::confirmed(),
+                "sponsoring",
             ),
             max_priority_fee_lamports: sponsoring.max_priority_fee_lamports,
             mints: solana_token::MintVerdicts::default(),
+            blockhash_catch_up: Duration::from_secs(2),
         }
+    });
+    let verifier = config.quote_verification.as_ref().map(|verification| {
+        let rpc = config
+            .rpc
+            .as_ref()
+            .expect("the [quote-verification] section requires the [rpc] section");
+        let client = |endpoint, component| {
+            SolanaRPC::new_with_timeout_and_commitment(
+                endpoint,
+                rpc.request_timeout,
+                CommitmentConfig::confirmed(),
+                component,
+            )
+        };
+        Verifier::new(
+            client(&rpc.endpoint, "verification"),
+            client(&verification.bundle_endpoint, "verification_bundle"),
+            verification
+                .holders_endpoint
+                .as_ref()
+                .map(|endpoint| client(endpoint, "verification_holders")),
+            verification.settlement_program,
+            verification.quote_inaccuracy_limit,
+            verification.mode,
+        )
     });
     let api = Api {
         addr: config.http.bind_address,
         pool,
         quoter: Quoter::new(config.quoting.drivers.clone(), config.quoting.timeout),
+        prices: NativePrices::new(config.quoting.autopilot.clone(), config.quoting.timeout),
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
+        fast_results_required: config.quoting.fast_results_required,
         sponsoring,
+        verifier,
+        app_data_size_limit: config.app_data_size_limit,
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

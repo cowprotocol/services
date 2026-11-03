@@ -272,8 +272,9 @@ mod tests {
         let result = rate_limiter.execute(async { 1 }, |_| false).await;
         assert!(matches!(result, Ok(1)));
         assert_eq!(
-            // get_current_back_off returns how much the back off should be extended if we
-            // were to encounter an error now, therefore we start with 20
+            // get_current_back_off returns how much the back off should be
+            // extended if we were to encounter an error now, therefore we start
+            // with 20
             Duration::from_millis(20),
             rate_limiter.strategy().get_current_back_off()
         );

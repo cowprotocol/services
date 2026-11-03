@@ -1,6 +1,6 @@
 use {
     crate::{
-        boundary::{self, Result},
+        boundary::Result,
         domain::{
             self,
             liquidity::{self, uniswap},
@@ -10,10 +10,13 @@ use {
     contracts::IUniswapLikeRouter,
     eth_domain_types as eth,
     ethrpc::{Web3, block_stream::CurrentBlockWatcher},
-    liquidity_sources::uniswap_v2::{
-        pair_provider::PairProvider,
-        pool_cache::PoolCache,
-        pool_fetching::{DefaultPoolReader, PoolFetcher, PoolReading},
+    liquidity_sources::{
+        recent_block_cache::CacheConfig,
+        uniswap_v2::{
+            pair_provider::PairProvider,
+            pool_cache::PoolCache,
+            pool_fetching::{DefaultPoolReader, PoolFetcher, PoolReading},
+        },
     },
     shared::http_solver::model::TokenAmount,
     solver::{
@@ -107,15 +110,17 @@ pub async fn collector(
     eth: &Ethereum,
     blocks: &CurrentBlockWatcher,
     config: &infra::liquidity::config::UniswapV2,
+    cache_config: CacheConfig,
 ) -> Result<Box<dyn LiquidityCollecting>> {
     let eth = eth.with_metric_label("uniswapV2".into());
-    collector_with_reader(&eth, blocks, config, DefaultPoolReader::new).await
+    collector_with_reader(&eth, blocks, config, cache_config, DefaultPoolReader::new).await
 }
 
 pub(in crate::boundary::liquidity) async fn collector_with_reader<R, F>(
     eth: &Ethereum,
     blocks: &CurrentBlockWatcher,
     config: &infra::liquidity::config::UniswapV2,
+    cache_config: CacheConfig,
     reader: F,
 ) -> Result<Box<dyn LiquidityCollecting>>
 where
@@ -138,7 +143,7 @@ where
         );
 
         Arc::new(PoolCache::new(
-            boundary::liquidity::cache_config(),
+            cache_config,
             Arc::new(pool_fetcher),
             blocks.clone(),
         )?)

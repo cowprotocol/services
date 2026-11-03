@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [[bin]]
 name = "event-bus-schemas"
 path = "src/bin/print_schemas.rs"
+test = false
 
 [dependencies]
 alloy-primitives = { workspace = true, features = ["serde"] }

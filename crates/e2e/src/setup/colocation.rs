@@ -185,7 +185,7 @@ relative-slippage = "0.1"
 merge-solutions = {merge_solutions}
 fast-path-enabled = true
 enable-metrics-bad-order-detection = true
-http-time-buffer = "100ms"
+http-time-buffer = "25ms"
 solving-share-of-deadline = 1.0
 solver-fee-bps = {solver_fee_bps}
 {submission_accounts_line}"#
@@ -224,14 +224,15 @@ deadline-check = "{:?}"
 
 [liquidity]
 base-tokens = [{encoded_base_tokens}]
+refresh-cooldown = "0s"
 
 {liquidity}
 
 [submission]
 gas-price-cap = "1000000000000"
 
-[[submission.mempool]]
-url = "{NODE_HOST}"
+[submission.public-mempool]
+urls = ["{NODE_HOST}"]
 
 [balance-cache]
 refresh-cooldown = "0s"

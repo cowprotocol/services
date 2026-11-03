@@ -40,19 +40,19 @@ test-db-solana:
     cargo nextest run solana_db --test-threads 1 --run-ignored ignored-only --no-tests=pass
 
 # Run End-to-end tests on local node (this machine)
-test-e2e-local: (test-e2e "local_node")
+test-e2e-local *extra: (test-e2e "local_node" extra)
 
 # Run End-to-end tests on forked node
 #
 # FORK_URL_MAINNET and FORK_URL_GNOSIS env variables have to be provided.
-test-e2e-forked: (test-e2e "forked_node")
+test-e2e-forked *extra: (test-e2e "forked_node" extra)
 
 # Run End-to-end tests with custom filters
 test-e2e filters="" *extra="":
     cargo nextest run -p e2e '{{filters}}' --test-threads 1 --failure-output final --run-ignored ignored-only {{extra}}
 
-test-driver:
-    RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only
+test-driver *extra:
+    RUST_MIN_STACK=3145728 cargo nextest run -p driver --run-ignored ignored-only {{extra}}
 
 # Run clippy
 clippy:

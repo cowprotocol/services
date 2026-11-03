@@ -5,7 +5,11 @@ use {
         infra::{self, blockchain::Ethereum},
     },
     ethrpc::block_stream::CurrentBlockWatcher,
-    liquidity_sources::{swapr::SwaprPoolReader, uniswap_v2::pool_fetching::DefaultPoolReader},
+    liquidity_sources::{
+        recent_block_cache::CacheConfig,
+        swapr::SwaprPoolReader,
+        uniswap_v2::pool_fetching::DefaultPoolReader,
+    },
     solver::{liquidity::ConstantProductOrder, liquidity_collector::LiquidityCollecting},
 };
 
@@ -39,6 +43,7 @@ pub async fn collector(
     eth: &Ethereum,
     blocks: &CurrentBlockWatcher,
     config: &infra::liquidity::config::Swapr,
+    cache_config: CacheConfig,
 ) -> Result<Box<dyn LiquidityCollecting>> {
     let eth = eth.with_metric_label("swapr".into());
     boundary::liquidity::uniswap::v2::collector_with_reader(
@@ -49,6 +54,7 @@ pub async fn collector(
             pool_code: config.pool_code,
             missing_pool_cache_time: config.missing_pool_cache_time,
         },
+        cache_config,
         |web3, pair_provider| SwaprPoolReader(DefaultPoolReader::new(web3, pair_provider)),
     )
     .await

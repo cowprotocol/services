@@ -11,6 +11,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "solvers"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 alloy = { workspace = true }

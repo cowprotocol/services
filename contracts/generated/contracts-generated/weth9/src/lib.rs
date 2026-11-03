@@ -2277,8 +2277,7 @@ pub mod WETH9 {
         /// All the selectors of this enum.
         ///
         /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// variants. No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
@@ -2633,8 +2632,7 @@ pub mod WETH9 {
         /// All the selectors of this enum.
         ///
         /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// variants. No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
@@ -2908,8 +2906,8 @@ pub mod WETH9 {
         /// and address.
         ///
         /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
+        /// in this contract. Prefer using the other methods for building
+        /// type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -2998,8 +2996,8 @@ pub mod WETH9 {
         /// and address.
         ///
         /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
+        /// contract. Prefer using the other methods for building type-safe
+        /// event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -3054,6 +3052,10 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
         )),
         137u64 => Some((
             ::alloy_primitives::address!("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"),
+            None,
+        )),
+        4663u64 => Some((
+            ::alloy_primitives::address!("0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73"),
             None,
         )),
         8453u64 => Some((

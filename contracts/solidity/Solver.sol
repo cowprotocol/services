@@ -83,20 +83,27 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
         address settleCallTarget,
         bytes calldata settlementCall
     ) internal returns (uint256 gasUsed) {
-        uint256 gasStart = gasleft();
+        // Initialize `_simulationOverhead` to a non-zero value outside of the metered
+        // section as the first write costs 20K.
+        _simulationOverhead = 1;
+
         // In order to call a function we need to copy the arguments into memory.
         // In a regular transaction that would actually not happen because the arguments
         // would get referenced directly from the calldata. To not overcount the gas
         // usage due to this difference we manually copy the calldata to memory and
         // pass the arguments via pointers outside of the metered section.
         bytes memory settlementCallMem = settlementCall;
+
+        uint256 gasStart = gasleft();
         assembly {
             if iszero(call(gas(), settleCallTarget, 0, add(settlementCallMem, 32), mload(settlementCallMem), 0, 0)) {
                 returndatacopy(0, 0, returndatasize())
                 revert(0, returndatasize())
             }
         }
-        gasUsed = gasStart - gasleft() - _simulationOverhead;
+
+        // Subtract 1 to not discount the initial value set above.
+        gasUsed = gasStart - gasleft() - (_simulationOverhead - 1);
     }
 
     /// @dev Ensures that the user has given the necessary approvals and transfers sell
@@ -143,15 +150,51 @@ contract Solver layout at 0x14f5b2c185fc03c75c787d1f0e10ea137cc6d235a0047448eff1
     /// @param countGas - controls whether this gas cost should be discounted from the settlement gas.
     function storeBalance(address token, address owner, bool countGas) external {
         uint256 gasStart = gasleft();
-        _queriedBalances.push(
-            token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
-                ? owner.balance
-                : IERC20(token).balanceOf(owner)
-        );
+        uint256 balance = _balanceOf(token, owner);
+        uint256 firstReadGas = gasStart - gasleft();
+        _queriedBalances.push(balance);
         if (countGas) {
-            // Account for costs of gas used outside of metered section.
-            _simulationOverhead += gasStart - gasleft() + 4460;
+            // When storage gets read the first time (cold access) it costs more than on
+            // subsequent reads (warm access). It can happen that this `_balanceOf()` call
+            // warms storage that would normally be cold in a real settlement. To know how
+            // much the settlement in this simulation saved due to the already warmed
+            // storage we measure `_balanceOf()` twice and take the difference as the
+            // `coldAccessSurcharge`.
+            // This will later be removed from the `_simulationOverhead` - effectively
+            // adding it back to the measurement of `settle()`.
+            // Depending on when in the `settle()` life cycle we execute `storeBalance()`
+            // the settlement might already have warmed the relevant storage. In that
+            // case `coldAccessSurcharge` would actually end up being 0 and no additional
+            // adjustments will be made to the settlements gas measurement.
+            uint256 secondReadStart = gasleft();
+            _balanceOf(token, owner);
+            uint256 coldAccessSurcharge = firstReadGas - (secondReadStart - gasleft());
+
+            // Account for the gas this interaction costs outside of the section metered
+            // above, so that a settlement with these interactions reports the same gas
+            // as the identical settlement without them. Derived from opcode traces of
+            // mainnet settlements (varies by a few gas with memory expansion):
+            //    391 dispatch and argument decoding before `gasStart`
+            //    547 this bookkeeping after the last `gasleft()`, including the 100 gas
+            //        SLOAD and SSTORE of the slot `_executeAndMeasure` already modified
+            //     11 the first read is metered 11 gas higher than the second one even
+            //        when both are warm (stack handling), which `coldAccessSurcharge`
+            //        would otherwise keep as settlement gas
+            //    100 `CALL` from the settlement to this already accessed account
+            //   1637 `Interaction` event of the settlement (LOG2 with 64 bytes of data)
+            //   1246 settlement interaction loop: calldata decoding, vault relayer check
+            //        and copying the interaction's calldata to memory
+            //   ----
+            //   3932
+            _simulationOverhead += gasStart - gasleft() - coldAccessSurcharge + 3932;
         }
+    }
+
+    /// @dev Reads the `owner`s balance of `token` (or ETH).
+    function _balanceOf(address token, address owner) internal view returns (uint256) {
+        return token == 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE
+            ? owner.balance
+            : IERC20(token).balanceOf(owner);
     }
 
     /// @dev Helper function that reads and stores the balances of the `settlementContract` for each token in `tokens`.

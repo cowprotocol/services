@@ -4,7 +4,7 @@
 /// private submission networks are used.
 use {
     super::Error,
-    crate::infra::{config::file::GasEstimatorType, mempool},
+    crate::infra::config::file::GasEstimatorType,
     alloy::eips::eip1559::Eip1559Estimation,
     anyhow::anyhow,
     eth_domain_types as eth,
@@ -112,40 +112,16 @@ impl GasPriceEstimating for GasPriceEstimator {
 }
 
 /// Set of tweaks to fine tune the computed gas price.
+#[derive(Debug, Clone)]
 pub struct GasPriceParameters {
     /// Maximum priority_fee_per_gas added on top of the price suggested by the
     /// estimator.
-    max_additional_tip: eth::U256,
+    pub max_additional_tip: eth::U256,
     /// The max_priority_fee_per_gas suggested by the gas price estimator gets
     /// multiplied with this factor and get capped at `max_additional_tip`.
-    additional_tip_factor: f64,
+    pub additional_tip_factor: f64,
     /// Highest `max_fee_per_gas` at which we still want to submit a tx.
-    max_fee_per_gas: eth::U256,
+    pub max_fee_per_gas: eth::U256,
     /// We'll always tip at least this value for `max_priority_fee_per_gas`.
-    min_priority_fee: eth::U256,
-}
-
-pub fn adjustments(mempools: &[mempool::Config]) -> GasPriceParameters {
-    // TODO: make configuration of those parameters more obvious by moving them
-    // into a separate config field instead of deriving them from the mempool
-    // configs
-    let mut max_additional_tip = eth::U256::ZERO;
-    let mut additional_tip_percentage = 0.0f64;
-    let mut max_fee_per_gas = eth::U256::MAX;
-    let mut min_priority_fee = eth::U256::ZERO;
-
-    for mempool in mempools {
-        max_additional_tip = max_additional_tip.max(mempool.max_additional_tip);
-        additional_tip_percentage =
-            additional_tip_percentage.max(mempool.additional_tip_percentage);
-        max_fee_per_gas = max_fee_per_gas.min(mempool.gas_price_cap);
-        min_priority_fee = min_priority_fee.max(mempool.min_priority_fee);
-    }
-
-    GasPriceParameters {
-        max_additional_tip,
-        additional_tip_factor: additional_tip_percentage,
-        max_fee_per_gas,
-        min_priority_fee,
-    }
+    pub min_priority_fee: eth::U256,
 }

@@ -117,13 +117,14 @@ impl OnchainOrderParsing<EthFlowData, EthFlowDataForDb> for EthFlowOnchainOrderP
         EthFlowDataForDb {
             eth_order_placement: EthOrderPlacement {
                 uid: order.uid,
-                // unwrap is allowed, as any missing event_index would have been filtered beforehand
-                // by the implementation of the function parse_custom_event_data
+                // unwrap is allowed, as any missing event_index would have been
+                // filtered beforehand by the implementation of the function
+                // parse_custom_event_data
                 valid_to: hashmap.get(event_index).unwrap().user_valid_to as i64,
             },
-            // The following interaction calls the wrap_all() function on the ethflow contract
-            // in order to wrap all existing ether to weth, such that the eth can be used as
-            // WETH by the cow protocol
+            // The following interaction calls the wrap_all() function on the
+            // ethflow contract in order to wrap all existing ether to weth,
+            // such that the eth can be used as WETH by the cow protocol
             pre_interaction: Interaction {
                 // For ethflow orders, the owner is always the ethflow contract
                 target: ByteArray(order.owner.0),

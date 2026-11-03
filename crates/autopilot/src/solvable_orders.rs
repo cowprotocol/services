@@ -401,8 +401,9 @@ impl SolvableOrdersCache {
         let fetch_orders = {
             let lock = self.cache.lock().await;
             match &*lock {
-                // Only use incremental query after cache already got initialized
-                // because it's not optimized for very long durations.
+                // Only use incremental query after cache already got
+                // initialized because it's not optimized for very long
+                // durations.
                 Some(cache) => self
                     .persistence
                     .solvable_orders_after(

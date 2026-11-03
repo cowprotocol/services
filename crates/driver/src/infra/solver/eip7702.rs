@@ -450,6 +450,8 @@ async fn sign_authorization(
     delegate: Address,
     auth_nonce: u64,
 ) -> anyhow::Result<SignedAuthorization> {
+    use alloy::signers::Signer;
+
     let auth = Authorization {
         chain_id: U256::from(chain_id),
         address: delegate,

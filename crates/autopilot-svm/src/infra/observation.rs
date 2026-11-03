@@ -28,10 +28,11 @@ use {
 /// ones the indexer saw land.
 ///
 /// `outcome` records what the indexer observed on chain, which is why a
-/// landing observed after the deadline overwrites a timeout. The one
-/// exception is `rejected`, written when no transaction went out, leaving
-/// nothing for the indexer to observe: a driver error proves it, or the
-/// executor skipped the winner before dispatch.
+/// landing observed after the deadline overwrites a timeout. The exceptions
+/// leave nothing for the indexer to observe: `rejected` is written when no
+/// transaction went out (a driver error proves it, or the executor skipped
+/// the winner before dispatch), `reverted` when the driver saw the
+/// transaction land and fail.
 #[derive(Clone)]
 pub struct SettlementWindows {
     pool: PgPool,
@@ -98,6 +99,18 @@ impl SettlementWindows {
         solution_uid: i64,
     ) -> Result<()> {
         db::reject_settlement_window(&self.pool, auction_id, solver, solution_uid).await
+    }
+
+    /// Close the window of a settlement the driver saw land and fail on
+    /// chain. The transaction cannot land again, so its orders need no hold.
+    pub async fn close_reverted(
+        &self,
+        auction_id: i64,
+        solver: Pubkey,
+        solution_uid: i64,
+    ) -> Result<()> {
+        let slot = to_db_integer(*self.tip.borrow());
+        db::revert_settlement_window(&self.pool, auction_id, solver, solution_uid, slot).await
     }
 
     /// Record a winner skipped before dispatch. Its window closes as rejected
@@ -335,6 +348,16 @@ VALUES (10, $1, 0, $2, $3, NULL)
         .unwrap()
     }
 
+    /// The solution uid every settlement is attributed to, by signature.
+    async fn attributions(pool: &PgPool) -> Vec<(Vec<u8>, Option<i64>)> {
+        sqlx::query_as(
+            "SELECT tx_signature, solution_uid FROM solana.settlements ORDER BY tx_signature",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
     /// The full path: a dispatched settlement opens a window, the trigger's
     /// NOTIFY (here: a bare INSERT, standing in for the indexer) closes it
     /// as landed with the settlement's signature.
@@ -456,8 +479,9 @@ VALUES (10, $1, 0, $2, $3, NULL)
     }
 
     /// A solver holding two windows of one auction: the settlement that
-    /// traded the first solution's order closes only that window, the second
-    /// window closes on its own settlement with its own signature.
+    /// traded the first solution's order closes only that window and takes
+    /// that solution's uid, the second window closes on its own settlement
+    /// with its own signature.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_a_landing_closes_only_the_window_it_executed() {
@@ -485,6 +509,7 @@ VALUES (10, $1, 0, $2, $3, NULL)
                 (2, None, None),
             ]
         );
+        assert_eq!(attributions(&pool).await, vec![(vec![9u8; 64], Some(1))]);
 
         insert_settlement(&pool, 1, 8, &[2]).await;
         crate::infra::db::close_landed_windows(&pool, 1)
@@ -496,6 +521,10 @@ VALUES (10, $1, 0, $2, $3, NULL)
                 (1, Some("landed".to_string()), Some(vec![9u8; 64])),
                 (2, Some("landed".to_string()), Some(vec![8u8; 64])),
             ]
+        );
+        assert_eq!(
+            attributions(&pool).await,
+            vec![(vec![8u8; 64], Some(2)), (vec![9u8; 64], Some(1))]
         );
     }
 
