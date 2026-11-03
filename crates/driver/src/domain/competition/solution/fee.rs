@@ -28,7 +28,6 @@ use {
         trade::{ClearingPrices, Fulfillment},
     },
     crate::domain::competition::{
-        PriceLimits,
         order::{self, FeePolicy, Side},
         solution::error::Trade,
     },
@@ -137,6 +136,7 @@ impl Fulfillment {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone)]
 pub struct Order {
     pub sell_amount: eth::U256,
@@ -144,11 +144,19 @@ pub struct Order {
     pub side: Side,
 }
 
+#[cfg(test)]
 #[derive(Clone)]
 pub struct Quote {
     pub sell_amount: eth::U256,
     pub buy_amount: eth::U256,
     pub fee_amount: eth::U256,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+pub struct PriceLimits {
+    pub sell: eth::TokenAmount,
+    pub buy: eth::TokenAmount,
 }
 
 /// This function adjusts quote amounts to directly compare them with the
@@ -170,6 +178,7 @@ pub struct Quote {
 /// - test_adjust_quote_to_out_market_buy_order_limits
 /// - test_adjust_quote_to_in_market_sell_order_limits
 /// - test_adjust_quote_to_in_market_buy_order_limits
+#[cfg(test)]
 pub fn adjust_quote_to_order_limits(order: Order, quote: Quote) -> Result<PriceLimits, Math> {
     match order.side {
         Side::Sell => {
