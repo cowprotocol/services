@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 env:
   BRANCH: bot/cargo-audit-fix
@@ -31,11 +32,12 @@ jobs:
         with:
           persist-credentials: false
       # The prebuilt cargo-audit binaries ship without the `fix` subcommand.
-      - run: cargo install cargo-audit --locked --features fix
+      - run: cargo install cargo-audit --version 0.22.2 --locked --features fix
       - id: fix
         run: .github/scripts/cargo-audit-fix.sh "$RUNNER_TEMP/body.md"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # Read-only. cargo-audit runs in this step and never sees the app token.
+          GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
       # When main no longer needs a fix, this closes the pull request of an
       # earlier run.
