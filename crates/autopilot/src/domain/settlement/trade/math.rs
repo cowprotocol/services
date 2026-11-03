@@ -116,6 +116,20 @@ impl Trade {
         self.fee_into_sell_token(fee)
     }
 
+    /// Sum of the given protocol fees, converted into sell token.
+    pub fn protocol_fee_in_sell_token(
+        &self,
+        fees: &[ExecutedProtocolFee],
+    ) -> Result<eth::SellTokenAmount, Error> {
+        let total = fees
+            .iter()
+            .try_fold(eth::U256::ZERO, |total, fee| {
+                total.checked_add(fee.fee.amount.0)
+            })
+            .ok_or(Math::Overflow)?;
+        self.fee_into_sell_token(eth::SurplusTokenAmount(total))
+    }
+
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
     /// before and after applying the fees.
     fn fee(&self) -> Result<eth::SurplusTokenAmount, Error> {

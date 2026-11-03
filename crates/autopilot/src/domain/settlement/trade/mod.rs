@@ -65,8 +65,13 @@ impl Trade {
     /// All fees broke down into protocol fees per policy and total fee.
     pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
         let trade = math::Trade::from(self);
-        let total = trade.fee_in_sell_token()?;
         let protocol = trade.protocol_fees(&auction.orders)?;
+        // The uniform-price total fails when a solver pays an order more than
+        // the uniform price. Protocol fees only use custom prices, so fall
+        // back to them (no network fee).
+        let total = trade
+            .fee_in_sell_token()
+            .or_else(|_| trade.protocol_fee_in_sell_token(&protocol))?;
         Ok(FeeBreakdown {
             total: eth::Asset {
                 token: self.sell_token(),
