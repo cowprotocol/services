@@ -218,9 +218,25 @@ impl Auction {
             let left = left.entry(order.sell_token_account).or_insert(balance);
             let sell = order.remaining().sell;
             if order.partially_fillable {
+                if *left < balance {
+                    tracing::debug!(
+                        order = %order.uid,
+                        account = %order.sell_token_account,
+                        balance,
+                        left = *left,
+                        "earlier orders take part of the sell balance, scaling the order down"
+                    );
+                }
                 order.sell_balance = Some(*left);
             } else if *left < sell {
-                tracing::debug!(order = %order.uid, "dropping order, earlier orders take its sell balance");
+                tracing::debug!(
+                    order = %order.uid,
+                    account = %order.sell_token_account,
+                    balance,
+                    left = *left,
+                    sell,
+                    "earlier orders take the sell balance, dropping the order"
+                );
                 return false;
             }
             *left = left.saturating_sub(sell);
