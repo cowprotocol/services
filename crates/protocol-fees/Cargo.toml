@@ -8,5 +8,8 @@ description = "Protocol fee policies and the chain-generic fee math over a fill"
 anyhow = { workspace = true }
 chain-types = { workspace = true }
 
+[dev-dependencies]
+rand = { workspace = true }
+
 [lints]
 workspace = true
