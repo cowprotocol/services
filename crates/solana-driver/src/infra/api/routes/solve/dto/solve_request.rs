@@ -7,7 +7,7 @@
 
 use {
     crate::{
-        domain::{self, order_uid::OrderUid},
+        domain::{self, order_uid::OrderUid, protocol_fee},
         infra::api::routes::Kind,
     },
     serde::{Deserialize, Serialize},
@@ -115,6 +115,81 @@ pub struct Order {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     sell_balance: Option<u64>,
+    /// The protocol fee policies the driver takes from the order's fills,
+    /// in order. Missing means none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    protocol_fees: Vec<FeePolicy>,
+}
+
+/// A protocol fee policy, in the EVM driver's wire shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
+}
+
+/// The best quote the order got, which a price improvement policy measures
+/// the fill against.
+#[serde_as]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    #[serde_as(as = "DisplayFromStr")]
+    sell_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    buy_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    fee: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    solver: Pubkey,
+}
+
+impl FeePolicy {
+    /// The domain policy, refused when a factor lies outside `[0, 1)`: a
+    /// fee at or past the whole fill, or a negative one, is no fee.
+    fn into_domain(self) -> Result<protocol_fee::FeePolicy, Error> {
+        let factor = |factor: f64| {
+            (0.0..1.0)
+                .contains(&factor)
+                .then_some(factor)
+                .ok_or(Error::InvalidFeePolicy)
+        };
+        Ok(match self {
+            Self::Surplus {
+                factor: surplus,
+                max_volume_factor,
+            } => protocol_fee::FeePolicy::Surplus {
+                factor: factor(surplus)?,
+                max_volume_factor: factor(max_volume_factor)?,
+            },
+            Self::PriceImprovement {
+                factor: improvement,
+                max_volume_factor,
+                quote,
+            } => protocol_fee::FeePolicy::PriceImprovement {
+                factor: factor(improvement)?,
+                max_volume_factor: factor(max_volume_factor)?,
+                quote: protocol_fees::Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                    solver: chain_types::solana::Pubkey(quote.solver.to_bytes()),
+                },
+            },
+            Self::Volume { factor: volume } => protocol_fee::FeePolicy::Volume {
+                factor: factor(volume)?,
+            },
+        })
+    }
 }
 
 impl From<Order> for domain::Order {
@@ -147,6 +222,8 @@ pub enum Error {
     InvalidAuctionId,
     #[error("a creation transaction does not decode")]
     InvalidCreation,
+    #[error("a fee policy factor is outside [0, 1)")]
+    InvalidFeePolicy,
 }
 
 impl From<domain::auction::InvalidAuctionId> for Error {
@@ -160,10 +237,20 @@ impl SolveRequest {
     pub fn into_domain(self) -> Result<domain::Auction, Error> {
         let id = domain::auction::Id::try_from(self.id)?;
         let mut creations = HashMap::new();
+        let mut fee_policies = HashMap::new();
         for order in &self.orders {
             if let Some(bytes) = &order.creation {
                 let creation = bincode::deserialize(bytes).map_err(|_| Error::InvalidCreation)?;
                 creations.insert(order.uid, creation);
+            }
+            if !order.protocol_fees.is_empty() {
+                let policies = order
+                    .protocol_fees
+                    .iter()
+                    .cloned()
+                    .map(FeePolicy::into_domain)
+                    .collect::<Result<_, _>>()?;
+                fee_policies.insert(order.uid, policies);
             }
         }
         Ok(domain::Auction {
@@ -178,6 +265,7 @@ impl SolveRequest {
                 .into_iter()
                 .map(|(mint, token)| (mint, token.price))
                 .collect(),
+            fee_policies,
         })
     }
 }
@@ -209,6 +297,83 @@ mod tests {
             executed: 0,
             creation: Some(vec![1, 2, 3]),
             sell_balance: Some(500),
+            protocol_fees: Vec::new(),
+        }
+    }
+
+    fn request_with_policies(policies: serde_json::Value) -> SolveRequest {
+        let mut request = serde_json::to_value(SolveRequest {
+            id: 7,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
+            orders: vec![Order {
+                creation: None,
+                ..order()
+            }],
+            tokens: HashMap::new(),
+        })
+        .unwrap();
+        request["orders"][0]["protocolFees"] = policies;
+        serde_json::from_value(request).unwrap()
+    }
+
+    /// The EVM driver's `FeePolicy` wire shape, amounts as strings and the
+    /// solver as base58.
+    #[test]
+    fn protocol_fees_pin_the_evm_wire_shape() {
+        let request = request_with_policies(serde_json::json!([
+            {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}},
+            {"priceImprovement": {
+                "factor": 0.5,
+                "maxVolumeFactor": 0.01,
+                "quote": {
+                    "sellAmount": "1000",
+                    "buyAmount": "2000",
+                    "fee": "0",
+                    "solver": pubkey(0x99).to_string(),
+                },
+            }},
+            {"volume": {"factor": 0.001}},
+        ]));
+        let auction = request.into_domain().unwrap();
+        assert_eq!(
+            auction.fee_policies[&OrderUid([0x11; 32])],
+            vec![
+                protocol_fee::FeePolicy::Surplus {
+                    factor: 0.5,
+                    max_volume_factor: 0.01,
+                },
+                protocol_fee::FeePolicy::PriceImprovement {
+                    factor: 0.5,
+                    max_volume_factor: 0.01,
+                    quote: protocol_fees::Quote {
+                        sell_amount: 1_000,
+                        buy_amount: 2_000,
+                        fee: 0,
+                        solver: chain_types::solana::Pubkey([0x99; 32]),
+                    },
+                },
+                protocol_fee::FeePolicy::Volume { factor: 0.001 },
+            ]
+        );
+    }
+
+    #[test]
+    fn an_order_without_policies_is_absent_from_the_map() {
+        let request = request_with_policies(serde_json::json!([]));
+        assert!(request.into_domain().unwrap().fee_policies.is_empty());
+    }
+
+    #[test]
+    fn into_domain_rejects_a_factor_outside_the_unit_interval() {
+        for policies in [
+            serde_json::json!([{"volume": {"factor": 1.0}}]),
+            serde_json::json!([{"volume": {"factor": -0.1}}]),
+            serde_json::json!([{"surplus": {"factor": 0.5, "maxVolumeFactor": 1.0}}]),
+        ] {
+            let err = request_with_policies(policies.clone())
+                .into_domain()
+                .expect_err("a factor outside [0, 1) must be rejected");
+            assert!(matches!(err, Error::InvalidFeePolicy), "{policies}");
         }
     }
 
