@@ -208,10 +208,6 @@ impl Auction {
             let Some(balance) = order.sell_balance else {
                 return true;
             };
-            // The creation funds and approves the account at settlement.
-            if self.creations.contains_key(&order.uid) {
-                return true;
-            }
             let left = left_per_account
                 .entry(order.sell_token_account)
                 .or_insert(balance);
@@ -234,9 +230,7 @@ impl Auction {
             if !kept {
                 return false;
             }
-            if order.partially_fillable {
-                order.sell_balance = Some(*left);
-            }
+            order.sell_balance = Some(*left);
             *left = left.saturating_sub(sell);
             true
         });
@@ -923,26 +917,16 @@ mod tests {
         assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
     }
 
-    /// Order 3 is the probe: it survives only if neither the order without
-    /// a balance nor the one awaiting its creation took the account's 1000.
+    /// Order 2 is the probe: it survives only if the order without a
+    /// balance took none of the account's 1000.
     #[test]
-    fn an_order_without_a_balance_or_awaiting_its_creation_stays_out_of_the_split() {
+    fn an_order_without_a_balance_stays_out_of_the_split() {
         let unknown = Order {
             sell_balance: None,
             ..fill_or_kill(1, 1_000)
         };
-        let mut auction = auction(vec![
-            unknown,
-            fill_or_kill(2, 1_000),
-            fill_or_kill(3, 1_000),
-        ]);
-        auction
-            .creations
-            .insert(OrderUid([2; 32]), VersionedTransaction::default());
+        let mut auction = auction(vec![unknown, fill_or_kill(2, 1_000)]);
         auction.split_sell_balances();
-        assert_eq!(
-            uids(auction.orders.iter().map(|order| &order.uid)),
-            [1, 2, 3]
-        );
+        assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
     }
 }
