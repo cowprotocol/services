@@ -11,12 +11,13 @@ use {
         order_uid::OrderUid,
         priority_fee::{self, PriorityFeePolicy},
         program_error::ProgramError,
+        quote,
         settlement::{self, ResolveError, writable_accounts},
         slot::Slot,
-        solution::Solution,
+        solution::{Solution, Trade},
     },
     crate::infra::{
-        blockchain::{BundleSimulation, Solana},
+        blockchain::{BundleSimulation, InvalidMintReason, Solana},
         config::FeeHandler,
         solver::Solver,
     },
@@ -164,6 +165,11 @@ impl Competition {
                 ])
                 .inc();
             let elapsed_ms = elapsed.as_millis() as u64;
+            let orders = solution
+                .trades
+                .iter()
+                .map(|trade| trade.order_uid.to_string())
+                .collect::<Vec<_>>();
             match &verdict {
                 // Compared with the slot of a later failing `/settle`
                 // simulation, this separates a lagging bundle endpoint from
@@ -173,6 +179,7 @@ impl Competition {
                     solution_id = solution.id,
                     slot = %slot,
                     ?units_consumed,
+                    ?orders,
                     elapsed_ms,
                     window_ms,
                     "solution simulation passed"
@@ -182,6 +189,7 @@ impl Competition {
                         solver = %self.solver.name(),
                         solution_id = solution.id,
                         ?error,
+                        ?orders,
                         elapsed_ms,
                         window_ms,
                         "dropping solution, its settlement fails in simulation"
@@ -192,6 +200,7 @@ impl Competition {
                     solver = %self.solver.name(),
                     solution_id = solution.id,
                     ?error,
+                    ?orders,
                     elapsed_ms,
                     window_ms,
                     "solution simulation inconclusive"
@@ -232,11 +241,16 @@ impl Competition {
     ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
+        let order_uids = orders
+            .iter()
+            .map(|order| order.uid.to_string())
+            .collect::<Vec<_>>();
         let (creation_uids, mut bundle): (Vec<_>, Vec<_>) = orders
             .iter()
             .filter_map(|order| Some((order.uid, auction.creations.get(&order.uid).cloned()?)))
             .unzip();
-        let settlement = super::Settlement::new(program_id, auction_id, orders, solution.clone())?;
+        let settlement =
+            super::Settlement::new(program_id, Some(auction_id), orders, solution.clone())?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())
             .await?
@@ -254,6 +268,7 @@ impl Competition {
         }
         tracing::debug!(
             solution_id = solution.id,
+            orders = ?order_uids,
             creations = ?creation_uids.iter().map(ToString::to_string).collect::<Vec<_>>(),
             bytes = bundle.iter().filter_map(encoded_size).sum::<u64>(),
             "simulating settlement bundle"
@@ -271,6 +286,7 @@ impl Competition {
                 tracing::debug!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     leg,
                     creation = ?creation_uids.get(leg).map(ToString::to_string),
                     program = ?failing_program(transaction, &err.clone().into()).map(|program| program.to_string()),
@@ -364,12 +380,18 @@ impl Competition {
         let orders = orders_by_uid(&auction.orders);
         let mut charged = Vec::with_capacity(solutions.len());
         for mut solution in solutions {
+            let order_uids = solution
+                .trades
+                .iter()
+                .map(|trade| trade.order_uid.to_string())
+                .collect::<Vec<_>>();
             if let Some(fee) = self.solver.solver_fee()
                 && let Err(reason) = fee.apply(&mut solution, &orders)
             {
                 tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     %reason,
                     "dropping solution the solver fee cannot be applied to"
                 );
@@ -383,6 +405,7 @@ impl Competition {
                         tracing::warn!(
                             solver = %self.solver.name(),
                             solution_id = solution.id,
+                            orders = ?order_uids,
                             %reason,
                             "dropping solution, its network fee is over budget"
                         );
@@ -396,6 +419,7 @@ impl Competition {
                 Err(reason) => tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
+                    orders = ?order_uids,
                     %reason,
                     "dropping solution the execution costs cannot be cut from"
                 ),
@@ -444,6 +468,46 @@ impl Competition {
             "network fee estimated"
         );
         Ok(network_fee)
+    }
+
+    /// The unsigned settlement of `solution`, filling `owner`'s order of the
+    /// executed amounts in place of the placeholder `quoted`.
+    pub async fn quote_settlement(
+        &self,
+        quoted: &Order,
+        solution: &Solution,
+        trade: &Trade,
+        owner: Pubkey,
+    ) -> Result<VersionedTransaction, Error> {
+        let program_id = self.blockchain.program_id();
+        let buy_mint = (!quoted.buys_native_sol()).then_some(quoted.buy_token);
+        let programs = self
+            .blockchain
+            .token_programs([quoted.sell_token].into_iter().chain(buy_mint))
+            .await
+            .map_err(Error::Rpc)?;
+        let program = |mint: Pubkey| {
+            programs
+                .get(&mint)
+                .copied()
+                .unwrap_or(Err(InvalidMintReason::AccountNotFound))
+                .map_err(|reason| ResolveError::InvalidMint { mint, reason })
+        };
+        let sell_program = program(quoted.sell_token)?;
+        let buy_program = buy_mint.map(program).transpose()?;
+        let order = quote::order(&program_id, quoted, trade, owner, sell_program, buy_program)?;
+        // The engine filled the placeholder order, the settlement fills the
+        // quote's.
+        let mut filled = solution.clone();
+        for trade in &mut filled.trades {
+            trade.order_uid = order.uid;
+        }
+        let settlement = super::Settlement::new(program_id, None, vec![order], filled)?;
+        let resolved = settlement
+            .resolve_accounts(&self.blockchain, self.solver.pubkey())
+            .await?
+            .with_max_native_shortfall(self.solver.max_native_shortfall());
+        Ok(resolved.unsigned()?)
     }
 
     /// Submit a previously proposed solution on chain.
@@ -549,7 +613,7 @@ impl Competition {
 
         let volume_fees = solver_volume_fees(&orders, &solution);
 
-        let settlement = super::Settlement::new(program_id, auction_id, orders, solution)?;
+        let settlement = super::Settlement::new(program_id, Some(auction_id), orders, solution)?;
 
         // Land the creations only after the solution validated: an invalid
         // solution must not cost the funder any fees. They get the full

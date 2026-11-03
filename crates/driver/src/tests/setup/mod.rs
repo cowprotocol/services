@@ -10,7 +10,6 @@ use {
         infra::{
             self,
             config::file::{
-                FeeHandler,
                 OrderPriorityStrategy,
                 default_http_time_buffer,
                 default_solving_share_of_deadline,
@@ -338,8 +337,6 @@ pub struct Solver {
     slippage: Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
-    /// Determines whether the `solver` or the `driver` handles the fees
-    fee_handler: FeeHandler,
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
@@ -375,7 +372,6 @@ pub fn test_solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
-        fee_handler: FeeHandler::default(),
         merge_solutions: false,
         solver_fee_bps: 0,
         max_solutions_to_propose: 1,
@@ -408,11 +404,6 @@ impl Solver {
 
     pub fn balance(self, balance: eth::U256) -> Self {
         Self { balance, ..self }
-    }
-
-    pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
-        self.fee_handler = fee_handler;
-        self
     }
 
     pub fn merge_solutions(mut self) -> Self {
@@ -1017,7 +1008,6 @@ impl Setup {
                 quote: self.quote,
                 quote_id: self.quote.then_some(self.quote_id),
                 fast_path: self.quote && self.quote_fast_path,
-                fee_handler: solver.fee_handler,
                 private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),

@@ -19,6 +19,7 @@ use {
         orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
+    database::fee_policies::FeePolicyOrigin,
     e2e::{assert_approximately_eq, setup::*},
     eth_domain_types::NonZeroU256,
     ethrpc::alloy::CallBuilderExt,
@@ -440,6 +441,26 @@ async fn combined_protocol_fees(web3: Web3) {
         partner_fee_executed_fee_in_buy_token,
         partner_fee_order_token_balance
     );
+
+    tracing::info!("Checking stored fee policy origins...");
+    for (uid, expected) in [
+        (
+            &market_price_improvement_uid,
+            vec![FeePolicyOrigin::Protocol],
+        ),
+        (&limit_surplus_order_uid, vec![FeePolicyOrigin::Protocol]),
+        (
+            &partner_fee_order_uid,
+            vec![FeePolicyOrigin::Protocol, FeePolicyOrigin::Partner],
+        ),
+    ] {
+        let origins: Vec<_> = crate::database::latest_fee_policies_of_order(services.db(), uid)
+            .await
+            .into_iter()
+            .map(|policy| policy.origin)
+            .collect();
+        assert_eq!(origins, expected.into_iter().map(Some).collect::<Vec<_>>());
+    }
 }
 
 /// Tests that a partner can provide multiple partner fees and also use

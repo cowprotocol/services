@@ -26,4 +26,16 @@ ignore = [
   # the Solana secp256k1 crates still require. The fix (0.7.6) needs
   # `k256` 0.14; drop this once they move to it.
   "RUSTSEC-2026-0387",
+
+  # zstd 0.13 / zstd-safe 7 - Decoder flaws (RUSTSEC-2026-0391,
+  # RUSTSEC-2026-0398, RUSTSEC-2026-0403). Pulled in through
+  # `solana-account-decoder` 4.2, which pins zstd ^0.13. The fix is zstd
+  # 0.14 / zstd-safe 8, which only the next solana line requires
+  # (solana-sdk 5 with agave 4.4: solana-rpc-client, solana-account-decoder,
+  # ...). Neither tonic nor the solana account decoder calls the affected
+  # APIs (context reuse, `Seekable`, `write::Decoder`). Drop these with
+  # that solana upgrade.
+  "RUSTSEC-2026-0391",
+  "RUSTSEC-2026-0398",
+  "RUSTSEC-2026-0403",
 ]

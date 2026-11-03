@@ -32,6 +32,7 @@ use {
         transaction::VersionedTransaction,
     },
     solana_testlib::{mint_account_json, multiple_accounts_json, temp_keypair},
+    solana_token::quote::QuoteOrder,
     spl_token_interface::native_mint,
     std::{
         net::SocketAddr,
@@ -1292,4 +1293,48 @@ async fn solve_keeps_a_solution_whose_bundle_simulation_stops_short() {
 
     let body = call_solve_with(addr, sponsored_solve_request()).await;
     assert_eq!(response_ids(&body), vec![42]);
+}
+
+/// A request naming an owner is answered with the settlement of that owner's
+/// order of the executed amounts: the solver is its only signer and it
+/// names the order's PDA and sell token account.
+#[tokio::test]
+async fn quote_with_an_owner_answers_the_settlement_transaction() {
+    let engine = spawn_mock_solver_engine(quote_solution("1000")).await;
+    let (solver, account) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let owner = pubkey(0x66);
+    let mut request = quote_request("sell", "1000");
+    request["owner"] = serde_json::json!(owner.to_string());
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["buyAmount"], "2000");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(json["transaction"].as_str().unwrap())
+        .unwrap();
+    let transaction: VersionedTransaction = bincode::deserialize(&bytes).unwrap();
+    let keys = transaction.message.static_account_keys();
+    assert_eq!(transaction.message.header().num_required_signatures, 1);
+    assert_eq!(keys[0], account);
+    let order = QuoteOrder {
+        owner,
+        sell_mint: pubkey(0x33),
+        sell_program: TokenProgram::SplToken,
+        buy_mint: pubkey(0x44),
+        buy_program: Some(TokenProgram::SplToken),
+        sell_amount: 1_000,
+        buy_amount: 2_000,
+        kind: OrderKind::Sell,
+    };
+    let pda = find_order_pda(&program_id(), &order.intent().unwrap().uid()).0;
+    assert!(keys.contains(&pda));
+    assert!(keys.contains(&order.sell_token_account()));
 }

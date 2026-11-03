@@ -10,7 +10,7 @@ pub struct Order {
     pub uid: OrderUid,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub protocol_fees: Vec<fee::Policy>,
+    pub protocol_fees: Vec<fee::PolicyWithOrigin>,
     pub side: Side,
     pub created: u32,
     pub valid_to: u32,

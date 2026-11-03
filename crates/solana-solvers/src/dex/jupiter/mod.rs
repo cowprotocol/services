@@ -93,7 +93,10 @@ impl Jupiter {
             .append_pair("swapMode", swap_mode.as_str())
             // Jupiter bakes the resulting bounds into the returned instruction
             // data; nothing downstream re-applies slippage.
-            .append_pair("slippageBps", &self.slippage_bps.to_string());
+            .append_pair("slippageBps", &self.slippage_bps.to_string())
+            // The swap pays into the settlement's buffer, which the taker does
+            // not own, and GoonFi V2 fails that with `InvalidAccountOwner`.
+            .append_pair("excludeDexes", "GoonFi V2");
         self.send(self.with_key(self.client.get(url))).await
     }
 

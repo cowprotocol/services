@@ -15,7 +15,7 @@ use solana_sdk::{account::Account, rent::Rent};
 pub use {
     account::account_orders,
     app_data::{get_app_data, put_app_data, put_app_data_by_hash},
-    create_order::create_order,
+    create_order::{create_order, initialize_metrics},
     healthz::healthz,
     order::order,
     quote::quote,

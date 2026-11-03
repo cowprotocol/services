@@ -107,7 +107,7 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: &domain::Quote,
         max_partner_fee: f64,
-    ) -> Vec<Policy> {
+    ) -> Vec<PolicyWithOrigin> {
         /// Number of basis points that make up 100%.
         const MAX_BPS: u32 = 10_000;
 
@@ -198,6 +198,10 @@ impl ProtocolFees {
                     }
                 }
             })
+            .map(|policy| PolicyWithOrigin {
+                policy,
+                origin: Origin::Partner,
+            })
             .collect::<Vec<_>>()
     }
 
@@ -207,7 +211,7 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: Option<&domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
-    ) -> Vec<Policy> {
+    ) -> Vec<PolicyWithOrigin> {
         // In case there is no quote, we assume 0 buy amount so that the order
         // ends up being considered out of market price.
         let reference_quote = quote.cloned().unwrap_or(domain::Quote {
@@ -232,8 +236,8 @@ impl ProtocolFees {
         &self,
         order: &boundary::Order,
         quote: &domain::Quote,
-        partner_fees: Vec<Policy>,
-    ) -> Vec<Policy> {
+        partner_fees: Vec<PolicyWithOrigin>,
+    ) -> Vec<PolicyWithOrigin> {
         let now = Utc::now();
         let fee_policies = self
             .upcoming_fee_policies
@@ -246,6 +250,10 @@ impl ProtocolFees {
             .iter()
             .filter_map(|fee_policy| Self::protocol_fee_into_policy(order, quote, fee_policy))
             .flat_map(|policy| self.variant_fee_apply(order, quote, policy))
+            .map(|policy| PolicyWithOrigin {
+                policy,
+                origin: Origin::Protocol,
+            })
             .chain(partner_fees)
             .collect()
     }
@@ -314,6 +322,21 @@ pub enum Policy {
     },
 }
 
+/// A fee policy together with the party it is charged for.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct PolicyWithOrigin {
+    pub policy: Policy,
+    pub origin: Origin,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// Configured by the protocol.
+    Protocol,
+    /// Requested by a partner via the order's app data.
+    Partner,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Quote {
     /// The amount of the sell token.
@@ -339,6 +362,14 @@ impl Quote {
 #[cfg(test)]
 mod test {
     use {super::*, model::order::OrderMetadata};
+
+    /// `policy` as requested by a partner.
+    fn partner(policy: Policy) -> PolicyWithOrigin {
+        PolicyWithOrigin {
+            policy,
+            origin: Origin::Partner,
+        }
+    }
 
     #[test]
     fn test_get_partner_fee_valid_multiple_fees_not_capped() {
@@ -380,12 +411,12 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.05).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.2).unwrap(),
-                }
+                })
             ]
         );
     }
@@ -454,9 +485,9 @@ mod test {
         // Expected: Empty vector since the only fee has 0 bps
         assert_eq!(
             result,
-            vec![Policy::Volume {
+            vec![partner(Policy::Volume {
                 factor: FeeFactor::try_from(0.0).unwrap(),
-            }]
+            })]
         );
     }
 
@@ -499,12 +530,12 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.0).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.0).unwrap(),
-                }
+                })
             ]
         );
     }
@@ -543,9 +574,9 @@ mod test {
         // Expected: Single fee capped at 0.3 (instead of 0.5)
         assert_eq!(
             result,
-            vec![Policy::Volume {
+            vec![partner(Policy::Volume {
                 factor: FeeFactor::try_from(0.3).unwrap(),
-            }]
+            })]
         );
     }
 
@@ -591,12 +622,12 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.1).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
-                }
+                })
             ]
         );
     }
@@ -649,15 +680,15 @@ mod test {
         assert_eq!(
             result,
             vec![
-                Policy::Volume {
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.1).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.18181818181818182).unwrap(),
-                },
-                Policy::Volume {
+                }),
+                partner(Policy::Volume {
                     factor: FeeFactor::try_from(0.0).unwrap(),
-                }
+                })
             ]
         );
     }

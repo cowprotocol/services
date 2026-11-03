@@ -342,7 +342,6 @@ async fn create_config_file(
                account = "{}"
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
-               fee-handler = {}
                merge-solutions = {}
                solver-fee-bps = {}
                max-solutions-to-propose = {}
@@ -359,7 +358,6 @@ async fn create_config_file(
             solver.signer.to_bytes(),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
-            serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
             solver.solver_fee_bps,
             solver.max_solutions_to_propose,

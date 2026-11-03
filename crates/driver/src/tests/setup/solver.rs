@@ -13,7 +13,6 @@ use {
             self,
             Ethereum,
             blockchain::{contracts::Addresses, gas},
-            config::file::FeeHandler,
         },
         tests::setup::blockchain::Trade,
     },
@@ -53,7 +52,6 @@ pub struct Config<'a> {
     pub quote_id: Option<i64>,
     /// Whether the driver should flag this `/solve` request as fast-path.
     pub fast_path: bool,
-    pub fee_handler: FeeHandler,
     pub private_key: PrivateKeySigner,
     pub expected_surplus_capturing_jit_order_owners: Vec<Address>,
     pub allow_multiple_solve_requests: bool,
@@ -84,29 +82,22 @@ impl Solver {
                 }
                 order::Side::Buy => {
                     let mut current_sell_amount = quote.sell_amount();
+                    // For volume based fees the driver artificially reduces the
+                    // limit sell amount for buy orders before sending to
+                    // solvers. This allows the driver to withhold the volume
+                    // based fee and not violate original limit prices.
                     for fee_policy in &quote.order.fee_policy {
-                        match fee_policy {
-                            // If the fees are handled in the driver, for volume
-                            // based fee, we artificially reduce the limit sell
-                            // amount for buy orders before sending to solvers.
-                            // This allows driver to withhold volume based fee
-                            // and not violate original limit prices.
-                            fee::Policy::Volume { factor }
-                                if config.fee_handler == FeeHandler::Driver =>
-                            {
-                                current_sell_amount = eth::TokenAmount(current_sell_amount)
-                                    .apply_factor(1.0 / (1.0 + factor))
-                                    .unwrap()
-                                    .0;
-                            }
-                            _ => {}
+                        if let fee::Policy::Volume { factor } = fee_policy {
+                            current_sell_amount = eth::TokenAmount(current_sell_amount)
+                                .apply_factor(1.0 / (1.0 + factor))
+                                .unwrap()
+                                .0;
                         }
                     }
                     // The driver injects the solver fee as an additional volume
-                    // fee policy, so in driver fee-handling mode it tightens
-                    // the limits for it exactly like for
-                    // the volume policies above.
-                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                    // fee policy, so it tightens the limits for it exactly like
+                    // for the volume policies above.
+                    if config.solver_fee_bps > 0 {
                         let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_sell_amount = eth::TokenAmount(current_sell_amount)
                             .apply_factor(1.0 / (1.0 + factor))
@@ -121,27 +112,21 @@ impl Solver {
                 order::Side::Sell if config.quote => "1".to_owned(),
                 order::Side::Sell => {
                     let mut current_buy_amount = quote.buy_amount();
+                    // For volume based fees the driver artificially increases
+                    // the limit buy amount for sell orders before sending to
+                    // solvers. This allows the driver to withhold the volume
+                    // based fee and not violate original limit prices.
                     for fee_policy in &quote.order.fee_policy {
-                        match fee_policy {
-                            // If the fees are handled in the driver, for volume
-                            // based fee, we artificially increase the limit buy
-                            // amount for sell orders before sending to solvers.
-                            // This allows driver to withhold volume based fee
-                            // and not violate original limit prices.
-                            fee::Policy::Volume { factor }
-                                if config.fee_handler == FeeHandler::Driver =>
-                            {
-                                current_buy_amount = eth::TokenAmount(current_buy_amount)
-                                    .apply_factor(1.0 / (1.0 - factor))
-                                    .unwrap()
-                                    .0;
-                            }
-                            _ => {}
+                        if let fee::Policy::Volume { factor } = fee_policy {
+                            current_buy_amount = eth::TokenAmount(current_buy_amount)
+                                .apply_factor(1.0 / (1.0 - factor))
+                                .unwrap()
+                                .0;
                         }
                     }
                     // Solver fee make-room (see comment in the buy-side branch
                     // above).
-                    if config.solver_fee_bps > 0 && config.fee_handler == FeeHandler::Driver {
+                    if config.solver_fee_bps > 0 {
                         let factor = f64::from(config.solver_fee_bps) / 10_000.0;
                         current_buy_amount = eth::TokenAmount(current_buy_amount)
                             .apply_factor(1.0 / (1.0 - factor))
@@ -186,31 +171,6 @@ impl Solver {
                     token: flashloan.token,
                     amount: flashloan.amount,
                 });
-            }
-            if config.fee_handler == FeeHandler::Solver {
-                let mut fee_policies_json: Vec<serde_json::Value> = if config.quote {
-                    vec![]
-                } else {
-                    quote
-                        .order
-                        .fee_policy
-                        .iter()
-                        .map(|policy| policy.to_json_value())
-                        .collect()
-                };
-                // In solver fee-handling mode the injected solver fee is
-                // forwarded to the solver as a regular volume fee policy.
-                if config.solver_fee_bps > 0 {
-                    fee_policies_json.push(json!({
-                        "volume": {
-                            "factor": f64::from(config.solver_fee_bps) / 10_000.0,
-                        }
-                    }));
-                }
-                order
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("feePolicies".to_owned(), json!(fee_policies_json));
             }
             orders_json.push(order);
         }

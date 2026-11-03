@@ -1,12 +1,15 @@
 //! Client for the drivers' quote routes.
 
 use {
-    futures::future::join_all,
+    futures::{StreamExt, stream::FuturesUnordered},
     reqwest::Client,
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, serde_as},
-    solana_sdk::pubkey::Pubkey,
-    std::time::{Duration, Instant},
+    serde_with::{DisplayFromStr, base64::Base64, serde_as},
+    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    std::{
+        num::NonZero,
+        time::{Duration, Instant},
+    },
     url::Url,
 };
 
@@ -31,6 +34,9 @@ pub struct Order {
     pub buy_token: Pubkey,
     pub amount: u64,
     pub kind: Kind,
+    /// The wallet the quoted order belongs to, for the driver to build its
+    /// settlement against. `None` asks for no settlement.
+    pub owner: Option<Pubkey>,
 }
 
 /// Which amount the order fixes.
@@ -42,7 +48,7 @@ pub enum Kind {
 }
 
 /// What a driver quoted.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Quote {
     pub sell_amount: u64,
     pub buy_amount: u64,
@@ -51,8 +57,15 @@ pub struct Quote {
     /// The network fee of settling the quoted route, in lamports. Zero when
     /// the driver reports none.
     pub network_fee: u64,
+    /// The settlement of the quoted route against the order's wallet,
+    /// unsigned. `None` when the driver answered none or a malformed one.
+    pub transaction: Option<VersionedTransaction>,
+    /// Whether the verification confirmed the amounts.
+    pub verified: bool,
     /// The driver that answered, as labelled in metrics.
     pub driver: String,
+    /// How long the driver took to answer.
+    pub elapsed: Duration,
 }
 
 impl Quote {
@@ -87,6 +100,9 @@ struct RequestBody {
     amount: u64,
     kind: Kind,
     deadline: chrono::DateTime<chrono::Utc>,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    owner: Option<Pubkey>,
 }
 
 #[serde_as]
@@ -103,6 +119,11 @@ struct ResponseBody {
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
     network_fee: Option<u64>,
+    /// The bincode-serialized settlement, absent from a driver that answers
+    /// none.
+    #[serde_as(as = "Option<Base64>")]
+    #[serde(default)]
+    transaction: Option<Vec<u8>>,
 }
 
 #[derive(Deserialize)]
@@ -120,16 +141,25 @@ impl Quoter {
     }
 
     /// Quote `order` on every driver concurrently and return every answer.
-    pub async fn quotes(&self, order: &Order) -> Result<Vec<Quote>, Error> {
-        let quotes: Vec<Quote> = join_all(
-            self.endpoints
-                .iter()
-                .map(|endpoint| self.quote_one(endpoint, order)),
-        )
-        .await
-        .into_iter()
-        .flatten()
-        .collect();
+    /// With `early_return`, return as soon as that many drivers answered and
+    /// cancel the requests still running.
+    pub async fn quotes(
+        &self,
+        order: &Order,
+        early_return: Option<NonZero<usize>>,
+    ) -> Result<Vec<Quote>, Error> {
+        let mut pending: FuturesUnordered<_> = self
+            .endpoints
+            .iter()
+            .map(|endpoint| self.quote_one(endpoint, order))
+            .collect();
+        let mut quotes = Vec::new();
+        while let Some(quote) = pending.next().await {
+            quotes.extend(quote);
+            if early_return.is_some_and(|required| quotes.len() >= required.get()) {
+                break;
+            }
+        }
         if quotes.is_empty() {
             return Err(Error::NoQuotes);
         }
@@ -143,11 +173,12 @@ impl Quoter {
         let driver = driver_name(endpoint);
         let start = Instant::now();
         let quoted = self.ask(endpoint, order).await;
+        let elapsed = start.elapsed();
         let metrics = metrics();
         metrics
             .price_estimation_times
             .with_label_values(&[driver.as_str()])
-            .observe(start.elapsed().as_secs_f64());
+            .observe(elapsed.as_secs_f64());
         let result = match &quoted {
             Ok(_) => "success",
             Err(result) => result,
@@ -156,13 +187,33 @@ impl Quoter {
             .price_estimates
             .with_label_values(&[driver.as_str(), result])
             .inc();
+        // Every driver that finishes, answered or failed: a driver that fails
+        // never reaches the quote competition, and a request where they all
+        // fail logs no competition at all.
+        tracing::debug!(
+            driver = %driver,
+            result,
+            elapsed_ms = elapsed.as_millis() as u64,
+            ?order,
+            "new price estimate"
+        );
         let quoted = quoted.ok()?;
+        let transaction = quoted.transaction.as_deref().and_then(|bytes| {
+            bincode::deserialize(bytes)
+                .inspect_err(|err| {
+                    tracing::warn!(driver, ?err, "driver quote transaction malformed")
+                })
+                .ok()
+        });
         Some(Quote {
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             solver: quoted.solver,
             network_fee: quoted.network_fee.unwrap_or(0),
+            transaction,
+            verified: false,
             driver,
+            elapsed,
         })
     }
 
@@ -176,6 +227,7 @@ impl Quoter {
             amount: order.amount,
             kind: order.kind,
             deadline: chrono::Utc::now() + self.timeout.saturating_sub(RESPONSE_RESERVE),
+            owner: order.owner,
         };
         let response = self
             .client
