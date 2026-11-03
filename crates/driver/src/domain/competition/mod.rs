@@ -280,8 +280,9 @@ pub struct Competition {
     /// Fast-path quote solutions cached at quote time, keyed per solver
     /// account.
     quote_cache: FastPathQuoteCache,
-    /// Native prices observed in regular auctions, reused to bound absolute
-    /// slippage when re-encoding fast-path solutions.
+    /// Native token prices observed in regular auctions. A fast-path solution
+    /// is re-encoded outside any auction and has no prices of its own, so it
+    /// reuses these to apply the solver's absolute slippage limit.
     native_price_cache: NativePriceCache,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
@@ -580,6 +581,9 @@ impl Competition {
             })?;
         // The quote was solved outside of any auction; its settlement runs
         // under the auction the autopilot allocated for it.
+        // `Tokens` is not `IntoIterator`, so iterate by ref and collect the
+        // (Copy) addresses: this keeps `tokens` intact for its reuse below and
+        // holds no borrow across the await (the future must stay `Send`).
         let tokens: Vec<eth::TokenAddress> = cached
             .auction
             .tokens

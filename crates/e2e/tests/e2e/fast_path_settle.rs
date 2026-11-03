@@ -1257,22 +1257,16 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     );
 }
 
-/// The absolute AMM-slippage cap binds on the fast path, which only works
-/// because the driver reuses the native prices it cached from regular auctions
-/// when re-encoding the fast-path solution.
+/// Enforces a solver's absolute AMM-slippage cap on the fast path.
 ///
-/// A regular order for the token settles first to prime that cache. A
-/// token->WETH order is then quoted and its solution cached. The pool is moved
-/// adversely (minting token in makes the token cheaper), so re-executing the
-/// cached swap needs more token input than quoted, i.e. some slippage. The
-/// solver's absolute slippage is set far below that need while its relative
-/// slippage (10%) would comfortably cover it. With the cached native price the
-/// encoder clamps to the tiny absolute cap, the fast-path settle can't cover
-/// the move and reverts, so the order stays open until the regular auction
-/// re-solves against the moved pool and settles it. If the cache lookup
-/// regressed, `apply_to` would fall back to the 10% relative buffer, the
-/// fast-path settle would go through, and the order would fill during the
-/// exclusivity window - failing this test.
+/// Re-encoding a fast-path solution happens outside any auction, so the driver
+/// reuses native prices cached from regular auctions to apply the cap. The test
+/// quotes a swap, moves the pool against it, and sets the absolute cap below
+/// what the move needs (while the 10% relative slippage alone would cover it).
+/// The fast-path settle must then revert, and the order only fills once the
+/// regular auction re-solves. If the cached price were missing, the cap
+/// couldn't apply, the settle would succeed, and the order would fill in the
+/// exclusivity window - failing the test.
 async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
     // 0.00001 ETH. Far below the slippage the pool move needs (so the cap binds
     // and the stale fast-path swap reverts), far above the ~zero slippage a
@@ -1338,22 +1332,21 @@ async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
     // timeout after the fast-path settle fails.
     let exclusivity = Duration::from_secs(5);
 
-    colocation::start_driver_with_config_override(
+    let mut fast_path_solver = colocation::start_baseline_solver(
+        "test_solver".into(),
+        solver.clone(),
+        *onchain.contracts().weth.address(),
+        vec![],
+        1,
+        true,
+    )
+    .await;
+    fast_path_solver.absolute_slippage = Some(ABSOLUTE_SLIPPAGE_WEI);
+
+    colocation::start_driver(
         onchain.contracts(),
-        vec![
-            colocation::start_baseline_solver(
-                "test_solver".into(),
-                solver.clone(),
-                *onchain.contracts().weth.address(),
-                vec![],
-                1,
-                true,
-            )
-            .await,
-        ],
+        vec![fast_path_solver],
         colocation::LiquidityProvider::UniswapV2,
-        None,
-        Some(ABSOLUTE_SLIPPAGE_WEI),
     );
 
     let quoter = ExternalSolver::new("test_solver", "http://localhost:11088/test_solver");

@@ -340,6 +340,7 @@ async fn quote_timeout(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -349,6 +350,7 @@ async fn quote_timeout(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],
@@ -530,6 +532,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -539,6 +542,7 @@ async fn quote_custom_solver_errors(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],
@@ -655,6 +659,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -664,6 +669,7 @@ async fn native_price_custom_solver_errors(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],
@@ -768,6 +774,7 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -777,6 +784,7 @@ async fn quote_custom_solver_errors_prioritized(web3: Web3) {
                 base_tokens: vec![*sell_token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],

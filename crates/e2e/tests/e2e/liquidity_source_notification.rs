@@ -189,6 +189,7 @@ async fn liquidity_source_notification(web3: Web3) {
                 base_tokens: vec![],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],
@@ -203,7 +204,6 @@ http-timeout = "10s"
         "#,
             liquorice_api.port
         )),
-        None,
     );
 
     services

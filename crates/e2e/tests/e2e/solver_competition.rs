@@ -431,6 +431,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 base_tokens: base_tokens.clone(),
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -440,6 +441,7 @@ async fn store_filtered_solutions(web3: Web3) {
                 base_tokens,
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],
@@ -718,6 +720,7 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
                 base_tokens: base_tokens.clone(),
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
             SolverEngine {
@@ -727,6 +730,7 @@ async fn cannot_replace_order_bid_on_by_non_winning_solution(web3: Web3) {
                 base_tokens,
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],
