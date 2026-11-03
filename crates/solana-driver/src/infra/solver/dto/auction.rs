@@ -9,7 +9,7 @@ use {
             Side,
             execution_cost::Charge,
             order_uid::OrderUid,
-            protocol_fee::{self, FeePolicy},
+            protocol_fee::FeePolicy,
             solver_fee::SolverFee,
         },
         infra::blockchain::associated_token_address,
@@ -139,14 +139,22 @@ impl Order {
         let available = order.available();
         let (sell_amount, buy_amount) = match order.side {
             Side::Sell => {
-                let min_buy = protocol_fee::tighten_limit(policies, Side::Sell, available.buy);
+                let min_buy = protocol_fees::tighten_limit(
+                    policies,
+                    protocol_fees::Side::Sell,
+                    available.buy,
+                );
                 (
                     available.sell,
                     tighten(Side::Sell, min_buy.saturating_add(cut)),
                 )
             }
             Side::Buy => {
-                let max_sell = protocol_fee::tighten_limit(policies, Side::Buy, available.sell);
+                let max_sell = protocol_fees::tighten_limit(
+                    policies,
+                    protocol_fees::Side::Buy,
+                    available.sell,
+                );
                 (
                     tighten(Side::Buy, max_sell.saturating_sub(cut)),
                     available.buy,
