@@ -288,6 +288,7 @@ Column                               | Type                         | Nullable |
  volume_factor                       | double precision             |          | fee percentage of the order volume; value is between 0 and 1
  price_improvement_factor            | double precision             |          | percentage of the price improvement over the best quote received during order creation; value is between 0 and 1
  price_improvement_max_volume_factor | double precision             |          | cap for the fee as a percentage of the order volume; value is between 0 and 1
+ origin                              | [PolicyOrigin](#policyorigin) |         | who the fee is charged for, defined in the PolicyOrigin enum; NULL for policies stored before this column was added
 
 Indexes:
 - PRIMARY KEY: composite key(`auction_id`, `order_uid`, `application_order`)
@@ -301,6 +302,13 @@ Indexes:
     - `surplus`: The fee is based on the surplus achieved in the trade.
     - `priceimprovement`: The fee is based on a better executed price than the top quote.
     - `volume`: The fee is based on the volume of the order.
+
+- #### PolicyOrigin
+    Enum for the `origin` column in `fee_policies` table.
+
+    Values:
+    - `protocol`: The fee policy is configured by the protocol.
+    - `partner`: The fee policy is requested by a partner via the order's app data.
 
 ### presignature\_events
 

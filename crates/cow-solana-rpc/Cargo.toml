@@ -19,6 +19,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+solana-account-decoder-client-types = { workspace = true }
 solana-commitment-config = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }

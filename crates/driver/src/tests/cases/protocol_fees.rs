@@ -1,7 +1,6 @@
 use {
     crate::{
         domain::competition::order,
-        infra::config::file::FeeHandler,
         tests::{
             self,
             cases::EtherExt,
@@ -44,7 +43,6 @@ struct TestCase {
     fee_policy: Vec<Policy>,
     execution: Execution,
     expected_score: eth::U256,
-    fee_handler: FeeHandler,
 }
 
 #[cfg(test)]
@@ -94,7 +92,6 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .pool(pool)
         .order(order.clone())
         .solution(ab_solution())
-        .solvers(vec![test_solver().fee_handler(test_case.fee_handler)])
         .done()
         .await;
 
@@ -151,7 +148,6 @@ async fn triple_surplus_protocol_fee_buy_order_not_capped() {
         // the order's limit price (50 / 60 = 80%) this leaves us with a score
         // of 16 ETH.
         expected_score: 16.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
 
     protocol_fee_test_case(test_case).await;
@@ -197,7 +193,6 @@ async fn triple_surplus_protocol_fee_sell_order_not_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -241,7 +236,6 @@ async fn surplus_and_volume_protocol_fee_buy_order_not_capped() {
         // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
         // of 13.3 ETH.
         expected_score: 13.3333333333333.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -295,7 +289,6 @@ async fn surplus_and_price_improvement_protocol_fee_sell_order_not_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -348,7 +341,6 @@ async fn surplus_and_price_improvement_fee_buy_in_market_order_not_capped() {
         // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
         // of 13.3 ETH.
         expected_score: 13.33333333333333.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -384,41 +376,6 @@ async fn surplus_protocol_fee_buy_order_not_capped() {
         // the order's limit price (40 / 50 = 80%) this leaves us with a score
         // of 16 ETH.
         expected_score: 16.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
-    };
-
-    protocol_fee_test_case(test_case).await;
-}
-
-#[tokio::test]
-#[ignore]
-async fn protocol_fee_calculated_on_the_solver_side() {
-    let fee_policy = Policy::Surplus {
-        factor: 0.5,
-        max_volume_factor: 1.0,
-    };
-    let test_case = TestCase {
-        fee_policy: vec![fee_policy],
-        order: Order {
-            sell_amount: 50.ether().into_wei(),
-            buy_amount: 40.ether().into_wei(),
-            side: order::Side::Buy,
-        },
-        execution: Execution {
-            solver: Amounts {
-                sell: 30.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
-            driver: Amounts {
-                sell: 30.ether().into_wei(),
-                buy: 40.ether().into_wei(),
-            },
-        },
-        // Surplus is 35 ETH worth of sell tokens, converted to buy tokens using
-        // the order's limit price (40 / 50 = 80%) this leaves us with a score
-        // of 28 ETH.
-        expected_score: 28.ether().into_wei(),
-        fee_handler: FeeHandler::Solver,
     };
 
     protocol_fee_test_case(test_case).await;
@@ -451,7 +408,6 @@ async fn surplus_protocol_fee_sell_order_not_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -484,7 +440,6 @@ async fn surplus_protocol_fee_partial_buy_order_not_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
 
     protocol_fee_test_case(test_case).await;
@@ -517,7 +472,6 @@ async fn surplus_protocol_fee_partial_sell_order_not_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -552,7 +506,6 @@ async fn surplus_protocol_fee_buy_order_capped() {
         // the order's limit price (40 / 50 = 80%) this leaves us with a score
         // of 16 ETH.
         expected_score: 16.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -584,7 +537,6 @@ async fn surplus_protocol_fee_sell_order_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -616,7 +568,6 @@ async fn surplus_protocol_fee_partial_buy_order_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -648,7 +599,6 @@ async fn surplus_protocol_fee_partial_sell_order_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -679,7 +629,6 @@ async fn volume_protocol_fee_buy_order() {
         // the order's limit price (40 / 50 = 80%) this leaves us with a score
         // of 16 ETH.
         expected_score: 16.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -713,7 +662,6 @@ async fn volume_protocol_fee_buy_order_at_limit_price() {
         // the order's limit price (40 / 50 = 80%) this leaves us with a score
         // of 8 ETH.
         expected_score: 8.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -741,7 +689,6 @@ async fn volume_protocol_fee_sell_order() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -772,7 +719,6 @@ async fn volume_protocol_fee_sell_order_at_limit_price() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -800,7 +746,6 @@ async fn volume_protocol_fee_partial_buy_order() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -831,7 +776,6 @@ async fn volume_protocol_fee_partial_buy_order_at_limit_price() {
             },
         },
         expected_score: 4.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -859,7 +803,6 @@ async fn volume_protocol_fee_partial_sell_order() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -890,7 +833,6 @@ async fn volume_protocol_fee_partial_sell_order_at_limit_price() {
             },
         },
         expected_score: 5.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -933,7 +875,6 @@ async fn price_improvement_fee_buy_in_market_order_not_capped() {
         // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
         // of 13.3 ETH.
         expected_score: 13.33333333333333.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -973,7 +914,6 @@ async fn price_improvement_fee_sell_in_market_order_not_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1016,7 +956,6 @@ async fn price_improvement_fee_buy_out_of_market_order_not_capped() {
         // the order's limit price (40 / 50 = 80%) this leaves us with a score
         // of 8 ETH.
         expected_score: 8.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1056,7 +995,6 @@ async fn price_improvement_fee_sell_out_of_market_order_not_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1098,7 +1036,6 @@ async fn price_improvement_fee_buy_in_market_order_capped() {
         // the order's limit price (40 / 60 = 66.6%) this leaves us with a score
         // of 13.3 ETH.
         expected_score: 13.33333333333333.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1137,7 +1074,6 @@ async fn price_improvement_fee_sell_in_market_order_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1179,7 +1115,6 @@ async fn price_improvement_fee_buy_out_of_market_order_capped() {
         // the order's limit price (40 / 50 = 80%) this leaves us with a score
         // of 8 ETH.
         expected_score: 8.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1218,7 +1153,6 @@ async fn price_improvement_fee_sell_out_of_market_order_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1261,7 +1195,6 @@ async fn price_improvement_fee_partial_buy_in_market_order_not_capped() {
         // the order's limit price (40 / 50 = 80%) this leaves us with a score
         // of 12 ETH.
         expected_score: 12.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1303,7 +1236,6 @@ async fn price_improvement_fee_partial_sell_in_market_order_not_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1343,7 +1275,6 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_not_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1383,7 +1314,6 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_not_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1425,7 +1355,6 @@ async fn price_improvement_fee_partial_buy_in_market_order_capped() {
         // the order's limit price (50 / 75 = 66.6%) this leaves us with a score
         // of 13.3 ETH.
         expected_score: 13.333333333333333.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1464,7 +1393,6 @@ async fn price_improvement_fee_partial_sell_in_market_order_capped() {
             },
         },
         expected_score: 20.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1503,7 +1431,6 @@ async fn price_improvement_fee_partial_buy_out_of_market_order_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1542,7 +1469,6 @@ async fn price_improvement_fee_partial_sell_out_of_market_order_capped() {
             },
         },
         expected_score: 10.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
@@ -1581,7 +1507,6 @@ async fn price_improvement_fee_sell_no_improvement() {
             },
         },
         expected_score: 5.ether().into_wei(),
-        fee_handler: FeeHandler::Driver,
     };
     protocol_fee_test_case(test_case).await;
 }
