@@ -38,14 +38,16 @@ use {
 /// sent accordingly.
 #[derive(Clone, Debug)]
 pub enum Charge {
-    /// The engine: it is sent the signed limits and the orders whose buy
-    /// token account the settlement creates.
+    /// The engine: it is sent the signed limits tightened by the volume fee
+    /// policies, and the orders whose buy token account the settlement
+    /// creates.
     Engine {
         missing_buy_token_accounts: HashSet<OrderUid>,
     },
-    /// The driver: the engine is sent each order's limit leg moved by the
-    /// atoms the driver cuts from its fill, by uid, and tightened by the
-    /// solver fee. An order without a cut is not sent.
+    /// The driver: the engine is sent each order's limit leg tightened by
+    /// the volume fee policies, moved by the atoms the driver cuts from its
+    /// fill, by uid, and tightened by the solver fee. An order without a cut
+    /// is not sent.
     Driver {
         cuts: HashMap<OrderUid, u64>,
         fee: Option<SolverFee>,
