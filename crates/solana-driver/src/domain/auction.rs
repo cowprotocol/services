@@ -205,6 +205,8 @@ impl Auction {
     pub(super) fn split_sell_balances(&mut self) {
         let mut left_per_account = HashMap::new();
         self.orders.retain_mut(|order| {
+            // No balance read at the cut: nothing to trim the order to and
+            // nothing to seed its account with, so it stays as it came.
             let Some(balance) = order.sell_balance else {
                 return true;
             };
