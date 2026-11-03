@@ -10,3 +10,4 @@ pub const OPTIMISM: u64 = 10;
 pub const LINEA: u64 = 59144;
 pub const PLASMA: u64 = 9745;
 pub const INK: u64 = 57073;
+pub const ROBINHOOD: u64 = 4663;

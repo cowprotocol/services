@@ -33,6 +33,12 @@ max-winners = 1
 solve-deadline = "6s"
 submission-deadline-slots = 25
 
+# Periodic deletion of expired quotes and of order events older than
+# cleanup-threshold. The defaults:
+# [db-cleanup]
+# cleanup-interval = "1d"
+# cleanup-threshold = "30d"
+
 [[drivers]]
 name = "baseline"
 url = "http://localhost:11088"

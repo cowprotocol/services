@@ -4,7 +4,7 @@ use {
     alloy_primitives::{Address, U256, address},
     chrono::{TimeZone, Utc},
     configs::fee_factor::FeeFactor,
-    fee_engine::{Evaluation, Fee, Match, RuleDefinition, RuleSet},
+    fee_engine::{Evaluation, Fee, Match, RuleDefinition, RuleSet, RuleSetDefinition},
     model::order::{Order, OrderData, OrderMetadata},
     std::collections::BTreeMap,
 };
@@ -44,7 +44,11 @@ fn rules() -> RuleSet {
         ),
         ("jit_makers".to_owned(), vec![MAKER.to_string()]),
     ]);
-    RuleSet::new(definitions, lists).unwrap()
+    RuleSet::new(RuleSetDefinition {
+        lists,
+        rules: definitions,
+    })
+    .unwrap()
 }
 
 fn order(owner: Address, sell: Address, buy: Address) -> Order {
@@ -124,10 +128,10 @@ fn reports_the_matching_rules_per_order() {
 
 #[test]
 fn no_matching_rule_means_no_fee() {
-    let rules = RuleSet::new(
-        vec![rule("Sells only", r#"order.kind == "sell""#, "volume(1)")],
-        BTreeMap::new(),
-    )
+    let rules = RuleSet::new(RuleSetDefinition {
+        rules: vec![rule("Sells only", r#"order.kind == "sell""#, "volume(1)")],
+        ..Default::default()
+    })
     .unwrap();
     let evaluator = rules.evaluator(Utc::now());
     assert!(evaluator.evaluate(&Order::default()).matched.is_empty());
