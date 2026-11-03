@@ -213,28 +213,27 @@ impl Auction {
             let left = left_per_account
                 .entry(order.sell_token_account)
                 .or_insert(balance);
-            let sell = order.remaining().sell;
+            let remaining_sell = order.remaining().sell;
             // A fill-or-kill order cannot shrink; `available` scales a
             // partially fillable one down to what is left, to nothing when
             // nothing is.
-            let kept = order.partially_fillable || *left >= sell;
+            let kept = order.partially_fillable || *left >= remaining_sell;
             if !kept || *left < balance {
                 tracing::debug!(
                     order = %order.uid,
                     account = %order.sell_token_account,
                     balance,
                     left = *left,
-                    sell,
+                    remaining_sell,
                     kept,
                     "splitting the sell balance"
                 );
             }
-            if !kept {
-                return false;
+            if kept {
+                order.sell_balance = Some(*left);
+                *left = left.saturating_sub(remaining_sell);
             }
-            order.sell_balance = Some(*left);
-            *left = left.saturating_sub(sell);
-            true
+            kept
         });
     }
 }
