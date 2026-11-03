@@ -155,12 +155,23 @@ impl Jupiter {
 /// promised amount out of what the swap delivered, so a promise above the
 /// enforced bound reverts the payout whenever the pool moves between the
 /// quote and the landing.
+///
+/// The program recomputes that bound on chain from the quoted amount and
+/// `slippageBps`; its rounding is not published and may differ from the API's
+/// by one atom. Stepping the promise one atom past the threshold on each side
+/// keeps it within the bound under either rounding.
 fn parse_quote(raw: serde_json::Value, destination: Pubkey) -> Result<Quote, Error> {
     let amounts = dto::QuoteAmounts::deserialize(&raw)
         .map_err(|err| Error::BadResponse(format!("quote: {err}")))?;
     let (in_amount, out_amount) = match amounts.swap_mode {
-        SwapMode::ExactIn => (amounts.in_amount, amounts.other_amount_threshold),
-        SwapMode::ExactOut => (amounts.other_amount_threshold, amounts.out_amount),
+        SwapMode::ExactIn => (
+            amounts.in_amount,
+            amounts.other_amount_threshold.saturating_sub(1),
+        ),
+        SwapMode::ExactOut => (
+            amounts.other_amount_threshold.saturating_add(1),
+            amounts.out_amount,
+        ),
     };
     Ok(Quote {
         in_amount,
@@ -221,7 +232,7 @@ mod tests {
         let quote = parse_quote(raw, Pubkey::from_str(WSOL).unwrap()).unwrap();
         assert_eq!(
             (quote.in_amount, quote.out_amount),
-            (5_000_000, 480_696_439)
+            (5_000_000, 480_696_438)
         );
     }
 
@@ -234,7 +245,7 @@ mod tests {
             "swapMode": "ExactOut",
         });
         let quote = parse_quote(raw, Pubkey::from_str(WSOL).unwrap()).unwrap();
-        assert_eq!((quote.in_amount, quote.out_amount), (1_005, 1_000_000));
+        assert_eq!((quote.in_amount, quote.out_amount), (1_006, 1_000_000));
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`
