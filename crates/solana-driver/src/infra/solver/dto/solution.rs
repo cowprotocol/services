@@ -44,7 +44,7 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Instruction>,
     /// Optional solver estimate of total settlement compute units. The
-    /// settlement declares it unless its simulation measures more.
+    /// settlement declares it until its simulation measures the usage.
     #[serde(default)]
     pub cu_estimate: Option<u32>,
 }
