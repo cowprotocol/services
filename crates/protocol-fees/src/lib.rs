@@ -1,8 +1,8 @@
 //! Protocol fee policies and the fee math over a fill.
 //!
-//! Generic over the chain's type vocabulary ([`ChainTypes`]). Every generic
-//! type defaults its chain parameter to [`Evm`], so bare type names mean the
-//! EVM instantiation.
+//! Generic over the chain's type vocabulary ([`ChainTypes`]). [`FeePolicy`],
+//! [`Quote`] and [`Order`] default their chain parameter to [`Evm`], so their
+//! bare names mean the EVM instantiation.
 
 use {
     anyhow::{Context, Result},
