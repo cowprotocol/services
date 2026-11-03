@@ -131,8 +131,18 @@ impl Competition {
             tracing::info!("no fillable order left; skipping solving");
             return Ok(Vec::new());
         }
-        let (solutions, reserve_fees) = self
-            .compute_solutions(&auction, Some(&buy_token_accounts))
+        // Over no accounts: the cluster-wide fees, which floor what any route
+        // pays.
+        let reserve_fees = match self.solver.fee_handler() {
+            FeeHandler::Driver => self
+                .blockchain
+                .recent_prioritization_fees(&[])
+                .await
+                .map_err(Error::Rpc)?,
+            FeeHandler::Solver => Vec::new(),
+        };
+        let solutions = self
+            .compute_solutions(&auction, Some(&buy_token_accounts), &reserve_fees)
             .await?;
         if solutions.is_empty() {
             return Ok(Vec::new());
@@ -432,13 +442,11 @@ impl Competition {
     }
 
     /// Send the auction to the solver engine and return its deduplicated
-    /// solutions without caching them, along with the reserve's cluster-wide
-    /// fees when the solver's fee handler is the driver: the fallback price
-    /// of a solution's cut whose own fee read fails at solve time. When the
-    /// solver's fee handler is the driver, the limits sent to the engine are
-    /// moved by the execution cost at the policy's default compute units and
-    /// every fill is tightened by the solver fee; the execution costs
-    /// themselves are not cut here.
+    /// solutions without caching them. When the solver's fee handler is the
+    /// driver, the limits sent to the engine are moved by the execution cost
+    /// at the policy's default compute units over `reserve_fees`, the
+    /// cluster-wide fees, and every fill is tightened by the solver fee; the
+    /// execution costs themselves are not cut here.
     ///
     /// `buy_token_accounts` is the auction's resolution, `None` for a quote:
     /// its execution costs are reported, not cut, and nothing is flagged.
@@ -446,40 +454,28 @@ impl Competition {
         &self,
         auction: &Auction,
         buy_token_accounts: Option<&BuyTokenAccounts>,
-    ) -> Result<(Vec<Solution>, Vec<RpcPrioritizationFee>), Error> {
+        reserve_fees: &[RpcPrioritizationFee],
+    ) -> Result<Vec<Solution>, Error> {
         let no_rent = HashMap::new();
-        let (charge, reserve_fees) = match self.solver.fee_handler() {
-            FeeHandler::Solver => (
-                Charge::Engine {
-                    missing_buy_token_accounts: buy_token_accounts
-                        .map(|accounts| accounts.missing.keys().copied().collect())
-                        .unwrap_or_default(),
-                },
-                Vec::new(),
-            ),
+        let charge = match self.solver.fee_handler() {
+            FeeHandler::Solver => Charge::Engine {
+                missing_buy_token_accounts: buy_token_accounts
+                    .map(|accounts| accounts.missing.keys().copied().collect())
+                    .unwrap_or_default(),
+            },
             FeeHandler::Driver => {
                 let costs = ExecutionCost {
                     rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
                     native_prices: &auction.native_prices,
                 };
-                let (network_fee, reserve_fees) = match buy_token_accounts {
-                    Some(_) => {
-                        let fees = self
-                            .blockchain
-                            .recent_prioritization_fees(&[])
-                            .await
-                            .map_err(Error::Rpc)?;
-                        (self.network_fee_reserve(&fees), fees)
-                    }
-                    None => (0, Vec::new()),
+                let network_fee = match buy_token_accounts {
+                    Some(_) => self.network_fee_reserve(reserve_fees),
+                    None => 0,
                 };
-                (
-                    Charge::Driver {
-                        cuts: costs.cuts(&auction.orders, network_fee),
-                        fee: self.solver.solver_fee(),
-                    },
-                    reserve_fees,
-                )
+                Charge::Driver {
+                    cuts: costs.cuts(&auction.orders, network_fee),
+                    fee: self.solver.solver_fee(),
+                }
             }
         };
         let solutions = self
@@ -502,7 +498,7 @@ impl Competition {
         }
 
         let Charge::Driver { fee: Some(fee), .. } = &charge else {
-            return Ok((solutions, reserve_fees));
+            return Ok(solutions);
         };
         let orders = orders_by_uid(&auction.orders);
         let mut tightened = Vec::with_capacity(solutions.len());
@@ -531,7 +527,7 @@ impl Competition {
             }
             tightened.push(solution);
         }
-        Ok((tightened, reserve_fees))
+        Ok(tightened)
     }
 
     /// The network fee the limit legs sent to the engine are moved by, before
