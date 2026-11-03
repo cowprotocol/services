@@ -79,7 +79,7 @@ pub trait Amount:
 
 pub type MathResult<T> = Result<T, MathError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum MathError {
     #[error("overflow")]
     Overflow,
