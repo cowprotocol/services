@@ -25,13 +25,6 @@ const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
 
-/// Headroom a settlement declares over its simulated units on top of the
-/// configured share. The usage grows between the simulation and the landed
-/// transaction by a fixed cost rather than a share of the route (prod, Oct
-/// 22 to Nov 3, 2026: +9,074 units on five grafiks routes, +9,224 on two
-/// Jupiter ones), so a percent alone leaves a small route short.
-const COMPUTE_UNIT_HEADROOM_UNITS: u64 = 20_000;
-
 /// The priority fee policy. Fields left out of the config take their
 /// [`Default`] value.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -56,10 +49,17 @@ pub struct PriorityFeePolicy {
     /// range.
     pub default_compute_unit_limit: u32,
     /// The share of the simulated compute units added to the limit a
-    /// settlement declares, in percent, on top of 20,000 units. Usage can
-    /// grow before the transaction lands and running out of units fails it,
-    /// while the priority fee is paid on the limit, used or not.
+    /// settlement declares, in percent, on top of
+    /// `compute_unit_limit_headroom_units`. Usage can grow before the
+    /// transaction lands and running out of units fails it, while the
+    /// priority fee is paid on the limit, used or not.
     pub compute_unit_limit_headroom_percent: u32,
+    /// The compute units added to the limit a settlement declares on top of
+    /// the share. The usage grows between the simulation and the landed
+    /// transaction by a fixed cost rather than a share of the route (prod,
+    /// Oct 22 to Nov 3, 2026: +9,074 units on five grafiks routes, +9,224 on
+    /// two Jupiter ones), so a percent alone leaves a small route short.
+    pub compute_unit_limit_headroom_units: u32,
 }
 
 impl Default for PriorityFeePolicy {
@@ -71,6 +71,7 @@ impl Default for PriorityFeePolicy {
             max_priority_fee_lamports: 1_000_000,
             default_compute_unit_limit: 400_000,
             compute_unit_limit_headroom_percent: 15,
+            compute_unit_limit_headroom_units: 20_000,
         }
     }
 }
@@ -145,7 +146,7 @@ impl PriorityFeePolicy {
         u32::try_from(
             units
                 .saturating_add(share)
-                .saturating_add(COMPUTE_UNIT_HEADROOM_UNITS),
+                .saturating_add(u64::from(self.compute_unit_limit_headroom_units)),
         )
         .unwrap_or(u32::MAX)
         .min(MAX_COMPUTE_UNIT_LIMIT)
@@ -194,6 +195,7 @@ mod tests {
             max_priority_fee_lamports: u64::MAX,
             default_compute_unit_limit: MAX_COMPUTE_UNIT_LIMIT,
             compute_unit_limit_headroom_percent: 10,
+            compute_unit_limit_headroom_units: 20_000,
         }
     }
 
@@ -221,11 +223,16 @@ mod tests {
         assert_eq!(policy.compute_unit_limit(100_000), 130_000);
         assert_eq!(policy.compute_unit_limit(1_272_728), MAX_COMPUTE_UNIT_LIMIT);
         assert_eq!(policy.compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
-        let policy = PriorityFeePolicy {
+        let share_alone = PriorityFeePolicy {
+            compute_unit_limit_headroom_units: 0,
+            ..policy
+        };
+        assert_eq!(share_alone.compute_unit_limit(100_000), 110_000);
+        let units_alone = PriorityFeePolicy {
             compute_unit_limit_headroom_percent: 0,
             ..policy
         };
-        assert_eq!(policy.compute_unit_limit(7), 20_007);
+        assert_eq!(units_alone.compute_unit_limit(7), 20_007);
     }
 
     #[test]

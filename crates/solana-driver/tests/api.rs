@@ -117,6 +117,7 @@ fn priority_fee() -> PriorityFeePolicy {
         max_priority_fee_lamports: u64::MAX,
         default_compute_unit_limit: 1_400_000,
         compute_unit_limit_headroom_percent: 10,
+        compute_unit_limit_headroom_units: 20_000,
     }
 }
 
