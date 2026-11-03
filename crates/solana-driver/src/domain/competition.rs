@@ -520,6 +520,13 @@ impl Competition {
                     %reason,
                     "dropping solution the solver fee cannot be applied to"
                 );
+                // A quote's drop has no solve-time count to add up to.
+                if buy_token_accounts.is_some() {
+                    metrics()
+                        .solve_solutions
+                        .with_label_values(&["fee_rejected", self.solver.name()])
+                        .inc();
+                }
                 continue;
             }
             tightened.push(solution);
@@ -1092,7 +1099,9 @@ struct Metrics {
     #[metric(labels("outcome", "solver"))]
     solve_simulations: prometheus::IntCounterVec,
     /// Solve-time solutions by outcome and solver: kept, or the reason they
-    /// were dropped.
+    /// were dropped, `fee_rejected` for a fill the solver fee cannot be
+    /// applied to before the simulation. The outcomes add up to the engine's
+    /// deduplicated solutions.
     #[metric(labels("outcome", "solver"))]
     solve_solutions: prometheus::IntCounterVec,
     /// Solve-time reads of a solution's route prioritization fees by outcome
