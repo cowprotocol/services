@@ -28,9 +28,9 @@ max-priority-fee-lamports = 1000000
 # (quotes, and solutions before their simulation), 1..=1400000.
 default-compute-unit-limit = 400000
 # The share of the simulated compute units added to the limit a settlement
-# declares, in percent. The priority fee is paid on the limit, used or not,
-# while running out of units fails the settlement.
-compute-unit-limit-headroom-percent = 10
+# declares, in percent, on top of 20000 units. The priority fee is paid on
+# the limit, used or not, while running out of units fails the settlement.
+compute-unit-limit-headroom-percent = 15
 
 [http]
 bind-address = "0.0.0.0:8080"

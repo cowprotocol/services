@@ -785,9 +785,9 @@ async fn settle_refuses_a_priority_fee_over_budget() {
 }
 
 /// Same fee as above, but the `/solve` simulation reports the settlement's
-/// compute units, so the fee is priced at those plus the 10% headroom,
-/// 110_000 units: 1_100 lamports, exactly the budget, so the settle reaches
-/// the send. A unit more is over it.
+/// compute units, so the fee is priced at those plus the 10% headroom and
+/// the 20_000 fixed units, 130_000 units: 1_300 lamports, exactly the
+/// budget, so the settle reaches the send. A unit more is over it.
 #[tokio::test]
 async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
     let engine = spawn_mock_solver_engine(engine_response(&[(42, "2000")])).await;
@@ -802,7 +802,7 @@ async fn settle_prices_the_priority_fee_at_the_simulated_compute_units() {
         vec![solver],
         mocks,
         PriorityFeePolicy {
-            max_priority_fee_lamports: 1_100,
+            max_priority_fee_lamports: 1_300,
             ..priority_fee()
         },
     )
@@ -1043,8 +1043,8 @@ async fn solve_cuts_at_the_policy_default_compute_units_without_a_simulation() {
     assert_eq!(request["orders"][0]["buyAmount"], "2995");
 }
 
-/// The simulation reports 100_000 units, so the settlement declares 110_000
-/// and the cut is priced at them: 1_100 lamports of priority fee, 994 atoms.
+/// The simulation reports 100_000 units, so the settlement declares 130_000
+/// and the cut is priced at them: 1_300 lamports of priority fee, 994 atoms.
 /// The limit sent to the engine still moves by the 1000 of the policy's
 /// default, the ceiling here, since no route exists yet.
 #[tokio::test]
@@ -1063,9 +1063,9 @@ async fn solve_cuts_at_the_simulated_compute_units() {
 
 /// The settlement declares the simulated units plus the headroom and the cut
 /// is priced at it, whatever the engine estimated. 100_000 simulated units
-/// declare 110_000: 1_100 lamports at the mock's 10_000 micro-lamports, kept
-/// at a 1_100 budget and dropped at 1_099 under an engine's 50_000, and kept
-/// at 1_100 under an engine's 200_000 too.
+/// declare 130_000: 1_300 lamports at the mock's 10_000 micro-lamports, kept
+/// at a 1_300 budget and dropped at 1_299 under an engine's 50_000, and kept
+/// at 1_300 under an engine's 200_000 too.
 #[tokio::test]
 async fn solve_declares_the_simulated_units_whatever_the_engine_estimated() {
     async fn solve_ids(cu_estimate: u32, max_priority_fee_lamports: u64) -> Vec<u64> {
@@ -1088,9 +1088,9 @@ async fn solve_declares_the_simulated_units_whatever_the_engine_estimated() {
         response_ids(&body)
     }
 
-    assert_eq!(solve_ids(50_000, 1_100).await, vec![1]);
-    assert!(solve_ids(50_000, 1_099).await.is_empty());
-    assert_eq!(solve_ids(200_000, 1_100).await, vec![1]);
+    assert_eq!(solve_ids(50_000, 1_300).await, vec![1]);
+    assert!(solve_ids(50_000, 1_299).await.is_empty());
+    assert_eq!(solve_ids(200_000, 1_300).await, vec![1]);
 }
 
 /// The reserve fetch before the engine is asked takes the one queued fee
