@@ -21,6 +21,7 @@ pub(crate) enum Kind {
     FailedToSubmit,
     SettlementReverted,
     InvalidCreation,
+    InvalidFeePolicy,
     FailedToCreate,
     QuoteSameTokens,
     QuotingFailed,
@@ -55,6 +56,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::FailedToSubmit => "Failed to submit the settlement transaction",
             Kind::SettlementReverted => "The settlement transaction failed on chain",
             Kind::InvalidCreation => "A creation transaction does not decode",
+            Kind::InvalidFeePolicy => "A fee policy factor is outside [0, 1)",
             Kind::FailedToCreate => "Failed to submit an order creation transaction",
             Kind::QuoteSameTokens => "Invalid quote with same buy and sell tokens",
             Kind::QuotingFailed => "No valid quote found",
@@ -137,6 +139,7 @@ impl From<AuctionError> for (axum::http::StatusCode, axum::Json<Error>) {
         match value {
             AuctionError::InvalidAuctionId => Kind::InvalidAuctionId,
             AuctionError::InvalidCreation => Kind::InvalidCreation,
+            AuctionError::InvalidFeePolicy => Kind::InvalidFeePolicy,
         }
         .into()
     }
