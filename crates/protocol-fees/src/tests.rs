@@ -144,6 +144,26 @@ fn a_fill_under_its_limit_fails_a_surplus_policy() {
     assert_eq!(err, MathError::Negative);
 }
 
+/// The volume fee pushes the fill under its limit, so the surplus policy after
+/// it fails, and the fill keeps the legs it came with.
+#[test]
+fn a_failed_policy_leaves_the_fill_untouched() {
+    let mut fill = fill(Side::Sell, 1_000, 1_800, 1_000, 2_000);
+    let err = apply_protocol_fees(
+        &mut fill,
+        &[
+            FeePolicy::Volume { factor: 0.5 },
+            FeePolicy::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.5,
+            },
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(err, MathError::Negative);
+    assert_eq!((fill.executed_sell, fill.executed_buy), (1_000, 2_000));
+}
+
 fn random_policy(rng: &mut StdRng) -> FeePolicy<Solana> {
     let factor = rng.random_range(0.0..=0.5);
     let max_volume_factor = rng.random_range(0.0..=0.5);
