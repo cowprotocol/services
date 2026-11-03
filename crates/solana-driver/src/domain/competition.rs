@@ -115,6 +115,7 @@ impl Competition {
             .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
             .await
             .map_err(Error::BuyTokenAccounts)?;
+        auction.split_sell_balances();
         auction.orders.retain(|order| {
             if order.available().has_zero_leg() {
                 tracing::debug!(order = %order.uid, "dropping order, nothing fillable");

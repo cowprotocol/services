@@ -197,6 +197,36 @@ impl Auction {
             }
         }
     }
+
+    /// Hand each sell token account's balance out to the orders selling from
+    /// it, in auction order, like the EVM driver's `update_orders`: a
+    /// fill-or-kill order takes its remaining sell amount or is dropped, a
+    /// partially fillable one takes what is left and scales to it. The
+    /// protocol does not pick which of an owner's orders fill, so each
+    /// solver's driver does. An order without a balance, or one whose
+    /// creation funds its account at settlement, stays out of the split.
+    pub(super) fn split_sell_balances(&mut self) {
+        let mut left = HashMap::new();
+        let creations = &self.creations;
+        self.orders.retain_mut(|order| {
+            let Some(balance) = order.sell_balance else {
+                return true;
+            };
+            if creations.contains_key(&order.uid) {
+                return true;
+            }
+            let left = left.entry(order.sell_token_account).or_insert(balance);
+            let sell = order.remaining().sell;
+            if order.partially_fillable {
+                order.sell_balance = Some(*left);
+            } else if *left < sell {
+                tracing::debug!(order = %order.uid, "dropping order, earlier orders take its sell balance");
+                return false;
+            }
+            *left = left.saturating_sub(sell);
+            true
+        });
+    }
 }
 
 /// One order available for solvers to fill.
@@ -823,5 +853,83 @@ mod tests {
         for id in [0, -1, i64::MIN] {
             assert_eq!(Id::new(id).unwrap_err(), InvalidAuctionId(id));
         }
+    }
+
+    /// An order selling `sell_amount` from a token account funding 1000.
+    fn fill_or_kill(uid: u8, sell_amount: u64) -> Order {
+        Order {
+            sell_amount,
+            buy_amount: sell_amount * 2,
+            sell_balance: Some(1_000),
+            ..order(uid, pubkey(0x66))
+        }
+    }
+
+    fn partially_fillable(uid: u8) -> Order {
+        Order {
+            partially_fillable: true,
+            ..fill_or_kill(uid, 1_000)
+        }
+    }
+
+    /// The balance goes out in auction order: two partially fillable orders
+    /// of 1000 on a balance of 1000 leave the second nothing to fill.
+    #[test]
+    fn splits_a_sell_balance_across_partially_fillable_orders() {
+        let mut auction = auction(vec![partially_fillable(1), partially_fillable(2)]);
+        auction.split_sell_balances();
+        assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
+        assert_eq!(auction.orders[0].available().sell, 1_000);
+        assert!(auction.orders[1].available().has_zero_leg());
+    }
+
+    #[test]
+    fn a_fill_or_kill_order_takes_its_sell_amount_first() {
+        let mut auction = auction(vec![fill_or_kill(1, 600), partially_fillable(2)]);
+        auction.split_sell_balances();
+        assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
+        assert_eq!(auction.orders[1].available().sell, 400);
+    }
+
+    #[test]
+    fn drops_a_fill_or_kill_order_the_balance_left_cannot_cover() {
+        let mut auction = auction(vec![partially_fillable(1), fill_or_kill(2, 600)]);
+        auction.split_sell_balances();
+        assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1]);
+        assert_eq!(auction.orders[0].available().sell, 1_000);
+    }
+
+    #[test]
+    fn each_sell_token_account_has_its_own_balance() {
+        let other = Order {
+            sell_token_account: pubkey(0x56),
+            ..fill_or_kill(2, 1_000)
+        };
+        let mut auction = auction(vec![fill_or_kill(1, 1_000), other]);
+        auction.split_sell_balances();
+        assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
+    }
+
+    /// An order without a balance, and one whose creation is yet to land,
+    /// neither take from the balance nor get dropped by it.
+    #[test]
+    fn an_order_without_a_balance_or_awaiting_its_creation_stays_out_of_the_split() {
+        let unknown = Order {
+            sell_balance: None,
+            ..fill_or_kill(1, 1_000)
+        };
+        let mut auction = auction(vec![
+            unknown,
+            fill_or_kill(2, 1_000),
+            fill_or_kill(3, 1_000),
+        ]);
+        auction
+            .creations
+            .insert(OrderUid([2; 32]), VersionedTransaction::default());
+        auction.split_sell_balances();
+        assert_eq!(
+            uids(auction.orders.iter().map(|order| &order.uid)),
+            [1, 2, 3]
+        );
     }
 }
