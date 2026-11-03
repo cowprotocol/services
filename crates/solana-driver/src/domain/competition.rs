@@ -101,6 +101,13 @@ impl Competition {
         self.solver.name()
     }
 
+    fn count_solution(&self, outcome: &str) {
+        metrics()
+            .solve_solutions
+            .with_label_values(&[outcome, self.solver.name()])
+            .inc()
+    }
+
     /// Solve the auction, drop the solutions whose settlement provably fails
     /// (over the byte limit or failing in simulation), cut the execution costs
     /// from the rest when the solver's fee handler is the driver, at the
@@ -131,8 +138,7 @@ impl Competition {
             tracing::info!("no fillable order left; skipping solving");
             return Ok(Vec::new());
         }
-        // Over no accounts: the cluster-wide fees, which floor what any route
-        // pays.
+        // Over no accounts, the RPC answers the cluster-wide fees.
         let reserve_fees = match self.solver.fee_handler() {
             FeeHandler::Driver => self
                 .blockchain
@@ -193,12 +199,6 @@ impl Competition {
         let orders = orders_by_uid(&auction.orders);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
-        let count_solution = |outcome: &str| {
-            metrics()
-                .solve_solutions
-                .with_label_values(&[outcome, self.solver.name()])
-                .inc()
-        };
         for (mut solution, (verdict, elapsed, fees)) in solutions.into_iter().zip(simulations) {
             metrics()
                 .solve_simulations
@@ -237,7 +237,7 @@ impl Competition {
                         window_ms,
                         "dropping solution, its settlement fails in simulation"
                     );
-                    count_solution(error_label(error));
+                    self.count_solution(error_label(error));
                     continue;
                 }
                 Err(error) => tracing::info!(
@@ -310,7 +310,7 @@ impl Competition {
                             %reason,
                             "dropping solution, its network fee is over budget"
                         );
-                        count_solution("priority_fee_too_high");
+                        self.count_solution("priority_fee_too_high");
                         continue;
                     }
                 };
@@ -322,7 +322,7 @@ impl Competition {
                         %reason,
                         "dropping solution the execution costs cannot be cut from"
                     );
-                    count_solution("cut_rejected");
+                    self.count_solution("cut_rejected");
                     continue;
                 }
             }
@@ -336,7 +336,7 @@ impl Competition {
                     solution: solution.clone(),
                 },
             );
-            count_solution("kept");
+            self.count_solution("kept");
             kept.push(solution);
         }
         Ok(kept)
@@ -468,10 +468,8 @@ impl Competition {
                     rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
                     native_prices: &auction.native_prices,
                 };
-                let network_fee = match buy_token_accounts {
-                    Some(_) => self.network_fee_reserve(reserve_fees),
-                    None => 0,
-                };
+                let network_fee =
+                    buy_token_accounts.map_or(0, |_| self.network_fee_reserve(reserve_fees));
                 Charge::Driver {
                     cuts: costs.cuts(&auction.orders, network_fee),
                     fee: self.solver.solver_fee(),
@@ -518,10 +516,7 @@ impl Competition {
                 );
                 // A quote's drop has no solve-time count to add up to.
                 if buy_token_accounts.is_some() {
-                    metrics()
-                        .solve_solutions
-                        .with_label_values(&["fee_rejected", self.solver.name()])
-                        .inc();
+                    self.count_solution("fee_rejected");
                 }
                 continue;
             }
@@ -1095,9 +1090,9 @@ struct Metrics {
     #[metric(labels("outcome", "solver"))]
     solve_simulations: prometheus::IntCounterVec,
     /// Solve-time solutions by outcome and solver: kept, or the reason they
-    /// were dropped, `fee_rejected` for a fill the solver fee cannot be
-    /// applied to before the simulation. The outcomes add up to the engine's
-    /// deduplicated solutions.
+    /// were dropped, `fee_rejected` for a solution whose fill the solver fee
+    /// cannot be applied to before the simulation. The outcomes add up to
+    /// the engine's deduplicated solutions.
     #[metric(labels("outcome", "solver"))]
     solve_solutions: prometheus::IntCounterVec,
     /// Solve-time reads of a solution's route prioritization fees by outcome

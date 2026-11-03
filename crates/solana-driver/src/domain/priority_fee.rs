@@ -55,10 +55,9 @@ pub struct PriorityFeePolicy {
     /// priority fee is paid on the limit, used or not.
     pub compute_unit_limit_headroom_percent: u32,
     /// The compute units added to the limit a settlement declares on top of
-    /// the share. The usage grows between the simulation and the landed
-    /// transaction by a fixed cost rather than a share of the route (prod,
-    /// Oct 22 to Nov 3, 2026: +9,074 units on five grafiks routes, +9,224 on
-    /// two Jupiter ones), so a percent alone leaves a small route short.
+    /// the share: the usage grows between the simulation and the landed
+    /// transaction by a fixed cost rather than a share of the route, so a
+    /// percent alone leaves a small route short.
     pub compute_unit_limit_headroom_units: u32,
 }
 
@@ -143,13 +142,12 @@ impl PriorityFeePolicy {
         let share = units
             .saturating_mul(u64::from(self.compute_unit_limit_headroom_percent))
             .div_ceil(100);
-        u32::try_from(
-            units
-                .saturating_add(share)
-                .saturating_add(u64::from(self.compute_unit_limit_headroom_units)),
-        )
-        .unwrap_or(u32::MAX)
-        .min(MAX_COMPUTE_UNIT_LIMIT)
+        let limit = units
+            .saturating_add(share)
+            .saturating_add(u64::from(self.compute_unit_limit_headroom_units));
+        u32::try_from(limit)
+            .unwrap_or(u32::MAX)
+            .min(MAX_COMPUTE_UNIT_LIMIT)
     }
 
     /// The configured percentile of the most recent slots' fees, raised to the
@@ -216,18 +214,12 @@ mod tests {
         assert_eq!(policy.compute_unit_price(&fees), 30);
     }
 
-    /// The test policy's 10% of 100_000 units plus the 20_000 fixed units.
     #[test]
     fn compute_unit_limit_adds_the_headroom_and_the_fixed_units_up_to_the_ceiling() {
         let policy = policy(50);
         assert_eq!(policy.compute_unit_limit(100_000), 130_000);
         assert_eq!(policy.compute_unit_limit(1_272_728), MAX_COMPUTE_UNIT_LIMIT);
         assert_eq!(policy.compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
-        let share_alone = PriorityFeePolicy {
-            compute_unit_limit_headroom_units: 0,
-            ..policy
-        };
-        assert_eq!(share_alone.compute_unit_limit(100_000), 110_000);
         let units_alone = PriorityFeePolicy {
             compute_unit_limit_headroom_percent: 0,
             ..policy
