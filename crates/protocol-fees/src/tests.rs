@@ -391,6 +391,35 @@ fn a_maximum_sell_whose_fee_overflows_drops_to_zero() {
 }
 
 #[test]
+fn a_factor_of_one_leaves_no_reachable_limit() {
+    let volume = [FeePolicy::<Solana>::Volume { factor: 1.0 }];
+    assert_eq!(tighten_limit(&volume, Side::Sell, 1_000), u64::MAX);
+    assert_eq!(tighten_limit(&volume, Side::Buy, 1_000), 0);
+    let volume = [FeePolicy::<Evm>::Volume { factor: 1.0 }];
+    let limit = U256::from(1_000u64);
+    assert_eq!(tighten_limit(&volume, Side::Sell, limit), U256::MAX);
+    assert_eq!(tighten_limit(&volume, Side::Buy, limit), U256::ZERO);
+}
+
+/// A factor just under 1 needs millions of rounds to reach the boundary, so
+/// the limit gives up and no fill can meet it.
+#[test]
+fn a_factor_just_under_one_gives_up() {
+    let volume = [FeePolicy::<Evm>::Volume { factor: 0.999_999 }];
+    let limit = U256::from(10u64).pow(U256::from(18));
+    assert_eq!(tighten_limit(&volume, Side::Sell, limit), U256::MAX);
+    assert_eq!(tighten_limit(&volume, Side::Buy, limit), U256::ZERO);
+}
+
+#[test]
+fn a_factor_of_0_8_reaches_the_boundary_of_a_huge_limit() {
+    let volume = [FeePolicy::<Evm>::Volume { factor: 0.8 }];
+    let limit = U256::from(10u64).pow(U256::from(55));
+    assert!(tighten_limit(&volume, Side::Sell, limit) < U256::MAX);
+    assert!(tighten_limit(&volume, Side::Buy, limit) > U256::ZERO);
+}
+
+#[test]
 fn a_maximum_sell_at_u64_max_fits_with_its_fee() {
     let max_sell = tighten_limit(
         &[FeePolicy::<Solana>::Volume { factor: 0.5 }],

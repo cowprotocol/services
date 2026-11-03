@@ -299,9 +299,10 @@ pub fn apply_protocol_fees<C: ChainTypes>(
 /// volume fees among `policies` are taken: a sell order's minimum buy rises,
 /// a buy order's maximum sell falls. The fill meets the policies in list
 /// order, so the last one tightens first. A surplus or price improvement fee
-/// takes a share of the surplus and cannot cross the limit. A minimum buy
-/// whose fee overflows saturates and a maximum sell whose fee overflows drops
-/// to zero: no fill can meet either.
+/// takes a share of the surplus and cannot cross the limit. When a volume
+/// fee has no reachable boundary (its fee overflows, its factor lies outside
+/// `[0, 1)` or the search runs out of rounds), a minimum buy saturates and a
+/// maximum sell drops to zero: no fill can meet either.
 pub fn tighten_limit<C: ChainTypes>(
     policies: &[FeePolicy<C>],
     side: Side,
@@ -322,19 +323,27 @@ pub fn tighten_limit<C: ChainTypes>(
         })
 }
 
+/// Rounds [`volume_limit`] takes before it gives up.
+const MAX_ROUNDS: usize = 1_024;
+
 /// The boundary leg under one volume `factor`, iterated on the fee itself so
 /// it matches [`fee_before_settlement`] to the atom. Sell: the least leg whose
 /// remainder after the fee reaches `limit`. Buy: a leg that stays within
 /// `limit` with the fee on top, the greatest one for factors up to 0.5. Each
-/// round multiplies the distance to the boundary by `factor`.
+/// round multiplies the distance to the boundary by `factor`, so a factor up
+/// to 0.8 gets there within [`MAX_ROUNDS`]. A factor outside `[0, 1)` has no
+/// boundary.
 fn volume_limit<A: Amount>(side: Side, factor: f64, limit: A) -> MathResult<A> {
+    if !(0.0..1.0).contains(&factor) {
+        return Err(MathError::Overflow);
+    }
     let fee = |leg: A| leg.try_mul_f64(factor);
     match side {
         Side::Sell => {
             // `limit + fee(leg)` climbs from `limit` and stops at the least
             // leg with `leg - fee(leg) >= limit`.
             let mut leg = limit;
-            loop {
+            for _ in 0..MAX_ROUNDS {
                 let next = limit.try_add(fee(leg)?)?;
                 if next == leg {
                     return Ok(leg);
@@ -346,7 +355,7 @@ fn volume_limit<A: Amount>(side: Side, factor: f64, limit: A) -> MathResult<A> {
             // `leg` fits because the fee only grows with the leg, and no
             // greater leg fits past `next`, so the boundary is in `leg..=next`.
             let mut bound = limit;
-            loop {
+            for _ in 0..MAX_ROUNDS {
                 let leg = limit.try_sub(fee(bound)?)?;
                 let next = limit.try_sub(fee(leg)?)?;
                 if next == bound {
@@ -356,6 +365,7 @@ fn volume_limit<A: Amount>(side: Side, factor: f64, limit: A) -> MathResult<A> {
             }
         }
     }
+    Err(MathError::Overflow)
 }
 
 /// Calculate surplus over limit price using custom clearing prices.
