@@ -2,6 +2,7 @@ use {
     crate::{nodes::NODE_WS_HOST, setup::*},
     ::alloy::primitives::Address,
     reqwest::Url,
+    serde::Serialize,
     std::collections::HashSet,
     tokio::task::JoinHandle,
 };
@@ -102,30 +103,131 @@ pub enum LiquidityProvider {
 }
 
 impl LiquidityProvider {
-    pub fn to_string(&self, contracts: &Contracts) -> String {
+    /// The provider-specific entries under `[liquidity]`. Exactly one side is
+    /// populated; the other serializes to nothing.
+    fn liquidity_sources(
+        &self,
+        contracts: &Contracts,
+    ) -> (Vec<UniswapV2Liquidity>, Option<ZeroExLiquidity>) {
         match self {
-            Self::UniswapV2 => format!(
-                r#"
-[[liquidity.uniswap-v2]]
-router = "{:?}"
-pool-code = "{:?}"
-missing-pool-cache-time = "0s"
-"#,
-                contracts.uniswap_v2_router.address(),
-                contracts.default_pool_code()
+            Self::UniswapV2 => (
+                vec![UniswapV2Liquidity {
+                    router: format!("{:?}", contracts.uniswap_v2_router.address()),
+                    pool_code: format!("{:?}", contracts.default_pool_code()),
+                    missing_pool_cache_time: "0s".to_string(),
+                }],
+                None,
             ),
-            Self::ZeroEx { api_port } => format!(
-                r#"
-[liquidity.zeroex]
-base-url = {:?}
-api-key = {:?}
-http-timeout = "10s"
-"#,
-                format!("http://0.0.0.0:{}", api_port),
-                "no-api-key".to_string()
+            Self::ZeroEx { api_port } => (
+                vec![],
+                Some(ZeroExLiquidity {
+                    base_url: format!("http://0.0.0.0:{api_port}"),
+                    api_key: "no-api-key".to_string(),
+                    http_timeout: "10s".to_string(),
+                }),
             ),
         }
     }
+}
+
+/// Typed view of the driver config file. Scalar fields are declared before
+/// table fields so the serialized TOML stays valid.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct DriverConfig {
+    app_data_fetching_enabled: bool,
+    orderbook_url: String,
+    flashloans_enabled: bool,
+    tx_gas_limit: String,
+    gas_estimator: GasEstimator,
+    contracts: ContractsConfig,
+    #[serde(rename = "solver")]
+    solvers: Vec<SolverConfig>,
+    liquidity: LiquidityConfig,
+    submission: SubmissionConfig,
+    balance_cache: BalanceCache,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct GasEstimator {
+    estimator: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct ContractsConfig {
+    gp_v2_settlement: String,
+    weth: String,
+    balances: String,
+    signatures: String,
+    deadline_check: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flashloan_router: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct SolverConfig {
+    name: String,
+    endpoint: String,
+    relative_slippage: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    absolute_slippage: Option<String>,
+    account: String,
+    merge_solutions: bool,
+    fast_path_enabled: bool,
+    enable_metrics_bad_order_detection: bool,
+    http_time_buffer: String,
+    solving_share_of_deadline: f64,
+    solver_fee_bps: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    submission_accounts: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct LiquidityConfig {
+    base_tokens: Vec<String>,
+    #[serde(rename = "uniswap-v2", skip_serializing_if = "Vec::is_empty")]
+    uniswap_v2: Vec<UniswapV2Liquidity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zeroex: Option<ZeroExLiquidity>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct UniswapV2Liquidity {
+    router: String,
+    pool_code: String,
+    missing_pool_cache_time: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct ZeroExLiquidity {
+    base_url: String,
+    api_key: String,
+    http_timeout: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct SubmissionConfig {
+    gas_price_cap: String,
+    mempool: Vec<Mempool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct Mempool {
+    url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct BalanceCache {
+    refresh_cooldown: String,
 }
 
 pub fn start_driver(
@@ -136,112 +238,79 @@ pub fn start_driver(
     start_driver_with_config_override(contracts, solvers, liquidity, None)
 }
 
-// TODO: build the driver config by serializing a typed struct to TOML instead
-// of templating these strings by hand.
 pub fn start_driver_with_config_override(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
     config_override: Option<&str>,
 ) -> JoinHandle<()> {
-    let base_tokens: HashSet<_> = solvers
+    let base_tokens: Vec<String> = solvers
         .iter()
         .flat_map(|solver| solver.base_tokens.iter())
         .cloned()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|token| format!("{token:x}"))
         .collect();
-    let solvers = solvers
+    let solver_configs = solvers
         .iter()
-        .map(|solver| {
-            let SolverEngine {
-                name,
-                account,
-                endpoint,
-                merge_solutions,
-                solver_fee_bps,
-                ..
-            } = solver;
-            let account = account.signer.to_bytes();
-            let absolute_slippage_line = solver
-                .absolute_slippage
-                .map(|wei| format!("absolute-slippage = \"{wei}\"\n"))
-                .unwrap_or_default();
-            let submission_accounts_line = if solver.submission_keys.is_empty() {
-                String::new()
-            } else {
-                let keys: Vec<String> = solver
-                    .submission_keys
-                    .iter()
-                    .map(|k| format!("\"{}\"", k.signer.to_bytes()))
-                    .collect();
-                format!("submission-accounts = [{}]\n", keys.join(", "))
-            };
-            format!(
-                r#"
-[[solver]]
-name = "{name}"
-endpoint = "{endpoint}"
-relative-slippage = "0.1"
-{absolute_slippage_line}account = "{account}"
-merge-solutions = {merge_solutions}
-fast-path-enabled = true
-enable-metrics-bad-order-detection = true
-http-time-buffer = "100ms"
-solving-share-of-deadline = 1.0
-solver-fee-bps = {solver_fee_bps}
-{submission_accounts_line}"#
-            )
+        .map(|solver| SolverConfig {
+            name: solver.name.clone(),
+            endpoint: solver.endpoint.to_string(),
+            relative_slippage: "0.1".to_string(),
+            absolute_slippage: solver.absolute_slippage.map(|wei| wei.to_string()),
+            account: solver.account.signer.to_bytes().to_string(),
+            merge_solutions: solver.merge_solutions,
+            fast_path_enabled: true,
+            enable_metrics_bad_order_detection: true,
+            http_time_buffer: "100ms".to_string(),
+            solving_share_of_deadline: 1.0,
+            solver_fee_bps: solver.solver_fee_bps,
+            submission_accounts: solver
+                .submission_keys
+                .iter()
+                .map(|key| key.signer.to_bytes().to_string())
+                .collect(),
         })
-        .collect::<Vec<String>>()
-        .join("\n");
-    let liquidity = liquidity.to_string(contracts);
+        .collect();
+    let (uniswap_v2, zeroex) = liquidity.liquidity_sources(contracts);
 
-    let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
-    let flashloan_router_config = contracts
-        .flashloan_router
-        .as_ref()
-        .map(|contract| format!("flashloan-router = \"{:?}\"", contract.address()))
-        .unwrap_or_default();
-
-    let base_config = format!(
-        r#"
-app-data-fetching-enabled = true
-orderbook-url = "http://localhost:8080"
-flashloans-enabled = true
-tx-gas-limit = "45000000"
-
-[gas-estimator]
-estimator = "web3"
-
-[contracts]
-gp-v2-settlement = "{:?}"
-weth = "{:?}"
-balances = "{:?}"
-signatures = "{:?}"
-deadline-check = "{:?}"
-{flashloan_router_config}
-
-{solvers}
-
-[liquidity]
-base-tokens = [{encoded_base_tokens}]
-
-{liquidity}
-
-[submission]
-gas-price-cap = "1000000000000"
-
-[[submission.mempool]]
-url = "{NODE_HOST}"
-
-[balance-cache]
-refresh-cooldown = "0s"
-"#,
-        contracts.gp_settlement.address(),
-        contracts.weth.address(),
-        contracts.balances.address(),
-        contracts.signatures.address(),
-        contracts.deadline_check.address(),
-    );
+    let config = DriverConfig {
+        app_data_fetching_enabled: true,
+        orderbook_url: "http://localhost:8080".to_string(),
+        flashloans_enabled: true,
+        tx_gas_limit: "45000000".to_string(),
+        gas_estimator: GasEstimator {
+            estimator: "web3".to_string(),
+        },
+        contracts: ContractsConfig {
+            gp_v2_settlement: format!("{:?}", contracts.gp_settlement.address()),
+            weth: format!("{:?}", contracts.weth.address()),
+            balances: format!("{:?}", contracts.balances.address()),
+            signatures: format!("{:?}", contracts.signatures.address()),
+            deadline_check: format!("{:?}", contracts.deadline_check.address()),
+            flashloan_router: contracts
+                .flashloan_router
+                .as_ref()
+                .map(|contract| format!("{:?}", contract.address())),
+        },
+        solvers: solver_configs,
+        liquidity: LiquidityConfig {
+            base_tokens,
+            uniswap_v2,
+            zeroex,
+        },
+        submission: SubmissionConfig {
+            gas_price_cap: "1000000000000".to_string(),
+            mempool: vec![Mempool {
+                url: NODE_HOST.to_string(),
+            }],
+        },
+        balance_cache: BalanceCache {
+            refresh_cooldown: "0s".to_string(),
+        },
+    };
+    let base_config = toml::to_string_pretty(&config).expect("failed to serialize driver config");
 
     let final_config = if let Some(override_str) = config_override {
         utils::toml::merge_raw(&base_config, override_str).expect("Failed to merge driver config")
@@ -269,4 +338,87 @@ fn encode_base_tokens(tokens: impl IntoIterator<Item = Address>) -> String {
         .map(|token| format!(r#""{token:x}""#))
         .collect::<Vec<_>>()
         .join(",")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Guards the hand-written `Serialize` layout: field order must keep the
+    // TOML valid (scalars before tables) and the renames must produce the
+    // sections the driver parses.
+    #[test]
+    fn driver_config_serializes_to_expected_toml() {
+        let config = DriverConfig {
+            app_data_fetching_enabled: true,
+            orderbook_url: "http://localhost:8080".to_string(),
+            flashloans_enabled: true,
+            tx_gas_limit: "45000000".to_string(),
+            gas_estimator: GasEstimator {
+                estimator: "web3".to_string(),
+            },
+            contracts: ContractsConfig {
+                gp_v2_settlement: "0x01".to_string(),
+                weth: "0x02".to_string(),
+                balances: "0x03".to_string(),
+                signatures: "0x04".to_string(),
+                deadline_check: "0x05".to_string(),
+                flashloan_router: Some("0x06".to_string()),
+            },
+            solvers: vec![SolverConfig {
+                name: "test_solver".to_string(),
+                endpoint: "http://localhost:1/".to_string(),
+                relative_slippage: "0.1".to_string(),
+                absolute_slippage: Some("10000".to_string()),
+                account: "0xabc".to_string(),
+                merge_solutions: true,
+                fast_path_enabled: true,
+                enable_metrics_bad_order_detection: true,
+                http_time_buffer: "100ms".to_string(),
+                solving_share_of_deadline: 1.0,
+                solver_fee_bps: 0,
+                submission_accounts: vec!["0xdef".to_string()],
+            }],
+            liquidity: LiquidityConfig {
+                base_tokens: vec!["0x07".to_string()],
+                uniswap_v2: vec![UniswapV2Liquidity {
+                    router: "0x08".to_string(),
+                    pool_code: "0x09".to_string(),
+                    missing_pool_cache_time: "0s".to_string(),
+                }],
+                zeroex: None,
+            },
+            submission: SubmissionConfig {
+                gas_price_cap: "1000000000000".to_string(),
+                mempool: vec![Mempool {
+                    url: "http://localhost:2".to_string(),
+                }],
+            },
+            balance_cache: BalanceCache {
+                refresh_cooldown: "0s".to_string(),
+            },
+        };
+
+        let toml = toml::to_string_pretty(&config).unwrap();
+
+        // Reparses as valid TOML (catches field-order / ValueAfterTable
+        // breakage).
+        toml::from_str::<toml::Table>(&toml).unwrap();
+
+        for expected in [
+            "app-data-fetching-enabled = true",
+            "[gas-estimator]",
+            "[contracts]",
+            "flashloan-router = \"0x06\"",
+            "[[solver]]",
+            "absolute-slippage = \"10000\"",
+            "fast-path-enabled = true",
+            "submission-accounts = [\"0xdef\"]",
+            "[[liquidity.uniswap-v2]]",
+            "[[submission.mempool]]",
+            "[balance-cache]",
+        ] {
+            assert!(toml.contains(expected), "missing `{expected}` in:\n{toml}");
+        }
+    }
 }
