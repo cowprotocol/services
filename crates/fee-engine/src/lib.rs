@@ -20,7 +20,7 @@ pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
-    order_view::{AppData, OrderView},
+    order_view::{AppData, Flashloan, OrderView},
     rules::{
         CompileError,
         Field,

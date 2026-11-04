@@ -2,8 +2,8 @@
 
 use {
     super::{hex, number},
-    ::app_data::{Flashloan, OrderUid},
-    alloy_primitives::Address,
+    alloy_primitives::{Address, U256},
+    model::order::OrderUid,
     serde_json::{Value, json},
 };
 
@@ -15,6 +15,15 @@ pub struct AppData {
     pub signer: Option<Address>,
     pub replaced_order: Option<OrderUid>,
     pub flashloan: Option<Flashloan>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Flashloan {
+    pub liquidity_provider: Address,
+    pub protocol_adapter: Address,
+    pub receiver: Address,
+    pub token: Address,
+    pub amount: U256,
 }
 
 /// The app data under the app-data schema's names, typed like the rest of
@@ -59,7 +68,7 @@ mod tests {
                 protocol_adapter: aa,
                 receiver: aa,
                 token: aa,
-                amount: 6136714.try_into().unwrap(),
+                amount: U256::from(6136714),
             }),
         };
         let aa = "0x00000000000000000000000000000000000000aa";

@@ -4,6 +4,7 @@ use {
     crate::{
         AppData,
         Evaluator,
+        Flashloan,
         OrderView,
         evaluator::{RuleError, Skipped},
         fee,
@@ -342,7 +343,7 @@ pub(crate) fn sample_app_data() -> AppData {
         app_code: Some("sample".to_owned()),
         signer: Some(Address::ZERO),
         replaced_order: Some(Default::default()),
-        flashloan: Some(::app_data::Flashloan {
+        flashloan: Some(Flashloan {
             liquidity_provider: Address::ZERO,
             protocol_adapter: Address::ZERO,
             receiver: Address::ZERO,

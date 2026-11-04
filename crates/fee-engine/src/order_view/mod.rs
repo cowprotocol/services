@@ -2,7 +2,7 @@
 
 mod app_data;
 
-pub use app_data::AppData;
+pub use app_data::{AppData, Flashloan};
 use {
     self::app_data::app_data_view,
     serde_json::{Value, json},
