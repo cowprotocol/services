@@ -5,6 +5,7 @@ use {
         domain::arbitrator::SolanaArbitrator,
         infra::{
             api,
+            cleanup,
             competition::DriverCompetition,
             config::{self, Config},
             db,
@@ -95,6 +96,7 @@ async fn run(config: Config) {
         .await
         .expect("database connection");
     db::spawn_table_rows_metric(pool.clone());
+    cleanup::spawn(pool.clone(), config.db_cleanup);
 
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
         &config.rpc.endpoint,
