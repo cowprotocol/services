@@ -5,9 +5,9 @@
 //! the engine reports each rule whose `when` is true, in rule order, with its
 //! fee; the caller picks which to act on.
 //!
-//! A rule sees `order` (the API order with decimal strings as doubles and
-//! hex in lowercase), `now` and every list. `README.md` documents every name a
-//! rule can use, with an example each, and the TOML file
+//! A rule sees `order` (the fee-relevant fields of the API order, amounts as
+//! doubles and hex in lowercase), `now` and every list. `README.md` documents
+//! every name a rule can use, with an example each, and the TOML file
 //! [`load_rules_from_str`] reads.
 
 mod evaluator;
@@ -20,6 +20,7 @@ pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::Fee,
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
+    order_view::OrderView,
     rules::{
         CompileError,
         Field,
@@ -27,6 +28,7 @@ pub use {
         RuleDefinition,
         RuleSet,
         RuleSetDefinition,
+        Sample,
         SampleOrderError,
     },
 };
