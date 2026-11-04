@@ -89,7 +89,10 @@ fn reports_the_matching_rules_per_order() {
     let user = address!("0x2222222222222222222222222222222222222222");
 
     let before_launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
-    let (rule, fees) = matched(before_launch.evaluate(&order(user, USDC, USDT)));
+    let (rule, fees) = matched(before_launch.evaluate(fee_engine::OrderView {
+        order: &order(user, USDC, USDT),
+        in_market: false,
+    }));
     assert_eq!(
         rule,
         ["Stablecoin launch month", "Stablecoin swaps", "Default"]
@@ -102,7 +105,10 @@ fn reports_the_matching_rules_per_order() {
     );
 
     let after_launch = rules.evaluator(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
-    let (rule, fees) = matched(after_launch.evaluate(&order(user, USDC, USDT)));
+    let (rule, fees) = matched(after_launch.evaluate(fee_engine::OrderView {
+        order: &order(user, USDC, USDT),
+        in_market: false,
+    }));
     assert_eq!(rule, ["Stablecoin swaps", "Default"]);
     assert_eq!(
         fees,
@@ -111,7 +117,10 @@ fn reports_the_matching_rules_per_order() {
         }]
     );
 
-    let (rule, fees) = matched(after_launch.evaluate(&order(user, WETH, USDT)));
+    let (rule, fees) = matched(after_launch.evaluate(fee_engine::OrderView {
+        order: &order(user, WETH, USDT),
+        in_market: false,
+    }));
     assert_eq!(rule, ["Default"]);
     assert_eq!(
         fees,
@@ -121,7 +130,10 @@ fn reports_the_matching_rules_per_order() {
         }]
     );
 
-    let (rule, fees) = matched(after_launch.evaluate(&order(MAKER, USDC, USDT)));
+    let (rule, fees) = matched(after_launch.evaluate(fee_engine::OrderView {
+        order: &order(MAKER, USDC, USDT),
+        in_market: false,
+    }));
     assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
     assert_eq!(fees, vec![]);
 }
@@ -134,5 +146,13 @@ fn no_matching_rule_means_no_fee() {
     })
     .unwrap();
     let evaluator = rules.evaluator(Utc::now());
-    assert!(evaluator.evaluate(&Order::default()).matched.is_empty());
+    assert!(
+        evaluator
+            .evaluate(fee_engine::OrderView {
+                order: &Order::default(),
+                in_market: false
+            })
+            .matched
+            .is_empty()
+    );
 }
