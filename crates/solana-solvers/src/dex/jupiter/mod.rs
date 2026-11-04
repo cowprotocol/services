@@ -8,15 +8,17 @@ mod dto;
 use {
     super::{Error, Order, Quote, Side, Swap},
     crate::config::JupiterConfig,
+    serde::Deserialize,
     solana_sdk::pubkey::Pubkey,
 };
 
 const QUOTE_PATH: &str = "swap/v1/quote";
 const SWAP_INSTRUCTIONS_PATH: &str = "swap/v1/swap-instructions";
 
-/// Jupiter's quote direction, rendered as the `swapMode` query value.
-#[derive(Clone, Copy)]
-enum SwapMode {
+/// Jupiter's quote direction: the `swapMode` query value, echoed back in the
+/// response.
+#[derive(Clone, Copy, Deserialize)]
+pub enum SwapMode {
     ExactIn,
     ExactOut,
 }
@@ -58,12 +60,7 @@ impl Jupiter {
             Side::Buy => return Err(Error::OrderNotSupported),
         };
         let raw = self.fetch_quote(order, swap_mode).await?;
-        Ok(Quote {
-            in_amount: amount_field(&raw, "inAmount")?,
-            out_amount: amount_field(&raw, "outAmount")?,
-            destination: order.buy_destination,
-            raw,
-        })
+        parse_quote(raw, order.buy_destination)
     }
 
     /// Build the swap for `quote` that the settlement signer `taker`
@@ -93,7 +90,10 @@ impl Jupiter {
             .append_pair("swapMode", swap_mode.as_str())
             // Jupiter bakes the resulting bounds into the returned instruction
             // data; nothing downstream re-applies slippage.
-            .append_pair("slippageBps", &self.slippage_bps.to_string());
+            .append_pair("slippageBps", &self.slippage_bps.to_string())
+            // The swap pays into the settlement's buffer, which the taker does
+            // not own, and GoonFi V2 fails that with `InvalidAccountOwner`.
+            .append_pair("excludeDexes", "GoonFi V2");
         self.send(self.with_key(self.client.get(url))).await
     }
 
@@ -139,9 +139,11 @@ impl Jupiter {
         }
         match status {
             reqwest::StatusCode::TOO_MANY_REQUESTS => Err(Error::RateLimited),
-            // Jupiter returns 400 with an error body when it can't route the order.
+            // Jupiter returns 400 with an error body when it can't route the
+            // order.
             reqwest::StatusCode::BAD_REQUEST => Err(Error::NotFound),
-            // Auth or server errors: carry the status and body so the cause shows.
+            // Auth or server errors: carry the status and body so the cause
+            // shows.
             _ => Err(Error::Api {
                 status: status.as_u16(),
                 body,
@@ -150,12 +152,36 @@ impl Jupiter {
     }
 }
 
-fn amount_field(quote: &serde_json::Value, field: &str) -> Result<u64, Error> {
-    quote
-        .get(field)
-        .and_then(serde_json::Value::as_str)
-        .and_then(|amount| amount.parse().ok())
-        .ok_or_else(|| Error::BadResponse(format!("missing or non-numeric {field}")))
+/// Jupiter's `inAmount` and `outAmount` are what it expects the route to
+/// move; its swap instruction enforces only `otherAmountThreshold`, that
+/// expectation moved by `slippageBps`. The settlement program pays the
+/// promised amount out of what the swap delivered, so a promise above the
+/// enforced bound reverts the payout whenever the pool moves between the
+/// quote and the landing.
+///
+/// The program recomputes that bound on chain from the quoted amount and
+/// `slippageBps`; its rounding is not published and may differ from the API's
+/// by one atom. Stepping the promise one atom past the threshold on each side
+/// keeps it within the bound under either rounding.
+fn parse_quote(raw: serde_json::Value, destination: Pubkey) -> Result<Quote, Error> {
+    let amounts = dto::QuoteAmounts::deserialize(&raw)
+        .map_err(|err| Error::BadResponse(format!("quote: {err}")))?;
+    let (in_amount, out_amount) = match amounts.swap_mode {
+        SwapMode::ExactIn => (
+            amounts.in_amount,
+            amounts.other_amount_threshold.saturating_sub(1),
+        ),
+        SwapMode::ExactOut => (
+            amounts.other_amount_threshold.saturating_add(1),
+            amounts.out_amount,
+        ),
+    };
+    Ok(Quote {
+        in_amount,
+        out_amount,
+        destination,
+        raw,
+    })
 }
 
 #[cfg(test)]
@@ -196,6 +222,33 @@ mod tests {
         let jupiter = Jupiter::new(&config(false)).unwrap();
         let result = jupiter.quote(&order(Side::Buy)).await;
         assert!(matches!(result, Err(Error::OrderNotSupported)));
+    }
+
+    #[test]
+    fn sell_quote_commits_to_the_output_threshold() {
+        let raw = serde_json::json!({
+            "inAmount": "5000000",
+            "outAmount": "483111998",
+            "otherAmountThreshold": "480696439",
+            "swapMode": "ExactIn",
+        });
+        let quote = parse_quote(raw, Pubkey::from_str(WSOL).unwrap()).unwrap();
+        assert_eq!(
+            (quote.in_amount, quote.out_amount),
+            (5_000_000, 480_696_438)
+        );
+    }
+
+    #[test]
+    fn buy_quote_commits_to_the_input_threshold() {
+        let raw = serde_json::json!({
+            "inAmount": "1000",
+            "outAmount": "1000000",
+            "otherAmountThreshold": "1005",
+            "swapMode": "ExactOut",
+        });
+        let quote = parse_quote(raw, Pubkey::from_str(WSOL).unwrap()).unwrap();
+        assert_eq!((quote.in_amount, quote.out_amount), (1_006, 1_000_000));
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`

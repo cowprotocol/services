@@ -66,8 +66,7 @@ pub fn from_domain(order: &domain::Order) -> Order {
         protocol_fees: order
             .protocol_fees
             .iter()
-            .copied()
-            .map(FeePolicy::from_domain)
+            .map(|fee| FeePolicy::from_domain(fee.policy))
             .collect(),
         created: order.created,
         valid_to: order.valid_to,
@@ -112,7 +111,12 @@ pub fn to_domain(order: Order) -> domain::Order {
         protocol_fees: order
             .protocol_fees
             .into_iter()
-            .map(FeePolicy::into_domain)
+            .map(|fee| domain::fee::PolicyWithOrigin {
+                policy: fee.into_domain(),
+                // The wire format doesn't distinguish protocol from partner
+                // fees, so the origin can't be recovered here.
+                origin: domain::fee::Origin::Protocol,
+            })
             .collect(),
         created: order.created,
         valid_to: order.valid_to,

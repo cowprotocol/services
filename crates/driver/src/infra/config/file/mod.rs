@@ -7,7 +7,7 @@ use {
     eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
-    serde::{Deserialize, Deserializer, Serialize},
+    serde::{Deserialize, Deserializer},
     serde_with::serde_as,
     solver::solver::Arn,
     std::{collections::HashMap, num::NonZeroUsize, str::FromStr, time::Duration},
@@ -354,10 +354,6 @@ struct SolverConfig {
     #[serde(default)]
     request_headers: HashMap<String, String>,
 
-    /// Determines whether the `solver` or the `driver` handles the fees
-    #[serde(default)]
-    fee_handler: FeeHandler,
-
     /// Whether this solver supports fast-path (out-of-competition) execution.
     #[serde(default)]
     fast_path_enabled: bool,
@@ -424,14 +420,6 @@ struct SolverConfig {
     /// sustained anymore.
     #[serde(default = "default_post_processing_concurrency_limit")]
     post_processing_concurrency_limit: NonZeroUsize,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum FeeHandler {
-    #[default]
-    Driver,
-    Solver,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

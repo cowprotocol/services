@@ -23,7 +23,6 @@ use {
 const SIGNED_PATH: &str = "/bgw-pro/swapx/pro/";
 const SWAP_PATH: &str = "swap";
 const COSIGN_PATH: &str = "signBgwSolTx";
-const PARTNER_CODE: &str = "cowswap";
 
 /// Adapter over Bitget's swap API.
 pub struct Bitget {
@@ -31,6 +30,7 @@ pub struct Bitget {
     endpoint: reqwest::Url,
     api_key: String,
     api_secret: String,
+    partner_code: String,
     slippage_bps: u16,
     max_accounts: u16,
     fee: Fee,
@@ -43,6 +43,7 @@ impl Bitget {
             endpoint: config.endpoint.clone(),
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
+            partner_code: config.partner_code.clone(),
             slippage_bps: config.slippage_bps,
             max_accounts: config.max_accounts,
             fee: config.fee,
@@ -93,7 +94,7 @@ impl Bitget {
             .client
             .post(url)
             .header("content-type", "application/json")
-            .header("Partner-Code", PARTNER_CODE)
+            .header("Partner-Code", &self.partner_code)
             .header("x-api-key", &self.api_key)
             .header("x-api-timestamp", &timestamp)
             .header("x-api-signature", signature)
@@ -113,7 +114,7 @@ impl Bitget {
         }
         serde_json::from_str::<dto::Envelope>(&body)
             .map_err(|err| Error::BadResponse(format!("response body: {err}")))?
-            .into_data(status.as_u16())
+            .into_data()
     }
 
     /// Base64 HMAC-SHA256, keyed by the secret, over the signed fields as JSON
@@ -152,6 +153,7 @@ mod tests {
                 .unwrap(),
             api_key: std::env::var("BITGET_API_KEY").unwrap(),
             api_secret: std::env::var("BITGET_API_SECRET").unwrap(),
+            partner_code: "cowswap".into(),
             slippage_bps: 20,
             max_accounts: 48,
             fee: Fee::Standard,

@@ -79,7 +79,8 @@ impl AccountsSnapshot {
     /// frozen) is `Unexpected`: an idempotent create cannot replace it.
     pub fn token_account_state(&self, address: &Pubkey) -> TokenAccountState {
         match self.accounts.get(address) {
-            // The account does not exist on chain: the idempotent create makes it.
+            // The account does not exist on chain: the idempotent create makes
+            // it.
             None => TokenAccountState::NeedsCreation,
             // An initialized, unfrozen token account. Anything else a token
             // program owns is `Unexpected`.

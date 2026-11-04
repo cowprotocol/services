@@ -853,8 +853,7 @@ pub mod IUniswapV3Factory {
         /// All the selectors of this enum.
         ///
         /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// variants. No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] =
@@ -1014,8 +1013,7 @@ pub mod IUniswapV3Factory {
         /// All the selectors of this enum.
         ///
         /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// variants. No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
@@ -1232,8 +1230,8 @@ pub mod IUniswapV3Factory {
         /// and address.
         ///
         /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
+        /// in this contract. Prefer using the other methods for building
+        /// type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -1268,8 +1266,8 @@ pub mod IUniswapV3Factory {
         /// and address.
         ///
         /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
+        /// contract. Prefer using the other methods for building type-safe
+        /// event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -1319,6 +1317,10 @@ pub const fn deployment_info(chain_id: u64) -> Option<(Address, Option<u64>)> {
         )),
         137u64 => Some((
             ::alloy_primitives::address!("0x1F98431c8aD98523631AE4a59f267346ea31F984"),
+            None,
+        )),
+        4663u64 => Some((
+            ::alloy_primitives::address!("0x1f7d7550b1b028f7571e69a784071f0205fd2efa"),
             None,
         )),
         8453u64 => Some((

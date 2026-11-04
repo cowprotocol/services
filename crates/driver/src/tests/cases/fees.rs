@@ -1,10 +1,9 @@
 use {
     crate::{
         domain::competition::order,
-        infra::config::file::FeeHandler,
         tests::{
             self,
-            setup::{ab_order, ab_pool, ab_solution, test_solver},
+            setup::{ab_order, ab_pool, ab_solution},
         },
     },
     eth_domain_types as eth,
@@ -17,7 +16,6 @@ async fn solver_fee() {
         let order = ab_order().side(side).solver_fee(Some(eth::U256::from(500)));
         let test = tests::setup()
             .name(format!("Solver Fee: {side:?}"))
-            .solvers(vec![test_solver().fee_handler(FeeHandler::Driver)])
             .pool(ab_pool())
             .order(order.clone())
             .solution(ab_solution())

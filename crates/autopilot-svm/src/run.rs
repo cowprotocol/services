@@ -5,6 +5,7 @@ use {
         domain::arbitrator::SolanaArbitrator,
         infra::{
             api,
+            cleanup,
             competition::DriverCompetition,
             config::{self, Config},
             db,
@@ -94,11 +95,14 @@ async fn run(config: Config) {
         .connect(config.database.write_url.as_str())
         .await
         .expect("database connection");
+    db::spawn_table_rows_metric(pool.clone());
+    cleanup::spawn(pool.clone(), config.db_cleanup);
 
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
         &config.rpc.endpoint,
         config.rpc.request_timeout,
         CommitmentConfig::confirmed(),
+        "slot_trigger",
     );
     let trigger = SlotTrigger::new(rpc, config.min_auction_interval);
 
@@ -140,6 +144,7 @@ async fn run(config: Config) {
                     &config.rpc.endpoint,
                     config.rpc.request_timeout,
                     CommitmentConfig::confirmed(),
+                    "sponsoring",
                 ),
                 pool.clone(),
                 sponsoring.max_displaced_creations,
@@ -154,6 +159,7 @@ async fn run(config: Config) {
             &config.rpc.endpoint,
             config.rpc.request_timeout,
             CommitmentConfig::confirmed(),
+            "native_prices",
         ),
         config.contracts.wrapped_native_mint,
     );
@@ -174,6 +180,7 @@ async fn run(config: Config) {
                 &config.rpc.endpoint,
                 config.rpc.request_timeout,
                 CommitmentConfig::confirmed(),
+                "auction_provider",
             ),
             config.max_indexer_lag_slots,
             prices,

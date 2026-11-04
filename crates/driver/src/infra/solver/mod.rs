@@ -14,7 +14,6 @@ use {
         },
         infra::{
             blockchain::Ethereum,
-            config::file::FeeHandler,
             persistence::{Persistence, S3},
         },
         util,
@@ -129,7 +128,8 @@ impl TxSigner<Signature> for Account {
         match self {
             Account::PrivateKey(local_signer) => local_signer.sign_transaction(tx).await,
             Account::Kms(aws_signer) => aws_signer.sign_transaction(tx).await,
-            // The address actually can't sign anything but for TxSigner only the Tx matters
+            // The address actually can't sign anything but for TxSigner only
+            // the Tx matters
             Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
@@ -199,8 +199,6 @@ pub struct Config {
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
     pub request_headers: HashMap<String, String>,
-    /// Determines whether the `solver` or the `driver` handles the fees
-    pub fee_handler: FeeHandler,
     /// Whether this solver supports fast-path (out-of-competition) execution.
     pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
@@ -342,8 +340,8 @@ impl Solver {
         Timeouts {
             // quote requests are tiny so the network buffer can be small
             http_delay: chrono::Duration::milliseconds(25),
-            // the driver doesn't do any post-processing for quote responses so we can use
-            // the entire time for computing solutions
+            // the driver doesn't do any post-processing for quote responses so
+            // we can use the entire time for computing solutions
             solving_share_of_deadline: 1.0.try_into().expect("literal is in allowed range"),
         }
     }
@@ -415,7 +413,6 @@ impl Solver {
             auction,
             liquidity,
             weth,
-            self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
             &wrappers,
@@ -643,7 +640,6 @@ mod tests {
                 solving_share_of_deadline: 1.0.try_into().unwrap(),
             },
             request_headers: Default::default(),
-            fee_handler: FeeHandler::Driver,
             fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,

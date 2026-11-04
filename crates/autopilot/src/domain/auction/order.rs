@@ -10,7 +10,7 @@ pub struct Order {
     pub uid: OrderUid,
     pub sell: eth::Asset,
     pub buy: eth::Asset,
-    pub protocol_fees: Vec<fee::Policy>,
+    pub protocol_fees: Vec<fee::PolicyWithOrigin>,
     pub side: Side,
     pub created: u32,
     pub valid_to: u32,
@@ -18,8 +18,8 @@ pub struct Order {
     pub owner: eth::Address,
     pub partially_fillable: bool,
     pub executed: TargetAmount,
-    // Partially fillable orders should have their pre-interactions only executed
-    // on the first fill.
+    // Partially fillable orders should have their pre-interactions only
+    // executed on the first fill.
     pub pre_interactions: Vec<Interaction>,
     pub post_interactions: Vec<Interaction>,
     pub sell_token_balance: SellTokenSource,

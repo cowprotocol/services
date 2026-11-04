@@ -1,0 +1,12 @@
+-- `order_owner` is redundant with the btree indexes leading with `owner`
+-- (`user_order_creation_timestamp`, `orders_owner_covering`,
+-- `orders_owner_valid_composite`), which serve all owner lookups.
+-- A hash index stores all duplicates of a key in the same bucket, and every
+-- insert walks the bucket's whole overflow chain to find free space. For
+-- owners with many orders (e.g. the ethflow contract) that chain is hundreds
+-- of pages long, so every such insert into `orders` gets slower the more orders
+-- that owner has.
+-- V016 already dropped this index in favour of the btree. V034 re-added it for
+-- an `owner = $1 OR sender = $1` query, which V041 split into a `UNION` served
+-- by the re-added btree, but this index was never dropped again.
+DROP INDEX CONCURRENTLY IF EXISTS order_owner;

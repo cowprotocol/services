@@ -6,8 +6,14 @@ use {
     base64::Engine,
     futures::{TryFutureExt, future},
     itertools::Itertools,
-    serde::Deserialize,
-    solana_rpc_client::nonblocking::rpc_client::RpcClient,
+    serde::{Deserialize, Deserializer},
+    solana_account_decoder_client_types::UiAccount,
+    solana_rpc_client::{
+        http_sender::HttpSender,
+        nonblocking::rpc_client::RpcClient,
+        rpc_client::RpcClientConfig,
+        rpc_sender::{RpcSender, RpcTransportStats},
+    },
     solana_rpc_client_api::{
         config::{RpcBlockConfig, RpcSendTransactionConfig},
         request::{MAX_MULTIPLE_ACCOUNTS, RpcError},
@@ -21,7 +27,10 @@ use {
         transaction::{TransactionError, VersionedTransaction},
     },
     solana_transaction_status_client_types::TransactionDetails,
-    std::{collections::HashMap, time::Duration},
+    std::{
+        collections::HashMap,
+        time::{Duration, Instant},
+    },
     url::Url,
 };
 pub use {
@@ -58,17 +67,20 @@ impl SolanaRPC {
     pub const SIGNATURES_PAGE: usize = 1000;
 
     /// Creates a client for the given HTTP URL, request timeout and
-    /// commitment level.
+    /// commitment level. `component` labels its requests in metrics.
     pub fn new_with_timeout_and_commitment(
         url: &Url,
         request_timeout: Duration,
         commitment: CommitmentConfig,
+        component: &str,
     ) -> Self {
         Self {
-            inner: RpcClient::new_with_timeout_and_commitment(
-                url.to_string(),
-                request_timeout,
-                commitment,
+            inner: RpcClient::new_sender(
+                InstrumentedSender {
+                    inner: HttpSender::new_with_timeout(url, request_timeout),
+                    component: component.to_owned(),
+                },
+                RpcClientConfig::with_commitment(commitment),
             ),
         }
     }
@@ -104,7 +116,7 @@ impl SolanaRPC {
     /// answering everything else from canned responses, for tests.
     #[cfg(feature = "test-util")]
     pub fn new_mock_recording_sends(
-        mocks: Mocks,
+        mocks: MocksMap,
     ) -> (
         Self,
         std::sync::Arc<std::sync::Mutex<Vec<VersionedTransaction>>>,
@@ -325,11 +337,13 @@ impl SolanaRPC {
     /// the node's latest, so partially signed and stale transactions still
     /// simulate. The value holds one result per executed transaction, in
     /// order, ending at the first failure; the context carries the slot it
-    /// simulated against. A node without the Jito extension answers with an
-    /// error.
+    /// simulated against. `accounts` lists, per transaction, the accounts to
+    /// report before and after it, a missing list reporting none. A node
+    /// without the Jito extension answers with an error.
     pub async fn simulate_bundle(
         &self,
         transactions: &[VersionedTransaction],
+        accounts: &[Vec<Pubkey>],
     ) -> Result<Response<Vec<RpcSimulateBundleTransactionResult>>, Error> {
         let encoded = transactions
             .iter()
@@ -339,8 +353,16 @@ impl SolanaRPC {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|err| ErrorKind::Custom(format!("serialize transaction: {err}")))?;
-        // The account config lists are mandatory: one `null` per transaction.
-        let accounts = vec![serde_json::Value::Null; encoded.len()];
+        // The account config lists are mandatory: one entry per transaction.
+        let accounts: Vec<serde_json::Value> = (0..encoded.len())
+            .map(|index| match accounts.get(index) {
+                Some(addresses) if !addresses.is_empty() => serde_json::json!({
+                    "encoding": "base64",
+                    "addresses": addresses.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                }),
+                _ => serde_json::Value::Null,
+            })
+            .collect();
         let params = serde_json::json!([
             { "encodedTransactions": encoded },
             {
@@ -367,11 +389,29 @@ impl SolanaRPC {
         })
     }
 
+    /// The addresses of `mint`'s largest token accounts, up to 20, largest
+    /// first. Needs a node with the `spl-token-mint` account index.
+    pub async fn token_largest_accounts(&self, mint: &Pubkey) -> Result<Vec<Pubkey>, Error> {
+        let holdings = self.inner.get_token_largest_accounts(mint).await?;
+        Ok(holdings
+            .into_iter()
+            .filter_map(|holding| holding.address.parse().ok())
+            .collect())
+    }
+
     /// Whether the blockhash is still usable for a new transaction at
     /// confirmed commitment.
     pub async fn is_blockhash_valid(&self, blockhash: &Hash) -> Result<bool, Error> {
         self.inner
             .is_blockhash_valid(blockhash, CommitmentConfig::confirmed())
+            .await
+    }
+
+    /// Whether the blockhash is still usable for a new transaction at
+    /// processed commitment, which includes slots the node has not confirmed.
+    pub async fn is_blockhash_valid_at_processed(&self, blockhash: &Hash) -> Result<bool, Error> {
+        self.inner
+            .is_blockhash_valid(blockhash, CommitmentConfig::processed())
             .await
     }
 
@@ -444,6 +484,27 @@ pub struct RpcSimulateBundleTransactionResult {
     /// Compute units the transaction consumed, `None` when the endpoint does
     /// not report them.
     pub units_consumed: Option<u64>,
+    /// The requested accounts as they were before the transaction, in request
+    /// order, a missing account as an empty one. Empty when none were
+    /// requested.
+    #[serde(default, deserialize_with = "deserialize_accounts")]
+    pub pre_execution_accounts: Vec<Account>,
+    /// The requested accounts as the transaction left them, in request order,
+    /// a missing account as an empty one. Empty when none were requested.
+    #[serde(default, deserialize_with = "deserialize_accounts")]
+    pub post_execution_accounts: Vec<Account>,
+}
+
+/// Accounts the node encoded, an undecodable one as empty.
+fn deserialize_accounts<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Account>, D::Error> {
+    let accounts: Option<Vec<UiAccount>> = Deserialize::deserialize(deserializer)?;
+    Ok(accounts
+        .unwrap_or_default()
+        .iter()
+        .map(|account| account.to_account().unwrap_or_default())
+        .collect())
 }
 
 /// One page of an address's transaction history.
@@ -479,6 +540,86 @@ impl From<BlockHeight> for u64 {
     }
 }
 
+/// An HTTP sender that records each request in metrics.
+struct InstrumentedSender {
+    inner: HttpSender,
+    component: String,
+}
+
+#[async_trait::async_trait]
+impl RpcSender for InstrumentedSender {
+    async fn send(
+        &self,
+        request: RpcRequest,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, Error> {
+        let _request = RequestMetrics::start(&self.component, request.as_str());
+        self.inner.send(request, params).await
+    }
+
+    fn get_transport_stats(&self) -> RpcTransportStats {
+        self.inner.get_transport_stats()
+    }
+
+    fn url(&self) -> String {
+        self.inner.url()
+    }
+}
+
+/// A request in flight. Dropping it records the request as complete, so a
+/// cancelled request counts too.
+struct RequestMetrics<'a> {
+    labels: [&'a str; 2],
+    start: Instant,
+}
+
+impl<'a> RequestMetrics<'a> {
+    fn start(component: &'a str, method: &'a str) -> Self {
+        let labels = [component, method];
+        metrics().requests_inflight.with_label_values(&labels).inc();
+        Self {
+            labels,
+            start: Instant::now(),
+        }
+    }
+}
+
+impl Drop for RequestMetrics<'_> {
+    fn drop(&mut self) {
+        let metrics = metrics();
+        metrics
+            .requests_inflight
+            .with_label_values(&self.labels)
+            .dec();
+        metrics
+            .requests_complete
+            .with_label_values(&self.labels)
+            .inc();
+        metrics
+            .requests_duration_seconds
+            .with_label_values(&self.labels)
+            .observe(self.start.elapsed().as_secs_f64());
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "rpc")]
+struct Metrics {
+    /// Requests in flight, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_inflight: prometheus::IntGaugeVec,
+    /// Completed requests, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_complete: prometheus::IntCounterVec,
+    /// Request durations, by component and method.
+    #[metric(labels("component", "method"))]
+    requests_duration_seconds: prometheus::HistogramVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
+
 #[cfg(feature = "test-util")]
 mod mock {
     use {
@@ -499,9 +640,12 @@ mod mock {
     }
 
     impl RecordingSender {
-        pub fn new(mocks: Mocks, sent: std::sync::Arc<Mutex<Vec<VersionedTransaction>>>) -> Self {
+        pub fn new(
+            mocks: MocksMap,
+            sent: std::sync::Arc<Mutex<Vec<VersionedTransaction>>>,
+        ) -> Self {
             Self {
-                inner: MockSender::new_with_mocks("mock", mocks),
+                inner: MockSender::new_with_mocks_map("mock", mocks),
                 sent,
             }
         }
@@ -605,4 +749,29 @@ pub struct LatestBlockhash {
 fn parse_hash(hash: &str) -> Result<Hash, Error> {
     hash.parse()
         .map_err(|_| ErrorKind::from(RpcError::ParseError("Hash".to_string())).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dropped_request_counts_as_complete() {
+        let labels = ["test", "getSlot"];
+        let metrics = metrics();
+        let request = RequestMetrics::start("test", "getSlot");
+        assert_eq!(
+            metrics.requests_inflight.with_label_values(&labels).get(),
+            1
+        );
+        drop(request);
+        assert_eq!(
+            metrics.requests_inflight.with_label_values(&labels).get(),
+            0
+        );
+        assert_eq!(
+            metrics.requests_complete.with_label_values(&labels).get(),
+            1
+        );
+    }
 }

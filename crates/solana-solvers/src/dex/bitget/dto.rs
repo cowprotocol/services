@@ -84,15 +84,15 @@ pub struct Envelope {
 }
 
 impl Envelope {
-    pub fn into_data<T: DeserializeOwned>(self, http_status: u16) -> Result<T, Error> {
+    pub fn into_data<T: DeserializeOwned>(self) -> Result<T, Error> {
         if self.status != 0 {
             let code = self.error_code.unwrap_or_default();
             return Err(match code {
                 // No route, or a Bitget-side failure the next auction retries.
                 80000 | 80001 | 80004 | 80005 | 80008..=80012 | 80014 | 80020 => Error::NotFound,
-                _ => Error::Api {
-                    status: http_status,
-                    body: format!("error_code {code}: {}", self.msg.unwrap_or_default()),
+                _ => Error::Dex {
+                    code,
+                    message: self.msg.unwrap_or_default(),
                 },
             });
         }
@@ -155,15 +155,21 @@ pub fn swap(quote: &Quote, taker: &Pubkey, fee: Fee) -> Result<Swap, Error> {
             instructions.push(instruction);
         }
     }
-    let accounts = || {
-        instructions
-            .iter()
-            .flat_map(|instruction| &instruction.accounts)
-    };
-    let cosigners: HashSet<_> = accounts()
-        .filter(|account| account.is_signer && account.pubkey != *taker)
-        .map(|account| account.pubkey)
-        .collect();
+    let atas = [inline_spl_token::ID, spl_token_2022_interface::ID].map(|program| {
+        let ata = get_associated_token_address_with_program_id(taker, &buy_mint, &program);
+        (program, ata)
+    });
+    let mut cosigners = HashSet::new();
+    let mut paid = None;
+    for account in instructions
+        .iter()
+        .flat_map(|instruction| &instruction.accounts)
+    {
+        if account.is_signer && account.pubkey != *taker {
+            cosigners.insert(account.pubkey);
+        }
+        paid = paid.or_else(|| atas.into_iter().find(|(_, ata)| *ata == account.pubkey));
+    }
     let allowed = match fee {
         Fee::Standard => 0,
         Fee::Exempt => 1,
@@ -174,14 +180,8 @@ pub fn swap(quote: &Quote, taker: &Pubkey, fee: Fee) -> Result<Swap, Error> {
             cosigners.len()
         )));
     }
-    let (token_program, output) = [inline_spl_token::ID, spl_token_2022_interface::ID]
-        .into_iter()
-        .map(|program| {
-            let ata = get_associated_token_address_with_program_id(taker, &buy_mint, &program);
-            (program, ata)
-        })
-        .find(|(_, ata)| accounts().any(|account| account.pubkey == *ata))
-        .ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
+    let (token_program, output) =
+        paid.ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
     // Unchecked because the auction carries no decimals. Token-2022 mints with
     // a transfer fee or hook reject it, and simulation drops them.
     #[allow(deprecated)]

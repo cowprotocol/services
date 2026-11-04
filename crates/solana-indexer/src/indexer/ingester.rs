@@ -151,12 +151,12 @@ where
             UpdateOneof::Transaction(tx_msg) => Self::handle_transaction(tx, tx_msg).await,
             UpdateOneof::Slot(slot) => Self::handle_slot(tx, latest_chain_slot, slot).await,
 
-            // Ping/Pong frames carry no data the ingester needs; the library passes them through,
-            // and we drop them here.
+            // Ping/Pong frames carry no data the ingester needs; the library
+            // passes them through, and we drop them here.
             UpdateOneof::Ping(_) | UpdateOneof::Pong(_) => ControlFlow::Continue(()),
 
-            // Not part of our subscription; irrelevant to the ingester even if the provider sends
-            // them.
+            // Not part of our subscription; irrelevant to the ingester even if
+            // the provider sends them.
             UpdateOneof::Account(_)
             | UpdateOneof::TransactionStatus(_)
             | UpdateOneof::Block(_)

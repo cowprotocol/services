@@ -14,11 +14,14 @@ path = "src/lib.rs"
 [[bin]]
 name = "solana-driver"
 path = "src/main.rs"
+test = false
 
 [dependencies]
+async-trait = { workspace = true }
 axum = { workspace = true }
 base64 = { workspace = true }
 bincode = { workspace = true }
+chain-types = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }
 clap = { workspace = true }
 configs = { workspace = true }
@@ -36,7 +39,7 @@ prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
-serde-ext = { workspace = true }
+serde-ext = { workspace = true, features = ["solana"] }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 solana-sdk = { workspace = true }

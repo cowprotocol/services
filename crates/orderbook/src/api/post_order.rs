@@ -279,6 +279,16 @@ impl IntoResponse for ValidationErrorWrapper {
                 error("TooMuchGas", "Executing order requires too many gas units"),
             )
                 .into_response(),
+            ValidationError::InvalidWrapper(wrapper) => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "InvalidAppData",
+                    format!(
+                        "wrapper {wrapper:?} is not a wrapper contract authorized to settle orders"
+                    ),
+                ),
+            )
+                .into_response(),
 
             ValidationError::Other(err) => {
                 tracing::error!(?err, "ValidationErrorWrapper");

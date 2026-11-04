@@ -83,7 +83,7 @@ fn same_scenario_ranks_identically_on_both_chains() {
         wrapped_native: Address::repeat_byte(0xff),
     };
     let evm_ranking = arbitrator.arbitrate(solutions, &context);
-    let evm_reference = arbitrator.compute_reference_scores(&evm_ranking);
+    let evm_reference = arbitrator.compute_reference_scores(&evm_ranking, &context);
 
     // Solana run, same numbers.
     let sol_id = sol_uid(1);
@@ -111,7 +111,7 @@ fn same_scenario_ranks_identically_on_both_chains() {
         wrapped_native: Pubkey([0xff; 32]),
     };
     let sol_ranking = arbitrator.arbitrate(solutions, &context);
-    let sol_reference = arbitrator.compute_reference_scores(&sol_ranking);
+    let sol_reference = arbitrator.compute_reference_scores(&sol_ranking, &context);
 
     // Both chains: solution 1 wins with surplus 5, solution 2 ranks second
     // with surplus 2 and does not win (same directed pair already cleared).
@@ -347,4 +347,94 @@ fn jit_owner_attribution_is_chain_specific() {
     let ranking = arbitrator.arbitrate(solutions, &context);
     assert_eq!(ranking.winners().count(), 0);
     assert!(ranking.ranked.is_empty());
+}
+
+/// A JIT liquidity order (owner not in the surplus-capturing allowlist) is
+/// the solver's own liquidity, equivalent to routing through an AMM via an
+/// interaction. It must not claim its token pair in winner selection and
+/// thereby block another solution that settles a user order on that pair.
+/// Only once the owner is allowlisted does the order count like a user order.
+#[test]
+fn jit_liquidity_orders_do_not_block_other_winners() {
+    let jit_owner = 0xaa;
+    let user_uid_1 = evm_uid(1, 0x11);
+    let user_uid_2 = evm_uid(2, 0x22);
+    let jit_uid = evm_uid(3, jit_owner);
+    let (token_a, token_b, token_c) = (
+        Address::repeat_byte(1),
+        Address::repeat_byte(2),
+        Address::repeat_byte(3),
+    );
+    let (solver_x, solver_y) = (Address::repeat_byte(4), Address::repeat_byte(5));
+    let arbitrator = Arbitrator::<Evm> {
+        max_winners: 5,
+        wrapped_native: Address::repeat_byte(0xff),
+    };
+    let solutions = || {
+        vec![
+            // Settles user order 1 (A -> B) and additionally a JIT order on
+            // the (A -> C) pair, which is the pair of user order 2.
+            Solution::new(
+                1,
+                solver_x,
+                vec![
+                    sell_order::<Evm>(user_uid_1, token_a, token_b, 95, U256::from),
+                    sell_order::<Evm>(jit_uid, token_a, token_c, 95, U256::from),
+                ],
+            ),
+            // Settles only user order 2 (A -> C) with a lower score.
+            Solution::new(
+                2,
+                solver_y,
+                vec![sell_order::<Evm>(
+                    user_uid_2,
+                    token_a,
+                    token_c,
+                    93,
+                    U256::from,
+                )],
+            ),
+        ]
+    };
+    let native_prices = HashMap::from([
+        (token_b, U256::from(EVM_UNIT_PRICE)),
+        (token_c, U256::from(EVM_UNIT_PRICE)),
+    ]);
+
+    // JIT owner is not surplus capturing: the JIT order is ignored by the
+    // mechanism, so both solutions are compatible and both win.
+    let context = AuctionContext::<Evm> {
+        fee_policies: HashMap::from([(user_uid_1, vec![]), (user_uid_2, vec![])]),
+        native_prices: native_prices.clone(),
+        ..Default::default()
+    };
+    let ranking = arbitrator.arbitrate(solutions(), &context);
+    assert_eq!(
+        ranking.winners().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert!(ranking.filtered_out.is_empty());
+    let reference = arbitrator.compute_reference_scores(&ranking, &context);
+    // Without solver X only solution 2 wins (score 3); without solver Y only
+    // solution 1 wins (score 5).
+    assert_eq!(reference[&solver_x], U256::from(3u64));
+    assert_eq!(reference[&solver_y], U256::from(5u64));
+
+    // JIT owner is surplus capturing: the JIT order counts like a user order
+    // and claims the (A -> C) pair, so solution 2 loses to the uniform
+    // directional clearing price.
+    let context = AuctionContext::<Evm> {
+        fee_policies: HashMap::from([(user_uid_1, vec![]), (user_uid_2, vec![])]),
+        surplus_capturing_jit_order_owners: [Address::repeat_byte(jit_owner)].into(),
+        native_prices,
+    };
+    let ranking = arbitrator.arbitrate(solutions(), &context);
+    assert_eq!(
+        ranking.winners().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(
+        ranking.non_winners().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![2]
+    );
 }

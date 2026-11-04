@@ -15,6 +15,8 @@ endpoint = "https://bopenapi.bgwapi.io/bgw-pro/swapx/pro/"
 # Credentials from the Bitget developer portal. Requests are signed with the secret.
 api-key = "your-bitget-api-key"
 api-secret = "your-bitget-api-secret"
+# Partner code sent in the Partner-Code header (defaults to "cowswap").
+# partner-code = "cowswap"
 # Slippage tolerance in basis points. Bids use Bitget's minimum output, so this
 # is how far below its expected output they land. 20 = 0.2%.
 slippage-bps = 20

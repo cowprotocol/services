@@ -273,13 +273,15 @@ mod tests {
                             ),
                         ),
                         // We add a second estimator in the first stage to catch
-                        // the error when you compute the remaining time based on the
-                        // number of estimator invocations instead of stage invocations.
+                        // the error when you compute the remaining time based
+                        // on the number of estimator invocations instead of
+                        // stage invocations.
                         (
                             "1.2".into(),
                             estimator(
-                                // this task may return immediately because we need to process
-                                // the whole stage before we start the next one
+                                // this task may return immediately because we
+                                // need to process the whole stage before we
+                                // start the next one
                                 async { Err(PriceEstimationError::NoLiquidity) }.boxed(),
                                 TOTAL_TIMEOUT / 2,
                             ),
@@ -289,8 +291,9 @@ mod tests {
                         "2.1".into(),
                         estimator(
                             async { Ok(1.) }.boxed(),
-                            // Because the first stage was faster than the allocated
-                            // time, the second stage now gets a bit more time.
+                            // Because the first stage was faster than the
+                            // allocated time, the second stage now gets a bit
+                            // more time.
                             TOTAL_TIMEOUT - FIRST_STAGE,
                         ),
                     )],

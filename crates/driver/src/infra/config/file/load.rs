@@ -94,7 +94,6 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
                         .unwrap(),
                 },
                 request_headers: solver_config.request_headers,
-                fee_handler: solver_config.fee_handler,
                 fast_path_enabled: solver_config.fast_path_enabled,
                 merge_solutions: match solver_config.merge_solutions {
                     true => SolutionMerging::Allowed {

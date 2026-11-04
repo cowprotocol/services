@@ -46,6 +46,7 @@ impl Api {
     ) -> std::io::Result<()> {
         let app = Router::new()
             .route("/healthz", get(healthz))
+            .route("/metrics", get(metrics))
             .route("/solve", post(solve))
             .route("/cosign", post(cosign))
             .with_state(self.solver)
@@ -60,6 +61,10 @@ impl Api {
 
 async fn healthz() -> &'static str {
     "ok"
+}
+
+async fn metrics() -> String {
+    observe::metrics::encode(observe::metrics::get_registry())
 }
 
 /// Quote the auction's orders and return one solution per side and directed
@@ -155,6 +160,7 @@ mod tests {
                 .unwrap(),
             api_key: "key".into(),
             api_secret: "secret".into(),
+            partner_code: "cowswap".into(),
             slippage_bps: 20,
             max_accounts: 48,
             fee: Fee::Exempt,

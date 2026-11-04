@@ -799,8 +799,8 @@ pub mod IVault {
         /// and address.
         ///
         /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
+        /// in this contract. Prefer using the other methods for building
+        /// type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -816,8 +816,8 @@ pub mod IVault {
         /// and address.
         ///
         /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
+        /// contract. Prefer using the other methods for building type-safe
+        /// event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {
@@ -1378,8 +1378,7 @@ pub mod BalancerQueries {
         /// All the selectors of this enum.
         ///
         /// Note that the selectors might not be in the same order as the
-        /// variants. No guarantees are made about the order of the
-        /// selectors.
+        /// variants. No guarantees are made about the order of the selectors.
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] =
@@ -1633,8 +1632,8 @@ pub mod BalancerQueries {
         /// and address.
         ///
         /// Note that the call can be any function call, not just those defined
-        /// in this contract. Prefer using the other methods for
-        /// building type-safe contract calls.
+        /// in this contract. Prefer using the other methods for building
+        /// type-safe contract calls.
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
@@ -1673,8 +1672,8 @@ pub mod BalancerQueries {
         /// and address.
         ///
         /// Note that the type can be any event, not just those defined in this
-        /// contract. Prefer using the other methods for building
-        /// type-safe event filters.
+        /// contract. Prefer using the other methods for building type-safe
+        /// event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
         ) -> alloy_contract::Event<&P, E, N> {

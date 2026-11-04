@@ -273,15 +273,15 @@ paths:
         creation transaction (owner signed, the deployment's funder as its
         unsigned fee payer), and every order field derives from its trailing
         `CreateOrder` instruction. In front of it the transaction carries the
-        preparation steps, in this order: create the wSOL account, fund it,
-        sync it, approve the settlement delegate, and create the buy token
-        account (idempotent, a no-op when the account already exists), each
-        omittable (the wrap steps only for native SOL sells). Without the
-        creation, the buy token account must already receive the buy mint or
-        be the owner's associated token account, which the settlement
-        creates when missing: a custom receiver's missing account needs the
-        creation. An order buying native SOL skips the creation, its payout
-        goes to the wallet. The order competes in auctions until the
+        preparation steps, in this order: create the wSOL account (the owner
+        pays for it, a funder-paid creation is refused), fund it, sync it,
+        and approve the settlement delegate, each omittable (the wrap steps
+        only for native SOL sells). The transaction must not create the buy
+        token account: it must already receive the buy mint, or be the
+        owner's associated token account, which the settlement creates when
+        missing. A custom receiver's account must therefore already exist
+        and accept the buy mint. An order buying native SOL pays out to its
+        wallet instead. The order competes in auctions until the
         transaction's blockhash expires (about a minute) or it settles.
       requestBody:
         required: true
@@ -320,6 +320,24 @@ paths:
                   type: integer
                   format: int64
                   nullable: true
+                appData:
+                  description: |
+                    AppData which will be assigned to the order: the full
+                    `appData` document whose keccak256 hash the `CreateOrder`
+                    intent carries in `app_data`, stored with the order and
+                    served as its `fullAppData`, or that hash once the document
+                    is registered through `PUT /api/v1/app_data`. The intent's
+                    hash when omitted.
+                  oneOf:
+                    - $ref: "#/components/schemas/AppData"
+                    - $ref: "#/components/schemas/AppDataHash"
+                appDataHash:
+                  description: |
+                    The hash of the stringified JSON `appData` doc. If present,
+                    `appData` must be the document this hash is derived from.
+                    In case they differ, the call will fail.
+                  allOf:
+                    - $ref: "#/components/schemas/AppDataHash"
       responses:
         "201":
           description: The order uid.
@@ -330,7 +348,10 @@ paths:
         "400":
           description: |
             Sponsoring disabled on this deployment (`SponsoringDisabled`), an
-            undecodable or wrongly shaped transaction (`InvalidTransaction`),
+            undecodable or wrongly shaped transaction, a wSOL sell account
+            creation paid by anyone but the order owner, a bundle creating
+            the buy token account, or a buy token account the settlement can
+            neither pay out to nor create (`InvalidTransaction`),
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
@@ -341,7 +362,11 @@ paths:
             890880 lamports for an empty wallet (`InvalidNativeBuy`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
             or above the maximum validity (`InsufficientValidTo`,
-            `ExcessiveValidTo`), a mint the settlement program
+            `ExcessiveValidTo`), an `appData` document that is not a JSON
+            object or exceeds the size limit, or a hash with no registered
+            document (`InvalidAppData`), an `appData` document or hash
+            disagreeing with its `appDataHash` or the intent's `app_data`
+            (`AppDataHashMismatch`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
           content:
@@ -374,7 +399,11 @@ paths:
             The body could not be parsed (`InvalidRequestBody`), buy and sell
             token are the same, wSOL for native SOL included
             (`SameBuyAndSellToken`), the amount is zero
-            (`ZeroAmount`), a native SOL buy would leave its wallet under the
+            (`ZeroAmount`), an `appData` document that is not a JSON object
+            or exceeds the size limit, or a hash with no registered document
+            (`InvalidAppData`), an `appDataHash` the document does not hash
+            to (`AppDataHashMismatch`), a native SOL buy would leave its
+            wallet under the
             rent-exempt minimum, 890880 lamports for an empty wallet
             (`InvalidNativeBuy`),
             `validTo` is closer than the configured minimum
@@ -393,6 +422,117 @@ paths:
           description: |
             No driver returned a route for the pair, or a token has no native
             price (`NoLiquidity`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/app_data/{app_data_hash}:
+    get:
+      operationId: getAppDataByHash
+      summary: Get the full `appData` from its `appDataHash`.
+      parameters:
+        - in: path
+          name: app_data_hash
+          schema:
+            $ref: "#/components/schemas/AppDataHash"
+          required: true
+      responses:
+        "200":
+          description: Full `appData`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataObject"
+        "400":
+          description: Invalid app data hash (`InvalidAppDataHash`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No full `appData` stored for this hash (`NotFound`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      operationId: registerAppDataByHash
+      summary: Registers a full `appData` so it can be referenced by `appDataHash`.
+      description: |
+        Uploads a full `appData` to the orderbook so that orders created with
+        the corresponding `appDataHash` can be linked to the original full
+        `appData`.
+      parameters:
+        - in: path
+          name: app_data_hash
+          schema:
+            $ref: "#/components/schemas/AppDataHash"
+          required: true
+      requestBody:
+        description: The `appData` document to upload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataObject"
+      responses:
+        "200":
+          description: The full `appData` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "201":
+          description: The full `appData` was successfully registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "400":
+          description: |
+            A document that is not a JSON object or exceeds the size limit
+            (`AppDataInvalid`), a document not hashing to the path's hash
+            (`AppDataHashMismatch`), a different document already stored
+            under the hash (`AppDataMismatch`), a malformed hash
+            (`InvalidAppDataHash`), or a body that is not an `AppDataObject`
+            (`InvalidRequestBody`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/app_data:
+    put:
+      operationId: registerAppData
+      summary: Registers a full `appData` and returns `appDataHash`.
+      description: |
+        Uploads a full `appData` to the orderbook and returns the
+        corresponding `appDataHash`.
+      requestBody:
+        description: The `appData` document to upload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataObject"
+      responses:
+        "200":
+          description: The full `appData` already exists.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "201":
+          description: The full `appData` was successfully registered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        "400":
+          description: |
+            A document that is not a JSON object or exceeds the size limit
+            (`AppDataInvalid`), a different document already stored under
+            its hash (`AppDataMismatch`), or a body that is not an
+            `AppDataObject` (`InvalidRequestBody`).
           content:
             application/json:
               schema:
@@ -424,10 +564,53 @@ components:
       description: A token amount in base units as a decimal string.
       type: string
       example: "1000000"
+    AppData:
+      description: |
+        The string encoding of a JSON object representing some `appData`. The
+        format of the JSON expected in the `appData` field is defined
+        [here](https://github.com/cowprotocol/app-data). The protocol
+        `metadata` is stored, not interpreted.
+      type: string
+      example: '{"version":"0.9.0","metadata":{}}'
+    AppDataHash:
+      description: |
+        32 bytes encoded as hex with `0x` prefix: the keccak256 hash of the
+        stringified JSON object representing the `appData`, as the
+        `CreateOrder` intent carries it in `app_data`.
+      type: string
+      example: "0xb48d38f93eaa084033fc5970bf96e559c33c4cdc07d889ab00b4d63f9590739d"
+    AppDataObject:
+      description: An `appData` document that is registered with the API.
+      type: object
+      properties:
+        fullAppData:
+          $ref: "#/components/schemas/AppData"
+      required:
+        - fullAppData
     OrderKind:
       description: Which amount the order fixes.
       type: string
       enum: [sell, buy]
+    PriceQuality:
+      description: |-
+        How good should the price estimate be?
+
+        Fast: The price estimate is chosen among the fastest N drivers.
+        Estimates do not get verified by simulation. The estimate is not
+        stored and expires at once.
+        Optimal: The price estimate is chosen among all drivers, ranked
+        purely by the promised price. Estimates do not get verified by
+        simulation.
+        Verified: All price estimates get verified by simulation whenever
+        possible and verified estimates are preferred over unverified ones,
+        even when an unverified estimate promises a better price. The
+        response's `verified` flag indicates whether the returned estimate
+        was actually verified.
+
+        **NOTE**: Orders are supposed to be created from `verified` or `optimal`
+        price estimates.
+      type: string
+      enum: [fast, optimal, verified]
     OrderStatus:
       description: |
         Lifecycle of the order. A full fill wins over cancellation because
@@ -453,6 +636,7 @@ components:
         - kind
         - partiallyFillable
         - appData
+        - fullAppData
         - orderPda
         - creationDate
         - executedSellAmount
@@ -496,8 +680,12 @@ components:
         partiallyFillable:
           type: boolean
         appData:
-          description: The 32-byte app-data hash as hex.
-          type: string
+          $ref: "#/components/schemas/AppDataHash"
+        fullAppData:
+          description: The document `appData` is the hash of, null until registered.
+          allOf:
+            - $ref: "#/components/schemas/AppData"
+          nullable: true
         orderPda:
           description: The order's on-chain account.
           allOf:
@@ -767,8 +955,8 @@ components:
     QuoteRequest:
       description: |
         A quote request. Fields with no Solana meaning (`signingScheme`,
-        `priceQuality`, `sellTokenBalance`, `buyTokenBalance`) are accepted
-        and ignored, so the EVM request body works unchanged.
+        `sellTokenBalance`, `buyTokenBalance`) are accepted and ignored, so
+        the EVM request body works unchanged.
       type: object
       required:
         - from
@@ -813,8 +1001,24 @@ components:
           description: Seconds from now the quoted order would expire after.
           type: integer
         appData:
-          description: The 32-byte app-data hash as hex.
-          type: string
+          description: |
+            The order's app data, the full document or its hash, checked like
+            at placement: a hash must have its document registered, the zero
+            hash names the empty document. The zero hash when omitted.
+          oneOf:
+            - $ref: "#/components/schemas/AppData"
+            - $ref: "#/components/schemas/AppDataHash"
+        appDataHash:
+          description: |
+            The hash of the `appData` document. If present, `appData` must be
+            the document this hash is derived from.
+          allOf:
+            - $ref: "#/components/schemas/AppDataHash"
+          nullable: true
+        priceQuality:
+          allOf:
+            - $ref: "#/components/schemas/PriceQuality"
+          default: verified
     QuoteResponse:
       type: object
       required:
@@ -828,16 +1032,22 @@ components:
         from:
           $ref: "#/components/schemas/Pubkey"
         expiration:
-          description: When the quoted amounts stop being honored.
+          description: >-
+            When the quoted amounts stop being honored. The epoch for a `fast`
+            quote, which expires at once.
           type: string
           format: date-time
         id:
-          description: The stored quote's id. Null when storing the quote failed.
+          description: >-
+            The stored quote's id. Null for a `fast` quote, which is not
+            stored, and when storing the quote failed.
           type: integer
           format: int64
           nullable: true
         verified:
-          description: Whether the amounts were confirmed by simulation. Always false.
+          description: >-
+            Whether it was possible to verify that the quoted amounts are
+            accurate using a simulation.
           type: boolean
         funder:
           description: >-
@@ -857,6 +1067,7 @@ components:
         - sellAmount
         - buyAmount
         - validTo
+        - appData
         - feeAmount
         - costs
         - kind
@@ -878,9 +1089,16 @@ components:
           description: Unix timestamp (`uint32`) the quoted order expires at.
           type: integer
         appData:
-          description: The 32-byte app-data hash as hex.
-          type: string
-          nullable: true
+          description: |
+            The request's `appData`, the full document or its hash, the zero
+            hash when the request named none.
+          oneOf:
+            - $ref: "#/components/schemas/AppData"
+            - $ref: "#/components/schemas/AppDataHash"
+        appDataHash:
+          description: The hash of `appData`, present when it is a document.
+          allOf:
+            - $ref: "#/components/schemas/AppDataHash"
         feeAmount:
           description: Always zero. No component charges a fee.
           allOf:

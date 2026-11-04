@@ -5,13 +5,21 @@ use {
     },
     anyhow::{Context, Result},
     app_data::AppDataHash,
+    moka::sync::Cache,
 };
+
+/// Approximate heap bytes a cache entry takes besides its document: the key
+/// and moka's bookkeeping, measured with moka 0.12.
+const CACHE_ENTRY_OVERHEAD: usize = 280;
 
 /// CoW Protocol API app-data registry.
 pub struct Registry {
     validator: app_data::Validator,
     database: Postgres,
     ipfs: Option<IpfsAppData>,
+    /// Full app data found in the database. A hash always maps to the same
+    /// document, so entries never go stale.
+    cache: Cache<AppDataHash, String>,
 }
 
 impl Registry {
@@ -20,11 +28,23 @@ impl Registry {
         validator: app_data::Validator,
         database: Postgres,
         ipfs: Option<IpfsAppData>,
+        cache_size: u64,
     ) -> Self {
         Self {
             validator,
             database,
             ipfs,
+            // Each entry weighs its approximate heap size in bytes, and moka
+            // keeps the total within `cache_size`. A full cache admits a new
+            // document only if it is read more often than the least recently
+            // used entries it would evict (TinyLFU). An entry heavier than
+            // `cache_size` is never cached.
+            cache: Cache::builder()
+                .max_capacity(cache_size)
+                .weigher(|_, document: &String| {
+                    u32::try_from(CACHE_ENTRY_OVERHEAD + document.len()).unwrap_or(u32::MAX)
+                })
+                .build(),
         }
     }
 
@@ -73,6 +93,23 @@ impl Registry {
         }
     }
 
+    /// Returns the full app data stored in the database for the given hash.
+    pub async fn get_full_app_data(
+        &self,
+        contract_app_data: &AppDataHash,
+    ) -> Result<Option<String>> {
+        if let Some(document) = self.cache.get(contract_app_data) {
+            return Ok(Some(document));
+        }
+        let document = self.database.get_full_app_data(contract_app_data).await?;
+        // A missing document can still be registered later, so only hits are
+        // cached.
+        if let Some(document) = &document {
+            self.cache.insert(*contract_app_data, document.clone());
+        }
+        Ok(document)
+    }
+
     /// Finds full app data for an order that only has the contract app data
     /// hash.
     ///
@@ -84,7 +121,6 @@ impl Registry {
         }
 
         if let Some(app_data) = self
-            .database
             .get_full_app_data(contract_app_data)
             .await
             .context("from database")?
@@ -126,4 +162,36 @@ pub enum RegisterError {
     DataMismatch { existing: String },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_caches_found_app_data_only() {
+        let db = Postgres::try_new("postgresql://", Default::default()).unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+        let registry = Registry::new(app_data::Validator::new(8192), db.clone(), None, 1024);
+        let document = r#"{"appCode":"cache"}"#;
+        let hash = registry
+            .validator
+            .validate(document.as_bytes())
+            .unwrap()
+            .hash;
+
+        assert_eq!(registry.get_full_app_data(&hash).await.unwrap(), None);
+        registry.register(None, document.as_bytes()).await.unwrap();
+        assert_eq!(
+            registry.get_full_app_data(&hash).await.unwrap().as_deref(),
+            Some(document)
+        );
+
+        database::clear_DANGER(&db.pool).await.unwrap();
+        assert_eq!(
+            registry.get_full_app_data(&hash).await.unwrap().as_deref(),
+            Some(document)
+        );
+    }
 }

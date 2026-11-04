@@ -13,9 +13,7 @@ use {
     std::cmp::Reverse,
 };
 
-/// The runtime's per-transaction compute unit ceiling. It caps every limit
-/// and prices a quote whose engine sent no estimate: the quote has no
-/// settlement instructions to derive the runtime's default from.
+/// The runtime's per-transaction compute unit ceiling. It caps every limit.
 pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// The base fee of one signature, in lamports: the cluster's
@@ -23,16 +21,6 @@ pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 /// verifications count as signatures too, and the settlement has none, so
 /// it pays for the solver keypair's signature only.
 const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
-
-/// The compute unit limit for a transaction that consumed `units` in
-/// simulation. Usage can grow before the transaction lands and running out of
-/// units fails it, so the limit is twice the usage, up to the runtime's
-/// ceiling.
-pub(crate) fn compute_unit_limit(units: u64) -> u32 {
-    u32::try_from(units.saturating_mul(2))
-        .unwrap_or(u32::MAX)
-        .min(MAX_COMPUTE_UNIT_LIMIT)
-}
 
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
@@ -53,6 +41,24 @@ pub struct PriorityFeePolicy {
     /// The most a transaction pays in priority fee, in lamports. A transaction
     /// over it is refused.
     pub max_priority_fee_lamports: u64,
+    /// The compute unit limit priced when a transaction's usage is not
+    /// measured: quotes, the limit legs moved before solving, and solutions
+    /// neither their engine nor their simulation measured, which also declare
+    /// it when the driver cuts their fills. Settlements declare their
+    /// simulated usage plus the headroom, so keep this near the top of that
+    /// range.
+    pub default_compute_unit_limit: u32,
+    /// The share of the simulated compute units added to the limit a
+    /// settlement declares, in percent, on top of
+    /// `compute_unit_limit_headroom_units`. Usage can grow before the
+    /// transaction lands and running out of units fails it, while the
+    /// priority fee is paid on the limit, used or not.
+    pub compute_unit_limit_headroom_percent: u32,
+    /// The compute units added to the limit a settlement declares on top of
+    /// the share: the usage grows between the simulation and the landed
+    /// transaction by a fixed cost rather than a share of the route, so a
+    /// percent alone leaves a small route short.
+    pub compute_unit_limit_headroom_units: u32,
 }
 
 impl Default for PriorityFeePolicy {
@@ -62,6 +68,9 @@ impl Default for PriorityFeePolicy {
             recent_slots: 50,
             min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
+            default_compute_unit_limit: 400_000,
+            compute_unit_limit_headroom_percent: 15,
+            compute_unit_limit_headroom_units: 20_000,
         }
     }
 }
@@ -97,14 +106,14 @@ impl PriorityFeePolicy {
     /// The priority fee for a transaction given the fees recently paid over its
     /// writable accounts and its compute unit limit, or the fee it would pay
     /// when that is over the budget. An undeclared limit is priced at the
-    /// runtime's ceiling.
+    /// policy's default.
     pub(crate) fn estimate(
         &self,
         fees: &[RpcPrioritizationFee],
         compute_unit_limit: Option<u32>,
     ) -> Result<Estimate, OverBudget> {
         let compute_unit_price = self.compute_unit_price(fees);
-        let limit = compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
+        let limit = compute_unit_limit.unwrap_or(self.default_compute_unit_limit);
         // Micro-lamports per unit times units, rounded up to whole lamports.
         let lamports = (u128::from(compute_unit_price) * u128::from(limit)).div_ceil(1_000_000);
         match u64::try_from(lamports) {
@@ -124,6 +133,21 @@ impl PriorityFeePolicy {
     pub(crate) fn max_network_fee(&self) -> u64 {
         self.max_priority_fee_lamports
             .saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
+
+    /// The compute unit limit for a settlement that consumed `units` in
+    /// simulation: the usage plus its configured share, rounded up, plus the
+    /// fixed headroom, up to the runtime's ceiling.
+    pub(crate) fn compute_unit_limit(&self, units: u64) -> u32 {
+        let share = units
+            .saturating_mul(u64::from(self.compute_unit_limit_headroom_percent))
+            .div_ceil(100);
+        let limit = units
+            .saturating_add(share)
+            .saturating_add(u64::from(self.compute_unit_limit_headroom_units));
+        u32::try_from(limit)
+            .unwrap_or(u32::MAX)
+            .min(MAX_COMPUTE_UNIT_LIMIT)
     }
 
     /// The configured percentile of the most recent slots' fees, raised to the
@@ -167,6 +191,9 @@ mod tests {
             recent_slots: MAX_RECENT_SLOTS,
             min_compute_unit_price: 0,
             max_priority_fee_lamports: u64::MAX,
+            default_compute_unit_limit: MAX_COMPUTE_UNIT_LIMIT,
+            compute_unit_limit_headroom_percent: 10,
+            compute_unit_limit_headroom_units: 20_000,
         }
     }
 
@@ -188,10 +215,16 @@ mod tests {
     }
 
     #[test]
-    fn compute_unit_limit_doubles_the_usage_up_to_the_ceiling() {
-        assert_eq!(compute_unit_limit(100_000), 200_000);
-        assert_eq!(compute_unit_limit(700_001), MAX_COMPUTE_UNIT_LIMIT);
-        assert_eq!(compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
+    fn compute_unit_limit_adds_the_headroom_and_the_fixed_units_up_to_the_ceiling() {
+        let policy = policy(50);
+        assert_eq!(policy.compute_unit_limit(100_000), 130_000);
+        assert_eq!(policy.compute_unit_limit(1_272_728), MAX_COMPUTE_UNIT_LIMIT);
+        assert_eq!(policy.compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
+        let units_alone = PriorityFeePolicy {
+            compute_unit_limit_headroom_percent: 0,
+            ..policy
+        };
+        assert_eq!(units_alone.compute_unit_limit(7), 20_007);
     }
 
     #[test]
@@ -217,11 +250,14 @@ mod tests {
         assert_eq!(estimate.lamports, 1);
     }
 
-    /// An undeclared limit is priced at the 1.4M ceiling.
     #[test]
-    fn undeclared_limit_is_priced_at_the_ceiling() {
-        let estimate = policy(50).estimate(&[fee(1, 1_000)], None).unwrap();
-        assert_eq!(estimate.lamports, 1_400);
+    fn undeclared_limit_is_priced_at_the_policy_default() {
+        let policy = PriorityFeePolicy {
+            default_compute_unit_limit: 300_000,
+            ..policy(50)
+        };
+        let estimate = policy.estimate(&[fee(1, 1_000)], None).unwrap();
+        assert_eq!(estimate.lamports, 300);
     }
 
     #[test]

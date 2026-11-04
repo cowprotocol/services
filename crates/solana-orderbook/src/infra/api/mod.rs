@@ -1,17 +1,18 @@
 //! HTTP API server.
 
 use {
-    super::{prices::NativePrices, quoter::Quoter},
+    super::{prices::NativePrices, quoter::Quoter, verifier::Verifier},
     axum::{
         Router,
         http,
-        routing::{get, post},
+        routing::{get, post, put},
     },
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
     std::{
         io,
         net::SocketAddr,
+        num::NonZero,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -48,8 +49,14 @@ pub struct Api {
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     pub quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub verifier: Option<Verifier>,
+    /// Most bytes an app data document may have.
+    pub app_data_size_limit: usize,
 }
 
 /// Bounds on an order's `validTo`, for quotes and sponsored placement
@@ -97,13 +104,17 @@ impl Api {
             .layer(TraceLayer::new_for_http().make_span_with(make_span))
             .map_request(record_trace_id);
 
+        routes::initialize_metrics();
         let state = State::new(
             self.pool,
             self.quoter,
             self.prices,
             self.validation,
             self.quote_expiry,
+            self.fast_results_required,
             self.sponsoring,
+            self.verifier,
+            self.app_data_size_limit,
         );
 
         // Browsers call this API directly, so it answers cross-origin
@@ -113,6 +124,7 @@ impl Api {
             .allow_methods([
                 http::Method::GET,
                 http::Method::POST,
+                http::Method::PUT,
                 http::Method::OPTIONS,
                 http::Method::HEAD,
             ])
@@ -147,6 +159,11 @@ impl Api {
             )
             .route("/api/v1/orders", post(routes::create_order))
             .route("/api/v1/quote", post(routes::quote))
+            .route("/api/v1/app_data", put(routes::put_app_data))
+            .route(
+                "/api/v1/app_data/{hash}",
+                get(routes::get_app_data).put(routes::put_app_data_by_hash),
+            )
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
             .layer(tracing_layer)
@@ -174,16 +191,23 @@ pub struct Sponsoring {
     pub max_priority_fee_lamports: u64,
     /// The verdicts on the mints placement and quoting read so far.
     pub mints: solana_token::MintVerdicts,
+    /// How long placement waits for the node to confirm a blockhash it does
+    /// not know.
+    pub blockhash_catch_up: Duration,
 }
 
 impl State {
+    #[expect(clippy::too_many_arguments)]
     fn new(
         pool: PgPool,
         quoter: Quoter,
         prices: NativePrices,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
+        fast_results_required: NonZero<usize>,
         sponsoring: Option<Sponsoring>,
+        verifier: Option<Verifier>,
+        app_data_size_limit: usize,
     ) -> Self {
         Self(Arc::new(Inner {
             pool,
@@ -191,7 +215,10 @@ impl State {
             prices,
             validation,
             quote_expiry,
+            fast_results_required,
             sponsoring,
+            verifier,
+            app_data_size_limit,
             block_height: Mutex::default(),
         }))
     }
@@ -222,9 +249,24 @@ impl State {
         self.0.quote_expiry
     }
 
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fn fast_results_required(&self) -> NonZero<usize> {
+        self.0.fast_results_required
+    }
+
     /// Sponsored placement dependencies, absent when the feature is off.
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
+    }
+
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub fn verifier(&self) -> Option<&Verifier> {
+        self.0.verifier.as_ref()
+    }
+
+    /// Most bytes an app data document may have.
+    pub fn app_data_size_limit(&self) -> usize {
+        self.0.app_data_size_limit
     }
 
     /// The chain's block height, which decides whether a pending sponsored
@@ -269,8 +311,14 @@ struct Inner {
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    fast_results_required: NonZero<usize>,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    verifier: Option<Verifier>,
+    /// Most bytes an app data document may have.
+    app_data_size_limit: usize,
     /// The last block height read and when, see [`State::block_height`].
     block_height: Mutex<Option<(Instant, i64)>>,
 }

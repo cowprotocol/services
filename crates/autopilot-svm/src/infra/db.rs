@@ -5,12 +5,39 @@ use {
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
+    chrono::{DateTime, Utc},
     database::{byte_array::ByteArray, solana::OrderEventLabel},
-    sqlx::{PgExecutor, Postgres, QueryBuilder},
+    sqlx::{PgExecutor, PgPool, Postgres, QueryBuilder},
+    std::time::Duration,
 };
 
 /// The channel the schema's `solana.settlements` trigger notifies.
 pub const SETTLEMENT_FINALIZED_CHANNEL: &str = "solana_settlement_finalized";
+
+/// Tables the `autopilot_table_rows` gauge counts exactly.
+const TABLES: &[&str] = &[
+    "app_data",
+    "auctions",
+    "dead_letter",
+    "indexer_state",
+    "order_pda",
+    "quotes",
+    "reference_scores",
+    "settlement_executions",
+    "settlements",
+    "trades",
+];
+
+/// Tables the gauge reports from the planner's estimate: a full scan every
+/// minute would weigh on the largest ones.
+const LARGE_TABLES: &[&str] = &[
+    "competition_auctions",
+    "orders",
+    "order_events",
+    "order_quotes",
+    "proposed_solutions",
+    "proposed_trade_executions",
+];
 
 /// The `solana.orders` columns auction assembly reads.
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -45,6 +72,7 @@ pub async fn open_orders(
     now_unix: i64,
     block_height: Option<i64>,
 ) -> Result<Vec<OrderRow>> {
+    let _timer = query_timer("open_orders");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
@@ -93,6 +121,7 @@ pub async fn unrecorded_dead_creations(
     now_unix: i64,
     block_height: i64,
 ) -> Result<Vec<ByteArray<32>>> {
+    let _timer = query_timer("unrecorded_dead_creations");
     const QUERY: &str = r#"
 SELECT o.uid
 FROM solana.orders o
@@ -119,6 +148,7 @@ ORDER BY o.uid
 /// Latest slot the indexer fully processed. `None` before the indexer's first
 /// write. `solana.indexer_state` is a single-row table.
 pub async fn last_indexed_slot(ex: impl PgExecutor<'_>) -> Result<Option<i64>> {
+    let _timer = query_timer("last_indexed_slot");
     const QUERY: &str = r#"SELECT slot FROM solana.indexer_state"#;
     sqlx::query_scalar(QUERY)
         .fetch_optional(ex)
@@ -152,6 +182,7 @@ pub async fn pending_creations(
     ex: impl PgExecutor<'_>,
     uids: &[Vec<u8>],
 ) -> Result<Vec<StoredCreation>> {
+    let _timer = query_timer("pending_creations");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.order_pda, o.presigned_transaction AS transaction
 FROM solana.orders o
@@ -171,6 +202,7 @@ ORDER BY o.creation_timestamp, o.uid
 /// Lower a pending sponsored creation's stored deadline to `height`, a height
 /// its blockhash is known dead at. Never raises it.
 pub async fn expire_creation(ex: impl PgExecutor<'_>, uid: &[u8], height: i64) -> Result<()> {
+    let _timer = query_timer("expire_creation");
     const QUERY: &str = r#"
 UPDATE solana.orders
 SET last_valid_block_height = LEAST(last_valid_block_height, $2)
@@ -194,6 +226,7 @@ pub async fn open_settlement_window(
     start_slot: i64,
     deadline_slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("open_settlement_window");
     const QUERY: &str = r#"
 INSERT INTO solana.settlement_executions
     (auction_id, solver, solution_uid, start_timestamp, start_slot, deadline_slot)
@@ -221,6 +254,7 @@ pub async fn reject_settlement_window(
     solver: Pubkey,
     solution_uid: i64,
 ) -> Result<()> {
+    let _timer = query_timer("reject_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'rejected', end_timestamp = now(), end_slot = start_slot
@@ -247,6 +281,7 @@ pub async fn revert_settlement_window(
     solution_uid: i64,
     slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("revert_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'reverted', end_timestamp = now(), end_slot = $4
@@ -274,6 +309,7 @@ pub async fn skip_settlement_window(
     slot: i64,
     deadline_slot: i64,
 ) -> Result<()> {
+    let _timer = query_timer("skip_settlement_window");
     const QUERY: &str = r#"
 INSERT INTO solana.settlement_executions
     (auction_id, solver, solution_uid, start_timestamp, end_timestamp, start_slot, end_slot,
@@ -304,6 +340,7 @@ pub async fn close_landed_windows(
     ex: impl PgExecutor<'_>,
     auction_id: i64,
 ) -> Result<Vec<LandedWindow>> {
+    let _timer = query_timer("close_landed_windows");
     const QUERY: &str = r#"
 WITH landed AS (
     UPDATE solana.settlement_executions e
@@ -351,6 +388,7 @@ pub async fn expire_settlement_window(
     solution_uid: i64,
     slot: i64,
 ) -> Result<bool> {
+    let _timer = query_timer("expire_settlement_window");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'timeout', end_timestamp = now(), end_slot = $4
@@ -371,6 +409,7 @@ WHERE auction_id = $1 AND solver = $2 AND solution_uid = $3
 /// Close every open window whose deadline is at or before the slot as timed
 /// out, returning their auction ids.
 pub async fn expire_settlement_windows(ex: impl PgExecutor<'_>, slot: i64) -> Result<Vec<i64>> {
+    let _timer = query_timer("expire_settlement_windows");
     const QUERY: &str = r#"
 UPDATE solana.settlement_executions
 SET outcome = 'timeout', end_timestamp = now(), end_slot = $1
@@ -386,6 +425,7 @@ RETURNING auction_id
 
 /// Auction ids of open windows, the seed re-read set.
 pub async fn open_window_auction_ids(ex: impl PgExecutor<'_>) -> Result<Vec<i64>> {
+    let _timer = query_timer("open_window_auction_ids");
     sqlx::query_scalar("SELECT auction_id FROM solana.settlement_executions WHERE outcome IS NULL")
         .fetch_all(ex)
         .await
@@ -404,6 +444,7 @@ pub async fn in_flight_orders(
     ex: impl PgExecutor<'_>,
     processed_slot: i64,
 ) -> Result<Vec<ByteArray<32>>> {
+    let _timer = query_timer("in_flight_orders");
     const QUERY: &str = r#"
 SELECT DISTINCT pte.order_uid
 FROM solana.competition_auctions ca
@@ -449,6 +490,7 @@ pub async fn replace_current_auction(
     tip_slot: i64,
     json: &serde_json::Value,
 ) -> Result<i64> {
+    let _timer = query_timer("replace_current_auction");
     let mut tx = pool.begin().await.context("begin auction replacement")?;
     sqlx::query("DELETE FROM solana.auctions")
         .execute(&mut *tx)
@@ -508,6 +550,7 @@ pub struct Competition {
 /// Persist a competition: the auction snapshot and every proposed solution
 /// with its executions, in one transaction.
 pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition) -> Result<()> {
+    let _timer = query_timer("persist_competition");
     let mut tx = pool.begin().await.context("begin competition persist")?;
     sqlx::query(
         "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, order_uids, \
@@ -641,19 +684,113 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
         .with_context(|| format!("amount {value} does not fit u64"))
 }
 
+/// Deletes the quotes that expired by `now`. Returns how many.
+pub async fn remove_expired_quotes(ex: impl PgExecutor<'_>, now: DateTime<Utc>) -> Result<u64> {
+    let _timer = query_timer("remove_expired_quotes");
+    const QUERY: &str = r#"DELETE FROM solana.quotes WHERE expiration_timestamp < $1"#;
+    let result = sqlx::query(QUERY)
+        .bind(now)
+        .execute(ex)
+        .await
+        .context("delete expired quotes")?;
+    Ok(result.rows_affected())
+}
+
+/// Deletes the order events recorded before `timestamp`, except `invalid`
+/// ones: [`unrecorded_dead_creations`] reads them to record each dead
+/// creation once. Returns how many.
+pub async fn delete_order_events_before(
+    ex: impl PgExecutor<'_>,
+    timestamp: DateTime<Utc>,
+) -> Result<u64> {
+    let _timer = query_timer("delete_order_events_before");
+    const QUERY: &str = r#"DELETE FROM solana.order_events WHERE timestamp < $1 AND label <> $2"#;
+    let result = sqlx::query(QUERY)
+        .bind(timestamp)
+        .bind(OrderEventLabel::Invalid)
+        .execute(ex)
+        .await
+        .context("delete old order events")?;
+    Ok(result.rows_affected())
+}
+
+/// Starts timing a query, recorded under `query` when the timer drops.
+pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
+    Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .database_queries
+        .with_label_values(&[query])
+        .start_timer()
+}
+
+/// Refreshes `autopilot_table_rows` every minute. The first refresh waits a
+/// minute so the counts stay off the busy startup.
+pub fn spawn_table_rows_metric(pool: PgPool) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            if let Err(err) = update_table_rows(&pool).await {
+                tracing::error!(?err, "failed to update table rows metric");
+            }
+        }
+    });
+}
+
+async fn update_table_rows(pool: &PgPool) -> Result<()> {
+    let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+    for &table in TABLES {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM solana.{table}"))
+            .fetch_one(pool)
+            .await?;
+        metrics.table_rows.with_label_values(&[table]).set(count);
+    }
+    for &table in LARGE_TABLES {
+        let count: i64 = sqlx::query_scalar(&format!(
+            "SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = \
+             'solana.{table}'::regclass"
+        ))
+        .fetch_one(pool)
+        .await?;
+        metrics.table_rows.with_label_values(&[table]).set(count);
+    }
+    Ok(())
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Rows per `solana.*` table, exact for small tables and the planner's
+    /// estimate for large ones.
+    #[metric(name = "autopilot_table_rows", labels("table"))]
+    table_rows: prometheus::IntGaugeVec,
+
+    /// Query durations, by query.
+    #[metric(
+        name = "autopilot_database_queries",
+        labels("type"),
+        buckets(
+            0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 40.0, 50.0,
+            60.0, 70.0, 80.0, 90.0
+        )
+    )]
+    database_queries: prometheus::HistogramVec,
+}
+
 #[cfg(test)]
 mod tests {
     use {
         super::{
+            delete_order_events_before,
             in_flight_orders,
             last_indexed_slot,
             open_orders,
+            remove_expired_quotes,
             revert_settlement_window,
             skip_settlement_window,
             unrecorded_dead_creations,
         },
         bigdecimal::{BigDecimal, ToPrimitive},
         chain_types::solana::Pubkey,
+        chrono::Utc,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
     };
@@ -746,6 +883,31 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         .execute(&mut **tx)
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_table_rows_count_every_listed_table() {
+        let pool = crate::test_db::pool().await;
+        sqlx::query("DELETE FROM solana.app_data")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        super::update_table_rows(&pool).await.unwrap();
+        let metrics = super::Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 0);
+
+        sqlx::query(
+            "INSERT INTO solana.app_data (contract_app_data, full_app_data) VALUES ($1, $2)",
+        )
+        .bind([7u8; 32].to_vec())
+        .bind(b"{}".to_vec())
+        .execute(&pool)
+        .await
+        .unwrap();
+        super::update_table_rows(&pool).await.unwrap();
+        assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 1);
     }
 
     #[tokio::test]
@@ -1097,5 +1259,59 @@ VALUES ($1, now(), $2)
             .await
             .unwrap();
         assert_eq!(last_indexed_slot(&mut *tx).await.unwrap(), Some(42));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_cleanup_deletes_only_expired_rows() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query(r#"DELETE FROM solana.quotes"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(r#"DELETE FROM solana.order_events"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.quotes (sell_token, buy_token, sell_amount, buy_amount, kind, solver, expiration_timestamp)
+VALUES ($1, $1, 1, 2, 'sell', $1, now() - interval '1 minute'),
+       ($1, $1, 1, 2, 'sell', $1, now() + interval '1 hour')
+            "#,
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.order_events (order_uid, timestamp, label)
+VALUES ($1, now() - interval '40 days', 'created'),
+       ($1, now() - interval '40 days', 'invalid'),
+       ($1, now(), 'created')
+            "#,
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        assert_eq!(remove_expired_quotes(&mut *tx, now).await.unwrap(), 1);
+        assert_eq!(
+            delete_order_events_before(&mut *tx, now - chrono::Duration::days(30))
+                .await
+                .unwrap(),
+            1
+        );
+        let left: (i64, i64) = sqlx::query_as(
+            r#"SELECT (SELECT count(*) FROM solana.quotes), (SELECT count(*) FROM solana.order_events)"#,
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(left, (1, 2));
     }
 }

@@ -1,6 +1,7 @@
 //! Wire shape of the quote endpoint, mirroring the EVM orderbook.
 
 use {
+    app_data::OrderCreationAppData,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -28,9 +29,28 @@ pub struct Request {
     pub side: Side,
     #[serde(flatten, default)]
     pub validity: Option<Validity>,
-    /// `0x`-prefixed 32 bytes, echoed back untouched.
+    /// The order's app data, the document or its hash, checked like at
+    /// placement. The zero hash when absent.
+    #[serde(flatten, deserialize_with = "app_data::deserialize_optional_app_data")]
+    pub app_data: OrderCreationAppData,
+    /// How much of the quote competition to wait for, `verified` when absent.
     #[serde(default)]
-    pub app_data: Option<String>,
+    pub price_quality: PriceQuality,
+}
+
+/// How good the quote should be, the EVM `priceQuality`.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PriceQuality {
+    /// The best quote of the fastest `n` drivers, unverified and not stored.
+    Fast,
+    /// The best quote of every driver, ranked purely by the promised price
+    /// without verifying quotes by simulation.
+    Optimal,
+    /// Quotes get verified by simulation whenever possible and verified
+    /// quotes are preferred over unverified ones, even at a worse price.
+    #[default]
+    Verified,
 }
 
 /// Which side the quote fixes, and the amount that side names.
@@ -109,8 +129,7 @@ pub struct Response {
     pub expiration: DateTime<Utc>,
     /// The stored quote's id, absent when the store was unavailable.
     pub id: Option<i64>,
-    /// Whether the amounts were confirmed by simulating the settlement. No
-    /// component simulates, so a quote is indicative.
+    /// Whether the amounts were confirmed by simulating the settlement.
     pub verified: bool,
     /// The account a sponsored creation transaction must name as its fee payer.
     /// Absent when the deployment does not sponsor placements.
@@ -135,7 +154,9 @@ pub struct Quote {
     pub buy_amount: u64,
     /// Unix seconds.
     pub valid_to: u32,
-    pub app_data: Option<String>,
+    /// The request's app data, a document with its hash alongside.
+    #[serde(flatten)]
+    pub app_data: OrderCreationAppData,
     /// Always zero: no component charges a fee.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
@@ -176,7 +197,7 @@ mod tests {
 
     #[test]
     fn accepts_the_evm_request_body() {
-        // Fields with no Solana meaning.
+        // The EVM body, with fields that have no Solana meaning.
         let raw = serde_json::json!({
             "from": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
             "sellToken": "So11111111111111111111111111111111111111112",
@@ -192,6 +213,7 @@ mod tests {
         assert_eq!(request.side.kind_and_amount(), (Kind::Sell, 10_000_000));
         assert!(matches!(request.validity, Some(Validity::ValidFor(1800))));
         assert!(request.receiver.is_none());
+        assert_eq!(request.price_quality, PriceQuality::Optimal);
     }
 
     #[test]
@@ -210,6 +232,7 @@ mod tests {
             request.validity,
             Some(Validity::ValidTo(1787740563))
         ));
+        assert_eq!(request.price_quality, PriceQuality::Verified);
     }
 
     /// Both spellings of the sell amount name the same number.

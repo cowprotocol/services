@@ -2,7 +2,7 @@
 
 use {
     crate::domain::{
-        priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
+        priority_fee::{MAX_COMPUTE_UNIT_LIMIT, MAX_RECENT_SLOTS, PriorityFeePolicy},
         settlement::MaxNativeShortfall,
         solver_fee::SolverFee,
     },
@@ -46,6 +46,10 @@ pub async fn load(path: &Path) -> Config {
     assert!(
         (1..=MAX_RECENT_SLOTS).contains(&priority_fee.recent_slots),
         "priority-fee: recent-slots is outside 1..={MAX_RECENT_SLOTS}"
+    );
+    assert!(
+        (1..=MAX_COMPUTE_UNIT_LIMIT).contains(&priority_fee.default_compute_unit_limit),
+        "priority-fee: default-compute-unit-limit is outside 1..={MAX_COMPUTE_UNIT_LIMIT}"
     );
     config
 }
@@ -125,6 +129,13 @@ pub struct Rpc {
 pub struct Http {
     /// Address the HTTP API server binds to and listens on.
     pub bind_address: SocketAddr,
+    /// Port the metrics and probes server binds to, on every interface.
+    #[serde(default = "default_metrics_port")]
+    pub metrics_port: u16,
+}
+
+const fn default_metrics_port() -> u16 {
+    observe::metrics::DEFAULT_METRICS_PORT
 }
 
 /// A configured solver engine.
@@ -189,6 +200,7 @@ mod tests {
             config.rpc.endpoint.as_str(),
             "https://api.mainnet-beta.solana.com/"
         );
+        assert_eq!(config.http.metrics_port, 9586);
         assert_eq!(
             config.rpc.bundle_endpoint.as_str(),
             "https://bundles.example.com/"

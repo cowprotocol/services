@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "driver"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 account-balances = { workspace = true }

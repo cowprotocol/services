@@ -144,7 +144,8 @@ fn resolves_settlement_and_solflow_across_top_level_and_cpi() {
         vec![router, acct_a],
         vec![settlement],
         vec![solflow, acct_b],
-        // top-level: a router call (dropped) then a solflow call (kept, index 1)
+        // top-level: a router call (dropped) then a solflow call (kept, index
+        // 1)
         vec![
             CompiledInstruction {
                 program_id_index: 0,
@@ -209,13 +210,15 @@ fn unresolvable_programs_dropped_account_indices_carried_through() {
                         accounts: vec![0],
                         data: vec![0],
                     },
-                    // program index 1 is the zeroed bad key -> untracked, dropped
+                    // program index 1 is the zeroed bad key -> untracked,
+                    // dropped
                     CompiledInstruction {
                         program_id_index: 1,
                         accounts: vec![0],
                         data: vec![0],
                     },
-                    // settlement, with an out-of-range account index carried as-is
+                    // settlement, with an out-of-range account index carried
+                    // as-is
                     CompiledInstruction {
                         program_id_index: 0,
                         accounts: vec![5],

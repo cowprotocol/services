@@ -8,11 +8,13 @@
 //! than the route achieved. The difference stays where the solver fee's
 //! does, see [`super::solver_fee`].
 //!
-//! The cut is enforced at the solver fee's two points: the limit leg sent to
-//! the engine is moved by the cut before the fee tightens it, and
-//! [`ExecutionCost::apply`] re-validates every fill once the fee is taken. A
-//! solution whose trades cannot absorb the cut within the order's signed
-//! limit is dropped whole, like one that cannot absorb the fee.
+//! The cut is taken at two points of solve time. Before any route is known,
+//! the limit leg sent to the engine is moved by the cut priced at the
+//! policy's default compute units, before the solver fee tightens it. Once
+//! the settlement is simulated, [`ExecutionCost::apply`] cuts every fill at
+//! the compute units the settlement will declare. A solution whose trades
+//! cannot absorb the cut within the order's signed limit is dropped whole,
+//! like one that cannot absorb the fee.
 
 use {
     super::{
@@ -23,6 +25,7 @@ use {
         solution::{Solution, Trade},
         solver_fee::SolverFee,
     },
+    chain_types::{ChainTypes, solana::Solana},
     cow_settlement_interface::data::intent::ENCODED_NATIVE_SOL_TRANSFER,
     solana_sdk::pubkey::Pubkey,
     std::{
@@ -30,9 +33,6 @@ use {
         num::NonZero,
     },
 };
-
-/// Lamports per 10^9 atoms of native SOL: an atom is a lamport.
-const NATIVE_PRICE: u64 = 1_000_000_000;
 
 /// Who prices the execution costs into the fills, and what the engine is
 /// sent accordingly.
@@ -172,12 +172,12 @@ impl ExecutionCost<'_> {
             Side::Buy => order.sell_token,
         };
         let price = if token == ENCODED_NATIVE_SOL_TRANSFER {
-            NATIVE_PRICE
+            Solana::NATIVE_PRICE_DENOMINATOR
         } else {
             self.native_prices.get(&token).copied()?
         };
         let price = NonZero::new(u128::from(price))?;
-        let atoms = (lamports * u128::from(NATIVE_PRICE)).div_ceil(price.get());
+        let atoms = (lamports * u128::from(Solana::NATIVE_PRICE_DENOMINATOR)).div_ceil(price.get());
         Some(u64::try_from(atoms).unwrap_or(u64::MAX))
     }
 }
@@ -271,8 +271,8 @@ mod tests {
     /// 1000 lamports are 500 sell atoms or 2000 buy atoms.
     fn prices() -> HashMap<Pubkey, u64> {
         HashMap::from([
-            (pubkey(0x33), 2 * NATIVE_PRICE),
-            (pubkey(0x44), NATIVE_PRICE / 2),
+            (pubkey(0x33), 2 * Solana::NATIVE_PRICE_DENOMINATOR),
+            (pubkey(0x44), Solana::NATIVE_PRICE_DENOMINATOR / 2),
         ])
     }
 
