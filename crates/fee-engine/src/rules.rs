@@ -2,13 +2,15 @@
 
 use {
     crate::{
+        AppData,
         Evaluator,
+        Flashloan,
         OrderView,
         evaluator::{RuleError, Skipped},
         fee,
         order_view,
     },
-    alloy_primitives::U256,
+    alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
@@ -243,6 +245,7 @@ impl RuleSet {
         let mut errors: Vec<_> = evaluator
             .evaluate_all_expressions(OrderView {
                 order: &full_sample_order(now),
+                app_data: &sample_app_data(),
                 in_market: false,
             })
             .into_iter()
@@ -251,6 +254,7 @@ impl RuleSet {
         let on_bare: Vec<_> = evaluator
             .evaluate(OrderView {
                 order: &bare_sample_order(now),
+                app_data: &AppData::default(),
                 in_market: false,
             })
             .skipped
@@ -331,6 +335,22 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
         ..order.metadata
     };
     order
+}
+
+/// App data with every field set, for the full sample order.
+pub(crate) fn sample_app_data() -> AppData {
+    AppData {
+        app_code: Some("sample".to_owned()),
+        signer: Some(Address::ZERO),
+        replaced_order: Some(Default::default()),
+        flashloan: Some(Flashloan {
+            liquidity_provider: Address::ZERO,
+            protocol_adapter: Address::ZERO,
+            receiver: Address::ZERO,
+            token: Address::ZERO,
+            amount: U256::ONE,
+        }),
+    }
 }
 
 /// Each list as the CEL list rules test with `in`, e.g.
@@ -484,6 +504,11 @@ mod tests {
             ),
             rule("Fast path", "order.fastPath", "no_fee()"),
             rule(
+                "App code",
+                "order.appData.?appCode.orValue('') == 'sample'",
+                "no_fee()",
+            ),
+            rule(
                 "Ratio",
                 "order.?quote.optMap(q, q.buyAmount / q.sellAmount).orValue(0.0) > 0.0",
                 "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
@@ -565,6 +590,7 @@ mod tests {
                 "no_fee()",
             ),
             rule("Misspelt", "order.sellAmout > 0", "volume(1)"),
+            rule("App code", "order.appData.appCode == 'sample'", "no_fee()"),
         ])
         .unwrap_err();
         let reported: Vec<_> = errors
@@ -577,6 +603,7 @@ mod tests {
                 ("Misspelt", Field::When, Sample::Full),
                 ("Unguarded", Field::When, Sample::Bare),
                 ("Last field only", Field::When, Sample::Bare),
+                ("App code", Field::When, Sample::Bare),
             ]
         );
         assert!(errors.iter().all(|error| matches!(

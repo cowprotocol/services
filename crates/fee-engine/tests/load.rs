@@ -4,11 +4,13 @@ use {
     alloy_primitives::{Address, U256, address},
     chrono::Utc,
     fee_engine::{
+        AppData,
         CompileError,
         Fee,
         Field,
         LoadError,
         Match,
+        OrderView,
         RuleSet,
         RulesToml,
         load_rules_from_str,
@@ -63,8 +65,9 @@ fn mainnet_sample_lists_reach_the_rules() {
     let rules = load_rules_from_str(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
 
-    let evaluation = evaluator.evaluate(fee_engine::OrderView {
+    let evaluation = evaluator.evaluate(OrderView {
         order: &order(USDC, USDT),
+        app_data: &AppData::default(),
         in_market: false,
     });
     assert!(evaluation.skipped.is_empty());
@@ -77,8 +80,9 @@ fn mainnet_sample_lists_reach_the_rules() {
 
     let mut quoted = order(USDC, USDT);
     quoted.metadata.quote = Some(Default::default());
-    let evaluation = evaluator.evaluate(fee_engine::OrderView {
+    let evaluation = evaluator.evaluate(OrderView {
         order: &quoted,
+        app_data: &AppData::default(),
         in_market: true,
     });
     let Match { fees, .. } = evaluation.matched.first().unwrap();
@@ -87,8 +91,9 @@ fn mainnet_sample_lists_reach_the_rules() {
         [Fee::PriceImprovement { .. }, Fee::Volume { .. }]
     ));
 
-    let evaluation = evaluator.evaluate(fee_engine::OrderView {
+    let evaluation = evaluator.evaluate(OrderView {
         order: &order(WETH, USDC),
+        app_data: &AppData::default(),
         in_market: false,
     });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
