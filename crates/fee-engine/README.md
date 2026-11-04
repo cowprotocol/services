@@ -22,8 +22,9 @@ not return valid fees is reported. This catches a misspelt name or a bad fee
 argument such as `volume(0.001)` at load time instead of on the first order.
 On the bare sample (no optional field present) the rules run as on a real
 order, and every rule that is skipped is reported. This catches a rule that
-reads `order.quote.sellAmount` without `has(order.quote)` first, which would
-be skipped on every order without a quote.
+reads a field an order may lack, such as `order.quote.sellAmount`, directly
+instead of through the optional operator (`order.?quote.sellAmount`), which
+would be skipped on every order without a quote.
 
 The pass has limits:
 
@@ -107,7 +108,8 @@ next section.
 The operators (`==`, `&&`, `||`, `in`, `? :`, arithmetic), the standard
 functions (`size`, `startsWith`, `endsWith`, `contains`, `matches`,
 `timestamp`, `duration`, `string`, `int`) and the macros (`has`, `exists`,
-`all`, `filter`, `map`). Optional values are off, so `a.?b` does not compile.
+`all`, `filter`, `map`). Optional values are on: `a.?b` reaches a field an
+order may lack without failing; see the `order` section.
 
 ```
 when: order.kind == "sell" && order.sellAmount > 1e21
@@ -225,13 +227,10 @@ whole numbers (`validTo`, `validFrom`, `ethflowData.userValidTo`) are
     "verified": true
   },
   "ethflowData": {
-    "userValidTo": 1793284991,
-    "refundTxHash": "0x7c1e…aa04",
-    "isRefunded": true
+    "userValidTo": 1793284991
   },
   "onchainOrderData": {
-    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187",
-    "placementError": "invalidQuote"
+    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187"
   },
   "onchainUser": "0x40a50cf069e992aa4536211b23f286ef88752187"
 }
@@ -245,10 +244,12 @@ Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
 app-data document (`fullAppData`) are not in the view. An unset `receiver`
 is the zero address. Other optional fields are absent when unset, not
-`null`: test them with `has(order.quote)`. `has` checks only its last
-field, so `has(order.ethflowData.refundTxHash)` fails on an order without
-`ethflowData`; write `has(order.ethflowData) &&
-has(order.ethflowData.refundTxHash)`.
+`null`. Reach one with the optional operator `order.?quote`: it yields an
+absent value instead of failing and reaches through an optional parent, so
+`order.?ethflowData.userValidTo` reads on any order, where
+`order.ethflowData.userValidTo` needs a `has(order.ethflowData)` guard first.
+End the chain with `.orValue(d)` for a plain value, `.hasValue()` for a bool,
+or `.optMap(x, …)` to compute over it.
 
 A `uint` compares with any number, but arithmetic needs `uint` operands,
 so write `order.validTo - 3600u` or `int(order.validTo) - 3600`, not
@@ -258,6 +259,7 @@ of it.
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
 when: timestamp(int(order.validTo)) - now > duration("1h")
+when: order.?quote.sellAmount.orValue(0.0) > 0.0
 fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
 ```
 

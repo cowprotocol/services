@@ -150,13 +150,7 @@ mod tests {
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
         configs::fee_factor::FeeFactor,
-        model::order::{
-            EthflowData,
-            OnchainOrderData,
-            OnchainOrderPlacementError,
-            OrderData,
-            OrderMetadata,
-        },
+        model::order::{OrderData, OrderMetadata},
         std::collections::BTreeMap,
     };
 

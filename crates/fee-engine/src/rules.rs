@@ -11,15 +11,7 @@ use {
     alloy_primitives::U256,
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
-    model::order::{
-        EthflowData,
-        OnchainOrderData,
-        OnchainOrderPlacementError,
-        Order,
-        OrderData,
-        OrderMetadata,
-        OrderQuote,
-    },
+    model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
     serde::{Deserialize, Deserializer, de},
     std::{
         collections::{BTreeMap, HashSet},
@@ -204,7 +196,7 @@ impl RuleSet {
             rules: definitions,
         }: RuleSetDefinition,
     ) -> Result<Self, CompileError> {
-        let mut env = Env::stdlib().with_optional_support(false);
+        let mut env = Env::stdlib();
         cel::extensions::math(&mut env).expect("math names are free in the stdlib");
         cel::extensions::strings(&mut env).expect("strings names are free in the stdlib");
         let env = Arc::new(env);
@@ -321,12 +313,9 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
     order.metadata = OrderMetadata {
         ethflow_data: Some(EthflowData {
             user_valid_to: now.timestamp(),
-            refund_tx_hash: Some(Default::default()),
-        }),
-        onchain_order_data: Some(OnchainOrderData {
-            placement_error: Some(OnchainOrderPlacementError::Other),
             ..Default::default()
         }),
+        onchain_order_data: Some(OnchainOrderData::default()),
         onchain_user: Some(Default::default()),
         valid_from: Some(now.timestamp() as u32),
         quote: Some(OrderQuote {
@@ -485,30 +474,18 @@ mod tests {
         validate(vec![
             rule(
                 "Quoted",
-                "has(order.quote) && order.quote.sellAmount > 0",
+                "order.?quote.sellAmount.orValue(0.0) > 0.0",
                 "volume(1)",
             ),
             rule(
                 "Ethflow",
-                "has(order.ethflowData) && order.ethflowData.userValidTo > 0",
+                "order.?ethflowData.userValidTo.orValue(0u) > 0u",
                 "no_fee()",
             ),
             rule("Fast path", "order.fastPath", "no_fee()"),
             rule(
-                "Refunded",
-                "has(order.ethflowData) && has(order.ethflowData.refundTxHash) && \
-                 order.ethflowData.refundTxHash != ''",
-                "no_fee()",
-            ),
-            rule(
-                "Placement error",
-                "has(order.onchainOrderData) && has(order.onchainOrderData.placementError) && \
-                 order.onchainOrderData.placementError == 'other'",
-                "no_fee()",
-            ),
-            rule(
                 "Ratio",
-                "has(order.quote) && order.quote.buyAmount / order.quote.sellAmount > 0.0",
+                "order.?quote.optMap(q, q.buyAmount / q.sellAmount).orValue(0.0) > 0.0",
                 "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
             ),
             rule(
@@ -519,7 +496,7 @@ mod tests {
             ),
             rule(
                 "Valid from",
-                "has(order.validFrom) && order.validFrom + 1u > 0u",
+                "order.?validFrom.orValue(0u) + 1u > 0u",
                 "no_fee()",
             ),
             rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
@@ -564,17 +541,17 @@ mod tests {
         validate(vec![
             rule(
                 "Guarded",
-                "has(order.quote) && order.quote.sellAmount > 0",
+                "order.?quote.sellAmount.orValue(0.0) > 0.0",
                 "volume(1)",
             ),
             rule(
                 "Fee behind its guard",
-                "has(order.quote)",
+                "order.?quote.hasValue()",
                 "volume(order.quote.feeAmount)",
             ),
             rule(
                 "Nested",
-                "has(order.ethflowData) && has(order.ethflowData.refundTxHash)",
+                "order.?ethflowData.userValidTo.hasValue()",
                 "no_fee()",
             ),
         ])
@@ -584,7 +561,7 @@ mod tests {
             rule("Unguarded", "order.quote.sellAmount > 0", "volume(1)"),
             rule(
                 "Last field only",
-                "has(order.ethflowData.refundTxHash)",
+                "has(order.ethflowData.userValidTo)",
                 "no_fee()",
             ),
             rule("Misspelt", "order.sellAmout > 0", "volume(1)"),

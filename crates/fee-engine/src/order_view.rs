@@ -71,7 +71,8 @@ fn number(decimal: impl ToString) -> f64 {
         .expect("decimals parse as doubles")
 }
 
-/// Drops `null` fields, so that an unset option is absent, as `has()` expects.
+/// Drops `null` fields, so an unset option is absent, not `null`: `.?` and
+/// `has` both read an absent field as missing.
 fn remove_nulls(value: &mut Value) {
     if let Value::Object(fields) = value {
         fields.retain(|_, field| !field.is_null());
@@ -273,20 +274,10 @@ mod tests {
         assert_eq!(view["quote"]["gasPrice"], 1234.5);
         assert_eq!(view["quote"]["sellTokenPrice"], 1e-7);
         assert_eq!(view["quote"]["sellAmount"], 1e21);
-        assert_eq!(
-            view["ethflowData"],
-            json!({
-                "userValidTo": 5,
-                "refundTxHash": format!("0x{}", "ab".repeat(32)),
-                "isRefunded": true,
-            })
-        );
+        assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
         assert_eq!(
             view["onchainOrderData"],
-            json!({
-                "sender": format!("0x{}cd", "0".repeat(38)),
-                "placementError": "validToTooFarInTheFuture",
-            })
+            json!({ "sender": format!("0x{}cd", "0".repeat(38)) })
         );
         assert_eq!(view["onchainUser"], format!("0x{}ef", "0".repeat(38)));
         assert_eq!(view["validFrom"], 4);
@@ -323,10 +314,7 @@ mod tests {
             in_market: false,
         });
 
-        assert_eq!(
-            view["ethflowData"],
-            json!({ "userValidTo": 0, "isRefunded": false })
-        );
+        assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
         assert_eq!(
             view["onchainOrderData"],
             json!({ "sender": format!("0x{}", "0".repeat(40)) })
