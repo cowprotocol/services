@@ -583,11 +583,9 @@ mod tests {
             error.error,
             RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
         )));
-        assert!(
-            errors[1]
-                .to_string()
-                .ends_with("on a sample order with no optional field")
-        );
+        let message = errors[1].to_string();
+        assert!(message.contains("No such key: quote"), "{message}");
+        assert!(message.ends_with("on a sample order with no optional field"));
     }
 
     #[test]
