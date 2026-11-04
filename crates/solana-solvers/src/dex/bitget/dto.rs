@@ -5,6 +5,7 @@ use {
         config::Fee,
         dex::{Error, Order, Quote, Swap, dto::ApiInstruction},
     },
+    base64::prelude::*,
     serde::{Deserialize, Serialize, de::DeserializeOwned},
     serde_with::{DisplayFromStr, serde_as},
     solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
@@ -201,8 +202,8 @@ pub fn swap(quote: &Quote, taker: &Pubkey, fee: Fee) -> Result<Swap, Error> {
     })
 }
 
-/// Body of the `/signBgwSolTx` request: the transaction as base58 of its wire
-/// bytes.
+/// Body of the `/signBgwSolTx` request: the transaction as base64 of its wire
+/// bytes. Bitget takes v1 transactions in base64, not base58.
 #[derive(Serialize)]
 pub struct CosignRequest {
     chain: &'static str,
@@ -214,7 +215,7 @@ impl CosignRequest {
         let bytes = wincode::serialize(transaction).expect("a transaction serializes");
         Self {
             chain: "sol",
-            transaction: bs58::encode(bytes).into_string(),
+            transaction: BASE64_STANDARD.encode(bytes),
         }
     }
 }
@@ -226,8 +227,8 @@ pub struct CosignResponse {
 
 impl CosignResponse {
     pub fn into_transaction(self) -> Result<VersionedTransaction, Error> {
-        let bytes = bs58::decode(&self.transaction)
-            .into_vec()
+        let bytes = BASE64_STANDARD
+            .decode(&self.transaction)
             .map_err(|err| Error::BadResponse(format!("co-signed transaction: {err}")))?;
         wincode::deserialize(&bytes)
             .map_err(|err| Error::BadResponse(format!("co-signed transaction: {err}")))

@@ -114,7 +114,7 @@ mod tests {
         std::{num::NonZeroUsize, time::Duration},
     };
 
-    /// Stands in for Bitget's `/signBgwSolTx`: decodes the base58
+    /// Stands in for Bitget's `/signBgwSolTx`: decodes the base64
     /// transaction, signs `authority`'s slot, and answers in Bitget's
     /// envelope.
     async fn spawn_bitget(authority: Arc<Keypair>) -> SocketAddr {
@@ -122,8 +122,8 @@ mod tests {
             "/signBgwSolTx",
             post(move |Json(request): Json<Value>| async move {
                 assert_eq!(request["chain"], "sol");
-                let bytes = bs58::decode(request["transaction"].as_str().unwrap())
-                    .into_vec()
+                let bytes = BASE64_STANDARD
+                    .decode(request["transaction"].as_str().unwrap())
                     .unwrap();
                 let mut transaction: VersionedTransaction = wincode::deserialize(&bytes).unwrap();
                 let index = transaction
@@ -134,7 +134,7 @@ mod tests {
                     .unwrap();
                 transaction.signatures[index] =
                     authority.sign_message(&transaction.message.serialize());
-                let encoded = bs58::encode(wincode::serialize(&transaction).unwrap()).into_string();
+                let encoded = BASE64_STANDARD.encode(wincode::serialize(&transaction).unwrap());
                 Json(json!({"status": 0, "error_code": 0, "data": {"transaction": encoded}}))
             }),
         );
