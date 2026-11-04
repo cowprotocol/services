@@ -458,7 +458,9 @@ mod tests {
     }
 
     #[test]
-    fn in_market_is_the_one_passed_in() {
+    fn in_market_comes_from_the_order_view() {
+        // An order carries no `inMarket`; the view exposes the `in_market` bool
+        // the host passes, and a rule reads back exactly that value.
         let rules = rule_set(vec![
             rule("Inside", "order.inMarket", "volume(1)"),
             rule("Outside", "!order.inMarket", "volume(2)"),
