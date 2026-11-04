@@ -274,15 +274,14 @@ paths:
         unsigned fee payer), and every order field derives from its trailing
         `CreateOrder` instruction. In front of it the transaction carries the
         preparation steps, in this order: create the wSOL account (the owner
-        pays for it, a funder-paid creation is refused), fund it,
-        sync it, approve the settlement delegate, and create the buy token
-        account (idempotent, a no-op when the account already exists), each
-        omittable (the wrap steps only for native SOL sells). Without the
-        creation, the buy token account must already receive the buy mint or
-        be the owner's associated token account, which the settlement
-        creates when missing: a custom receiver's missing account needs the
-        creation. An order buying native SOL skips the creation, its payout
-        goes to the wallet. The order competes in auctions until the
+        pays for it, a funder-paid creation is refused), fund it, sync it,
+        and approve the settlement delegate, each omittable (the wrap steps
+        only for native SOL sells). The transaction must not create the buy
+        token account: it must already receive the buy mint, or be the
+        owner's associated token account, which the settlement creates when
+        missing. A custom receiver's account must therefore already exist
+        and accept the buy mint. An order buying native SOL pays out to its
+        wallet instead. The order competes in auctions until the
         transaction's blockhash expires (about a minute) or it settles.
       requestBody:
         required: true
@@ -349,8 +348,10 @@ paths:
         "400":
           description: |
             Sponsoring disabled on this deployment (`SponsoringDisabled`), an
-            undecodable or wrongly shaped transaction, or a wSOL sell account
-            creation paid by anyone but the order owner (`InvalidTransaction`),
+            undecodable or wrongly shaped transaction, a wSOL sell account
+            creation paid by anyone but the order owner, a bundle creating
+            the buy token account, or a buy token account the settlement can
+            neither pay out to nor create (`InvalidTransaction`),
             a fee or rent payer other than the funder (`WrongFeePayer`,
             `WrongRentPayer`), a PDA not derived from the intent
             (`WrongOrderPda`), a delegation not targeting the settlement
@@ -590,6 +591,26 @@ components:
       description: Which amount the order fixes.
       type: string
       enum: [sell, buy]
+    PriceQuality:
+      description: |-
+        How good should the price estimate be?
+
+        Fast: The price estimate is chosen among the fastest N drivers.
+        Estimates do not get verified by simulation. The estimate is not
+        stored and expires at once.
+        Optimal: The price estimate is chosen among all drivers, ranked
+        purely by the promised price. Estimates do not get verified by
+        simulation.
+        Verified: All price estimates get verified by simulation whenever
+        possible and verified estimates are preferred over unverified ones,
+        even when an unverified estimate promises a better price. The
+        response's `verified` flag indicates whether the returned estimate
+        was actually verified.
+
+        **NOTE**: Orders are supposed to be created from `verified` or `optimal`
+        price estimates.
+      type: string
+      enum: [fast, optimal, verified]
     OrderStatus:
       description: |
         Lifecycle of the order. A full fill wins over cancellation because
@@ -934,8 +955,8 @@ components:
     QuoteRequest:
       description: |
         A quote request. Fields with no Solana meaning (`signingScheme`,
-        `priceQuality`, `sellTokenBalance`, `buyTokenBalance`) are accepted
-        and ignored, so the EVM request body works unchanged.
+        `sellTokenBalance`, `buyTokenBalance`) are accepted and ignored, so
+        the EVM request body works unchanged.
       type: object
       required:
         - from
@@ -994,6 +1015,10 @@ components:
           allOf:
             - $ref: "#/components/schemas/AppDataHash"
           nullable: true
+        priceQuality:
+          allOf:
+            - $ref: "#/components/schemas/PriceQuality"
+          default: verified
     QuoteResponse:
       type: object
       required:
@@ -1007,16 +1032,22 @@ components:
         from:
           $ref: "#/components/schemas/Pubkey"
         expiration:
-          description: When the quoted amounts stop being honored.
+          description: >-
+            When the quoted amounts stop being honored. The epoch for a `fast`
+            quote, which expires at once.
           type: string
           format: date-time
         id:
-          description: The stored quote's id. Null when storing the quote failed.
+          description: >-
+            The stored quote's id. Null for a `fast` quote, which is not
+            stored, and when storing the quote failed.
           type: integer
           format: int64
           nullable: true
         verified:
-          description: Whether the amounts were confirmed by simulation. Always false.
+          description: >-
+            Whether it was possible to verify that the quoted amounts are
+            accurate using a simulation.
           type: boolean
         funder:
           description: >-

@@ -9,16 +9,22 @@ to act on, e.g. the first.
 
 A rule is a `RuleDefinition`: a name and two [CEL](https://cel.dev)
 expressions. `when` must return a bool. `fee` must return one fee or a list
-of fees. `RuleSet::new` refuses the whole set when a rule name repeats, a
-list takes a reserved name or an expression does not compile. A rule whose
-expression fails at run time is skipped and reported to the caller.
+of fees. `RuleSet::new` refuses the whole set when a rule name is empty or
+repeats, a list takes a reserved name or an expression does not compile. A
+rule whose expression fails at run time is skipped and reported to the
+caller.
 
-`RuleSet::validate_on_sample_order` is a separate pass: it runs both
-expressions of every rule against a sample order (a default order with
-every optional field present) and reports every `when` that does not return
-a bool and every `fee` that does not return valid fees, so one run shows all
-the mistakes. This catches a misspelt name or a bad fee argument such as
-`volume(0.001)` at load time instead of on the first order.
+`RuleSet::validate_on_sample_order` is a separate pass over two sample
+orders, so one run shows all the mistakes. On the full sample (every
+optional field present) both expressions of every rule run, whatever `when`
+says, and every `when` that does not return a bool and every `fee` that does
+not return valid fees is reported. This catches a misspelt name or a bad fee
+argument such as `volume(0.001)` at load time instead of on the first order.
+On the bare sample (no optional field present) the rules run as on a real
+order, and every rule that is skipped is reported. This catches a rule that
+reads a field an order may lack, such as `order.quote.sellAmount`, directly
+instead of through the optional operator (`order.?quote.sellAmount`), which
+would be skipped on every order without a quote.
 
 The pass has limits:
 
@@ -26,11 +32,12 @@ The pass has limits:
   sample is out of market, so the bad argument in `order.inMarket ?
   volume(0.001) : volume(1)` is not found; a static check of every branch is
   planned.
-- Every amount and price in the sample is 1, except `feeAmount`, which is 0
-  as on every order the API accepts. A fee computed from the order is
-  checked only at those values: `volume(order.buyAmount / order.sellAmount)`
-  passes, but on a real order it can give an out-of-range argument, and the
-  rule is then skipped and reported.
+- Every amount and price in the samples is 1, except `feeAmount`, which is 0
+  as on every order the API accepts, and every timestamp is `now`. A fee
+  computed from the order is checked only at those values:
+  `volume(order.buyAmount / order.sellAmount)` passes, but on a real order
+  it can give an out-of-range argument, and the rule is then skipped and
+  reported.
 
 ```
 name: Stablecoin swaps
@@ -44,14 +51,23 @@ fee:  surplus(50, 1)
 
 ## The rules file
 
-`load_rules(source)` reads a set from TOML: `[lists]` holds named lists of
-strings and each `[[rule]]` table is a rule, tried in file order. Unknown
-top-level and rule keys are refused; any key under `[lists]` is a list
-name, so a list that no rule names loads without error. The file goes
-through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
-refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown key
-or missing field; names the line and column), `Rules` (a `CompileError`) or
-`SampleOrder` (every `SampleOrderError`).
+`load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
+`[lists]` holds named lists of strings and each `[[rule]]` table is a rule,
+tried in file order. Unknown top-level and rule keys are refused; any key
+under `[lists]` is a list name, so a list that no rule names loads without
+error. The file goes through `RuleSet::new` and
+`RuleSet::validate_on_sample_order`; any failure refuses the whole file as a
+`LoadError`: `Toml` (does not parse, unknown key, missing field or a rule
+field that is empty; names the line and column), `Rules` (a `CompileError`)
+or `SampleOrder` (every `SampleOrderError`). A file without rules loads: no
+order pays a protocol fee.
+
+`load_rules_toml(RulesToml { lists, rules })` loads the same two tables as
+raw `toml::Value`s, e.g. from a section of a host config, so the host need
+not know their shape. `None` is an empty table, like an absent one in a
+file. It refuses them as `load_rules_from_str` does, but without a line or
+column: a malformed rule is a `MalformedRule` error that names the rule by
+its number, and any other malformed value is a `Toml` error.
 
 ```toml
 [lists]
@@ -92,7 +108,8 @@ next section.
 The operators (`==`, `&&`, `||`, `in`, `? :`, arithmetic), the standard
 functions (`size`, `startsWith`, `endsWith`, `contains`, `matches`,
 `timestamp`, `duration`, `string`, `int`) and the macros (`has`, `exists`,
-`all`, `filter`, `map`). Optional values are off, so `a.?b` does not compile.
+`all`, `filter`, `map`). Optional values are on: `a.?b` reaches a field an
+order may lack without failing; see the `order` section.
 
 ```
 when: order.kind == "sell" && order.sellAmount > 1e21
@@ -174,8 +191,9 @@ order.
 
 The fields of the API order that a fee can depend on, under the API names
 except for the app data (see `order.appData`), built field by field in
-`order_view/mod.rs`. Amounts and prices are doubles and hex is lowercase. An
-order with every field set looks like this (hashes shortened):
+`order_view/mod.rs`. Amounts and prices are doubles, whole numbers
+(`validTo`, `validFrom`, `ethflowData.userValidTo`) are `uint`s and hex is
+lowercase. An order with every field set looks like this (hashes shortened):
 
 ```json
 {
@@ -222,29 +240,38 @@ order with every field set looks like this (hashes shortened):
     "verified": true
   },
   "ethflowData": {
-    "userValidTo": 1793284991,
-    "refundTxHash": "0x7c1e…aa04",
-    "isRefunded": true
+    "userValidTo": 1793284991
   },
   "onchainOrderData": {
-    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187",
-    "placementError": "invalidQuote"
+    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187"
   },
   "onchainUser": "0x40a50cf069e992aa4536211b23f286ef88752187"
 }
 ```
 
-`inMarket` is `Order::in_market` as the host passes it. The engine does not
+`inMarket` is `OrderView::in_market` as the host passes it. The engine does not
 check it: the host must pass false when the order has no quote.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
 `settlementContract`) and legacy fields (`class`, `isLiquidityOrder`) are
 not in the view. An unset `receiver` is the zero address. Other optional
-fields are absent when unset, not `null`: test them with `has(order.quote)`.
+fields are absent when unset, not `null`. Reach one with the optional
+operator `order.?quote`: it yields an absent value instead of failing and
+reaches through an optional parent, so `order.?ethflowData.userValidTo`
+reads on any order, where `order.ethflowData.userValidTo` needs a
+`has(order.ethflowData)` guard first. End the chain with `.orValue(d)` for a
+plain value, `.hasValue()` for a bool, or `.optMap(x, …)` to compute over it.
+
+A `uint` compares with any number, but arithmetic needs `uint` operands,
+so write `order.validTo - 3600u` or `int(order.validTo) - 3600`, not
+`order.validTo - 3600`. `timestamp(int(order.validTo))` makes a timestamp
+of it.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
+when: timestamp(int(order.validTo)) - now > duration("1h")
+when: order.?quote.sellAmount.orValue(0.0) > 0.0
 fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
 ```
 
@@ -254,22 +281,24 @@ matter.
 
 ### `order.appData`
 
-`Order::app_data`: the app data a fee can depend on, which the host copies
-from the protocol's parsed document, plus its `appCode`. The engine reads no
-app-data text. In the order the API returns, `appData` is the hash and
-`fullAppData` is the document as text; the view has the parsed document as
-`appData`, and no hash.
+`OrderView::app_data`: the app data a fee can depend on, which the host
+copies from the protocol's parsed document, plus its `appCode`. The engine
+reads no app-data text. In the order the API returns, `appData` is the hash
+and `fullAppData` is the document as text; the view has the parsed document
+as `appData`, and no hash.
 
 The order above shows every field. No other key of the document is here,
 hooks, wrappers and partner fees included; the host appends the partner
 fees after the rule's fees. The host passes `AppData::default()` when the
-order has no document or the protocol cannot parse it.
+order has no document or the protocol cannot parse it. `appData` and
+`appData.metadata` are always present; every field under them is optional,
+so reach it with `.?` or guard it with `has`.
 
 `metadata.enableFastPath` and `metadata.validFrom` are not here: read
 `order.fastPath` and `order.validFrom`, which hold the values in effect.
 
 ```
-when: has(order.appData.appCode) && order.appData.appCode == "CoW Swap"
+when: order.appData.?appCode.orValue("") == "CoW Swap"
 when: has(order.appData.metadata.flashloan)
 ```
 

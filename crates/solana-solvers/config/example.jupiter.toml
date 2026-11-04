@@ -18,7 +18,9 @@ endpoint = "https://api.jup.ag"
 # API key from the Jupiter developer portal (or Triton). Works without one but
 # heavily rate-limited, set it for production.
 api-key = "your-jupiter-api-key"
-# Slippage tolerance in basis points, sent to Jupiter as slippageBps. 50 = 0.5%.
+# Slippage tolerance in basis points, sent to Jupiter as slippageBps. Bids use
+# Jupiter's otherAmountThreshold, so this is how far below its expected output
+# (sells) or above its expected input (buys) they land. 50 = 0.5%.
 slippage-bps = 50
 # Serve buy orders via ExactOut swaps. Off by default.
 enable-buy-orders = false

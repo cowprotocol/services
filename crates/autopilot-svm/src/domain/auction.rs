@@ -35,8 +35,7 @@ pub struct Order {
     pub order_pda: Pubkey,
     pub app_data: AppData,
     /// Whether the order PDA already exists on chain. A pending sponsored
-    /// order creates its PDA, and its buy token account when the transaction
-    /// carries that step, only at settlement time through its presigned
+    /// order creates its PDA only at settlement time through its presigned
     /// transaction.
     pub created_on_chain: bool,
     /// The cumulative fill on the order's own side: sell-token units for a

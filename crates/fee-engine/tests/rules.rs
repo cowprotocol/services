@@ -4,7 +4,7 @@ use {
     alloy_primitives::{Address, U256, address},
     chrono::{TimeZone, Utc},
     configs::fee_factor::FeeFactor,
-    fee_engine::{AppData, Evaluation, Fee, Match, RuleDefinition, RuleSet},
+    fee_engine::{AppData, Evaluation, Fee, Match, RuleDefinition, RuleSet, RuleSetDefinition},
     model::order::{Order, OrderData, OrderMetadata},
     std::collections::BTreeMap,
 };
@@ -44,18 +44,22 @@ fn rules() -> RuleSet {
         ),
         ("jit_makers".to_owned(), vec![MAKER.to_string()]),
     ]);
-    RuleSet::new(definitions, lists).unwrap()
+    RuleSet::new(RuleSetDefinition {
+        lists,
+        rules: definitions,
+    })
+    .unwrap()
 }
 
 /// `order` with no app data.
-fn without_app_data(order: &Order, in_market: bool) -> fee_engine::Order<'_> {
+fn without_app_data(order: &Order, in_market: bool) -> fee_engine::OrderView<'_> {
     static NO_APP_DATA: AppData = AppData {
         app_code: None,
         signer: None,
         replaced_order: None,
         flashloan: None,
     };
-    fee_engine::Order {
+    fee_engine::OrderView {
         order,
         app_data: &NO_APP_DATA,
         in_market,
@@ -143,10 +147,10 @@ fn reports_the_matching_rules_per_order() {
 
 #[test]
 fn no_matching_rule_means_no_fee() {
-    let rules = RuleSet::new(
-        vec![rule("Sells only", r#"order.kind == "sell""#, "volume(1)")],
-        BTreeMap::new(),
-    )
+    let rules = RuleSet::new(RuleSetDefinition {
+        rules: vec![rule("Sells only", r#"order.kind == "sell""#, "volume(1)")],
+        ..Default::default()
+    })
     .unwrap();
     let evaluator = rules.evaluator(Utc::now());
     assert!(

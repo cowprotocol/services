@@ -11,7 +11,7 @@ use {
 /// An order as the host hands it to the engine: the API order plus the facts
 /// the host computes for it.
 #[derive(Debug, Clone, Copy)]
-pub struct Order<'a> {
+pub struct OrderView<'a> {
     pub order: &'a model::order::Order,
     /// The order's app data, which the host copies from the parsed document.
     pub app_data: &'a AppData,
@@ -21,7 +21,7 @@ pub struct Order<'a> {
 }
 
 #[cfg(test)]
-impl<'a> Order<'a> {
+impl<'a> OrderView<'a> {
     /// `order` with no app data.
     pub(crate) fn without_app_data(order: &'a model::order::Order, in_market: bool) -> Self {
         static NO_APP_DATA: AppData = AppData {
@@ -42,11 +42,11 @@ impl<'a> Order<'a> {
 /// prices as doubles and hex in lowercase. Unset optional fields are absent,
 /// not `null`. Execution state, settlement and legacy fields are left out.
 pub(crate) fn order_view(
-    Order {
+    OrderView {
         order,
         app_data,
         in_market,
-    }: Order,
+    }: OrderView,
 ) -> Value {
     let (data, meta) = (&order.data, &order.metadata);
     let mut view = json!({
@@ -81,12 +81,9 @@ pub(crate) fn order_view(
         })),
         "ethflowData": meta.ethflow_data.as_ref().map(|ethflow| json!({
             "userValidTo": ethflow.user_valid_to,
-            "refundTxHash": ethflow.refund_tx_hash.map(|hash| hex(hash.as_slice())),
-            "isRefunded": ethflow.refund_tx_hash.is_some(),
         })),
         "onchainOrderData": meta.onchain_order_data.as_ref().map(|onchain| json!({
             "sender": hex(onchain.sender.as_slice()),
-            "placementError": onchain.placement_error,
         })),
         "onchainUser": meta.onchain_user.map(|user| hex(user.as_slice())),
     });
@@ -106,11 +103,16 @@ fn number(decimal: impl ToString) -> f64 {
         .expect("decimals parse as doubles")
 }
 
-/// Drops `null` fields, so that an unset option is absent, as `has()` expects.
+/// Drops `null` fields, so an unset option is absent, not `null`: `.?` and
+/// `has` both read an absent field as missing. Iterative over a heap stack, so
+/// no depth of nesting can exhaust the call stack.
 fn remove_nulls(value: &mut Value) {
-    if let Value::Object(fields) = value {
-        fields.retain(|_, field| !field.is_null());
-        fields.values_mut().for_each(remove_nulls);
+    let mut stack = vec![value];
+    while let Some(value) = stack.pop() {
+        if let Value::Object(fields) = value {
+            fields.retain(|_, field| !field.is_null());
+            stack.extend(fields.values_mut());
+        }
     }
 }
 
@@ -156,7 +158,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(Order::without_app_data(&order, false));
+        let view = order_view(OrderView::without_app_data(&order, false));
 
         assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
         assert_eq!(view["sellAmount"], 1e21);
@@ -233,7 +235,7 @@ mod tests {
     #[test]
     fn view_matches_the_api_json() {
         let order = fully_set_order();
-        let mut view = order_view(Order {
+        let mut view = order_view(OrderView {
             order: &order,
             app_data: &crate::rules::sample_app_data(),
             in_market: true,
@@ -265,7 +267,7 @@ mod tests {
     /// settlement or legacy field, and unset options are absent.
     #[test]
     fn view_holds_only_rule_fields() {
-        let view = order_view(Order {
+        let view = order_view(OrderView {
             order: &fully_set_order(),
             app_data: &crate::rules::sample_app_data(),
             in_market: true,
@@ -308,38 +310,28 @@ mod tests {
         assert_eq!(view["quote"]["gasPrice"], 1234.5);
         assert_eq!(view["quote"]["sellTokenPrice"], 1e-7);
         assert_eq!(view["quote"]["sellAmount"], 1e21);
-        assert_eq!(
-            view["ethflowData"],
-            json!({
-                "userValidTo": 5,
-                "refundTxHash": format!("0x{}", "ab".repeat(32)),
-                "isRefunded": true,
-            })
-        );
+        assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
         assert_eq!(
             view["onchainOrderData"],
-            json!({
-                "sender": format!("0x{}cd", "0".repeat(38)),
-                "placementError": "validToTooFarInTheFuture",
-            })
+            json!({ "sender": format!("0x{}cd", "0".repeat(38)) })
         );
         assert_eq!(view["onchainUser"], format!("0x{}ef", "0".repeat(38)));
         assert_eq!(view["validFrom"], 4);
     }
 
-    /// The sample order that validates rules reaches every field, nested ones
-    /// included, so that no valid rule fails on a missing key.
+    /// The full sample order that validates rules reaches every field, nested
+    /// ones included, so that no valid rule fails on a missing key.
     #[test]
     fn sample_order_view_has_every_field() {
         let view = |order| {
-            order_view(Order {
+            order_view(OrderView {
                 order,
                 app_data: &crate::rules::sample_app_data(),
                 in_market: false,
             })
         };
         assert_eq!(
-            field_paths(&view(&crate::rules::sample_order())),
+            field_paths(&view(&crate::rules::full_sample_order(chrono::Utc::now()))),
             field_paths(&view(&fully_set_order())),
         );
     }
@@ -354,12 +346,9 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(Order::without_app_data(&order, false));
+        let view = order_view(OrderView::without_app_data(&order, false));
 
-        assert_eq!(
-            view["ethflowData"],
-            json!({ "userValidTo": 0, "isRefunded": false })
-        );
+        assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
         assert_eq!(
             view["onchainOrderData"],
             json!({ "sender": format!("0x{}", "0".repeat(40)) })
@@ -373,7 +362,7 @@ mod tests {
         let section = &readme[readme.find("### `order`").unwrap()..];
         let sample = section.split("```json\n").nth(1).unwrap();
         let sample: Value = serde_json::from_str(sample.split("```").next().unwrap()).unwrap();
-        let view = order_view(Order {
+        let view = order_view(OrderView {
             order: &fully_set_order(),
             app_data: &crate::rules::sample_app_data(),
             in_market: true,
@@ -387,5 +376,15 @@ mod tests {
         assert_eq!(normalize("Acme"), "Acme");
         assert_eq!(normalize("0x"), "0x");
         assert_eq!(normalize("0xzz"), "0xzz");
+    }
+
+    #[test]
+    fn removes_nulls_at_every_level() {
+        let mut value = json!({
+            "a": null,
+            "b": { "c": null, "d": 1, "e": { "f": null, "g": 2 } },
+        });
+        remove_nulls(&mut value);
+        assert_eq!(value, json!({ "b": { "d": 1, "e": { "g": 2 } } }));
     }
 }
