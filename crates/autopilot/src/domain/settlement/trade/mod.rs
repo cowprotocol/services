@@ -204,7 +204,8 @@ pub struct Jit {
 /// trade.
 #[derive(Debug, Clone)]
 pub struct FeeBreakdown {
-    /// Total fee the trade was charged (network fee + protocol fee)
+    /// Total fee the trade was charged (network fee + protocol fee), or just
+    /// the protocol fees when the uniform-price total can't be computed.
     // TODO surplus token
     pub total: eth::Asset,
     /// Breakdown of protocol fees.
@@ -278,11 +279,14 @@ mod tests {
             prices: Default::default(),
             surplus_capturing_jit_order_owners: Default::default(),
         };
-        assert!(math::Trade::from(&trade).fee_in_sell_token().is_err());
+        assert!(matches!(
+            math::Trade::from(&trade).fee_in_sell_token(),
+            Err(math::Error::Math(math::error::Math::Negative))
+        ));
 
         let breakdown = trade.fee_breakdown(&auction).unwrap();
 
-        assert_eq!(breakdown.total.amount.0, u(1168417));
+        assert_eq!(breakdown.total.amount.0, u(1155752));
         assert_eq!(
             breakdown
                 .protocol
