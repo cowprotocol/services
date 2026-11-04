@@ -153,7 +153,7 @@ mod tests {
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
         configs::fee_factor::FeeFactor,
-        model::order::{OrderData, OrderMetadata},
+        model::order::{Order, OrderData, OrderMetadata},
         std::collections::BTreeMap,
     };
 
@@ -223,6 +223,15 @@ mod tests {
         }
     }
 
+    /// `order` evaluated with no app data.
+    fn evaluate<'r>(evaluator: &Evaluator<'r>, order: &Order, in_market: bool) -> Evaluation<'r> {
+        evaluator.evaluate(OrderView {
+            order,
+            app_data: &AppData::default(),
+            in_market,
+        })
+    }
+
     fn after_launch() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap()
     }
@@ -247,13 +256,13 @@ mod tests {
         let rules = rule_set(sample_rules());
         let evaluator = rules.evaluator(after_launch());
 
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&order(USDC, USDT), false));
+        let evaluation = evaluate(&evaluator, &order(USDC, USDT), false);
         assert_eq!(names(&evaluation), ["Stablecoin swaps", "Default"]);
         let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Stablecoin swaps");
         assert_eq!(fees, vec![volume(10.)]);
 
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&order(WETH, USDT), false));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert_eq!(names(&evaluation), ["Default"]);
         let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Default");
@@ -267,7 +276,7 @@ mod tests {
 
         let mut jit = order(USDC, USDT);
         jit.metadata.owner = MAKER;
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&jit, false));
+        let evaluation = evaluate(&evaluator, &jit, false);
         assert_eq!(
             names(&evaluation),
             ["JIT makers", "Stablecoin swaps", "Default"]
@@ -294,7 +303,7 @@ mod tests {
 
         let sequence: Vec<_> = [&large, &small, &jit, &small, &large, &jit]
             .into_iter()
-            .map(|order| names(&evaluator.evaluate(OrderView::without_app_data(order, false))))
+            .map(|order| names(&evaluate(&evaluator, order, false)))
             .collect();
         assert_eq!(
             sequence,
@@ -313,8 +322,7 @@ mod tests {
     fn now_is_the_evaluator_time() {
         let rules = rule_set(sample_rules());
         let launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
-        let (rule, fees) =
-            matched(&launch.evaluate(OrderView::without_app_data(&order(USDC, USDT), false)));
+        let (rule, fees) = matched(&evaluate(&launch, &order(USDC, USDT), false));
         assert_eq!(rule, "Stablecoin launch month");
         assert_eq!(fees, vec![volume(1.)]);
     }
@@ -335,8 +343,7 @@ mod tests {
         })
         .unwrap();
         let evaluator = rules.evaluator(after_launch());
-        let (rule, _) =
-            matched(&evaluator.evaluate(OrderView::without_app_data(&order(USDC, WETH), false)));
+        let (rule, _) = matched(&evaluate(&evaluator, &order(USDC, WETH), false));
         assert_eq!(rule, "Stable sells");
     }
 
@@ -350,7 +357,7 @@ mod tests {
             rule("Broken below", "true", "volume(0.001)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&order(WETH, USDT), false));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert_eq!(names(&evaluation), ["Default"]);
         let (_, fees) = matched(&evaluation);
         assert_eq!(fees, vec![volume(2.)]);
@@ -391,8 +398,7 @@ mod tests {
             "volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e5)))",
         )]);
         let evaluator = rules.evaluator(after_launch());
-        let (_, fees) =
-            matched(&evaluator.evaluate(OrderView::without_app_data(&order(WETH, USDT), false)));
+        let (_, fees) = matched(&evaluate(&evaluator, &order(WETH, USDT), false));
         assert_eq!(fees, vec![volume(10.)]);
     }
 
@@ -404,8 +410,7 @@ mod tests {
             "volume(1)",
         )]);
         let evaluator = rules.evaluator(after_launch());
-        let (rule, _) =
-            matched(&evaluator.evaluate(OrderView::without_app_data(&order(USDC, WETH), false)));
+        let (rule, _) = matched(&evaluate(&evaluator, &order(USDC, WETH), false));
         assert_eq!(rule, "Checksummed literal");
     }
 
@@ -418,14 +423,14 @@ mod tests {
         ]);
         let evaluator = rules.evaluator(after_launch());
 
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&order(WETH, USDT), false));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert_eq!(names(&evaluation), ["Default"]);
         assert!(evaluation.skipped.is_empty());
 
         let mut quoted = order(WETH, USDT);
         quoted.metadata.quote = Some(Default::default());
         quoted.metadata.fast_path = true;
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&quoted, false));
+        let evaluation = evaluate(&evaluator, &quoted, false);
         assert_eq!(names(&evaluation), ["Quoted", "Fast path", "Default"]);
     }
 
@@ -439,7 +444,7 @@ mod tests {
         let evaluator = rules.evaluator(after_launch());
 
         let order = order(WETH, USDT);
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&order, false));
+        let evaluation = evaluate(&evaluator, &order, false);
         assert!(evaluation.matched.is_empty());
         assert!(evaluation.skipped.is_empty());
 
@@ -466,21 +471,15 @@ mod tests {
         ]);
         let evaluator = rules.evaluator(after_launch());
         let order = order(WETH, USDT);
-        assert_eq!(
-            names(&evaluator.evaluate(OrderView::without_app_data(&order, true))),
-            ["Inside"]
-        );
-        assert_eq!(
-            names(&evaluator.evaluate(OrderView::without_app_data(&order, false))),
-            ["Outside"]
-        );
+        assert_eq!(names(&evaluate(&evaluator, &order, true)), ["Inside"]);
+        assert_eq!(names(&evaluate(&evaluator, &order, false)), ["Outside"]);
     }
 
     #[test]
     fn no_rules_means_no_fee() {
         let rules = rule_set(vec![]);
         let evaluator = rules.evaluator(after_launch());
-        let evaluation = evaluator.evaluate(OrderView::without_app_data(&order(WETH, USDT), false));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert!(evaluation.matched.is_empty());
         assert!(evaluation.skipped.is_empty());
     }

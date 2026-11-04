@@ -2,9 +2,9 @@
 
 mod app_data;
 
-pub use app_data::{AppData, Flashloan};
+pub use app_data::AppData;
 use {
-    app_data::app_data_view,
+    self::app_data::app_data_view,
     serde_json::{Value, json},
 };
 
@@ -18,24 +18,6 @@ pub struct OrderView<'a> {
     /// Whether the limit price is inside the market price of the order's quote;
     /// false when the order has no quote. The engine trusts it as given.
     pub in_market: bool,
-}
-
-#[cfg(test)]
-impl<'a> OrderView<'a> {
-    /// `order` with no app data.
-    pub(crate) fn without_app_data(order: &'a model::order::Order, in_market: bool) -> Self {
-        static NO_APP_DATA: AppData = AppData {
-            app_code: None,
-            signer: None,
-            replaced_order: None,
-            flashloan: None,
-        };
-        Self {
-            order,
-            app_data: &NO_APP_DATA,
-            in_market,
-        }
-    }
 }
 
 /// The order as rules see it: every field a rule can read, with amounts and
@@ -158,7 +140,11 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(OrderView::without_app_data(&order, false));
+        let view = order_view(OrderView {
+            order: &order,
+            app_data: &AppData::default(),
+            in_market: false,
+        });
 
         assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
         assert_eq!(view["sellAmount"], 1e21);
@@ -346,7 +332,11 @@ mod tests {
             },
             ..Default::default()
         };
-        let view = order_view(OrderView::without_app_data(&order, false));
+        let view = order_view(OrderView {
+            order: &order,
+            app_data: &AppData::default(),
+            in_market: false,
+        });
 
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
         assert_eq!(

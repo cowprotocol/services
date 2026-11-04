@@ -10,6 +10,7 @@ use {
         Field,
         LoadError,
         Match,
+        OrderView,
         RuleSet,
         RulesToml,
         load_rules_from_str,
@@ -35,21 +36,6 @@ fn order(sell: Address, buy: Address) -> Order {
             ..Default::default()
         },
         ..Default::default()
-    }
-}
-
-/// `order` with no app data.
-fn without_app_data(order: &Order, in_market: bool) -> fee_engine::OrderView<'_> {
-    static NO_APP_DATA: AppData = AppData {
-        app_code: None,
-        signer: None,
-        replaced_order: None,
-        flashloan: None,
-    };
-    fee_engine::OrderView {
-        order,
-        app_data: &NO_APP_DATA,
-        in_market,
     }
 }
 
@@ -79,7 +65,11 @@ fn mainnet_sample_lists_reach_the_rules() {
     let rules = load_rules_from_str(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
 
-    let evaluation = evaluator.evaluate(without_app_data(&order(USDC, USDT), false));
+    let evaluation = evaluator.evaluate(OrderView {
+        order: &order(USDC, USDT),
+        app_data: &AppData::default(),
+        in_market: false,
+    });
     assert!(evaluation.skipped.is_empty());
     let Match { rule, fees } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Stablecoin bucket: 0.3 bps");
@@ -90,14 +80,22 @@ fn mainnet_sample_lists_reach_the_rules() {
 
     let mut quoted = order(USDC, USDT);
     quoted.metadata.quote = Some(Default::default());
-    let evaluation = evaluator.evaluate(without_app_data(&quoted, true));
+    let evaluation = evaluator.evaluate(OrderView {
+        order: &quoted,
+        app_data: &AppData::default(),
+        in_market: true,
+    });
     let Match { fees, .. } = evaluation.matched.first().unwrap();
     assert!(matches!(
         fees[..],
         [Fee::PriceImprovement { .. }, Fee::Volume { .. }]
     ));
 
-    let evaluation = evaluator.evaluate(without_app_data(&order(WETH, USDC), false));
+    let evaluation = evaluator.evaluate(OrderView {
+        order: &order(WETH, USDC),
+        app_data: &AppData::default(),
+        in_market: false,
+    });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
 }

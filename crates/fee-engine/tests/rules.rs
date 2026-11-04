@@ -4,7 +4,16 @@ use {
     alloy_primitives::{Address, U256, address},
     chrono::{TimeZone, Utc},
     configs::fee_factor::FeeFactor,
-    fee_engine::{AppData, Evaluation, Fee, Match, RuleDefinition, RuleSet, RuleSetDefinition},
+    fee_engine::{
+        AppData,
+        Evaluation,
+        Fee,
+        Match,
+        OrderView,
+        RuleDefinition,
+        RuleSet,
+        RuleSetDefinition,
+    },
     model::order::{Order, OrderData, OrderMetadata},
     std::collections::BTreeMap,
 };
@@ -51,21 +60,6 @@ fn rules() -> RuleSet {
     .unwrap()
 }
 
-/// `order` with no app data.
-fn without_app_data(order: &Order, in_market: bool) -> fee_engine::OrderView<'_> {
-    static NO_APP_DATA: AppData = AppData {
-        app_code: None,
-        signer: None,
-        replaced_order: None,
-        flashloan: None,
-    };
-    fee_engine::OrderView {
-        order,
-        app_data: &NO_APP_DATA,
-        in_market,
-    }
-}
-
 fn order(owner: Address, sell: Address, buy: Address) -> Order {
     Order {
         metadata: OrderMetadata {
@@ -104,8 +98,11 @@ fn reports_the_matching_rules_per_order() {
     let user = address!("0x2222222222222222222222222222222222222222");
 
     let before_launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
-    let (rule, fees) =
-        matched(before_launch.evaluate(without_app_data(&order(user, USDC, USDT), false)));
+    let (rule, fees) = matched(before_launch.evaluate(OrderView {
+        order: &order(user, USDC, USDT),
+        app_data: &AppData::default(),
+        in_market: false,
+    }));
     assert_eq!(
         rule,
         ["Stablecoin launch month", "Stablecoin swaps", "Default"]
@@ -118,8 +115,11 @@ fn reports_the_matching_rules_per_order() {
     );
 
     let after_launch = rules.evaluator(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
-    let (rule, fees) =
-        matched(after_launch.evaluate(without_app_data(&order(user, USDC, USDT), false)));
+    let (rule, fees) = matched(after_launch.evaluate(OrderView {
+        order: &order(user, USDC, USDT),
+        app_data: &AppData::default(),
+        in_market: false,
+    }));
     assert_eq!(rule, ["Stablecoin swaps", "Default"]);
     assert_eq!(
         fees,
@@ -128,8 +128,11 @@ fn reports_the_matching_rules_per_order() {
         }]
     );
 
-    let (rule, fees) =
-        matched(after_launch.evaluate(without_app_data(&order(user, WETH, USDT), false)));
+    let (rule, fees) = matched(after_launch.evaluate(OrderView {
+        order: &order(user, WETH, USDT),
+        app_data: &AppData::default(),
+        in_market: false,
+    }));
     assert_eq!(rule, ["Default"]);
     assert_eq!(
         fees,
@@ -139,8 +142,11 @@ fn reports_the_matching_rules_per_order() {
         }]
     );
 
-    let (rule, fees) =
-        matched(after_launch.evaluate(without_app_data(&order(MAKER, USDC, USDT), false)));
+    let (rule, fees) = matched(after_launch.evaluate(OrderView {
+        order: &order(MAKER, USDC, USDT),
+        app_data: &AppData::default(),
+        in_market: false,
+    }));
     assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
     assert_eq!(fees, vec![]);
 }
@@ -155,7 +161,11 @@ fn no_matching_rule_means_no_fee() {
     let evaluator = rules.evaluator(Utc::now());
     assert!(
         evaluator
-            .evaluate(without_app_data(&Order::default(), false))
+            .evaluate(OrderView {
+                order: &Order::default(),
+                app_data: &AppData::default(),
+                in_market: false
+            })
             .matched
             .is_empty()
     );
