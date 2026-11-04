@@ -3,21 +3,27 @@
 use {
     super::{auction::Id, order_uid::OrderUid},
     moka::future::Cache,
-    std::{collections::HashSet, future::Future, sync::Arc, time::Duration},
+    std::{
+        collections::{HashMap, HashSet},
+        future::Future,
+        sync::Arc,
+        time::Duration,
+    },
 };
 
 /// How long a resolution stays cached. An auction is solved by every engine
 /// within one deadline, so this only has to outlive that.
 const CACHE_TTL: Duration = Duration::from_secs(60);
 
-/// How an auction's buy token accounts stand on chain. An order in neither
-/// set needs nothing from the settlement: its account is initialized, or it
-/// buys native SOL and the payout itself creates the receiving wallet.
+/// How an auction's buy token accounts stand on chain. An order listed in
+/// neither needs nothing from the settlement: its account is initialized, or
+/// it buys native SOL and the payout itself creates the receiving wallet.
 #[derive(Debug, Default)]
 pub struct BuyTokenAccounts {
-    /// Orders whose account the settlement creates before it pays out, so the
-    /// engine can price its rent in.
-    pub missing: HashSet<OrderUid>,
+    /// Orders whose account the settlement creates before it pays out, with
+    /// the lamports the creation costs the payer: the account's rent-exempt
+    /// minimum less what its address already holds.
+    pub missing: HashMap<OrderUid, u64>,
     /// Orders whose account can neither receive the payout nor be created by
     /// the settlement: their settlement would revert at `FinalizeSettle`.
     pub unreceivable: HashSet<OrderUid>,

@@ -18,6 +18,7 @@ use {
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     std::{
+        collections::HashSet,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
         path::Path,
         time::Duration,
@@ -122,6 +123,11 @@ pub struct Configuration {
     #[serde(default = "default_simulation_timeout", with = "humantime_serde")]
     pub order_simulation_timeout: Duration,
 
+    /// Flashloan lenders whose orders a passing order-creation simulation
+    /// accepts even when the EIP-1271 signature or transfer check fails.
+    #[serde(default)]
+    pub order_simulation_ignore_legacy_checks_for_lenders: HashSet<Address>,
+
     /// When enabled, solver competition endpoints return 404 until the
     /// auction's submission deadline block has been reached.
     #[serde(default)]
@@ -215,6 +221,7 @@ pub mod test_util {
                 order_quoting: TestDefault::test_default(),
                 price_estimation: PriceEstimation::test_default(),
                 order_simulation_timeout: Duration::from_secs(2),
+                order_simulation_ignore_legacy_checks_for_lenders: Default::default(),
                 hide_competition_before_deadline: false,
             }
         }
@@ -230,6 +237,7 @@ mod tests {
             orderbook::order_validation::SameTokensPolicy,
             test_util::TestDefault,
         },
+        alloy::primitives::address,
         std::time::Duration,
     };
 
@@ -242,6 +250,7 @@ mod tests {
         eip1271-skip-creation-validation = true
         hide-competition-before-deadline = true
         order-simulation-timeout = "3s"
+        order-simulation-ignore-legacy-checks-for-lenders = ["0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"]
 
         [banned-users]
         addresses = ["0xdead000000000000000000000000000000000000"]
@@ -277,6 +286,10 @@ mod tests {
         assert!(config.eip1271_skip_creation_validation);
         assert!(config.hide_competition_before_deadline);
         assert_eq!(config.order_simulation_timeout, Duration::from_secs(3));
+        assert_eq!(
+            config.order_simulation_ignore_legacy_checks_for_lenders,
+            HashSet::from([address!("87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2")])
+        );
 
         assert!(matches!(
             config.order_validation.same_tokens_policy,
@@ -331,6 +344,11 @@ mod tests {
         assert!(config.banned_users.addresses.is_empty());
         assert!(!config.eip1271_skip_creation_validation);
         assert!(!config.hide_competition_before_deadline);
+        assert!(
+            config
+                .order_simulation_ignore_legacy_checks_for_lenders
+                .is_empty()
+        );
     }
 
     #[test]
@@ -373,6 +391,9 @@ mod tests {
             http_client: Default::default(),
             price_estimation: Default::default(),
             order_simulation_timeout: default_simulation_timeout(),
+            order_simulation_ignore_legacy_checks_for_lenders: HashSet::from([address!(
+                "87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+            )]),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -406,6 +427,10 @@ mod tests {
         assert_eq!(
             config.hide_competition_before_deadline,
             deserialized.hide_competition_before_deadline
+        );
+        assert_eq!(
+            config.order_simulation_ignore_legacy_checks_for_lenders,
+            deserialized.order_simulation_ignore_legacy_checks_for_lenders
         );
         assert_eq!(config.http_client.timeout, deserialized.http_client.timeout)
     }

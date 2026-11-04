@@ -9,6 +9,7 @@ use {
     serde::Deserialize,
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
+    std::collections::HashMap,
 };
 
 /// The auction the driver posts to `/solve`.
@@ -24,6 +25,28 @@ pub struct Auction {
     pub orders: Vec<Order>,
     /// Absolute deadline by which solutions must be returned.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The auction's native prices by mint, the ones the autopilot scores
+    /// solutions with. A mint without a price is absent.
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, _>")]
+    pub tokens: HashMap<Pubkey, Token>,
+}
+
+/// What the auction knows about one mint.
+#[serde_as]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Token {
+    /// Lamports per 10^9 atoms of the mint, as a decimal string.
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub reference_price: u64,
+}
+
+impl Auction {
+    /// The native price of `mint`, `None` when the auction has none for it.
+    /// A zero price counts as none: it would value the mint at nothing.
+    pub fn native_price(&self, mint: &Pubkey) -> Option<u64> {
+        Some(self.tokens.get(mint)?.reference_price).filter(|price| *price > 0)
+    }
 }
 
 /// One order to quote.
@@ -131,6 +154,9 @@ mod tests {
                 "partiallyFillable": false,
             }],
             "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(1).to_string()): {"referencePrice": "1500000000"},
+            },
         });
 
         let auction: Auction = serde_json::from_value(json).unwrap();
@@ -149,5 +175,26 @@ mod tests {
         );
         assert_eq!(order.side, dex::Side::Sell);
         assert!(!order.partially_fillable);
+        assert_eq!(auction.tokens.len(), 1);
+        assert_eq!(auction.native_price(&pubkey(1)), Some(1_500_000_000));
+    }
+
+    /// A mint absent from `tokens`, or priced at zero, is unpriced.
+    #[test]
+    fn treats_absent_and_zero_prices_as_unpriced() {
+        let json = serde_json::json!({
+            "id": 1,
+            "taker": pubkey(3).to_string(),
+            "orders": [],
+            "deadline": "2026-01-01T00:00:00Z",
+            "tokens": {
+                (pubkey(4).to_string()): {"referencePrice": "0"},
+            },
+        });
+
+        let auction: Auction = serde_json::from_value(json).unwrap();
+
+        assert_eq!(auction.native_price(&pubkey(1)), None);
+        assert_eq!(auction.native_price(&pubkey(4)), None);
     }
 }

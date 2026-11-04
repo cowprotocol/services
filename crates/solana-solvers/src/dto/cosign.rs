@@ -1,4 +1,5 @@
-//! The `/cosign` request and response: a transaction as base64 bincode.
+//! The `/cosign` request and response: a transaction as base64 of its wire
+//! bytes.
 
 use {
     base64::prelude::*,
@@ -13,7 +14,7 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn new(transaction: &VersionedTransaction) -> Self {
-        let bytes = bincode::serialize(transaction).expect("a transaction serializes");
+        let bytes = wincode::serialize(transaction).expect("a transaction serializes");
         Self {
             transaction: BASE64_STANDARD.encode(bytes),
         }
@@ -23,6 +24,6 @@ impl Transaction {
         let bytes = BASE64_STANDARD
             .decode(&self.transaction)
             .map_err(|err| format!("transaction base64: {err}"))?;
-        bincode::deserialize(&bytes).map_err(|err| format!("transaction bincode: {err}"))
+        wincode::deserialize(&bytes).map_err(|err| format!("transaction bytes: {err}"))
     }
 }

@@ -647,11 +647,12 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let extensions = infra::SupportedExtensions::from(&driver);
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.submission_account,
-                driver.supports_auction_deltas,
+                extensions,
             )
             .await
             .map(Arc::new)
@@ -726,6 +727,11 @@ async fn shadow_mode(config: Configuration) -> ! {
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let extensions = infra::SupportedExtensions {
+                // the shadow autopilot always sends full auctions
+                auction_deltas: false,
+                ..infra::SupportedExtensions::from(&driver)
+            };
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
@@ -738,8 +744,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
-                // the shadow autopilot always sends full auctions
-                false,
+                extensions,
             )
             .await
             .map(Arc::new)
@@ -800,7 +805,6 @@ async fn shadow_mode(config: Configuration) -> ! {
         drivers,
         trusted_tokens,
         config.run_loop.min_solve_time,
-        config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
         config.run_loop.max_winners_per_auction,

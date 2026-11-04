@@ -17,7 +17,7 @@ use {
         token_program::TokenProgram,
     },
     serde::Serialize,
-    solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
+    solana_sdk::{pubkey::Pubkey, sysvar, transaction::VersionedTransaction},
     std::{collections::HashMap, fmt, sync::Arc},
 };
 
@@ -101,7 +101,8 @@ impl Auction {
     }
 
     /// Classify every token buy's buy token account, the settlement's payout
-    /// destination, against the chain. A native SOL buy pays out to a wallet,
+    /// destination, against the chain, and price the creation of the missing
+    /// ones at the cluster's rent. A native SOL buy pays out to a wallet,
     /// which the payout creates when it is missing, so it needs no lookup.
     ///
     /// An order whose buy mint is missing or not a mint is unreceivable: no
@@ -111,22 +112,27 @@ impl Auction {
         blockchain: &Solana,
     ) -> Result<BuyTokenAccounts, cow_solana_rpc::Error> {
         let token_buys = || self.orders.iter().filter(|order| !order.buys_native_sol());
-        let programs = blockchain
-            .token_programs(token_buys().map(|order| order.buy_token))
+        let mints = blockchain
+            .mints(token_buys().map(|order| order.buy_token))
             .await?;
         let snapshot = blockchain
-            .accounts_snapshot(token_buys().map(|order| order.buy_token_account))
+            .accounts_snapshot(
+                token_buys()
+                    .map(|order| order.buy_token_account)
+                    .chain([sysvar::rent::ID]),
+            )
             .await?;
+        let rent = snapshot.rent();
         let mut resolved = BuyTokenAccounts::default();
         for order in token_buys() {
             // Every token buy's mint was fetched, so a missing entry only
             // guards a bug and drops the order like an invalid mint.
-            let program = programs
+            let mint = mints
                 .get(&order.buy_token)
                 .copied()
                 .unwrap_or(Err(InvalidMintReason::AccountNotFound));
-            let program = match program {
-                Ok(program) => program,
+            let mint = match mint {
+                Ok(mint) => mint,
                 Err(reason) => {
                     tracing::warn!(
                         order = %order.uid,
@@ -140,8 +146,15 @@ impl Auction {
             };
             match snapshot.token_account_state(&order.buy_token_account) {
                 TokenAccountState::Initialized => (),
-                TokenAccountState::NeedsCreation if order.buy_token_account_is_ata(program) => {
-                    resolved.missing.insert(order.uid);
+                TokenAccountState::NeedsCreation
+                    if order.buy_token_account_is_ata(mint.program) =>
+                {
+                    // The idempotent creation tops a pre-funded address up to
+                    // the minimum.
+                    let owed = rent
+                        .minimum_balance(mint.ata_len)
+                        .saturating_sub(snapshot.lamports(&order.buy_token_account));
+                    resolved.missing.insert(order.uid, owed);
                 }
                 state => {
                     tracing::warn!(
@@ -322,8 +335,10 @@ pub enum Side {
 mod tests {
     use {
         super::*,
+        base64::{Engine, prelude::BASE64_STANDARD},
         cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
         serde_json::{Value, json},
+        solana_sdk::rent::Rent,
         solana_testlib::{
             account_json,
             mint_account_json,
@@ -331,7 +346,6 @@ mod tests {
             token_2022_mint,
             token_account_json,
         },
-        std::collections::HashSet,
     };
 
     fn pubkey(byte: u8) -> Pubkey {
@@ -369,15 +383,16 @@ mod tests {
         }
     }
 
-    fn uids(set: &HashSet<OrderUid>) -> Vec<u8> {
-        let mut uids: Vec<u8> = set.iter().map(|uid| uid.0[0]).collect();
+    fn uids<'a>(uids: impl IntoIterator<Item = &'a OrderUid>) -> Vec<u8> {
+        let mut uids: Vec<u8> = uids.into_iter().map(|uid| uid.0[0]).collect();
         uids.sort_unstable();
         uids
     }
 
     /// Answers the classification's two `getMultipleAccounts` lookups in
     /// order: `mints` for the token buys' buy mints, then `accounts` for their
-    /// buy token accounts, each in auction order.
+    /// buy token accounts, each in auction order, with the rent sysvar asked
+    /// for last and left unanswered unless `accounts` goes on to it.
     fn blockchain(
         mints: impl IntoIterator<Item = Value>,
         accounts: impl IntoIterator<Item = Value>,
@@ -444,8 +459,61 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(uids(&resolved.missing), [2]);
+        assert_eq!(uids(resolved.missing.keys()), [2]);
         assert_eq!(uids(&resolved.unreceivable), [3, 4]);
+    }
+
+    /// The missing SPL Token account is priced at the fetched rent sysvar's
+    /// minimum for its 165 bytes, less the lamports already at its address.
+    #[tokio::test]
+    async fn a_missing_account_owes_the_rent_its_address_lacks() {
+        let (owner, mint) = (pubkey(0x22), pubkey(0x44));
+        let rent = Rent {
+            lamports_per_byte: 1_000,
+            ..Rent::default()
+        };
+        let funded = json!({
+            "lamports": 100_000u64,
+            "data": ["", "base64"],
+            "owner": solana_system_interface::program::ID.to_string(),
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 0u64,
+        });
+        let rent_sysvar = json!({
+            "lamports": 1u64,
+            "data": [BASE64_STANDARD.encode(bincode::serialize(&rent).unwrap()), "base64"],
+            "owner": sysvar::ID.to_string(),
+            "executable": false,
+            "rentEpoch": 0u64,
+            "space": 17u64,
+        });
+        let blockchain = blockchain(
+            [mint_account_json(), mint_account_json()],
+            [Value::Null, funded, rent_sysvar],
+        );
+        let ata = associated_token_address(&owner, &mint, TokenProgram::SplToken);
+        let other = Order {
+            owner: pubkey(0x23),
+            ..order(
+                2,
+                associated_token_address(&pubkey(0x23), &mint, TokenProgram::SplToken),
+            )
+        };
+
+        let resolved = auction(vec![order(1, ata), other])
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain,
+                &BuyTokenAccountCache::default(),
+            )
+            .await
+            .unwrap();
+
+        let minimum = rent.minimum_balance(165);
+        assert_eq!(minimum, (165 + 128) * 1_000);
+        assert_eq!(resolved.missing[&OrderUid([1; 32])], minimum);
+        assert_eq!(resolved.missing[&OrderUid([2; 32])], minimum - 100_000);
     }
 
     /// The associated token address derives under the buy mint's token
@@ -479,7 +547,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(uids(&resolved.missing), [1]);
+        assert_eq!(uids(resolved.missing.keys()), [1]);
         assert_eq!(uids(&resolved.unreceivable), [2]);
     }
 
@@ -531,7 +599,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(uids(&resolved.missing), [2]);
+        assert_eq!(uids(resolved.missing.keys()), [2]);
         assert!(resolved.unreceivable.is_empty());
     }
 

@@ -4,7 +4,7 @@
 use {
     super::Error,
     base64::prelude::*,
-    serde::Deserialize,
+    serde::{Deserialize, Serialize},
     solana_sdk::{
         instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
@@ -12,7 +12,7 @@ use {
     std::str::FromStr,
 };
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiInstruction {
     program_id: String,
@@ -40,7 +40,7 @@ impl ApiInstruction {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ApiAccount {
     pubkey: String,

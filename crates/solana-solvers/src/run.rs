@@ -35,6 +35,7 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
                 dex::Dex::Jupiter(jupiter),
                 config.concurrent_requests,
                 config.rate_limiting(),
+                config.max_batch_size,
             )
         }
         Command::Bitget { config: path } => {
@@ -45,6 +46,7 @@ pub async fn start(args: impl IntoIterator<Item = String>) {
                 dex::Dex::Bitget(bitget),
                 config.concurrent_requests,
                 config.rate_limiting(),
+                config.max_batch_size,
             )
         }
     };

@@ -207,6 +207,8 @@ jobs:
 
   test-local-node:
     needs: test-local-node-shard
+    # Runs even when a shard fails: a skipped required check counts as passing.
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - run: test "${{ needs.test-local-node-shard.result }}" = success
@@ -322,10 +324,12 @@ jobs:
       - run: node_modules/.bin/swagger-cli validate crates/driver/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/solvers/openapi.yml
       - run: node_modules/.bin/swagger-cli validate crates/solana-orderbook/openapi.yml
+      - run: node_modules/.bin/swagger-cli validate crates/autopilot-svm/openapi.yml
       - run: node_modules/.bin/spectral lint crates/orderbook/openapi.yml
       - run: node_modules/.bin/spectral lint crates/driver/openapi.yml
       - run: node_modules/.bin/spectral lint crates/solvers/openapi.yml
       - run: node_modules/.bin/spectral lint crates/solana-orderbook/openapi.yml
+      - run: node_modules/.bin/spectral lint crates/autopilot-svm/openapi.yml
 
   run-flaky-test:
     # to debug a flaky test set `if` to true and configure the flaky test in the `run` step

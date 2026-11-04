@@ -7,7 +7,7 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    solana_orderbook::infra::{api::Api, db, quoter::Quoter},
+    solana_orderbook::infra::{api::Api, db, prices::NativePrices, quoter::Quoter},
     solana_sdk::signer::Signer,
     spl_token_2022_interface::extension::{
         BaseStateWithExtensionsMut,
@@ -19,13 +19,14 @@ use {
     tokio_util::sync::CancellationToken,
 };
 
-fn mock_api() -> Api {
+async fn mock_api() -> Api {
     Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         // A lazy pool at a dead endpoint keeps these tests database-free: a
         // quote insert degrades to an id-less answer, nothing else queries.
         pool: PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
         quoter: dead_quoter(),
+        prices: spawn_mock_autopilot(Some(1_000_000_000)).await,
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
         sponsoring: None,
@@ -49,13 +50,37 @@ async fn spawn_server() -> SocketAddr {
 async fn spawn_server_with(quoter: Quoter) -> SocketAddr {
     let api = Api {
         quoter,
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     // A token that is never cancelled keeps the server alive for the test.
     let shutdown = CancellationToken::new();
     tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
     addr
+}
+
+/// A tiny axum server that answers `/native_price/{mint}` with `price` for
+/// every mint, or 404 without one. It stands in for the autopilot.
+async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
+    let app = axum::Router::new().route(
+        "/native_price/{mint}",
+        axum::routing::get(move || async move {
+            match price {
+                Some(price) => (
+                    axum::http::StatusCode::OK,
+                    serde_json::json!({ "price": price.to_string() }).to_string(),
+                ),
+                None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    NativePrices::new(
+        format!("http://{addr}").parse().unwrap(),
+        Duration::from_secs(1),
+    )
 }
 
 /// A tiny axum server that answers `/quote` with a fixed response. It stands
@@ -85,6 +110,50 @@ async fn healthz_returns_200() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 }
 
+/// Spawn the API server on `pool` and return the status and the body of
+/// `GET /api/v1/ready`.
+async fn get_ready(pool: PgPool) -> (reqwest::StatusCode, String) {
+    let api = Api {
+        pool,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let response = reqwest::Client::new()
+        .get(format!("http://{addr}/api/v1/ready"))
+        .send()
+        .await
+        .unwrap();
+    (response.status(), response.text().await.unwrap())
+}
+
+/// The readiness probe fails when the database does not answer.
+#[tokio::test]
+async fn ready_returns_500_without_a_database() {
+    // The pool tries a refused connection again until the acquire timeout.
+    // A short timeout keeps the test fast.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(Duration::from_millis(100))
+        .connect_lazy("postgresql://127.0.0.1:1/")
+        .unwrap();
+    let (status, body) = get_ready(pool).await;
+    assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        serde_json::json!({"errorType": "InternalServerError", "description": ""})
+    );
+}
+
+/// The readiness probe passes when the database answers.
+#[tokio::test]
+#[ignore = "needs a local database"]
+async fn solana_db_ready_returns_200() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let (status, _) = get_ready(pool).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+}
+
 /// The version route answers like the EVM orderbook's: the build's
 /// `<ref>@<sha>` as plain text.
 #[tokio::test]
@@ -102,9 +171,37 @@ async fn version_reports_the_build() {
     );
 }
 
+/// The path parameters are checked before any database read, in the API's
+/// error shape.
+#[tokio::test]
+async fn solver_competition_rejects_malformed_path_parameters() {
+    let addr = spawn_server().await;
+    for (path, error_type) in [
+        ("/api/v2/solver_competition/abc", "InvalidAuctionId"),
+        ("/api/v2/solver_competition/-1", "InvalidAuctionId"),
+        (
+            "/restricted/api/v2/solver_competition/abc",
+            "InvalidAuctionId",
+        ),
+        (
+            "/api/v2/solver_competition/by_tx_hash/not-base58",
+            "InvalidTransactionSignature",
+        ),
+    ] {
+        let response = reqwest::get(format!("http://{addr}{path}")).await.unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "{path}"
+        );
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["errorType"], error_type, "{path}");
+    }
+}
+
 #[tokio::test]
 async fn shuts_down_cleanly_on_signal() {
-    let api = mock_api();
+    let api = mock_api().await;
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown_token = CancellationToken::new();
     let serve = api.serve(listener, shutdown_token.clone());
@@ -193,7 +290,7 @@ async fn quote_validation_rejects_bad_orders() {
             "InsufficientValidTo",
         ),
         (
-            quote_body(serde_json::json!({"validFor": 4 * 60 * 60})),
+            quote_body(serde_json::json!({"validFor": 2 * 365 * 24 * 60 * 60})),
             "ExcessiveValidTo",
         ),
         (same_tokens, "SameBuyAndSellToken"),
@@ -288,7 +385,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
             }),
-            ..mock_api()
+            ..mock_api().await
         };
         let (listener, addr) = api.bind().await.unwrap();
         let shutdown = CancellationToken::new();
@@ -302,13 +399,15 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
 }
 
 /// The full happy path: the driver's amounts come back in the EVM response
-/// shape with the request's own fields echoed.
+/// shape with the request's own fields echoed, net of the buy token account
+/// rent and the driver's network fee at the mock price of a lamport an atom.
 #[tokio::test]
 async fn quote_answers_in_the_evm_shape() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "3461207",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
     }))
     .await;
     let addr = spawn_server_with(Quoter::new(
@@ -343,11 +442,17 @@ async fn quote_answers_in_the_evm_shape() {
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "feeAmount": "0",
-                "networkFees": "6400",
-                // Without sponsoring the buy token account is not read, so it
-                // counts as the costliest a settleable mint can need at the
-                // SDK's default rent.
-                "buyTokenAtaCosts": "2220240",
+                // In the buy token, at the mocked lamport an atom. Without
+                // sponsoring the buy token account is not read, so it counts
+                // as the costliest a settleable mint can need at the SDK's
+                // default rent.
+                "costs": {
+                    "token": body["buyToken"],
+                    "networkFees": "6400",
+                    "buyTokenAtaCosts": "2220240",
+                    "protocolFee": "0",
+                    "total": "2226640",
+                },
                 "kind": "sell",
                 "partiallyFillable": false,
             },
@@ -374,7 +479,7 @@ async fn quote_answers_in_the_evm_shape() {
 async fn quote_names_the_funder_when_sponsoring_is_on() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "10000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
     }))
     .await;
@@ -394,7 +499,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
         }),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -414,12 +519,13 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
 }
 
 /// The lookups answer the mints, then the owner, its associated token
-/// account, the buy mint and the rent sysvar.
+/// account, the buy mint and the rent sysvar. The rent comes off the buy
+/// amount at the mock price of a lamport an atom.
 #[tokio::test]
 async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "10000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
     }))
     .await;
@@ -432,9 +538,9 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
         &solana_sdk::rent::Rent::with_lamports_per_byte(5080),
     );
     for (buy_mint, cost) in [
-        (mint_account(spl_token_interface::ID), "1488440"),
-        (mint_account(spl_token_2022_interface::ID), "1513840"),
-        (free_fee_mint, "1574800"),
+        (mint_account(spl_token_interface::ID), 1_488_440_u64),
+        (mint_account(spl_token_2022_interface::ID), 1_513_840),
+        (free_fee_mint, 1_574_800),
     ] {
         let mints = accounts_response(&[
             Some(mint_account(spl_token_interface::ID)),
@@ -459,7 +565,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
             }),
-            ..mock_api()
+            ..mock_api().await
         };
         let (listener, addr) = api.bind().await.unwrap();
         let shutdown = CancellationToken::new();
@@ -473,23 +579,28 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
             .unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         let json: serde_json::Value = response.json().await.unwrap();
-        assert_eq!(json["quote"]["buyTokenAtaCosts"], cost);
+        assert_eq!(json["quote"]["costs"]["buyTokenAtaCosts"], cost.to_string());
+        assert_eq!(json["quote"]["buyAmount"], (10_000_000 - cost).to_string());
     }
 }
 
 /// With several drivers configured, the best answer wins: the largest buy
-/// amount for a sell order.
+/// amount for a sell order once each driver's own network fee and the buy
+/// token account rent (2,220,240 lamports, a lamport an atom) come off it.
+/// The larger raw answer loses to the fee it reports, and a driver that
+/// reports no fee is charged none.
 #[tokio::test]
 async fn quote_picks_the_best_driver_answer() {
     let worse = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1500000",
+        "buyAmount": "5001000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "2000000",
     }))
     .await;
     let better = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "2000000",
+        "buyAmount": "5000000",
         "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
     }))
     .await;
@@ -511,7 +622,76 @@ async fn quote_picks_the_best_driver_answer() {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(json["quote"]["buyAmount"], "2000000");
+    assert_eq!(json["quote"]["buyAmount"], "2779760");
+    assert_eq!(json["quote"]["costs"]["networkFees"], "0");
+}
+
+/// A buy order keeps its buy amount and pulls the execution cost, priced in
+/// the sell token, through the sell amount instead.
+#[tokio::test]
+async fn quote_charges_a_buy_order_on_the_sell_side() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["kind"] = serde_json::json!("buy");
+    body["buyAmountAfterFee"] = serde_json::json!("1234567");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["kind"], "buy");
+    assert_eq!(json["quote"]["sellAmount"], "12226640");
+    assert_eq!(json["quote"]["buyAmount"], "1234567");
+    assert_eq!(
+        json["quote"]["costs"],
+        serde_json::json!({
+            "token": body["sellToken"],
+            "networkFees": "6400",
+            "buyTokenAtaCosts": "2220240",
+            "protocolFee": "0",
+            "total": "2226640",
+        })
+    );
+}
+
+/// A fill the execution cost swallows is no quote.
+#[tokio::test]
+async fn quote_rejects_a_fill_the_cost_swallows() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1000",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (
+            reqwest::StatusCode::BAD_REQUEST,
+            "SellAmountDoesNotCoverFee"
+        )
+    );
 }
 
 /// A sponsoring deployment reads the quoted mints and refuses one the
@@ -568,6 +748,34 @@ async fn quote_checks_only_the_mints_it_can_read() {
     }
 }
 
+/// A token the autopilot cannot price answers no liquidity even when a
+/// driver quotes the pair: an order on it would never enter an auction.
+#[tokio::test]
+async fn quote_without_a_native_price_is_no_liquidity() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "1234567",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    }))
+    .await;
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        prices: spawn_mock_autopilot(None).await,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let (status, kind) = post_quote(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
+    );
+}
+
 /// Every driver failure reads as no liquidity, mirroring the EVM mapping of
 /// estimator errors.
 #[tokio::test]
@@ -580,7 +788,8 @@ async fn quote_without_a_route_is_no_liquidity() {
     );
 }
 
-/// The answered quote lands in `solana.quotes` and its id comes back.
+/// The answered quote, net of the execution cost, lands in `solana.quotes`
+/// and its id comes back.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_quote_is_persisted() {
@@ -592,7 +801,7 @@ async fn solana_db_quote_is_persisted() {
     let solver = solana_sdk::pubkey::Pubkey::new_unique();
     let driver = spawn_mock_driver(serde_json::json!({
         "sellAmount": "10000000",
-        "buyAmount": "1234567",
+        "buyAmount": "10000000",
         "solver": solver.to_string(),
     }))
     .await;
@@ -602,7 +811,7 @@ async fn solana_db_quote_is_persisted() {
             vec![format!("http://{driver}/").parse().unwrap()],
             Duration::from_secs(1),
         ),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -645,7 +854,7 @@ async fn solana_db_quote_is_persisted() {
     assert_eq!(row.1, sell.to_bytes());
     assert_eq!(row.2, buy.to_bytes());
     assert_eq!(row.3, "10000000");
-    assert_eq!(row.4, "1234567");
+    assert_eq!(row.4, "7779760");
     assert_eq!(row.5, "sell");
     assert_eq!(row.6, solver.to_bytes());
     // The stored expiry is the answered one, up to timestamptz rounding.
@@ -718,6 +927,11 @@ async fn spawn_sponsored_server(
     .await
 }
 
+/// The mock blockhash probe answers "expired", and that probe is the first
+/// gate after the account checks, so an order rejected with this kind passed
+/// every check before it without the request reaching the database.
+const PASSED_ACCOUNT_CHECKS: &str = "BlockhashExpired";
+
 /// The mock RPC answers to the blockhash and height probes, and `accounts`
 /// to the order account lookup, a `getMultipleAccounts` response.
 fn sponsored_mocks(blockhash_valid: bool, accounts: serde_json::Value) -> Mocks {
@@ -749,7 +963,7 @@ async fn spawn_sponsored_server_with(
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
         }),
-        ..mock_api()
+        ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
     let shutdown = CancellationToken::new();
@@ -814,7 +1028,7 @@ fn sponsored_intent(
         ),
         sell_amount: std::num::NonZeroU64::new(1_000).unwrap(),
         buy_amount: std::num::NonZeroU64::new(2_000).unwrap(),
-        valid_to: u32::MAX,
+        valid_to: u32::try_from(chrono::Utc::now().timestamp() + 3600).unwrap(),
         flags: cow_settlement_interface::data::intent::Flags {
             kind: cow_settlement_interface::data::intent::OrderKind::Sell,
             partially_fillable: false,
@@ -977,7 +1191,7 @@ fn signed_creation_tx(
     base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
 }
 
-/// The mandatory buy-account creation step for the intent.
+/// The buy-account creation step for the intent.
 fn destination_creation(
     funder: solana_sdk::pubkey::Pubkey,
     owner: solana_sdk::pubkey::Pubkey,
@@ -1002,7 +1216,7 @@ fn buy_mint(
 }
 
 /// A sponsored creation transaction with an arbitrary SPL sell and only the
-/// mandatory buy-account creation in front of `CreateOrder`.
+/// buy-account creation in front of `CreateOrder`.
 fn sponsored_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
@@ -1037,6 +1251,46 @@ fn overpriced_creation_tx(
         ],
         true,
     )
+}
+
+/// The sponsored creation as a v1 message: its 5 SOL priority fee sits in the
+/// message config, where no compute-budget instruction shows it.
+fn v1_creation_tx(
+    funder: solana_sdk::pubkey::Pubkey,
+    owner: &solana_sdk::signer::keypair::Keypair,
+) -> String {
+    use solana_sdk::message::{VersionedMessage, v1};
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let instructions = [
+        destination_creation(funder, owner.pubkey(), &intent),
+        create_order(funder, owner.pubkey(), &intent),
+    ];
+    let message = VersionedMessage::V1(
+        v1::Message::try_compile_with_config(
+            &funder,
+            &instructions,
+            solana_sdk::hash::Hash::new_unique(),
+            v1::TransactionConfig::empty().with_priority_fee(5_000_000_000),
+        )
+        .unwrap(),
+    );
+    let serialized = message.serialize();
+    let signers = usize::from(message.header().num_required_signatures);
+    let signatures = message.static_account_keys()[..signers]
+        .iter()
+        .map(|key| {
+            if *key == owner.pubkey() {
+                owner.sign_message(&serialized)
+            } else {
+                solana_sdk::signature::Signature::default()
+            }
+        })
+        .collect();
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message,
+    };
+    base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
 }
 
 /// A Lighthouse instruction over one account, the shape Phantom injects.
@@ -1119,6 +1373,8 @@ async fn create_order_rejects_invalid_submissions() {
         ),
         // The funder pays the priority fee, so an outsized price is refused.
         (overpriced_creation_tx(funder, &owner), "InvalidTransaction"),
+        // Nor can a v1 message hide one in its config.
+        (v1_creation_tx(funder, &owner), "InvalidTransaction"),
         // A lighthouse assertion is fine, anything outside that range is not.
         (
             lighthouse_memory_creation_tx(funder, &owner),
@@ -1133,7 +1389,7 @@ async fn create_order_rejects_invalid_submissions() {
     }
 
     // Intent-level rejections: the funder as owner, equal mints, and a
-    // validTo below the minimum validity.
+    // validTo outside the validity bounds.
     let mut funder_owned = sponsored_intent(owner.pubkey(), false);
     funder_owned.owner = funder;
     let mut same_token = sponsored_intent(owner.pubkey(), false);
@@ -1145,10 +1401,14 @@ async fn create_order_rejects_invalid_submissions() {
     );
     let mut expiring = sponsored_intent(owner.pubkey(), false);
     expiring.valid_to = u32::try_from(chrono::Utc::now().timestamp() + 30).unwrap();
+    let mut distant = sponsored_intent(owner.pubkey(), false);
+    distant.valid_to =
+        u32::try_from(chrono::Utc::now().timestamp() + 2 * 365 * 24 * 60 * 60).unwrap();
     for (intent, expected) in [
         (funder_owned, "InvalidTransaction"),
         (same_token, "SameBuyAndSellToken"),
         (expiring, "InsufficientValidTo"),
+        (distant, "ExcessiveValidTo"),
     ] {
         let destination = destination_creation(funder, owner.pubkey(), &intent);
         let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
@@ -1230,21 +1490,21 @@ async fn create_order_checks_the_native_buy_wallet() {
         (
             wallet(2_039_280, system),
             buy(1_000_000_000),
-            "BlockhashExpired",
+            PASSED_ACCOUNT_CHECKS,
         ),
         (None, buy(floor - 1), "InvalidNativeBuy"),
         (None, partial(1_000_000_000), "InvalidNativeBuy"),
         (
             wallet(1_000, system),
             buy(floor - 1_000),
-            "BlockhashExpired",
+            PASSED_ACCOUNT_CHECKS,
         ),
         (
             wallet(1_000, system),
             buy(floor - 1_001),
             "InvalidNativeBuy",
         ),
-        (wallet(floor, system), partial(1), "BlockhashExpired"),
+        (wallet(floor, system), partial(1), PASSED_ACCOUNT_CHECKS),
     ]
     .into_iter()
     .enumerate()
@@ -1264,6 +1524,108 @@ async fn create_order_checks_the_native_buy_wallet() {
             (status, kind.as_str()),
             (reqwest::StatusCode::BAD_REQUEST, expected),
             "case {index}"
+        );
+    }
+}
+
+/// Without the creation step in the bundle, the buy token account must
+/// already receive the buy mint, or be the owner's associated token account
+/// under the buy mint's token program, which the settlement creates when
+/// missing. A custom receiver's missing account needs the creation step.
+#[tokio::test]
+async fn create_order_checks_an_uncreated_buy_token_account() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::new_unique();
+
+    let paid_to_owner = sponsored_intent(owner.pubkey(), false);
+    let mint = buy_mint(&paid_to_owner);
+    let mut paid_to_receiver = sponsored_intent(owner.pubkey(), false);
+    paid_to_receiver.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint,
+            token_account: ata(receiver, mint),
+        },
+    );
+    let create_receiver_account = destination_creation(funder, receiver, &paid_to_receiver);
+
+    let receiver_token_account = solana_testlib::token_account_json(&mint, &receiver);
+    let lamports_only = solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: solana_sdk::rent::Rent::default().minimum_balance(0),
+        owner: solana_system_interface::program::ID,
+        ..Default::default()
+    });
+    // The lookup reads the sell mint, the buy mint, the Clock sysvar, then
+    // the buy token account.
+    let lookup = |token_program, buy_account: Option<serde_json::Value>| {
+        let mint = solana_testlib::account_json(&mint_account(token_program));
+        solana_testlib::multiple_accounts_json([
+            mint.clone(),
+            mint,
+            serde_json::Value::Null,
+            buy_account.unwrap_or(serde_json::Value::Null),
+        ])
+    };
+    let spl_token = spl_token_interface::ID;
+    let token_2022 = spl_token_2022_interface::ID;
+
+    for (name, intent, preparations, accounts, expected) in [
+        (
+            "owner's missing ATA: the settlement creates it",
+            &paid_to_owner,
+            vec![],
+            lookup(spl_token, None),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "owner's ATA holding only lamports: the idempotent create allocates over it",
+            &paid_to_owner,
+            vec![],
+            lookup(spl_token, Some(lamports_only)),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "owner's SPL Token ATA on a Token-2022 mint: the settlement would create the \
+             Token-2022 one",
+            &paid_to_owner,
+            vec![],
+            lookup(token_2022, None),
+            "InvalidTransaction",
+        ),
+        (
+            "receiver's missing ATA without the creation step",
+            &paid_to_receiver,
+            vec![],
+            lookup(spl_token, None),
+            "InvalidTransaction",
+        ),
+        (
+            "receiver's missing ATA with the creation step",
+            &paid_to_receiver,
+            vec![create_receiver_account],
+            lookup(spl_token, None),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "receiver's existing token account",
+            &paid_to_receiver,
+            vec![],
+            lookup(spl_token, Some(receiver_token_account)),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+    ] {
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            sponsored_mocks(false, accounts),
+        )
+        .await;
+        let transaction = creation_tx(funder, &owner, intent, preparations, true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected),
+            "{name}"
         );
     }
 }
@@ -1334,8 +1696,6 @@ async fn create_order_checks_the_preparation_template() {
     };
 
     for (preparations, expected) in [
-        // The buy-account creation is mandatory.
-        (vec![], "InvalidTransaction"),
         // A program outside the template never rides on the funder's fee.
         (
             vec![solana_sdk::instruction::Instruction::new_with_bytes(
@@ -1444,7 +1804,7 @@ async fn create_order_checks_the_mints_on_chain() {
     let intent = sponsored_intent(owner.pubkey(), false);
     let classic = Some(mint_account(spl_token_interface::ID));
     let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
-    // Only the mandatory buy account creation, under SPL Token.
+    // Only the buy account creation, under SPL Token.
     let plain = sponsored_creation_tx(funder, &owner, true);
     let token_2022_approve = creation_tx(
         funder,

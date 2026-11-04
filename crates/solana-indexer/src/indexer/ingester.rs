@@ -78,9 +78,8 @@ where
     pub tx: Sender<StreamUpdate>,
 
     /// Latest chain slot seen on the slot filter. The ingester is the sole
-    /// writer. The `Arc` is taken from the caller so other components
-    /// can share it as a read handle once it is wired up; it doesn't read it
-    /// yet. Cold start is zero (`AtomicU64::default`).
+    /// writer, and the liveness probe reads it. Cold start is zero
+    /// (`AtomicU64::default`).
     pub latest_chain_slot: Arc<AtomicU64>,
 }
 

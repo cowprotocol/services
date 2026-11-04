@@ -39,7 +39,6 @@ pub struct RunLoop {
     auction: domain::auction::Id,
     block: u64,
     solve_deadline: Duration,
-    compress_solve_request: bool,
     liveness: Arc<Liveness>,
     current_block: CurrentBlockWatcher,
     winner_selection: winner_selection::Arbitrator,
@@ -52,7 +51,6 @@ impl RunLoop {
         drivers: Vec<Arc<infra::Driver>>,
         trusted_tokens: AutoUpdatingTokenList,
         solve_deadline: Duration,
-        compress_solve_request: bool,
         liveness: Arc<Liveness>,
         current_block: CurrentBlockWatcher,
         max_winners_per_auction: NonZeroUsize,
@@ -69,7 +67,6 @@ impl RunLoop {
             auction: 0,
             block: 0,
             solve_deadline,
-            compress_solve_request,
             liveness,
             current_block,
         }
@@ -186,15 +183,18 @@ impl RunLoop {
             auction,
             &self.trusted_tokens.all(),
             Utc::now() + self.solve_deadline,
-            self.compress_solve_request,
         )
         .await;
+        let compress = self
+            .drivers
+            .iter()
+            .any(|driver| driver.extensions.compression);
+        let requests = solve::EncodedRequests::new(request, compress).await;
 
-        futures::future::join_all(
-            self.drivers
-                .iter()
-                .map(|driver| self.participate(Arc::clone(driver), request.clone(), auction.id)),
-        )
+        futures::future::join_all(self.drivers.iter().map(|driver| {
+            let request = requests.for_driver(driver.extensions.compression);
+            self.participate(Arc::clone(driver), request, auction.id)
+        }))
         .await
         .into_iter()
         .flatten()

@@ -3,7 +3,7 @@
 use {
     crate::{
         config::Fee,
-        dex::{Error, Order, Swap, dto::ApiInstruction},
+        dex::{Error, Order, Quote, Swap, dto::ApiInstruction},
     },
     serde::{Deserialize, Serialize, de::DeserializeOwned},
     serde_with::{DisplayFromStr, serde_as},
@@ -101,83 +101,108 @@ impl Envelope {
     }
 }
 
-/// The parts of a rich-mode `/swap` response we need. `minAmount` is the
-/// output after Bitget's fee, which its program enforces on chain.
+/// The parts of a rich-mode `/swap` response we need. Bitget's program checks
+/// `minAmount` against what the receiver gets after its fee.
 #[serde_as]
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SwapResponse {
     #[serde_as(as = "DisplayFromStr")]
     min_amount: u64,
     instruction_lists: Vec<ApiInstruction>,
-    #[serde_as(as = "Vec<DisplayFromStr>")]
-    address_lookup_table_account: Vec<Pubkey>,
 }
 
 impl SwapResponse {
-    /// Bitget pays the taker's buy-mint ATA, so a transfer of `minAmount` moves
-    /// the output on to `order.buy_destination` and positive slippage stays
-    /// with the taker. ComputeBudget instructions are dropped: the driver sets
-    /// its own. An exempt route may also need Bitget's signature.
-    pub fn into_swap(self, order: &Order, taker: &Pubkey, fee: Fee) -> Result<Swap, Error> {
-        let mut instructions = Vec::with_capacity(self.instruction_lists.len() + 1);
-        for instruction in self.instruction_lists {
-            let instruction = instruction.into_instruction()?;
-            if instruction.program_id != solana_compute_budget_interface::ID {
-                instructions.push(instruction);
-            }
-        }
-        let accounts = || {
-            instructions
-                .iter()
-                .flat_map(|instruction| &instruction.accounts)
-        };
-        let cosigners: HashSet<_> = accounts()
-            .filter(|account| account.is_signer && account.pubkey != *taker)
-            .map(|account| account.pubkey)
-            .collect();
-        let allowed = match fee {
-            Fee::Standard => 0,
-            Fee::Exempt => 1,
-        };
-        if cosigners.len() > allowed {
-            return Err(Error::BadResponse(format!(
-                "route needs {} signers besides the taker",
-                cosigners.len()
-            )));
-        }
-        let (token_program, output) = [inline_spl_token::ID, spl_token_2022_interface::ID]
-            .into_iter()
-            .map(|program| {
-                let ata =
-                    get_associated_token_address_with_program_id(taker, &order.buy_mint, &program);
-                (program, ata)
-            })
-            .find(|(_, ata)| accounts().any(|account| account.pubkey == *ata))
-            .ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
-        // Unchecked because the auction carries no decimals. Token-2022 mints
-        // with a transfer fee or hook reject it, and simulation drops them.
-        #[allow(deprecated)]
-        let transfer = spl_token_2022_interface::instruction::transfer(
-            &token_program,
-            &output,
-            &order.buy_destination,
-            taker,
-            &[],
-            self.min_amount,
-        )
-        .expect("both token programs pass the program check");
-        instructions.push(transfer);
-        Ok(Swap {
+    /// The quote for `order`, bidding `minAmount`, keeping the route to build
+    /// its swap.
+    pub fn into_quote(self, order: &Order) -> Quote {
+        Quote {
             in_amount: order.sell_amount,
             out_amount: self.min_amount,
-            instructions,
-            address_lookup_tables: self.address_lookup_table_account,
-        })
+            destination: order.buy_destination,
+            raw: serde_json::to_value(Quoted {
+                buy_mint: order.buy_mint,
+                response: self,
+            })
+            .expect("a quote serializes"),
+        }
     }
 }
 
-/// Body of the `/signBgwSolTx` request: the transaction as base58 bincode.
+/// What a quote keeps to build its swap: the route, and the buy mint the
+/// response doesn't name.
+#[serde_as]
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Quoted {
+    #[serde_as(as = "DisplayFromStr")]
+    buy_mint: Pubkey,
+    response: SwapResponse,
+}
+
+/// Bitget pays the taker's buy-mint ATA, so a transfer of `minAmount` moves
+/// the output on to the quote's destination and positive slippage stays with
+/// the taker. ComputeBudget instructions are dropped: the driver sets its own.
+/// An exempt route may also need Bitget's signature.
+pub fn swap(quote: &Quote, taker: &Pubkey, fee: Fee) -> Result<Swap, Error> {
+    let Quoted { buy_mint, response } = Quoted::deserialize(&quote.raw)
+        .map_err(|err| Error::BadResponse(format!("quote: {err}")))?;
+    let mut instructions = Vec::with_capacity(response.instruction_lists.len() + 1);
+    for instruction in response.instruction_lists {
+        let instruction = instruction.into_instruction()?;
+        if instruction.program_id != solana_compute_budget_interface::ID {
+            instructions.push(instruction);
+        }
+    }
+    let accounts = || {
+        instructions
+            .iter()
+            .flat_map(|instruction| &instruction.accounts)
+    };
+    let cosigners: HashSet<_> = accounts()
+        .filter(|account| account.is_signer && account.pubkey != *taker)
+        .map(|account| account.pubkey)
+        .collect();
+    let allowed = match fee {
+        Fee::Standard => 0,
+        Fee::Exempt => 1,
+    };
+    if cosigners.len() > allowed {
+        return Err(Error::BadResponse(format!(
+            "route needs {} signers besides the taker",
+            cosigners.len()
+        )));
+    }
+    let (token_program, output) = [inline_spl_token::ID, spl_token_2022_interface::ID]
+        .into_iter()
+        .map(|program| {
+            let ata = get_associated_token_address_with_program_id(taker, &buy_mint, &program);
+            (program, ata)
+        })
+        .find(|(_, ata)| accounts().any(|account| account.pubkey == *ata))
+        .ok_or_else(|| Error::BadResponse("route doesn't pay the taker's ATA".into()))?;
+    // Unchecked because the auction carries no decimals. Token-2022 mints with
+    // a transfer fee or hook reject it, and simulation drops them.
+    #[allow(deprecated)]
+    let transfer = spl_token_2022_interface::instruction::transfer(
+        &token_program,
+        &output,
+        &quote.destination,
+        taker,
+        &[],
+        response.min_amount,
+    )
+    .expect("both token programs pass the program check");
+    instructions.push(transfer);
+    Ok(Swap {
+        in_amount: quote.in_amount,
+        out_amount: response.min_amount,
+        instructions,
+    })
+}
+
+/// Body of the `/signBgwSolTx` request: the transaction as base58 of its wire
+/// bytes.
 #[derive(Serialize)]
 pub struct CosignRequest {
     chain: &'static str,
@@ -186,7 +211,7 @@ pub struct CosignRequest {
 
 impl CosignRequest {
     pub fn new(transaction: &VersionedTransaction) -> Self {
-        let bytes = bincode::serialize(transaction).expect("a transaction serializes");
+        let bytes = wincode::serialize(transaction).expect("a transaction serializes");
         Self {
             chain: "sol",
             transaction: bs58::encode(bytes).into_string(),
@@ -204,7 +229,7 @@ impl CosignResponse {
         let bytes = bs58::decode(&self.transaction)
             .into_vec()
             .map_err(|err| Error::BadResponse(format!("co-signed transaction: {err}")))?;
-        bincode::deserialize(&bytes)
+        wincode::deserialize(&bytes)
             .map_err(|err| Error::BadResponse(format!("co-signed transaction: {err}")))
     }
 }
@@ -245,7 +270,6 @@ mod tests {
                 {"programId": solana_compute_budget_interface::ID.to_string(), "accounts": [], "data": "AnBkCAA="},
                 {"programId": Pubkey::new_unique().to_string(), "accounts": accounts, "data": "AQ=="},
             ],
-            "addressLookupTableAccount": [Pubkey::new_unique().to_string()],
         }))
         .unwrap()
     }
@@ -255,12 +279,11 @@ mod tests {
         let taker = Pubkey::new_unique();
         let order = order();
         for program in [inline_spl_token::ID, spl_token_2022_interface::ID] {
-            let swap = response(&order, &taker, &program, &[])
-                .into_swap(&order, &taker, Fee::Standard)
-                .unwrap();
+            let quote = response(&order, &taker, &program, &[]).into_quote(&order);
+            let swap = swap(&quote, &taker, Fee::Standard).unwrap();
 
+            assert_eq!((quote.in_amount, quote.out_amount), (1_000, 990));
             assert_eq!((swap.in_amount, swap.out_amount), (1_000, 990));
-            assert_eq!(swap.address_lookup_tables.len(), 1);
             // ComputeBudget dropped: the route, then the transfer.
             assert_eq!(swap.instructions.len(), 2);
             let transfer = &swap.instructions[1];
@@ -278,20 +301,19 @@ mod tests {
     fn only_a_fee_exempt_route_may_need_bitgets_signature() {
         let taker = Pubkey::new_unique();
         let order = order();
-        let response =
-            |signers: &[Pubkey]| response(&order, &taker, &inline_spl_token::ID, signers);
+        let quote = |signers: &[Pubkey]| {
+            response(&order, &taker, &inline_spl_token::ID, signers).into_quote(&order)
+        };
         let cosigner = [Pubkey::new_unique()];
         let two = [Pubkey::new_unique(), Pubkey::new_unique()];
 
         assert!(matches!(
-            response(&cosigner).into_swap(&order, &taker, Fee::Standard),
+            swap(&quote(&cosigner), &taker, Fee::Standard),
             Err(Error::BadResponse(_))
         ));
-        response(&cosigner)
-            .into_swap(&order, &taker, Fee::Exempt)
-            .unwrap();
+        swap(&quote(&cosigner), &taker, Fee::Exempt).unwrap();
         assert!(matches!(
-            response(&two).into_swap(&order, &taker, Fee::Exempt),
+            swap(&quote(&two), &taker, Fee::Exempt),
             Err(Error::BadResponse(_))
         ));
     }
