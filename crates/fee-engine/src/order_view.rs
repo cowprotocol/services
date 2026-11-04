@@ -49,12 +49,9 @@ pub(crate) fn order_view(OrderView { order, in_market }: OrderView) -> Value {
         })),
         "ethflowData": meta.ethflow_data.as_ref().map(|ethflow| json!({
             "userValidTo": ethflow.user_valid_to,
-            "refundTxHash": ethflow.refund_tx_hash.map(|hash| hex(hash.as_slice())),
-            "isRefunded": ethflow.refund_tx_hash.is_some(),
         })),
         "onchainOrderData": meta.onchain_order_data.as_ref().map(|onchain| json!({
             "sender": hex(onchain.sender.as_slice()),
-            "placementError": onchain.placement_error,
         })),
         "onchainUser": meta.onchain_user.map(|user| hex(user.as_slice())),
     });
