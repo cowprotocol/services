@@ -506,6 +506,7 @@ impl<'a> PriceEstimatorFactory<'a> {
             self.config.cache.concurrent_requests.get(),
             approximation_tokens,
             self.args.quote_timeout,
+            self.config.cache.rate_limit_backoff,
         )
     }
 

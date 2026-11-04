@@ -63,6 +63,9 @@ struct CacheMetrics {
     /// native price cache hits misses
     #[metric(labels("result"))]
     native_price_cache_access: IntCounterVec,
+    /// Native-price requests served a rate-limit error during a token's
+    /// backoff.
+    native_price_rate_limit_backoffs: IntCounter,
     /// number of items in cache
     native_price_cache_size: IntGauge,
 }
@@ -289,6 +292,8 @@ struct CachingInner {
     approximation_tokens: HashMap<Address, ApproximationToken>,
     quote_timeout: Duration,
     requests_in_flight: BoxRequestSharing<Address, CacheEntry>,
+    rate_limit_backoff: Duration,
+    rate_limited_tokens: moka::sync::Cache<Address, Instant>,
 }
 
 impl CachingNativePriceEstimator {
@@ -298,6 +303,7 @@ impl CachingNativePriceEstimator {
         concurrent_requests: usize,
         approximation_tokens: HashMap<Address, ApproximationToken>,
         quote_timeout: Duration,
+        rate_limit_backoff: Duration,
     ) -> Self {
         let inner = Arc::new(CachingInner {
             estimator,
@@ -306,6 +312,10 @@ impl CachingNativePriceEstimator {
             approximation_tokens,
             quote_timeout,
             requests_in_flight: RequestSharing::labelled("native_price".to_string()),
+            rate_limit_backoff,
+            rate_limited_tokens: moka::sync::Cache::builder()
+                .max_capacity(MAX_CACHE_SIZE)
+                .build(),
         });
         Self(inner)
     }
@@ -334,7 +344,18 @@ impl CachingNativePriceEstimator {
             if let Some(cached) =
                 Cache::get_cached_price(token, Instant::now(), &self.0.cache.0.data, &max_age)
             {
+                if !self.0.rate_limit_backoff.is_zero() {
+                    self.0.rate_limited_tokens.invalidate(&token);
+                }
                 return (token, cached.result);
+            }
+
+            if !self.0.rate_limit_backoff.is_zero()
+                && let Some(failed_at) = self.0.rate_limited_tokens.get(&token)
+                && failed_at.elapsed() < self.0.rate_limit_backoff
+            {
+                CacheMetrics::get().native_price_rate_limit_backoffs.inc();
+                return (token, Err(PriceEstimationError::RateLimited));
             }
 
             // Coalesce concurrent in-flight requests for the same token so the
@@ -361,6 +382,15 @@ impl CachingNativePriceEstimator {
 
                         if should_cache(&result) {
                             this.0.cache.insert(token, result.clone());
+                        }
+
+                        if !this.0.rate_limit_backoff.is_zero() {
+                            if matches!(result, Err(PriceEstimationError::RateLimited)) {
+                                // Keep backoff separate from cached prices.
+                                this.0.rate_limited_tokens.insert(token, Instant::now());
+                            } else {
+                                this.0.rate_limited_tokens.invalidate(&token);
+                            }
                         }
 
                         result
@@ -433,6 +463,9 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 .inc_by(1);
 
             if let Some(cached) = cached {
+                if !self.0.rate_limit_backoff.is_zero() {
+                    self.0.rate_limited_tokens.invalidate(&token);
+                }
                 return cached.result;
             }
 
@@ -601,6 +634,7 @@ mod tests {
             concurrent_requests,
             approximation_tokens,
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         )
     }
 
@@ -622,6 +656,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         );
 
         {
@@ -992,6 +1027,219 @@ mod tests {
         }
     }
 
+    fn estimator_with_backoff(
+        inner: MockNativePriceEstimating,
+        cache: Cache,
+    ) -> CachingNativePriceEstimator {
+        CachingNativePriceEstimator::new(
+            Box::new(inner),
+            cache,
+            10,
+            Default::default(),
+            HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::from_secs(5),
+        )
+    }
+
+    #[tokio::test]
+    async fn rate_limit_backoff_preserves_errors_without_caching_a_price() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
+        let cache = Cache::new(Duration::from_secs(600), Default::default());
+        let estimator = estimator_with_backoff(inner, cache.clone());
+
+        for _ in 0..10 {
+            assert!(matches!(
+                estimator
+                    .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                    .await,
+                Err(PriceEstimationError::RateLimited)
+            ));
+        }
+        assert!(cache.0.data.get(&token(0)).is_none());
+        let prices = estimator
+            .fetch_prices(&[token(0)], HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert!(matches!(
+            prices[&token(0)],
+            Err(PriceEstimationError::RateLimited)
+        ));
+    }
+
+    #[tokio::test]
+    async fn rate_limit_backoff_does_not_reuse_transport_or_deadline_errors() {
+        let mut inner = MockNativePriceEstimating::new();
+        let mut sequence = mockall::Sequence::new();
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .in_sequence(&mut sequence)
+            .returning(|_, _| {
+                async {
+                    Err(PriceEstimationError::ProtocolInternal(anyhow!(
+                        "request deadline"
+                    )))
+                }
+                .boxed()
+            });
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .in_sequence(&mut sequence)
+            .returning(|_, _| async { Ok(1.0) }.boxed());
+        let estimator = estimator_with_backoff(
+            inner,
+            Cache::new(Duration::from_secs(600), Default::default()),
+        );
+
+        assert!(matches!(
+            estimator
+                .estimate_native_price(token(0), Duration::from_millis(1))
+                .await,
+            Err(PriceEstimationError::ProtocolInternal(_))
+        ));
+        assert_eq!(
+            estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap(),
+            1.0
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limit_backoff_expires_without_being_extended_by_reads() {
+        let mut inner = MockNativePriceEstimating::new();
+        let mut sequence = mockall::Sequence::new();
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .in_sequence(&mut sequence)
+            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .in_sequence(&mut sequence)
+            .returning(|_, _| async { Ok(1.0) }.boxed());
+        let estimator = estimator_with_backoff(
+            inner,
+            Cache::new(Duration::from_secs(600), Default::default()),
+        );
+
+        assert!(matches!(
+            estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await,
+            Err(PriceEstimationError::RateLimited)
+        ));
+        let failed_at = estimator.0.rate_limited_tokens.get(&token(0)).unwrap();
+        for _ in 0..10 {
+            assert!(matches!(
+                estimator
+                    .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                    .await,
+                Err(PriceEstimationError::RateLimited)
+            ));
+        }
+        assert_eq!(
+            estimator.0.rate_limited_tokens.get(&token(0)).unwrap(),
+            failed_at
+        );
+        estimator
+            .0
+            .rate_limited_tokens
+            .insert(token(0), Instant::now() - Duration::from_secs(6));
+        assert_eq!(
+            estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap(),
+            1.0
+        );
+        assert!(estimator.0.rate_limited_tokens.get(&token(0)).is_none());
+    }
+
+    #[tokio::test]
+    async fn rate_limit_backoff_is_per_token_and_does_not_hide_fresh_prices() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .withf(|address, _| *address == token(0))
+            .once()
+            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
+        inner
+            .expect_estimate_native_price()
+            .withf(|address, _| *address == token(1))
+            .once()
+            .returning(|_, _| async { Ok(2.0) }.boxed());
+        let cache = Cache::new(Duration::from_secs(600), Default::default());
+        let estimator = estimator_with_backoff(inner, cache.clone());
+
+        assert!(matches!(
+            estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await,
+            Err(PriceEstimationError::RateLimited)
+        ));
+        assert_eq!(
+            estimator
+                .estimate_native_price(token(1), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap(),
+            2.0,
+        );
+
+        // The maintenance estimator shares the price cache, but not this
+        // estimator's transient failures. Its fresh price wins immediately.
+        cache.insert(token(0), Ok(3.0));
+        assert_eq!(
+            estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await
+                .unwrap(),
+            3.0,
+        );
+        assert!(estimator.0.rate_limited_tokens.get(&token(0)).is_none());
+    }
+
+    #[tokio::test]
+    async fn rate_limit_backoff_coalesces_concurrent_failures() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .returning(|_, _| {
+                async {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    Err(PriceEstimationError::RateLimited)
+                }
+                .boxed()
+            });
+        let estimator = estimator_with_backoff(
+            inner,
+            Cache::new(Duration::from_secs(600), Default::default()),
+        );
+        let results = futures::future::join_all(
+            (0..10)
+                .map(|_| estimator.estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)),
+        )
+        .await;
+        assert!(
+            results
+                .iter()
+                .all(|result| matches!(result, Err(PriceEstimationError::RateLimited)))
+        );
+        assert!(matches!(
+            estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await,
+            Err(PriceEstimationError::RateLimited)
+        ));
+    }
+
     #[tokio::test]
     async fn maintenance_can_limit_update_size_to_n() {
         let mut inner = MockNativePriceEstimating::new();
@@ -1027,6 +1275,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         );
         let updater = NativePriceUpdater::new(
             estimator.clone(),
@@ -1085,6 +1334,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         );
         let all_tokens: HashSet<_> = (0..10).map(Address::with_last_byte).collect();
         let updater = NativePriceUpdater::new(
@@ -1144,6 +1394,7 @@ mod tests {
             BATCH_SIZE,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         );
         let all_tokens: HashSet<_> = (0..BATCH_SIZE as u64)
             .map(|u| Address::left_padding_from(&u.to_be_bytes()))

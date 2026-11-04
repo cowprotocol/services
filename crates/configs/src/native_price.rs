@@ -60,6 +60,12 @@ pub struct CacheConfig {
     #[serde(default = "default_cache_max_age", with = "humantime_serde")]
     pub max_age: Duration,
 
+    /// How long to reuse a rate-limited native-price result before retrying
+    /// that token. Zero disables the backoff. Fresh entries in the price cache
+    /// always take precedence. Transport errors and timeouts are not reused.
+    #[serde(default, with = "humantime_serde")]
+    pub rate_limit_backoff: Duration,
+
     /// How many price estimation requests can be executed concurrently in the
     /// maintenance task.
     #[serde(default = "default_cache_concurrent_requests")]
@@ -70,6 +76,7 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             max_age: default_cache_max_age(),
+            rate_limit_backoff: Duration::ZERO,
             concurrent_requests: default_cache_concurrent_requests(),
         }
     }
@@ -106,11 +113,13 @@ mod tests {
 
             [cache]
             max-age = "5m"
+            rate-limit-backoff = "5s"
             concurrent-requests = 4
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.approximation_tokens.len(), 1);
         assert_eq!(config.cache.max_age, Duration::from_secs(300));
+        assert_eq!(config.cache.rate_limit_backoff, Duration::from_secs(5));
         assert_eq!(
             config.cache.concurrent_requests,
             NonZeroUsize::new(4).unwrap()
@@ -125,6 +134,7 @@ mod tests {
         "#;
         let config: NativePriceConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.cache.max_age, Duration::from_mins(10));
+        assert_eq!(config.cache.rate_limit_backoff, Duration::ZERO);
         assert_eq!(
             config.cache.concurrent_requests,
             NonZeroUsize::new(1).unwrap()
@@ -154,6 +164,7 @@ mod tests {
             approximation_tokens: vec![(Address::repeat_byte(1), Address::repeat_byte(2))],
             cache: CacheConfig {
                 max_age: Duration::from_secs(120),
+                rate_limit_backoff: Duration::from_secs(5),
                 concurrent_requests: NonZeroUsize::new(8).unwrap(),
             },
             results_required: default_results_required(),
@@ -167,6 +178,10 @@ mod tests {
             deserialized.approximation_tokens,
         );
         assert_eq!(config.cache.max_age, deserialized.cache.max_age);
+        assert_eq!(
+            config.cache.rate_limit_backoff,
+            deserialized.cache.rate_limit_backoff,
+        );
         assert_eq!(
             config.cache.concurrent_requests,
             deserialized.cache.concurrent_requests,

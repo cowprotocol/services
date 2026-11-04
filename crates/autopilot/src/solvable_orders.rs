@@ -803,6 +803,7 @@ mod tests {
             3,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         );
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
@@ -895,6 +896,7 @@ mod tests {
             1,
             Default::default(),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         );
         let native_price_estimator = NativePriceUpdater::new(
             caching_estimator,
@@ -1002,6 +1004,7 @@ mod tests {
                 (token2, ApproximationToken::same_decimals(token_approx2)),
             ]),
             HEALTHY_PRICE_ESTIMATION_TIME,
+            Duration::ZERO,
         );
         let native_price_estimator =
             NativePriceUpdater::new(caching_estimator, Duration::MAX, Default::default());
