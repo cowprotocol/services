@@ -383,7 +383,12 @@ impl Competition {
             .with_max_native_shortfall(self.solver.max_native_shortfall());
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
-        bundle.push(resolved.unsigned()?);
+        let transaction = resolved.unsigned()?;
+        let signers = transaction.message.header().num_required_signatures;
+        if signers > 1 && !self.solver.cosigns() {
+            return Err(Error::NeedsCosigner { signers });
+        }
+        bundle.push(transaction);
         bundle.iter().try_for_each(check_size)?;
         if let Some(accounts) = bundle
             .iter()
@@ -1080,6 +1085,10 @@ pub(crate) enum Error {
     /// sent.
     #[error("transaction locks {accounts} accounts, over the {MAX_TRANSACTION_ACCOUNTS} limit")]
     TooManyAccounts { accounts: usize },
+    /// The settlement needs signers besides the solver, and the solver's
+    /// engine doesn't co-sign. Nothing was sent.
+    #[error("settlement needs {signers} signers and the solver doesn't co-sign")]
+    NeedsCosigner { signers: u8 },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -1201,7 +1210,8 @@ fn proves_failure(error: &Error) -> bool {
         Error::Settlement(_)
         | Error::SimulationFailed { .. }
         | Error::TransactionTooLarge { .. }
-        | Error::TooManyAccounts { .. } => true,
+        | Error::TooManyAccounts { .. }
+        | Error::NeedsCosigner { .. } => true,
         Error::Resolve(error) => !matches!(error, ResolveError::Rpc(_)),
         _ => false,
     }
@@ -1229,6 +1239,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::TransactionTooLarge { .. } => "transaction_too_large",
         Error::PriorityFeeTooHigh(_) => "priority_fee_too_high",
         Error::TooManyAccounts { .. } => "too_many_accounts",
+        Error::NeedsCosigner { .. } => "needs_cosigner",
         Error::Resolve(_) => "resolve_failed",
         // v1 compilation refuses more than 64 addresses, the account lock
         // limit, before the bundle's count runs.

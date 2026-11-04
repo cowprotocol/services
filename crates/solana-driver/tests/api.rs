@@ -220,19 +220,25 @@ async fn spawn_recording_solver_engine(
 /// so the test can register a matching settlement signer. Its engine prices
 /// the execution costs in, so fills come back as the engine reports them.
 async fn solver_with_keypair(addr: SocketAddr) -> (Solver, Pubkey) {
-    solver_with(addr, FeeHandler::Solver, 0).await
+    solver_with(addr, FeeHandler::Solver, 0, false).await
+}
+
+/// Like [`solver_with_keypair`], with an engine that co-signs.
+async fn cosigning_solver(addr: SocketAddr) -> Solver {
+    solver_with(addr, FeeHandler::Solver, 0, true).await.0
 }
 
 /// A solver client whose fills the driver cuts, by `solver_fee_bps` and the
 /// execution costs.
 async fn solver_with_fee(addr: SocketAddr, solver_fee_bps: u16) -> (Solver, Pubkey) {
-    solver_with(addr, FeeHandler::Driver, solver_fee_bps).await
+    solver_with(addr, FeeHandler::Driver, solver_fee_bps, false).await
 }
 
 async fn solver_with(
     addr: SocketAddr,
     fee_handler: FeeHandler,
     solver_fee_bps: u16,
+    cosign: bool,
 ) -> (Solver, Pubkey) {
     let keypair_file = temp_keypair();
     let keypair_path = keypair_file.path().to_path_buf();
@@ -244,6 +250,7 @@ async fn solver_with(
         fee_handler,
         solver_fee_bps: (solver_fee_bps > 0).then(|| SolverFee::try_from(solver_fee_bps).unwrap()),
         max_native_shortfall_bps: None,
+        cosign,
     })
     .await
     .expect("solver construction should succeed");
@@ -339,6 +346,7 @@ async fn throttled_dead_solver(stride: u64) -> Solver {
         fee_handler: FeeHandler::Solver,
         solver_fee_bps: None,
         max_native_shortfall_bps: None,
+        cosign: false,
     })
     .await
     .expect("solver construction should succeed")
@@ -759,13 +767,26 @@ async fn solve_drops_a_solution_over_the_transaction_size_limit() {
     assert_eq!(response_ids(&response.json().await.unwrap()), [1, 3]);
 }
 
+/// A solution needing another signer is offered only by a solver whose engine
+/// co-signs. Elsewhere it would win the auction and fail to settle.
+#[tokio::test]
+async fn solve_offers_a_solution_needing_another_signer_only_when_cosigning() {
+    let engine =
+        spawn_mock_solver_engine(engine_response_needing_a_cosigner(&Pubkey::new_unique())).await;
+    let plain = spawn_server(vec![solver_with_keypair(engine).await.0]).await;
+    let cosigning = spawn_server(vec![cosigning_solver(engine).await]).await;
+
+    assert!(response_ids(&call_solve(plain).await).is_empty());
+    assert_eq!(response_ids(&call_solve(cosigning).await), [42]);
+}
+
 /// A co-sign answer still missing the signature fails the settle and keeps
 /// the solution for a retry.
 #[tokio::test]
 async fn settle_keeps_the_solution_when_cosigning_fails() {
     let response = engine_response_needing_a_cosigner(&Pubkey::new_unique());
     let (engine, posted) = spawn_cosigning_engine(response, |transaction| transaction).await;
-    let addr = spawn_server(vec![solver_with_keypair(engine).await.0]).await;
+    let addr = spawn_server(vec![cosigning_solver(engine).await]).await;
     let solution_id = call_solve(addr).await["solutions"][0]["solutionId"]
         .as_u64()
         .unwrap();
@@ -805,7 +826,7 @@ async fn settle_submits_the_cosigned_transaction() {
     let api = Api {
         addr: "0.0.0.0:0".parse().unwrap(),
         blockchain,
-        solvers: vec![solver_with_keypair(engine).await.0],
+        solvers: vec![cosigning_solver(engine).await],
         priority_fee: priority_fee(),
     };
     let (listener, addr) = api.bind().await.unwrap();

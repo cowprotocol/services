@@ -173,6 +173,11 @@ pub struct Solver {
     /// Absent means none.
     #[serde(default)]
     pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
+    /// Settle solutions that need a signer besides the solver by collecting
+    /// the other signatures from the engine's `/cosign`. Off drops them at
+    /// solve time, since they would win the auction and fail to settle.
+    #[serde(default)]
+    pub cosign: bool,
 }
 
 /// Who prices a settlement's execution costs, its network fee and the rent

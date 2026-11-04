@@ -76,3 +76,7 @@ signer = { keypair = "/path/to/keypair.json" }
 # than the payouts. A larger shortfall reverts the settlement. Omit to revert
 # on any shortfall.
 # max-native-shortfall-bps = 40
+# Settle solutions that need a signer besides the solver, such as Bitget's
+# fee-exempt routes, by collecting the other signatures from the engine's
+# /cosign. Omit to drop them at solve time.
+# cosign = true

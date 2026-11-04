@@ -36,6 +36,7 @@ pub struct Solver {
     fee_handler: FeeHandler,
     solver_fee: Option<SolverFee>,
     max_native_shortfall: Option<MaxNativeShortfall>,
+    cosign: bool,
 }
 
 impl Solver {
@@ -75,6 +76,12 @@ impl Solver {
         self.max_native_shortfall
     }
 
+    /// Whether the engine adds the signatures of a settlement's other signers
+    /// through `/cosign`.
+    pub fn cosigns(&self) -> bool {
+        self.cosign
+    }
+
     /// Build a solver client from its configuration, loading the signer the
     /// config names: a local keypair file or an AWS KMS key.
     pub async fn new(config: &config::Solver) -> Result<Self, Error> {
@@ -96,6 +103,7 @@ impl Solver {
             fee_handler: config.fee_handler,
             solver_fee: config.solver_fee_bps,
             max_native_shortfall: config.max_native_shortfall_bps,
+            cosign: config.cosign,
         })
     }
 
@@ -319,6 +327,7 @@ mod tests {
             fee_handler: FeeHandler::default(),
             solver_fee_bps: None,
             max_native_shortfall_bps: None,
+            cosign: false,
         })
         .await
         .expect("solver construction should succeed");
