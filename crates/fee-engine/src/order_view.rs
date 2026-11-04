@@ -72,11 +72,15 @@ fn number(decimal: impl ToString) -> f64 {
 }
 
 /// Drops `null` fields, so an unset option is absent, not `null`: `.?` and
-/// `has` both read an absent field as missing.
+/// `has` both read an absent field as missing. Iterative over a heap stack, so
+/// no depth of nesting can exhaust the call stack.
 fn remove_nulls(value: &mut Value) {
-    if let Value::Object(fields) = value {
-        fields.retain(|_, field| !field.is_null());
-        fields.values_mut().for_each(remove_nulls);
+    let mut stack = vec![value];
+    while let Some(value) = stack.pop() {
+        if let Value::Object(fields) = value {
+            fields.retain(|_, field| !field.is_null());
+            stack.extend(fields.values_mut());
+        }
     }
 }
 
@@ -341,5 +345,15 @@ mod tests {
         assert_eq!(normalize("Acme"), "Acme");
         assert_eq!(normalize("0x"), "0x");
         assert_eq!(normalize("0xzz"), "0xzz");
+    }
+
+    #[test]
+    fn removes_nulls_at_every_level() {
+        let mut value = json!({
+            "a": null,
+            "b": { "c": null, "d": 1, "e": { "f": null, "g": 2 } },
+        });
+        remove_nulls(&mut value);
+        assert_eq!(value, json!({ "b": { "d": 1, "e": { "g": 2 } } }));
     }
 }
