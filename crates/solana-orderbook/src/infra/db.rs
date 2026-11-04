@@ -8,7 +8,7 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    sqlx::{PgExecutor, PgPool},
+    sqlx::{Connection, PgExecutor, PgPool},
 };
 
 /// One order joined with its fill state.
@@ -26,6 +26,8 @@ pub struct OrderRow {
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub app_data: ByteArray<32>,
+    /// The document `app_data` is the hash of, once registered.
+    pub full_app_data: Option<String>,
     pub creation_timestamp: DateTime<Utc>,
     pub order_pda: ByteArray<32>,
     pub amount_withdrawn: BigDecimal,
@@ -39,10 +41,12 @@ pub struct OrderRow {
 
 /// Read one order with its fill state. `None` when the uid is unknown.
 pub async fn find_order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Option<OrderRow>> {
+    let _timer = query_timer("find_order_by_uid");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.app_data,
+       convert_from(a.full_app_data, 'UTF8') AS full_app_data,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
@@ -51,6 +55,7 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.app_data a ON a.contract_app_data = o.app_data
 WHERE o.uid = $1 AND NOT COALESCE(p.is_reorged, false)
     "#;
     sqlx::query_as(QUERY)
@@ -67,10 +72,12 @@ pub async fn get_orders_by_owner(
     offset: i64,
     limit: i64,
 ) -> Result<Vec<OrderRow>> {
+    let _timer = query_timer("get_orders_by_owner");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.app_data,
+       convert_from(a.full_app_data, 'UTF8') AS full_app_data,
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
@@ -79,6 +86,7 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.app_data a ON a.contract_app_data = o.app_data
 WHERE o.owner = $1
 ORDER BY o.creation_timestamp DESC
 LIMIT $2 OFFSET $3
@@ -117,6 +125,7 @@ pub async fn get_trades(
     offset: i64,
     limit: i64,
 ) -> Result<Vec<TradeRow>> {
+    let _timer = query_timer("get_trades");
     const QUERY: &str = r#"
 SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
        t.sell_amount, t.buy_amount, t.tx_signature,
@@ -146,6 +155,7 @@ OFFSET $3 LIMIT $4
 
 /// Whether the order has at least one trade.
 pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<bool> {
+    let _timer = query_timer("order_has_trade");
     sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS (SELECT 1 FROM solana.trades WHERE order_uid = $1)",
     )
@@ -189,6 +199,7 @@ pub struct OrderQuote {
 
 /// Whether an order with this uid is already stored.
 pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
+    let _timer = query_timer("order_exists");
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM solana.orders WHERE uid = $1)")
         .bind(ByteArray(*uid))
         .fetch_one(pool)
@@ -196,14 +207,16 @@ pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
         .context("check solana.orders existence")
 }
 
-/// Insert a sponsored order, its quote copy when one matched, and its
-/// `created` event in one transaction. A duplicate uid or order PDA surfaces
-/// as a unique violation.
+/// Insert a sponsored order, its quote copy when one matched, its app data
+/// `document`, and its `created` event in one transaction. A duplicate uid
+/// or order PDA surfaces as a unique violation.
 pub async fn insert_sponsored_order(
     pool: &PgPool,
     order: &SponsoredOrder,
     quote: Option<&OrderQuote>,
+    document: &str,
 ) -> Result<()> {
+    let _timer = query_timer("insert_sponsored_order");
     const QUERY: &str = r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
@@ -245,6 +258,12 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
         .await
         .context("insert order quote")?;
     }
+    let existing = insert_app_data(&mut *tx, order.app_data.0, document).await?;
+    // The hash is the document's keccak256, so another document under it is
+    // a collision.
+    if existing.is_some_and(|existing| existing != document) {
+        anyhow::bail!("a different document is stored under {:?}", order.app_data);
+    }
     sqlx::query(
         "INSERT INTO solana.order_events (order_uid, timestamp, label) VALUES ($1, now(), $2)",
     )
@@ -254,6 +273,47 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
     .await
     .context("insert created event")?;
     tx.commit().await.context("commit sponsored order insert")
+}
+
+/// Store `document` under `hash`. `None` once stored, otherwise the document
+/// already under the hash, which stays.
+pub async fn insert_app_data(
+    ex: impl PgExecutor<'_>,
+    hash: [u8; 32],
+    document: &str,
+) -> Result<Option<String>> {
+    let _timer = query_timer("insert_app_data");
+    const QUERY: &str = r#"
+WITH inserted AS (
+    INSERT INTO solana.app_data (contract_app_data, full_app_data)
+    VALUES ($1, $2)
+    ON CONFLICT DO NOTHING
+    RETURNING TRUE
+)
+SELECT CASE
+    WHEN (SELECT * FROM inserted) THEN NULL
+    ELSE (SELECT convert_from(full_app_data, 'UTF8') FROM solana.app_data WHERE contract_app_data = $1)
+END
+    "#;
+    sqlx::query_scalar(QUERY)
+        .bind(ByteArray(hash))
+        .bind(document.as_bytes())
+        .fetch_one(ex)
+        .await
+        .context("insert solana.app_data")
+}
+
+/// The document stored under `hash`. `None` when the hash is unknown.
+pub async fn find_app_data(ex: impl PgExecutor<'_>, hash: [u8; 32]) -> Result<Option<String>> {
+    let _timer = query_timer("find_app_data");
+    sqlx::query_scalar(
+        "SELECT convert_from(full_app_data, 'UTF8') FROM solana.app_data WHERE contract_app_data \
+         = $1",
+    )
+    .bind(ByteArray(hash))
+    .fetch_optional(ex)
+    .await
+    .context("read solana.app_data")
 }
 
 /// A stored sponsored creation: the presigned transaction and its expiry.
@@ -269,6 +329,7 @@ pub async fn find_sponsored_creation(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Option<SponsoredCreation>> {
+    let _timer = query_timer("find_sponsored_creation");
     sqlx::query_as(
         "SELECT presigned_transaction, last_valid_block_height
          FROM solana.orders
@@ -285,6 +346,7 @@ pub async fn find_latest_order_event(
     ex: impl PgExecutor<'_>,
     uid: [u8; 32],
 ) -> Result<Option<OrderEventLabel>> {
+    let _timer = query_timer("find_latest_order_event");
     const QUERY: &str = r#"
 SELECT label
 FROM solana.order_events
@@ -297,6 +359,224 @@ LIMIT 1
         .fetch_optional(ex)
         .await
         .context("read solana.order_events")
+}
+
+/// One proposed solution of the competition an order's status reports, with
+/// the amounts it executes for the order when it includes the order.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct SolutionRow {
+    pub solver: ByteArray<32>,
+    pub executed_sell: Option<BigDecimal>,
+    pub executed_buy: Option<BigDecimal>,
+}
+
+/// The proposed solutions of the auction that settled the order's latest
+/// trade, or of the latest auction in which a solution executed the order.
+/// Worst to best with the winner last, the order the EVM status endpoint
+/// lists them in. Empty when no competition knows the order.
+pub async fn find_order_solutions(
+    ex: impl PgExecutor<'_>,
+    uid: [u8; 32],
+) -> Result<Vec<SolutionRow>> {
+    let _timer = query_timer("find_order_solutions");
+    const QUERY: &str = r#"
+SELECT ps.solver, pte.executed_sell, pte.executed_buy
+FROM solana.proposed_solutions ps
+LEFT JOIN solana.proposed_trade_executions pte
+  ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid AND pte.order_uid = $1
+WHERE ps.auction_id = COALESCE(
+    (SELECT s.auction_id
+     FROM solana.trades t
+     JOIN solana.settlements s
+       ON s.tx_signature = t.tx_signature AND s.instruction_index = t.instruction_index
+     WHERE t.order_uid = $1
+     ORDER BY t.slot DESC, t.instruction_index DESC
+     LIMIT 1),
+    (SELECT max(auction_id) FROM solana.proposed_trade_executions WHERE order_uid = $1))
+ORDER BY ps.uid DESC
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(ByteArray(uid))
+        .fetch_all(ex)
+        .await
+        .context("read solana.proposed_solutions by order")
+}
+
+/// The auction a competition ranked, as snapshot at ranking time.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct CompetitionAuction {
+    pub id: i64,
+    pub tip_slot: i64,
+    pub deadline_slot: i64,
+    pub order_uids: Vec<ByteArray<32>>,
+    pub price_tokens: Vec<ByteArray<32>>,
+    pub price_values: Vec<BigDecimal>,
+}
+
+/// One proposed solution of a competition with its rank, its solver's
+/// reference score, and the settlement that executed it once attributed.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct CompetitionSolution {
+    pub uid: i64,
+    pub ranking: i64,
+    pub solver: ByteArray<32>,
+    pub is_winner: bool,
+    pub filtered_out: bool,
+    pub score: BigDecimal,
+    pub reference_score: Option<BigDecimal>,
+    pub tx_signature: Option<ByteArray<64>>,
+}
+
+/// One order execution a proposed solution contains, with the order's mints.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct CompetitionTrade {
+    pub solution_uid: i64,
+    pub order_uid: ByteArray<32>,
+    pub executed_sell: BigDecimal,
+    pub executed_buy: BigDecimal,
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+}
+
+/// A competition: its auction, solutions, executions, and settlements.
+#[derive(Clone, Debug)]
+pub struct Competition {
+    pub auction: CompetitionAuction,
+    /// Worst to best, the winner last.
+    pub solutions: Vec<CompetitionSolution>,
+    pub trades: Vec<CompetitionTrade>,
+    /// The transactions that settled the auction, attributed to a solution.
+    pub tx_signatures: Vec<ByteArray<64>>,
+}
+
+/// The competition of one auction. `None` for an unknown auction, and for
+/// one whose deadline slot the indexer has not passed: its winners may still
+/// submit their settlements, and the solutions would show what they trade.
+pub async fn find_competition_by_id(pool: &PgPool, auction_id: i64) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_competition_by_id");
+    read_competition(pool, auction_id, true).await
+}
+
+/// The competition of one auction, before its deadline too, for internal
+/// callers only.
+pub async fn find_competition_by_id_unfiltered(
+    pool: &PgPool,
+    auction_id: i64,
+) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_competition_by_id_unfiltered");
+    read_competition(pool, auction_id, false).await
+}
+
+async fn read_competition(
+    pool: &PgPool,
+    auction_id: i64,
+    hide_before_deadline: bool,
+) -> Result<Option<Competition>> {
+    const AUCTION: &str = r#"
+SELECT id, tip_slot, deadline_slot, order_uids, price_tokens, price_values
+FROM solana.competition_auctions
+WHERE id = $1 AND (NOT $2 OR deadline_slot <= (SELECT slot FROM solana.indexer_state))
+    "#;
+    // Solution uids count from 0 at the best, so `uid + 1` ranks them.
+    const SOLUTIONS: &str = r#"
+SELECT ps.uid, ps.uid + 1 AS ranking, ps.solver, ps.is_winner, ps.filtered_out, ps.score,
+       rs.reference_score,
+       (SELECT s.tx_signature
+        FROM solana.settlements s
+        WHERE s.auction_id = ps.auction_id AND s.solution_uid = ps.uid
+        LIMIT 1) AS tx_signature
+FROM solana.proposed_solutions ps
+LEFT JOIN solana.reference_scores rs
+  ON rs.auction_id = ps.auction_id AND rs.solver = ps.solver
+WHERE ps.auction_id = $1
+ORDER BY ps.uid DESC
+    "#;
+    const TRADES: &str = r#"
+SELECT pte.solution_uid, pte.order_uid, pte.executed_sell, pte.executed_buy,
+       o.sell_token, o.buy_token
+FROM solana.proposed_trade_executions pte
+JOIN solana.orders o ON o.uid = pte.order_uid
+WHERE pte.auction_id = $1
+ORDER BY pte.solution_uid, pte.order_uid
+    "#;
+    const SIGNATURES: &str = r#"
+SELECT DISTINCT tx_signature
+FROM solana.settlements
+WHERE auction_id = $1 AND solution_uid IS NOT NULL
+ORDER BY tx_signature
+    "#;
+    let auction: Option<CompetitionAuction> = sqlx::query_as(AUCTION)
+        .bind(auction_id)
+        .bind(hide_before_deadline)
+        .fetch_optional(pool)
+        .await
+        .context("read solana.competition_auctions")?;
+    let Some(auction) = auction else {
+        return Ok(None);
+    };
+    let solutions = sqlx::query_as(SOLUTIONS)
+        .bind(auction_id)
+        .fetch_all(pool)
+        .await
+        .context("read solana.proposed_solutions")?;
+    let trades = sqlx::query_as(TRADES)
+        .bind(auction_id)
+        .fetch_all(pool)
+        .await
+        .context("read solana.proposed_trade_executions")?;
+    let tx_signatures = sqlx::query_scalar(SIGNATURES)
+        .bind(auction_id)
+        .fetch_all(pool)
+        .await
+        .context("read solana.settlements by auction")?;
+    Ok(Some(Competition {
+        auction,
+        solutions,
+        trades,
+        tx_signatures,
+    }))
+}
+
+/// The competition the transaction settled, under the visibility rule of
+/// [`find_competition_by_id`]. `None` when no settlement attributed to a
+/// solution carries the signature.
+pub async fn find_competition_by_tx_signature(
+    pool: &PgPool,
+    tx_signature: [u8; 64],
+) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_competition_by_tx_signature");
+    let auction_id: Option<i64> = sqlx::query_scalar(
+        "SELECT auction_id FROM solana.settlements WHERE tx_signature = $1 AND solution_uid IS \
+         NOT NULL LIMIT 1",
+    )
+    .bind(ByteArray(tx_signature))
+    .fetch_optional(pool)
+    .await
+    .context("read solana.settlements by signature")?;
+    match auction_id {
+        Some(auction_id) => find_competition_by_id(pool, auction_id).await,
+        None => Ok(None),
+    }
+}
+
+/// The most recent competition whose deadline slot the indexer has passed.
+pub async fn find_latest_competition(pool: &PgPool) -> Result<Option<Competition>> {
+    let _timer = query_timer("find_latest_competition");
+    const QUERY: &str = r#"
+SELECT id
+FROM solana.competition_auctions
+WHERE deadline_slot <= (SELECT slot FROM solana.indexer_state)
+ORDER BY id DESC
+LIMIT 1
+    "#;
+    let auction_id: Option<i64> = sqlx::query_scalar(QUERY)
+        .fetch_optional(pool)
+        .await
+        .context("read the latest solana.competition_auctions")?;
+    match auction_id {
+        Some(auction_id) => find_competition_by_id(pool, auction_id).await,
+        None => Ok(None),
+    }
 }
 
 /// A quote as the quote endpoint hands it out.
@@ -313,6 +593,7 @@ pub struct Quote {
 
 /// Store a quote and return the id allocated for it.
 pub async fn save_quote(ex: impl PgExecutor<'_>, quote: &Quote) -> Result<i64> {
+    let _timer = query_timer("save_quote");
     const QUERY: &str = r#"
 INSERT INTO solana.quotes (sell_token, buy_token, sell_amount, buy_amount,
     kind, solver, expiration_timestamp)
@@ -346,6 +627,7 @@ pub struct StoredQuote {
 
 /// Read one stored quote. `None` when the id is unknown.
 pub async fn read_quote(ex: impl PgExecutor<'_>, id: i64) -> Result<Option<StoredQuote>> {
+    let _timer = query_timer("read_quote");
     const QUERY: &str = r#"
 SELECT sell_token, buy_token, sell_amount, buy_amount, kind, solver,
        expiration_timestamp AS expiration
@@ -357,6 +639,30 @@ WHERE id = $1
         .fetch_optional(ex)
         .await
         .context("read solana.quotes")
+}
+
+/// Check that the pool gives a connection and that the database answers on
+/// it.
+pub async fn ping(pool: &PgPool) -> Result<()> {
+    let _timer = query_timer("ping");
+    let mut conn = pool.acquire().await.context("acquire a connection")?;
+    conn.ping().await.context("ping the database")
+}
+
+/// Starts timing a query, recorded under `query` when the timer drops.
+fn query_timer(query: &str) -> prometheus::HistogramTimer {
+    Metrics::instance(observe::metrics::get_storage_registry())
+        .unwrap()
+        .database_queries
+        .with_label_values(&[query])
+        .start_timer()
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Query durations, by query.
+    #[metric(name = "orderbook_database_queries", labels("type"))]
+    database_queries: prometheus::HistogramVec,
 }
 
 #[cfg(test)]
@@ -448,8 +754,8 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
     async fn solana_db_inserts_a_sponsored_order_once() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         sqlx::query(
-            "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
-             CASCADE",
+            "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+             solana.app_data CASCADE",
         )
         .execute(&pool)
         .await
@@ -477,9 +783,16 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             buy_amount: BigDecimal::from(2_100u64),
             solver: ByteArray([0xDD; 32]),
         };
-        insert_sponsored_order(&pool, &order, Some(&quote))
+        insert_sponsored_order(&pool, &order, Some(&quote), "{}")
             .await
             .unwrap();
+        assert_eq!(
+            find_app_data(&pool, order.app_data.0)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{}")
+        );
 
         let creation = find_sponsored_creation(&pool, order.uid.0)
             .await
@@ -509,7 +822,11 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
 
         // The uid is the primary key: placing the same order twice fails and
         // leaves no second event behind.
-        assert!(insert_sponsored_order(&pool, &order, None).await.is_err());
+        assert!(
+            insert_sponsored_order(&pool, &order, None, "{}")
+                .await
+                .is_err()
+        );
         let events: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_events")
             .fetch_one(&pool)
             .await
@@ -663,6 +980,314 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         assert_eq!(second[0].slot, Some(42));
         assert!(
             get_trades(&pool, Some(uid), None, 2, 1)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    /// A competition reads back once the indexer passes its deadline slot:
+    /// by auction id, by settlement signature, and as the latest. Solutions
+    /// list worst to best with their executions, the reference score joins
+    /// by solver, and an attributed settlement names its transaction.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_competitions() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query(
+            "TRUNCATE solana.competition_auctions, solana.proposed_solutions, \
+             solana.proposed_trade_executions, solana.reference_scores, solana.indexer_state",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // Auction 1 passed its deadline at the indexer's slot, auction 2
+        // has not.
+        sqlx::query("INSERT INTO solana.indexer_state (slot) VALUES (150)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for (auction, deadline) in [(1i64, 100i64), (2, 200)] {
+            sqlx::query(
+                "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, \
+                 order_uids, price_tokens, price_values) VALUES ($1, $2 - 25, $2, $3, $4, $5)",
+            )
+            .bind(auction)
+            .bind(deadline)
+            .bind(vec![ByteArray(uid)])
+            .bind(vec![ByteArray([0xAA; 32]), ByteArray([0xAB; 32])])
+            .bind(vec![BigDecimal::from(5), BigDecimal::from(7)])
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        // (auction, solution uid, solver, winner, filtered out, score)
+        for (auction, solution, solver, winner, filtered_out, score) in [
+            (1i64, 0i64, 0xA1u8, true, false, 9i64),
+            (1, 1, 0xA2, false, true, 5),
+            (2, 0, 0xB1, true, false, 8),
+        ] {
+            sqlx::query(
+                "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+                 filtered_out, score) VALUES ($1, $2, $2, $3, $4, $5, $6)",
+            )
+            .bind(auction)
+            .bind(solution)
+            .bind(ByteArray([solver; 32]))
+            .bind(winner)
+            .bind(filtered_out)
+            .bind(score)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, \
+                 order_uid, executed_sell, executed_buy) VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(auction)
+            .bind(solution)
+            .bind(ByteArray(uid))
+            .bind(BigDecimal::from(score * 10))
+            .bind(BigDecimal::from(score * 20))
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO solana.reference_scores (auction_id, solver, reference_score) VALUES (1, \
+             $1, 4)",
+        )
+        .bind(ByteArray([0xA1; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        // The winner's settlement, attributed to its solution, and one not
+        // attributed yet.
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+             auction_id, solution_uid) VALUES (90, $1, 1, $2, 1, 0)",
+        )
+        .bind(ByteArray([9u8; 64]))
+        .bind(ByteArray([0xA1; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+             auction_id) VALUES (91, $1, 1, $2, 1)",
+        )
+        .bind(ByteArray([7u8; 64]))
+        .bind(ByteArray([0xA2; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let competition = find_competition_by_id(&pool, 1).await.unwrap().unwrap();
+        assert_eq!(competition.auction.tip_slot, 75);
+        assert_eq!(competition.auction.deadline_slot, 100);
+        assert_eq!(competition.auction.order_uids, vec![ByteArray(uid)]);
+        assert_eq!(
+            competition.auction.price_values,
+            vec![BigDecimal::from(5), BigDecimal::from(7)]
+        );
+        assert_eq!(competition.tx_signatures, vec![ByteArray([9u8; 64])]);
+        let solutions: Vec<_> = competition
+            .solutions
+            .iter()
+            .map(|solution| {
+                (
+                    solution.ranking,
+                    solution.solver.0[0],
+                    solution.is_winner,
+                    solution.filtered_out,
+                    solution.reference_score.clone(),
+                    solution.tx_signature,
+                )
+            })
+            .collect();
+        assert_eq!(
+            solutions,
+            vec![
+                (2, 0xA2, false, true, None, None),
+                (
+                    1,
+                    0xA1,
+                    true,
+                    false,
+                    Some(BigDecimal::from(4)),
+                    Some(ByteArray([9u8; 64]))
+                ),
+            ]
+        );
+        let trades: Vec<_> = competition
+            .trades
+            .iter()
+            .map(|trade| {
+                (
+                    trade.solution_uid,
+                    trade.executed_sell.to_string(),
+                    trade.sell_token.0[0],
+                    trade.buy_token.0[0],
+                )
+            })
+            .collect();
+        assert_eq!(
+            trades,
+            vec![
+                (0, "90".to_owned(), 0xAA, 0xAB),
+                (1, "50".to_owned(), 0xAA, 0xAB)
+            ]
+        );
+
+        // The attributed settlement resolves its auction, an unattributed or
+        // unknown signature nothing.
+        let by_signature = find_competition_by_tx_signature(&pool, [9u8; 64])
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(by_signature.auction.id, 1);
+        for unresolved in [[7u8; 64], [8u8; 64]] {
+            assert!(
+                find_competition_by_tx_signature(&pool, unresolved)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        // Auction 2 stays hidden until the indexer passes its deadline, so
+        // auction 1 is the latest. The unfiltered read serves it already.
+        assert!(find_competition_by_id(&pool, 2).await.unwrap().is_none());
+        let unfiltered = find_competition_by_id_unfiltered(&pool, 2)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unfiltered.auction.id, 2);
+        assert!(
+            find_competition_by_id_unfiltered(&pool, 3)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let latest = find_latest_competition(&pool).await.unwrap().unwrap();
+        assert_eq!(latest.auction.id, 1);
+        sqlx::query("UPDATE solana.indexer_state SET slot = 200")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let latest = find_latest_competition(&pool).await.unwrap().unwrap();
+        assert_eq!(latest.auction.id, 2);
+        assert!(find_competition_by_id(&pool, 3).await.unwrap().is_none());
+    }
+
+    /// The latest trade's settlement picks the auction, else the latest
+    /// auction a solution executed the order in. Solutions list worst to
+    /// best, a solution without the order carries no amounts.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_reads_order_solutions() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query(
+            "TRUNCATE solana.competition_auctions, solana.proposed_solutions, \
+             solana.proposed_trade_executions",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        for auction in [1i64, 2] {
+            sqlx::query(
+                "INSERT INTO solana.competition_auctions (id, tip_slot, deadline_slot, \
+                 order_uids, price_tokens, price_values) VALUES ($1, 1, 100, '{}', '{}', '{}')",
+            )
+            .bind(auction)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        // (auction, solution uid, solver, winner, score, executes the order)
+        for (auction, solution, solver, winner, score, executes) in [
+            (1i64, 0i64, 0xA1u8, true, 9i64, true),
+            (2, 0, 0xB1, true, 8, true),
+            (2, 1, 0xB2, true, 7, false),
+            (2, 2, 0xB3, false, 5, true),
+        ] {
+            sqlx::query(
+                "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+                 filtered_out, score) VALUES ($1, $2, $2, $3, $4, false, $5)",
+            )
+            .bind(auction)
+            .bind(solution)
+            .bind(ByteArray([solver; 32]))
+            .bind(winner)
+            .bind(score)
+            .execute(&pool)
+            .await
+            .unwrap();
+            if executes {
+                sqlx::query(
+                    "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, \
+                     order_uid, executed_sell, executed_buy) VALUES ($1, $2, $3, $4, $5)",
+                )
+                .bind(auction)
+                .bind(solution)
+                .bind(ByteArray(uid))
+                .bind(BigDecimal::from(score * 10))
+                .bind(BigDecimal::from(score * 20))
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        }
+        let view = |rows: Vec<SolutionRow>| {
+            rows.into_iter()
+                .map(|row| (row.solver.0[0], row.executed_buy.map(|buy| buy.to_string())))
+                .collect::<Vec<_>>()
+        };
+
+        let second_auction = [
+            (0xB3, Some("100".to_owned())),
+            (0xB2, None),
+            (0xB1, Some("160".to_owned())),
+        ];
+        let latest = find_order_solutions(&pool, uid).await.unwrap();
+        assert_eq!(view(latest), second_auction);
+
+        // A trade pins the auction that settled it, the latest trade wins.
+        for (slot, auction, signature) in [(42i64, 1i64, 9u8), (43, 2, 8)] {
+            sqlx::query(
+                "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+                 auction_id) VALUES ($1, $2, 1, $3, $4)",
+            )
+            .bind(slot)
+            .bind(ByteArray([signature; 64]))
+            .bind(ByteArray([0xA1; 32]))
+            .bind(auction)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, \
+                 sell_amount, buy_amount, fee_amount, slot) VALUES ($1, 1, $2, 400, 200, 0, $3)",
+            )
+            .bind(ByteArray([signature; 64]))
+            .bind(ByteArray(uid))
+            .bind(slot)
+            .execute(&pool)
+            .await
+            .unwrap();
+            let settled = find_order_solutions(&pool, uid).await.unwrap();
+            let expected = match auction {
+                1 => vec![(0xA1, Some("180".to_owned()))],
+                _ => second_auction.to_vec(),
+            };
+            assert_eq!(view(settled), expected);
+        }
+
+        assert!(
+            find_order_solutions(&pool, [0x99; 32])
                 .await
                 .unwrap()
                 .is_empty()

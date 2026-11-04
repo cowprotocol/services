@@ -36,6 +36,7 @@ publish = false
 
 [lib]
 doctest = false
+test = false
 
 [dependencies]
 alloy-primitives = { workspace = true }
@@ -195,6 +196,7 @@ publish = false
 
 [lib]
 doctest = false
+test = false
 
 [dependencies]
 ",

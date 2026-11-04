@@ -1,5 +1,5 @@
 use {
-    alloy::primitives::{Address, U256},
+    alloy_primitives::{Address, U256},
     anyhow::ensure,
     serde::{Deserialize, Deserializer, Serialize},
     std::collections::HashSet,
@@ -100,7 +100,7 @@ impl<'de> Deserialize<'de> for PenaltyFactor {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy::primitives::address};
+    use {super::*, alloy_primitives::address};
 
     #[test]
     fn deserialize_penalty_cap_config() {

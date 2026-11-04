@@ -3,7 +3,7 @@
 use {
     crate::infra::api::routes::Kind,
     serde::{Deserialize, Serialize},
-    serde_with::{DisplayFromStr, serde_as},
+    serde_with::{DisplayFromStr, base64::Base64, serde_as},
     solana_sdk::pubkey::Pubkey,
 };
 
@@ -22,9 +22,14 @@ pub struct QuoteRequest {
     pub kind: Kind,
     /// Absolute deadline by which the solver engine must answer.
     pub deadline: chrono::DateTime<chrono::Utc>,
+    /// The wallet the quoted order belongs to, see `transaction`. Absent, no
+    /// transaction is answered.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(default)]
+    pub owner: Option<Pubkey>,
 }
 
-/// The quoted amounts.
+/// The quoted amounts and what settling them costs.
 #[serde_as]
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,4 +41,16 @@ pub struct QuoteResponse {
     /// The solver that produced the quote.
     #[serde_as(as = "DisplayFromStr")]
     pub solver: Pubkey,
+    /// The network fee of settling the quoted route, in lamports: the
+    /// signature fee plus the priority fee at the solution's compute unit
+    /// estimate, the runtime's ceiling when the engine sent none. The amounts
+    /// are not reduced by it.
+    #[serde_as(as = "DisplayFromStr")]
+    pub network_fee: u64,
+    /// The unsigned settlement of the `owner`'s quoted order (see
+    /// `solana_token::quote::QuoteOrder`), bincode-serialized. Absent without
+    /// an `owner` or when it could not be built.
+    #[serde_as(as = "Option<Base64>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction: Option<Vec<u8>>,
 }

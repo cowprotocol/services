@@ -96,6 +96,7 @@ impl Decoder {
             &config.rpc.endpoint,
             config.rpc.request_timeout,
             CommitmentConfig::confirmed(),
+            "recovery",
         );
         let (_closed, rx) = mpsc::channel(1);
         Self::new(

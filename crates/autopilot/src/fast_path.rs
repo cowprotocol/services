@@ -225,7 +225,7 @@ impl FastPathHandler {
                 &self.surplus_capturing_jit_order_owners,
             )
             .into_iter()
-            .filter(|p| matches!(p, domain::fee::Policy::Volume { .. }))
+            .filter(|fee| matches!(fee.policy, domain::fee::Policy::Volume { .. }))
             .collect();
 
         let winner = staged.winner();
@@ -235,7 +235,7 @@ impl FastPathHandler {
             winner.quoted_buy,
             pending.model_order.data.kind,
             winner.gas_cost_in_sell_token,
-            &volume_fee_policies,
+            volume_fee_policies.iter().map(|fee| &fee.policy),
         );
         if !shared::fee::satisfies_limit_price(
             pending.model_order.data.sell_amount,
@@ -331,7 +331,7 @@ impl FastPathHandler {
         order: model::order::Order,
         staged: StagedFastPathCompetition,
         auction_id: database::auction::AuctionId,
-        volume_fee_policies: Vec<domain::fee::Policy>,
+        volume_fee_policies: Vec<domain::fee::PolicyWithOrigin>,
         deadline: &SubmissionDeadline,
     ) -> Result<FinalOrderExecution, PreflightError> {
         let order_uid: domain::OrderUid = order.metadata.uid.into();
@@ -349,8 +349,7 @@ impl FastPathHandler {
                 winsel::OrderUid(order_uid.0),
                 volume_fee_policies
                     .iter()
-                    .copied()
-                    .map(Into::into)
+                    .map(|fee| fee.policy.into())
                     .collect(),
             )]
             .into_iter()
@@ -378,7 +377,7 @@ impl FastPathHandler {
                     solution.quoted_buy,
                     order_kind,
                     solution.gas_cost_in_sell_token,
-                    &volume_fee_policies,
+                    volume_fee_policies.iter().map(|fee| &fee.policy),
                 );
                 if solution.is_winner {
                     // keep the adjusted prices of the winner as those are the
@@ -674,12 +673,12 @@ impl Metrics {
 /// Computes the effective bid the driver would settle at: nets the quote's
 /// gas fee out first (as the user-facing quote does), then applies the
 /// volume-fee policies in order.
-fn finalize_bid(
+fn finalize_bid<'a>(
     sell: U256,
     buy: U256,
     kind: OrderKind,
     gas_fee: U256,
-    policies: &[domain::fee::Policy],
+    policies: impl IntoIterator<Item = &'a domain::fee::Policy>,
 ) -> (U256, U256) {
     let (sell, buy) = shared::fee::adjust_bid_for_gas_costs(sell, buy, kind, gas_fee);
     apply_volume_fees(sell, buy, kind, policies)
@@ -691,14 +690,14 @@ fn finalize_bid(
 /// without pre-filtering. Delegates the per-factor arithmetic to
 /// [`shared::fee::apply_volume_fee`] so the sensitive high-precision math
 /// lives in exactly one place.
-fn apply_volume_fees(
+fn apply_volume_fees<'a>(
     sell: U256,
     buy: U256,
     kind: OrderKind,
-    policies: &[domain::fee::Policy],
+    policies: impl IntoIterator<Item = &'a domain::fee::Policy>,
 ) -> (U256, U256) {
     policies
-        .iter()
+        .into_iter()
         .filter_map(|policy| match policy {
             domain::fee::Policy::Volume { factor } => Some(*factor),
             _ => None,

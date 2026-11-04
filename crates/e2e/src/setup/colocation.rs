@@ -189,6 +189,7 @@ struct SolverConfig {
 #[serde(rename_all = "kebab-case")]
 struct LiquidityConfig {
     base_tokens: Vec<String>,
+    refresh_cooldown: String,
     #[serde(rename = "uniswap-v2", skip_serializing_if = "Vec::is_empty")]
     uniswap_v2: Vec<UniswapV2Liquidity>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -215,13 +216,13 @@ struct ZeroExLiquidity {
 #[serde(rename_all = "kebab-case")]
 struct SubmissionConfig {
     gas_price_cap: String,
-    mempool: Vec<Mempool>,
+    public_mempool: PublicMempool,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "kebab-case")]
-struct Mempool {
-    url: String,
+struct PublicMempool {
+    urls: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -263,7 +264,7 @@ pub fn start_driver_with_config_override(
             merge_solutions: solver.merge_solutions,
             fast_path_enabled: true,
             enable_metrics_bad_order_detection: true,
-            http_time_buffer: "100ms".to_string(),
+            http_time_buffer: "25ms".to_string(),
             solving_share_of_deadline: 1.0,
             solver_fee_bps: solver.solver_fee_bps,
             submission_accounts: solver
@@ -297,14 +298,15 @@ pub fn start_driver_with_config_override(
         solvers: solver_configs,
         liquidity: LiquidityConfig {
             base_tokens,
+            refresh_cooldown: "0s".to_string(),
             uniswap_v2,
             zeroex,
         },
         submission: SubmissionConfig {
             gas_price_cap: "1000000000000".to_string(),
-            mempool: vec![Mempool {
-                url: NODE_HOST.to_string(),
-            }],
+            public_mempool: PublicMempool {
+                urls: vec![NODE_HOST.to_string()],
+            },
         },
         balance_cache: BalanceCache {
             refresh_cooldown: "0s".to_string(),
@@ -374,13 +376,14 @@ mod tests {
                 merge_solutions: true,
                 fast_path_enabled: true,
                 enable_metrics_bad_order_detection: true,
-                http_time_buffer: "100ms".to_string(),
+                http_time_buffer: "25ms".to_string(),
                 solving_share_of_deadline: 1.0,
                 solver_fee_bps: 0,
                 submission_accounts: vec!["0xdef".to_string()],
             }],
             liquidity: LiquidityConfig {
                 base_tokens: vec!["0x07".to_string()],
+                refresh_cooldown: "0s".to_string(),
                 uniswap_v2: vec![UniswapV2Liquidity {
                     router: "0x08".to_string(),
                     pool_code: "0x09".to_string(),
@@ -390,9 +393,9 @@ mod tests {
             },
             submission: SubmissionConfig {
                 gas_price_cap: "1000000000000".to_string(),
-                mempool: vec![Mempool {
-                    url: "http://localhost:2".to_string(),
-                }],
+                public_mempool: PublicMempool {
+                    urls: vec!["http://localhost:2".to_string()],
+                },
             },
             balance_cache: BalanceCache {
                 refresh_cooldown: "0s".to_string(),
@@ -415,7 +418,7 @@ mod tests {
             "fast-path-enabled = true",
             "submission-accounts = [\"0xdef\"]",
             "[[liquidity.uniswap-v2]]",
-            "[[submission.mempool]]",
+            "[submission.public-mempool]",
             "[balance-cache]",
         ] {
             assert!(toml.contains(expected), "missing `{expected}` in:\n{toml}");

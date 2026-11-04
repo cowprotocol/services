@@ -283,8 +283,8 @@ pub struct EncodedTrade {
     pub partially_fillable: bool,
     pub signature: order::Signature,
     pub executed: order::TargetAmount,
-    /// Uniform prices of the traded tokens, if the settlement lists them. Only
-    /// liquidity JIT orders can do without, see [`super::Trade::new`].
+    /// Uniform prices of the traded tokens, if the settlement lists them. If
+    /// not, the trade books no fee, see [`super::Trade::new`].
     pub uniform_prices: Option<ClearingPrices>,
     pub custom_prices: ClearingPrices,
 }

@@ -142,6 +142,24 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         }
                         return;
                     }
+                    // The transaction failed on chain and cannot land again,
+                    // so its orders re-enter the next cut.
+                    Err(err) if err.settlement_reverted() => {
+                        tracing::error!(
+                            driver = %driver.name,
+                            auction_id,
+                            ?err,
+                            "settlement reverted"
+                        );
+                        if let Err(err) = windows.close_reverted(auction_id, solver, uid).await {
+                            tracing::error!(
+                                auction_id,
+                                ?err,
+                                "failed to close the settlement window"
+                            );
+                        }
+                        return;
+                    }
                     Err(err) => tracing::error!(
                         driver = %driver.name,
                         auction_id,

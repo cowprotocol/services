@@ -24,9 +24,15 @@ min-compute-unit-price = 10000
 # The most a transaction pays in priority fee (price times compute unit
 # limit), in lamports. A transaction over it is refused as over budget.
 max-priority-fee-lamports = 1000000
+# The compute unit limit priced when a transaction's usage is not measured
+# (quotes, and solutions before their simulation), 1..=1400000.
+default-compute-unit-limit = 400000
 
 [http]
 bind-address = "0.0.0.0:8080"
+# Port the metrics and probes server binds to, on every interface. Optional;
+# the value below is the default.
+metrics-port = 9586
 
 [logging]
 filter = "info,solana_driver=debug"
@@ -44,6 +50,12 @@ signer = { keypair = "/path/to/keypair.json" }
 # value, sitting the rest out so other solvers win settlements to test
 # against. Omit to participate in every auction.
 # solve-every-nth-auction = 5
+# Who prices the execution costs, the network fee and the rent of the buy
+# token accounts the settlement creates, into the fills: "driver" cuts them
+# from every fill the engine reports, on top of the solver fee below, "solver"
+# sends the engine the signed limits and leaves both to it. Omit for the
+# driver.
+# fee-handler = "driver"
 # Volume-based solver fee in basis points, 0..10000. Sell orders deliver
 # (1 - fee) of the fill's buy leg; buy orders pull (1 + fee) of its sell leg.
 # The difference stays in the buy-mint buffer PDA (sell orders) or the

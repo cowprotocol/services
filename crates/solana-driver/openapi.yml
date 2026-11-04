@@ -152,6 +152,12 @@ components:
           description: The time until which the caller expects a response.
           allOf:
             - $ref: "#/components/schemas/DateTime"
+        owner:
+          description: >-
+            The wallet the quoted order belongs to, see `transaction` in the
+            response. Without it no transaction is answered.
+          allOf:
+            - $ref: "#/components/schemas/Address"
       required:
         - sellToken
         - buyToken
@@ -168,10 +174,28 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         solver:
           $ref: "#/components/schemas/Address"
+        networkFee:
+          description: >-
+            The network fee of settling the quoted route, in lamports: the
+            signature fee plus the priority fee the driver would pay at the
+            solution's compute unit estimate, or at the runtime's ceiling when
+            the engine sent none. The amounts are not reduced by it.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        transaction:
+          description: >-
+            The unsigned settlement of the quote, bincode-serialized and
+            base64-encoded. It fills a fill-or-kill order of the quoted
+            amounts that the request's `owner` trades through its associated
+            token accounts (or its wallet for a native SOL buy), never
+            expiring, with empty app data. Absent without an `owner`, or when
+            the settlement could not be built.
+          type: string
       required:
         - sellAmount
         - buyAmount
         - solver
+        - networkFee
     Order:
       description: Order information like what is returned by the Orderbook apis.
       type: object
@@ -202,8 +226,8 @@ components:
             that is absent and cannot be created leaves the order out of the
             auction sent to the engine. For native SOL it is the wallet
             receiving the lamports, and a payout to a missing wallet creates
-            it. `FinalizeSettle` pays native SOL out of the state PDA's
-            lamports, so the settlement has to move them there first.
+            it. `FinalizeSettle` pays native SOL out of the native SOL buffer
+            PDA's lamports, so the settlement has to move them there first.
           allOf:
             - $ref: "#/components/schemas/Address"
         sellAmount:
@@ -282,6 +306,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Order"
+        tokens:
+          description: |-
+            Reference data per auction token, keyed by mint. A native SOL
+            buy's price is keyed by the System Program ID. Tokens without a
+            price are absent.
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              price:
+                description: |-
+                  Lamports per 10^9 atoms of the token, a 64 bit unsigned
+                  integer in decimal notation.
+                type: string
+                example: "1000000000"
       required:
         - id
         - deadline
@@ -382,9 +421,10 @@ components:
         - description
     ErrorKind:
       description: |-
-        The kind of error. Every kind but `DeadlineExceeded` and
-        `FailedToSubmit` precedes the send, so no transaction reached the
-        network.
+        The kind of error. Every kind but `DeadlineExceeded`,
+        `FailedToSubmit` and `SettlementReverted` precedes the send, so no
+        transaction reached the network. `SettlementReverted` means the
+        transaction landed and failed, so it cannot land again.
       type: string
       enum:
         - InvalidAuctionId
@@ -393,6 +433,7 @@ components:
         - DeadlineExceeded
         - TooManyPendingSettlements
         - FailedToSubmit
+        - SettlementReverted
         - InvalidCreation
         - FailedToCreate
         - QuoteSameTokens

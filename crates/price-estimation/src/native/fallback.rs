@@ -471,7 +471,8 @@ mod tests {
             .returning(move |_, _| {
                 call_count += 1;
                 match call_count {
-                    // error, success, error, error — never reaches 3 consecutive
+                    // error, success, error, error — never reaches 3
+                    // consecutive
                     1 | 3 | 4 => async {
                         Err(PriceEstimationError::ProtocolInternal(anyhow::anyhow!(
                             "transient error"

@@ -23,6 +23,8 @@ pub enum ChainName {
     ArbitrumOne,
     #[serde(rename = "ink")]
     Ink,
+    #[serde(rename = "robinhood")]
+    Robinhood,
 }
 
 impl ChainName {
@@ -34,6 +36,7 @@ impl ChainName {
             eth::ChainId::Polygon => Self::Polygon,
             eth::ChainId::ArbitrumOne => Self::ArbitrumOne,
             eth::ChainId::Ink => Self::Ink,
+            eth::ChainId::Robinhood => Self::Robinhood,
             _ => panic!("unsupported Bitget chain: {chain_id:?}"),
         }
     }
@@ -99,7 +102,8 @@ impl SwapRequest {
             to_chain: chain_name,
             from_address: settlement_contract,
             to_address: settlement_contract,
-            // as per a suggestion by the BitGet team for the best routes on EVM chains
+            // as per a suggestion by the BitGet team for the best routes on EVM
+            // chains
             market: "bgwevmaggregator".to_string(),
             slippage: slippage.as_percent().unwrap_or_default(),
             request_mod: "rich".to_string(),

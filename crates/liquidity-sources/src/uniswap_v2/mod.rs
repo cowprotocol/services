@@ -319,7 +319,9 @@ mod tests {
                     )
                     .unwrap(),
                 },
-                Block::Recent,
+                Block::Recent {
+                    schedule_update: false,
+                },
             )
             .await
             .unwrap()
@@ -357,7 +359,9 @@ mod tests {
                     )
                     .unwrap(),
                 },
-                Block::Recent,
+                Block::Recent {
+                    schedule_update: false,
+                },
             )
             .await
             .unwrap()

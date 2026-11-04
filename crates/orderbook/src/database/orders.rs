@@ -341,14 +341,21 @@ impl OrderStoring for Postgres {
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let mut ex_orders = self.pool.acquire().await?;
-        let mut ex_jit_orders = self.pool.acquire().await?;
-
+        // Each query acquires its own connection and releases it once done.
+        // Acquiring both connections upfront would hold one while waiting for
+        // the other, which deadlocks the pool when enough of these requests
+        // run concurrently.
         let (orders, jit_orders) = try_join!(
-            database::orders::many_full_orders_with_quotes(&mut ex_orders, &uids),
-            // JIT orders are fetched without quotes as they are created by solvers at settlement
-            // time
-            database::jit_orders::get_many_by_uid(&mut ex_jit_orders, &uids)
+            async {
+                let mut ex = self.pool.acquire().await?;
+                database::orders::many_full_orders_with_quotes(&mut ex, &uids).await
+            },
+            // JIT orders are fetched without quotes as they are created by
+            // solvers at settlement time
+            async {
+                let mut ex = self.pool.acquire().await?;
+                database::jit_orders::get_many_by_uid(&mut ex, &uids).await
+            }
         )?;
         Ok(orders
             .into_iter()
@@ -645,9 +652,7 @@ fn full_order_with_quote_into_model_order(
             .transpose()
             .context("valid_from is not u32")?,
         fast_path: order.fast_path,
-        quote: quote
-            .map(|q| order_quote_into_model(q, status))
-            .transpose()?,
+        quote: quote.map(order_quote_into_model).transpose()?,
     };
     let data = OrderData {
         sell_token: Address::new(order.sell_token.0),
@@ -1166,6 +1171,51 @@ mod tests {
         assert_eq!(order_status(1).await, OrderStatus::Cancelled);
         assert_eq!(order_status(2).await, OrderStatus::Cancelled);
         assert_eq!(order_status(3).await, OrderStatus::Open);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_many_orders_single_connection_pool() {
+        // `many_orders` must never hold a connection while waiting for another
+        // one from the same pool. Otherwise concurrent requests can exhaust
+        // the pool by each holding one connection and waiting for a second.
+        let db = Postgres::try_new(
+            "postgresql://",
+            crate::database::Config {
+                max_pool_size: 1,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
+
+        let order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: OrderUid([1; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&order, None).await.unwrap();
+
+        let orders = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            db.many_orders(&[order.metadata.uid, OrderUid([2; 56])]),
+        )
+        .await
+        .expect("many_orders must complete with a single connection")
+        .unwrap();
+
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].0, order.metadata.uid);
+        assert_eq!(
+            orders[0].1.as_ref().unwrap().metadata.uid,
+            order.metadata.uid
+        );
     }
 
     #[tokio::test]

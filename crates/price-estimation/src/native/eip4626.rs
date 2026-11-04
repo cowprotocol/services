@@ -75,8 +75,9 @@ impl Eip4626 {
         Self {
             inner,
             provider,
-            // BUY_ETH_ADDRESS is not ERC-20, but it is a valid estimation address
-            // so we need to make sure it bypasses the EIP-4626 estimator
+            // BUY_ETH_ADDRESS is not ERC-20, but it is a valid estimation
+            // address so we need to make sure it bypasses the EIP-4626
+            // estimator
             non_vault_tokens: exemptions.into_iter().chain([BUY_ETH_ADDRESS]).collect(),
         }
     }

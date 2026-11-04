@@ -411,7 +411,7 @@ impl Utilities {
         let pairs = auction.liquidity_pairs();
         Arc::new(
             self.liquidity_fetcher
-                .fetch(&pairs, infra::liquidity::AtBlock::Latest)
+                .fetch(&pairs, self.liquidity_fetcher.fetch_at_block())
                 .await,
         )
     }

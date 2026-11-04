@@ -542,15 +542,17 @@ impl EthCallInputs {
     /// tenderly.
     pub fn to_tenderly_request(&self) -> Result<tenderly::dto::Request, ConversionError> {
         Ok(tenderly::dto::Request {
-            // By default, tenderly simulates the given transaction as if it happened somewhere in
-            // the given block number, while nodes simulate the transaction as if it
-            // happened at the very end of the given block. This could be achieved in
-            // tenderly with `transaction_index: -1` but this is extremely costly to
-            // simulate which is why we craft the request to simulate the tx on the very
-            // first index of the **next** block. In practice the different will be that
-            // tenderly's simulation will already use the block number and timestamp of
-            // the **next** block that would be mined which is arguably more correct than
-            // the original simulation.
+            // By default, tenderly simulates the given transaction as if it
+            // happened somewhere in the given block number, while nodes
+            // simulate the transaction as if it happened at the very end of the
+            // given block. This could be achieved in tenderly with
+            // `transaction_index: -1` but this is extremely costly to
+            // simulate which is why we craft the request to simulate the tx on
+            // the very first index of the **next** block. In practice the
+            // different will be that tenderly's simulation will already use the
+            // block number and timestamp of the **next** block that would be
+            // mined which is arguably more correct than the original
+            // simulation.
             block_number: Some(self.block + 1),
             transaction_index: Some(0),
             network_id: self.simulator.0.chain_id.to_string(),

@@ -36,6 +36,8 @@ pub struct Order {
     pub kind: Kind,
     pub partially_fillable: bool,
     pub app_data: String,
+    /// The document `app_data` is the hash of, null until registered.
+    pub full_app_data: Option<String>,
     #[serde_as(as = "DisplayFromStr")]
     pub order_pda: Pubkey,
     pub creation_date: DateTime<Utc>,
@@ -97,6 +99,7 @@ impl Order {
             kind,
             partially_fillable: row.partially_fillable,
             app_data: const_hex::encode_prefixed(row.app_data.0),
+            full_app_data: row.full_app_data,
             order_pda: Pubkey::new_from_array(row.order_pda.0),
             creation_date: row.creation_timestamp,
             executed_sell_amount: row.amount_withdrawn,
@@ -156,6 +159,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: false,
             app_data: ByteArray([0x77; 32]),
+            full_app_data: None,
             creation_timestamp: DateTime::from_timestamp(1_000, 0).unwrap(),
             order_pda: ByteArray([0x88; 32]),
             amount_withdrawn: 0.into(),
@@ -232,6 +236,7 @@ mod tests {
         assert_eq!(json["status"], "open");
         assert_eq!(json["kind"], "sell");
         assert_eq!(json["appData"], format!("0x{}", "77".repeat(32)));
+        assert_eq!(json["fullAppData"], serde_json::Value::Null);
         assert_eq!(json["creationDate"], "1970-01-01T00:16:40Z");
         // Absent unless a sponsored creation is pending.
         assert!(json.get("lastValidBlockHeight").is_none());
@@ -242,5 +247,12 @@ mod tests {
         };
         let json = serde_json::to_value(Order::new(pending, 1_500, None)).unwrap();
         assert_eq!(json["lastValidBlockHeight"], 250);
+
+        let registered = OrderRow {
+            full_app_data: Some("{}".to_owned()),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(registered, 1_500, None)).unwrap();
+        assert_eq!(json["fullAppData"], "{}");
     }
 }

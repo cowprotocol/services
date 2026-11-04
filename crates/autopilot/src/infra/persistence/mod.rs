@@ -300,7 +300,7 @@ impl Persistence {
     pub async fn store_fee_policies(
         &self,
         auction_id: domain::auction::Id,
-        fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::Policy>)>,
+        fee_policies: Vec<(domain::OrderUid, Vec<domain::fee::PolicyWithOrigin>)>,
     ) -> anyhow::Result<()> {
         let _timer = Metrics::get()
             .database_queries
@@ -803,8 +803,9 @@ impl Persistence {
                 log_index,
                 solver,
                 settlement.solution_uid(),
-                // We're not expecting this to actually happen, BUT, since this is the cost of a
-                // transaction we'll double count this value if 1 transaction has 2 settlements
+                // We're not expecting this to actually happen, BUT, since this
+                // is the cost of a transaction we'll double count this value if
+                // 1 transaction has 2 settlements
                 u256_to_big_decimal(&gas.0),
                 u256_to_big_decimal(&gas_price.0.0),
             )
@@ -1250,7 +1251,7 @@ pub struct FastPathPromotion {
     /// `filtered_out`, score, executed amounts — live in the domain
     /// handler rather than here.
     pub solutions: Vec<database::solver_competition_v2::Solution>,
-    pub fee_policies: Vec<domain::fee::Policy>,
+    pub fee_policies: Vec<domain::fee::PolicyWithOrigin>,
     pub reference_score: database::reference_scores::Score,
     /// Cap of the penalty the solver will get for not executing the order.
     /// Denominated in the native token.

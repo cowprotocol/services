@@ -10,5 +10,11 @@ alloy-primitives = { workspace = true }
 const-hex = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
-solana-sdk = { workspace = true }
+solana-pubkey = { workspace = true, optional = true }
 url = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+serde-ext = { path = ".", features = ["solana"] }
+
+[features]
+solana = ["dep:solana-pubkey"]

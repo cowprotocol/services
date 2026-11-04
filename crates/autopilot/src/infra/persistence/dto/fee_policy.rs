@@ -1,15 +1,19 @@
 use {
     crate::{boundary, domain},
     anyhow::Context,
-    database::fee_policies::{FeePolicy, FeePolicyKind},
+    database::fee_policies::{FeePolicy, FeePolicyKind, FeePolicyOrigin},
 };
 
 pub fn from_domain(
     auction_id: domain::auction::Id,
     order_uid: domain::OrderUid,
-    policy: domain::fee::Policy,
+    fee: domain::fee::PolicyWithOrigin,
 ) -> FeePolicy {
-    match policy {
+    let origin = Some(match fee.origin {
+        domain::fee::Origin::Protocol => FeePolicyOrigin::Protocol,
+        domain::fee::Origin::Partner => FeePolicyOrigin::Partner,
+    });
+    match fee.policy {
         domain::fee::Policy::Surplus {
             factor,
             max_volume_factor,
@@ -22,6 +26,7 @@ pub fn from_domain(
             volume_factor: None,
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
+            origin,
         },
         domain::fee::Policy::Volume { factor } => FeePolicy {
             auction_id,
@@ -32,6 +37,7 @@ pub fn from_domain(
             volume_factor: Some(factor.get()),
             price_improvement_factor: None,
             price_improvement_max_volume_factor: None,
+            origin,
         },
         domain::fee::Policy::PriceImprovement {
             factor,
@@ -46,6 +52,7 @@ pub fn from_domain(
             volume_factor: None,
             price_improvement_factor: Some(factor.get()),
             price_improvement_max_volume_factor: Some(max_volume_factor.get()),
+            origin,
         },
     }
 }

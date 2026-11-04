@@ -595,8 +595,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .await;
 
         let refund_event_handler = EventUpdater::new_skip_blocks_before(
-            // This cares only about ethflow refund events because all the other ethflow
-            // events are already indexed by the OnchainOrderParser.
+            // This cares only about ethflow refund events because all the other
+            // ethflow events are already indexed by the OnchainOrderParser.
             EthFlowRefundRetriever::new(web3.clone(), config.ethflow.contracts.clone()),
             db_write.clone(),
             block_retriever.clone(),
@@ -615,6 +615,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             DomainSeparator::new(chain_id, *eth.contracts().settlement().address()),
             *eth.contracts().settlement().address(),
             eth.contracts().trampoline().clone(),
+            eth.contracts().authenticator().clone(),
         );
 
         let ethflow_start_block = determine_ethflow_indexing_start(
@@ -627,8 +628,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .await;
 
         let onchain_order_indexer = EventUpdater::new_skip_blocks_before(
-            // The events from the ethflow contract are read with the more generic contract
-            // interface called CoWSwapOnchainOrders.
+            // The events from the ethflow contract are read with the more
+            // generic contract interface called CoWSwapOnchainOrders.
             CoWSwapOnchainOrdersContract::new(web3.clone(), config.ethflow.contracts),
             onchain_order_event_parser,
             block_retriever,
@@ -647,11 +648,12 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let extensions = infra::SupportedExtensions::from(&driver);
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.submission_account,
-                driver.supports_auction_deltas,
+                extensions,
             )
             .await
             .map(Arc::new)
@@ -726,6 +728,11 @@ async fn shadow_mode(config: Configuration) -> ! {
         .drivers
         .into_iter()
         .map(|driver| async move {
+            let extensions = infra::SupportedExtensions {
+                // the shadow autopilot always sends full auctions
+                auction_deltas: false,
+                ..infra::SupportedExtensions::from(&driver)
+            };
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
@@ -738,8 +745,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // this address for anything important so we
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
-                // the shadow autopilot always sends full auctions
-                false,
+                extensions,
             )
             .await
             .map(Arc::new)
@@ -800,7 +806,6 @@ async fn shadow_mode(config: Configuration) -> ! {
         drivers,
         trusted_tokens,
         config.run_loop.min_solve_time,
-        config.run_loop.compress_solve_request,
         liveness.clone(),
         current_block,
         config.run_loop.max_winners_per_auction,

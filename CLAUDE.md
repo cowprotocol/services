@@ -89,7 +89,7 @@ User signs order → Orderbook validates → Autopilot includes in auction
   - Database tests: `cargo nextest run postgres -p orderbook -p database -p autopilot --test-threads 1 --run-ignored ignored-only`
   - E2E local tests: `cargo nextest run -p e2e local_node --test-threads 1 --failure-output final --run-ignored ignored-only`
   - E2E forked tests: `cargo nextest run -p e2e forked_node --test-threads 1 --run-ignored ignored-only --failure-output final`
-  - Driver tests: `RUST_MIN_STACK=3145728 cargo nextest run -p driver --test-threads 1 --run-ignored ignored-only`
+  - Driver tests: `RUST_MIN_STACK=3145728 cargo nextest run -p driver --run-ignored ignored-only`
 - E2E tests available in `crates/e2e`
 
 ### Testing Requirements

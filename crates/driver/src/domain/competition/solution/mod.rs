@@ -9,7 +9,6 @@ use {
         },
         infra::{
             blockchain::{self, Ethereum},
-            config::file::FeeHandler,
             solver::Solver,
         },
     },
@@ -147,7 +146,6 @@ impl Solution {
         weth: eth::WrappedNativeToken,
         gas: Option<eth::Gas>,
         gas_fee_override: Option<GasFeeOverride>,
-        fee_handler: FeeHandler,
         surplus_capturing_jit_order_owners: &HashSet<eth::Address>,
         flashloans: HashMap<order::Uid, Flashloan>,
         wrappers: Vec<WrapperCall>,
@@ -221,11 +219,7 @@ impl Solution {
             return Err(error::Solution::InvalidClearingPrices);
         }
 
-        // Apply protocol fees only if the drivers is set to handler the fees
-        if fee_handler != FeeHandler::Driver {
-            return Ok(solution);
-        }
-
+        // Apply the protocol and partner fees to every fulfillment.
         let mut trades = Vec::with_capacity(solution.trades.len());
         for trade in solution.trades {
             match &trade {
@@ -365,7 +359,7 @@ impl Solution {
         &self,
         eth: &Ethereum,
         internalization: settlement::Internalization,
-    ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, Error> {
+    ) -> Result<impl Iterator<Item = eth::allowance::Approval> + use<>, blockchain::Error> {
         let settlement_contract = *eth.contracts().settlement().address();
         let allowances =
             try_join_all(self.allowances(internalization).map(|required| async move {
@@ -497,7 +491,8 @@ impl Solution {
                 (None, Some(gas)) => Some(gas),
                 (None, None) => None,
             },
-            // Gas fee overrides are per-solution; no meaningful way to merge them.
+            // Gas fee overrides are per-solution; no meaningful way to merge
+            // them.
             gas_fee_override: None,
             flashloans,
             wrappers: self.wrappers.clone(),
@@ -695,19 +690,6 @@ impl Solution {
         // The clearing price of ETH is equal to WETH.
         let token = token.as_erc20(self.weth);
         self.prices.get(&token).map(ToOwned::to_owned)
-    }
-
-    /// Whether there is a reasonable risk of this solution reverting on chain.
-    pub fn revertable(&self) -> bool {
-        self.interactions
-            .iter()
-            .any(|interaction| !interaction.internalize())
-            || self.user_trades().any(|trade| {
-                matches!(
-                    trade.order().signature.scheme,
-                    order::signature::Scheme::Eip1271
-                )
-            })
     }
 }
 

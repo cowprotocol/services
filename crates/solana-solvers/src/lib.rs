@@ -1,7 +1,8 @@
 //! Solana solver engines for CoW Protocol.
 //!
-//! An MVP dex-wrapper over Jupiter, mirroring the `crates/solvers` shape over
-//! Solana-native types (`u64`, `Pubkey`, instructions). Hosts the `/solve` API.
+//! Dex-wrappers over Jupiter and Bitget, mirroring the `crates/solvers` shape
+//! over Solana-native types (`u64`, `Pubkey`, instructions). Hosts the `/solve`
+//! API.
 
 pub mod api;
 mod cli;

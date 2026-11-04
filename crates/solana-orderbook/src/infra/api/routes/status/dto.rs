@@ -1,6 +1,9 @@
 //! Wire shape of the order status endpoint.
 
 use {
+    crate::infra::db::SolutionRow,
+    anyhow::Context,
+    bigdecimal::{BigDecimal, ToPrimitive},
     database::solana::OrderEventLabel,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
@@ -8,9 +11,6 @@ use {
 };
 
 /// Auction progress of an order.
-///
-/// TODO: the `value` payloads stay empty until the autopilot persists
-/// competition results.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase", content = "value")]
 pub enum Status {
@@ -62,6 +62,34 @@ pub struct ExecutedAmounts {
     pub buy: u64,
 }
 
+impl TryFrom<SolutionRow> for SolutionInclusion {
+    type Error = anyhow::Error;
+
+    /// Fails on an amount past `u64::MAX`, which no token amount reaches.
+    fn try_from(row: SolutionRow) -> Result<Self, Self::Error> {
+        let amount = |amount: BigDecimal| {
+            amount
+                .to_u64()
+                .with_context(|| format!("executed amount {amount} exceeds u64"))
+        };
+        Ok(Self {
+            solver: Pubkey::new_from_array(row.solver.0),
+            executed_amounts: row
+                .executed_sell
+                .zip(row.executed_buy)
+                .map(|(sell, buy)| {
+                    anyhow::Ok(ExecutedAmounts {
+                        sell: amount(sell)?,
+                        buy: amount(buy)?,
+                    })
+                })
+                .transpose()?,
+        })
+    }
+}
+
+/// The status the latest auction event implies. Solution-carrying statuses
+/// start empty.
 impl From<OrderEventLabel> for Status {
     fn from(label: OrderEventLabel) -> Self {
         match label {

@@ -736,8 +736,8 @@ async fn fast_path_penalty_cap(web3: Web3) {
         penalty_cap: Some(PenaltyCapConfig {
             default_factor: 0.0004.try_into().unwrap(),
             absolute_cap_usd: 20.,
-            // WETH as the USD reference: its native price is 1 by definition, so
-            // the bound is 20 ETH. The test only cares about the plumbing.
+            // WETH as the USD reference: its native price is 1 by definition,
+            // so the bound is 20 ETH. The test only cares about the plumbing.
             usd_reference_token: *onchain.contracts().weth.address(),
             overrides: vec![],
         }),
@@ -930,7 +930,7 @@ async fn fast_path_settles_across_split_configs(web3: Web3) {
     let (autopilot_config, orderbook_config) =
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
 
-    services.start_autopilot(None, autopilot_config).await;
+    services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
@@ -1104,7 +1104,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
     let (autopilot_config, orderbook_config) =
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
 
-    services.start_autopilot(None, autopilot_config).await;
+    services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
     let app_data = r#"{"metadata":{"enableFastPath":true}}"#.to_string();
@@ -1361,7 +1361,7 @@ async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
     };
     let (autopilot_config, orderbook_config) =
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
-    services.start_autopilot(None, autopilot_config).await;
+    services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
     // Warm the driver's native-price cache with a regular solve; the fast path
@@ -1609,7 +1609,7 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
     let (autopilot_config, orderbook_config) =
         with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
 
-    services.start_autopilot(None, autopilot_config).await;
+    services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
     let app_data = json!({
