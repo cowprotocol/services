@@ -19,9 +19,10 @@ pub struct Order {
     pub uid: String,
     #[serde_as(as = "DisplayFromStr")]
     pub owner: Pubkey,
-    /// The wallet `buy_token_account` belongs to when that is not the owner:
-    /// the wallet it is the associated token account of, or the wallet
-    /// itself for a native SOL buy. Null when the owner receives the payout.
+    /// The wallet `buy_token_account` belongs to, as named at placement: the
+    /// wallet it is the associated token account of, or the wallet itself
+    /// for a native SOL buy. Null unless placement named a wallet other than
+    /// the owner.
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub receiver: Option<Pubkey>,
     #[serde_as(as = "DisplayFromStr")]

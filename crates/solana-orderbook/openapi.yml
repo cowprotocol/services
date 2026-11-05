@@ -320,6 +320,7 @@ paths:
                     native SOL buy. The settlement creates a missing account at
                     that address for this wallet, like the owner's own. Any
                     other wallet is refused with `InvalidBuyTokenAccount`.
+                    Naming the owner is the same as leaving it out.
                   allOf:
                     - $ref: "#/components/schemas/Pubkey"
                   nullable: true
@@ -663,9 +664,8 @@ components:
           $ref: "#/components/schemas/Pubkey"
         receiver:
           description: |
-            The wallet `buyTokenAccount` belongs to when that is not the
-            owner, as named at placement. Null when the owner receives the
-            payout.
+            The wallet `buyTokenAccount` belongs to, as named at placement.
+            Null unless placement named a wallet other than the owner.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
           nullable: true

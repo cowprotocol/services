@@ -64,7 +64,8 @@ pub struct Params {
     /// The wallet the buy token account belongs to, when that is not the
     /// owner: the wallet `buyTokenAccount` is the associated token account
     /// of, or the wallet itself for a native SOL buy. The settlement creates
-    /// a missing account at that address for this wallet.
+    /// a missing account at that address for this wallet. Naming the owner
+    /// is the same as leaving it out.
     #[serde(default)]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub receiver: Option<Pubkey>,
@@ -225,8 +226,10 @@ async fn place(
         })?;
     let (mut order, token_programs) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
+    // Naming the owner is the same as naming nobody.
     order.receiver = params
         .receiver
+        .filter(|receiver| receiver.to_bytes() != order.owner.0)
         .map(|receiver| ByteArray(receiver.to_bytes()));
     // The intent signed the hash, so whatever the request names must agree
     // with it, and the hash alone needs its document registered already.

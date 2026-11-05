@@ -3015,6 +3015,55 @@ async fn solana_db_create_order_creates_a_receivers_missing_buy_token_account() 
     assert_eq!(stored, Some(receiver.to_bytes().to_vec()));
 }
 
+/// Naming the owner as the receiver is the same as naming nobody: the order
+/// is placed like one without a receiver and reports none. The lookup
+/// answers the sell and buy mints, the Clock sysvar, then nothing for the
+/// buy account.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_treats_the_owner_as_no_receiver() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let classic = Some(mint_account(spl_token_interface::ID));
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            accounts_response(&[classic.clone(), classic, None, None]),
+        ),
+    )
+    .await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({
+            "partiallySignedTx": transaction,
+            "receiver": owner.pubkey().to_string(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uid: String = response.json().await.unwrap();
+    assert!(get_order(addr, &uid).await["receiver"].is_null());
+    let stored: Option<Vec<u8>> = sqlx::query_scalar("SELECT receiver FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, None);
+}
+
 /// A receiver the buy token account does not belong to is refused: a wallet
 /// whose associated token account is not the buy account, the owner's own
 /// included, and a wallet other than the paid one for a native SOL buy. Each
