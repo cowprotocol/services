@@ -198,10 +198,10 @@ impl Auction {
         }
     }
 
-    /// Hand each sell token account's balance out to the orders selling from
-    /// it, in auction order, and drop the orders it runs out on. Each
-    /// solver's driver splits, as on EVM: the protocol does not pick which
-    /// of an owner's orders fill.
+    /// Hand each sell token account's balance out to its owner's orders
+    /// selling from it, in auction order, and drop the orders it runs out on.
+    /// Each solver's driver splits, as on EVM: the protocol does not pick
+    /// which of an owner's orders fill.
     pub(super) fn split_sell_balances(&mut self) {
         let mut left_per_account = HashMap::new();
         self.orders.retain_mut(|order| {
@@ -210,8 +210,11 @@ impl Auction {
             let Some(balance) = order.sell_balance else {
                 return true;
             };
+            // Nothing before settlement ties the account to the order's
+            // owner: another owner's order against it must not spend this
+            // owner's balance.
             let left = left_per_account
-                .entry(order.sell_token_account)
+                .entry((order.owner, order.sell_token_account))
                 .or_insert(balance);
             let remaining_sell = order.remaining().sell;
             // A fill-or-kill order cannot shrink; `available` scales a
@@ -914,6 +917,19 @@ mod tests {
             ..fill_or_kill(2, 1_000)
         };
         let mut auction = auction(vec![fill_or_kill(1, 1_000), other]);
+        auction.split_sell_balances();
+        assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
+    }
+
+    /// Order 2 is the probe: it survives only if order 1, placed by another
+    /// owner against the same account, took none of its 1000.
+    #[test]
+    fn another_owners_order_does_not_spend_the_balance() {
+        let stranger = Order {
+            owner: pubkey(0x23),
+            ..fill_or_kill(1, 1_000)
+        };
+        let mut auction = auction(vec![stranger, fill_or_kill(2, 1_000)]);
         auction.split_sell_balances();
         assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
     }
