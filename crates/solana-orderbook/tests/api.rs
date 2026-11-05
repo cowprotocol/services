@@ -7,15 +7,21 @@ use {
         byte_array::ByteArray,
         solana::{OrderEventLabel, OrderKind},
     },
-    solana_orderbook::infra::{api::Api, db, prices::NativePrices, quoter::Quoter},
-    solana_sdk::signer::Signer,
+    solana_orderbook::infra::{
+        api::Api,
+        db,
+        prices::NativePrices,
+        quoter::Quoter,
+        verifier::Verifier,
+    },
+    solana_sdk::{program_pack::Pack, signer::Signer},
     spl_token_2022_interface::extension::{
         BaseStateWithExtensionsMut,
         ExtensionType,
         transfer_fee::TransferFeeConfig,
     },
     sqlx::PgPool,
-    std::{net::SocketAddr, time::Duration},
+    std::{net::SocketAddr, num::NonZero, time::Duration},
     tokio_util::sync::CancellationToken,
 };
 
@@ -29,7 +35,9 @@ async fn mock_api() -> Api {
         prices: spawn_mock_autopilot(Some(1_000_000_000)).await,
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
+        fast_results_required: NonZero::new(2).unwrap(),
         sponsoring: None,
+        verifier: None,
         app_data_size_limit: 8192,
     }
 }
@@ -87,11 +95,19 @@ async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
 /// A tiny axum server that answers `/quote` with a fixed response. It stands
 /// in for the driver.
 async fn spawn_mock_driver(response: serde_json::Value) -> SocketAddr {
+    spawn_mock_driver_after(Duration::ZERO, response).await
+}
+
+/// Like [`spawn_mock_driver`], answering after `delay`.
+async fn spawn_mock_driver_after(delay: Duration, response: serde_json::Value) -> SocketAddr {
     let app = axum::Router::new().route(
         "/quote",
         axum::routing::post(move || {
             let response = response.clone();
-            async move { axum::Json(response) }
+            async move {
+                tokio::time::sleep(delay).await;
+                axum::Json(response)
+            }
         }),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -385,6 +401,7 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
+                blockhash_catch_up: Duration::ZERO,
             }),
             ..mock_api().await
         };
@@ -534,6 +551,7 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
             )])),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
         }),
         ..mock_api().await
     };
@@ -600,6 +618,7 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
                 mints: Default::default(),
+                blockhash_catch_up: Duration::ZERO,
             }),
             ..mock_api().await
         };
@@ -660,6 +679,420 @@ async fn quote_picks_the_best_driver_answer() {
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["buyAmount"], "2779760");
     assert_eq!(json["quote"]["costs"]["networkFees"], "0");
+}
+
+/// A `fast` quote answers with the best of the first `fast_results_required`
+/// drivers to quote while a slower driver with a better price is still
+/// running, is not stored and expires at once. The default quality waits for
+/// every driver, so the slow one wins there.
+#[tokio::test]
+async fn quote_fast_answers_from_the_first_drivers() {
+    let answer = |buy_amount: &str| {
+        serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": buy_amount,
+            "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        })
+    };
+    let worse = spawn_mock_driver(answer("5000000")).await;
+    let better = spawn_mock_driver(answer("5100000")).await;
+    let best_but_slow =
+        spawn_mock_driver_after(Duration::from_millis(500), answer("9000000")).await;
+    let addr = spawn_server_with(Quoter::new(
+        [worse, better, best_but_slow]
+            .iter()
+            .map(|driver| format!("http://{driver}/").parse().unwrap())
+            .collect(),
+        Duration::from_secs(3),
+    ))
+    .await;
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body["priceQuality"] = serde_json::json!("fast");
+    let (status, json) = quote_json(addr, body).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["quote"]["buyAmount"], "2879760");
+    assert_eq!(json["id"], serde_json::Value::Null);
+    assert_eq!(json["expiration"], "1970-01-01T00:00:00Z");
+    assert_eq!(json["verified"], false);
+
+    let body = quote_body(serde_json::json!({"validFor": 1800}));
+    let (status, json) = quote_json(addr, body).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["quote"]["buyAmount"], "6779760");
+}
+
+/// A driver answer for the `quote_body` sell, settling it for `buy_amount`
+/// with the unsigned settlement transaction `signers` sign, the first as
+/// the fee payer and the solver.
+fn settling_driver_answer(
+    buy_amount: &str,
+    signers: &[solana_sdk::pubkey::Pubkey],
+) -> serde_json::Value {
+    let instructions: Vec<_> = signers
+        .iter()
+        .map(|signer| solana_system_interface::instruction::transfer(signer, &program_id(), 1))
+        .collect();
+    let message = solana_sdk::message::Message::new(&instructions, Some(&signers[0]));
+    let transaction = solana_sdk::transaction::VersionedTransaction {
+        signatures: vec![solana_sdk::signature::Signature::default(); signers.len()],
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    };
+    serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": buy_amount,
+        "solver": signers[0].to_string(),
+        "networkFee": "0",
+        "transaction": base64::engine::general_purpose::STANDARD
+            .encode(bincode::serialize(&transaction).unwrap()),
+    })
+}
+
+/// An SPL Token mint `authority` can mint more of.
+fn mintable_mint_json(authority: solana_sdk::pubkey::Pubkey) -> serde_json::Value {
+    let mut data = vec![0; spl_token_interface::state::Mint::LEN];
+    spl_token_interface::state::Mint {
+        mint_authority: solana_sdk::program_option::COption::Some(authority),
+        decimals: 6,
+        is_initialized: true,
+        ..Default::default()
+    }
+    .pack_into_slice(&mut data);
+    solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 1_461_600,
+        owner: spl_token_interface::ID,
+        data,
+        ..Default::default()
+    })
+}
+
+/// An initialized SPL token account holding `amount`.
+fn holding_json(owner: solana_sdk::pubkey::Pubkey, amount: u64) -> serde_json::Value {
+    let mut data = vec![0; spl_token_interface::state::Account::LEN];
+    spl_token_interface::state::Account {
+        owner,
+        amount,
+        state: spl_token_interface::state::AccountState::Initialized,
+        ..Default::default()
+    }
+    .pack_into_slice(&mut data);
+    solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 2_039_280,
+        owner: spl_token_interface::ID,
+        data,
+        ..Default::default()
+    })
+}
+
+/// A bundle answer whose creation leg passes and whose settlement leg is
+/// `settlement`.
+fn bundle_json(settlement: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "context": { "slot": 1 },
+        "value": { "transactionResults": [{ "err": null, "logs": [] }, settlement] },
+    })
+}
+
+/// An order account recording `received` of its buy token.
+fn order_json(received: u64) -> serde_json::Value {
+    let mut data = vec![0; cow_settlement_interface::data::order::SIZE];
+    cow_settlement_interface::data::order::OrderAccount::initialize(
+        data.as_mut_slice(),
+        0,
+        false,
+        0,
+        received,
+        &solana_sdk::pubkey::Pubkey::default(),
+        &[0; cow_settlement_interface::data::intent::EncodedOrderIntent::SIZE],
+    )
+    .unwrap();
+    solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 2_728_560,
+        owner: program_id(),
+        data,
+        ..Default::default()
+    })
+}
+
+/// A passing settlement leg: the watched accounts are the order, recording
+/// the buy amount received, the sell buffer and the buy buffer, at `pre`
+/// before and `post` after.
+fn settled_json(pre: [u64; 3], post: [u64; 3]) -> serde_json::Value {
+    let accounts = |[received, sell_buffer, buy_buffer]: [u64; 3]| {
+        let owner = program_id();
+        [
+            order_json(received),
+            holding_json(owner, sell_buffer),
+            holding_json(owner, buy_buffer),
+        ]
+    };
+    serde_json::json!({
+        "err": null,
+        "logs": [],
+        "unitsConsumed": 100_000,
+        "preExecutionAccounts": accounts(pre),
+        "postExecutionAccounts": accounts(post),
+    })
+}
+
+/// A verifier preferring verified quotes, with a 1% inaccuracy limit, over
+/// mock nodes: `rpc` answers the account reads in queue order, `bundle` up to
+/// two bundle simulations, `holders` the largest-holders lookup when given.
+fn verifier(
+    rpc: MocksMap,
+    bundle: serde_json::Value,
+    holders: Option<serde_json::Value>,
+) -> Verifier {
+    Verifier::new(
+        SolanaRPC::new_mock_with_mocks_map(rpc),
+        SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+            (cow_solana_rpc::SIMULATE_BUNDLE, bundle.clone()),
+            (cow_solana_rpc::SIMULATE_BUNDLE, bundle),
+        ])),
+        holders.map(|largest| {
+            SolanaRPC::new_mock_with_mocks(Mocks::from([(
+                RpcRequest::GetTokenLargestAccounts,
+                largest,
+            )]))
+        }),
+        program_id(),
+        0.01,
+        configs::price_estimation::QuoteVerificationMode::Prefer,
+    )
+}
+
+/// The mock account reads of a verification whose sell mint `authority` can
+/// mint: the two mints, then the authority, a plain wallet.
+fn mintable_reads(authority: solana_sdk::pubkey::Pubkey) -> MocksMap {
+    MocksMap::from_iter([
+        (
+            RpcRequest::GetMultipleAccounts,
+            solana_testlib::multiple_accounts_json([
+                mintable_mint_json(authority),
+                solana_testlib::mint_account_json(),
+            ]),
+        ),
+        (
+            RpcRequest::GetMultipleAccounts,
+            solana_testlib::multiple_accounts_json([solana_testlib::account_json(
+                &solana_sdk::account::Account {
+                    lamports: 1_000_000_000,
+                    ..Default::default()
+                },
+            )]),
+        ),
+    ])
+}
+
+async fn spawn_verifying_server(drivers: Vec<SocketAddr>, verifier: Verifier) -> SocketAddr {
+    let api = Api {
+        quoter: Quoter::new(
+            drivers
+                .iter()
+                .map(|driver| format!("http://{driver}/").parse().unwrap())
+                .collect(),
+            Duration::from_secs(1),
+        ),
+        verifier: Some(verifier),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    addr
+}
+
+/// Post `body` to the quote route and return the HTTP status and the parsed
+/// body.
+async fn quote_json(
+    addr: SocketAddr,
+    body: serde_json::Value,
+) -> (reqwest::StatusCode, serde_json::Value) {
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    (status, response.json().await.unwrap())
+}
+
+/// Post the `quote_body` sell and return the HTTP status and the parsed body.
+async fn quote_verified(addr: SocketAddr) -> (reqwest::StatusCode, serde_json::Value) {
+    quote_json(addr, quote_body(serde_json::json!({"validFor": 1800}))).await
+}
+
+/// The sell mint's authority mints the sell amount in the creation leg, the
+/// settlement delivers the quoted amount and the buffers keep theirs: the
+/// quote is verified. A second quote of the pair reuses the mints read for the
+/// first, the only reads mocked.
+#[tokio::test]
+async fn quote_verified_by_a_passing_bundle_simulation() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+        None,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    for _ in 0..2 {
+        let (status, json) = quote_verified(addr).await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(json["verified"], true);
+        assert_eq!(json["quote"]["buyAmount"], "1240967");
+    }
+}
+
+/// A settlement that fails in simulation, or delivers less than it quoted,
+/// leaves the quote as the driver gave it, unverified.
+#[tokio::test]
+async fn quote_whose_settlement_fails_or_underdelivers_is_unverified() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let failing = serde_json::json!({
+        "err": { "InstructionError": [1, { "Custom": 1 }] },
+        "logs": ["boom"],
+    });
+    for settlement in [
+        failing,
+        settled_json([0, 1_000, 5_000], [3_461_206, 1_000, 5_000]),
+    ] {
+        let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+        let verifier = verifier(
+            mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+            bundle_json(settlement.clone()),
+            None,
+        );
+        let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+        let (status, json) = quote_verified(addr).await;
+        assert_eq!(status, reqwest::StatusCode::OK, "{settlement}");
+        assert_eq!(json["verified"], false);
+        assert_eq!(json["quote"]["buyAmount"], "1240967");
+    }
+}
+
+/// A settlement the buffers pay for, beyond the inaccuracy limit's share of
+/// the amount, is dropped: with no other quote there is no liquidity.
+#[tokio::test]
+async fn quote_the_buffers_pay_for_is_dropped() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json(
+            [0, 1_000, 5_000_000],
+            [3_461_207, 1_000, 4_900_000],
+        )),
+        None,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    let (status, json) = quote_verified(addr).await;
+    assert_eq!(status, reqwest::StatusCode::NOT_FOUND);
+    assert_eq!(json["errorType"], "NoLiquidity");
+}
+
+/// Preferring verified quotes, a verified quote beats a better one whose
+/// settlement signs as more than the solver, which no simulation can vouch
+/// for.
+#[tokio::test]
+async fn quote_prefers_a_verified_answer_in_prefer_mode() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let unverifiable = spawn_mock_driver(settling_driver_answer(
+        "5000000",
+        &[solver, solana_sdk::pubkey::Pubkey::new_unique()],
+    ))
+    .await;
+    let verifiable = spawn_mock_driver(settling_driver_answer("4000000", &[solver])).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json([0, 1_000, 5_000], [4_000_000, 1_000, 5_000])),
+        None,
+    );
+    let addr = spawn_verifying_server(vec![unverifiable, verifiable], verifier).await;
+
+    let (status, json) = quote_verified(addr).await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(json["quote"]["buyAmount"], "1779760");
+    assert_eq!(json["verified"], true);
+}
+
+/// With a verifier configured, `fast` and `optimal` quotes skip the
+/// simulation: the answer stays unverified although the mocked settlement
+/// would pass.
+#[tokio::test]
+async fn quote_fast_and_optimal_skip_verification() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+    let verifier = verifier(
+        mintable_reads(solana_sdk::pubkey::Pubkey::new_unique()),
+        bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+        None,
+    );
+    let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+    for quality in ["fast", "optimal"] {
+        let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+        body["priceQuality"] = serde_json::json!(quality);
+        let (status, json) = quote_json(addr, body).await;
+        assert_eq!(status, reqwest::StatusCode::OK, "{quality}");
+        assert_eq!(json["verified"], false, "{quality}");
+        assert_eq!(json["quote"]["buyAmount"], "1240967", "{quality}");
+    }
+}
+
+/// A sell mint nobody can mint is funded by its largest wallet-owned holder,
+/// read from the holders node. A PDA-owned holder funds nothing, and neither
+/// does a missing holders node.
+#[tokio::test]
+async fn quote_selling_a_mint_nobody_can_mint_is_funded_by_its_largest_holder() {
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let holder = solana_sdk::pubkey::Pubkey::new_unique();
+    let largest = serde_json::json!({
+        "context": { "slot": 1 },
+        "value": [{
+            "address": holder.to_string(),
+            "amount": "20000000",
+            "decimals": 6,
+            "uiAmount": 20.0,
+            "uiAmountString": "20",
+        }],
+    });
+    let wallet = solana_sdk::signature::Keypair::new().pubkey();
+    let pool = solana_sdk::pubkey::Pubkey::find_program_address(&[b"pool"], &program_id()).0;
+    for (holders, owner, verified) in [
+        (Some(largest.clone()), wallet, true),
+        (Some(largest), pool, false),
+        (None, wallet, false),
+    ] {
+        let driver = spawn_mock_driver(settling_driver_answer("3461207", &[solver])).await;
+        let reads = MocksMap::from_iter([
+            (
+                RpcRequest::GetMultipleAccounts,
+                solana_testlib::multiple_accounts_json([
+                    solana_testlib::mint_account_json(),
+                    solana_testlib::mint_account_json(),
+                ]),
+            ),
+            (
+                RpcRequest::GetMultipleAccounts,
+                solana_testlib::multiple_accounts_json([holding_json(owner, 20_000_000)]),
+            ),
+        ]);
+        let verifier = verifier(
+            reads,
+            bundle_json(settled_json([0, 1_000, 5_000], [3_461_207, 1_000, 5_000])),
+            holders,
+        );
+        let addr = spawn_verifying_server(vec![driver], verifier).await;
+
+        let (status, json) = quote_verified(addr).await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(json["verified"], verified);
+    }
 }
 
 /// A buy order keeps its buy amount and pulls the execution cost, priced in
@@ -1043,6 +1476,7 @@ async fn spawn_sponsored_server_with(
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
         }),
         ..mock_api().await
     };
@@ -1160,9 +1594,8 @@ fn state_pda() -> solana_sdk::pubkey::Pubkey {
 
 /// The full whitelisted preparation prefix for a native-sell intent: create
 /// the wSOL account (the owner pays its rent, as placement requires), fund
-/// it, sync it, delegate it, create the buy account.
+/// it, sync it, delegate it.
 fn full_preparations(
-    funder: solana_sdk::pubkey::Pubkey,
     owner: solana_sdk::pubkey::Pubkey,
     intent: &cow_settlement_interface::data::intent::OrderIntent,
 ) -> Vec<solana_sdk::instruction::Instruction> {
@@ -1188,12 +1621,6 @@ fn full_preparations(
             1_000,
         )
         .unwrap(),
-        spl_associated_token_account_interface::instruction::create_associated_token_account(
-            &funder,
-            &owner,
-            &buy_mint(intent),
-            &spl_token_interface::ID,
-        ),
     ]
 }
 
@@ -1297,16 +1724,15 @@ fn buy_mint(
     buy.mint
 }
 
-/// A sponsored creation transaction with an arbitrary SPL sell and only the
-/// buy-account creation in front of `CreateOrder`.
+/// A sponsored creation transaction with an arbitrary SPL sell and no
+/// preparation steps in front of `CreateOrder`.
 fn sponsored_creation_tx(
     funder: solana_sdk::pubkey::Pubkey,
     owner: &solana_sdk::signer::keypair::Keypair,
     sign: bool,
 ) -> String {
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    creation_tx(funder, owner, &intent, vec![destination], sign)
+    creation_tx(funder, owner, &intent, vec![], sign)
 }
 
 /// A well-formed bundle whose priority fee is above the sponsored ceiling.
@@ -1317,12 +1743,11 @@ fn overpriced_creation_tx(
     owner: &solana_sdk::signer::keypair::Keypair,
 ) -> String {
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
     creation_tx_wrapped(
         funder,
         owner,
         &intent,
-        vec![destination],
+        vec![],
         vec![
             solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_price(
                 500_000,
@@ -1343,10 +1768,7 @@ fn v1_creation_tx(
 ) -> String {
     use solana_sdk::message::{VersionedMessage, v1};
     let intent = sponsored_intent(owner.pubkey(), false);
-    let instructions = [
-        destination_creation(funder, owner.pubkey(), &intent),
-        create_order(funder, owner.pubkey(), &intent),
-    ];
+    let instructions = [create_order(funder, owner.pubkey(), &intent)];
     let message = VersionedMessage::V1(
         v1::Message::try_compile_with_config(
             &funder,
@@ -1397,12 +1819,11 @@ fn lighthouse_memory_creation_tx(
     owner: &solana_sdk::signer::keypair::Keypair,
 ) -> String {
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
     creation_tx_wrapped(
         funder,
         owner,
         &intent,
-        vec![destination],
+        vec![],
         // Discriminator 0 is `MemoryWrite`.
         vec![lighthouse(0, owner.pubkey())],
         true,
@@ -1503,8 +1924,7 @@ async fn create_order_rejects_invalid_submissions() {
         (expiring, "InsufficientValidTo"),
         (distant, "ExcessiveValidTo"),
     ] {
-        let destination = destination_creation(funder, owner.pubkey(), &intent);
-        let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
             (status, kind.as_str()),
@@ -1519,8 +1939,7 @@ async fn create_order_rejects_invalid_submissions() {
         - cow_settlement_interface::data::intent::EncodedOrderIntent::SIZE
         + cow_settlement_interface::data::intent::fixtures::SELL_AMOUNT_OFFSET;
     create.data[sell_amount..sell_amount + size_of::<u64>()].fill(0);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = signed_creation_tx(funder, &owner, vec![destination, create], true);
+    let transaction = signed_creation_tx(funder, &owner, vec![create], true);
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
         (status, kind.as_str()),
@@ -1567,12 +1986,10 @@ async fn create_order_checks_the_app_data() {
     let zero_hex = format!("0x{}", "00".repeat(32));
     let mut intent = sponsored_intent(owner.pubkey(), false);
     intent.app_data = hash;
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let mut zero_intent = sponsored_intent(owner.pubkey(), false);
     zero_intent.app_data = [0; 32];
-    let destination = destination_creation(funder, owner.pubkey(), &zero_intent);
-    let zero_transaction = creation_tx(funder, &owner, &zero_intent, vec![destination], true);
+    let zero_transaction = creation_tx(funder, &owner, &zero_intent, vec![], true);
     let body = |transaction: &str, app_data: Option<&str>, app_data_hash: Option<&str>| {
         let mut body = serde_json::json!({ "partiallySignedTx": transaction });
         if let Some(app_data) = app_data {
@@ -1711,12 +2128,14 @@ async fn create_order_checks_the_native_buy_wallet() {
     }
 }
 
-/// Without the creation step in the bundle, the buy token account must
-/// already receive the buy mint, or be the owner's associated token account
-/// under the buy mint's token program, which the settlement creates when
-/// missing. A custom receiver's missing account needs the creation step.
+/// The buy token account must be one the settlement can pay out to as is,
+/// or the owner's associated token account under the buy mint's token
+/// program, which the settlement creates when missing. A custom receiver's
+/// missing account cannot be placed. A passing order moves on to the
+/// blockhash check. The lookup answers the sell and buy mints, the Clock
+/// sysvar, then the buy token account.
 #[tokio::test]
-async fn create_order_checks_an_uncreated_buy_token_account() {
+async fn create_order_checks_the_buy_token_account() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let receiver = solana_sdk::pubkey::Pubkey::new_unique();
@@ -1730,7 +2149,6 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
             token_account: ata(receiver, mint),
         },
     );
-    let create_receiver_account = destination_creation(funder, receiver, &paid_to_receiver);
 
     let receiver_token_account = solana_testlib::token_account_json(&mint, &receiver);
     let lamports_only = solana_testlib::account_json(&solana_sdk::account::Account {
@@ -1752,18 +2170,16 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
     let spl_token = spl_token_interface::ID;
     let token_2022 = spl_token_2022_interface::ID;
 
-    for (name, intent, preparations, accounts, expected) in [
+    for (name, intent, accounts, expected) in [
         (
             "owner's missing ATA: the settlement creates it",
             &paid_to_owner,
-            vec![],
             lookup(spl_token, None),
             PASSED_ACCOUNT_CHECKS,
         ),
         (
             "owner's ATA holding only lamports: the idempotent create allocates over it",
             &paid_to_owner,
-            vec![],
             lookup(spl_token, Some(lamports_only)),
             PASSED_ACCOUNT_CHECKS,
         ),
@@ -1771,28 +2187,18 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
             "owner's SPL Token ATA on a Token-2022 mint: the settlement would create the \
              Token-2022 one",
             &paid_to_owner,
-            vec![],
             lookup(token_2022, None),
             "InvalidTransaction",
         ),
         (
-            "receiver's missing ATA without the creation step",
+            "receiver's missing ATA: nothing can derive whose wallet to create it for",
             &paid_to_receiver,
-            vec![],
             lookup(spl_token, None),
             "InvalidTransaction",
         ),
         (
-            "receiver's missing ATA with the creation step",
-            &paid_to_receiver,
-            vec![create_receiver_account],
-            lookup(spl_token, None),
-            PASSED_ACCOUNT_CHECKS,
-        ),
-        (
             "receiver's existing token account",
             &paid_to_receiver,
-            vec![],
             lookup(spl_token, Some(receiver_token_account)),
             PASSED_ACCOUNT_CHECKS,
         ),
@@ -1803,12 +2209,131 @@ async fn create_order_checks_an_uncreated_buy_token_account() {
             sponsored_mocks(false, accounts),
         )
         .await;
-        let transaction = creation_tx(funder, &owner, intent, preparations, true);
+        let transaction = creation_tx(funder, &owner, intent, vec![], true);
         let (status, kind) = post_order(addr, transaction).await;
         assert_eq!(
             (status, kind.as_str()),
             (reqwest::StatusCode::BAD_REQUEST, expected),
             "{name}"
+        );
+    }
+}
+
+/// A bundle that creates the buy token account is rejected, whoever pays
+/// for it, whichever creation variant and token program it uses, whoever
+/// owns the account, and wherever it sits in the template. Validation
+/// rejects it, so no RPC probe is consumed.
+#[tokio::test]
+async fn create_order_rejects_creating_the_buy_token_account() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::new_unique();
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+    let owned = sponsored_intent(owner.pubkey(), false);
+    let mint = buy_mint(&owned);
+    let with_buy_account = |token_account| {
+        let mut intent = sponsored_intent(owner.pubkey(), false);
+        intent.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+            cow_settlement_interface::data::intent::TokenAsset {
+                mint,
+                token_account,
+            },
+        );
+        intent
+    };
+    let received = with_buy_account(ata(receiver, mint));
+    let token_2022 = with_buy_account(
+        spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
+            &owner.pubkey(),
+            &mint,
+            &spl_token_2022_interface::ID,
+        ),
+    );
+    let approve = spl_token_interface::instruction::approve(
+        &spl_token_interface::ID,
+        &owned.sell.token_account,
+        &state_pda(),
+        &owner.pubkey(),
+        &[],
+        owned.sell_amount.get(),
+    )
+    .unwrap();
+
+    for (index, (intent, preparations)) in [
+        // Paid by the funder.
+        (&owned, vec![destination_creation(funder, owner.pubkey(), &owned)]),
+        // Paid by the owner.
+        (
+            &owned,
+            vec![
+                spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                    &owner.pubkey(),
+                    &owner.pubkey(),
+                    &mint,
+                    &spl_token_interface::ID,
+                ),
+            ],
+        ),
+        // The non-idempotent creation.
+        (
+            &owned,
+            vec![
+                spl_associated_token_account_interface::instruction::create_associated_token_account(
+                    &funder,
+                    &owner.pubkey(),
+                    &mint,
+                    &spl_token_interface::ID,
+                ),
+            ],
+        ),
+        // Under Token-2022.
+        (
+            &token_2022,
+            vec![
+                spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
+                    &funder,
+                    &owner.pubkey(),
+                    &mint,
+                    &spl_token_2022_interface::ID,
+                ),
+            ],
+        ),
+        // For a custom receiver.
+        (&received, vec![destination_creation(funder, receiver, &received)]),
+        // After a valid delegation.
+        (
+            &owned,
+            vec![
+                approve,
+                destination_creation(funder, owner.pubkey(), &owned),
+            ],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let transaction = creation_tx(funder, &owner, intent, preparations, true);
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/orders"))
+            .json(&serde_json::json!({ "partiallySignedTx": transaction }))
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let json: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(
+            (
+                status,
+                json["errorType"].as_str(),
+                json["description"].as_str()
+            ),
+            (
+                reqwest::StatusCode::BAD_REQUEST,
+                Some("InvalidTransaction"),
+                Some("the bundle must not create the buy token account"),
+            ),
+            "case {index}"
         );
     }
 }
@@ -1823,7 +2348,6 @@ async fn create_order_requires_the_owner_as_signer() {
     let addr =
         spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
     let intent = sponsored_intent(owner.pubkey(), false);
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
     let instruction: solana_sdk::instruction::Instruction =
         cow_settlement_client::instruction::CreateOrder {
             program_id: program_id(),
@@ -1833,7 +2357,7 @@ async fn create_order_requires_the_owner_as_signer() {
         }
         .into();
     let mut message = solana_sdk::message::Message::new_with_blockhash(
-        &[destination, instruction],
+        &[instruction],
         Some(&funder),
         &solana_sdk::hash::Hash::new_unique(),
     );
@@ -1955,7 +2479,7 @@ async fn create_order_checks_the_preparation_template() {
     );
 
     // A wrapped sell account owned by a stranger is rejected even when the
-    // intent names it. Only the buy account may belong to someone else.
+    // intent names it.
     let stranger = solana_sdk::pubkey::Pubkey::new_unique();
     let mut foreign_sell = sponsored_intent(owner, true);
     foreign_sell.sell.token_account = ata(stranger, foreign_sell.sell.mint);
@@ -1966,7 +2490,6 @@ async fn create_order_checks_the_preparation_template() {
             &foreign_sell.sell.mint,
             &spl_token_interface::ID,
         ),
-        destination_creation(funder, owner, &foreign_sell),
     ];
     let transaction = creation_tx(funder, &owner_keypair, &foreign_sell, preparations, true);
     let (status, kind) = post_order(addr, transaction).await;
@@ -1986,7 +2509,7 @@ async fn create_order_rejects_a_funder_paid_sell_account_creation() {
     let addr =
         spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
     let intent = sponsored_intent(owner.pubkey(), true);
-    let mut preparations = full_preparations(funder, owner.pubkey(), &intent);
+    let mut preparations = full_preparations(owner.pubkey(), &intent);
     preparations[0] = spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
         &funder,
         &owner.pubkey(),
@@ -2002,17 +2525,16 @@ async fn create_order_rejects_a_funder_paid_sell_account_creation() {
 }
 
 /// Placement reads the order's mints: one the settlement program cannot move
-/// answers `UnsupportedToken`, and a token program other than the mint's
-/// owner is an invalid transaction. Every case gets a fresh server, since the
-/// mock answers the mint lookup once.
+/// answers `UnsupportedToken`, and a delegation through a token program other
+/// than the mint's owner is an invalid transaction. Every case gets a fresh
+/// server, since the mock answers the mint lookup once.
 #[tokio::test]
 async fn create_order_checks_the_mints_on_chain() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
     let intent = sponsored_intent(owner.pubkey(), false);
     let classic = Some(mint_account(spl_token_interface::ID));
-    let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
-    // Only the buy account creation, under SPL Token.
+    // No preparation steps.
     let plain = sponsored_creation_tx(funder, &owner, true);
     let token_2022_approve = creation_tx(
         funder,
@@ -2028,17 +2550,13 @@ async fn create_order_checks_the_mints_on_chain() {
                 1_000,
             )
             .unwrap(),
-            destination_creation(funder, owner.pubkey(), &intent),
         ],
         true,
     );
 
     for (transaction, mints, expected) in [
         // The sell mint does not exist.
-        (plain.clone(), [None, classic.clone()], "UnsupportedToken"),
-        // The buy mint lives under Token-2022 but its account is created
-        // under SPL Token.
-        (plain, [classic.clone(), token_2022], "InvalidTransaction"),
+        (plain, [None, classic.clone()], "UnsupportedToken"),
         // The sell mint lives under SPL Token but its delegation goes
         // through Token-2022.
         (
@@ -2087,7 +2605,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         lighthouse(6, owner.pubkey()),
         lighthouse(6, funder),
     ];
-    preparations.extend(full_preparations(funder, owner.pubkey(), &intent));
+    preparations.extend(full_preparations(owner.pubkey(), &intent));
     let transaction = creation_tx_wrapped(
         funder,
         &owner,
@@ -2173,8 +2691,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     )
     .await
     .unwrap();
-    let destination = destination_creation(funder, other_owner.pubkey(), &other);
-    let transaction = creation_tx(funder, &other_owner, &other, vec![destination], true);
+    let transaction = creation_tx(funder, &other_owner, &other, vec![], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
         .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": mismatched }))
@@ -2206,8 +2723,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     )
     .await
     .unwrap();
-    let destination = destination_creation(funder, late_owner.pubkey(), &late);
-    let transaction = creation_tx(funder, &late_owner, &late, vec![destination], true);
+    let transaction = creation_tx(funder, &late_owner, &late, vec![], true);
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
         .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": expired }))
@@ -2222,8 +2738,10 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     assert_eq!(copies, 1, "the expired quote must not be copied");
 }
 
-/// The buy account may belong to a wallet other than the owner: the bundle
-/// creates it for the receiver and the order stores that account.
+/// The buy account may belong to a wallet other than the owner: the
+/// receiver's existing account receives the payout and the order stores it.
+/// The lookup answers the sell and buy mints, the Clock sysvar, then the
+/// receiver's account.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_a_custom_receiver() {
@@ -2246,9 +2764,22 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
             token_account: ata(receiver, buy_mint),
         },
     );
-    let destination = destination_creation(funder, receiver, &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
-    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let classic = solana_testlib::account_json(&mint_account(spl_token_interface::ID));
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            solana_testlib::multiple_accounts_json([
+                classic.clone(),
+                classic,
+                serde_json::Value::Null,
+                solana_testlib::token_account_json(&buy_mint, &receiver),
+            ]),
+        ),
+    )
+    .await;
 
     let (status, _) = post_order(addr, transaction).await;
     assert_eq!(status, reqwest::StatusCode::CREATED);
@@ -2259,9 +2790,11 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
     assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
 }
 
-/// Token-2022 mints place like classic ones: the delegation and the buy
-/// account creation go through Token-2022, and the buy account is the
-/// owner's Token-2022 associated token account.
+/// Token-2022 mints place like classic ones: the delegation goes through
+/// Token-2022, and the buy account is the owner's missing Token-2022
+/// associated token account, which the settlement creates. The lookup
+/// answers the sell and buy mints, the Clock sysvar, then the buy token
+/// account.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_accepts_token_2022_mints() {
@@ -2298,19 +2831,16 @@ async fn solana_db_create_order_accepts_token_2022_mints() {
             intent.sell_amount.get(),
         )
         .unwrap(),
-        spl_associated_token_account_interface::instruction::create_associated_token_account_idempotent(
-            &funder,
-            &owner.pubkey(),
-            &buy_mint,
-            &spl_token_2022_interface::ID,
-        ),
     ];
     let transaction = creation_tx(funder, &owner, &intent, preparations, true);
     let token_2022 = Some(mint_account(spl_token_2022_interface::ID));
     let addr = spawn_sponsored_server_with(
         pool.clone(),
         funder,
-        sponsored_mocks(true, accounts_response(&[token_2022.clone(), token_2022])),
+        sponsored_mocks(
+            true,
+            accounts_response(&[token_2022.clone(), token_2022, None, None]),
+        ),
     )
     .await;
 
@@ -2386,8 +2916,7 @@ async fn solana_db_create_order_stores_the_app_data() {
     let hash_hex = const_hex::encode_prefixed(hash);
     let mut intent = sponsored_intent(owner.pubkey(), false);
     intent.app_data = hash;
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
 
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -2414,8 +2943,7 @@ async fn solana_db_create_order_stores_the_app_data() {
 
     // Each sponsored server answers its chain probes once.
     intent.valid_to += 1;
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let response = reqwest::Client::new()
         .post(format!("http://{addr}/api/v1/orders"))
@@ -2428,8 +2956,7 @@ async fn solana_db_create_order_stores_the_app_data() {
     assert_eq!(get_order(addr, &uid).await["fullAppData"], document);
 
     intent.app_data = [0x77; 32];
-    let destination = destination_creation(funder, owner.pubkey(), &intent);
-    let transaction = creation_tx(funder, &owner, &intent, vec![destination], true);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let addr = spawn_sponsored_server(pool, funder, true).await;
     for body in [
         serde_json::json!({ "partiallySignedTx": transaction }),

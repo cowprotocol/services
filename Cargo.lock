@@ -4006,6 +4006,7 @@ dependencies = [
  "prometheus-metric-storage",
  "serde",
  "serde_json",
+ "solana-account-decoder-client-types",
  "solana-commitment-config",
  "solana-rpc-client",
  "solana-rpc-client-api",
@@ -4314,7 +4315,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ab67060fc6b8ef687992d439ca0fa36e7ed17e9a0b16b25b601e8757df720de"
 dependencies = [
  "data-encoding",
- "syn 2.0.118",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -7765,9 +7766,9 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.13.5"
+version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "278e9268c93b9e498a2da46c34d90ba93a3255eb99009646398f34bc73ab36eb"
+checksum = "3db2be46835f013dd3f4fa7f5f7402c537787b54ebb6fe2b94bbdd7e2669bb7b"
 dependencies = [
  "bitflags 2.10.0",
  "memchr",
@@ -10057,6 +10058,7 @@ dependencies = [
  "database",
  "futures",
  "humantime-serde",
+ "moka",
  "observe",
  "prometheus",
  "prometheus-metric-storage",

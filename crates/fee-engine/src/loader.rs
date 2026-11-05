@@ -1,21 +1,20 @@
-//! A [`RuleSet`] from a TOML rules file.
+//! A [`RuleSet`] from a TOML rules file or from the tables of one.
 
-use {
-    crate::{CompileError, RuleDefinition, RuleSet, SampleOrderError, fee},
-    configs::{autopilot::fee_policy::default_max_partner_fee, fee_factor::FeeFactor},
-    rust_decimal::{Decimal, prelude::FromPrimitive},
-    serde::{Deserialize, Deserializer, de::Error as _},
-    std::collections::BTreeMap,
-};
+use crate::{CompileError, RuleDefinition, RuleSet, RuleSetDefinition, SampleOrderError};
 
 /// Why a rules file was refused.
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
-    #[error("rules file does not parse: {0}")]
+    #[error("rules are malformed: {0}")]
     Toml(#[from] toml::de::Error),
+    #[error("rule number {number} is malformed: {error}")]
+    MalformedRule {
+        number: usize,
+        error: toml::de::Error,
+    },
     #[error(transparent)]
     Rules(#[from] CompileError),
-    #[error("sample order: {}", join_sample_order_errors(.0))]
+    #[error("{}", join_sample_order_errors(.0))]
     SampleOrder(Vec<SampleOrderError>),
 }
 
@@ -28,44 +27,62 @@ fn join_sample_order_errors(errors: &[SampleOrderError]) -> String {
         .join("; ")
 }
 
-/// The on-disk shape of a rules file; unknown keys are refused.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RulesFile {
-    #[serde(default)]
-    lists: BTreeMap<String, Vec<String>>,
-    #[serde(default, rename = "rule")]
-    rules: Vec<RuleDefinition>,
-    partner_fees: Option<PartnerFees>,
+/// The `lists`, `rule` and `partner_fees` tables of a rules file as raw TOML,
+/// e.g. from a section of a host config; `None` is an absent table, as in a
+/// file. [`load_rules_toml`] checks their shape.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RulesToml {
+    pub lists: Option<toml::Value>,
+    pub rules: Option<toml::Value>,
+    pub partner_fees: Option<toml::Value>,
 }
 
-/// `[partner_fees]`: how the engine caps an order's partner fees.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PartnerFees {
-    /// Percent of the volume all partner fees may take together.
-    #[serde(deserialize_with = "percent_of_volume")]
-    max_volume: FeeFactor,
+/// Parses a whole rules file, then loads it as [`load_rules_toml`] does.
+pub fn load_rules_from_str(source: &str) -> Result<RuleSet, LoadError> {
+    load_rule_set_definition(toml::from_str(source)?)
 }
 
-/// A percent of the volume on the fee grid, like a `surplus` `max_volume`.
-fn percent_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
-    let percent = f64::deserialize(deserializer)?;
-    Decimal::from_f64(percent)
-        .ok_or(fee::OUT_OF_RANGE)
-        .and_then(|number| fee::factor_on_grid(number, fee::PERCENT))
-        .map_err(|error| D::Error::custom(format!("max_volume = {percent} {error}")))
+/// Checks the shape of the tables, compiles the rules and validates them on
+/// a sample order. Any failure refuses the whole set.
+pub fn load_rules_toml(
+    RulesToml {
+        lists,
+        rules,
+        partner_fees,
+    }: RulesToml,
+) -> Result<RuleSet, LoadError> {
+    load_rule_set_definition(RuleSetDefinition {
+        lists: lists
+            .map(toml::Value::try_into)
+            .transpose()?
+            .unwrap_or_default(),
+        rules: rules.map(rule_definitions).transpose()?.unwrap_or_default(),
+        partner_fees: partner_fees
+            .map(toml::Value::try_into)
+            .transpose()?
+            .unwrap_or_default(),
+    })
 }
 
-/// Parses `source`, compiles the rules and validates them on a sample
-/// order. Any failure refuses the whole file.
-pub fn load_rules(source: &str) -> Result<RuleSet, LoadError> {
-    let file: RulesFile = toml::from_str(source)?;
-    // Without `[partner_fees]`, the autopilot's default cap.
-    let max_partner_fee = file
-        .partner_fees
-        .map_or_else(default_max_partner_fee, |table| table.max_volume);
-    let rules = RuleSet::new(file.rules, file.lists, max_partner_fee)?;
+/// Deserializes each rule on its own on purpose, for better diagnostics: a
+/// `toml::Value` has no line to point at, so the error names the rule's
+/// number instead.
+fn rule_definitions(rules: toml::Value) -> Result<Vec<RuleDefinition>, LoadError> {
+    let rules: Vec<toml::Value> = rules.try_into()?;
+    rules
+        .into_iter()
+        .enumerate()
+        .map(|(index, rule)| {
+            rule.try_into().map_err(|error| LoadError::MalformedRule {
+                number: index + 1,
+                error,
+            })
+        })
+        .collect()
+}
+
+fn load_rule_set_definition(definition: RuleSetDefinition) -> Result<RuleSet, LoadError> {
+    let rules = RuleSet::new(definition)?;
     rules
         .validate_on_sample_order()
         .map_err(LoadError::SampleOrder)?;

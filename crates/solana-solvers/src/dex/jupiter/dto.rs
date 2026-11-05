@@ -1,13 +1,29 @@
-//! DTOs for Jupiter's `/swap-instructions` request and response, converting to
-//! and from Solana instructions. Field names follow Jupiter's camelCase JSON.
+//! DTOs for Jupiter's `/quote` response and `/swap-instructions` request and
+//! response, converting to and from Solana instructions. Field names follow
+//! Jupiter's camelCase JSON.
 
 use {
-    super::Error,
+    super::{Error, SwapMode},
     crate::dex::{Swap, dto::ApiInstruction},
     serde::{Deserialize, Serialize},
     serde_with::serde_as,
     solana_sdk::pubkey::Pubkey,
 };
+
+/// The parts of a `/quote` response we read; the rest rides back to
+/// `/swap-instructions` untouched.
+#[serde_as]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuoteAmounts {
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub in_amount: u64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub out_amount: u64,
+    #[serde_as(as = "serde_with::DisplayFromStr")]
+    pub other_amount_threshold: u64,
+    pub swap_mode: SwapMode,
+}
 
 /// Body of the `/swap-instructions` request.
 #[serde_as]

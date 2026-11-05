@@ -3,6 +3,7 @@
 use {
     super::{hex, number},
     alloy_primitives::{Address, U256},
+    model::order::OrderUid,
     serde_json::{Value, json},
 };
 
@@ -12,8 +13,7 @@ use {
 pub struct AppData {
     pub app_code: Option<String>,
     pub signer: Option<Address>,
-    /// The uid of the order this one replaces.
-    pub replaced_order: Option<[u8; 56]>,
+    pub replaced_order: Option<OrderUid>,
     pub flashloan: Option<Flashloan>,
 }
 
@@ -33,7 +33,7 @@ pub(super) fn app_data_view(app_data: &AppData) -> Value {
         "appCode": app_data.app_code,
         "metadata": {
             "signer": app_data.signer.map(|signer| hex(signer.as_slice())),
-            "replacedOrder": app_data.replaced_order.map(|uid| json!({ "uid": hex(&uid) })),
+            "replacedOrder": app_data.replaced_order.map(|uid| json!({ "uid": hex(&uid.0) })),
             "flashloan": app_data.flashloan.as_ref().map(|flashloan| json!({
                 "liquidityProvider": hex(flashloan.liquidity_provider.as_slice()),
                 "protocolAdapter": hex(flashloan.protocol_adapter.as_slice()),
@@ -62,7 +62,7 @@ mod tests {
         let app_data = AppData {
             app_code: Some("CoW Swap".to_owned()),
             signer: Some(aa),
-            replaced_order: Some([0xab; 56]),
+            replaced_order: Some(OrderUid([0xab; 56])),
             flashloan: Some(Flashloan {
                 liquidity_provider: aa,
                 protocol_adapter: aa,
