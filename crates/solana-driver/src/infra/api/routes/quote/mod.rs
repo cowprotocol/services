@@ -106,6 +106,7 @@ fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
         orders: vec![Order {
             uid: OrderUid([0; 32]),
             owner: Pubkey::default(),
+            receiver: None,
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             sell_token_account: Pubkey::default(),
