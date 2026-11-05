@@ -203,6 +203,9 @@ impl Auction {
     /// Each solver's driver splits, as on EVM: the protocol does not pick
     /// which of an owner's orders fill. Unlike EVM, nothing sorts the orders
     /// by priority first.
+    ///
+    /// Every order it sees takes its share, so drop the orders no solver
+    /// will get before calling it.
     pub(super) fn split_sell_balances(&mut self) {
         let mut left_per_account = HashMap::new();
         self.orders.retain_mut(|order| {
