@@ -201,11 +201,12 @@ fn settleable_orders(
 }
 
 /// Drop orders whose buy token account cannot receive the payout at
-/// `FinalizeSettle` and is not the owner's missing associated token account,
-/// which the settlement creates under the buy mint's token program. A native
-/// SOL buy pays a wallet instead, which must be missing or owned by the System
-/// Program and stay rent-exempt after the payout. Returns the kept orders and
-/// the uids of the dropped ones.
+/// `FinalizeSettle` and is not the missing associated token account of the
+/// wallet it belongs to, the receiver or else the owner, which the settlement
+/// creates under the buy mint's token program. A native SOL buy pays a wallet
+/// instead, which must be missing or owned by the System Program and stay
+/// rent-exempt after the payout. Returns the kept orders and the uids of the
+/// dropped ones.
 fn receivable_orders(
     orders: Vec<Order>,
     accounts: &HashMap<Pubkey, Account>,
@@ -222,7 +223,7 @@ fn receivable_orders(
             found,
             &account,
             &buy_mint,
-            &Pubkey::new_from_array(order.owner.0),
+            &Pubkey::new_from_array(order.buy_account_owner().0),
             verdicts.get(&buy_mint).copied().and_then(Result::ok),
         )
     });
@@ -595,6 +596,7 @@ mod tests {
         Order {
             uid: IntentHash(buy_token_account),
             owner: ChainPubkey([0x22; 32]),
+            receiver: None,
             sell_token: ChainPubkey([0x33; 32]),
             buy_token: ChainPubkey([0x44; 32]),
             sell_token_account: ChainPubkey([0x55; 32]),
@@ -625,11 +627,11 @@ mod tests {
         )
     }
 
-    /// The order owner's associated token account for the buy mint under
-    /// `program`.
+    /// The associated token account of the wallet the order pays out to for
+    /// the buy mint under `program`.
     fn associated_token_address(order: &Order, program: &Pubkey) -> Pubkey {
         spl_associated_token_account_interface::address::get_associated_token_address_with_program_id(
-            &Pubkey::new_from_array(order.owner.0),
+            &Pubkey::new_from_array(order.buy_account_owner().0),
             &Pubkey::new_from_array(order.buy_token.0),
             program,
         )
@@ -688,6 +690,37 @@ mod tests {
                 IntentHash([0x04; 32])
             ]
         );
+    }
+
+    /// A missing account at the receiver's associated token address is the
+    /// settlement's to create, one at the owner's is not when the order names
+    /// a receiver. The lookup reads the two accounts, then the sell and buy
+    /// mints.
+    #[tokio::test]
+    async fn creates_a_receivers_missing_associated_token_account() {
+        let response = serde_json::json!({
+            "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+            "value": [
+                null,
+                null,
+                crate::tests::mint_account_json(6),
+                crate::tests::mint_account_json(6),
+            ],
+        });
+        let provider = provider(Mocks::from([(RpcRequest::GetMultipleAccounts, response)]));
+        let received = |buy_token_account| Order {
+            receiver: Some(ChainPubkey([0x23; 32])),
+            ..order(buy_token_account, false)
+        };
+        let receivers_ata =
+            associated_token_address(&received([0; 32]), &spl_token_interface::ID).to_bytes();
+        let owners_ata =
+            associated_token_address(&order([0; 32], false), &spl_token_interface::ID).to_bytes();
+        let orders = vec![received(receivers_ata), received(owners_ata)];
+        let (kept, _, dropped, _) = provider.checked_orders(orders).await;
+        let kept: Vec<_> = kept.iter().map(|order| order.uid).collect();
+        assert_eq!(kept, [IntentHash(receivers_ata)]);
+        assert_eq!(dropped, [IntentHash(owners_ata)]);
     }
 
     /// A native SOL buy pays its wallet directly: a missing or system-owned
