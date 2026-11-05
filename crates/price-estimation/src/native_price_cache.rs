@@ -99,34 +99,38 @@ struct CachedResult {
 /// estimator.
 const ACCUMULATIVE_ERRORS_THRESHOLD: u32 = 5;
 
+/// Errors that may go away on retry. They only get served from the cache once
+/// they repeated `ACCUMULATIVE_ERRORS_THRESHOLD` times in a row, so a token
+/// nobody can price doesn't rerun the whole competition on every request.
+fn is_accumulating_error(result: &CacheEntry) -> bool {
+    matches!(
+        result,
+        Err(PriceEstimationError::EstimatorInternal(_) | PriceEstimationError::RateLimited)
+    )
+}
+
 impl CachedResult {
     fn new(result: CacheEntry) -> Self {
-        let now = Instant::now();
-        let is_accumulating_error =
-            matches!(result, Err(PriceEstimationError::EstimatorInternal(_)));
-
         Self {
+            accumulative_errors_count: u32::from(is_accumulating_error(&result)),
             result,
-            updated_at: now,
-            accumulative_errors_count: u32::from(is_accumulating_error),
+            updated_at: Instant::now(),
         }
     }
 
     fn update(&mut self, result: CacheEntry) {
         let now = Instant::now();
         self.updated_at = now;
-        self.accumulative_errors_count = match result {
-            Err(PriceEstimationError::EstimatorInternal(_)) => self.accumulative_errors_count + 1,
-            _ => 0,
+        self.accumulative_errors_count = if is_accumulating_error(&result) {
+            self.accumulative_errors_count + 1
+        } else {
+            0
         };
         self.result = result;
     }
 
-    /// The result is not ready if the estimator has returned an internal error
-    /// and consecutive errors are less than
-    /// `ESTIMATOR_INTERNAL_ERRORS_THRESHOLD`.
     fn is_ready(&self) -> bool {
-        !matches!(self.result, Err(PriceEstimationError::EstimatorInternal(_)))
+        !is_accumulating_error(&self.result)
             || self.accumulative_errors_count >= ACCUMULATIVE_ERRORS_THRESHOLD
     }
 }
@@ -137,10 +141,9 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
         Ok(_)
         | Err(PriceEstimationError::NoLiquidity)
         | Err(PriceEstimationError::UnsupportedToken { .. })
-        | Err(PriceEstimationError::EstimatorInternal(_)) => true,
-        Err(PriceEstimationError::ProtocolInternal(_)) | Err(PriceEstimationError::RateLimited) => {
-            false
-        }
+        | Err(PriceEstimationError::EstimatorInternal(_))
+        | Err(PriceEstimationError::RateLimited) => true,
+        Err(PriceEstimationError::ProtocolInternal(_)) => false,
         Err(PriceEstimationError::UnsupportedOrderType(_))
         | Err(PriceEstimationError::TradingOutsideAllowedWindow { .. })
         | Err(PriceEstimationError::TokenTemporarilySuspended { .. })
@@ -901,7 +904,9 @@ mod tests {
             .expect_estimate_native_price()
             .once()
             .in_sequence(&mut seq)
-            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
+            .returning(|_, _| {
+                async { Err(PriceEstimationError::ProtocolInternal(anyhow!("boom"))) }.boxed()
+            });
 
         // Since the ACCUMULATIVE_ERRORS_THRESHOLD is 5, there are only 3 more
         // calls remain. Anything exceeding that must return the cached
@@ -954,7 +959,7 @@ mod tests {
             .await;
         assert!(matches!(
             result.as_ref().unwrap_err(),
-            PriceEstimationError::RateLimited
+            PriceEstimationError::ProtocolInternal(_)
         ));
 
         // Make more than expected calls. The cache should be used once the
@@ -976,12 +981,36 @@ mod tests {
         inner
             .expect_estimate_native_price()
             .times(10)
-            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
+            .returning(|_, _| {
+                async { Err(PriceEstimationError::ProtocolInternal(anyhow!("boom"))) }.boxed()
+            });
 
         let estimator =
             create_caching_estimator(inner, Duration::from_millis(30), 1, Default::default());
 
         for _ in 0..10 {
+            let result = estimator
+                .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+                .await;
+            assert!(matches!(
+                result.as_ref().unwrap_err(),
+                PriceEstimationError::ProtocolInternal(_)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn caches_rate_limited_estimates_once_they_repeat() {
+        let mut inner = MockNativePriceEstimating::new();
+        inner
+            .expect_estimate_native_price()
+            .times(usize::try_from(ACCUMULATIVE_ERRORS_THRESHOLD).unwrap())
+            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
+
+        let estimator =
+            create_caching_estimator(inner, Duration::from_secs(60), 1, Default::default());
+
+        for _ in 0..(ACCUMULATIVE_ERRORS_THRESHOLD * 2) {
             let result = estimator
                 .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
                 .await;
@@ -1211,8 +1240,8 @@ mod tests {
         assert!(should_cache(&Err(PriceEstimationError::EstimatorInternal(
             anyhow!("estimator")
         ))));
+        assert!(should_cache(&Err(PriceEstimationError::RateLimited)));
 
-        assert!(!should_cache(&Err(PriceEstimationError::RateLimited)));
         assert!(!should_cache(&Err(PriceEstimationError::ProtocolInternal(
             anyhow!("protocol")
         ))));
