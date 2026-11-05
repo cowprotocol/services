@@ -201,7 +201,8 @@ impl Auction {
     /// Hand each sell token account's balance out to its owner's orders
     /// selling from it, in auction order, and drop the orders it runs out on.
     /// Each solver's driver splits, as on EVM: the protocol does not pick
-    /// which of an owner's orders fill.
+    /// which of an owner's orders fill. Unlike EVM, nothing sorts the orders
+    /// by priority first.
     pub(super) fn split_sell_balances(&mut self) {
         let mut left_per_account = HashMap::new();
         self.orders.retain_mut(|order| {
@@ -867,7 +868,6 @@ mod tests {
         }
     }
 
-    /// An order selling `sell_amount` from a token account funding 1000.
     fn fill_or_kill(uid: u8, sell_amount: u64) -> Order {
         Order {
             sell_amount,
@@ -883,10 +883,8 @@ mod tests {
         }
     }
 
-    /// The balance goes out in auction order: two partially fillable orders
-    /// of 1000 on a balance of 1000 leave the second nothing to fill.
     #[test]
-    fn splits_a_sell_balance_across_partially_fillable_orders() {
+    fn the_balance_goes_out_in_auction_order() {
         let mut auction = auction(vec![partially_fillable(1), partially_fillable(2)]);
         auction.split_sell_balances();
         assert_eq!(uids(auction.orders.iter().map(|order| &order.uid)), [1, 2]);
