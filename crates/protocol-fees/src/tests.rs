@@ -3,11 +3,13 @@
 use {
     crate::{
         FeePolicy,
+        FeeShares,
         Order,
         Quote,
         Side,
         apply_protocol_fees,
         fee_before_settlement,
+        fee_shares_before_settlement,
         protocol_fees_by_policy,
         surplus_over_limit,
     },
@@ -70,15 +72,21 @@ fn volume_fee_moves_a_buy_fill_up() {
 /// 2000 bought is 20.
 #[test]
 fn surplus_fee_is_capped_by_volume() {
+    let policy = FeePolicy::Surplus {
+        factor: 0.5,
+        max_volume_factor: 0.01,
+    };
     let mut capped = fill(Side::Sell, 1_000, 1_800, 1_000, 2_000);
-    let fee = apply_protocol_fees(
-        &mut capped,
-        &[FeePolicy::Surplus {
-            factor: 0.5,
-            max_volume_factor: 0.01,
-        }],
-    )
-    .unwrap();
+    let shares = fee_shares_before_settlement(&capped, &policy).unwrap();
+    assert_eq!(
+        shares,
+        FeeShares {
+            surplus: Some(100),
+            volume: 20,
+        }
+    );
+    let fee = apply_protocol_fees(&mut capped, &[policy]).unwrap();
+    assert_eq!(fee, shares.fee());
     assert_eq!(fee, 20);
     assert_eq!(capped.executed_buy, 1_980);
 

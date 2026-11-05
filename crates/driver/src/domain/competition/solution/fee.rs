@@ -52,28 +52,47 @@ impl Fulfillment {
         prices: ClearingPrices,
         protocol_fee: &FeePolicy,
     ) -> Result<Self, Error> {
-        let surplus_fee = match protocol_fees::fee_before_settlement(
-            &self.fill_at(&prices)?,
-            &protocol_fee.into(),
+        let fill = self.fill_at(&prices)?;
+        let policy = protocol_fees::FeePolicy::from(protocol_fee);
+        let shares = match (
+            protocol_fees::fee_shares_before_settlement(&fill, &policy),
+            policy,
         ) {
-            Ok(fee) => fee,
+            (Ok(shares), _) => shares,
             // A fill under its limit price has no surplus. The settlement
             // simulation rejects such fills.
-            Err(chain_types::MathError::Negative)
-                if matches!(protocol_fee, FeePolicy::Surplus { .. }) =>
-            {
-                eth::U256::ZERO
-            }
-            Err(err) => return Err(Math::from(err).into()),
+            (
+                Err(chain_types::MathError::Negative),
+                protocol_fees::FeePolicy::Surplus {
+                    max_volume_factor, ..
+                },
+            ) => protocol_fees::FeeShares {
+                surplus: Some(eth::U256::ZERO),
+                volume: protocol_fees::volume_share_before_settlement(&fill, max_volume_factor)
+                    .map_err(Math::from)?,
+            },
+            (Err(err), _) => return Err(Math::from(err).into()),
         };
-        tracing::debug!(
-            uid = ?self.order().uid,
-            protocol_fee = ?surplus_fee,
-            executed = ?self.executed(),
-            fee = ?self.fee(),
-            "calculated protocol fee"
-        );
-        let protocol_fee = self.fee_in_sell_token(prices, eth::TokenAmount(surplus_fee))?;
+        let protocol_fee = eth::TokenAmount(shares.fee());
+        match shares.surplus {
+            Some(fee_from_surplus) => tracing::debug!(
+                uid = ?self.order().uid,
+                fee_from_surplus = ?eth::TokenAmount(fee_from_surplus),
+                fee_from_volume = ?eth::TokenAmount(shares.volume),
+                ?protocol_fee,
+                executed = ?self.executed(),
+                fee = ?self.fee(),
+                "calculated protocol fee"
+            ),
+            None => tracing::debug!(
+                uid = ?self.order().uid,
+                fee_from_volume = ?eth::TokenAmount(shares.volume),
+                executed = ?self.executed(),
+                fee = ?self.fee(),
+                "calculated protocol fee"
+            ),
+        }
+        let protocol_fee = self.fee_in_sell_token(prices, protocol_fee)?;
 
         // Increase the fee by the protocol fee
         let fee = order::SellAmount(
