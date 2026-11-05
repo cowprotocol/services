@@ -119,6 +119,11 @@ impl CachedResult {
     }
 
     fn update(&mut self, result: CacheEntry) {
+        // A rate limit says nothing about the token, so it doesn't replace a
+        // known price.
+        if self.result.is_ok() && matches!(result, Err(PriceEstimationError::RateLimited)) {
+            return;
+        }
         let now = Instant::now();
         self.updated_at = now;
         self.accumulative_errors_count = if is_accumulating_error(&result) {
@@ -997,6 +1002,45 @@ mod tests {
                 PriceEstimationError::ProtocolInternal(_)
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn rate_limited_refresh_keeps_cached_price() {
+        let mut inner = MockNativePriceEstimating::new();
+        let mut seq = mockall::Sequence::new();
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|_, _| async { Ok(1.0) }.boxed());
+        inner
+            .expect_estimate_native_price()
+            .once()
+            .in_sequence(&mut seq)
+            .returning(|_, _| async { Err(PriceEstimationError::RateLimited) }.boxed());
+
+        let estimator =
+            create_caching_estimator(inner, Duration::from_secs(60), 1, Default::default());
+
+        let price = estimator
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(price.unwrap(), 1.0);
+
+        // Refresh the still valid price like the background updater does.
+        let _ = estimator
+            .estimate_prices_and_update_cache(
+                [token(0)],
+                Duration::ZERO,
+                HEALTHY_PRICE_ESTIMATION_TIME,
+            )
+            .collect::<Vec<_>>()
+            .await;
+
+        let price = estimator
+            .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(price.unwrap(), 1.0);
     }
 
     #[tokio::test]
