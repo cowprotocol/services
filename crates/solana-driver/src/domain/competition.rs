@@ -127,12 +127,16 @@ impl Competition {
             .resolve_buy_token_accounts(auction_id, &self.blockchain, &self.buy_token_accounts)
             .await
             .map_err(Error::BuyTokenAccounts)?;
+        auction
+            .orders
+            .retain(|order| !buy_token_accounts.unreceivable.contains(&order.uid));
+        auction.split_sell_balances();
         auction.orders.retain(|order| {
             if order.available().has_zero_leg() {
                 tracing::debug!(order = %order.uid, "dropping order, nothing fillable");
                 return false;
             }
-            !buy_token_accounts.unreceivable.contains(&order.uid)
+            true
         });
         if auction.orders.is_empty() {
             tracing::info!("no fillable order left; skipping solving");
