@@ -94,16 +94,17 @@ impl Trade {
         Ok(price.in_eth(eth::TokenAmount(fee.0)))
     }
 
-    /// Converts given surplus fee into sell token fee.
+    /// Converts given surplus fee into sell token fee at the given prices.
     fn fee_into_sell_token(
         &self,
         fee: eth::SurplusTokenAmount,
+        prices: &ClearingPrices,
     ) -> Result<eth::SellTokenAmount, Error> {
         let fee_in_sell_token = match self.side {
             order::Side::Buy => fee.0,
             order::Side::Sell => fee
                 .0
-                .checked_mul_ratio(&self.prices.uniform.buy, &self.prices.uniform.sell)
+                .checked_mul_ratio(&prices.buy, &prices.sell)
                 .map_err(error::Math::from)?,
         };
         Ok(eth::SellTokenAmount(fee_in_sell_token))
@@ -113,7 +114,22 @@ impl Trade {
     /// before and after applying the fees.
     pub fn fee_in_sell_token(&self) -> Result<eth::SellTokenAmount, Error> {
         let fee = self.fee()?;
-        self.fee_into_sell_token(fee)
+        self.fee_into_sell_token(fee, &self.prices.uniform)
+    }
+
+    /// Sum of the given protocol fees, converted into sell token at the custom
+    /// prices.
+    pub fn protocol_fee_in_sell_token(
+        &self,
+        fees: &[ExecutedProtocolFee],
+    ) -> Result<eth::SellTokenAmount, Error> {
+        let total = fees
+            .iter()
+            .try_fold(eth::U256::ZERO, |total, fee| {
+                total.checked_add(fee.fee.amount.0)
+            })
+            .ok_or(Math::Overflow)?;
+        self.fee_into_sell_token(eth::SurplusTokenAmount(total), &self.prices.custom)
     }
 
     /// Total fee (protocol fee + network fee). Equal to a surplus difference
@@ -603,10 +619,12 @@ mod tests {
     /// fee by the uniform buy price and overflowed the same way.
     #[test]
     fn fee_conversion_survives_hugely_scaled_clearing_prices() {
-        let fee = incident_trade(order::Side::Sell)
-            .fee_into_sell_token(eth::SurplusTokenAmount(eth::U256::from(
-                1_000_000_000_000_000_000_u128,
-            )))
+        let trade = incident_trade(order::Side::Sell);
+        let fee = trade
+            .fee_into_sell_token(
+                eth::SurplusTokenAmount(eth::U256::from(1_000_000_000_000_000_000_u128)),
+                &trade.prices.uniform,
+            )
             .unwrap();
         assert_eq!(fee.0, eth::U256::from(999999986666666844_u64));
     }

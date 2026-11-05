@@ -4,11 +4,13 @@ use {
     alloy_primitives::{Address, U256, address},
     chrono::Utc,
     fee_engine::{
+        AppData,
         CompileError,
         Fee,
         Field,
         LoadError,
         Match,
+        OrderView,
         RuleSet,
         RulesToml,
         load_rules_from_str,
@@ -63,17 +65,37 @@ fn mainnet_sample_lists_reach_the_rules() {
     let rules = load_rules_from_str(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
 
-    let evaluation = evaluator.evaluate(&order(USDC, USDT));
+    let evaluation = evaluator.evaluate(OrderView {
+        order: &order(USDC, USDT),
+        app_data: &AppData::default(),
+        in_market: false,
+    });
     assert!(evaluation.skipped.is_empty());
     let Match { rule, fees } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Stablecoin bucket: 0.3 bps");
-    // Surplus, not price improvement: `order.class` is always "limit".
     assert!(matches!(
         fees[..],
         [Fee::Surplus { .. }, Fee::Volume { factor }] if factor.to_high_precision() == 30
     ));
 
-    let evaluation = evaluator.evaluate(&order(WETH, USDC));
+    let mut quoted = order(USDC, USDT);
+    quoted.metadata.quote = Some(Default::default());
+    let evaluation = evaluator.evaluate(OrderView {
+        order: &quoted,
+        app_data: &AppData::default(),
+        in_market: true,
+    });
+    let Match { fees, .. } = evaluation.matched.first().unwrap();
+    assert!(matches!(
+        fees[..],
+        [Fee::PriceImprovement { .. }, Fee::Volume { .. }]
+    ));
+
+    let evaluation = evaluator.evaluate(OrderView {
+        order: &order(WETH, USDC),
+        app_data: &AppData::default(),
+        in_market: false,
+    });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
 }

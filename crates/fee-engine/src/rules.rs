@@ -1,10 +1,19 @@
 //! Rule definitions and their compilation into a [`RuleSet`].
 
 use {
-    crate::{Evaluator, evaluator::RuleError, fee, order_view},
+    crate::{
+        AppData,
+        Evaluator,
+        Flashloan,
+        OrderView,
+        evaluator::{RuleError, Skipped},
+        fee,
+        order_view,
+    },
+    alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
-    model::order::{EthflowData, OnchainOrderData, Order, OrderMetadata, OrderQuote},
+    model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
     serde::{Deserialize, Deserializer, de},
     std::{
         collections::{BTreeMap, HashSet},
@@ -69,13 +78,33 @@ pub enum CompileError {
     },
 }
 
-/// One expression that gave no usable value on the sample order.
+/// One expression that gave no usable value on a sample order.
 #[derive(Debug, thiserror::Error)]
-#[error("rule `{rule}`: `{field}` {error} on a sample order")]
+#[error("rule `{rule}`: `{field}` {error} on {sample}")]
 pub struct SampleOrderError {
     pub rule: String,
     pub field: Field,
     pub error: RuleError,
+    pub sample: Sample,
+}
+
+/// The sample order an expression failed on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sample {
+    /// Every optional field present, every timestamp `now`, amounts and
+    /// prices 1.
+    Full,
+    /// No optional field present; otherwise the same.
+    Bare,
+}
+
+impl fmt::Display for Sample {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Sample::Full => "a sample order",
+            Sample::Bare => "a sample order with no optional field",
+        })
+    }
 }
 
 /// The two expressions of a rule.
@@ -169,7 +198,7 @@ impl RuleSet {
             rules: definitions,
         }: RuleSetDefinition,
     ) -> Result<Self, CompileError> {
-        let mut env = Env::stdlib().with_optional_support(false);
+        let mut env = Env::stdlib();
         cel::extensions::math(&mut env).expect("math names are free in the stdlib");
         cel::extensions::strings(&mut env).expect("strings names are free in the stdlib");
         let env = Arc::new(env);
@@ -199,20 +228,45 @@ impl RuleSet {
         })
     }
 
-    /// Runs both expressions of every rule against a sample order, whatever
-    /// `when` says, and reports every one that yields no bool or no fee. This
-    /// catches bad fee arguments and misspelt names before any real order.
+    /// Runs every rule against two sample orders and reports each expression
+    /// that yields no bool or no fee: every expression on the full sample,
+    /// then the rules a real order would skip on the bare one. See the README.
     pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
-        let errors: Vec<_> = self
-            .evaluator(Utc::now())
-            .evaluate_all_expressions(&sample_order())
-            .into_iter()
-            .map(|skipped| SampleOrderError {
+        let now = Utc::now();
+        let evaluator = self.evaluator(now);
+        let error = |sample| {
+            move |skipped: Skipped<'_>| SampleOrderError {
                 rule: skipped.rule.name().to_owned(),
                 field: skipped.field,
                 error: skipped.error,
+                sample,
+            }
+        };
+        let mut errors: Vec<_> = evaluator
+            .evaluate_all_expressions(OrderView {
+                order: &full_sample_order(now),
+                app_data: &sample_app_data(),
+                in_market: false,
             })
+            .into_iter()
+            .map(error(Sample::Full))
             .collect();
+        let on_bare: Vec<_> = evaluator
+            .evaluate(OrderView {
+                order: &bare_sample_order(now),
+                app_data: &AppData::default(),
+                in_market: false,
+            })
+            .skipped
+            .into_iter()
+            .filter(|skipped| {
+                !errors
+                    .iter()
+                    .any(|found| found.rule == skipped.rule.name() && found.field == skipped.field)
+            })
+            .map(error(Sample::Bare))
+            .collect();
+        errors.extend(on_bare);
         if errors.is_empty() {
             return Ok(());
         }
@@ -237,26 +291,65 @@ impl RuleSet {
     }
 }
 
-/// A default order with every optional field present, so that a rule can
-/// reach any name the view may hold.
-fn sample_order() -> Order {
+/// An order with no optional field present and every timestamp `now`, so
+/// that time arithmetic does not underflow. Amounts are 1, so a ratio of two
+/// is defined; `feeAmount` stays 0, as the API refuses any other.
+pub(crate) fn bare_sample_order(now: DateTime<Utc>) -> Order {
     Order {
+        data: OrderData {
+            sell_amount: U256::ONE,
+            buy_amount: U256::ONE,
+            valid_to: now.timestamp() as u32,
+            ..Default::default()
+        },
         metadata: OrderMetadata {
-            available_balance: Some(Default::default()),
-            gas_cost: Some(Default::default()),
-            ethflow_data: Some(EthflowData {
-                refund_tx_hash: Some(Default::default()),
-                ..Default::default()
-            }),
-            onchain_order_data: Some(OnchainOrderData::default()),
-            onchain_user: Some(Default::default()),
-            full_app_data: Some(Default::default()),
-            valid_from: Some(Default::default()),
-            quote: Some(OrderQuote::default()),
-            fast_path: true,
+            creation_date: now,
             ..Default::default()
         },
         ..Default::default()
+    }
+}
+
+/// The bare sample with every optional field present, so that a rule can
+/// reach any name the view may hold. Prices are 1, like the amounts.
+pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
+    let mut order = bare_sample_order(now);
+    order.metadata = OrderMetadata {
+        ethflow_data: Some(EthflowData {
+            user_valid_to: now.timestamp(),
+            ..Default::default()
+        }),
+        onchain_order_data: Some(OnchainOrderData::default()),
+        onchain_user: Some(Default::default()),
+        valid_from: Some(now.timestamp() as u32),
+        quote: Some(OrderQuote {
+            sell_amount: U256::ONE,
+            buy_amount: U256::ONE,
+            fee_amount: U256::ONE,
+            gas_amount: 1.into(),
+            gas_price: 1.into(),
+            sell_token_price: 1.into(),
+            ..Default::default()
+        }),
+        fast_path: true,
+        ..order.metadata
+    };
+    order
+}
+
+/// App data with every field set, for the full sample order.
+pub(crate) fn sample_app_data() -> AppData {
+    AppData {
+        app_code: Some("sample".to_owned()),
+        signer: Some(Address::ZERO),
+        replaced_order: Some(Default::default()),
+        flashloan: Some(Flashloan {
+            liquidity_provider: Address::ZERO,
+            protocol_adapter: Address::ZERO,
+            receiver: Address::ZERO,
+            token: Address::ZERO,
+            amount: U256::ONE,
+        }),
     }
 }
 
@@ -387,21 +480,50 @@ mod tests {
         }
     }
 
+    fn validate(rules: Vec<RuleDefinition>) -> Result<(), Vec<SampleOrderError>> {
+        RuleSet::new(RuleSetDefinition {
+            rules,
+            ..Default::default()
+        })
+        .unwrap()
+        .validate_on_sample_order()
+    }
+
     #[test]
     fn validates_every_expression_on_a_sample_order() {
-        let validate = |rules| {
-            RuleSet::new(RuleSetDefinition {
-                rules,
-                ..Default::default()
-            })
-            .unwrap()
-            .validate_on_sample_order()
-        };
-
         validate(vec![
-            rule("Quoted", "order.quote.sellAmount > 0", "volume(1)"),
-            rule("Ethflow", "order.ethflowData.userValidTo > 0", "no_fee()"),
+            rule(
+                "Quoted",
+                "order.?quote.sellAmount.orValue(0.0) > 0.0",
+                "volume(1)",
+            ),
+            rule(
+                "Ethflow",
+                "order.?ethflowData.userValidTo.orValue(0u) > 0u",
+                "no_fee()",
+            ),
             rule("Fast path", "order.fastPath", "no_fee()"),
+            rule(
+                "App code",
+                "order.appData.?appCode.orValue('') == 'sample'",
+                "no_fee()",
+            ),
+            rule(
+                "Ratio",
+                "order.?quote.optMap(q, q.buyAmount / q.sellAmount).orValue(0.0) > 0.0",
+                "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
+            ),
+            rule(
+                "Expiry",
+                "order.validTo - 3600u > 0u && now - timestamp(int(order.validTo)) < \
+                 duration('1h')",
+                "no_fee()",
+            ),
+            rule(
+                "Valid from",
+                "order.?validFrom.orValue(0u) + 1u > 0u",
+                "no_fee()",
+            ),
             rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
         ])
         .unwrap();
@@ -413,6 +535,7 @@ mod tests {
                 ref rule,
                 field: Field::When,
                 error: RuleError::NotABool(_),
+                sample: Sample::Full,
             }] if rule == "Not a bool"
         ));
         assert!(matches!(
@@ -436,6 +559,60 @@ mod tests {
             "rule `x`: `fee` `volume` argument `bps` is string instead of a number on a sample \
              order"
         );
+    }
+
+    #[test]
+    fn reports_fields_a_real_order_may_lack() {
+        validate(vec![
+            rule(
+                "Guarded",
+                "order.?quote.sellAmount.orValue(0.0) > 0.0",
+                "volume(1)",
+            ),
+            rule(
+                "Fee behind its guard",
+                "order.?quote.hasValue()",
+                "volume(order.quote.feeAmount)",
+            ),
+            rule(
+                "Nested",
+                "order.?ethflowData.userValidTo.hasValue()",
+                "no_fee()",
+            ),
+        ])
+        .unwrap();
+
+        let errors = validate(vec![
+            rule("Unguarded", "order.quote.sellAmount > 0", "volume(1)"),
+            rule(
+                "Last field only",
+                "has(order.ethflowData.userValidTo)",
+                "no_fee()",
+            ),
+            rule("Misspelt", "order.sellAmout > 0", "volume(1)"),
+            rule("App code", "order.appData.appCode == 'sample'", "no_fee()"),
+        ])
+        .unwrap_err();
+        let reported: Vec<_> = errors
+            .iter()
+            .map(|error| (error.rule.as_str(), error.field, error.sample))
+            .collect();
+        assert_eq!(
+            reported,
+            [
+                ("Misspelt", Field::When, Sample::Full),
+                ("Unguarded", Field::When, Sample::Bare),
+                ("Last field only", Field::When, Sample::Bare),
+                ("App code", Field::When, Sample::Bare),
+            ]
+        );
+        assert!(errors.iter().all(|error| matches!(
+            error.error,
+            RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
+        )));
+        let message = errors[1].to_string();
+        assert!(message.contains("No such key: quote"), "{message}");
+        assert!(message.ends_with("on a sample order with no optional field"));
     }
 
     #[test]
