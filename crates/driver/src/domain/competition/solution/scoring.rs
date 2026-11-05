@@ -130,10 +130,7 @@ impl Trade {
             buy_amount: self.signed_buy.amount.0,
             executed_sell: self.sell_amount()?.0,
             executed_buy: self.buy_amount()?.0,
-            side: match self.side {
-                Side::Sell => protocol_fees::Side::Sell,
-                Side::Buy => protocol_fees::Side::Buy,
-            },
+            side: self.side.into(),
         })
     }
 

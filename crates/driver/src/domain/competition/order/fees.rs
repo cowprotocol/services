@@ -95,3 +95,12 @@ impl From<&FeePolicy> for protocol_fees::FeePolicy {
         }
     }
 }
+
+impl From<order::Side> for protocol_fees::Side {
+    fn from(side: order::Side) -> Self {
+        match side {
+            order::Side::Sell => Self::Sell,
+            order::Side::Buy => Self::Buy,
+        }
+    }
+}

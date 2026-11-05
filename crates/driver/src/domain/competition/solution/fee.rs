@@ -112,10 +112,7 @@ impl Fulfillment {
             buy_amount: order.buy.amount.0,
             executed_sell: self.sell_amount(prices)?.0,
             executed_buy: self.buy_amount(prices)?.0,
-            side: match order.side {
-                Side::Sell => protocol_fees::Side::Sell,
-                Side::Buy => protocol_fees::Side::Buy,
-            },
+            side: order.side.into(),
         })
     }
 
