@@ -202,10 +202,10 @@ fn fee_before_settlement<C: ChainTypes>(
 /// order pulls more sell token. Returns the total fee in the surplus token,
 /// which [`protocol_fees`] recovers from the settled legs.
 ///
-/// The fees can push the fill past its signed limit. A surplus or price
-/// improvement policy fails on a fill already under it, a volume policy never
-/// checks, so the caller checks the limit on the result. On an error `fill`
-/// keeps the legs it came with.
+/// The fees can push the fill past its signed limit. A surplus policy fails
+/// on a fill already under it, a price improvement policy takes nothing from
+/// a fill under its quote, a volume policy never checks, so the caller checks
+/// the limit on the result. On an error `fill` keeps the legs it came with.
 pub fn apply_protocol_fees<C: ChainTypes>(
     fill: &mut Order<C>,
     policies: &[FeePolicy<C>],
