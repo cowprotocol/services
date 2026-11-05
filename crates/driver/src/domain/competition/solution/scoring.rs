@@ -362,8 +362,10 @@ mod tests {
         assert_eq!(dropped.0, U256::from(80u128));
     }
 
-    /// The driver's own scoring formulas, kept verbatim as the oracle for the
-    /// equality test below.
+    /// The driver's own scoring formulas, kept as the oracle for the equality
+    /// test below. One difference: legacy also rebuilt the prices after the
+    /// first policy, where nothing reads them, and could fail there. The
+    /// oracle skips that rebuild so the errors compare too.
     mod legacy {
         use super::*;
 
@@ -421,7 +423,7 @@ mod tests {
             let mut current_trade = trade.clone();
             let mut unwound = eth::SurplusTokenAmount::default();
             let mut scored = eth::SurplusTokenAmount::default();
-            for protocol_fee in trade.policies.iter().rev() {
+            for (i, protocol_fee) in trade.policies.iter().enumerate().rev() {
                 let fee = self::protocol_fee(&current_trade, protocol_fee)?;
                 unwound = unwound
                     .0
@@ -435,7 +437,10 @@ mod tests {
                         .ok_or(Error::Math(Math::Overflow))?
                         .into();
                 }
-                current_trade = with_custom_price(trade, calculate_custom_prices(trade, unwound)?);
+                if i != 0 {
+                    current_trade =
+                        with_custom_price(trade, calculate_custom_prices(trade, unwound)?);
+                }
             }
             Ok(scored)
         }
@@ -660,22 +665,28 @@ mod tests {
         }
     }
 
-    /// The generic math gives the legacy formulas' numbers wherever those
-    /// produce one. Legacy also rebuilt the prices after the first policy,
-    /// where nothing reads them, so its errors there are skipped.
+    /// The generic math gives the legacy formulas' numbers and refuses the
+    /// trades they refuse.
     #[test]
     fn fees_and_surplus_match_the_legacy_formulas() {
         let mut rng = StdRng::seed_from_u64(0x5eed);
         let mut compared = Vec::new();
         for _ in 0..5_000 {
             let trade = random_trade(&mut rng);
-            let (Ok(fees), Ok(surplus)) = (legacy::fees(&trade), legacy::user_surplus(&trade))
-            else {
-                continue;
-            };
-            compared.push((trade.side, trade.policies.is_empty()));
-            assert_eq!(trade.fees().unwrap(), fees, "{trade:?}");
-            assert_eq!(trade.user_surplus().unwrap(), surplus, "{trade:?}");
+            let expected =
+                legacy::fees(&trade).and_then(|fees| Ok((fees, legacy::user_surplus(&trade)?)));
+            let actual = trade
+                .fees()
+                .and_then(|fees| Ok((fees, trade.user_surplus()?)));
+            match (expected, actual) {
+                (Ok(expected), Ok(actual)) => {
+                    assert_eq!(actual, expected, "{trade:?}");
+                    compared.push((trade.side, trade.policies.is_empty()));
+                }
+                (Ok(_), Err(err)) => panic!("refused {err:?} {trade:?}"),
+                (Err(err), Ok(_)) => panic!("legacy refused {err:?} {trade:?}"),
+                (Err(_), Err(_)) => {}
+            }
         }
         for side in [Side::Sell, Side::Buy] {
             for with_policies in [true, false] {
