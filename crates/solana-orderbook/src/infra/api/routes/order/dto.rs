@@ -19,6 +19,11 @@ pub struct Order {
     pub uid: String,
     #[serde_as(as = "DisplayFromStr")]
     pub owner: Pubkey,
+    /// The wallet `buy_token_account` belongs to when that is not the owner:
+    /// the wallet it is the associated token account of, or the wallet
+    /// itself for a native SOL buy. Null when the owner receives the payout.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub receiver: Option<Pubkey>,
     #[serde_as(as = "DisplayFromStr")]
     pub sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
@@ -89,6 +94,9 @@ impl Order {
         Self {
             uid: const_hex::encode_prefixed(row.uid.0),
             owner: Pubkey::new_from_array(row.owner.0),
+            receiver: row
+                .receiver
+                .map(|receiver| Pubkey::new_from_array(receiver.0)),
             sell_token: Pubkey::new_from_array(row.sell_token.0),
             buy_token: Pubkey::new_from_array(row.buy_token.0),
             sell_token_account: Pubkey::new_from_array(row.sell_token_account.0),
@@ -149,6 +157,7 @@ mod tests {
         OrderRow {
             uid: ByteArray([0x11; 32]),
             owner: ByteArray([0x22; 32]),
+            receiver: None,
             sell_token: ByteArray([0x33; 32]),
             buy_token: ByteArray([0x44; 32]),
             sell_token_account: ByteArray([0x55; 32]),
@@ -167,6 +176,23 @@ mod tests {
             cancellation_timestamp: None,
             last_valid_block_height: None,
         }
+    }
+
+    /// Base58 of 32 bytes of 0x23, precomputed so the wire literal is not
+    /// the Display impl compared against itself.
+    #[test]
+    fn the_receiver_is_null_for_the_owner_and_base58_otherwise() {
+        let json = serde_json::to_value(Order::new(row(), 1_500, None)).unwrap();
+        assert_eq!(json["receiver"], serde_json::Value::Null);
+        let named = OrderRow {
+            receiver: Some(ByteArray([0x23; 32])),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(named, 1_500, None)).unwrap();
+        assert_eq!(
+            json["receiver"],
+            "3NAM1YJMhSPvtAkmGTRABe1hYZN3aE2hZHKy3JZy9fHk"
+        );
     }
 
     #[test]

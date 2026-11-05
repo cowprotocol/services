@@ -278,11 +278,11 @@ paths:
         and approve the settlement delegate, each omittable (the wrap steps
         only for native SOL sells). The transaction must not create the buy
         token account: it must already receive the buy mint, or be the
-        owner's associated token account, which the settlement creates when
-        missing. A custom receiver's account must therefore already exist
-        and accept the buy mint. An order buying native SOL pays out to its
-        wallet instead. The order competes in auctions until the
-        transaction's blockhash expires (about a minute) or it settles.
+        associated token account of the owner, or of the `receiver` the
+        request names, which the settlement creates when missing. An order
+        buying native SOL pays out to its wallet instead. The order competes
+        in auctions until the transaction's blockhash expires (about a
+        minute) or it settles.
       requestBody:
         required: true
         content:
@@ -312,6 +312,17 @@ paths:
                        `Transaction` needs
                        `serialize({ requireAllSignatures: false })`.
                   type: string
+                receiver:
+                  description: |
+                    The wallet the buy token account belongs to, when that is
+                    not the owner: the wallet `buyTokenAccount` is the
+                    associated token account of, or the wallet itself for a
+                    native SOL buy. The settlement creates a missing account at
+                    that address for this wallet, like the owner's own. Any
+                    other wallet is refused with `InvalidBuyTokenAccount`.
+                  allOf:
+                    - $ref: "#/components/schemas/Pubkey"
+                  nullable: true
                 quoteId:
                   description: |
                     The id the quote endpoint answered for this order. Stored
@@ -359,7 +370,9 @@ paths:
             (`SameBuyAndSellToken`), a zero amount (`ZeroAmount`), a native
             SOL buy paying an account the System Program does not own, or
             whose payout can leave the wallet under its rent-exempt minimum,
-            890880 lamports for an empty wallet (`InvalidNativeBuy`), a missing
+            890880 lamports for an empty wallet (`InvalidNativeBuy`), a
+            `receiver` the buy token account does not belong to
+            (`InvalidBuyTokenAccount`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum
             or above the maximum validity (`InsufficientValidTo`,
             `ExcessiveValidTo`), an `appData` document that is not a JSON
@@ -626,6 +639,7 @@ components:
       required:
         - uid
         - owner
+        - receiver
         - sellToken
         - buyToken
         - sellTokenAccount
@@ -647,6 +661,14 @@ components:
           $ref: "#/components/schemas/OrderUid"
         owner:
           $ref: "#/components/schemas/Pubkey"
+        receiver:
+          description: |
+            The wallet `buyTokenAccount` belongs to when that is not the
+            owner, as named at placement. Null when the owner receives the
+            payout.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
+          nullable: true
         sellToken:
           description: The mint of the token being sold.
           allOf:
@@ -663,8 +685,8 @@ components:
             - $ref: "#/components/schemas/Pubkey"
         buyTokenAccount:
           description: |
-            The owner's token account the buy tokens are paid to, or the
-            wallet for native SOL.
+            The token account the buy tokens are paid to, the owner's or the
+            receiver's, or the wallet for native SOL.
           allOf:
             - $ref: "#/components/schemas/Pubkey"
         sellAmount:

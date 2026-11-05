@@ -2954,6 +2954,107 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
     assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
 }
 
+/// A placement may name the wallet the buy token account belongs to: a
+/// missing account at that wallet's associated token address is the
+/// settlement's to create, like the owner's own, and the order reports the
+/// wallet. An off-curve wallet derives like any other. The lookup answers
+/// the sell and buy mints, the Clock sysvar, then nothing for the account.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_creates_a_receivers_missing_buy_token_account() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::find_program_address(&[b"vault"], &program_id()).0;
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    let buy_mint = intent.buy.encode().0;
+    intent.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint: buy_mint,
+            token_account: ata(receiver, buy_mint),
+        },
+    );
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let classic = Some(mint_account(spl_token_interface::ID));
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            accounts_response(&[classic.clone(), classic, None, None]),
+        ),
+    )
+    .await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({
+            "partiallySignedTx": transaction,
+            "receiver": receiver.to_string(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uid: String = response.json().await.unwrap();
+    assert_eq!(
+        get_order(addr, &uid).await["receiver"],
+        receiver.to_string()
+    );
+    let stored: Option<Vec<u8>> = sqlx::query_scalar("SELECT receiver FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, Some(receiver.to_bytes().to_vec()));
+}
+
+/// A receiver the buy token account does not belong to is refused: a wallet
+/// whose associated token account is not the buy account, the owner's own
+/// included, and a wallet other than the paid one for a native SOL buy. Each
+/// lookup answers the mints, the Clock sysvar, then nothing for the buy
+/// account or wallet.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_refuses_a_receiver_the_buy_token_account_does_not_belong_to() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let classic = Some(mint_account(spl_token_interface::ID));
+    let token_buy = (
+        sponsored_intent(owner.pubkey(), false),
+        accounts_response(&[classic.clone(), classic.clone(), None, None]),
+    );
+    let native_buy = (
+        native_buy_intent(owner.pubkey(), 890_880),
+        accounts_response(&[classic, None, None]),
+    );
+    for (intent, accounts) in [token_buy, native_buy] {
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+        let addr =
+            spawn_sponsored_server_with(pool.clone(), funder, sponsored_mocks(true, accounts))
+                .await;
+        let (status, kind) = post_order_body(
+            addr,
+            serde_json::json!({
+                "partiallySignedTx": transaction,
+                "receiver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, "InvalidBuyTokenAccount")
+        );
+    }
+}
+
 /// Token-2022 mints place like classic ones: the delegation goes through
 /// Token-2022, and the buy account is the owner's missing Token-2022
 /// associated token account, which the settlement creates. The lookup
@@ -3171,6 +3272,7 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let order = db::SponsoredOrder {
         uid: ByteArray([0x11; 32]),
         owner: ByteArray(owner.to_bytes()),
+        receiver: None,
         sell_token: ByteArray([0x66; 32]),
         buy_token: ByteArray([0x55; 32]),
         sell_token_account: ByteArray([0x33; 32]),
