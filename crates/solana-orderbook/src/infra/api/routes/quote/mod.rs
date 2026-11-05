@@ -140,6 +140,9 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
+    // The fee answers in the sell token, so the sell token needs a price too.
+    let sell_token_price = NonZero::new(sell_price)
+        .ok_or_else(|| price_error(request.sell_token, prices::Error::NoLiquidity))?;
     // A fast quote is not accurate enough to honor or store, so it expires
     // at once.
     let fast = matches!(request.price_quality, dto::PriceQuality::Fast);
@@ -165,18 +168,36 @@ pub async fn quote(
         },
         &ranked,
     );
-    let Some((quoted, costs)) = ranked.into_iter().next().and_then(|(_, netted)| netted) else {
-        log_competition(&competition);
-        return Err(error::reply(
+    let does_not_cover_fee = || {
+        error::reply(
             StatusCode::BAD_REQUEST,
             "SellAmountDoesNotCoverFee",
             "the quoted amount does not cover the execution cost",
-        ));
+        )
+    };
+    let Some((route, (quoted, costs))) = ranked
+        .into_iter()
+        .next()
+        .and_then(|(route, netted)| Some((route, netted?)))
+    else {
+        log_competition(&competition);
+        return Err(does_not_cover_fee());
+    };
+    let Some(amounts) = amounts(
+        &request.side,
+        &route,
+        &quoted,
+        &costs,
+        sell_token_price,
+        buy_price,
+    ) else {
+        log_competition(&competition);
+        return Err(does_not_cover_fee());
     };
     quoted.count_win(order.kind);
     // The last exit before the insert, and the competition is worth having for
     // a quote this rejects.
-    check_native_payout(state.sponsoring(), &request, quoted.buy_amount)
+    check_native_payout(state.sponsoring(), &request, amounts.buy_amount)
         .await
         .inspect_err(|_| log_competition(&competition))?;
 
@@ -189,8 +210,8 @@ pub async fn quote(
         let quote = db::Quote {
             sell_token: ByteArray(request.sell_token.to_bytes()),
             buy_token: ByteArray(request.buy_token.to_bytes()),
-            sell_amount: quoted.sell_amount,
-            buy_amount: quoted.buy_amount,
+            sell_amount: amounts.signed_sell_amount,
+            buy_amount: amounts.buy_amount,
             kind: match kind {
                 dto::Kind::Sell => OrderKind::Sell,
                 dto::Kind::Buy => OrderKind::Buy,
@@ -219,8 +240,8 @@ pub async fn quote(
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             receiver: request.receiver,
-            sell_amount: quoted.sell_amount,
-            buy_amount: quoted.buy_amount,
+            sell_amount: amounts.sell_amount,
+            buy_amount: amounts.buy_amount,
             valid_to,
             // A document answers with its hash alongside.
             app_data: match &request.app_data {
@@ -230,7 +251,7 @@ pub async fn quote(
                 },
                 app_data => app_data.clone(),
             },
-            fee_amount: 0,
+            fee_amount: amounts.fee_amount,
             costs: dto::Costs {
                 token,
                 network_fees: costs.network_fees,
@@ -404,6 +425,65 @@ struct Costs {
     buy_token_ata_costs: u64,
     /// The sum, what the quote is cut by.
     total: u64,
+}
+
+/// The amounts of the answer in the EVM shape: `fee_amount` is the cut as the
+/// sell token, `sell_amount` and `buy_amount` what the trader trades net of
+/// it, `signed_sell_amount` the sell amount plus the fee, what an order placed
+/// on the quote sells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Amounts {
+    sell_amount: u64,
+    buy_amount: u64,
+    fee_amount: u64,
+    signed_sell_amount: u64,
+}
+
+/// The amounts for `side`, from `route` as the driver quoted it, `quoted` net
+/// of `costs`, and the native prices. A buy order's cut is already in the
+/// sell token and goes on top of the route's sell amount. A sell order's cut
+/// comes out of the buy token, so the fee converts at the two prices, rounded
+/// up against the trader. A `sellAmountBeforeFee` amount pays the fee from
+/// itself and buys the cut amount. A `sellAmountAfterFee` amount pays the fee
+/// on top and buys the route's full amount, since the fee covers the cut.
+/// `None` when the fee swallows the amount or the sum does not fit.
+fn amounts(
+    side: &dto::Side,
+    route: &quoter::Quote,
+    quoted: &quoter::Quote,
+    costs: &Costs,
+    sell_price: NonZero<u64>,
+    buy_price: u64,
+) -> Option<Amounts> {
+    match side {
+        dto::Side::Buy { .. } => Some(Amounts {
+            sell_amount: route.sell_amount,
+            buy_amount: quoted.buy_amount,
+            fee_amount: costs.total,
+            signed_sell_amount: route.sell_amount.checked_add(costs.total)?,
+        }),
+        dto::Side::Sell { sell_amount } => {
+            // The cut's worth in lamports, times the price denominator.
+            let worth = u128::from(costs.total) * u128::from(buy_price);
+            let fee_amount = u64::try_from(worth.div_ceil(u128::from(sell_price.get()))).ok()?;
+            let (sell_amount, buy_amount, signed_sell_amount) = match sell_amount {
+                dto::SellAmount::BeforeFee { value } => (
+                    value.checked_sub(fee_amount).filter(|net| *net > 0)?,
+                    quoted.buy_amount,
+                    *value,
+                ),
+                dto::SellAmount::AfterFee { value } => {
+                    (*value, route.buy_amount, value.checked_add(fee_amount)?)
+                }
+            };
+            Some(Amounts {
+                sell_amount,
+                buy_amount,
+                fee_amount,
+                signed_sell_amount,
+            })
+        }
+    }
 }
 
 /// `quote` with its execution cost, `rent` plus its own network fee, taken
@@ -811,6 +891,105 @@ mod tests {
 
     fn price(native_price: u64) -> NonZero<u64> {
         NonZero::new(native_price).unwrap()
+    }
+
+    fn costs(total: u64) -> Costs {
+        Costs {
+            network_fees: total,
+            buy_token_ata_costs: 0,
+            total,
+        }
+    }
+
+    fn selling(sell_amount: dto::SellAmount) -> dto::Side {
+        dto::Side::Sell { sell_amount }
+    }
+
+    /// Five atoms of a buy token worth two lamports each are ten lamports,
+    /// three and a third atoms of a sell token worth three, so four.
+    #[test]
+    fn a_sell_orders_fee_is_its_cut_as_the_sell_token_rounded_up() {
+        let side = selling(dto::SellAmount::BeforeFee { value: 100 });
+        assert_eq!(
+            amounts(
+                &side,
+                &quote(100, 1_000, 0),
+                &quote(100, 995, 0),
+                &costs(5),
+                price(3),
+                2
+            ),
+            Some(Amounts {
+                sell_amount: 96,
+                buy_amount: 995,
+                fee_amount: 4,
+                signed_sell_amount: 100,
+            })
+        );
+    }
+
+    /// The fee on top covers the cut, so the route's full buy amount stays.
+    #[test]
+    fn an_after_fee_amount_stays_and_signs_the_fee_on_top() {
+        let side = selling(dto::SellAmount::AfterFee { value: 100 });
+        assert_eq!(
+            amounts(
+                &side,
+                &quote(100, 1_000, 0),
+                &quote(100, 995, 0),
+                &costs(5),
+                price(3),
+                2
+            ),
+            Some(Amounts {
+                sell_amount: 100,
+                buy_amount: 1_000,
+                fee_amount: 4,
+                signed_sell_amount: 104,
+            })
+        );
+    }
+
+    #[test]
+    fn a_buy_order_pays_its_cut_on_top_of_the_route() {
+        let side = dto::Side::Buy {
+            buy_amount_after_fee: 1_000,
+        };
+        assert_eq!(
+            amounts(
+                &side,
+                &quote(1_000, 1_000, 0),
+                &quote(1_050, 1_000, 0),
+                &costs(50),
+                price(1),
+                1
+            ),
+            Some(Amounts {
+                sell_amount: 1_000,
+                buy_amount: 1_000,
+                fee_amount: 50,
+                signed_sell_amount: 1_050,
+            })
+        );
+    }
+
+    #[test]
+    fn a_fee_that_swallows_the_sell_amount_is_no_quote() {
+        for value in [3, 4] {
+            let side = selling(dto::SellAmount::BeforeFee { value });
+            assert_eq!(
+                amounts(
+                    &side,
+                    &quote(value, 1_000, 0),
+                    &quote(value, 995, 0),
+                    &costs(5),
+                    price(3),
+                    2
+                ),
+                None,
+                "{value}"
+            );
+        }
     }
 
     fn best(

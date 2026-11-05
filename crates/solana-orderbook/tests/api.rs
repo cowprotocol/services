@@ -32,7 +32,7 @@ async fn mock_api() -> Api {
         // quote insert degrades to an id-less answer, nothing else queries.
         pool: PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
         quoter: dead_quoter(),
-        prices: spawn_mock_autopilot(Some(1_000_000_000)).await,
+        prices: spawn_mock_autopilot(|_| Some(1_000_000_000)).await,
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
         fast_results_required: NonZero::new(2).unwrap(),
@@ -68,20 +68,24 @@ async fn spawn_server_with(quoter: Quoter) -> SocketAddr {
     addr
 }
 
-/// A tiny axum server that answers `/native_price/{mint}` with `price` for
-/// every mint, or 404 without one. It stands in for the autopilot.
-async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
+/// A tiny axum server that answers `/native_price/{mint}` with `price(mint)`,
+/// or 404 without one. It stands in for the autopilot.
+async fn spawn_mock_autopilot(
+    price: impl Fn(&str) -> Option<u64> + Clone + Send + Sync + 'static,
+) -> NativePrices {
     let app = axum::Router::new().route(
         "/native_price/{mint}",
-        axum::routing::get(move || async move {
-            match price {
-                Some(price) => (
-                    axum::http::StatusCode::OK,
-                    serde_json::json!({ "price": price.to_string() }).to_string(),
-                ),
-                None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
-            }
-        }),
+        axum::routing::get(
+            move |axum::extract::Path(mint): axum::extract::Path<String>| async move {
+                match price(&mint) {
+                    Some(price) => (
+                        axum::http::StatusCode::OK,
+                        serde_json::json!({ "price": price.to_string() }).to_string(),
+                    ),
+                    None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
+                }
+            },
+        ),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -456,12 +460,16 @@ async fn quote_answers_in_the_evm_shape() {
                 "sellToken": body["sellToken"],
                 "buyToken": body["buyToken"],
                 "receiver": body["receiver"],
-                "sellAmount": "10000000",
+                // The requested amount minus the fee, the amount to sign is
+                // the requested one.
+                "sellAmount": "7773360",
                 "buyAmount": "1234567",
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "appDataHash": body["appDataHash"],
-                "feeAmount": "0",
+                // The cut as the sell token, a lamport an atom on both sides
+                // at the mocked prices.
+                "feeAmount": "2226640",
                 // In the buy token, at the mocked lamport an atom. Without
                 // sponsoring the buy token account is not read, so it counts
                 // as the costliest a settleable mint can need at the SDK's
@@ -1125,7 +1133,8 @@ async fn quote_charges_a_buy_order_on_the_sell_side() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["kind"], "buy");
-    assert_eq!(json["quote"]["sellAmount"], "12226640");
+    assert_eq!(json["quote"]["sellAmount"], "10000000");
+    assert_eq!(json["quote"]["feeAmount"], "2226640");
     assert_eq!(json["quote"]["buyAmount"], "1234567");
     assert_eq!(
         json["quote"]["costs"],
@@ -1136,6 +1145,110 @@ async fn quote_charges_a_buy_order_on_the_sell_side() {
             "protocolFee": "0",
             "total": "2226640",
         })
+    );
+}
+
+/// A `sellAmountAfterFee` request sells that amount, the fee goes on top and
+/// covers the cut, so the route's full buy amount stays.
+#[tokio::test]
+async fn quote_sells_an_after_fee_amount_as_is() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["sellAmountAfterFee"] = serde_json::json!("10000000");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["sellAmount"], "10000000");
+    assert_eq!(json["quote"]["feeAmount"], "2226640");
+    assert_eq!(json["quote"]["buyAmount"], "3461207");
+}
+
+/// A sell order's fee converts the cut at both native prices: the buy token
+/// at a lamport an atom, the sell token at two, so half as many atoms.
+#[tokio::test]
+async fn quote_converts_a_sell_orders_fee_at_both_native_prices() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        prices: spawn_mock_autopilot(|mint| {
+            Some(match mint {
+                "So11111111111111111111111111111111111111112" => 2_000_000_000,
+                _ => 1_000_000_000,
+            })
+        })
+        .await,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validFor": 1800})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["feeAmount"], "1113320");
+    assert_eq!(json["quote"]["sellAmount"], "8886680");
+    assert_eq!(json["quote"]["buyAmount"], "1234567");
+    assert_eq!(json["quote"]["costs"]["total"], "2226640");
+}
+
+/// A `sellAmountBeforeFee` amount the fee swallows is no quote, even when the
+/// buy side absorbs the cut.
+#[tokio::test]
+async fn quote_rejects_a_sell_amount_under_its_fee() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "2000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body["sellAmountBeforeFee"] = serde_json::json!("2000000");
+    let (status, kind) = post_quote(addr, body).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (
+            reqwest::StatusCode::BAD_REQUEST,
+            "SellAmountDoesNotCoverFee"
+        )
     );
 }
 
@@ -1232,7 +1345,7 @@ async fn quote_without_a_native_price_is_no_liquidity() {
             vec![format!("http://{driver}/").parse().unwrap()],
             Duration::from_secs(1),
         ),
-        prices: spawn_mock_autopilot(None).await,
+        prices: spawn_mock_autopilot(|_| None).await,
         ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
@@ -1300,6 +1413,57 @@ async fn quote_checks_the_app_data_forms() {
             "{app_data:?} {app_data_hash:?}"
         );
     }
+}
+
+/// The stored quote sells what an order placed on it signs, the answered
+/// `sellAmount` plus `feeAmount`, and buys the answered `buyAmount`.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_quote_stores_the_amount_to_sign() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query("TRUNCATE solana.quotes")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "10000000",
+        "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+    }))
+    .await;
+    let api = Api {
+        pool: pool.clone(),
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["sellAmountAfterFee"] = serde_json::json!("10000000");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["sellAmount"], "10000000");
+    assert_eq!(json["quote"]["feeAmount"], "2220240");
+    assert_eq!(json["quote"]["buyAmount"], "10000000");
+
+    let stored: (String, String) =
+        sqlx::query_as("SELECT sell_amount::text, buy_amount::text FROM solana.quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, ("12220240".to_owned(), "10000000".to_owned()));
 }
 
 /// The answered quote, net of the execution cost, lands in `solana.quotes`
