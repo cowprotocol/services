@@ -411,11 +411,7 @@ mod tests {
     }
 
     fn blockchain_with_mocks_map(mocks: MocksMap) -> Solana {
-        Solana::new(
-            SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
-            SolanaRPC::new_mock_with_mocks_map(mocks),
-            pubkey(0xaa),
-        )
+        Solana::new(SolanaRPC::new_mock_with_mocks_map(mocks), pubkey(0xaa))
     }
 
     /// The buy mint is an SPL Token mint. The account lookup answers in
