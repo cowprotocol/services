@@ -24,6 +24,11 @@ permissions:
   contents: read
   packages: write
 
+# Runs for the same ref go one at a time, in push order. Therefore, the newest
+# commit is always the last one to move the image tags.
+concurrency:
+  group: deploy-${{ github.ref }}
+
 env:
   SERVICES_IMAGE: ghcr.io/${{ github.repository }}
   MIGRATION_IMAGE: ghcr.io/${{ github.repository }}-migration

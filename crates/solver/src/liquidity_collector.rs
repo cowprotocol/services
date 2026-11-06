@@ -196,7 +196,12 @@ mod test {
         assert_eq!(gauge.get(), 0);
 
         let liquidity = source
-            .get_liquidity(Default::default(), Block::Recent)
+            .get_liquidity(
+                Default::default(),
+                Block::Recent {
+                    schedule_update: false,
+                },
+            )
             .now_or_never();
         // As long as the liquidity source is not initialised `get_liquidity`
         // returns immediately with 0 liquidity.
@@ -208,7 +213,12 @@ mod test {
         // init loop ran expected number of times
         assert_eq!(counter.load(Ordering::SeqCst), ATTEMPTS);
         let liquidity = source
-            .get_liquidity(Default::default(), Block::Recent)
+            .get_liquidity(
+                Default::default(),
+                Block::Recent {
+                    schedule_update: false,
+                },
+            )
             .await;
         assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised");
         assert_eq!(gauge.get(), 1);
@@ -243,7 +253,12 @@ mod test {
         // variance due to our very short timeouts here).
         assert!((5..=6).contains(&counter.load(Ordering::SeqCst)));
         let liquidity = source
-            .get_liquidity(Default::default(), Block::Recent)
+            .get_liquidity(
+                Default::default(),
+                Block::Recent {
+                    schedule_update: false,
+                },
+            )
             .await;
         assert_eq!(liquidity.unwrap_err().to_string(), "I am initialised");
 

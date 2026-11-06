@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "orderbook"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 account-balances = { workspace = true }
@@ -42,6 +43,7 @@ http-client = { workspace = true }
 humantime = { workspace = true }
 humantime-serde = { workspace = true }
 model = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
 multibase = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }

@@ -13,11 +13,14 @@ use {
     std::cmp::Reverse,
 };
 
-/// The runtime's per-transaction compute unit ceiling, which prices a
-/// transaction that declares no limit. The runtime's own default for such a
-/// transaction is lower (200k units per non-builtin instruction and 3k per
-/// builtin, up to this ceiling), so this is the conservative pick.
-const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+/// The runtime's per-transaction compute unit ceiling. It caps every limit.
+pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+
+/// The base fee of one signature, in lamports: the cluster's
+/// `lamports_per_signature`, 5000 on every cluster. Precompile signature
+/// verifications count as signatures too, and the settlement has none, so
+/// it pays for the solver keypair's signature only.
+const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
 
 /// The slots `getRecentPrioritizationFees` serves.
 pub(crate) const MAX_RECENT_SLOTS: usize = 150;
@@ -38,6 +41,24 @@ pub struct PriorityFeePolicy {
     /// The most a transaction pays in priority fee, in lamports. A transaction
     /// over it is refused.
     pub max_priority_fee_lamports: u64,
+    /// The compute unit limit priced when a transaction's usage is not
+    /// measured: quotes, the limit legs moved before solving, and solutions
+    /// neither their engine nor their simulation measured, which also declare
+    /// it when the driver cuts their fills. Settlements declare their
+    /// simulated usage plus the headroom, so keep this near the top of that
+    /// range.
+    pub default_compute_unit_limit: u32,
+    /// The share of the simulated compute units added to the limit a
+    /// settlement declares, in percent, on top of
+    /// `compute_unit_limit_headroom_units`. Usage can grow before the
+    /// transaction lands and running out of units fails it, while the
+    /// priority fee is paid on the limit, used or not.
+    pub compute_unit_limit_headroom_percent: u32,
+    /// The compute units added to the limit a settlement declares on top of
+    /// the share: the usage grows between the simulation and the landed
+    /// transaction by a fixed cost rather than a share of the route, so a
+    /// percent alone leaves a small route short.
+    pub compute_unit_limit_headroom_units: u32,
 }
 
 impl Default for PriorityFeePolicy {
@@ -47,17 +68,28 @@ impl Default for PriorityFeePolicy {
             recent_slots: 50,
             min_compute_unit_price: 10_000,
             max_priority_fee_lamports: 1_000_000,
+            default_compute_unit_limit: 400_000,
+            compute_unit_limit_headroom_percent: 15,
+            compute_unit_limit_headroom_units: 20_000,
         }
     }
 }
 
 /// A transaction's estimated priority fee.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Estimate {
     /// Micro-lamports per compute unit.
     pub(crate) compute_unit_price: u64,
     /// The priority fee the transaction pays at that price, in lamports.
-    pub(crate) lamports: u128,
+    pub(crate) lamports: u64,
+}
+
+impl Estimate {
+    /// The network fee of the transaction paying this priority fee, in
+    /// lamports: the signature fee plus the priority fee.
+    pub(crate) fn network_fee(&self) -> u64 {
+        self.lamports.saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -74,26 +106,48 @@ impl PriorityFeePolicy {
     /// The priority fee for a transaction given the fees recently paid over its
     /// writable accounts and its compute unit limit, or the fee it would pay
     /// when that is over the budget. An undeclared limit is priced at the
-    /// runtime's ceiling.
+    /// policy's default.
     pub(crate) fn estimate(
         &self,
         fees: &[RpcPrioritizationFee],
         compute_unit_limit: Option<u32>,
     ) -> Result<Estimate, OverBudget> {
         let compute_unit_price = self.compute_unit_price(fees);
-        let limit = compute_unit_limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
+        let limit = compute_unit_limit.unwrap_or(self.default_compute_unit_limit);
         // Micro-lamports per unit times units, rounded up to whole lamports.
         let lamports = (u128::from(compute_unit_price) * u128::from(limit)).div_ceil(1_000_000);
-        if lamports > u128::from(self.max_priority_fee_lamports) {
-            return Err(OverBudget {
+        match u64::try_from(lamports) {
+            Ok(lamports) if lamports <= self.max_priority_fee_lamports => Ok(Estimate {
+                compute_unit_price,
+                lamports,
+            }),
+            _ => Err(OverBudget {
                 lamports,
                 cap: self.max_priority_fee_lamports,
-            });
+            }),
         }
-        Ok(Estimate {
-            compute_unit_price,
-            lamports,
-        })
+    }
+
+    /// The most a transaction's network fee comes to under this policy: the
+    /// budget plus the signature fee.
+    pub(crate) fn max_network_fee(&self) -> u64 {
+        self.max_priority_fee_lamports
+            .saturating_add(LAMPORTS_PER_SIGNATURE)
+    }
+
+    /// The compute unit limit for a settlement that consumed `units` in
+    /// simulation: the usage plus its configured share, rounded up, plus the
+    /// fixed headroom, up to the runtime's ceiling.
+    pub(crate) fn compute_unit_limit(&self, units: u64) -> u32 {
+        let share = units
+            .saturating_mul(u64::from(self.compute_unit_limit_headroom_percent))
+            .div_ceil(100);
+        let limit = units
+            .saturating_add(share)
+            .saturating_add(u64::from(self.compute_unit_limit_headroom_units));
+        u32::try_from(limit)
+            .unwrap_or(u32::MAX)
+            .min(MAX_COMPUTE_UNIT_LIMIT)
     }
 
     /// The configured percentile of the most recent slots' fees, raised to the
@@ -122,7 +176,7 @@ fn percentile(sorted: &[u64], p: u8) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, solana_fee_structure::FeeStructure};
 
     fn fee(slot: u64, prioritization_fee: u64) -> RpcPrioritizationFee {
         RpcPrioritizationFee {
@@ -137,6 +191,9 @@ mod tests {
             recent_slots: MAX_RECENT_SLOTS,
             min_compute_unit_price: 0,
             max_priority_fee_lamports: u64::MAX,
+            default_compute_unit_limit: MAX_COMPUTE_UNIT_LIMIT,
+            compute_unit_limit_headroom_percent: 10,
+            compute_unit_limit_headroom_units: 20_000,
         }
     }
 
@@ -155,6 +212,19 @@ mod tests {
             ..policy
         };
         assert_eq!(policy.compute_unit_price(&fees), 30);
+    }
+
+    #[test]
+    fn compute_unit_limit_adds_the_headroom_and_the_fixed_units_up_to_the_ceiling() {
+        let policy = policy(50);
+        assert_eq!(policy.compute_unit_limit(100_000), 130_000);
+        assert_eq!(policy.compute_unit_limit(1_272_728), MAX_COMPUTE_UNIT_LIMIT);
+        assert_eq!(policy.compute_unit_limit(u64::MAX), MAX_COMPUTE_UNIT_LIMIT);
+        let units_alone = PriorityFeePolicy {
+            compute_unit_limit_headroom_percent: 0,
+            ..policy
+        };
+        assert_eq!(units_alone.compute_unit_limit(7), 20_007);
     }
 
     #[test]
@@ -180,11 +250,14 @@ mod tests {
         assert_eq!(estimate.lamports, 1);
     }
 
-    /// An undeclared limit is priced at the 1.4M ceiling.
     #[test]
-    fn undeclared_limit_is_priced_at_the_ceiling() {
-        let estimate = policy(50).estimate(&[fee(1, 1_000)], None).unwrap();
-        assert_eq!(estimate.lamports, 1_400);
+    fn undeclared_limit_is_priced_at_the_policy_default() {
+        let policy = PriorityFeePolicy {
+            default_compute_unit_limit: 300_000,
+            ..policy(50)
+        };
+        let estimate = policy.estimate(&[fee(1, 1_000)], None).unwrap();
+        assert_eq!(estimate.lamports, 300);
     }
 
     #[test]
@@ -205,6 +278,15 @@ mod tests {
             ..policy
         };
         assert!(policy.estimate(&[fee(1, 1_500)], Some(200_000)).is_ok());
+    }
+
+    /// The constant follows the SDK's default fee structure.
+    #[test]
+    fn signature_fee_is_the_sdk_default() {
+        assert_eq!(
+            LAMPORTS_PER_SIGNATURE,
+            FeeStructure::default().lamports_per_signature
+        );
     }
 
     #[test]

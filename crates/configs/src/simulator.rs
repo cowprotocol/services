@@ -1,6 +1,6 @@
 use {
     crate::gas_price_estimation::{default_past_blocks, default_reward_percentile},
-    alloy::primitives::Address,
+    alloy_primitives::Address,
     serde::{Deserialize, Serialize},
     std::time::Duration,
     url::Url,

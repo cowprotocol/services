@@ -161,8 +161,9 @@ impl BalanceSimulator {
             contracts: Balances::Balances::Contracts {
                 settlement: *self.settlement.address(),
                 vaultRelayer: self.vault_relayer,
-                // The Balancer Vault is only used by the deprecated External/Internal
-                // sell-token sources, which are rejected at order creation.
+                // The Balancer Vault is only used by the deprecated
+                // External/Internal sell-token sources, which are rejected at
+                // order creation.
                 vault: Address::ZERO,
             },
             trader: owner,

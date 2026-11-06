@@ -2,7 +2,7 @@
 
 use {
     crate::domain::{
-        priority_fee::{MAX_RECENT_SLOTS, PriorityFeePolicy},
+        priority_fee::{MAX_COMPUTE_UNIT_LIMIT, MAX_RECENT_SLOTS, PriorityFeePolicy},
         settlement::MaxNativeShortfall,
         solver_fee::SolverFee,
     },
@@ -46,6 +46,10 @@ pub async fn load(path: &Path) -> Config {
     assert!(
         (1..=MAX_RECENT_SLOTS).contains(&priority_fee.recent_slots),
         "priority-fee: recent-slots is outside 1..={MAX_RECENT_SLOTS}"
+    );
+    assert!(
+        (1..=MAX_COMPUTE_UNIT_LIMIT).contains(&priority_fee.default_compute_unit_limit),
+        "priority-fee: default-compute-unit-limit is outside 1..={MAX_COMPUTE_UNIT_LIMIT}"
     );
     config
 }
@@ -107,13 +111,6 @@ pub struct Chain {
 pub struct Rpc {
     /// RPC endpoint to connect to.
     pub endpoint: url::Url,
-    /// RPC endpoint for `simulateBundle` only, so a metered plan on the main
-    /// endpoint is spared its cost.
-    ///
-    /// TODO: the split is temporary. Once a single endpoint serves every
-    /// method, drop this field and `Solana::bundle_rpc` and route the call
-    /// through `endpoint`.
-    pub bundle_endpoint: url::Url,
     /// Timeout for individual RPC requests.
     #[serde(with = "humantime_serde")]
     pub request_timeout: Duration,
@@ -125,6 +122,13 @@ pub struct Rpc {
 pub struct Http {
     /// Address the HTTP API server binds to and listens on.
     pub bind_address: SocketAddr,
+    /// Port the metrics and probes server binds to, on every interface.
+    #[serde(default = "default_metrics_port")]
+    pub metrics_port: u16,
+}
+
+const fn default_metrics_port() -> u16 {
+    observe::metrics::DEFAULT_METRICS_PORT
 }
 
 /// A configured solver engine.
@@ -145,6 +149,10 @@ pub struct Solver {
     /// test against. Absent means every auction.
     #[serde(default)]
     pub solve_every_nth_auction: Option<NonZero<u64>>,
+    /// Who prices the execution costs into the fills, see [`FeeHandler`].
+    /// Absent means the driver.
+    #[serde(default)]
+    pub fee_handler: FeeHandler,
     /// Volume-based solver fee in basis points, `0..10_000`. Sell orders
     /// deliver `(1 − fee)` of the fill's buy leg; buy orders pull `(1 + fee)`
     /// of its sell leg. The difference stays in the buy-mint buffer PDA (sell
@@ -160,6 +168,18 @@ pub struct Solver {
     pub max_native_shortfall_bps: Option<MaxNativeShortfall>,
 }
 
+/// Who prices a settlement's execution costs, its network fee and the rent
+/// of the buy token accounts it creates, into the fills: the driver cuts
+/// them from every fill the engine reports, or the solver engine prices them
+/// in itself.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum FeeHandler {
+    #[default]
+    Driver,
+    Solver,
+}
+
 #[cfg(test)]
 mod tests {
     use {super::*, std::path::Path};
@@ -173,10 +193,7 @@ mod tests {
             config.rpc.endpoint.as_str(),
             "https://api.mainnet-beta.solana.com/"
         );
-        assert_eq!(
-            config.rpc.bundle_endpoint.as_str(),
-            "https://bundles.example.com/"
-        );
+        assert_eq!(config.http.metrics_port, 9586);
         assert_eq!(config.solvers.len(), 1);
         assert_eq!(config.solvers[0].name, "baseline");
         assert!(matches!(
@@ -208,6 +225,26 @@ mod tests {
     fn chain_defaults_to_interface_program_id() {
         let chain: Chain = toml::de::from_str("").unwrap();
         assert_eq!(chain.settlement_program_id, cow_settlement_interface::ID);
+    }
+
+    #[test]
+    fn fee_handler_parses_and_defaults_to_the_driver() {
+        let solver = |fee_handler: &str| {
+            toml::de::from_str::<Solver>(&format!(
+                r#"
+                name = "baseline"
+                endpoint = "http://localhost:8001"
+                signer = {{ keypair = "/path/to/keypair.json" }}
+                {fee_handler}
+                "#
+            ))
+        };
+        assert_eq!(solver("").unwrap().fee_handler, FeeHandler::Driver);
+        assert_eq!(
+            solver(r#"fee-handler = "solver""#).unwrap().fee_handler,
+            FeeHandler::Solver
+        );
+        assert!(solver(r#"fee-handler = "autopilot""#).is_err());
     }
 
     #[test]

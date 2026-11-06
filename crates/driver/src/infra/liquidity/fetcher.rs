@@ -11,6 +11,7 @@ use {
 #[derive(Clone, Debug)]
 pub struct Fetcher {
     inner: Arc<boundary::liquidity::Fetcher>,
+    fetch_at_block: AtBlock,
 }
 
 /// Specifies at which block liquidity should be fetched.
@@ -25,12 +26,14 @@ pub enum AtBlock {
     /// this is completely fine as the exactly input and output amounts will be
     /// computed anyway. At worse, we might provide a slightly sub-optimal
     /// route in some cases, but this is an acceptable trade-off.
-    Recent,
+    Recent {
+        /// Whether the requested pairs get kept up to date in the background.
+        /// Quotes don't need that. Auctions that want to use Recent for
+        /// perfromance reasons do.
+        schedule_update: bool,
+    },
     /// Fetches liquidity for the latest state of the blockchain.
     Latest,
-    /// Useful for chains that can't fetch liquidity on non-finalized
-    /// blocks(e.g. Avalanche).
-    Finalized,
 }
 
 impl Fetcher {
@@ -41,7 +44,13 @@ impl Fetcher {
         let inner = boundary::liquidity::Fetcher::try_new(&eth, config).await?;
         Ok(Self {
             inner: Arc::new(inner),
+            fetch_at_block: config.fetch_at_block.clone(),
         })
+    }
+
+    /// The block at which liquidity for `/solve` requests gets fetched.
+    pub fn fetch_at_block(&self) -> AtBlock {
+        self.fetch_at_block.clone()
     }
 
     /// Fetches all relevant liquidity for the specified token pairs. Handles

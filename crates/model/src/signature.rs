@@ -261,7 +261,8 @@ impl Default for EcdsaSignature {
         Self {
             r: B256::ZERO,
             s: B256::ZERO,
-            // Use normalized v value (equivalent to 0) for Solidity ecrecover compatibility
+            // Use normalized v value (equivalent to 0) for Solidity ecrecover
+            // compatibility
             v: 27,
         }
     }

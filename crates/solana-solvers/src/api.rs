@@ -40,6 +40,7 @@ impl Api {
     ) -> std::io::Result<()> {
         let app = Router::new()
             .route("/healthz", get(healthz))
+            .route("/metrics", get(metrics))
             .route("/solve", post(solve))
             .with_state(self.solver)
             .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
@@ -55,7 +56,12 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
-/// Quote the auction's orders and return the single-order solutions.
+async fn metrics() -> String {
+    observe::metrics::encode(observe::metrics::get_registry())
+}
+
+/// Quote the auction's orders and return one solution per side and directed
+/// mint pair, batched where the swap clears several orders.
 async fn solve(
     State(solver): State<Arc<Solver<Dex>>>,
     LoggingJson(auction): LoggingJson<Auction>,

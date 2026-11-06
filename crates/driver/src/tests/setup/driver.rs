@@ -1,5 +1,5 @@
 use {
-    super::{Mempool, Partial, Solver, Test, blockchain::Blockchain},
+    super::{Partial, Solver, Test, blockchain::Blockchain},
     crate::{
         domain::competition::order,
         infra::config::file::OrderPriorityStrategy,
@@ -17,7 +17,7 @@ pub struct Config {
     /// temporary file will be created with reasonable values.
     pub config_file: Option<PathBuf>,
     pub enable_simulation: bool,
-    pub mempools: Vec<Mempool>,
+    pub builders: Vec<String>,
     pub order_priority_strategies: Vec<OrderPriorityStrategy>,
     pub orderbook: Orderbook,
     pub flashloans_enabled: bool,
@@ -265,6 +265,7 @@ async fn create_config_file(
 
            [submission]
            gas-price-cap = "1000000000000"
+           additional-tip-percentage = 0.0
            "#,
         blockchain.settlement.address(),
         blockchain.weth.address(),
@@ -275,32 +276,22 @@ async fn create_config_file(
     )
     .unwrap();
 
-    for mempool in &config.mempools {
-        match mempool {
-            Mempool::Default => write!(
-                file,
-                r#"[[submission.mempool]]
-                    url = "{}"
-                    additional-tip-percentage = 0.0
-                    "#,
-                blockchain.web3_url,
-            )
-            .unwrap(),
-            Mempool::Private {
-                url,
-                mines_reverting_txs,
-            } => write!(
-                file,
-                r#"[[submission.mempool]]
-                    url = "{}"
-                    additional-tip-percentage = 0.0
-                    mines-reverting-txs = {mines_reverting_txs}
-                    "#,
-                url.clone().unwrap_or(blockchain.web3_url.clone()),
-            )
-            .unwrap(),
-        }
+    match config.builders.as_slice() {
+        [] => write!(
+            file,
+            r#"[submission.public-mempool]
+               urls = ["{}"]
+               "#,
+            blockchain.web3_url,
+        ),
+        urls => write!(
+            file,
+            r#"[submission.builders]
+               urls = {urls:?}
+               "#,
+        ),
     }
+    .unwrap();
 
     for strategy in &config.order_priority_strategies {
         match strategy {
@@ -351,7 +342,6 @@ async fn create_config_file(
                account = "{}"
                solving-share-of-deadline = {}
                http-time-buffer = "{}ms"
-               fee-handler = {}
                merge-solutions = {}
                solver-fee-bps = {}
                max-solutions-to-propose = {}
@@ -368,7 +358,6 @@ async fn create_config_file(
             solver.signer.to_bytes(),
             solver.timeouts.solving_share_of_deadline.get(),
             solver.timeouts.http_delay.num_milliseconds(),
-            serde_json::to_string(&solver.fee_handler).unwrap(),
             solver.merge_solutions,
             solver.solver_fee_bps,
             solver.max_solutions_to_propose,

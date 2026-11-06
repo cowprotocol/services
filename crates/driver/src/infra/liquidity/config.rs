@@ -1,5 +1,5 @@
 use {
-    crate::domain::blockchain::CodeDigest,
+    crate::{domain::blockchain::CodeDigest, infra::liquidity::AtBlock},
     alloy::primitives::Address,
     chain::Chain,
     contracts::BalancerV2Vault,
@@ -15,7 +15,7 @@ use {
         UNISWAP_INIT,
     },
     reqwest::Url,
-    std::{collections::HashSet, time::Duration},
+    std::{collections::HashSet, num::NonZeroUsize, time::Duration},
 };
 
 /// Configuration options for liquidity fetching.
@@ -43,6 +43,20 @@ pub struct Config {
 
     /// 0x liquidity fetcher.
     pub zeroex: Option<ZeroEx>,
+
+    /// The block at which liquidity for `/solve` requests gets fetched.
+    pub fetch_at_block: AtBlock,
+
+    /// Minimum time between two background refreshes of the cached pools.
+    pub refresh_cooldown: Duration,
+
+    /// How many blocks older than the last background refresh cached pools
+    /// may be to still be returned for recent liquidity requests.
+    pub max_recent_block_age: u64,
+
+    /// How many of the most recently used token pairs get kept up to date in
+    /// the background.
+    pub max_auto_updated_pairs: NonZeroUsize,
 }
 
 /// Uniswap V2 (and Uniswap V2 clone) liquidity fetching options.

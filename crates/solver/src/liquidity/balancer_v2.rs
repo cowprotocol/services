@@ -340,7 +340,12 @@ mod tests {
             pool_fetcher: Arc::new(pool_fetcher),
         };
         let (stable_orders, weighted_orders) = liquidity_provider
-            .get_orders(pairs, Block::Recent)
+            .get_orders(
+                pairs,
+                Block::Recent {
+                    schedule_update: false,
+                },
+            )
             .await
             .unwrap();
 

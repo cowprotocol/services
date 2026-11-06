@@ -19,6 +19,12 @@ pub struct Order {
     pub uid: String,
     #[serde_as(as = "DisplayFromStr")]
     pub owner: Pubkey,
+    /// The wallet `buy_token_account` belongs to, as named at placement: the
+    /// wallet it is the associated token account of, or the wallet itself
+    /// for a native SOL buy. Null unless placement named a wallet other than
+    /// the owner.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub receiver: Option<Pubkey>,
     #[serde_as(as = "DisplayFromStr")]
     pub sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
@@ -36,6 +42,8 @@ pub struct Order {
     pub kind: Kind,
     pub partially_fillable: bool,
     pub app_data: String,
+    /// The document `app_data` is the hash of, null until registered.
+    pub full_app_data: Option<String>,
     #[serde_as(as = "DisplayFromStr")]
     pub order_pda: Pubkey,
     pub creation_date: DateTime<Utc>,
@@ -87,6 +95,9 @@ impl Order {
         Self {
             uid: const_hex::encode_prefixed(row.uid.0),
             owner: Pubkey::new_from_array(row.owner.0),
+            receiver: row
+                .receiver
+                .map(|receiver| Pubkey::new_from_array(receiver.0)),
             sell_token: Pubkey::new_from_array(row.sell_token.0),
             buy_token: Pubkey::new_from_array(row.buy_token.0),
             sell_token_account: Pubkey::new_from_array(row.sell_token_account.0),
@@ -97,6 +108,7 @@ impl Order {
             kind,
             partially_fillable: row.partially_fillable,
             app_data: const_hex::encode_prefixed(row.app_data.0),
+            full_app_data: row.full_app_data,
             order_pda: Pubkey::new_from_array(row.order_pda.0),
             creation_date: row.creation_timestamp,
             executed_sell_amount: row.amount_withdrawn,
@@ -146,6 +158,7 @@ mod tests {
         OrderRow {
             uid: ByteArray([0x11; 32]),
             owner: ByteArray([0x22; 32]),
+            receiver: None,
             sell_token: ByteArray([0x33; 32]),
             buy_token: ByteArray([0x44; 32]),
             sell_token_account: ByteArray([0x55; 32]),
@@ -156,6 +169,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: false,
             app_data: ByteArray([0x77; 32]),
+            full_app_data: None,
             creation_timestamp: DateTime::from_timestamp(1_000, 0).unwrap(),
             order_pda: ByteArray([0x88; 32]),
             amount_withdrawn: 0.into(),
@@ -163,6 +177,23 @@ mod tests {
             cancellation_timestamp: None,
             last_valid_block_height: None,
         }
+    }
+
+    /// Base58 of 32 bytes of 0x23, precomputed so the wire literal is not
+    /// the Display impl compared against itself.
+    #[test]
+    fn the_receiver_is_null_for_the_owner_and_base58_otherwise() {
+        let json = serde_json::to_value(Order::new(row(), 1_500, None)).unwrap();
+        assert_eq!(json["receiver"], serde_json::Value::Null);
+        let named = OrderRow {
+            receiver: Some(ByteArray([0x23; 32])),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(named, 1_500, None)).unwrap();
+        assert_eq!(
+            json["receiver"],
+            "3NAM1YJMhSPvtAkmGTRABe1hYZN3aE2hZHKy3JZy9fHk"
+        );
     }
 
     #[test]
@@ -232,6 +263,7 @@ mod tests {
         assert_eq!(json["status"], "open");
         assert_eq!(json["kind"], "sell");
         assert_eq!(json["appData"], format!("0x{}", "77".repeat(32)));
+        assert_eq!(json["fullAppData"], serde_json::Value::Null);
         assert_eq!(json["creationDate"], "1970-01-01T00:16:40Z");
         // Absent unless a sponsored creation is pending.
         assert!(json.get("lastValidBlockHeight").is_none());
@@ -242,5 +274,12 @@ mod tests {
         };
         let json = serde_json::to_value(Order::new(pending, 1_500, None)).unwrap();
         assert_eq!(json["lastValidBlockHeight"], 250);
+
+        let registered = OrderRow {
+            full_app_data: Some("{}".to_owned()),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(registered, 1_500, None)).unwrap();
+        assert_eq!(json["fullAppData"], "{}");
     }
 }

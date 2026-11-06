@@ -42,7 +42,6 @@ mod get_orders_by_uid;
 mod get_solver_competition_v2;
 mod get_token_metadata;
 mod get_total_surplus;
-mod get_trades;
 mod get_trades_v2;
 mod get_user_orders;
 mod post_order;
@@ -262,7 +261,6 @@ pub fn handle_all_routes(
             "/api/v1/token/{token}/native_price",
             get(get_native_price::get_native_price_handler),
         ),
-        ("GET", "/api/v1/trades", get(get_trades::get_trades_handler)),
         (
             "GET",
             "/api/v1/transactions/{hash}/orders",

@@ -11,6 +11,7 @@ alloy-primitives = { workspace = true }
 async-trait = { workspace = true }
 const-hex = { workspace = true }
 contracts = { workspace = true }
+ethrpc = { workspace = true }
 futures = { workspace = true }
 hmac = { workspace = true }
 moka = { workspace = true, features = ["sync"] }
@@ -23,6 +24,11 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+
+[dev-dependencies]
+alloy-provider = { workspace = true }
+alloy-sol-types = { workspace = true }
+ethrpc = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

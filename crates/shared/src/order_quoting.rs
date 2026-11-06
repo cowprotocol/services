@@ -241,12 +241,32 @@ pub struct QuoteData {
 /// Collection of data that describes the full quote comptition (request,
 /// all quotes, native prices, gas price). Guaranteed to contain at least
 /// one quote by construction.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct QuoteCompetition {
     pub request: QuoteRequest,
     /// All quotes sorted from best to worst. Guaranteed to be non-empty.
     quotes: Vec<QuoteResponse>,
     pub metadata: QuoteCompetitionMetadata,
+}
+
+// Custom [`Debug`] implementation to not log the entire quote competition.
+// Only the winning quote is relevant for logging.
+impl std::fmt::Debug for QuoteCompetition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let winner = self.quotes.first().expect("non-empty by construction");
+        f.debug_struct("QuoteCompetition")
+            .field("request", &self.request)
+            .field("metadata", &self.metadata)
+            .field("quotes", &self.quotes.len())
+            .field("winner_solver", &winner.solver)
+            .field("winner_quote_id", &winner.quote_id)
+            .field("winner_sell_amount", &winner.quoted_sell_amount)
+            .field("winner_buy_amount", &winner.quoted_buy_amount)
+            .field("winner_gas_amount", &winner.gas_amount)
+            .field("winner_verified", &winner.verified)
+            .field("winner_supports_fast_path", &winner.supports_fast_path)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -803,9 +823,10 @@ impl StreamingQuoting for OrderQuoter {
             self.native_price_estimator
                 .estimate_native_price(parameters.sell_token, trade_query.timeout)
                 .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeSell, err))),
-            // We don't care about the native price of the buy_token for the quote but we need it
-            // when we build the auction. To prevent creating orders which we can't settle later on
-            // we make the native buy_token price a requirement here as well.
+            // We don't care about the native price of the buy_token for the
+            // quote but we need it when we build the auction. To prevent
+            // creating orders which we can't settle later on we make the native
+            // buy_token price a requirement here as well.
             self.native_price_estimator
                 .estimate_native_price(parameters.buy_token, trade_query.timeout)
                 .map_err(|err| CalculateQuoteError::from((EstimatorKind::NativeBuy, err))),

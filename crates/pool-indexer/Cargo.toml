@@ -13,6 +13,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "pool-indexer"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 alloy-contract = { workspace = true }

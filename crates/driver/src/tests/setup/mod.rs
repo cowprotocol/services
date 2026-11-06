@@ -10,7 +10,6 @@ use {
         infra::{
             self,
             config::file::{
-                FeeHandler,
                 OrderPriorityStrategy,
                 default_http_time_buffer,
                 default_solving_share_of_deadline,
@@ -58,6 +57,7 @@ use {
 };
 
 pub mod blockchain;
+pub mod builder;
 mod driver;
 pub mod fee;
 mod orderbook;
@@ -121,7 +121,8 @@ pub struct Order {
     pub created: u32,
     pub valid_to: u32,
 
-    // Currently used for limit orders to represent the surplus_fee calculated by the solver.
+    // Currently used for limit orders to represent the surplus_fee calculated
+    // by the solver.
     pub solver_fee: Option<eth::U256>,
 
     /// Set a value to be used to divide the order buy or sell amount before
@@ -336,8 +337,6 @@ pub struct Solver {
     slippage: Slippage,
     /// The fraction of time used for solving
     timeouts: infra::solver::Timeouts,
-    /// Determines whether the `solver` or the `driver` handles the fees
-    fee_handler: FeeHandler,
     /// Whether or not solver is allowed to combine multiple solutions into a
     /// new one.
     merge_solutions: bool,
@@ -373,7 +372,6 @@ pub fn test_solver() -> Solver {
             http_delay: chrono::Duration::from_std(default_http_time_buffer()).unwrap(),
             solving_share_of_deadline: default_solving_share_of_deadline().try_into().unwrap(),
         },
-        fee_handler: FeeHandler::default(),
         merge_solutions: false,
         solver_fee_bps: 0,
         max_solutions_to_propose: 1,
@@ -406,11 +404,6 @@ impl Solver {
 
     pub fn balance(self, balance: eth::U256) -> Self {
         Self { balance, ..self }
-    }
-
-    pub fn fee_handler(mut self, fee_handler: FeeHandler) -> Self {
-        self.fee_handler = fee_handler;
-        self
     }
 
     pub fn merge_solutions(mut self) -> Self {
@@ -485,24 +478,13 @@ fn ceil_div(x: eth::U256, y: eth::U256) -> eth::U256 {
     (x + y - eth::U256::from(1)) / y
 }
 
-#[derive(Debug)]
-pub enum Mempool {
-    /// Uses the driver's main RPC URL
-    Default,
-    Private {
-        /// Uses ethrpc node if None
-        url: Option<String>,
-        mines_reverting_txs: bool,
-    },
-}
-
 /// Create a builder for the setup process.
 pub fn setup() -> Setup {
     Setup {
         solvers: vec![test_solver()],
         enable_simulation: true,
-        mempools: vec![Mempool::Default],
         rpc_args: vec!["--gas-limit".into(), "10000000".into()],
+        builders: Default::default(),
         allow_multiple_solve_requests: false,
         auction_id: 1,
         quote_id: QUOTE_ID,
@@ -538,11 +520,11 @@ pub struct Setup {
     balances_address: Option<eth::Address>,
     /// Ensure the Signatures contract is deployed on a specific address?
     signatures_address: Option<eth::Address>,
-    /// Mempools that should be used for solution submission in addition
-    /// to the main RPC URL.
-    mempools: Vec<Mempool>,
     /// Extra configuration for the RPC node
     rpc_args: Vec<String>,
+    /// Block builders to send the settlement to instead of the public mempool
+    /// of the test node.
+    builders: Vec<String>,
     /// List of jit orders returned by the solver
     jit_orders: Vec<JitOrder>,
     /// List of surplus capturing JIT-order owners
@@ -886,8 +868,8 @@ impl Setup {
         self
     }
 
-    pub fn mempools(mut self, mempools: Vec<Mempool>) -> Self {
-        self.mempools = mempools;
+    pub fn builders(mut self, urls: Vec<String>) -> Self {
+        self.builders = urls;
         self
     }
 
@@ -954,7 +936,8 @@ impl Setup {
         // Create the necessary components for testing.
         let blockchain = Blockchain::new(blockchain::Config {
             pools,
-            // This PK is publicly known - don't send any funds to its account onchain!!!
+            // This PK is publicly known - don't send any funds to its account
+            // onchain!!!
             main_trader_secret_key: PrivateKeySigner::from_bytes(&b256!(
                 "f9f831cee763ef826b8d45557f0f8677b27045e0e011bcd78571a40acc8a6cc3"
             ))
@@ -1025,7 +1008,6 @@ impl Setup {
                 quote: self.quote,
                 quote_id: self.quote.then_some(self.quote_id),
                 fast_path: self.quote && self.quote_fast_path,
-                fee_handler: solver.fee_handler,
                 private_key: solver.signer.clone(),
                 expected_surplus_capturing_jit_order_owners: surplus_capturing_jit_order_owners
                     .clone(),
@@ -1042,7 +1024,7 @@ impl Setup {
             &driver::Config {
                 config_file,
                 enable_simulation: self.enable_simulation,
-                mempools: self.mempools,
+                builders: self.builders,
                 order_priority_strategies: self.order_priority_strategies,
                 orderbook,
                 flashloans_enabled: self.flashloans_enabled,

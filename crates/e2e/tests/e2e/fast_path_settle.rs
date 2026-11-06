@@ -730,8 +730,8 @@ async fn fast_path_penalty_cap(web3: Web3) {
         penalty_cap: Some(PenaltyCapConfig {
             default_factor: 0.0004.try_into().unwrap(),
             absolute_cap_usd: 20.,
-            // WETH as the USD reference: its native price is 1 by definition, so
-            // the bound is 20 ETH. The test only cares about the plumbing.
+            // WETH as the USD reference: its native price is 1 by definition,
+            // so the bound is 20 ETH. The test only cares about the plumbing.
             usd_reference_token: *onchain.contracts().weth.address(),
             overrides: vec![],
         }),

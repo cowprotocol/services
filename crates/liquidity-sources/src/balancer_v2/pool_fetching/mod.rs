@@ -162,8 +162,8 @@ pub trait BalancerPoolFetching: Send + Sync {
 pub struct BalancerPoolFetcher {
     fetcher: Arc<dyn InternalPoolFetching>,
     // We observed some balancer pools like https://app.balancer.fi/#/pool/0x072f14b85add63488ddad88f855fda4a99d6ac9b000200000000000000000027
-    // being problematic because their token balance becomes out of sync leading to simulation
-    // failures.
+    // being problematic because their token balance becomes out of sync leading
+    // to simulation failures.
     // https://forum.balancer.fi/t/medium-severity-bug-found/3161
     pool_id_deny_list: Vec<B256>,
 }

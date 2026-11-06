@@ -180,18 +180,7 @@ pub fn fast_path_order_into_model(order: &PendingFastPathOrderDb) -> Result<Orde
     })
 }
 
-pub fn order_quote_into_model(
-    quote: &database::orders::Quote,
-    status: model::order::OrderStatus,
-) -> Result<OrderQuote> {
-    let metadata = match status {
-        // We don't want to make the quote's execution plan public as long as an order
-        // is still fillable. Otherwise solvers can just try to copy the execution
-        // plan which could lead to undesirable behavior of quoters.
-        OrderStatus::Open | OrderStatus::PresignaturePending => Default::default(),
-        _ => quote.metadata.clone(),
-    };
-
+pub fn order_quote_into_model(quote: &database::orders::Quote) -> Result<OrderQuote> {
     let fee_amount = crate::fee::FeeParameters {
         gas_amount: quote.gas_amount,
         gas_price: quote.gas_price,
@@ -209,7 +198,7 @@ pub fn order_quote_into_model(
         fee_amount,
         solver: Address::new(quote.solver.0),
         verified: quote.verified,
-        metadata,
+        metadata: quote.metadata.clone(),
     })
 }
 

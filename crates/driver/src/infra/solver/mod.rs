@@ -13,9 +13,7 @@ use {
             time::Remaining,
         },
         infra::{
-            self,
             blockchain::Ethereum,
-            config::file::FeeHandler,
             persistence::{Persistence, S3},
         },
         util,
@@ -130,7 +128,8 @@ impl TxSigner<Signature> for Account {
         match self {
             Account::PrivateKey(local_signer) => local_signer.sign_transaction(tx).await,
             Account::Kms(aws_signer) => aws_signer.sign_transaction(tx).await,
-            // The address actually can't sign anything but for TxSigner only the Tx matters
+            // The address actually can't sign anything but for TxSigner only
+            // the Tx matters
             Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
@@ -138,21 +137,37 @@ impl TxSigner<Signature> for Account {
     }
 }
 
-impl Account {
-    /// Sign a hash using the underlying signer. Needed for EIP-7702
-    /// authorization signing which requires `Signer::sign_hash` rather than
-    /// `TxSigner::sign_transaction`.
-    pub async fn sign_hash(
-        &self,
-        hash: &alloy::primitives::B256,
-    ) -> alloy::signers::Result<Signature> {
-        use alloy::signers::Signer;
+/// Signs hashes with the underlying signer: EIP-7702 authorizations and the
+/// `X-Flashbots-Signature` header of builder requests.
+#[async_trait::async_trait]
+impl alloy::signers::Signer for Account {
+    async fn sign_hash(&self, hash: &alloy::primitives::B256) -> alloy::signers::Result<Signature> {
         match self {
             Account::PrivateKey(signer) => signer.sign_hash(hash).await,
             Account::Kms(signer) => signer.sign_hash(hash).await,
             Account::Address(_) => Err(alloy::signers::Error::UnsupportedOperation(
                 alloy::signers::UnsupportedSignerOperation::SignHash,
             )),
+        }
+    }
+
+    fn address(&self) -> Address {
+        TxSigner::address(self)
+    }
+
+    fn chain_id(&self) -> Option<alloy::primitives::ChainId> {
+        match self {
+            Account::PrivateKey(signer) => alloy::signers::Signer::chain_id(signer),
+            Account::Kms(signer) => alloy::signers::Signer::chain_id(signer),
+            Account::Address(_) => None,
+        }
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<alloy::primitives::ChainId>) {
+        match self {
+            Account::PrivateKey(signer) => alloy::signers::Signer::set_chain_id(signer, chain_id),
+            Account::Kms(signer) => alloy::signers::Signer::set_chain_id(signer, chain_id),
+            Account::Address(_) => {}
         }
     }
 }
@@ -184,8 +199,6 @@ pub struct Config {
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
     pub request_headers: HashMap<String, String>,
-    /// Determines whether the `solver` or the `driver` handles the fees
-    pub fee_handler: FeeHandler,
     /// Whether this solver supports fast-path (out-of-competition) execution.
     pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
@@ -202,9 +215,6 @@ pub struct Config {
     pub settle_queue_size: usize,
     /// Whether flashloan hints should be sent to the solver.
     pub flashloans_enabled: bool,
-    /// Defines at which block the liquidity needs to be fetched on /solve
-    /// requests.
-    pub fetch_liquidity_at_block: infra::liquidity::AtBlock,
     /// Volume-based solver fee in basis points (0-10000). Injected as an
     /// additional `FeePolicy::Volume` on every auction order, reusing the
     /// protocol fee machinery to make competition bids and delivered prices
@@ -330,8 +340,8 @@ impl Solver {
         Timeouts {
             // quote requests are tiny so the network buffer can be small
             http_delay: chrono::Duration::milliseconds(25),
-            // the driver doesn't do any post-processing for quote responses so we can use
-            // the entire time for computing solutions
+            // the driver doesn't do any post-processing for quote responses so
+            // we can use the entire time for computing solutions
             solving_share_of_deadline: 1.0.try_into().expect("literal is in allowed range"),
         }
     }
@@ -355,10 +365,6 @@ impl Solver {
 
     pub fn settle_queue_size(&self) -> usize {
         self.config.settle_queue_size
-    }
-
-    pub fn fetch_liquidity_at_block(&self) -> infra::liquidity::AtBlock {
-        self.config.fetch_liquidity_at_block.clone()
     }
 
     /// The volume-based fee policy injected for this solver, if configured.
@@ -407,7 +413,6 @@ impl Solver {
             auction,
             liquidity,
             weth,
-            self.config.fee_handler,
             self.config.solver_native_token,
             &flashloan_hints,
             &wrappers,
@@ -635,7 +640,6 @@ mod tests {
                 solving_share_of_deadline: 1.0.try_into().unwrap(),
             },
             request_headers: Default::default(),
-            fee_handler: FeeHandler::Driver,
             fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,
@@ -657,7 +661,6 @@ mod tests {
             },
             settle_queue_size: 0,
             flashloans_enabled: false,
-            fetch_liquidity_at_block: infra::liquidity::AtBlock::Latest,
             solver_fee_bps: 0,
             submission_accounts: vec![],
             max_solutions_to_propose: NonZeroUsize::new(1).unwrap(),

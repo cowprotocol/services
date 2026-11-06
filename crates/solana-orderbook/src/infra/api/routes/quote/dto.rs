@@ -1,6 +1,7 @@
 //! Wire shape of the quote endpoint, mirroring the EVM orderbook.
 
 use {
+    app_data::OrderCreationAppData,
     chrono::{DateTime, Utc},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, serde_as},
@@ -20,7 +21,7 @@ pub struct Request {
     pub sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     pub buy_token: Pubkey,
-    /// The buy token account proceeds would land in. Echoed back untouched.
+    /// Account or wallet the proceeds would land in. Echoed back untouched.
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
     pub receiver: Option<Pubkey>,
@@ -28,9 +29,28 @@ pub struct Request {
     pub side: Side,
     #[serde(flatten, default)]
     pub validity: Option<Validity>,
-    /// `0x`-prefixed 32 bytes, echoed back untouched.
+    /// The order's app data, the document or its hash, checked like at
+    /// placement. The zero hash when absent.
+    #[serde(flatten, deserialize_with = "app_data::deserialize_optional_app_data")]
+    pub app_data: OrderCreationAppData,
+    /// How much of the quote competition to wait for, `verified` when absent.
     #[serde(default)]
-    pub app_data: Option<String>,
+    pub price_quality: PriceQuality,
+}
+
+/// How good the quote should be, the EVM `priceQuality`.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum PriceQuality {
+    /// The best quote of the fastest `n` drivers, unverified and not stored.
+    Fast,
+    /// The best quote of every driver, ranked purely by the promised price
+    /// without verifying quotes by simulation.
+    Optimal,
+    /// Quotes get verified by simulation whenever possible and verified
+    /// quotes are preferred over unverified ones, even at a worse price.
+    #[default]
+    Verified,
 }
 
 /// Which side the quote fixes, and the amount that side names.
@@ -49,8 +69,8 @@ pub enum Side {
     },
 }
 
-/// The sell amount, with or without the fee. No component charges a fee, so
-/// both spellings name the same number.
+/// The amount to sell, with the fee inside (`sellAmountBeforeFee`) or on top
+/// of it (`sellAmountAfterFee`).
 #[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -109,8 +129,7 @@ pub struct Response {
     pub expiration: DateTime<Utc>,
     /// The stored quote's id, absent when the store was unavailable.
     pub id: Option<i64>,
-    /// Whether the amounts were confirmed by simulating the settlement. No
-    /// component simulates, so a quote is indicative.
+    /// Whether the amounts were confirmed by simulating the settlement.
     pub verified: bool,
     /// The account a sponsored creation transaction must name as its fee payer.
     /// Absent when the deployment does not sponsor placements.
@@ -129,18 +148,57 @@ pub struct Quote {
     pub buy_token: Pubkey,
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub receiver: Option<Pubkey>,
+    /// Net of `fee_amount` for a `sellAmountBeforeFee` request, the requested
+    /// amount for `sellAmountAfterFee`, the sell amount the winning driver
+    /// quoted for a buy order.
     #[serde_as(as = "DisplayFromStr")]
     pub sell_amount: u64,
+    /// Net of the execution cost for a `sellAmountBeforeFee` request. The buy
+    /// amount the winning driver quoted for `sellAmountAfterFee`, since
+    /// `fee_amount` on top covers the cost. The requested amount for a buy
+    /// order.
     #[serde_as(as = "DisplayFromStr")]
     pub buy_amount: u64,
     /// Unix seconds.
     pub valid_to: u32,
-    pub app_data: Option<String>,
-    /// Always zero: no component charges a fee.
+    /// The request's app data, a document with its hash alongside.
+    #[serde(flatten)]
+    pub app_data: OrderCreationAppData,
+    /// The execution cost as the sell token, the EVM `feeAmount`: `costs.total`
+    /// for a buy order, `costs.total` converted from the buy token at the
+    /// native prices and rounded up for a sell order. An order placed on the
+    /// quote sells `sell_amount + fee_amount`.
     #[serde_as(as = "DisplayFromStr")]
     pub fee_amount: u64,
+    pub costs: Costs,
     pub kind: Kind,
     pub partially_fillable: bool,
+}
+
+/// The execution cost taken out of the quoted amounts, in the token it comes
+/// out of.
+#[serde_as]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Costs {
+    /// The buy token of a sell order, the sell token of a buy order. The
+    /// amounts below are in its atoms.
+    #[serde_as(as = "DisplayFromStr")]
+    pub token: Pubkey,
+    /// The network fee of settling the quoted route, as the winning driver
+    /// reported it, zero when it reported none.
+    #[serde_as(as = "DisplayFromStr")]
+    pub network_fees: u64,
+    /// Rent of the buy token account when the settlement must create it.
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_token_ata_costs: u64,
+    /// Always zero: no protocol fee is charged.
+    #[serde_as(as = "DisplayFromStr")]
+    pub protocol_fee: u64,
+    /// The sum, what the driver takes at settlement. `fee_amount` is it as the
+    /// sell token.
+    #[serde_as(as = "DisplayFromStr")]
+    pub total: u64,
 }
 
 #[cfg(test)]
@@ -149,7 +207,7 @@ mod tests {
 
     #[test]
     fn accepts_the_evm_request_body() {
-        // Fields with no Solana meaning.
+        // The EVM body, with fields that have no Solana meaning.
         let raw = serde_json::json!({
             "from": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
             "sellToken": "So11111111111111111111111111111111111111112",
@@ -165,6 +223,7 @@ mod tests {
         assert_eq!(request.side.kind_and_amount(), (Kind::Sell, 10_000_000));
         assert!(matches!(request.validity, Some(Validity::ValidFor(1800))));
         assert!(request.receiver.is_none());
+        assert_eq!(request.price_quality, PriceQuality::Optimal);
     }
 
     #[test]
@@ -183,9 +242,11 @@ mod tests {
             request.validity,
             Some(Validity::ValidTo(1787740563))
         ));
+        assert_eq!(request.price_quality, PriceQuality::Verified);
     }
 
-    /// Both spellings of the sell amount name the same number.
+    /// Either spelling of the sell amount parses to the amount the driver
+    /// routes.
     #[test]
     fn sell_amount_after_fee_is_read_too() {
         let raw = serde_json::json!({
