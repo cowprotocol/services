@@ -99,9 +99,10 @@ struct CachedResult {
 /// estimator.
 const ACCUMULATIVE_ERRORS_THRESHOLD: u32 = 5;
 
-/// Errors that may go away on retry. They only get served from the cache once
-/// they repeated `ACCUMULATIVE_ERRORS_THRESHOLD` times in a row, so a token
-/// nobody can price doesn't rerun the whole competition on every request.
+/// Estimator errors that may go away on retry. They only get served from the
+/// cache once they have repeated `ACCUMULATIVE_ERRORS_THRESHOLD` times in a
+/// row, so a token nobody can price doesn't rerun the whole competition on
+/// every request.
 fn is_accumulating_error(result: &CacheEntry) -> bool {
     matches!(
         result,
@@ -118,14 +119,16 @@ impl CachedResult {
         }
     }
 
-    fn update(&mut self, result: CacheEntry) {
+    fn update(&mut self, result: CacheEntry, max_age: Duration) {
         // A rate limit says nothing about the token, so it doesn't replace a
-        // known price.
-        if self.result.is_ok() && matches!(result, Err(PriceEstimationError::RateLimited)) {
+        // price or final error that is still valid.
+        if matches!(result, Err(PriceEstimationError::RateLimited))
+            && !is_accumulating_error(&self.result)
+            && self.updated_at.elapsed() < max_age
+        {
             return;
         }
-        let now = Instant::now();
-        self.updated_at = now;
+        self.updated_at = Instant::now();
         self.accumulative_errors_count = if is_accumulating_error(&result) {
             self.accumulative_errors_count + 1
         } else {
@@ -141,7 +144,6 @@ impl CachedResult {
 }
 
 fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
-    // We don't want to cache errors that we consider transient
     match result {
         Ok(_)
         | Err(PriceEstimationError::NoLiquidity)
@@ -266,7 +268,7 @@ impl Cache {
             .and_upsert_with(|maybe_entry| match maybe_entry {
                 Some(entry) => {
                     let mut cached = entry.into_value();
-                    cached.update(result);
+                    cached.update(result, self.0.max_age);
                     cached
                 }
                 None => CachedResult::new(result),
@@ -1041,6 +1043,26 @@ mod tests {
             .estimate_native_price(token(0), HEALTHY_PRICE_ESTIMATION_TIME)
             .await;
         assert_eq!(price.unwrap(), 1.0);
+    }
+
+    #[test]
+    fn rate_limited_keeps_only_fresh_answers() {
+        let max_age = Duration::from_secs(60);
+
+        let mut no_liquidity = CachedResult::new(Err(PriceEstimationError::NoLiquidity));
+        no_liquidity.update(Err(PriceEstimationError::RateLimited), max_age);
+        assert!(matches!(
+            no_liquidity.result,
+            Err(PriceEstimationError::NoLiquidity)
+        ));
+
+        let mut expired_price = CachedResult {
+            result: Ok(1.0),
+            updated_at: Cache::updated_at_percentage(max_age, Instant::now(), 100),
+            accumulative_errors_count: 0,
+        };
+        expired_price.update(Err(PriceEstimationError::RateLimited), max_age);
+        assert_eq!(expired_price.accumulative_errors_count, 1);
     }
 
     #[tokio::test]
