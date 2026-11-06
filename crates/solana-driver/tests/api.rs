@@ -1189,6 +1189,51 @@ fn solve_request_with_policies(
     request
 }
 
+/// The auction order sells 1000 for at least 2000, the cut is 100 atoms, the
+/// solver fee 500 bps and the protocol fee 10 bps of the volume. The engine
+/// is asked for 2211, the limit after the cut and the solver fee, and sees
+/// no policy. Its route paying 3000 is reported at 2748: 3000 less the 150
+/// solver fee, the cut, and the 2 protocol fee of what is left.
+#[tokio::test]
+async fn solve_takes_the_protocol_fee_after_the_cut_and_the_solver_fee() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 500).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let request = solve_request_with_policies(
+        solve_request_priced_for_a_cut_of(100),
+        serde_json::json!([{"volume": {"factor": 0.001}}]),
+    );
+    let body = call_solve_with(addr, request).await;
+    let amounts = &body["solutions"][0]["orders"][uid()];
+    assert_eq!(amounts["executedSell"], "1000");
+    assert_eq!(amounts["executedBuy"], "2748");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2211");
+    assert!(request["orders"][0].get("protocolFees").is_none());
+}
+
+/// An engine pricing its own costs still has the protocol fee taken: half
+/// the 1000 surplus over the 2000 limit, capped at 1% of the 3000 bought. A
+/// surplus policy leaves the engine's limit alone.
+#[tokio::test]
+async fn solve_takes_the_protocol_fee_from_a_self_pricing_engines_fill() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let request = solve_request_with_policies(
+        solve_request(),
+        serde_json::json!([{"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}}]),
+    );
+    let body = call_solve_with(addr, request).await;
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2970");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2000");
+}
+
 #[tokio::test]
 async fn solve_rejects_a_fee_policy_factor_outside_the_unit_interval() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;

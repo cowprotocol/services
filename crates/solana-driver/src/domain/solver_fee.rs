@@ -197,6 +197,7 @@ mod tests {
                 executed_sell,
                 executed_buy,
                 solver_fee: 0,
+                protocol_fee: 0,
             }],
             interactions: vec![],
             cu_estimate: None,
@@ -393,6 +394,7 @@ mod tests {
             executed_sell: 1_000,
             executed_buy: 1_000,
             solver_fee: 0,
+            protocol_fee: 0,
         });
         let mut m = orders(&order);
         let mut order2 = order.clone();
