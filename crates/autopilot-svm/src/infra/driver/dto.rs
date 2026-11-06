@@ -206,6 +206,8 @@ mod tests {
             executed: 400,
             creation: None,
             sell_balance: Some(500),
+            quote: None,
+            protocol_fees: Vec::new(),
         }
     }
 

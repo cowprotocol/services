@@ -2,7 +2,10 @@
 //! vocabulary and their assembly from database rows.
 
 use {
-    crate::run_loop::AuctionInfo,
+    crate::{
+        domain::fee::{FeePolicy, Quote},
+        run_loop::AuctionInfo,
+    },
     chain_types::solana::{AppData, IntentHash, NATIVE_SOL, Pubkey},
     std::collections::HashMap,
 };
@@ -51,6 +54,12 @@ pub struct Order {
     /// capped by the delegated one. `None` for a pending sponsored order,
     /// whose creation funds it.
     pub sell_balance: Option<u64>,
+    /// The quote the orderbook linked the order to at placement, if any. It
+    /// decides the order's class for the fee policies.
+    pub quote: Option<Quote>,
+    /// The protocol fee policies the driver applies to the order's fills, in
+    /// order.
+    pub protocol_fees: Vec<FeePolicy>,
 }
 
 impl Order {
@@ -202,6 +211,8 @@ mod tests {
             executed: 0,
             creation: None,
             sell_balance: None,
+            quote: None,
+            protocol_fees: Vec::new(),
         }
     }
 
