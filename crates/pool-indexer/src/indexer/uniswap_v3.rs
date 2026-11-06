@@ -684,16 +684,17 @@ const MAX_BISECTION_DEPTH: u32 = 8;
 
 /// Retry transient `eth_getLogs` failures (timeout, reset, throttle) with
 /// backoff, capped by a per-call timeout, so one blip can't abort a long
-/// cold-seed scan. Range-size rejections are bisected, not retried.
+/// cold-seed scan. Range-size rejections are bisected, not retried, and so are
+/// cut-off replies while the range can still shrink.
 const GETLOGS_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_GETLOGS_RETRIES: u32 = 6;
 const GETLOGS_RETRY_BACKOFF: Duration = Duration::from_secs(2);
 
 /// Fetches logs for `[from, to]` filtered by the given contract addresses
 /// and `topic0` event signatures, sequentially bisecting the block range on
-/// "too large" rejections until each sub-range is tractable. An empty
-/// `addresses` list means "any contract". Bisection depth is capped by
-/// [`MAX_BISECTION_DEPTH`].
+/// "too large" rejections or cut-off replies until each sub-range is
+/// tractable. An empty `addresses` list means "any contract". Bisection depth
+/// is capped by [`MAX_BISECTION_DEPTH`].
 pub(crate) fn bisecting_get_logs(
     provider: &AlloyProvider,
     from: u64,
@@ -731,6 +732,17 @@ fn bisecting_get_logs_with_depth(
                             anyhow::Error::new(err).context(format!("get_logs({from}..={to})"))
                         );
                     }
+                    break;
+                }
+                // Reply cut off, e.g. by a proxy whose buffer it overflowed:
+                // bisect while the range can still shrink. The batching layer
+                // flattens transport errors into strings, hence the name match.
+                Ok(Err(err))
+                    if format!("{err:?}").contains("IncompleteMessage")
+                        && to > from
+                        && depth < MAX_BISECTION_DEPTH =>
+                {
+                    tracing::warn!(?err, from, to, "get_logs reply cut off, bisecting");
                     break;
                 }
                 Ok(Err(err)) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
@@ -1132,6 +1144,41 @@ mod tests {
     /// committed yet — only in-chunk PoolCreateds are accepted."
     fn known(pools: &[Address]) -> HashSet<Address> {
         pools.iter().copied().collect()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn get_logs_bisects_only_cut_off_replies() {
+        let asserter = alloy_provider::mock::Asserter::new();
+        let provider = alloy_provider::ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
+        let logs = |blocks: std::ops::RangeInclusive<u64>| -> Vec<Log> {
+            blocks
+                .map(|block| Log {
+                    block_number: Some(block),
+                    ..Default::default()
+                })
+                .collect()
+        };
+        let fetched_blocks = async || -> Vec<u64> {
+            bisecting_get_logs(&provider, 1, 4, vec![], vec![])
+                .await
+                .unwrap()
+                .iter()
+                .map(|log| log.block_number.unwrap())
+                .collect()
+        };
+
+        // Cut off: split into 1..=2 and 3..=4.
+        asserter.push_failure_msg("batch call failed: hyper::Error(IncompleteMessage)");
+        asserter.push_success(&logs(1..=2));
+        asserter.push_success(&logs(3..=4));
+        assert_eq!(fetched_blocks().await, [1, 2, 3, 4]);
+
+        // Throttled: retried on the same range, not split.
+        asserter.push_failure_msg("batch call failed: HttpError(429)");
+        asserter.push_success(&logs(1..=4));
+        assert_eq!(fetched_blocks().await, [1, 2, 3, 4]);
     }
 
     #[test]
