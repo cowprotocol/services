@@ -2,6 +2,7 @@
 
 use {
     configs::{
+        autopilot::fee_policy::FeePoliciesConfig,
         database::DatabasePoolConfig,
         deserialize_env::deserialize_string_from_env,
         shared::LoggingConfig,
@@ -50,6 +51,11 @@ pub struct Config {
     /// Competition parameters.
     #[serde(default)]
     pub competition: Competition,
+    /// Protocol fee policies by order class, the EVM autopilot's section.
+    /// Without it no order carries a policy. `max-partner-fee` is read but
+    /// unused: Solana orders carry no partner fee.
+    #[serde(default)]
+    pub fee_policies: FeePoliciesConfig,
     /// Port the metrics and probes server binds to, on every interface.
     #[serde(default = "default_metrics_port")]
     pub metrics_port: u16,
@@ -345,6 +351,8 @@ mod tests {
         assert_eq!(config.competition.max_winners.get(), 1);
         assert_eq!(config.competition.solve_deadline, Duration::from_secs(6));
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
+        assert_eq!(config.fee_policies.policies.len(), 1);
+        assert!(config.fee_policies.upcoming_policies.policies.is_empty());
         assert_eq!(config.api_address, "0.0.0.0:12088".parse().unwrap());
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
