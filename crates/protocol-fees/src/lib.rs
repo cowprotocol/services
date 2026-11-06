@@ -1,0 +1,364 @@
+//! Protocol fee policies and the fee math over a fill.
+//!
+//! Generic over the chain's type vocabulary ([`ChainTypes`]). [`FeePolicy`],
+//! [`Quote`] and [`Order`] default their chain parameter to [`Evm`], so their
+//! bare names mean the EVM instantiation.
+
+use {
+    anyhow::{Context, Result},
+    chain_types::{Amount, ChainTypes, MathError, MathResult, Zero, evm::Evm},
+};
+
+/// Order side (buy or sell).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+/// Protocol fee policy.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FeePolicy<C: ChainTypes = Evm> {
+    /// Fee as a percentage of surplus over limit price.
+    Surplus { factor: f64, max_volume_factor: f64 },
+    /// Fee as a percentage of price improvement over quote.
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote<C>,
+    },
+    /// Fee as a percentage of order volume.
+    Volume { factor: f64 },
+}
+
+/// Quote data for price improvement fee calculation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quote<C: ChainTypes = Evm> {
+    pub sell_amount: C::Amount,
+    pub buy_amount: C::Amount,
+    pub fee: C::Amount,
+    pub solver: C::AccountId,
+}
+
+/// An order's limit amounts and the amounts a solution executed for it.
+#[derive(Debug, Clone)]
+pub struct Order<C: ChainTypes = Evm> {
+    /// Unique order identifier.
+    pub uid: C::OrderUid,
+
+    /// Sell token address.
+    pub sell_token: C::TokenId,
+
+    /// Buy token address.
+    pub buy_token: C::TokenId,
+
+    /// Limit amount of sell token (from original order parameters).
+    ///
+    /// This is the maximum amount the user is willing to sell.
+    pub sell_amount: C::Amount,
+
+    /// Limit amount of buy token (from original order parameters).
+    ///
+    /// This is the minimum amount the user wants to receive.
+    pub buy_amount: C::Amount,
+
+    /// Amount of sell token that left the user's wallet (including fees).
+    ///
+    /// This is the actual executed amount in this solution.
+    pub executed_sell: C::Amount,
+
+    /// Amount of buy token the user received (after fees).
+    ///
+    /// This is the actual amount the user got in this solution.
+    pub executed_buy: C::Amount,
+
+    /// Order side (Buy or Sell).
+    ///
+    /// Determines how surplus is calculated.
+    pub side: Side,
+}
+
+/// Clearing prices for a trade.
+///
+/// These can be either uniform (same for all orders) or custom (adjusted for
+/// protocol fees on a per-order basis).
+#[derive(Debug, Clone, Copy)]
+pub struct ClearingPrices<C: ChainTypes> {
+    /// Price of sell token in terms of buy token.
+    sell: C::Amount,
+    /// Price of buy token in terms of sell token.
+    buy: C::Amount,
+}
+
+/// Price limits for an order or quote.
+#[derive(Debug, Clone, Copy)]
+struct PriceLimits<C: ChainTypes> {
+    /// Maximum sell amount.
+    sell: C::Amount,
+    /// Minimum buy amount.
+    buy: C::Amount,
+}
+
+/// Calculate total protocol fees for an order.
+///
+/// Returns the total fee in the surplus token.
+pub fn protocol_fees<C: ChainTypes>(
+    order: &Order<C>,
+    policies: &[FeePolicy<C>],
+    base_prices: &ClearingPrices<C>,
+) -> Result<C::Amount> {
+    let mut total_fee = C::Amount::zero();
+    let mut current_prices = *base_prices;
+
+    // Process policies in reverse order, updating custom prices as we go
+    for (i, policy) in policies.iter().enumerate().rev() {
+        let fee = protocol_fee(order, policy, &current_prices)?;
+
+        total_fee = total_fee
+            .try_add(fee)
+            .context("overflow adding protocol fees")?;
+
+        // Update custom prices for next iteration (except last iteration)
+        if i != 0 {
+            current_prices = calculate_custom_prices(order, total_fee, base_prices)?;
+        }
+    }
+
+    Ok(total_fee)
+}
+
+/// Calculate a single protocol fee based on policy type.
+fn protocol_fee<C: ChainTypes>(
+    order: &Order<C>,
+    policy: &FeePolicy<C>,
+    custom_prices: &ClearingPrices<C>,
+) -> MathResult<C::Amount> {
+    match policy {
+        FeePolicy::Surplus {
+            factor,
+            max_volume_factor,
+        } => {
+            let surplus = surplus_over_limit_price(order, custom_prices)?;
+            let surplus_fee = surplus_fee::<C>(surplus, *factor)?;
+            let volume_fee = volume_fee(order, custom_prices, *max_volume_factor)?;
+            Ok(surplus_fee.min(volume_fee))
+        }
+        FeePolicy::PriceImprovement {
+            factor,
+            max_volume_factor,
+            quote,
+        } => {
+            let price_improvement = price_improvement_over_quote(order, custom_prices, quote)?;
+            let surplus_fee = surplus_fee::<C>(price_improvement, *factor)?;
+            let volume_fee = volume_fee(order, custom_prices, *max_volume_factor)?;
+            Ok(surplus_fee.min(volume_fee))
+        }
+        FeePolicy::Volume { factor } => volume_fee(order, custom_prices, *factor),
+    }
+}
+
+/// Calculate surplus over limit price using custom clearing prices.
+pub fn surplus_over_limit_price<C: ChainTypes>(
+    order: &Order<C>,
+    prices: &ClearingPrices<C>,
+) -> MathResult<C::Amount> {
+    surplus_over(
+        order,
+        prices,
+        PriceLimits {
+            sell: order.sell_amount,
+            buy: order.buy_amount,
+        },
+    )
+}
+
+/// Calculate surplus over arbitrary price limits.
+fn surplus_over<C: ChainTypes>(
+    order: &Order<C>,
+    prices: &ClearingPrices<C>,
+    limits: PriceLimits<C>,
+) -> MathResult<C::Amount> {
+    let executed = match order.side {
+        Side::Buy => order.executed_buy,
+        Side::Sell => order.executed_sell,
+    };
+
+    match order.side {
+        Side::Buy => {
+            // Scale limit sell to support partially fillable orders
+            let limit_sell = limits.sell.try_mul_div_floor(executed, limits.buy)?;
+
+            let sold = executed.try_mul_div_floor(prices.buy, prices.sell)?;
+
+            limit_sell.try_sub(sold)
+        }
+        Side::Sell => {
+            // Scale limit buy to support partially fillable orders (ceiling
+            // division)
+            let limit_buy = executed.try_mul_div_ceil(limits.buy, limits.sell)?;
+
+            let bought = executed.try_mul_div_ceil(prices.sell, prices.buy)?;
+
+            bought.try_sub(limit_buy)
+        }
+    }
+}
+
+/// Calculate price improvement over quote.
+///
+/// Returns 0 if there's no improvement (instead of error).
+fn price_improvement_over_quote<C: ChainTypes>(
+    order: &Order<C>,
+    prices: &ClearingPrices<C>,
+    quote: &Quote<C>,
+) -> MathResult<C::Amount> {
+    let adjusted_quote = adjust_quote_to_order_limits(order, quote)?;
+    match surplus_over(order, prices, adjusted_quote) {
+        Ok(surplus) => Ok(surplus),
+        Err(MathError::Negative) => Ok(C::Amount::zero()),
+        Err(err) => Err(err),
+    }
+}
+
+/// Adjust quote amounts to be comparable with order limits.
+fn adjust_quote_to_order_limits<C: ChainTypes>(
+    order: &Order<C>,
+    quote: &Quote<C>,
+) -> MathResult<PriceLimits<C>> {
+    match order.side {
+        Side::Sell => {
+            // Quote buy amount after fees
+            let quote_buy_amount = quote.buy_amount.try_sub(
+                quote
+                    .fee
+                    .try_mul_div_floor(quote.buy_amount, quote.sell_amount)?,
+            )?;
+
+            // Scale to order's sell amount
+            let scaled_buy_amount =
+                quote_buy_amount.try_mul_div_floor(order.sell_amount, quote.sell_amount)?;
+
+            // Use max to handle out-of-market orders
+            let buy_amount = order.buy_amount.max(scaled_buy_amount);
+
+            Ok(PriceLimits {
+                sell: order.sell_amount,
+                buy: buy_amount,
+            })
+        }
+        Side::Buy => {
+            // Quote sell amount including fees
+            let quote_sell_amount = quote.sell_amount.try_add(quote.fee)?;
+
+            // Scale to order's buy amount
+            let scaled_sell_amount =
+                quote_sell_amount.try_mul_div_floor(order.buy_amount, quote.buy_amount)?;
+
+            // Use min to handle out-of-market orders
+            let sell_amount = order.sell_amount.min(scaled_sell_amount);
+
+            Ok(PriceLimits {
+                sell: sell_amount,
+                buy: order.buy_amount,
+            })
+        }
+    }
+}
+
+/// Calculate surplus fee as a cut of surplus.
+///
+/// Uses adjusted factor: fee = surplus * factor / (1 - factor)
+fn surplus_fee<C: ChainTypes>(surplus: C::Amount, factor: f64) -> MathResult<C::Amount> {
+    // Surplus fee is specified as a `factor` from raw surplus (before fee).
+    // Since we work with trades that already have the protocol fee applied,
+    // we need to calculate the protocol fee using an adjusted factor.
+    //
+    // fee = surplus_before_fee * factor
+    // surplus_after_fee = surplus_before_fee - fee
+    // fee = surplus_after_fee * factor / (1 - factor)
+    surplus.try_mul_f64(factor / (1.0 - factor))
+}
+
+/// Calculate volume fee as a cut of trade volume.
+fn volume_fee<C: ChainTypes>(
+    order: &Order<C>,
+    prices: &ClearingPrices<C>,
+    factor: f64,
+) -> MathResult<C::Amount> {
+    // Volume fee is specified as a factor from raw volume (before fee).
+    // We need to calculate using an adjusted factor based on order side.
+    //
+    // Sell: fee = traded_buy_amount * factor / (1 - factor)
+    // Buy:  fee = traded_sell_amount * factor / (1 + factor)
+
+    let executed_in_surplus_token = match order.side {
+        Side::Sell => buy_amount(order, prices)?,
+        Side::Buy => sell_amount(order, prices)?,
+    };
+
+    let adjusted_factor = match order.side {
+        Side::Sell => factor / (1.0 - factor),
+        Side::Buy => factor / (1.0 + factor),
+    };
+
+    executed_in_surplus_token.try_mul_f64(adjusted_factor)
+}
+
+/// Calculate custom clearing prices from executed amounts.
+///
+/// Custom prices are derived from what was actually executed.
+pub fn calculate_custom_prices_from_executed<C: ChainTypes>(order: &Order<C>) -> ClearingPrices<C> {
+    ClearingPrices {
+        sell: order.executed_buy,
+        buy: order.executed_sell,
+    }
+}
+
+/// Calculate custom clearing prices excluding protocol fees.
+///
+/// This adjusts prices to reflect the trade without the accumulated fees.
+fn calculate_custom_prices<C: ChainTypes>(
+    order: &Order<C>,
+    protocol_fee: C::Amount,
+    prices: &ClearingPrices<C>,
+) -> MathResult<ClearingPrices<C>> {
+    let sell_amount = sell_amount(order, prices)?;
+    let buy_amount = buy_amount(order, prices)?;
+
+    Ok(ClearingPrices {
+        sell: match order.side {
+            Side::Sell => buy_amount.try_add(protocol_fee)?,
+            Side::Buy => buy_amount,
+        },
+        buy: match order.side {
+            Side::Sell => sell_amount,
+            Side::Buy => sell_amount.try_sub(protocol_fee)?,
+        },
+    })
+}
+
+/// Calculate effective sell amount (what left user's wallet).
+fn sell_amount<C: ChainTypes>(
+    order: &Order<C>,
+    prices: &ClearingPrices<C>,
+) -> MathResult<C::Amount> {
+    match order.side {
+        Side::Sell => Ok(order.executed_sell),
+        Side::Buy => order
+            .executed_buy
+            .try_mul_div_floor(prices.buy, prices.sell),
+    }
+}
+
+/// Calculate effective buy amount (what user received).
+fn buy_amount<C: ChainTypes>(
+    order: &Order<C>,
+    prices: &ClearingPrices<C>,
+) -> MathResult<C::Amount> {
+    match order.side {
+        Side::Sell => order
+            .executed_sell
+            .try_mul_div_ceil(prices.sell, prices.buy),
+        Side::Buy => Ok(order.executed_buy),
+    }
+}
