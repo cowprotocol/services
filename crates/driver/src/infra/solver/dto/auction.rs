@@ -8,6 +8,7 @@ use {
                 order::{self, Side, fees, signature::Scheme},
             },
             liquidity,
+            quote,
         },
         infra::solver::ManageNativeToken,
     },
@@ -68,14 +69,20 @@ pub fn new(
     }
 
     solvers_dto::auction::Auction {
-        id: match auction.auction_id() {
-            Some(id) => solvers_dto::auction::Id::Auction(id.0),
-            None => solvers_dto::auction::Id::Quote {
-                id: auction
-                    .quote_id()
-                    .expect("a quote request carries a quote id")
-                    .0,
-                fast_path: auction.fast_path(),
+        id: match auction.id {
+            competition::auction::Kind::Competition(id) => solvers_dto::auction::Id::Auction(id.0),
+            competition::auction::Kind::Quote {
+                id,
+                fast_path,
+                price_quality,
+            } => solvers_dto::auction::Id::Quote {
+                id: id.0,
+                fast_path,
+                price_quality: match price_quality {
+                    quote::PriceQuality::Fast => solvers_dto::auction::PriceQuality::Fast,
+                    quote::PriceQuality::Optimal => solvers_dto::auction::PriceQuality::Optimal,
+                    quote::PriceQuality::Verified => solvers_dto::auction::PriceQuality::Verified,
+                },
             },
         },
         orders: auction
