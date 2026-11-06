@@ -87,9 +87,18 @@ pub trait BalanceFetching: Send + Sync {
     ) -> anyhow::Result<U256>;
 }
 
-/// Create the default [`BalanceFetching`] instance.
-pub fn fetcher(web3: &Web3, balance_simulator: BalanceSimulator) -> Arc<dyn BalanceFetching> {
-    Arc::new(simulation::Balances::new(web3, balance_simulator))
+/// Create the default [`BalanceFetching`] instance. `batch_size` is the number
+/// of hook-free queries read per Multicall3 call.
+pub fn fetcher(
+    web3: &Web3,
+    balance_simulator: BalanceSimulator,
+    batch_size: usize,
+) -> Arc<dyn BalanceFetching> {
+    Arc::new(simulation::Balances::new(
+        web3,
+        balance_simulator,
+        batch_size,
+    ))
 }
 
 /// Create a cached [`BalanceFetching`] instance.
@@ -99,8 +108,13 @@ pub fn cached(
     blocks: CurrentBlockWatcher,
     eviction_time: Duration,
     refresh_cooldown: Duration,
+    batch_size: usize,
 ) -> Arc<dyn BalanceFetching> {
-    let cached = Arc::new(cached::Balances::new(fetcher(web3, balance_simulator)));
+    let cached = Arc::new(cached::Balances::new(fetcher(
+        web3,
+        balance_simulator,
+        batch_size,
+    )));
     cached.spawn_background_task(blocks, eviction_time, refresh_cooldown);
     cached
 }

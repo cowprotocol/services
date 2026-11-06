@@ -221,6 +221,7 @@ pub async fn run(config: Configuration) {
             vault_relayer,
             balance_overrider.clone(),
         ),
+        configs::balance_cache::BalanceCacheConfig::default().batch_size,
     );
 
     let gas_estimators: Vec<gas_price_estimation::GasEstimatorType> = config

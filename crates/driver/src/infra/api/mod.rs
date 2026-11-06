@@ -61,6 +61,7 @@ impl Api {
             self.eth.current_block().clone(),
             self.balance_cache.eviction_time,
             self.balance_cache.refresh_cooldown,
+            self.balance_cache.batch_size,
         );
 
         let tokens = tokens::Fetcher::new(&self.eth);
