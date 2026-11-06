@@ -16,11 +16,7 @@ use {
     },
     anyhow::{Context, Result},
     itertools::{Either, Itertools},
-    protocol_fees::{
-        calculate_custom_prices_from_executed,
-        protocol_fees,
-        surplus_over_limit_price,
-    },
+    protocol_fees::{protocol_fees_by_policy, surplus_over_limit},
     std::{
         cmp::Reverse,
         collections::{HashMap, HashSet},
@@ -335,18 +331,11 @@ fn compute_order_score<C: ChainTypes>(
         .get(&order.buy_token)
         .context("missing native price for buy token")?;
 
-    let custom_prices = calculate_custom_prices_from_executed(order);
-
     // Calculate surplus in surplus token (buy token for sell orders, sell
     // token for buy orders)
     let surplus_in_surplus_token = {
-        let user_surplus = surplus_over_limit_price(order, &custom_prices)?;
-        let policies = context
-            .fee_policies
-            .get(&order.uid)
-            .map(|v| v.as_slice())
-            .unwrap_or_default();
-        let fees = protocol_fees(order, policies, &custom_prices)?;
+        let user_surplus = surplus_over_limit(order)?;
+        let fees = protocol_fees(order, context)?;
 
         user_surplus
             .try_add(fees)
@@ -380,6 +369,24 @@ fn compute_order_score<C: ChainTypes>(
     };
 
     Ok(score_native)
+}
+
+/// Calculate total protocol fees for an order.
+///
+/// Returns the total fee in the surplus token.
+fn protocol_fees<C: ChainTypes>(
+    order: &Order<C>,
+    context: &AuctionContext<C>,
+) -> Result<C::Amount> {
+    let policies = context
+        .fee_policies
+        .get(&order.uid)
+        .map(|v| v.as_slice())
+        .unwrap_or_default();
+    protocol_fees_by_policy(order, policies)?
+        .into_iter()
+        .try_fold(C::Amount::zero(), |total, fee| total.try_add(fee))
+        .context("overflow adding protocol fees")
 }
 
 /// Total solution score obtained by folding the per-token-pair scores
