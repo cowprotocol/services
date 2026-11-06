@@ -44,6 +44,7 @@ const LARGE_TABLES: &[&str] = &[
 pub struct OrderRow {
     pub uid: ByteArray<32>,
     pub owner: ByteArray<32>,
+    pub receiver: Option<ByteArray<32>>,
     pub sell_token: ByteArray<32>,
     pub buy_token: ByteArray<32>,
     pub sell_token_account: ByteArray<32>,
@@ -74,7 +75,7 @@ pub async fn open_orders(
 ) -> Result<Vec<OrderRow>> {
     let _timer = query_timer("open_orders");
     const QUERY: &str = r#"
-SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
+SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.order_pda, o.app_data,
        p.order_uid IS NOT NULL AS created_on_chain,
@@ -655,6 +656,7 @@ impl TryFrom<OrderRow> for Order {
         Ok(Order {
             uid: IntentHash(row.uid.0),
             owner: Pubkey(row.owner.0),
+            receiver: row.receiver.map(|receiver| Pubkey(receiver.0)),
             sell_token: Pubkey(row.sell_token.0),
             buy_token: Pubkey(row.buy_token.0),
             sell_token_account: Pubkey(row.sell_token_account.0),
@@ -799,6 +801,7 @@ mod tests {
         super::OrderRow {
             uid: ByteArray([1; 32]),
             owner: ByteArray([2; 32]),
+            receiver: None,
             sell_token: ByteArray([3; 32]),
             buy_token: ByteArray([4; 32]),
             sell_token_account: ByteArray([5; 32]),
@@ -939,9 +942,15 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
             .execute(&mut *tx)
             .await
             .unwrap();
-        // Kept: live PDA, partially filled.
+        // Kept: live PDA, partially filled, paid out to a receiver.
         insert_order(&mut tx, 5, 2_000, true, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 5, false, 999, 0).await;
+        sqlx::query(r#"UPDATE solana.orders SET receiver = $1 WHERE uid = $2"#)
+            .bind(database::byte_array::ByteArray([0x23u8; 32]))
+            .bind(database::byte_array::ByteArray([5u8; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         // Kept: created directly on chain, no off-chain material.
         insert_order(&mut tx, 6, 2_000, false, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 6, false, 0, 0).await;
@@ -980,6 +989,11 @@ WHERE uid = $1
             .map(|order| order.executed.to_u64().unwrap())
             .collect();
         assert_eq!(executed, vec![0, 999, 0, 0, 500]);
+        let receivers: Vec<_> = orders
+            .iter()
+            .map(|order| order.receiver.map(|receiver| receiver.0))
+            .collect();
+        assert_eq!(receivers, vec![None, Some([0x23; 32]), None, None, None]);
         let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
         assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
