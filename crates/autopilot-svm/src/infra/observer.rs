@@ -12,7 +12,10 @@ use {
     chain_types::solana::IntentHash,
     database::{byte_array::ByteArray, solana::OrderEventLabel},
     sqlx::PgPool,
-    std::{collections::HashSet, sync::Mutex},
+    std::{
+        collections::{HashMap, HashSet},
+        sync::Mutex,
+    },
     winner_selection::state::RankedItem,
 };
 
@@ -104,6 +107,26 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
                     .collect(),
             })
             .collect();
+        // The policies of every order a ranked solution trades, once per
+        // order.
+        let order_policies: HashMap<_, _> = auction
+            .orders
+            .iter()
+            .map(|order| (order.uid, &order.protocol_fees))
+            .collect();
+        let mut seen = HashSet::new();
+        let fee_policies = ranking
+            .inner
+            .ranked
+            .iter()
+            .flat_map(|solution| solution.orders().iter().map(|order| order.uid))
+            .filter(|uid| seen.insert(*uid))
+            .filter_map(|uid| {
+                order_policies
+                    .get(&uid)
+                    .map(|policies| (ByteArray(uid.0), (*policies).clone()))
+            })
+            .collect();
         let (price_tokens, price_values) = auction
             .native_prices
             .iter()
@@ -129,6 +152,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
                     score: BigDecimal::from(*score),
                 })
                 .collect(),
+            fee_policies,
         };
         db::persist_competition(&self.pool, &competition).await?;
         tracing::info!(

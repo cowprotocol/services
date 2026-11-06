@@ -3,13 +3,16 @@
 use {
     crate::domain::{
         auction::{Order, OrderKind},
-        fee::Quote,
+        fee::{FeePolicy, Quote},
     },
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
     chrono::{DateTime, Utc},
-    database::{byte_array::ByteArray, solana::OrderEventLabel},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, PolicyKind},
+    },
     sqlx::{PgExecutor, PgPool, Postgres, QueryBuilder},
     std::time::Duration,
 };
@@ -35,6 +38,7 @@ const TABLES: &[&str] = &[
 /// minute would weigh on the largest ones.
 const LARGE_TABLES: &[&str] = &[
     "competition_auctions",
+    "fee_policies",
     "orders",
     "order_events",
     "order_quotes",
@@ -557,10 +561,13 @@ pub struct Competition {
     pub price_values: Vec<BigDecimal>,
     pub solutions: Vec<ProposedSolution>,
     pub reference_scores: Vec<ReferenceScore>,
+    /// The policies of every order a ranked solution trades, in application
+    /// order.
+    pub fee_policies: Vec<(ByteArray<32>, Vec<FeePolicy>)>,
 }
 
-/// Persist a competition: the auction snapshot and every proposed solution
-/// with its executions, in one transaction.
+/// Persist a competition: the auction snapshot, every proposed solution with
+/// its executions, and the traded orders' fee policies, in one transaction.
 pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition) -> Result<()> {
     let _timer = query_timer("persist_competition");
     let mut tx = pool.begin().await.context("begin competition persist")?;
@@ -639,6 +646,55 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
             .execute(&mut *tx)
             .await
             .context("insert reference scores")?;
+    }
+    let policies: Vec<_> = competition
+        .fee_policies
+        .iter()
+        .flat_map(|(order_uid, policies)| policies.iter().map(move |policy| (order_uid, policy)))
+        .collect();
+    if !policies.is_empty() {
+        let mut insert = QueryBuilder::<Postgres>::new(
+            "INSERT INTO solana.fee_policies (auction_id, order_uid, kind, surplus_factor, \
+             surplus_max_volume_factor, price_improvement_factor, \
+             price_improvement_max_volume_factor, volume_factor) ",
+        );
+        insert.push_values(policies, |mut row, (order_uid, policy)| {
+            let (kind, surplus, price_improvement, volume) = match *policy {
+                FeePolicy::Surplus {
+                    factor,
+                    max_volume_factor,
+                } => (
+                    PolicyKind::Surplus,
+                    Some((factor, max_volume_factor)),
+                    None,
+                    None,
+                ),
+                FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                    ..
+                } => (
+                    PolicyKind::PriceImprovement,
+                    None,
+                    Some((factor, max_volume_factor)),
+                    None,
+                ),
+                FeePolicy::Volume { factor } => (PolicyKind::Volume, None, None, Some(factor)),
+            };
+            row.push_bind(competition.auction_id)
+                .push_bind(*order_uid)
+                .push_bind(kind)
+                .push_bind(surplus.map(|(factor, _)| factor))
+                .push_bind(surplus.map(|(_, cap)| cap))
+                .push_bind(price_improvement.map(|(factor, _)| factor))
+                .push_bind(price_improvement.map(|(_, cap)| cap))
+                .push_bind(volume);
+        });
+        insert
+            .build()
+            .execute(&mut *tx)
+            .await
+            .context("insert fee policies")?;
     }
     tx.commit().await.context("commit competition persist")
 }
@@ -811,11 +867,14 @@ struct Metrics {
 mod tests {
     use {
         super::{
+            Competition,
+            FeePolicy,
             Quote,
             delete_order_events_before,
             in_flight_orders,
             last_indexed_slot,
             open_orders,
+            persist_competition,
             remove_expired_quotes,
             revert_settlement_window,
             skip_settlement_window,
@@ -977,6 +1036,112 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         .unwrap();
         super::update_table_rows(&pool).await.unwrap();
         assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 1);
+    }
+
+    /// Every policy of a traded order lands in its application order with
+    /// the EVM columns, an order without policies stores no row.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_persist_competition_stores_the_fee_policies_in_order() {
+        let pool = crate::test_db::pool().await;
+        for table in [
+            "fee_policies",
+            "reference_scores",
+            "proposed_trade_executions",
+            "proposed_solutions",
+            "competition_auctions",
+        ] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let charged = ByteArray([1; 32]);
+        let competition = Competition {
+            auction_id: 88,
+            tip_slot: 1,
+            deadline_slot: 100,
+            order_uids: vec![charged.0.to_vec(), vec![2; 32]],
+            price_tokens: vec![],
+            price_values: vec![],
+            solutions: vec![],
+            reference_scores: vec![],
+            fee_policies: vec![
+                (
+                    charged,
+                    vec![
+                        FeePolicy::Surplus {
+                            factor: 0.5,
+                            max_volume_factor: 0.9,
+                        },
+                        FeePolicy::PriceImprovement {
+                            factor: 0.3,
+                            max_volume_factor: 0.01,
+                            quote: Quote {
+                                sell_amount: 1,
+                                buy_amount: 2,
+                                fee: 0,
+                                solver: Pubkey([9; 32]),
+                            },
+                        },
+                        FeePolicy::Volume { factor: 0.001 },
+                    ],
+                ),
+                (ByteArray([2; 32]), vec![]),
+            ],
+        };
+        persist_competition(&pool, &competition).await.unwrap();
+
+        type Row = (
+            Vec<u8>,
+            String,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+        );
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT order_uid, kind::text, surplus_factor, surplus_max_volume_factor, \
+             price_improvement_factor, price_improvement_max_volume_factor, volume_factor FROM \
+             solana.fee_policies WHERE auction_id = 88 ORDER BY application_order",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let uid = charged.0.to_vec();
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    uid.clone(),
+                    "surplus".to_string(),
+                    Some(0.5),
+                    Some(0.9),
+                    None,
+                    None,
+                    None
+                ),
+                (
+                    uid.clone(),
+                    "priceimprovement".to_string(),
+                    None,
+                    None,
+                    Some(0.3),
+                    Some(0.01),
+                    None
+                ),
+                (
+                    uid,
+                    "volume".to_string(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(0.001)
+                ),
+            ]
+        );
     }
 
     #[tokio::test]
