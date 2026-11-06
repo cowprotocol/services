@@ -109,6 +109,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 settlement::Error::NoTradeForOrder(_)
                 | settlement::Error::NoOrderForTrade(_)
                 | settlement::Error::ExecutedAmountOverflow
+                | settlement::Error::ProtocolFeeExceedsSell(_)
                 | settlement::Error::NotExactlyFilled(_)
                 | settlement::Error::Overfill(_)
                 | settlement::Error::LimitPriceViolated(_)

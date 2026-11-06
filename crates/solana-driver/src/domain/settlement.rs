@@ -725,6 +725,12 @@ fn validate_orders(
         if !respects_limit(order, amounts.sell, amounts.buy) {
             return Err(Error::LimitPriceViolated(order.uid));
         }
+
+        // A buy order's protocol fee is pulled out of its executed sell
+        // amount, so it must fit in there.
+        if order.side == Side::Buy && amounts.protocol_fee > amounts.sell {
+            return Err(Error::ProtocolFeeExceedsSell(order.uid));
+        }
     }
     Ok(())
 }
@@ -811,38 +817,23 @@ impl SettlementOrder {
         checked_push: bool,
     ) -> Result<Self, Error> {
         let sell_ata = associated_token_address(payer, &order.sell_token, sell_program);
-        let (pulls, buy_mint_fee) = match order.side {
-            Side::Buy if amounts.protocol_fee > 0 => (
-                vec![
-                    Pull {
-                        destination: sell_ata,
-                        amount: amounts
-                            .sell
-                            .checked_sub(amounts.protocol_fee)
-                            .ok_or(Error::ExecutedAmountOverflow)?,
-                    },
-                    Pull {
-                        destination: find_buffer_pda(program_id, &order.sell_token).0,
-                        amount: amounts.protocol_fee,
-                    },
-                ],
-                0,
-            ),
-            Side::Buy => (
-                vec![Pull {
-                    destination: sell_ata,
-                    amount: amounts.sell,
-                }],
-                0,
-            ),
-            Side::Sell => (
-                vec![Pull {
-                    destination: sell_ata,
-                    amount: amounts.sell,
-                }],
-                amounts.protocol_fee,
-            ),
+        let (sell_mint_fee, buy_mint_fee) = match order.side {
+            Side::Buy => (amounts.protocol_fee, 0),
+            Side::Sell => (0, amounts.protocol_fee),
         };
+        let mut pulls = vec![Pull {
+            destination: sell_ata,
+            amount: amounts
+                .sell
+                .checked_sub(sell_mint_fee)
+                .ok_or(Error::ProtocolFeeExceedsSell(order.uid))?,
+        }];
+        if sell_mint_fee > 0 {
+            pulls.push(Pull {
+                destination: find_buffer_pda(program_id, &order.sell_token).0,
+                amount: sell_mint_fee,
+            });
+        }
         Ok(Self {
             intent: order.try_into()?,
             order_pda: order.order_pda,
@@ -1028,6 +1019,9 @@ pub enum Error {
     /// The sum of the executed amounts overflowed `u64`.
     #[error("executed amounts overflow u64")]
     ExecutedAmountOverflow,
+    /// A buy order's protocol fee exceeds the sell amount it is pulled from.
+    #[error("order {0} pays a protocol fee above its executed sell amount")]
+    ProtocolFeeExceedsSell(OrderUid),
     /// The order is not partially fillable but was not filled exactly.
     #[error("order {0} was not filled exactly")]
     NotExactlyFilled(OrderUid),
@@ -1589,6 +1583,18 @@ mod tests {
         let finalize_input =
             FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
         assert_eq!(finalize_input.pushes.iter().next().unwrap().amount, 2_000);
+    }
+
+    #[test]
+    fn a_buy_orders_protocol_fee_above_its_sell_amount_is_rejected() {
+        let program_id = pubkey(0xaa);
+        let order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        let err = test_settlement(
+            slice::from_ref(&order),
+            &[fee_trade(order.uid, 1_000, 2_000, 1_001)],
+        )
+        .unwrap_err();
+        assert_eq!(err, Error::ProtocolFeeExceedsSell(order.uid));
     }
 
     #[test]
