@@ -84,6 +84,7 @@ async fn single_limit_order_test(web3: Web3) {
                 base_tokens: vec![*token.address()],
                 merge_solutions: true,
                 solver_fee_bps: 0,
+                absolute_slippage: None,
                 submission_keys: vec![],
             },
         ],

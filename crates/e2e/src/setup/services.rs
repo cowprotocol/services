@@ -332,6 +332,7 @@ impl<'a> Services<'a> {
             base_tokens: vec![],
             merge_solutions: true,
             solver_fee_bps: 0,
+            absolute_slippage: None,
             submission_keys: vec![],
         }];
 
