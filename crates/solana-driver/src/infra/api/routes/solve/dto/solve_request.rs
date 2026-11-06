@@ -74,6 +74,12 @@ pub struct Order {
     uid: OrderUid,
     #[serde_as(as = "DisplayFromStr")]
     owner: Pubkey,
+    /// The wallet `buy_token_account` is the associated token account of,
+    /// when that is not the owner. Absent from an autopilot that predates
+    /// custom receivers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    receiver: Option<Pubkey>,
     #[serde_as(as = "DisplayFromStr")]
     sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
@@ -116,6 +122,7 @@ impl From<Order> for domain::Order {
         Self {
             uid: order.uid,
             owner: order.owner,
+            receiver: order.receiver,
             sell_token: order.sell_token,
             buy_token: order.buy_token,
             sell_token_account: order.sell_token_account,
@@ -187,6 +194,7 @@ mod tests {
         Order {
             uid: OrderUid([0x11; 32]),
             owner: Pubkey::new_from_array([0x22; 32]),
+            receiver: None,
             sell_token: Pubkey::new_from_array([0x33; 32]),
             buy_token: Pubkey::new_from_array([0x44; 32]),
             sell_token_account: Pubkey::new_from_array([0x55; 32]),
@@ -253,6 +261,19 @@ mod tests {
         let parsed: SolveRequest = serde_json::from_value(expected).unwrap();
         assert_eq!(parsed.orders[0].executed, 0);
         assert_eq!(parsed.orders[0].sell_balance, None);
+    }
+
+    /// An order without a receiver is serialized without the key, one with
+    /// it parses the wallet.
+    #[test]
+    fn the_receiver_is_optional() {
+        let mut json = serde_json::to_value(order()).unwrap();
+        assert!(json.get("receiver").is_none());
+
+        json["receiver"] = serde_json::json!(pubkey(0x23).to_string());
+        let parsed: Order = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed.receiver, Some(pubkey(0x23)));
+        assert_eq!(domain::Order::from(parsed).receiver, Some(pubkey(0x23)));
     }
 
     #[test]

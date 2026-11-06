@@ -227,6 +227,7 @@ mod tests {
         Order {
             uid: OrderUid([uid; 32]),
             owner: pubkey(0x22),
+            receiver: None,
             sell_token: pubkey(0x33),
             buy_token: pubkey(0x44),
             sell_token_account: pubkey(0x55),
