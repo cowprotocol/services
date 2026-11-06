@@ -516,7 +516,7 @@ fn accounts_to_create(
             && order.buy_token_account_is_ata(token_programs.get(order.buy_token)?)
         {
             missing_atas.push(Ata {
-                owner: order.owner,
+                owner: order.buy_account_owner(),
                 mint: order.buy_token,
             });
         }
@@ -1028,6 +1028,7 @@ mod tests {
         let mut order = Order {
             uid: OrderUid([0; 32]), // re-derived below
             owner: pubkey(0x22),
+            receiver: None,
             sell_token: pubkey(0x33),
             buy_token: pubkey(0x44),
             sell_token_account: pubkey(0x55),
@@ -1966,6 +1967,52 @@ mod tests {
         );
         assert_eq!(accounts[2], order.owner);
         assert_eq!(accounts[3], order.buy_token);
+    }
+
+    /// The order pays out to an off-curve receiver's absent associated token
+    /// account, so the settlement creates it for the receiver, charged to
+    /// the payer like the owner's own.
+    #[tokio::test]
+    async fn creates_the_orders_buy_ata_for_its_receiver() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let receiver = Pubkey::find_program_address(&[b"vault"], &pubkey(0xcc)).0;
+        assert!(!receiver.is_on_curve());
+        let order = test_order_with(&program_id, |order| {
+            order.receiver = Some(receiver);
+            order.buy_token_account =
+                associated_token_address(&receiver, &order.buy_token, TokenProgram::SplToken);
+        });
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+
+        let resolved = settlement
+            .resolve_accounts(
+                &blockchain(
+                    [mint_account_json(), mint_account_json()],
+                    [Value::Null, Value::Null, Value::Null],
+                ),
+                payer,
+            )
+            .await
+            .unwrap();
+        let buy_ata = Ata {
+            owner: receiver,
+            mint: order.buy_token,
+        };
+        assert!(resolved.missing_atas.contains(&buy_ata));
+
+        let instructions = resolved.instructions().unwrap();
+        let create = instructions
+            .iter()
+            .find(|instruction| {
+                instruction.program_id == spl_associated_token_account_interface::program::ID
+                    && instruction.accounts[2].pubkey == receiver
+            })
+            .expect("a creation for the receiver");
+        assert_eq!(create.accounts[0].pubkey, payer);
+        assert_eq!(create.accounts[1].pubkey, order.buy_token_account);
+        assert_eq!(create.accounts[3].pubkey, order.buy_token);
     }
 
     /// The fee payer leads, every account an instruction writes follows once,

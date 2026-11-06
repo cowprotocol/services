@@ -301,6 +301,7 @@ mod tests {
         domain::Order {
             uid: OrderUid([8; 32]),
             owner: pubkey(0x22),
+            receiver: None,
             sell_token: pubkey(1),
             buy_token: pubkey(2),
             sell_token_account: pubkey(0x55),

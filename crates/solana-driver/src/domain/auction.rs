@@ -250,6 +250,10 @@ impl Auction {
 pub struct Order {
     pub uid: OrderUid,
     pub owner: Pubkey,
+    /// The wallet `buy_token_account` is the associated token account of,
+    /// when that is not the owner. A missing account at that address is
+    /// created for this wallet, like the owner's own.
+    pub receiver: Option<Pubkey>,
     pub sell_token: Pubkey,
     pub buy_token: Pubkey,
     pub sell_token_account: Pubkey,
@@ -335,11 +339,18 @@ impl Order {
         }
     }
 
-    /// Whether `buy_token_account` is the owner's associated token account
-    /// for the buy mint under the mint's token `program`, the only
-    /// destination an idempotent create can produce.
+    /// Whether `buy_token_account` is the associated token account of the
+    /// wallet paid out to, for the buy mint under the mint's token `program`:
+    /// the only destination an idempotent create can produce.
     pub fn buy_token_account_is_ata(&self, program: TokenProgram) -> bool {
-        self.buy_token_account == associated_token_address(&self.owner, &self.buy_token, program)
+        self.buy_token_account
+            == associated_token_address(&self.buy_account_owner(), &self.buy_token, program)
+    }
+
+    /// The wallet `buy_token_account` belongs to: the receiver when the order
+    /// names one, the owner otherwise.
+    pub fn buy_account_owner(&self) -> Pubkey {
+        self.receiver.unwrap_or(self.owner)
     }
 
     /// Whether the order buys native SOL. The intent encodes it as the System
@@ -402,6 +413,7 @@ mod tests {
         Order {
             uid: OrderUid([uid; 32]),
             owner: pubkey(0x22),
+            receiver: None,
             sell_token: pubkey(0x33),
             buy_token: pubkey(0x44),
             sell_token_account: pubkey(0x55),
@@ -579,6 +591,48 @@ mod tests {
                 2,
                 associated_token_address(&owner, &mint, TokenProgram::SplToken),
             ),
+        ]);
+        let resolved = auction
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain,
+                &BuyTokenAccountCache::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(uids(resolved.missing.keys()), [1]);
+        assert_eq!(uids(&resolved.unreceivable), [2]);
+    }
+
+    /// A receiver's absent associated token account is the settlement's to
+    /// create, an off-curve receiver's included. With a receiver named, the
+    /// owner's own absent account is not.
+    #[tokio::test]
+    async fn a_receivers_missing_ata_is_the_settlements_to_create() {
+        let (owner, mint) = (pubkey(0x22), pubkey(0x44));
+        let receiver = Pubkey::find_program_address(&[b"vault"], &pubkey(0xcc)).0;
+        assert!(!receiver.is_on_curve());
+        let blockchain = blockchain(
+            [mint_account_json(), mint_account_json()],
+            [Value::Null, Value::Null],
+        );
+
+        let auction = auction(vec![
+            Order {
+                receiver: Some(receiver),
+                ..order(
+                    1,
+                    associated_token_address(&receiver, &mint, TokenProgram::SplToken),
+                )
+            },
+            Order {
+                receiver: Some(receiver),
+                ..order(
+                    2,
+                    associated_token_address(&owner, &mint, TokenProgram::SplToken),
+                )
+            },
         ]);
         let resolved = auction
             .resolve_buy_token_accounts(

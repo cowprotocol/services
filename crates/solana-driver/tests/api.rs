@@ -595,6 +595,44 @@ async fn solve_drops_an_order_whose_buy_account_cannot_be_created() {
     assert!(requests.lock().unwrap().is_none());
 }
 
+/// With `receiver` naming the wallet the absent buy token account belongs to,
+/// the settlement can create it: the order stays in and is flagged to the
+/// engine like a missing account of the owner.
+#[tokio::test]
+async fn solve_flags_a_receivers_missing_buy_token_account_to_the_engine() {
+    let receiver = Pubkey::find_program_address(&[b"vault"], &pubkey(0xcc)).0;
+    let buy_token_account =
+        associated_token_address(&receiver, &pubkey(0x44), TokenProgram::SplToken);
+    let intent = OrderIntent {
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: pubkey(0x44),
+            token_account: buy_token_account,
+        }),
+        ..test_order_intent()
+    };
+    let uid = format!("0x{}", const_hex::encode(intent.uid().to_bytes()));
+    let mut response = engine_response(&[(1, "2000")]);
+    response["solutions"][0]["trades"][0]["orderUid"] = serde_json::json!(uid);
+    let (engine, requests) = spawn_recording_solver_engine(response).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    let order = &mut request["orders"][0];
+    order["uid"] = serde_json::json!(uid);
+    order["orderPda"] =
+        serde_json::json!(find_order_pda(&program_id(), &intent.uid()).0.to_string());
+    order["receiver"] = serde_json::json!(receiver.to_string());
+    order["buyTokenAccount"] = serde_json::json!(buy_token_account.to_string());
+
+    let body = call_solve_with(addr, request).await;
+    assert_eq!(response_ids(&body), vec![1]);
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(
+        request["orders"][0]["missingBuyTokenAccount"],
+        serde_json::json!(true)
+    );
+}
+
 /// Two solutions with the same id: the driver keeps only the last occurrence
 /// (each `HashMap::insert` replaces the earlier entry), because
 /// the id is the handle `/settle` addresses a solution by.

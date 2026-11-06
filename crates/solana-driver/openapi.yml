@@ -204,6 +204,14 @@ components:
           $ref: "#/components/schemas/OrderUid"
         owner:
           $ref: "#/components/schemas/Address"
+        receiver:
+          description: |-
+            The wallet `buyTokenAccount` is the associated token account of,
+            when that is not the owner. A missing account at that address is
+            then created for this wallet, like the owner's own. Absent when
+            the owner receives the payout.
+          allOf:
+            - $ref: "#/components/schemas/Address"
         sellToken:
           $ref: "#/components/schemas/Address"
         buyToken:
@@ -221,8 +229,9 @@ components:
         buyTokenAccount:
           description: |-
             The token account the settlement pays out to. When it does not
-            exist yet and is the owner's associated token account, the
-            settlement creates it and the solver pays its rent. An account
+            exist yet and is the associated token account of the owner, or of
+            `receiver` when named, the settlement creates it and the solver
+            pays its rent. An account
             that is absent and cannot be created leaves the order out of the
             auction sent to the engine. For native SOL it is the wallet
             receiving the lamports, and a payout to a missing wallet creates
