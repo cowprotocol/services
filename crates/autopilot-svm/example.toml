@@ -11,6 +11,9 @@ max-auction-age = "5m"
 min-auction-interval = "2s"
 # Slots the indexer may lag behind the tip before auction cuts are skipped.
 max-indexer-lag-slots = 150
+# Lets several instances run at once: only the one holding a lock in the
+# database cuts auctions. Off by default.
+enable-leader-lock = true
 
 [database]
 # The Postgres database the indexer writes to. A value like "%DB_WRITE_URL"

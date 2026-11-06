@@ -12,12 +12,14 @@
 //! tip, the auction, order ids, solutions, the ranking), and [`CycleTrigger`],
 //! [`AuctionProvider`], [`SolverCompetition`], [`WinnerSelection`],
 //! [`SettlementExecutor`], and [`SettlementObserver`] carry the per-chain
-//! behaviour behind each phase. Leadership is chain-agnostic and belongs to
-//! the caller, the loop always runs as if it were the leader.
+//! behaviour behind each phase. Leadership is chain-agnostic: with a
+//! database leader lock, only the instance holding it cuts auctions, and the
+//! others only sync to the tip so one can take over at once.
 
 use {
-    crate::run::Liveness,
+    crate::{leader_lock_tracker::LeaderLockTracker, run::Liveness},
     async_trait::async_trait,
+    database::leader_pg_lock::LeaderLock,
     std::{
         collections::HashSet,
         fmt::Debug,
@@ -27,6 +29,7 @@ use {
             atomic::{AtomicBool, Ordering},
         },
     },
+    tokio_util::sync::CancellationToken,
     tracing::Instrument,
 };
 
@@ -202,15 +205,40 @@ impl<C: Cycle> AuctionLoop<C> {
         }
     }
 
-    /// Run cycles until the process ends.
-    pub async fn run_forever(mut self) -> ! {
-        loop {
-            self.run_cycle().await;
+    /// Runs cycles until `shutdown` is cancelled, then releases the leader
+    /// lock. The cycle in flight when the signal arrives runs to its end.
+    /// With a lock, a cycle on an instance that does not hold it only syncs.
+    pub async fn run_forever(
+        mut self,
+        leader_lock: Option<LeaderLock>,
+        shutdown: CancellationToken,
+    ) {
+        let mut leader_lock_tracker = LeaderLockTracker::new(leader_lock);
+        while !shutdown.is_cancelled() {
+            leader_lock_tracker.try_acquire().await;
+            if leader_lock_tracker.is_leader() {
+                self.run_cycle().await;
+            } else {
+                self.sync().await;
+            }
         }
+        leader_lock_tracker.release().await;
     }
 
     /// One iteration of the outer loop.
     pub async fn run_cycle(&mut self) {
+        let tip = self.sync().await;
+        let Some(auction) = self.next_auction(&tip).await else {
+            return;
+        };
+        let auction_id = auction.id();
+        self.single_run(&auction)
+            .instrument(tracing::info_span!("auction", auction_id = %auction_id))
+            .await;
+    }
+
+    /// Waits for the next tip and brings the order caches up to it.
+    async fn sync(&mut self) -> C::Tip {
         let tip = self.trigger.next_cycle().await;
 
         match self.provider.sync_to_tip(&tip).await {
@@ -222,14 +250,7 @@ impl<C: Cycle> AuctionLoop<C> {
             }
             Err(err) => tracing::warn!(?err, "failed to update auction"),
         }
-
-        let Some(auction) = self.next_auction(&tip).await else {
-            return;
-        };
-        let auction_id = auction.id();
-        self.single_run(&auction)
-            .instrument(tracing::info_span!("auction", auction_id = %auction_id))
-            .await;
+        tip
     }
 
     /// Cuts the next auction and dedupes against the previous cycle. A new
@@ -432,6 +453,22 @@ mod tests {
         }
     }
 
+    /// Fires every cycle at tip 1 like [`Stub`], and cancels the shutdown
+    /// token while the cycle runs.
+    struct ShutdownMidCycle(CancellationToken);
+
+    #[async_trait]
+    impl CycleTrigger<TestCycle> for ShutdownMidCycle {
+        async fn next_cycle(&mut self) -> u64 {
+            self.0.cancel();
+            1
+        }
+
+        fn current_tip(&self) -> u64 {
+            1
+        }
+    }
+
     /// A loop that runs the scripted cycles. Its liveness probe fails until
     /// the loop records an auction, and its startup probe fails until the
     /// first successful sync.
@@ -442,11 +479,23 @@ mod tests {
         Arc<Liveness>,
         Arc<Option<AtomicBool>>,
     ) {
+        scripted_loop_with(Box::new(Stub), cycles)
+    }
+
+    /// A [`scripted_loop`] whose cycles `trigger` fires.
+    fn scripted_loop_with(
+        trigger: Box<dyn CycleTrigger<TestCycle>>,
+        cycles: impl IntoIterator<Item = (bool, NextAuction<TestAuction>)>,
+    ) -> (
+        AuctionLoop<TestCycle>,
+        Arc<Liveness>,
+        Arc<Option<AtomicBool>>,
+    ) {
         let liveness = Arc::new(Liveness::new(Duration::from_secs(60)));
         liveness.expire();
         let startup = Arc::new(Some(AtomicBool::new(false)));
         let auction_loop = AuctionLoop::new(
-            Box::new(Stub),
+            trigger,
             Box::new(ScriptedProvider(Mutex::new(cycles.into_iter().collect()))),
             Box::new(Stub),
             Box::new(Stub),
@@ -511,5 +560,43 @@ mod tests {
         assert!(!started());
         auction_loop.run_cycle().await;
         assert!(started());
+    }
+
+    /// The cut of the cycle the signal arrives in still runs and refreshes
+    /// the liveness probe. A second cycle would find no scripted entry and
+    /// panic.
+    #[tokio::test]
+    async fn shutdown_ends_the_loop_after_the_current_cycle() {
+        let shutdown = CancellationToken::new();
+        let (auction_loop, liveness, _) = scripted_loop_with(
+            Box::new(ShutdownMidCycle(shutdown.clone())),
+            [(true, NextAuction::Empty)],
+        );
+        auction_loop.run_forever(None, shutdown).await;
+        assert!(liveness.is_alive().await);
+    }
+
+    /// While another instance holds the lock, a cycle syncs, which passes
+    /// the startup probe, and cuts nothing, so the liveness probe stays
+    /// expired.
+    #[tokio::test]
+    #[ignore = "needs a local database"]
+    async fn solana_db_a_standby_syncs_without_cutting() {
+        let pool = crate::test_db::pool().await;
+        let key = "solana_db_a_standby_syncs_without_cutting".to_string();
+        let mut leader = LeaderLock::new(pool.clone(), key.clone(), Duration::ZERO);
+        assert!(leader.try_acquire().await.unwrap());
+
+        let shutdown = CancellationToken::new();
+        let (auction_loop, liveness, startup) = scripted_loop_with(
+            Box::new(ShutdownMidCycle(shutdown.clone())),
+            [(true, NextAuction::Auction(TestAuction(vec![1])))],
+        );
+        let standby = LeaderLock::new(pool, key, Duration::ZERO);
+        auction_loop.run_forever(Some(standby), shutdown).await;
+
+        assert!(startup.as_ref().as_ref().unwrap().load(Ordering::Acquire));
+        assert!(!liveness.is_alive().await);
+        leader.release().await;
     }
 }
