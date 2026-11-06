@@ -135,7 +135,8 @@ impl Order {
         policies: &[FeePolicy],
         missing_buy_token_account: bool,
     ) -> Self {
-        let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
+        let tighten_for_solver_fee =
+            |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
         let available = order.available();
         let (sell_amount, buy_amount) = match order.side {
             Side::Sell => {
@@ -146,7 +147,7 @@ impl Order {
                 );
                 (
                     available.sell,
-                    tighten(Side::Sell, min_buy.saturating_add(cut)),
+                    tighten_for_solver_fee(Side::Sell, min_buy.saturating_add(cut)),
                 )
             }
             Side::Buy => {
@@ -156,7 +157,7 @@ impl Order {
                     available.sell,
                 );
                 (
-                    tighten(Side::Buy, max_sell.saturating_sub(cut)),
+                    tighten_for_solver_fee(Side::Buy, max_sell.saturating_sub(cut)),
                     available.buy,
                 )
             }
