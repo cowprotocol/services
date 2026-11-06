@@ -161,41 +161,92 @@ fn protocol_fee<C: ChainTypes>(
     }
 }
 
-/// The fee `policy` takes from the fill `order` describes, in the surplus
+/// The shares a policy's fee is the lesser of, see
+/// [`fee_shares_before_settlement`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeeShares<A> {
+    /// The policy's share of the surplus or price improvement, `None` for a
+    /// volume policy.
+    pub surplus: Option<A>,
+    /// The policy's share of the volume: the cap of a surplus or price
+    /// improvement policy, the whole fee of a volume policy.
+    pub volume: A,
+}
+
+impl<A: Amount> FeeShares<A> {
+    /// The fee the policy takes.
+    pub fn fee(&self) -> A {
+        self.surplus
+            .map_or(self.volume, |surplus| surplus.min(self.volume))
+    }
+}
+
+/// The shares `policy` takes from the fill `order` describes, in the surplus
 /// token, with the executed legs as the fee base. The inverse of
-/// [`protocol_fee`], which recovers the fee from the legs the fill settled
-/// at.
-fn fee_before_settlement<C: ChainTypes>(
+/// `protocol_fee`, which recovers the fee from the legs the fill settled at.
+pub fn fee_shares_before_settlement<C: ChainTypes>(
     order: &Order<C>,
     policy: &FeePolicy<C>,
-) -> MathResult<C::Amount> {
-    let prices = calculate_custom_prices_from_executed(order);
-    let volume = match order.side {
-        Side::Sell => order.executed_buy,
-        Side::Buy => order.executed_sell,
-    };
+) -> MathResult<FeeShares<C::Amount>> {
     match policy {
         FeePolicy::Surplus {
             factor,
             max_volume_factor,
         } => {
-            let surplus = surplus_over_limit_price(order, &prices)?;
-            Ok(surplus
-                .try_mul_f64(*factor)?
-                .min(volume.try_mul_f64(*max_volume_factor)?))
+            let surplus = surplus_at_legs(
+                order,
+                PriceLimits {
+                    sell: order.sell_amount,
+                    buy: order.buy_amount,
+                },
+            )?;
+            Ok(FeeShares {
+                surplus: Some(surplus.try_mul_f64(*factor)?),
+                volume: volume_share_before_settlement(order, *max_volume_factor)?,
+            })
         }
         FeePolicy::PriceImprovement {
             factor,
             max_volume_factor,
             quote,
         } => {
-            let improvement = price_improvement_over_quote(order, &prices, quote)?;
-            Ok(improvement
-                .try_mul_f64(*factor)?
-                .min(volume.try_mul_f64(*max_volume_factor)?))
+            let improvement =
+                match surplus_at_legs(order, adjust_quote_to_order_limits(order, quote)?) {
+                    Err(MathError::Negative) => C::Amount::zero(),
+                    improvement => improvement?,
+                };
+            Ok(FeeShares {
+                surplus: Some(improvement.try_mul_f64(*factor)?),
+                volume: volume_share_before_settlement(order, *max_volume_factor)?,
+            })
         }
-        FeePolicy::Volume { factor } => volume.try_mul_f64(*factor),
+        FeePolicy::Volume { factor } => Ok(FeeShares {
+            surplus: None,
+            volume: volume_share_before_settlement(order, *factor)?,
+        }),
     }
+}
+
+/// The fee `policy` takes from the fill `order` describes: the lesser of its
+/// [`FeeShares`].
+pub fn fee_before_settlement<C: ChainTypes>(
+    order: &Order<C>,
+    policy: &FeePolicy<C>,
+) -> MathResult<C::Amount> {
+    Ok(fee_shares_before_settlement(order, policy)?.fee())
+}
+
+/// The share `factor` takes of the fill's volume in the surplus token: the
+/// executed buy leg of a sell order, the executed sell leg of a buy order.
+pub fn volume_share_before_settlement<C: ChainTypes>(
+    order: &Order<C>,
+    factor: f64,
+) -> MathResult<C::Amount> {
+    let volume = match order.side {
+        Side::Sell => order.executed_buy,
+        Side::Buy => order.executed_sell,
+    };
+    volume.try_mul_f64(factor)
 }
 
 /// Takes `policies` from the fill `fill` describes, in list order, each from
@@ -214,7 +265,26 @@ pub fn apply_protocol_fees<C: ChainTypes>(
     let mut taken = fill.clone();
     let mut total = C::Amount::zero();
     for policy in policies {
-        let fee = fee_before_settlement(&taken, policy)?;
+        let shares = fee_shares_before_settlement(&taken, policy)?;
+        let fee = shares.fee();
+        match shares.surplus {
+            Some(fee_from_surplus) => tracing::debug!(
+                uid = ?taken.uid,
+                ?fee_from_surplus,
+                fee_from_volume = ?shares.volume,
+                protocol_fee = ?fee,
+                executed_sell = ?taken.executed_sell,
+                executed_buy = ?taken.executed_buy,
+                "calculated protocol fee"
+            ),
+            None => tracing::debug!(
+                uid = ?taken.uid,
+                fee_from_volume = ?shares.volume,
+                executed_sell = ?taken.executed_sell,
+                executed_buy = ?taken.executed_buy,
+                "calculated protocol fee"
+            ),
+        }
         match taken.side {
             Side::Sell => taken.executed_buy = taken.executed_buy.try_sub(fee)?,
             Side::Buy => taken.executed_sell = taken.executed_sell.try_add(fee)?,
@@ -268,6 +338,27 @@ fn surplus_over<C: ChainTypes>(
             let bought = executed.try_mul_div_ceil(prices.sell, prices.buy)?;
 
             bought.try_sub(limit_buy)
+        }
+    }
+}
+
+/// Surplus of the fill `order` describes over `limits`, measured on its
+/// executed legs. Equals `surplus_over` with the legs as prices, without
+/// multiplying the two legs, whose product can exceed the amount type.
+fn surplus_at_legs<C: ChainTypes>(
+    order: &Order<C>,
+    limits: PriceLimits<C>,
+) -> MathResult<C::Amount> {
+    match order.side {
+        Side::Buy => limits
+            .sell
+            .try_mul_div_floor(order.executed_buy, limits.buy)?
+            .try_sub(order.executed_sell),
+        Side::Sell => {
+            let limit_buy = order
+                .executed_sell
+                .try_mul_div_ceil(limits.buy, limits.sell)?;
+            order.executed_buy.try_sub(limit_buy)
         }
     }
 }

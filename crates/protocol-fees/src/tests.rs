@@ -3,14 +3,18 @@
 use {
     crate::{
         FeePolicy,
+        FeeShares,
         Order,
         Quote,
         Side,
         apply_protocol_fees,
+        fee_before_settlement,
+        fee_shares_before_settlement,
         protocol_fees_by_policy,
         surplus_over_limit,
     },
     chain_types::{
+        Amount,
         MathError,
         evm::{Address, Evm, OrderUid, U256},
         solana::{IntentHash, Pubkey, Solana},
@@ -68,15 +72,21 @@ fn volume_fee_moves_a_buy_fill_up() {
 /// 2000 bought is 20.
 #[test]
 fn surplus_fee_is_capped_by_volume() {
+    let policy = FeePolicy::Surplus {
+        factor: 0.5,
+        max_volume_factor: 0.01,
+    };
     let mut capped = fill(Side::Sell, 1_000, 1_800, 1_000, 2_000);
-    let fee = apply_protocol_fees(
-        &mut capped,
-        &[FeePolicy::Surplus {
-            factor: 0.5,
-            max_volume_factor: 0.01,
-        }],
-    )
-    .unwrap();
+    let shares = fee_shares_before_settlement(&capped, &policy).unwrap();
+    assert_eq!(
+        shares,
+        FeeShares {
+            surplus: Some(100),
+            volume: 20,
+        }
+    );
+    let fee = apply_protocol_fees(&mut capped, &[policy]).unwrap();
+    assert_eq!(fee, shares.fee());
     assert_eq!(fee, 20);
     assert_eq!(capped.executed_buy, 1_980);
 
@@ -308,4 +318,29 @@ fn surplus_over_limit_scales_the_limit_to_the_fill() {
         ..evm_sell_fill()
     };
     assert_eq!(surplus_over_limit(&buy_fill).unwrap(), U256::from(50u64));
+}
+
+/// Legs of 2^150 sold and 2^120 bought multiply past `U256`. The forward fee
+/// measures the surplus on the legs themselves, while the backward math
+/// overflows on their product.
+#[test]
+fn huge_legs_overflow_only_the_backward_math() {
+    let huge = Order::<Evm> {
+        sell_amount: U256::ONE << 150,
+        buy_amount: U256::ONE,
+        executed_sell: U256::ONE << 150,
+        executed_buy: U256::ONE << 120,
+        ..evm_sell_fill()
+    };
+    let policy = FeePolicy::Surplus {
+        factor: 0.5,
+        max_volume_factor: 1.0,
+    };
+
+    let surplus: U256 = (U256::ONE << 120) - U256::ONE;
+    assert_eq!(
+        fee_before_settlement(&huge, &policy),
+        surplus.try_mul_f64(0.5)
+    );
+    assert_eq!(surplus_over_limit(&huge), Err(MathError::Overflow));
 }
