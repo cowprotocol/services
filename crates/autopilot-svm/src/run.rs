@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        domain::arbitrator::SolanaArbitrator,
+        domain::{arbitrator::SolanaArbitrator, fee::ProtocolFees},
         infra::{
             api,
             cleanup,
@@ -185,6 +185,7 @@ async fn run(config: Config) {
             config.max_indexer_lag_slots,
             prices,
             config.contracts.state_pda(),
+            ProtocolFees::new(config.fee_policies.clone()),
         )),
         Box::new(DriverCompetition::new(
             drivers.clone(),

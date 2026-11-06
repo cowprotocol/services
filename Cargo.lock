@@ -1572,6 +1572,7 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
+ "protocol-fees",
  "request-sharing",
  "reqwest 0.13.4",
  "serde",
