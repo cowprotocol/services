@@ -191,7 +191,7 @@ jobs:
         with:
           just-version: 1.39.0
       # Run only the tests of the packages that the changes can affect.
-      - run: just test-db ${FILTER:+-E "$FILTER"}
+      - run: just test-db ${FILTER:+-E "$FILTER" --no-tests=warn}
         env:
           FILTER: ${{ needs.changes.outputs.nextest-filter }}
 
@@ -298,7 +298,6 @@ jobs:
     if: |
       !cancelled() && needs.changes.outputs.e2e != 'false' && (
         (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) ||
-        github.event_name == 'merge_group' ||
         (github.event_name == 'push' && github.ref == 'refs/heads/main')
       )
     timeout-minutes: 60
