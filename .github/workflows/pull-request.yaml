@@ -127,7 +127,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: checks
+          shared-key: doc-tests
       - run: just test-doc
 
   unit-tests:
@@ -147,7 +147,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: tests
+          shared-key: workspace-tests
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -178,10 +178,10 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: tests
+          shared-key: workspace-tests
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build --locked -p orderbook -p database -p autopilot -p solana-indexer -p solana-orderbook --tests &
+      - run: cargo build --locked --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -214,10 +214,10 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: tests
+          shared-key: workspace-tests
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
-      - run: cargo build --locked -p solana-indexer -p autopilot-svm --tests &
+      - run: cargo build --locked --tests &
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -260,7 +260,7 @@ jobs:
           version: v1.7.1
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: tests
+          shared-key: e2e
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p e2e --tests &
@@ -326,7 +326,7 @@ jobs:
           version: v1.0.0
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: tests
+          shared-key: e2e
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p e2e --tests &
@@ -362,7 +362,7 @@ jobs:
           version: v1.7.1
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: tests
+          shared-key: driver
       - uses: taiki-e/install-action@4684b8405694ae9dd42c9f39ba901a70ae83f4a3 # v2.82.9
         with:
           tool: nextest
@@ -438,7 +438,7 @@ jobs:
           version: v1.7.1
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: tests
+          shared-key: e2e
       # Start the build process in the background. The following cargo test command will automatically
       # wait for the build process to be done before proceeding.
       - run: cargo build --locked -p e2e --tests &
@@ -524,7 +524,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - uses: ./.github/actions/setup-rust-cache
         with:
-          shared-key: checks
+          shared-key: event-bus-schemas
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
         with:
           just-version: 1.39.0

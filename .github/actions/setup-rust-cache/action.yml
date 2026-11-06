@@ -34,7 +34,7 @@ runs:
         cache-directories: ${{ runner.temp }}/mtime-cache
         shared-key: ${{ inputs.shared-key }}
         # Only write to the cache if running on main
-        save-if: ${{ github.ref == 'refs/heads/main' }}
+        save-if: true
 
     # Gives each unchanged file its previous time again, so that cargo reuses the
     # cached workspace artifacts. A changed file keeps the time of the checkout.

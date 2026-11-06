@@ -68,6 +68,10 @@ pub struct Config {
     /// skipped, so a stalled indexer stops feeding stale orders to solvers.
     #[serde(default = "default_max_indexer_lag_slots")]
     pub max_indexer_lag_slots: u64,
+    /// Take a leader lock in the database, so several instances can run and
+    /// only the one holding it cuts auctions.
+    #[serde(default)]
+    pub enable_leader_lock: bool,
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
@@ -349,6 +353,7 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
+        assert!(config.enable_leader_lock);
         assert_eq!(config.db_cleanup.cleanup_interval, Duration::from_hours(24));
         assert_eq!(
             config.db_cleanup.cleanup_threshold,
