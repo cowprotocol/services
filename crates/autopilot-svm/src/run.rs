@@ -24,6 +24,7 @@ use {
     chain_types::solana::Pubkey,
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
+    database::leader_pg_lock::LeaderLock,
     observe::metrics::LivenessChecking,
     sqlx::postgres::PgPoolOptions,
     std::{
@@ -32,6 +33,7 @@ use {
         sync::{Arc, RwLock, atomic::AtomicBool},
         time::{Duration, Instant},
     },
+    tokio_util::sync::CancellationToken,
 };
 
 /// How long startup waits for the first slot before skipping the sweep of
@@ -170,6 +172,13 @@ async fn run(config: Config) {
             .expect("bind the HTTP API"),
         prices.clone(),
     );
+    let leader_lock = config.enable_leader_lock.then(|| {
+        LeaderLock::new(
+            pool.clone(),
+            "solana_autopilot".to_string(),
+            Duration::from_millis(200),
+        )
+    });
     let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
     let auction_loop = AuctionLoop::new(
@@ -209,16 +218,25 @@ async fn run(config: Config) {
         Default::default(),
         startup,
     );
-    let cycles = auction_loop.run_forever();
+    let shutdown = CancellationToken::new();
+    tokio::spawn({
+        let shutdown = shutdown.clone();
+        async move {
+            observe::shutdown::shutdown_signal().await;
+            tracing::info!("shutting down");
+            shutdown.cancel();
+        }
+    });
+    let cycles = auction_loop.run_forever(leader_lock, shutdown);
 
     // The servers and the listen session never end on their own, so an end
-    // means the task panicked.
+    // means the task panicked. They keep serving while the auction loop
+    // finishes its last cycle.
     tokio::select! {
-        _ = cycles => unreachable!("the auction loop never returns"),
+        () = cycles => (),
         _ = metrics => panic!("metrics server stopped"),
         result = api => panic!("HTTP API server stopped: {result:?}"),
         _ = listen => panic!("settlement listen session stopped"),
-        () = observe::shutdown::shutdown_signal() => tracing::info!("shutting down"),
     }
 }
 
