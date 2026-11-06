@@ -55,10 +55,15 @@ impl CycleTrigger<SolanaCycle> for FixedTrigger {
 #[derive(Clone)]
 struct MockDriverState {
     solution: dto::Solution,
+    solves: mpsc::UnboundedSender<dto::SolveRequest>,
     settles: mpsc::UnboundedSender<dto::SettleRequest>,
 }
 
-async fn handle_solve(State(state): State<MockDriverState>) -> Json<serde_json::Value> {
+async fn handle_solve(
+    State(state): State<MockDriverState>,
+    Json(request): Json<dto::SolveRequest>,
+) -> Json<serde_json::Value> {
+    state.solves.send(request).unwrap();
     Json(
         serde_json::to_value(&dto::SolveResponse {
             solutions: vec![state.solution.clone()],
@@ -80,7 +85,8 @@ async fn handle_settle(
     )
 }
 
-/// Serves `/solve` with one canned solution and records every `/settle`.
+/// Serves `/solve` with one canned solution and records every `/solve` and
+/// `/settle`.
 async fn spawn_mock_driver(state: MockDriverState) -> SocketAddr {
     let app = Router::new()
         .route("/solve", post(handle_solve))
@@ -213,8 +219,19 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     let tip = 500_u64;
     seed_open_order(&pool, uid, i64::try_from(tip).unwrap()).await;
 
-    // Selling 1000 for at least 500 and receiving 600 clears the limit, so
-    // the solution scores its 100 surplus and wins.
+    // Selling 1000 for at least 500 and receiving 600 clears the limit by
+    // 100. The surplus policy implies a fee of another 100, so the solution
+    // scores 200 and wins.
+    let fees = ProtocolFees::new(
+        toml::from_str(
+            r#"
+            [[policies]]
+            kind.surplus = { factor = 0.5, max-volume-factor = 0.9 }
+            order-class = "any"
+            "#,
+        )
+        .unwrap(),
+    );
     let solution = dto::Solution {
         solution_id: 7,
         solver: Pubkey([0xCC; 32]),
@@ -227,8 +244,14 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         )]),
     };
     let wrapped_native = Pubkey([0xFE; 32]);
+    let (solves, mut solved) = mpsc::unbounded_channel();
     let (settles, mut settled) = mpsc::unbounded_channel();
-    let addr = spawn_mock_driver(MockDriverState { solution, settles }).await;
+    let addr = spawn_mock_driver(MockDriverState {
+        solution,
+        solves,
+        settles,
+    })
+    .await;
     let driver = Arc::new(Driver::new(
         "mock".to_string(),
         &Url::parse(&format!("http://{addr}")).unwrap(),
@@ -242,7 +265,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             150,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
-            ProtocolFees::default(),
+            fees.clone(),
         );
         let NextAuction::Auction(auction) = provider.cut_auction(&tip).await else {
             panic!("auction cut");
@@ -252,6 +275,15 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             DriverCompetition::new(vec![Arc::clone(&driver)], Duration::from_secs(6), true);
         let solutions = competition.solve(&auction).await;
         assert_eq!(solutions.len(), 1, "driver solution converted");
+        let solve = solved.recv().await.unwrap();
+        assert_eq!(
+            solve.orders[0].protocol_fees,
+            vec![dto::FeePolicy::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.9,
+            }],
+            "policy forwarded to the driver"
+        );
         let ranking = SolanaArbitrator::new(1, wrapped_native).arbitrate(solutions, &auction);
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }
@@ -266,7 +298,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             150,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
-            ProtocolFees::default(),
+            fees.clone(),
         )),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
@@ -313,14 +345,22 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .await
     .unwrap();
     assert_eq!(caps, [0]);
-    let (solution_uid, solver_id, is_winner, filtered_out): (i64, i64, bool, bool) =
-        sqlx::query_as("SELECT uid, id, is_winner, filtered_out FROM solana.proposed_solutions")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let (solution_uid, solver_id, is_winner, filtered_out, score): (i64, i64, bool, bool, String) =
+        sqlx::query_as(
+            "SELECT uid, id, is_winner, filtered_out, score::text FROM solana.proposed_solutions",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(
-        (solution_uid, solver_id, is_winner, filtered_out),
-        (0, 7, true, false)
+        (
+            solution_uid,
+            solver_id,
+            is_winner,
+            filtered_out,
+            score.as_str()
+        ),
+        (0, 7, true, false, "200")
     );
     // The sole winner's reference score: the winners' total without it, zero.
     let (reference_solver, reference_score): (Vec<u8>, String) =
@@ -360,7 +400,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         u64::MAX,
         NativePrices::seeded(test_prices()),
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
-        ProtocolFees::default(),
+        fees,
     );
     assert!(
         matches!(
