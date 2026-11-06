@@ -106,7 +106,12 @@ const ACCUMULATIVE_ERRORS_THRESHOLD: u32 = 5;
 fn is_accumulating_error(result: &CacheEntry) -> bool {
     matches!(
         result,
-        Err(PriceEstimationError::EstimatorInternal(_) | PriceEstimationError::RateLimited)
+        Err(PriceEstimationError::EstimatorInternal(_)
+            | PriceEstimationError::RateLimited
+            | PriceEstimationError::TradingOutsideAllowedWindow { .. }
+            | PriceEstimationError::TokenTemporarilySuspended { .. }
+            | PriceEstimationError::InsufficientLiquidity { .. }
+            | PriceEstimationError::CustomSolverError { .. })
     )
 }
 
@@ -149,13 +154,13 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
         | Err(PriceEstimationError::NoLiquidity)
         | Err(PriceEstimationError::UnsupportedToken { .. })
         | Err(PriceEstimationError::EstimatorInternal(_))
-        | Err(PriceEstimationError::RateLimited) => true,
-        Err(PriceEstimationError::ProtocolInternal(_)) => false,
-        Err(PriceEstimationError::UnsupportedOrderType(_))
+        | Err(PriceEstimationError::RateLimited)
         | Err(PriceEstimationError::TradingOutsideAllowedWindow { .. })
         | Err(PriceEstimationError::TokenTemporarilySuspended { .. })
         | Err(PriceEstimationError::InsufficientLiquidity { .. })
-        | Err(PriceEstimationError::CustomSolverError { .. }) => {
+        | Err(PriceEstimationError::CustomSolverError { .. }) => true,
+        Err(PriceEstimationError::ProtocolInternal(_)) => false,
+        Err(PriceEstimationError::UnsupportedOrderType(_)) => {
             tracing::error!(?result, "Unexpected error in native price cache");
             false
         }
@@ -1274,7 +1279,7 @@ mod tests {
     }
 
     #[test]
-    fn should_cache_filters_custom_solver_errors() {
+    fn custom_solver_errors_accumulate() {
         let custom_errors = [
             PriceEstimationError::TradingOutsideAllowedWindow {
                 message: "window".to_string(),
@@ -1290,8 +1295,9 @@ mod tests {
             },
         ];
 
-        for err in &custom_errors {
-            assert!(!should_cache(&Err(err.clone())));
+        for err in custom_errors {
+            let result = Err(err);
+            assert!(should_cache(&result) && is_accumulating_error(&result));
         }
     }
 
