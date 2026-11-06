@@ -383,6 +383,17 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         (executed_sell.as_str(), executed_buy.as_str()),
         ("1000", "600")
     );
+    // The traded order's policy is stored in the EVM columns.
+    let (kind, factor, cap): (String, f64, f64) = sqlx::query_as(
+        "SELECT kind::text, surplus_factor, surplus_max_volume_factor FROM solana.fee_policies \
+         WHERE auction_id = $1 AND order_uid = $2",
+    )
+    .bind(settle.auction_id)
+    .bind(ByteArray(uid))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((kind.as_str(), factor, cap), ("surplus", 0.5, 0.9));
     let window_uid: i64 =
         sqlx::query_scalar("SELECT solution_uid FROM solana.settlement_executions")
             .fetch_one(&pool)
