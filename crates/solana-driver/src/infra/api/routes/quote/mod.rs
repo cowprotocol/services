@@ -125,5 +125,6 @@ fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
         deadline: request.deadline,
         creations: std::collections::HashMap::new(),
         native_prices: std::collections::HashMap::new(),
+        fee_policies: std::collections::HashMap::new(),
     }
 }
