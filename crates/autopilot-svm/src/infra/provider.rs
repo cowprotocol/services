@@ -697,7 +697,7 @@ mod tests {
     /// a receiver. The lookup reads the two accounts, then the sell and buy
     /// mints.
     #[tokio::test]
-    async fn creates_a_receivers_missing_associated_token_account() {
+    async fn keeps_an_order_paying_to_a_receivers_missing_ata() {
         let response = serde_json::json!({
             "context": {"slot": 1u64, "apiVersion": "2.0.0"},
             "value": [
