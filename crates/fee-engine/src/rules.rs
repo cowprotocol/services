@@ -13,7 +13,9 @@ use {
     alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
+    configs::{autopilot::fee_policy::default_max_partner_fee, fee_factor::FeeFactor},
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
+    rust_decimal::{Decimal, prelude::FromPrimitive},
     serde::{Deserialize, Deserializer, de},
     std::{
         collections::{BTreeMap, HashSet},
@@ -46,15 +48,45 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
     Ok(value)
 }
 
-/// A rule set as written: named lists and the rules in the order they are
-/// tried. In TOML, `[lists]` and one `[[rule]]` table per rule.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+/// A rule set as written: named lists, the rules in the order they are
+/// tried and the cap on partner fees. In TOML, `[lists]`, one `[[rule]]`
+/// table per rule and `[partner_fees]`.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleSetDefinition {
     #[serde(default)]
     pub lists: BTreeMap<String, Vec<String>>,
     #[serde(default, rename = "rule")]
     pub rules: Vec<RuleDefinition>,
+    #[serde(default)]
+    pub partner_fees: PartnerFees,
+}
+
+/// How the engine caps an order's partner fees. Without the table, the
+/// autopilot's default cap.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartnerFees {
+    /// Percent of the volume all partner fees may take together.
+    #[serde(deserialize_with = "percent_of_volume")]
+    pub max_volume: FeeFactor,
+}
+
+impl Default for PartnerFees {
+    fn default() -> Self {
+        Self {
+            max_volume: default_max_partner_fee(),
+        }
+    }
+}
+
+/// A percent of the volume on the fee grid, like a `surplus` `max_volume`.
+fn percent_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
+    let percent = f64::deserialize(deserializer)?;
+    Decimal::from_f64(percent)
+        .ok_or(fee::OUT_OF_RANGE)
+        .and_then(|number| fee::factor_on_grid(number, fee::PERCENT))
+        .map_err(|error| de::Error::custom(format!("max_volume = {percent} {error}")))
 }
 
 /// Names the evaluator binds itself; a list under one of them would be
@@ -178,12 +210,14 @@ pub struct RuleSet {
     pub(crate) env: Arc<Env>,
     rules: Vec<Rule>,
     pub(crate) lists: Vec<(String, Value)>,
+    max_partner_fee: FeeFactor,
 }
 
 impl fmt::Debug for RuleSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuleSet")
             .field("rules", &self.rules)
+            .field("max_partner_fee", &self.max_partner_fee)
             .finish_non_exhaustive()
     }
 }
@@ -191,11 +225,13 @@ impl fmt::Debug for RuleSet {
 impl RuleSet {
     /// Compiles the rules in the order they are tried against the CEL
     /// stdlib plus its math and strings extensions. Each list becomes a CEL
-    /// list under its name. Any failure refuses the whole set.
+    /// list under its name. `partner_fees` caps an order's partner fees
+    /// together. Any failure refuses the whole set.
     pub fn new(
         RuleSetDefinition {
             lists,
             rules: definitions,
+            partner_fees,
         }: RuleSetDefinition,
     ) -> Result<Self, CompileError> {
         let mut env = Env::stdlib();
@@ -225,6 +261,7 @@ impl RuleSet {
             env,
             rules,
             lists: list_values(&lists),
+            max_partner_fee: partner_fees.max_volume,
         })
     }
 
@@ -246,6 +283,7 @@ impl RuleSet {
             .evaluate_all_expressions(OrderView {
                 order: &full_sample_order(now),
                 app_data: &sample_app_data(),
+                partner_fees: &[],
                 in_market: false,
             })
             .into_iter()
@@ -255,6 +293,7 @@ impl RuleSet {
             .evaluate(OrderView {
                 order: &bare_sample_order(now),
                 app_data: &AppData::default(),
+                partner_fees: &[],
                 in_market: false,
             })
             .skipped
@@ -276,6 +315,11 @@ impl RuleSet {
     /// The rules in the order they are tried.
     pub fn rules(&self) -> &[Rule] {
         &self.rules
+    }
+
+    /// The cap on an order's partner fees together, as a share of the volume.
+    pub fn max_partner_fee(&self) -> FeeFactor {
+        self.max_partner_fee
     }
 
     /// Binds lists, functions and `now` once; each order evaluated through

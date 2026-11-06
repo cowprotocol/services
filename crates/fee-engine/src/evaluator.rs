@@ -4,6 +4,7 @@ use {
     crate::{
         fee::{self, Fee},
         order_view::{self, OrderView},
+        partner_fee,
         rules::{Field, Rule, RuleSet},
     },
     cel::{Context, Value, objects::ValueType},
@@ -16,10 +17,13 @@ use {
 #[derive(Debug)]
 pub struct Evaluation<'r> {
     /// Every rule whose `when` held, in rule order, with its fees. Empty means
-    /// no fee applies (check `skipped` to ensure no fees were ignored).
+    /// no protocol fee applies (check `skipped` to ensure none was ignored).
     pub matched: Vec<Match<'r>>,
     /// Rules that failed to evaluate, in rule order.
     pub skipped: Vec<Skipped<'r>>,
+    /// The order's partner fees, capped. They come after the fees of the
+    /// match the caller picks, and apply when no rule matched too.
+    pub partner_fees: Vec<Fee>,
 }
 
 /// A rule whose `when` held for an order, and its fees.
@@ -78,6 +82,10 @@ impl<'r> Evaluator<'r> {
         let mut evaluation = Evaluation {
             matched: Vec::new(),
             skipped: Vec::new(),
+            partner_fees: partner_fee::partner_fees(
+                order.partner_fees,
+                self.rules.max_partner_fee(),
+            ),
         };
         for rule in self.rules.rules() {
             match Self::evaluate_rule(rule, &context) {
@@ -148,6 +156,7 @@ mod tests {
         super::*,
         crate::{
             AppData,
+            PartnerFee,
             rules::{RuleDefinition, RuleSetDefinition},
         },
         alloy_primitives::{Address, U256, address},
@@ -201,6 +210,7 @@ mod tests {
         RuleSet::new(RuleSetDefinition {
             lists: sample_lists(),
             rules: definitions,
+            ..Default::default()
         })
         .unwrap()
     }
@@ -223,11 +233,12 @@ mod tests {
         }
     }
 
-    /// `order` evaluated with no app data.
+    /// `order` evaluated with no app data and no partner fees.
     fn evaluate<'r>(evaluator: &Evaluator<'r>, order: &Order, in_market: bool) -> Evaluation<'r> {
         evaluator.evaluate(OrderView {
             order,
             app_data: &AppData::default(),
+            partner_fees: &[],
             in_market,
         })
     }
@@ -340,6 +351,7 @@ mod tests {
                 "order.sellToken in stablecoins",
                 "volume(1)",
             )],
+            ..Default::default()
         })
         .unwrap();
         let evaluator = rules.evaluator(after_launch());
@@ -455,10 +467,26 @@ mod tests {
         let evaluation = evaluator.evaluate(OrderView {
             order: &order,
             app_data: &app_data,
+            partner_fees: &[],
             in_market: false,
         });
         assert!(evaluation.skipped.is_empty());
         assert_eq!(names(&evaluation), ["CoW Swap"]);
+    }
+
+    #[test]
+    fn partner_fees_apply_when_no_rule_matches() {
+        let rules = rule_set(vec![rule("Never", "false", "volume(1)")]);
+        let order = order(WETH, USDT);
+        let evaluation = rules.evaluator(after_launch()).evaluate(OrderView {
+            order: &order,
+            app_data: &AppData::default(),
+            partner_fees: &[PartnerFee::Volume { bps: 60 }],
+            in_market: false,
+        });
+
+        assert!(evaluation.matched.is_empty());
+        assert_eq!(evaluation.partner_fees, [volume(60.0)]);
     }
 
     #[test]

@@ -56,6 +56,7 @@ fn rules() -> RuleSet {
     RuleSet::new(RuleSetDefinition {
         lists,
         rules: definitions,
+        ..Default::default()
     })
     .unwrap()
 }
@@ -101,6 +102,7 @@ fn reports_the_matching_rules_per_order() {
     let (rule, fees) = matched(before_launch.evaluate(OrderView {
         order: &order(user, USDC, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(
@@ -118,6 +120,7 @@ fn reports_the_matching_rules_per_order() {
     let (rule, fees) = matched(after_launch.evaluate(OrderView {
         order: &order(user, USDC, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(rule, ["Stablecoin swaps", "Default"]);
@@ -131,6 +134,7 @@ fn reports_the_matching_rules_per_order() {
     let (rule, fees) = matched(after_launch.evaluate(OrderView {
         order: &order(user, WETH, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(rule, ["Default"]);
@@ -145,6 +149,7 @@ fn reports_the_matching_rules_per_order() {
     let (rule, fees) = matched(after_launch.evaluate(OrderView {
         order: &order(MAKER, USDC, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
@@ -164,6 +169,7 @@ fn no_matching_rule_means_no_fee() {
             .evaluate(OrderView {
                 order: &Order::default(),
                 app_data: &AppData::default(),
+                partner_fees: &[],
                 in_market: false
             })
             .matched

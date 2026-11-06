@@ -36,7 +36,7 @@ const KIND: &str = "kind";
 /// rounded.
 const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
 /// Grid units per percent.
-const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
+pub(crate) const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
 
 /// Binds the fee functions. Each returns a tagged map that
 /// [`fees_from_value`] turns into a [`Fee`] after the rule has run.
@@ -113,19 +113,8 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
                 ));
             }
         };
-        let scaled = number
-            .checked_mul(Decimal::from(grid_units))
-            .ok_or_else(out_of_range)?;
-        if !scaled.is_integer() {
-            return Err(format!(
-                "`{kind}` argument `{name}` = {number} is finer than the fee precision (1e-6 of \
-                 the volume)"
-            ));
-        }
-        scaled
-            .to_u64()
-            .and_then(|units| FeeFactor::from_high_precision(units).ok())
-            .ok_or_else(out_of_range)
+        factor_on_grid(number, grid_units)
+            .map_err(|error| format!("`{kind}` argument `{name}` = {number} {error}"))
     };
     match kind.as_str() {
         "volume" => Ok(Fee::Volume {
@@ -142,6 +131,23 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
         other => Err(format!("unknown fee kind `{other}`")),
     }
 }
+
+/// `number` steps of `grid_units` each (e.g. [`PERCENT`]) as a fee factor.
+pub(crate) fn factor_on_grid(number: Decimal, grid_units: u64) -> Result<FeeFactor, &'static str> {
+    let scaled = number
+        .checked_mul(Decimal::from(grid_units))
+        .ok_or(OUT_OF_RANGE)?;
+    if !scaled.is_integer() {
+        return Err("is finer than the fee precision (1e-6 of the volume)");
+    }
+    scaled
+        .to_u64()
+        .and_then(|units| FeeFactor::from_high_precision(units).ok())
+        .ok_or(OUT_OF_RANGE)
+}
+
+/// Negative, 100% of the volume or more, or not a finite number.
+pub(crate) const OUT_OF_RANGE: &str = "is out of range";
 
 #[cfg(test)]
 mod tests {

@@ -3,7 +3,8 @@
 Rule-based protocol fees. A `RuleSet` holds named lists and an ordered list
 of rules. For every order every rule runs; the engine reports each rule whose
 `when` is true, in rule order, with its fee. The caller picks which matches
-to act on, e.g. the first.
+to act on, e.g. the first. The partner fees of the order's app data are not
+rules: the engine returns them apart, capped, to follow the picked fees.
 
 ## Rules
 
@@ -52,24 +53,30 @@ fee:  surplus(50, 1)
 ## The rules file
 
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
-`[lists]` holds named lists of strings and each `[[rule]]` table is a rule,
-tried in file order. Unknown top-level and rule keys are refused; any key
-under `[lists]` is a list name, so a list that no rule names loads without
-error. The file goes through `RuleSet::new` and
-`RuleSet::validate_on_sample_order`; any failure refuses the whole file as a
-`LoadError`: `Toml` (does not parse, unknown key, missing field or a rule
-field that is empty; names the line and column), `Rules` (a `CompileError`)
-or `SampleOrder` (every `SampleOrderError`). A file without rules loads: no
-order pays a protocol fee.
+`[lists]` holds named lists of strings, each `[[rule]]` table is a rule,
+tried in file order, and `[partner_fees]` holds `max_volume`, the percent of
+the volume an order's partner fees may take together. Without the table it
+is 1, as in the autopilot; it lands on the fee grid like a fee argument.
+Unknown top-level and rule keys are refused; any key under `[lists]` is a
+list name, so a list that no rule names loads without error. The file goes
+through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
+refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown
+key, missing field, a rule field that is empty or a bad `max_volume`; names
+the line and column), `Rules` (a `CompileError`) or `SampleOrder` (every
+`SampleOrderError`). A file without rules loads: no order pays a protocol
+fee.
 
-`load_rules_toml(RulesToml { lists, rules })` loads the same two tables as
-raw `toml::Value`s, e.g. from a section of a host config, so the host need
-not know their shape. `None` is an empty table, like an absent one in a
-file. It refuses them as `load_rules_from_str` does, but without a line or
-column: a malformed rule is a `MalformedRule` error that names the rule by
-its number, and any other malformed value is a `Toml` error.
+`load_rules_toml(RulesToml { lists, rules, partner_fees })` loads the same
+tables as raw `toml::Value`s, e.g. from a section of a host config, so the
+host need not know their shape. `None` is an absent table, as in a file. It
+refuses them as `load_rules_from_str` does, but without a line or column: a
+malformed rule is a `MalformedRule` error that names the rule by its number,
+and any other malformed value is a `Toml` error.
 
 ```toml
+[partner_fees]
+max_volume = 1
+
 [lists]
 stablecoins = [
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
@@ -288,8 +295,8 @@ and `fullAppData` is the document as text; the view has the parsed document
 as `appData`, and no hash.
 
 The order above shows every field. No other key of the document is here,
-hooks, wrappers and partner fees included; the host appends the partner
-fees after the rule's fees. The host passes `AppData::default()` when the
+hooks, wrappers and partner fees included (see `partner_fees` under
+Outcome). The host passes `AppData::default()` and no partner fees when the
 order has no document or the protocol cannot parse it. `appData` and
 `appData.metadata` are always present; every field under them is optional,
 so reach it with `.?` or guard it with `has`.
@@ -313,3 +320,7 @@ diagnostics, and logs nothing itself:
 - `skipped`: every rule that failed to evaluate, in rule order, each with
   the field (`when` or `fee`) and the `RuleError`. The caller decides how to
   log or count them.
+- `partner_fees`: the fees `OrderView::partner_fees` asks for, in app-data
+  order, also when no rule matched. The caller puts them after the fees of
+  the match it picks. They are capped by `max_volume` as the autopilot caps
+  them; a fee past the cap stays, with a zero volume share or volume cap.
