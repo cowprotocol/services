@@ -1191,9 +1191,10 @@ fn solve_request_with_policies(
 
 /// The auction order sells 1000 for at least 2000, the cut is 100 atoms, the
 /// solver fee 500 bps and the protocol fee 10 bps of the volume. The engine
-/// is asked for 2211, the limit after the cut and the solver fee, and sees
-/// no policy. Its route paying 3000 is reported at 2748: 3000 less the 150
-/// solver fee, the cut, and the 2 protocol fee of what is left.
+/// is asked for 2213: 2002 is the least leg the protocol fee leaves at 2000,
+/// the cut moves it to 2102 and the solver fee tightens that. Its route
+/// paying 3000 is reported at 2748: 3000 less the 150 solver fee, the cut,
+/// and the 2 protocol fee of what is left. The engine sees no policy.
 #[tokio::test]
 async fn solve_takes_the_protocol_fee_after_the_cut_and_the_solver_fee() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
@@ -1210,7 +1211,7 @@ async fn solve_takes_the_protocol_fee_after_the_cut_and_the_solver_fee() {
     assert_eq!(amounts["executedBuy"], "2748");
 
     let request = requests.lock().unwrap().take().unwrap();
-    assert_eq!(request["orders"][0]["buyAmount"], "2211");
+    assert_eq!(request["orders"][0]["buyAmount"], "2213");
     assert!(request["orders"][0].get("protocolFees").is_none());
 }
 
