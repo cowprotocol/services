@@ -488,31 +488,49 @@ impl Root {
     }
 }
 
-/// Caches whether a given app data document contains wrappers, keyed by
-/// hash. This avoids re-parsing the same JSON across orders and auction
-/// cycles. We're using the default TinyLFU eviction policy, but the capacity is
-/// large enough that we don't expect eviction to be a problem in practice, but
-/// we limit the size to prevent potential memory exhaustion attacks.
-pub struct WrapperCache(Cache<AppDataHash, bool>);
+/// The app-data facts the autopilot needs per order on every solvable-orders
+/// refresh. One parse per distinct document answers all of them at once.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AppDataFlags {
+    /// The document lists at least one wrapper call.
+    pub has_wrappers: bool,
+    /// The document sets `waitForCow: true`.
+    pub wait_for_cow: bool,
+}
 
-impl WrapperCache {
+impl From<&ProtocolAppData> for AppDataFlags {
+    fn from(protocol: &ProtocolAppData) -> Self {
+        Self {
+            has_wrappers: !protocol.wrappers.is_empty(),
+            wait_for_cow: matches!(protocol.execution_mode, ExecutionMode::WaitForCow),
+        }
+    }
+}
+
+/// Memoizes [`AppDataFlags`] per app-data hash, so that the JSON parse runs
+/// once per distinct document instead of once per order per refresh. TinyLFU
+/// eviction; the capacity is large enough that eviction is not expected in
+/// practice, but bounded to prevent memory exhaustion attacks.
+pub struct AppDataFlagsCache(Cache<AppDataHash, AppDataFlags>);
+
+impl AppDataFlagsCache {
     pub fn new(capacity: u64) -> Self {
         Self(Cache::new(capacity))
     }
 
-    /// Returns `true` if order appData contains non-empty wrappers
-    pub fn has_wrappers(&self, hash: &AppDataHash, document: Option<&str>) -> bool {
+    /// Returns the flags for the document. An absent or unparsable document
+    /// yields all-false flags: the orderbook requires a valid document to
+    /// accept any of the underlying fields.
+    pub fn get(&self, hash: &AppDataHash, document: Option<&str>) -> AppDataFlags {
         if let Some(cached) = self.0.get(hash) {
             return cached;
         }
-        let result = document.is_some_and(|doc| {
-            serde_json::from_str::<Root>(doc)
-                .ok()
-                .and_then(|root| root.metadata)
-                .is_some_and(|m| !m.wrappers.is_empty())
-        });
-        self.0.insert(*hash, result);
-        result
+        let flags = document
+            .and_then(|doc| parse(doc.as_bytes()).ok())
+            .map(|protocol| AppDataFlags::from(&protocol))
+            .unwrap_or_default();
+        self.0.insert(*hash, flags);
+        flags
     }
 }
 
@@ -1007,21 +1025,39 @@ mod tests {
     }
 
     #[test]
-    fn wrapper_cache_detects_wrappers() {
-        let cache = WrapperCache::new(100);
+    fn flags_cache_detects_wrappers_and_wait_for_cow() {
+        let cache = AppDataFlagsCache::new(100);
         let h = |b: u8| AppDataHash([b; 32]);
+        let none = AppDataFlags::default();
 
-        assert!(!cache.has_wrappers(&h(1), None));
-        assert!(!cache.has_wrappers(&h(2), Some("{}")));
-        assert!(!cache.has_wrappers(&h(3), Some(r#"{"metadata": {}}"#)));
-        assert!(!cache.has_wrappers(&h(4), Some(r#"{"metadata": {"wrappers": []}}"#)));
-        assert!(cache.has_wrappers(
-            &h(5),
-            Some(r#"{"metadata": {"wrappers": [{"address": "0x0000000000000000000000000000000000000001", "data": "0x"}]}}"#),
-        ));
+        assert_eq!(cache.get(&h(1), None), none);
+        assert_eq!(cache.get(&h(2), Some("{}")), none);
+        assert_eq!(cache.get(&h(3), Some(r#"{"metadata": {}}"#)), none);
+        assert_eq!(
+            cache.get(&h(4), Some(r#"{"metadata": {"wrappers": []}}"#)),
+            none
+        );
+        assert_eq!(
+            cache.get(
+                &h(5),
+                Some(r#"{"metadata": {"wrappers": [{"address": "0x0000000000000000000000000000000000000001", "data": "0x"}]}}"#),
+            ),
+            AppDataFlags {
+                has_wrappers: true,
+                wait_for_cow: false,
+            }
+        );
+        assert_eq!(
+            cache.get(&h(6), Some(r#"{"metadata": {"waitForCow": true}}"#)),
+            AppDataFlags {
+                has_wrappers: false,
+                wait_for_cow: true,
+            }
+        );
 
         // Second call hits the cache
-        assert!(cache.has_wrappers(&h(5), None));
+        assert!(cache.get(&h(5), None).has_wrappers);
+        assert!(cache.get(&h(6), None).wait_for_cow);
     }
 
     #[test]

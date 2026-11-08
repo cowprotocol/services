@@ -534,6 +534,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
+        config.batch_auction_interval,
     );
 
     let liveness = Arc::new(Liveness::new(config.max_auction_age));

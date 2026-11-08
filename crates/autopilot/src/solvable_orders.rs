@@ -69,6 +69,12 @@ pub struct Metrics {
     /// Auction filtered orders grouped by class.
     #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
+
+    /// `waitForCow` orders that got their `valid_from` assigned by this
+    /// process, labelled by whether the order was deferred to a future
+    /// batch-auction boundary or made valid immediately.
+    #[metric(labels("outcome"))]
+    wait_for_cow_assigned: IntCounterVec,
 }
 
 impl Metrics {
@@ -126,7 +132,9 @@ pub struct SolvableOrdersCache {
     native_price_timeout: Duration,
     settlement_contract: Address,
     disable_order_balance_filter: bool,
-    wrapper_cache: app_data::WrapperCache,
+    app_data_flags: app_data::AppDataFlagsCache,
+    /// See [`Self::assign_wait_for_cow_valid_from`].
+    batch_auction_interval: Duration,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -152,6 +160,7 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: Address,
         disable_order_balance_filter: bool,
+        batch_auction_interval: Duration,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -168,7 +177,8 @@ impl SolvableOrdersCache {
             native_price_timeout,
             settlement_contract,
             disable_order_balance_filter,
-            wrapper_cache: app_data::WrapperCache::new(20_000),
+            app_data_flags: app_data::AppDataFlagsCache::new(20_000),
+            batch_auction_interval,
         })
     }
 
@@ -208,10 +218,12 @@ impl SolvableOrdersCache {
         let balance_filter_exempt_orders: HashSet<_> = orders
             .iter()
             .filter(|order| {
-                self.wrapper_cache.has_wrappers(
-                    &order.data.app_data,
-                    order.metadata.full_app_data.as_deref(),
-                )
+                self.app_data_flags
+                    .get(
+                        &order.data.app_data,
+                        order.metadata.full_app_data.as_deref(),
+                    )
+                    .has_wrappers
             })
             .map(|order| order.metadata.uid)
             .collect();
@@ -420,6 +432,8 @@ impl SolvableOrdersCache {
 
         let mut orders = fetch_orders.await?;
 
+        self.assign_wait_for_cow_valid_from(&mut orders).await;
+
         // Move the checkpoint slightly back in time to mitigate race conditions
         // caused by inconsistencies of stored timestamps. See #2959 for more
         // details. This will cause us to fetch orders created or
@@ -427,6 +441,29 @@ impl SolvableOrdersCache {
         // small price to pay for not missing orders.
         orders.fetched_from_db -= chrono::TimeDelta::seconds(60);
         Ok(orders)
+    }
+
+    /// Batches `waitForCow` orders into periodic auctions. The flag lives
+    /// only in the app-data, so such orders reach this refresh with
+    /// `valid_from IS NULL` like any other new order. For each one: set
+    /// `valid_from` to the next multiple of `batch_auction_interval`, so
+    /// every order placed in the same window becomes solvable together;
+    /// drop it from this refresh, and let the incremental query bring it
+    /// back once that boundary passes. The write only lands if `valid_from`
+    /// is still NULL, so replicas and restarts agree on one assignment.
+    #[instrument(skip_all)]
+    async fn assign_wait_for_cow_valid_from(&self, solvable: &mut SolvableOrders) {
+        let interval = u32::try_from(self.batch_auction_interval.as_secs()).unwrap_or(u32::MAX);
+        let min_validity =
+            u32::try_from(self.min_order_validity_period.as_secs()).unwrap_or(u32::MAX);
+        assign_wait_for_cow_valid_from(
+            &self.persistence,
+            &self.app_data_flags,
+            interval,
+            min_validity,
+            solvable,
+        )
+        .await;
     }
 
     /// Executed orders filtering in parallel.
@@ -499,6 +536,108 @@ impl SolvableOrdersCache {
                 Some(reason),
             );
         }
+    }
+}
+
+/// Assigns `valid_from` to every `waitForCow` order in `solvable` that does
+/// not have one yet and removes those orders from this auction. See
+/// [`wait_for_cow_valid_from`] for the value chosen.
+async fn assign_wait_for_cow_valid_from(
+    persistence: &infra::Persistence,
+    app_data_flags: &app_data::AppDataFlagsCache,
+    interval: u32,
+    min_validity: u32,
+    solvable: &mut SolvableOrders,
+) {
+    let now = now_in_epoch_seconds();
+
+    let pending: Vec<_> = solvable
+        .orders
+        .values()
+        .filter(|order| {
+            order.metadata.valid_from.is_none()
+                && !order.metadata.fast_path
+                && app_data_flags
+                    .get(
+                        &order.data.app_data,
+                        order.metadata.full_app_data.as_deref(),
+                    )
+                    .wait_for_cow
+        })
+        .map(|order| (domain::OrderUid(order.metadata.uid.0), order.data.valid_to))
+        .collect();
+
+    for (uid, valid_to) in pending {
+        let valid_from = wait_for_cow_valid_from(now, interval, valid_to, min_validity);
+
+        match persistence
+            .set_order_valid_from_if_unset(uid, valid_from)
+            .await
+        {
+            Ok(true) => {
+                let deferral = valid_from.saturating_sub(now);
+                let outcome = if deferral > 0 {
+                    "deferred"
+                } else {
+                    "immediate"
+                };
+                tracing::debug!(%uid, valid_from, deferral, "assigned waitForCow valid_from");
+                Metrics::get()
+                    .wait_for_cow_assigned
+                    .with_label_values(&[outcome])
+                    .inc();
+            }
+            // Another replica (or a previous run) already assigned it.
+            // Whatever it chose is in the DB and will be picked up by
+            // the next refresh; don't trust our own number.
+            Ok(false) => {
+                tracing::debug!(%uid, "waitForCow valid_from already assigned elsewhere");
+            }
+            Err(err) => {
+                tracing::warn!(%uid, ?err, "failed to assign waitForCow valid_from");
+            }
+        }
+
+        // Either way the order must not enter this auction unassigned.
+        // If the assignment made it valid right away it will be picked
+        // up by the next refresh via the crossing branch; the one-cycle
+        // delay is acceptable for an order that opted into waiting.
+        solvable.orders.remove(&uid);
+        // Keep the quote around: it is refetched on crossing anyway, but
+        // this avoids a needless gap if the refetch races the checkpoint.
+    }
+}
+
+/// Computes the `valid_from` for a `waitForCow` order.
+///
+/// Time is cut into windows of `interval` seconds, aligned to the epoch.
+/// Every window edge is a batch auction: `waitForCow` orders placed during
+/// a window all become solvable at its end, so they are auctioned together.
+///
+/// ```text
+///   auction        auction        auction
+///      │              │              │
+///   ───┼──────●───────┼──────────────┼───▶ t
+///   k·interval  now  (k+1)·interval
+///                      = valid_from
+///                      ├ min_validity ┤
+///                                     ▲
+///       valid_to must be here or later, so the order is still
+///       solvable once its auction starts; if it is not, the order
+///       becomes valid at `now` and joins the next regular auction.
+/// ```
+///
+/// The orderbook already rejects orders whose `valid_to` cannot reach the
+/// boundary, so the fallback only fires after a long autopilot outage or
+/// for on-chain orders, which skip that check. Joining the next regular
+/// auction beats expiring an order the user signed.
+fn wait_for_cow_valid_from(now: u32, interval: u32, valid_to: u32, min_validity: u32) -> u32 {
+    let interval = interval.max(1);
+    let boundary = now.div_ceil(interval).saturating_mul(interval);
+    if boundary.saturating_add(min_validity) > valid_to {
+        now
+    } else {
+        boundary
     }
 }
 
@@ -737,6 +876,7 @@ mod tests {
     use {
         super::*,
         alloy::primitives::{Address, B256},
+        database::byte_array::ByteArray,
         eth_domain_types::Receiver,
         futures::FutureExt,
         maplit::{btreemap, hashset},
@@ -754,6 +894,153 @@ mod tests {
         },
         token_info::DenyListedTokens,
     };
+
+    #[test]
+    fn wait_for_cow_valid_from_batches_a_window_into_one_boundary() {
+        // Generous `valid_to` so the expiry fallback never kicks in.
+        let f = |now| wait_for_cow_valid_from(now, 300, u32::MAX, 60);
+
+        // Every order placed inside (300, 600] lands on the same boundary.
+        assert_eq!(f(301), 600);
+        assert_eq!(f(450), 600);
+        assert_eq!(f(599), 600);
+        assert_eq!(f(600), 600);
+        // The next window gets the next boundary.
+        assert_eq!(f(601), 900);
+        // Boundaries are absolute multiples of the interval, not relative
+        // to the first order.
+        assert_eq!(f(0), 0);
+    }
+
+    #[test]
+    fn wait_for_cow_valid_from_degenerate_intervals() {
+        let f = |now, interval| wait_for_cow_valid_from(now, interval, u32::MAX, 60);
+
+        // Interval of 1s is the identity.
+        assert_eq!(f(1234, 1), 1234);
+        // A zero interval would divide by zero; treat as 1s.
+        assert_eq!(f(1234, 0), 1234);
+    }
+
+    #[test]
+    fn wait_for_cow_valid_from_falls_back_to_now_if_boundary_too_late() {
+        let f = |valid_to| wait_for_cow_valid_from(301, 300, valid_to, 60);
+
+        // Boundary (600) leaves exactly the minimum window: fine.
+        assert_eq!(f(660), 600);
+        // One second short: the order would be unfillable, make it valid now.
+        assert_eq!(f(659), 301);
+        // Already past `valid_to`: still `now` (expiry filter handles it).
+        assert_eq!(f(100), 301);
+        // No minimum window at all: the boundary itself must still be
+        // reachable.
+        assert_eq!(wait_for_cow_valid_from(301, 300, 600, 0), 600);
+        assert_eq!(wait_for_cow_valid_from(301, 300, 599, 0), 301);
+    }
+
+    #[test]
+    fn wait_for_cow_valid_from_saturates_near_u32_max() {
+        // Rounding `now` up overflows: the boundary saturates to u32::MAX,
+        // which an order valid until u32::MAX can still reach.
+        assert_eq!(
+            wait_for_cow_valid_from(u32::MAX - 1, 300, u32::MAX, 0),
+            u32::MAX
+        );
+        // Any earlier `valid_to` cannot, so fall back to `now`.
+        assert_eq!(
+            wait_for_cow_valid_from(u32::MAX - 1, 300, u32::MAX - 1, 0),
+            u32::MAX - 1
+        );
+
+        // The boundary fits but `boundary + min_validity` overflows: the
+        // sum saturates, which again only a `valid_to` of u32::MAX reaches.
+        let boundary = u32::MAX - (u32::MAX % 300);
+        assert_eq!(
+            wait_for_cow_valid_from(boundary - 1, 300, u32::MAX, 600),
+            boundary
+        );
+        assert_eq!(
+            wait_for_cow_valid_from(boundary - 1, 300, u32::MAX - 1, 600),
+            boundary - 1
+        );
+    }
+
+    /// A `waitForCow` order is stored with `valid_from = NULL` (by the
+    /// orderbook and by the on-chain indexer alike). The first solvable-orders
+    /// refresh that sees it writes the next batch-auction boundary to the DB
+    /// and drops the order from that auction; later refreshes and other
+    /// replicas leave the stored value alone.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_wait_for_cow_valid_from_is_written_once_from_null() {
+        let postgres = Arc::new(crate::database::Postgres::with_defaults().await.unwrap());
+        let mut ex = postgres.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+
+        let app_data = ByteArray([1u8; 32]);
+        database::app_data::insert(&mut ex, &app_data, br#"{"metadata":{"waitForCow":true}}"#)
+            .await
+            .unwrap();
+        let now = now_in_epoch_seconds();
+        let order = database::orders::Order {
+            uid: ByteArray([7u8; 56]),
+            app_data,
+            kind: database::orders::OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            signature: vec![0; 65],
+            creation_timestamp: chrono::Utc::now(),
+            valid_to: i64::from(now) + 10_000,
+            valid_from: None,
+            ..Default::default()
+        };
+        database::orders::insert_order(&mut ex, &order)
+            .await
+            .unwrap();
+        ex.commit().await.unwrap();
+
+        let persistence = infra::Persistence::new(None, postgres.clone()).await;
+        let flags = app_data::AppDataFlagsCache::new(10);
+        let uid = domain::OrderUid(order.uid.0);
+        let stored_valid_from = || async {
+            let mut ex = postgres.pool.acquire().await.unwrap();
+            database::orders::single_full_order_with_quote(&mut ex, &order.uid)
+                .await
+                .unwrap()
+                .unwrap()
+                .full_order
+                .valid_from
+        };
+
+        // The order enters the solvable set unassigned.
+        let mut solvable = persistence.all_solvable_orders(now).await.unwrap();
+        assert_eq!(solvable.orders[&uid].metadata.valid_from, None);
+        assert_eq!(stored_valid_from().await, None);
+
+        // Keep the unassigned snapshot: it stands in for a stale read below.
+        let snapshot = solvable.orders.clone();
+
+        const INTERVAL: u32 = 3600;
+        let before = now_in_epoch_seconds();
+        assign_wait_for_cow_valid_from(&persistence, &flags, INTERVAL, 60, &mut solvable).await;
+        let after = now_in_epoch_seconds();
+
+        // Dropped from this auction and the next boundary is in the DB.
+        assert!(!solvable.orders.contains_key(&uid));
+        let valid_from = stored_valid_from().await.unwrap();
+        assert_eq!(valid_from % i64::from(INTERVAL), 0);
+        assert!(i64::from(before) <= valid_from && valid_from <= i64::from(after + INTERVAL));
+
+        // A second pass over a stale snapshot (another replica, or this
+        // process after a restart) must not overwrite the assignment, even
+        // when it would compute a different value.
+        let mut stale = persistence.all_solvable_orders(now).await.unwrap();
+        stale.orders = snapshot;
+        assert_eq!(stale.orders[&uid].metadata.valid_from, None);
+        assign_wait_for_cow_valid_from(&persistence, &flags, 1, 60, &mut stale).await;
+        assert!(!stale.orders.contains_key(&uid));
+        assert_eq!(stored_valid_from().await, Some(valid_from));
+    }
 
     #[tokio::test]
     async fn get_orders_with_native_prices_with_timeout() {
