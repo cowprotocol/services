@@ -56,6 +56,10 @@ const fn default_max_auction_age() -> Duration {
     Duration::from_mins(5)
 }
 
+const fn default_batch_auction_interval() -> Duration {
+    Duration::from_mins(5)
+}
+
 // Does not implement Default because `native_price_estimation` *cannot* have
 // empty `estimators`, as such, we cannot provide a proper default value for
 // this structure.
@@ -183,6 +187,16 @@ pub struct Configuration {
     #[serde(default)]
     pub fast_path_penalty_cap_enabled: bool,
 
+    /// Length of the periodic batch-auction window that `waitForCow` orders
+    /// wait for. When the solvable-orders cache first sees such an order it
+    /// writes `valid_from = ceil(now / interval) * interval`, so every
+    /// `waitForCow` order placed in the same window becomes solvable in the
+    /// same auction. Must match the orderbook's
+    /// `order-validation.batch-auction-interval`, which rejects orders whose
+    /// `valid_to` cannot outlive that assignment.
+    #[serde(with = "humantime_serde", default = "default_batch_auction_interval")]
+    pub batch_auction_interval: Duration,
+
     /// Configurations for price estimation (tenderly, rate limiting, CoinGecko,
     /// 1inch, quote verification, balance overrides, etc.).
     #[serde(default)]
@@ -258,6 +272,7 @@ impl Configuration {
             order_quoting: TestDefault::test_default(),
             fast_path_submission_deadline: None,
             fast_path_penalty_cap_enabled: false,
+            batch_auction_interval: default_batch_auction_interval(),
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -293,6 +308,7 @@ impl Configuration {
             order_quoting: TestDefault::test_default(),
             fast_path_submission_deadline: None,
             fast_path_penalty_cap_enabled: false,
+            batch_auction_interval: default_batch_auction_interval(),
             price_estimation: TestDefault::test_default(),
             balance_cache: TestDefault::test_default(),
         }
@@ -345,6 +361,7 @@ mod tests {
         native-price-timeout = "3s"
         fast-path-submission-deadline = 3
         fast-path-penalty-cap-enabled = true
+        batch-auction-interval = "30s"
 
         [[drivers]]
         name = "solver1"
@@ -499,6 +516,7 @@ mod tests {
         assert_eq!(config.native_price_timeout, Duration::from_secs(3));
         assert_eq!(config.fast_path_submission_deadline, Some(3));
         assert!(config.fast_path_penalty_cap_enabled);
+        assert_eq!(config.batch_auction_interval, Duration::from_secs(30));
 
         assert_eq!(config.balance_cache.eviction_time, Duration::from_secs(10));
         assert_eq!(
@@ -570,6 +588,7 @@ mod tests {
         assert_eq!(config.native_price_timeout, Duration::ZERO);
         assert_eq!(config.fast_path_submission_deadline, None);
         assert!(!config.fast_path_penalty_cap_enabled);
+        assert_eq!(config.batch_auction_interval, Duration::from_secs(300));
     }
 
     #[test]

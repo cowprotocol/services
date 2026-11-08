@@ -523,6 +523,7 @@ pub async fn run(config: Configuration) {
         config.price_estimation.quote_timeout,
         current_block_stream,
         config.hide_competition_before_deadline,
+        config.order_validation.batch_auction_interval,
     );
 
     let mut metrics_address = config.bind_address;
@@ -570,6 +571,7 @@ fn serve_api(
     quote_timeout: Duration,
     current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
+    batch_auction_interval: Duration,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -581,6 +583,7 @@ fn serve_api(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
+        batch_auction_interval,
     );
     tracing::info!(%address, "serving order book");
 

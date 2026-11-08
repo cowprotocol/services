@@ -44,6 +44,7 @@ mod get_token_metadata;
 mod get_total_surplus;
 mod get_trades_v2;
 mod get_user_orders;
+mod get_wait_for_cow;
 mod post_order;
 mod post_quote;
 mod post_quote_stream;
@@ -72,6 +73,8 @@ pub struct AppState {
     pub quote_timeout: Duration,
     pub current_block_stream: CurrentBlockWatcher,
     pub hide_competition_before_deadline: bool,
+    /// See [`get_wait_for_cow`].
+    pub batch_auction_interval: Duration,
 }
 
 impl AppState {
@@ -167,6 +170,7 @@ pub fn handle_all_routes(
     quote_timeout: Duration,
     current_block_stream: CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
+    batch_auction_interval: Duration,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -180,6 +184,7 @@ pub fn handle_all_routes(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
+        batch_auction_interval,
     });
 
     let routes = [
@@ -272,6 +277,12 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        // UNSTABLE: frontend helper, see `get_wait_for_cow`.
+        (
+            "GET",
+            "/api/v1/wait_for_cow/next_batch",
+            get(get_wait_for_cow::get_wait_for_cow_next_batch_handler),
+        ),
         ("GET", "/api/v1/ready", get(ready::get_ready_handler)),
         // Routes under `/restricted/api/` are not exposed publicly. WAF and
         // infra rules restrict access to authenticated partners.

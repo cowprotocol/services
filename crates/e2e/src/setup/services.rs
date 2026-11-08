@@ -50,6 +50,7 @@ pub const AUCTION_ENDPOINT: &str = "/api/v1/auction";
 pub const TRADES_ENDPOINT: &str = "/api/v2/trades";
 pub const VERSION_ENDPOINT: &str = "/api/v1/version";
 pub const READY_ENDPOINT: &str = "/api/v1/ready";
+pub const WAIT_FOR_COW_NEXT_BATCH_ENDPOINT: &str = "/api/v1/wait_for_cow/next_batch";
 pub const SOLVER_COMPETITION_ENDPOINT: &str = "/api/v2/solver_competition";
 const LOCAL_DB_URL: &str = "postgresql://";
 
@@ -452,6 +453,28 @@ impl<'a> Services<'a> {
         wait_for_condition(TIMEOUT, is_up)
             .await
             .expect("waiting for autopilot timed out");
+    }
+
+    /// Returns `(nextValidFrom, batchAuctionInterval)` from the unstable
+    /// `waitForCow` helper endpoint.
+    pub async fn get_wait_for_cow_next_batch(&self) -> (u32, u64) {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct NextBatch {
+            next_valid_from: u32,
+            batch_auction_interval: u64,
+        }
+        let response = self
+            .http
+            .get(format!("{API_HOST}{WAIT_FOR_COW_NEXT_BATCH_ENDPOINT}"))
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let next: NextBatch = serde_json::from_str(&body).unwrap();
+        (next.next_valid_from, next.batch_auction_interval)
     }
 
     /// Fetches the current auction. Don't use this as a synchronization
