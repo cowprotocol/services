@@ -437,37 +437,43 @@ pub async fn run(config: Configuration) {
         *native_token.address(),
     ));
 
-    let order_validator = Arc::new(OrderValidator::new(
-        native_token.clone(),
-        Arc::new(order_validation::banned::Users::new(
-            chainalysis_oracle,
-            config.banned_users.hermod.clone().map(|hermod| {
-                order_validation::banned::HermodConfig {
-                    url: hermod.url,
-                    hmac_key: hermod.hmac_key,
-                    api_key: hermod.api_key,
-                }
-            }),
-            config.banned_users.addresses,
-            config.banned_users.max_cache_size.get().to_u64().unwrap(),
-        )),
-        validity_configuration,
-        config.eip1271_skip_creation_validation,
-        deny_listed_tokens.clone(),
-        hooks_contract,
-        verified_quoter.clone(),
-        balance_fetcher,
-        signature_validator,
-        validator_simulator,
-        Arc::new(postgres_write.clone()),
-        config.order_validation.max_limit_orders_per_user,
-        app_data_validator.clone(),
-        config.order_validation.max_gas_per_order,
-        config.order_validation.same_tokens_policy,
-        Some(volume_fee_policy.clone()),
-        config.order_quoting.max_partner_fee,
-        order_validation::wrappers::Validator::new(authenticator, *settlement_contract.address()),
-    ));
+    let order_validator = Arc::new(
+        OrderValidator::new(
+            native_token.clone(),
+            Arc::new(order_validation::banned::Users::new(
+                chainalysis_oracle,
+                config.banned_users.hermod.clone().map(|hermod| {
+                    order_validation::banned::HermodConfig {
+                        url: hermod.url,
+                        hmac_key: hermod.hmac_key,
+                        api_key: hermod.api_key,
+                    }
+                }),
+                config.banned_users.addresses,
+                config.banned_users.max_cache_size.get().to_u64().unwrap(),
+            )),
+            validity_configuration,
+            config.eip1271_skip_creation_validation,
+            deny_listed_tokens.clone(),
+            hooks_contract,
+            verified_quoter.clone(),
+            balance_fetcher,
+            signature_validator,
+            validator_simulator,
+            Arc::new(postgres_write.clone()),
+            config.order_validation.max_limit_orders_per_user,
+            app_data_validator.clone(),
+            config.order_validation.max_gas_per_order,
+            config.order_validation.same_tokens_policy,
+            Some(volume_fee_policy.clone()),
+            config.order_quoting.max_partner_fee,
+            order_validation::wrappers::Validator::new(
+                authenticator,
+                *settlement_contract.address(),
+            ),
+        )
+        .with_batch_auction_interval(config.order_validation.batch_auction_interval),
+    );
     let ipfs = config
         .ipfs
         .map(|ipfs| {

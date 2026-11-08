@@ -1430,9 +1430,15 @@ components:
         validFrom:
           description: >
             Earliest time (unix seconds) at which the order may enter a batch
-            auction, taken from the order's `appData`. Omitted when the order
-            has no lower bound (eligible immediately). Mutually exclusive with
-            `enableFastPath`: an order that sets both is rejected.
+            auction. Taken from the order's `appData` when set there, or
+            assigned by the protocol shortly after placement for orders whose
+            `appData` sets `waitForCow: true` (the next multiple of the
+            configured batch-auction interval, so that such orders are
+            collected into a periodic batch). Omitted when the order has no
+            lower bound (eligible immediately) or has not been assigned one
+            yet. `validFrom`, `enableFastPath` and `waitForCow` are mutually
+            exclusive in `appData`: an order that sets more than one is
+            rejected.
           type: integer
           nullable: true
         settlementContract:

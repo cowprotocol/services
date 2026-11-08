@@ -777,6 +777,12 @@ async fn handle_app_data(
         match parsed.execution_mode {
             ExecutionMode::FastPath => order.fast_path = true,
             ExecutionMode::ValidFrom(valid_from) => order.valid_from = Some(i64::from(valid_from)),
+            // Left `NULL` on purpose: the solvable-orders cache assigns the
+            // next batch-auction boundary when it first sees the order
+            // (`SolvableOrdersCache::assign_wait_for_cow_valid_from`).
+            // On-chain orders skip the orderbook's `valid_to` check, so the
+            // cache's expiry fallback is what protects them.
+            ExecutionMode::WaitForCow => {}
             ExecutionMode::RegularAuction => {}
         }
     }
