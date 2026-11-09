@@ -657,8 +657,14 @@ components:
           default: false
         priceQuality:
           description: |
-            The price quality the orderbook was asked for. Set for every quote
+            How the quotes for this request get compared. Set for every quote
             request and absent for auctions.
+
+            - `verified`: quotes get simulated. One that passes wins even at a worse price.
+            - `optimal`: no simulation. The best price wins.
+            - `fast`: no simulation. The best of the first few answers wins.
+
+            Token price requests (see `id`) are `fast`.
           type: string
           enum:
             - fast

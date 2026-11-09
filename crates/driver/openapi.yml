@@ -57,7 +57,7 @@ paths:
             The price quality the orderbook was asked for. For `verified` the orderbook
             simulates the quotes it collects whenever possible and prefers one
             that passes simulation over one that doesn't.
-            Native price estimation asks for `optimal`.
+            Native price estimation asks for `fast`.
           schema:
             type: string
             enum:

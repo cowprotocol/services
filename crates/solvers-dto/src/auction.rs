@@ -100,7 +100,9 @@ impl TryFrom<RawAuction> for Auction {
             (None, Some(id)) => Id::Quote {
                 id,
                 fast_path: raw.fast_path,
-                price_quality: raw.price_quality.ok_or("quotes carry a `priceQuality`")?,
+                price_quality: raw
+                    .price_quality
+                    .ok_or("`priceQuality` must be set for quotes")?,
             },
         };
         Ok(Auction {

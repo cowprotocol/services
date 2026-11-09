@@ -165,8 +165,7 @@ pub struct Query {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
     /// The price quality the quote was requested with; propagated to the
-    /// driver. Native price queries are `Optimal`: the best promised price
-    /// wins and nothing is simulated.
+    /// driver. Native price queries are `Fast`.
     pub price_quality: PriceQuality,
     pub timeout: Duration,
 }

@@ -96,7 +96,7 @@ impl NativePriceEstimator {
             verification: Default::default(),
             block_dependent: false,
             fast_path: false,
-            price_quality: PriceQuality::Optimal,
+            price_quality: PriceQuality::Fast,
             timeout,
         }
     }
