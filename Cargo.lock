@@ -4500,6 +4500,7 @@ dependencies = [
  "bytes",
  "bytes-hex",
  "chain",
+ "chain-types",
  "chrono",
  "clap",
  "configs",
@@ -4529,6 +4530,7 @@ dependencies = [
  "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
+ "protocol-fees",
  "rand 0.9.4",
  "request-sharing",
  "reqwest 0.13.4",
@@ -7743,7 +7745,6 @@ checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
 name = "protocol-fees"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "chain-types",
  "rand 0.9.4",
 ]
