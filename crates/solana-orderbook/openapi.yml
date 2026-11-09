@@ -1112,10 +1112,10 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         buyAmount:
           description: >-
-            Net of the execution cost for a `sellAmountBeforeFee` request, see
-            `costs`. The buy amount the winning driver quoted for
-            `sellAmountAfterFee`, since `feeAmount` on top covers the cost.
-            The requested amount for a buy order.
+            Net of `costs.total` for a `sellAmountBeforeFee` request. The buy
+            amount the winning driver quoted for `sellAmountAfterFee`, since
+            `feeAmount` on top covers it. The requested amount for a buy
+            order.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         validTo:
@@ -1134,10 +1134,10 @@ components:
             - $ref: "#/components/schemas/AppDataHash"
         feeAmount:
           description: >-
-            The execution cost as the sell token, the EVM `feeAmount`:
-            `costs.total` for a buy order, `costs.total` converted from the
-            buy token at the native prices and rounded up for a sell order.
-            An order placed on the quote sells `sellAmount + feeAmount`.
+            `costs.total` as the sell token, the EVM `feeAmount`: as is for
+            a buy order, converted from the buy token at the native prices
+            and rounded up for a sell order. An order placed on the quote
+            sells `sellAmount + feeAmount`.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         costs:
@@ -1148,9 +1148,10 @@ components:
           type: boolean
     Costs:
       description: >-
-        The execution cost in the token the driver takes it from at
-        settlement: the buy token of a sell order, the sell token of a buy
-        order. `feeAmount` is the same cost as the sell token. Each cost
+        The execution cost and the protocol fee in the token the driver
+        takes them from at settlement: the buy token of a sell order, the
+        sell token of a buy order. `feeAmount` is the same total as the sell
+        token. Each cost
         converts from lamports at the autopilot's native price on its own,
         rounded up against the trader. Drivers are ranked on the amounts
         after the cut.
@@ -1184,7 +1185,12 @@ components:
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         protocolFee:
-          description: Always zero. No protocol fee is charged.
+          description: >-
+            The volume protocol fee the driver takes at settlement, at the
+            orderbook's configured factor: its share of the quoted amount
+            after the two costs above, or for a `sellAmountAfterFee` quote
+            of the leg whose remainder after the fee is the quoted buy
+            amount. Zero without a configured factor.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         total:
