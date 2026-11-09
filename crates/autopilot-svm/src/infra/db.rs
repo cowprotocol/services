@@ -691,12 +691,17 @@ impl TryFrom<OrderRow> for Order {
                 row.quote_buy_amount,
                 row.quote_solver,
             ) {
-                (Some(sell_amount), Some(buy_amount), Some(solver)) => Some(Quote {
-                    sell_amount: to_amount(&sell_amount).context("quote sell_amount")?,
-                    buy_amount: to_amount(&buy_amount).context("quote buy_amount")?,
-                    fee: 0,
-                    solver: Pubkey(solver.0),
-                }),
+                // A quote amount past `u64` leaves the order unlinked, out of
+                // market as the orderbook classed it, instead of dropping it.
+                (Some(sell_amount), Some(buy_amount), Some(solver)) => to_amount(&sell_amount)
+                    .ok()
+                    .zip(to_amount(&buy_amount).ok())
+                    .map(|(sell_amount, buy_amount)| Quote {
+                        sell_amount,
+                        buy_amount,
+                        fee: 0,
+                        solver: Pubkey(solver.0),
+                    }),
                 _ => None,
             },
             protocol_fees: Vec::new(),
@@ -869,6 +874,15 @@ mod tests {
                 solver: Pubkey([9; 32]),
             })
         );
+        // The orderbook stores the quote's unfixed side unchecked, so it can
+        // exceed `u64`. The order then stays in the auction without a quote.
+        let oversized = super::OrderRow {
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(u64::MAX) + BigDecimal::from(1u64)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        };
+        assert_eq!(super::Order::try_from(oversized).unwrap().quote, None);
     }
 
     #[test]
