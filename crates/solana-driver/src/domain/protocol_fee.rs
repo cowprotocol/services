@@ -8,6 +8,10 @@
 //! [`apply_protocol_fees`]. A solution with a fill that cannot absorb its
 //! fees within the order's signed limit is dropped whole, like one that
 //! cannot absorb the solver fee.
+//!
+//! Only a volume policy moves the limit leg sent to the engine, see
+//! [`protocol_fees::tighten_limit`]: a surplus kind takes a share of the
+//! surplus and cannot cross the limit.
 
 use {
     super::{
