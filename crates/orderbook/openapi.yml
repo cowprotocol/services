@@ -1243,6 +1243,15 @@ components:
 
           type: boolean
           default: false
+        waitForCow:
+          description: >
+            If set to true, the backend moves the order's `validFrom` onto the
+            first predefined slot that starts at least 30 seconds after
+            placement and no earlier than the app-data `validFrom`, if any. The stored `validFrom` may then
+            differ from the app-data one. Not part of the signed order.
+            Rejected for fast-path orders.
+          type: boolean
+          default: false
       required:
         - sellToken
         - buyToken
@@ -1399,10 +1408,9 @@ components:
           nullable: true
         waitForCow:
           description: >
-            Whether the order waits for one of the predefined slots to be
-            batched with other orders: it is not a fast-path order and its
-            `validFrom` starts exactly on a slot. Decided by the backend at
-            placement; not part of `OrderCreation`. Omitted when `false`.
+            Whether the order is not a fast-path order and its `validFrom`
+            starts exactly on one of the predefined slots. Decided by the
+            backend at placement, see `OrderCreation::waitForCow`. Omitted when `false`.
           type: boolean
         settlementContract:
           description: >
@@ -1883,6 +1891,7 @@ components:
             - AppdataFromMismatch
             - MetadataSerializationFailed
             - OldOrderActivelyBidOn
+            - WaitForCowWithFastPath
         description:
           type: string
       required:

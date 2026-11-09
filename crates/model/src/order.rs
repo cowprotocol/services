@@ -331,6 +331,11 @@ pub struct OrderCreation {
     /// placement.
     #[serde(default)]
     pub full_balance_check: bool,
+    /// Asks for a wait-for-CoW order: the backend moves `valid_from` onto a
+    /// predefined slot, see [`next_wait_for_cow_slot`]. Not part of the
+    /// signed order.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wait_for_cow: bool,
 }
 
 impl OrderCreation {
@@ -682,9 +687,10 @@ pub struct OrderMetadata {
     /// regular auction.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
-    /// Whether the order waits for one of the predefined slots to be batched
-    /// with other orders. See [`is_wait_for_cow`]. Decided by the backend at
-    /// placement from `valid_from`; clients never set it.
+    /// Whether the order is not fast-path and its `valid_from` starts exactly
+    /// on one of the predefined slots. See [`is_wait_for_cow`]. Decided by the
+    /// backend at placement; clients can ask for it with
+    /// [`OrderCreation::wait_for_cow`].
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub wait_for_cow: bool,
     /// If the order was created with a quote, then this field contains that
@@ -693,14 +699,21 @@ pub struct OrderMetadata {
     pub quote: Option<OrderQuote>,
 }
 
+/// Wait-for-CoW slots start every 5 minutes on the hour (UTC): :00, :05, ...,
+/// :55. Unix time has no leap seconds, so slot starts are plain multiples.
+const WAIT_FOR_COW_SLOT_SECS: u32 = 5 * 60;
+
 /// Whether an order is a "wait for CoW" order: not fast-path, with a
 /// `valid_from` that starts exactly on one of the predefined slots.
 pub fn is_wait_for_cow(valid_from: Option<u32>, fast_path: bool) -> bool {
-    /// Slots start every 5 minutes on the hour (UTC): :00, :05, ..., :55.
-    const SLOT_SECS: u32 = 5 * 60;
+    !fast_path
+        && valid_from.is_some_and(|valid_from| valid_from.is_multiple_of(WAIT_FOR_COW_SLOT_SECS))
+}
 
-    // Unix time has no leap seconds, so slot starts are plain multiples.
-    !fast_path && valid_from.is_some_and(|valid_from| valid_from.is_multiple_of(SLOT_SECS))
+/// The first wait-for-CoW slot that starts at or after `earliest`, or `None`
+/// past the last slot a `u32` timestamp can hold.
+pub fn next_wait_for_cow_slot(earliest: u32) -> Option<u32> {
+    earliest.checked_next_multiple_of(WAIT_FOR_COW_SLOT_SECS)
 }
 
 /// Serializes the constant `"limit"` for the deprecated `class` field, see
@@ -1033,6 +1046,23 @@ mod tests {
     }
 
     #[test]
+    fn next_wait_for_cow_slot_rounds_up_to_a_slot() {
+        let at = |h, m, s| {
+            u32::try_from(
+                Utc.with_ymd_and_hms(2026, 10, 27, h, m, s)
+                    .unwrap()
+                    .timestamp(),
+            )
+            .unwrap()
+        };
+        assert_eq!(next_wait_for_cow_slot(at(14, 5, 0)), Some(at(14, 5, 0)));
+        assert_eq!(next_wait_for_cow_slot(at(14, 5, 1)), Some(at(14, 10, 0)));
+        assert_eq!(next_wait_for_cow_slot(at(14, 59, 59)), Some(at(15, 0, 0)));
+        assert!(is_wait_for_cow(next_wait_for_cow_slot(at(14, 3, 7)), false));
+        assert_eq!(next_wait_for_cow_slot(u32::MAX), None);
+    }
+
+    #[test]
     fn deserialization_and_back() {
         // Input JSON has v=0x01, which gets normalized to v=28 (0x1c) for
         // Solidity ecrecover compatibility. Serialization then outputs
@@ -1191,6 +1221,7 @@ mod tests {
             signature: Signature::PreSign,
             quote_id: Some(42),
             full_balance_check: false,
+            wait_for_cow: false,
         };
 
         // Test PreSign round-trip (no signature normalization needed)

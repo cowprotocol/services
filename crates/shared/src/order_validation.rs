@@ -53,6 +53,10 @@ use {
     tracing::instrument,
 };
 
+/// How far ahead of placement a wait-for-CoW order's slot must start, so the
+/// order reaches the auction before it.
+const WAIT_FOR_COW_LEAD_SECS: u32 = 30;
+
 /// Order simulation paired with the EIP-1271 signature check. The result is
 /// logged, and for flashloan orders from an allowlisted lender a passing
 /// simulation accepts the order (see [`accept_by_simulation`]).
@@ -336,6 +340,9 @@ pub enum ValidationError {
     /// Applying those fees would push the effective execution price past
     /// the user's limit, making the order unfillable on chain.
     FastPathLimitTooTight,
+    /// The order asks for wait-for-CoW but also opts into the fast path,
+    /// which owns `valid_from` itself.
+    WaitForCowWithFastPath,
     IncompatibleSigningScheme,
     TooManyLimitOrders,
     TooMuchGas,
@@ -769,11 +776,15 @@ impl OrderValidator {
         app_data: &OrderAppData,
         quote: Option<&Quote>,
         order: &OrderData,
+        wait_for_cow: bool,
     ) -> Result<Option<u32>, ValidationError> {
         if matches!(
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
         ) {
+            if wait_for_cow {
+                return Err(ValidationError::WaitForCowWithFastPath);
+            }
             let Some(quote) = quote else {
                 return Err(ValidationError::FastPathLimitTooTight);
             };
@@ -796,10 +807,21 @@ impl OrderValidator {
 
         // Non-fast-path orders may still declare `valid_from` explicitly
         // in app-data.
-        let valid_from = match app_data.inner.protocol.execution_mode {
+        let mut valid_from = match app_data.inner.protocol.execution_mode {
             ExecutionMode::ValidFrom(valid_from) => Some(valid_from),
             _ => None,
         };
+        if wait_for_cow {
+            // Move `valid_from` onto a slot: never earlier than the client
+            // asked for, and far enough ahead for the order to reach the
+            // auction before its slot starts.
+            let earliest = (time::now_in_epoch_seconds() + WAIT_FOR_COW_LEAD_SECS)
+                .max(valid_from.unwrap_or_default());
+            valid_from = Some(
+                model::order::next_wait_for_cow_slot(earliest)
+                    .ok_or(ValidationError::InvalidValidFrom)?,
+            );
+        }
         if let Some(valid_from) = valid_from {
             let min = self.validity_configuration.min.as_secs();
             if u64::from(order.valid_to) < u64::from(valid_from) + min {
@@ -1147,7 +1169,12 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
+        let valid_from = self.compute_and_validate_valid_from(
+            &app_data,
+            quote.as_ref(),
+            &data,
+            order.wait_for_cow,
+        )?;
         let fast_path = matches!(
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
@@ -1849,8 +1876,9 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn enforces_minimum_validity_window() {
+    /// A validator whose only interesting configuration is the `valid_to`
+    /// window: at least 60 seconds and at most `max`.
+    fn valid_from_validator(max: Duration) -> OrderValidator {
         let mut order_quoter = MockOrderQuoting::new();
         order_quoter
             .expect_find_quote()
@@ -1872,12 +1900,12 @@ mod tests {
         let mut limit_order_counter = MockLimitOrderCounting::new();
         limit_order_counter.expect_count().returning(|_| Ok(0u64));
         let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
-        let validator = OrderValidator::new(
+        OrderValidator::new(
             native_token,
             Arc::new(order_validation::banned::Users::none()),
             OrderValidPeriodConfiguration {
                 min: Duration::from_secs(60),
-                max: Duration::from_secs(200),
+                max,
             },
             false,
             Default::default(),
@@ -1894,8 +1922,12 @@ mod tests {
             None,
             None,
             wrapper_validator(),
-        );
+        )
+    }
 
+    #[tokio::test]
+    async fn enforces_minimum_validity_window() {
+        let validator = valid_from_validator(Duration::from_secs(200));
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
             valid_to,
@@ -1969,6 +2001,89 @@ mod tests {
         std::assert_matches!(
             validate(both).await,
             Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_for_cow_moves_valid_from_onto_a_slot() {
+        let validator = valid_from_validator(Duration::from_secs(7200));
+        let now = time::now_in_epoch_seconds();
+        let plain = |valid_to: u32| OrderCreation {
+            valid_to,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            fee_amount: alloy::primitives::U256::from(0),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: "{}".to_string(),
+            },
+            ..Default::default()
+        };
+        let delayed = |valid_from: u32, valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "validFrom": valid_from } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        let validate = async |creation| {
+            validator
+                .validate_and_construct_order(
+                    creation,
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+
+        let wait_for_cow = |creation| OrderCreation {
+            wait_for_cow: true,
+            ..creation
+        };
+        let assert_on_slot_after = |order: &Order, earliest: u32| {
+            let valid_from = order.metadata.valid_from.unwrap();
+            assert!(order.metadata.wait_for_cow);
+            assert!(valid_from >= earliest, "{valid_from} < {earliest}");
+            // Allow a few seconds for the clock to tick during validation.
+            assert!(valid_from < earliest + 300 + 5, "{valid_from}");
+        };
+        // No `valid_from`: one is picked.
+        let (order, _) = validate(wait_for_cow(plain(now + 3600))).await.unwrap();
+        assert_on_slot_after(&order, now + WAIT_FOR_COW_LEAD_SECS);
+        // A `valid_from` too soon is pushed out.
+        let (order, _) = validate(wait_for_cow(delayed(now + 10, now + 3600)))
+            .await
+            .unwrap();
+        assert_on_slot_after(&order, now + WAIT_FOR_COW_LEAD_SECS);
+        // A later `valid_from` on a slot is kept.
+        let slot = model::order::next_wait_for_cow_slot(now + 1000).unwrap();
+        let (order, _) = validate(wait_for_cow(delayed(slot, now + 3600)))
+            .await
+            .unwrap();
+        assert_eq!(order.metadata.valid_from, Some(slot));
+        assert!(order.metadata.wait_for_cow);
+        // A later `valid_from` off a slot is rounded up, never earlier.
+        let (order, _) = validate(wait_for_cow(delayed(slot + 1, now + 3600)))
+            .await
+            .unwrap();
+        assert_eq!(order.metadata.valid_from, Some(slot + 300));
+        // The `valid_to` window is measured from the picked slot.
+        std::assert_matches!(
+            validate(wait_for_cow(delayed(slot, slot + 10))).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+        // Fast-path orders can't ask for it.
+        let fast_path = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableFastPath": true } }).to_string(),
+            },
+            ..plain(now + 3600)
+        };
+        std::assert_matches!(
+            validate(wait_for_cow(fast_path)).await,
+            Err(ValidationError::WaitForCowWithFastPath)
         );
     }
 

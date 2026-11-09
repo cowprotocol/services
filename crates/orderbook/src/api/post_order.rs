@@ -261,6 +261,14 @@ impl IntoResponse for ValidationErrorWrapper {
                 ),
             )
                 .into_response(),
+            ValidationError::WaitForCowWithFastPath => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "WaitForCowWithFastPath",
+                    "waitForCow can't be combined with the appData fast-path opt-in.",
+                ),
+            )
+                .into_response(),
             ValidationError::IncompatibleSigningScheme => (
                 StatusCode::BAD_REQUEST,
                 error(
