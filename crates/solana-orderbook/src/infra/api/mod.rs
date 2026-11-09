@@ -7,6 +7,8 @@ use {
         http,
         routing::{get, post, put},
     },
+    chrono::{DateTime, Utc},
+    configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
     std::{
@@ -51,6 +53,8 @@ pub struct Api {
     pub quote_expiry: std::time::Duration,
     /// Drivers a `fast` quote waits for before it answers.
     pub fast_results_required: NonZero<usize>,
+    /// The volume protocol fee quotes net out, absent when none is charged.
+    pub volume_fee: Option<VolumeFeeConfig>,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
     /// Settles quotes in simulation, absent when every quote is unverified.
@@ -112,6 +116,7 @@ impl Api {
             self.validation,
             self.quote_expiry,
             self.fast_results_required,
+            self.volume_fee,
             self.sponsoring,
             self.verifier,
             self.app_data_size_limit,
@@ -205,6 +210,7 @@ impl State {
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
         fast_results_required: NonZero<usize>,
+        volume_fee: Option<VolumeFeeConfig>,
         sponsoring: Option<Sponsoring>,
         verifier: Option<Verifier>,
         app_data_size_limit: usize,
@@ -216,6 +222,7 @@ impl State {
             validation,
             quote_expiry,
             fast_results_required,
+            volume_fee,
             sponsoring,
             verifier,
             app_data_size_limit,
@@ -252,6 +259,16 @@ impl State {
     /// Drivers a `fast` quote waits for before it answers.
     pub fn fast_results_required(&self) -> NonZero<usize> {
         self.0.fast_results_required
+    }
+
+    /// The volume protocol fee factor in force at `now`, `None` when no
+    /// protocol fee is charged.
+    pub fn volume_fee(&self, now: DateTime<Utc>) -> Option<FeeFactor> {
+        self.0
+            .volume_fee
+            .as_ref()
+            .filter(|fee| fee.effective_from_timestamp.is_none_or(|from| from <= now))
+            .and_then(|fee| fee.factor)
     }
 
     /// Sponsored placement dependencies, absent when the feature is off.
@@ -313,6 +330,8 @@ struct Inner {
     quote_expiry: std::time::Duration,
     /// Drivers a `fast` quote waits for before it answers.
     fast_results_required: NonZero<usize>,
+    /// The volume protocol fee quotes net out, absent when none is charged.
+    volume_fee: Option<VolumeFeeConfig>,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
     /// Settles quotes in simulation, absent when every quote is unverified.

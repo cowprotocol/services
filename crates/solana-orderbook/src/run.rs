@@ -147,6 +147,7 @@ pub async fn run(args: Args) {
         validation: config.quoting.validation(),
         quote_expiry: config.quoting.quote_expiry,
         fast_results_required: config.quoting.fast_results_required,
+        volume_fee: config.volume_fee,
         sponsoring,
         verifier,
         app_data_size_limit: config.app_data_size_limit,
