@@ -193,11 +193,12 @@ pub async fn quote(
         log_competition(&competition);
         return Err(does_not_cover_fee());
     };
-    let Some(amounts) = amounts(
+    let Some((amounts, costs)) = amounts(
         &request.side,
         &route,
         &quoted,
-        &costs,
+        costs,
+        volume_fee,
         sell_token_price,
         buy_price,
     ) else {
@@ -437,7 +438,7 @@ fn competition(
 struct Costs {
     network_fees: u64,
     buy_token_ata_costs: u64,
-    /// The volume fee's share of the leg the two costs above left.
+    /// The volume fee the driver takes at settlement.
     protocol_fee: u64,
     /// The sum, what the quote is cut by.
     total: u64,
@@ -456,50 +457,103 @@ struct Amounts {
 }
 
 /// The amounts for `side`, from `route` as the driver quoted it, `quoted` net
-/// of `costs`, and the native prices. A buy order's cut is already in the
-/// sell token and goes on top of the route's sell amount. A sell order's cut
-/// comes out of the buy token, so the fee converts at the two prices, rounded
-/// up against the trader. A `sellAmountBeforeFee` amount pays the fee from
-/// itself and buys the cut amount. A `sellAmountAfterFee` amount pays the fee
-/// on top and buys the route's full amount, since the fee covers the cut.
-/// `None` when the fee swallows the amount or the sum does not fit.
+/// of `costs`, and the native prices, with the costs the answer reports. A
+/// buy order's cut is already in the sell token and goes on top of the
+/// route's sell amount. A sell order's cut comes out of the buy token, so the
+/// fee converts at the two prices, rounded up against the trader. A
+/// `sellAmountBeforeFee` amount pays the fee from itself and buys the cut
+/// amount. A `sellAmountAfterFee` amount pays the fee on top and buys the
+/// route's full amount, so its protocol fee is the one on that amount grossed
+/// up, see [`fee_on_top`]. `None` when the fee swallows the amount or the sum
+/// does not fit.
 fn amounts(
     side: &dto::Side,
     route: &quoter::Quote,
     quoted: &quoter::Quote,
-    costs: &Costs,
+    costs: Costs,
+    volume_fee: Option<FeeFactor>,
     sell_price: NonZero<u64>,
     buy_price: u64,
-) -> Option<Amounts> {
+) -> Option<(Amounts, Costs)> {
     match side {
-        dto::Side::Buy { .. } => Some(Amounts {
-            sell_amount: route.sell_amount,
-            buy_amount: quoted.buy_amount,
-            fee_amount: costs.total,
-            signed_sell_amount: route.sell_amount.checked_add(costs.total)?,
-        }),
+        dto::Side::Buy { .. } => Some((
+            Amounts {
+                sell_amount: route.sell_amount,
+                buy_amount: quoted.buy_amount,
+                fee_amount: costs.total,
+                signed_sell_amount: route.sell_amount.checked_add(costs.total)?,
+            },
+            costs,
+        )),
         dto::Side::Sell { sell_amount } => {
-            // The cut's worth in lamports, times the price denominator.
-            let worth = u128::from(costs.total) * u128::from(buy_price);
-            let fee_amount = u64::try_from(worth.div_ceil(u128::from(sell_price.get()))).ok()?;
-            let (sell_amount, buy_amount, signed_sell_amount) = match sell_amount {
-                dto::SellAmount::BeforeFee { value } => (
-                    value.checked_sub(fee_amount).filter(|net| *net > 0)?,
-                    quoted.buy_amount,
-                    *value,
-                ),
-                dto::SellAmount::AfterFee { value } => {
-                    (*value, route.buy_amount, value.checked_add(fee_amount)?)
-                }
+            // The cut's worth as the sell token: in lamports times the price
+            // denominator, over the sell price, rounded up.
+            let in_sell_token = |cut: u64| {
+                let worth = u128::from(cut) * u128::from(buy_price);
+                u64::try_from(worth.div_ceil(u128::from(sell_price.get()))).ok()
             };
-            Some(Amounts {
-                sell_amount,
-                buy_amount,
-                fee_amount,
-                signed_sell_amount,
-            })
+            match sell_amount {
+                dto::SellAmount::BeforeFee { value } => {
+                    let fee_amount = in_sell_token(costs.total)?;
+                    Some((
+                        Amounts {
+                            sell_amount: value.checked_sub(fee_amount).filter(|net| *net > 0)?,
+                            buy_amount: quoted.buy_amount,
+                            fee_amount,
+                            signed_sell_amount: *value,
+                        },
+                        costs,
+                    ))
+                }
+                dto::SellAmount::AfterFee { value } => {
+                    let costs = fee_on_top(costs, route.buy_amount, volume_fee)?;
+                    let fee_amount = in_sell_token(costs.total)?;
+                    Some((
+                        Amounts {
+                            sell_amount: *value,
+                            buy_amount: route.buy_amount,
+                            fee_amount,
+                            signed_sell_amount: value.checked_add(fee_amount)?,
+                        },
+                        costs,
+                    ))
+                }
+            }
         }
     }
+}
+
+/// `costs` with the protocol fee of an order that buys `buy_amount` whole:
+/// the fee at `factor` on the least leg that still leaves `buy_amount` once
+/// the driver takes its share, as the driver computes it. `None` when no leg
+/// reaches `buy_amount` or the sum does not fit.
+fn fee_on_top(costs: Costs, buy_amount: u64, factor: Option<FeeFactor>) -> Option<Costs> {
+    let protocol_fee = match factor {
+        Some(factor) => {
+            let policy = [protocol_fees::FeePolicy::Volume {
+                factor: factor.get(),
+            }];
+            let leg = protocol_fees::tighten_limit::<Solana>(
+                &policy,
+                protocol_fees::Side::Sell,
+                buy_amount,
+            );
+            // The saturated answer for a leg no fill reaches.
+            if leg == u64::MAX {
+                return None;
+            }
+            leg.checked_sub(buy_amount)?
+        }
+        None => 0,
+    };
+    Some(Costs {
+        protocol_fee,
+        total: costs
+            .network_fees
+            .checked_add(costs.buy_token_ata_costs)?
+            .checked_add(protocol_fee)?,
+        ..costs
+    })
 }
 
 /// `quote` with its execution cost, `rent` plus its own network fee, and then
@@ -955,16 +1009,20 @@ mod tests {
                 &side,
                 &quote(100, 1_000, 0),
                 &quote(100, 995, 0),
-                &costs(5),
+                costs(5),
+                None,
                 price(3),
                 2
             ),
-            Some(Amounts {
-                sell_amount: 96,
-                buy_amount: 995,
-                fee_amount: 4,
-                signed_sell_amount: 100,
-            })
+            Some((
+                Amounts {
+                    sell_amount: 96,
+                    buy_amount: 995,
+                    fee_amount: 4,
+                    signed_sell_amount: 100,
+                },
+                costs(5)
+            ))
         );
     }
 
@@ -977,16 +1035,20 @@ mod tests {
                 &side,
                 &quote(100, 1_000, 0),
                 &quote(100, 995, 0),
-                &costs(5),
+                costs(5),
+                None,
                 price(3),
                 2
             ),
-            Some(Amounts {
-                sell_amount: 100,
-                buy_amount: 1_000,
-                fee_amount: 4,
-                signed_sell_amount: 104,
-            })
+            Some((
+                Amounts {
+                    sell_amount: 100,
+                    buy_amount: 1_000,
+                    fee_amount: 4,
+                    signed_sell_amount: 104,
+                },
+                costs(5)
+            ))
         );
     }
 
@@ -1000,16 +1062,20 @@ mod tests {
                 &side,
                 &quote(1_000, 1_000, 0),
                 &quote(1_050, 1_000, 0),
-                &costs(50),
+                costs(50),
+                None,
                 price(1),
                 1
             ),
-            Some(Amounts {
-                sell_amount: 1_000,
-                buy_amount: 1_000,
-                fee_amount: 50,
-                signed_sell_amount: 1_050,
-            })
+            Some((
+                Amounts {
+                    sell_amount: 1_000,
+                    buy_amount: 1_000,
+                    fee_amount: 50,
+                    signed_sell_amount: 1_050,
+                },
+                costs(50)
+            ))
         );
     }
 
@@ -1022,7 +1088,8 @@ mod tests {
                     &side,
                     &quote(value, 1_000, 0),
                     &quote(value, 995, 0),
-                    &costs(5),
+                    costs(5),
+                    None,
                     price(3),
                     2
                 ),
@@ -1030,6 +1097,65 @@ mod tests {
                 "{value}"
             );
         }
+    }
+
+    /// An order placed on a `sellAmountAfterFee` quote buys the route's full
+    /// amount, so its fee on top is grossed up: the leg the driver's cut
+    /// leaves, taxed as the driver taxes it, comes down to the route's amount
+    /// to the atom. A lamport an atom on both sides, so the fee on top buys as
+    /// much buy token as it costs. A leg no fill reaches is no quote.
+    #[test]
+    fn an_after_fee_orders_fee_on_top_survives_the_drivers_take() {
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
+        let side = selling(dto::SellAmount::AfterFee { value: 1_000 });
+        for factor in [0.0007, 0.001, 0.5] {
+            let policies = [protocol_fees::FeePolicy::Volume { factor }];
+            for (buy_amount, rent) in [(1_000_000, 0), (7_777_777, 2_039_280), (3, 1), (1, 0)] {
+                let route = quote(1_000, buy_amount, 0);
+                let (quoted, costs) = net(
+                    route.clone(),
+                    dto::Kind::Sell,
+                    rent,
+                    lamport_an_atom,
+                    Some(FeeFactor::new(factor)),
+                )
+                .unwrap();
+                let (amounts, costs) = amounts(
+                    &side,
+                    &route,
+                    &quoted,
+                    costs,
+                    Some(FeeFactor::new(factor)),
+                    lamport_an_atom,
+                    Solana::NATIVE_PRICE_DENOMINATOR,
+                )
+                .unwrap();
+                assert_eq!(
+                    (amounts.buy_amount, amounts.fee_amount),
+                    (buy_amount, costs.total)
+                );
+                // The fill after the driver's cut: the route's amount plus what
+                // the fee on top bought, less the rent.
+                let executed_buy = buy_amount + costs.total - rent;
+                let mut fill = protocol_fees::Order::<Solana> {
+                    uid: IntentHash([0; 32]),
+                    sell_token: ChainPubkey([1; 32]),
+                    buy_token: ChainPubkey([2; 32]),
+                    sell_amount: amounts.signed_sell_amount,
+                    buy_amount,
+                    executed_sell: amounts.signed_sell_amount,
+                    executed_buy,
+                    side: protocol_fees::Side::Sell,
+                };
+                let fee = protocol_fees::apply_protocol_fees(&mut fill, &policies).unwrap();
+                assert_eq!(
+                    (fill.executed_buy, fee),
+                    (buy_amount, costs.protocol_fee),
+                    "{factor} {buy_amount} {rent}"
+                );
+            }
+        }
+        assert!(fee_on_top(costs(0), u64::MAX - 1, Some(FeeFactor::new(0.001))).is_none());
     }
 
     fn best(

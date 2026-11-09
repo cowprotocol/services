@@ -1186,10 +1186,11 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         protocolFee:
           description: >-
-            The volume protocol fee: the orderbook's configured factor's
-            share of the quoted amount after the two costs above, the amount
-            the driver takes the fee from at settlement. Zero without a
-            configured factor.
+            The volume protocol fee the driver takes at settlement, at the
+            orderbook's configured factor: its share of the quoted amount
+            after the two costs above, or for a `sellAmountAfterFee` quote
+            of the leg whose remainder after the fee is the quoted buy
+            amount. Zero without a configured factor.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
         total:

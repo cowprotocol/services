@@ -191,8 +191,11 @@ pub struct Costs {
     /// Rent of the buy token account when the settlement must create it.
     #[serde_as(as = "DisplayFromStr")]
     pub buy_token_ata_costs: u64,
-    /// The volume protocol fee: the configured factor's share of the quoted
-    /// amount after the two costs above, zero without a configured factor.
+    /// The volume protocol fee the driver takes at settlement, at the
+    /// configured factor: its share of the quoted amount after the two costs
+    /// above, or for a `sellAmountAfterFee` quote of the leg whose remainder
+    /// after the fee is the quoted buy amount. Zero without a configured
+    /// factor.
     #[serde_as(as = "DisplayFromStr")]
     pub protocol_fee: u64,
     /// The sum, what the driver takes at settlement. `fee_amount` is it as the

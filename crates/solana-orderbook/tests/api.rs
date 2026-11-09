@@ -1232,6 +1232,52 @@ async fn quote_sells_an_after_fee_amount_as_is() {
     assert_eq!(json["quote"]["buyAmount"], "3461207");
 }
 
+/// With a volume fee, a `sellAmountAfterFee` quote still buys the route's
+/// full amount, so the fee on top is grossed up to the leg that comes down to
+/// that amount once the driver takes its share: ten basis points of 3_464_671
+/// are 3_464, which leave the route's 3_461_207.
+#[tokio::test]
+async fn quote_grosses_up_the_volume_fee_on_an_after_fee_amount() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        volume_fee: Some(VolumeFeeConfig {
+            factor: Some(FeeFactor::new(0.001)),
+            effective_from_timestamp: None,
+        }),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["sellAmountAfterFee"] = serde_json::json!("10000000");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    let quote = &json["quote"];
+    assert_eq!(quote["sellAmount"], "10000000");
+    assert_eq!(quote["buyAmount"], "3461207");
+    assert_eq!(quote["feeAmount"], "2230104");
+    assert_eq!(quote["costs"]["protocolFee"], "3464");
+    assert_eq!(quote["costs"]["total"], "2230104");
+}
+
 /// A sell order's fee converts the cut at both native prices: the buy token
 /// at a lamport an atom, the sell token at two, so half as many atoms.
 #[tokio::test]
