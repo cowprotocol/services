@@ -1180,6 +1180,31 @@ async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
     assert!(requests.lock().unwrap().is_none());
 }
 
+/// The standard solve request with `policies` on its order.
+fn solve_request_with_policies(
+    mut request: serde_json::Value,
+    policies: serde_json::Value,
+) -> serde_json::Value {
+    request["orders"][0]["protocolFees"] = policies;
+    request
+}
+
+#[tokio::test]
+async fn solve_rejects_a_fee_policy_factor_outside_the_unit_interval() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let request = solve_request_with_policies(
+        solve_request(),
+        serde_json::json!([{"volume": {"factor": 1.0}}]),
+    );
+    let response = post_solve(addr, &request).await;
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["kind"], "InvalidFeePolicy");
+}
+
 /// A quote shrinks by the fee like a fill, but not by the execution costs:
 /// the orderbook nets those from the quote itself, so the engine's 2000 buy
 /// comes back as 1900 with the network fee beside it.

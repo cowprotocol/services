@@ -4,6 +4,7 @@ use {
     super::{
         buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
         order_uid::OrderUid,
+        protocol_fee::FeePolicies,
         slot::Slot,
     },
     crate::infra::blockchain::{
@@ -83,6 +84,9 @@ pub struct Auction {
     /// price sits under [`ENCODED_NATIVE_SOL_TRANSFER`]. Tokens without a
     /// price are absent.
     pub native_prices: HashMap<Pubkey, u64>,
+    /// The protocol fee policies of each order, see [`super::protocol_fee`].
+    /// Empty for a quote.
+    pub fee_policies: FeePolicies,
 }
 
 impl Auction {
@@ -438,6 +442,7 @@ mod tests {
             deadline: chrono::Utc::now(),
             creations: HashMap::new(),
             native_prices: HashMap::new(),
+            fee_policies: HashMap::new(),
         }
     }
 

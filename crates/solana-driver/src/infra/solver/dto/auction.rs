@@ -471,6 +471,7 @@ mod tests {
             deadline: chrono::Utc::now(),
             creations: HashMap::new(),
             native_prices: HashMap::new(),
+            fee_policies: HashMap::new(),
         }
     }
 
