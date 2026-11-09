@@ -250,6 +250,7 @@ mod tests {
             executed_sell,
             executed_buy,
             solver_fee: 7,
+            protocol_fee: 0,
         }
     }
 

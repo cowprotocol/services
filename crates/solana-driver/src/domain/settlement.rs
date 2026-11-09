@@ -1063,6 +1063,7 @@ mod tests {
             executed_sell,
             executed_buy,
             solver_fee: 0,
+            protocol_fee: 0,
         }
     }
 
