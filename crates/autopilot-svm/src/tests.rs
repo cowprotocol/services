@@ -3,7 +3,7 @@
 
 use {
     crate::{
-        domain::{arbitrator::SolanaArbitrator, cycle::SolanaCycle},
+        domain::{arbitrator::SolanaArbitrator, cycle::SolanaCycle, fee::ProtocolFees},
         infra::{
             competition::DriverCompetition,
             driver::{Driver, dto},
@@ -242,6 +242,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             150,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
+            ProtocolFees::default(),
         );
         let NextAuction::Auction(auction) = provider.cut_auction(&tip).await else {
             panic!("auction cut");
@@ -265,6 +266,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             150,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
+            ProtocolFees::default(),
         )),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
@@ -358,6 +360,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         u64::MAX,
         NativePrices::seeded(test_prices()),
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
+        ProtocolFees::default(),
     );
     assert!(
         matches!(

@@ -1,7 +1,10 @@
 //! Database access for the Solana autopilot.
 
 use {
-    crate::domain::auction::{Order, OrderKind},
+    crate::domain::{
+        auction::{Order, OrderKind},
+        fee::Quote,
+    },
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
@@ -39,7 +42,8 @@ const LARGE_TABLES: &[&str] = &[
     "proposed_trade_executions",
 ];
 
-/// The `solana.orders` columns auction assembly reads.
+/// The `solana.orders` columns auction assembly reads, with the quote
+/// `solana.order_quotes` links the order to.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct OrderRow {
     pub uid: ByteArray<32>,
@@ -59,6 +63,9 @@ pub struct OrderRow {
     pub created_on_chain: bool,
     pub executed: BigDecimal,
     pub creation: Option<Vec<u8>>,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_solver: Option<ByteArray<32>>,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -83,9 +90,13 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
            WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
            ELSE COALESCE(p.amount_received, 0)
        END AS executed,
-       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation
+       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation,
+       q.sell_amount AS quote_sell_amount,
+       q.buy_amount AS quote_buy_amount,
+       q.solver AS quote_solver
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.order_quotes q ON q.order_uid = o.uid
 WHERE o.valid_to >= $1
   AND NOT COALESCE(p.is_reorged, false)
   AND (o.valid_from IS NULL OR o.valid_from <= $1)
@@ -675,6 +686,25 @@ impl TryFrom<OrderRow> for Order {
             executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
             sell_balance: None,
+            quote: match (
+                row.quote_sell_amount,
+                row.quote_buy_amount,
+                row.quote_solver,
+            ) {
+                // A quote amount past `u64` leaves the order unlinked, out of
+                // market as the orderbook classed it, instead of dropping it.
+                (Some(sell_amount), Some(buy_amount), Some(solver)) => to_amount(&sell_amount)
+                    .ok()
+                    .zip(to_amount(&buy_amount).ok())
+                    .map(|(sell_amount, buy_amount)| Quote {
+                        sell_amount,
+                        buy_amount,
+                        fee: 0,
+                        solver: Pubkey(solver.0),
+                    }),
+                _ => None,
+            },
+            protocol_fees: Vec::new(),
         })
     }
 }
@@ -781,6 +811,7 @@ struct Metrics {
 mod tests {
     use {
         super::{
+            Quote,
             delete_order_events_before,
             in_flight_orders,
             last_indexed_slot,
@@ -816,7 +847,42 @@ mod tests {
             created_on_chain: true,
             executed: BigDecimal::from(0u64),
             creation: None,
+            quote_sell_amount: None,
+            quote_buy_amount: None,
+            quote_solver: None,
         }
+    }
+
+    #[test]
+    fn a_linked_quote_converts_with_a_zero_fee() {
+        assert_eq!(
+            super::Order::try_from(conversion_row()).unwrap().quote,
+            None
+        );
+        let linked = super::OrderRow {
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(2_000u64)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        };
+        assert_eq!(
+            super::Order::try_from(linked).unwrap().quote,
+            Some(Quote {
+                sell_amount: 1_000,
+                buy_amount: 2_000,
+                fee: 0,
+                solver: Pubkey([9; 32]),
+            })
+        );
+        // The orderbook stores the quote's unfixed side unchecked, so it can
+        // exceed `u64`. The order then stays in the auction without a quote.
+        let oversized = super::OrderRow {
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(u64::MAX) + BigDecimal::from(1u64)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        };
+        assert_eq!(super::Order::try_from(oversized).unwrap().quote, None);
     }
 
     #[test]
@@ -919,15 +985,24 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         let pool = crate::test_db::pool().await;
         let mut tx = pool.begin().await.unwrap();
 
-        for table in ["trades", "order_pda", "orders"] {
+        for table in ["trades", "order_pda", "order_quotes", "orders"] {
             sqlx::query(&format!("DELETE FROM solana.{table}"))
                 .execute(&mut *tx)
                 .await
                 .unwrap();
         }
 
-        // Kept: signed and unexpired, no PDA yet.
+        // Kept: signed and unexpired, no PDA yet. Placed against a quote.
         insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query(
+            "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
+             solver) VALUES ($1, 7, 1000, 2100, $2)",
+        )
+        .bind(ByteArray([1u8; 32]))
+        .bind(ByteArray([0xCC; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         // Dropped: expired.
         insert_order(&mut tx, 2, 500, true, database::solana::OrderKind::Sell).await;
         // Dropped: no PDA and nothing for the driver to create it from.
@@ -996,6 +1071,22 @@ WHERE uid = $1
         assert_eq!(receivers, vec![None, Some([0x23; 32]), None, None, None]);
         let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
         assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
+        // Only the first order carries its linked quote.
+        let quotes: Vec<_> = orders
+            .iter()
+            .map(|order| {
+                order
+                    .quote_buy_amount
+                    .as_ref()
+                    .map(|amount| amount.to_u64().unwrap())
+            })
+            .collect();
+        assert_eq!(quotes, vec![Some(2_100), None, None, None, None]);
+        assert_eq!(
+            orders[0].quote_sell_amount.as_ref().unwrap().to_u64(),
+            Some(1_000)
+        );
+        assert_eq!(orders[0].quote_solver, Some(ByteArray([0xCC; 32])));
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);

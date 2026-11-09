@@ -36,6 +36,14 @@ max-winners = 1
 solve-deadline = "6s"
 submission-deadline-slots = 25
 
+# Protocol fee policies by order class, read like the EVM autopilot's
+# [fee-policies]. A policy applies to market orders (the linked quote meets
+# the order's limit), to limit orders, or to any order. Without the section
+# no order carries a policy.
+[[fee-policies.policies]]
+kind.volume = { factor = 0.001 }
+order-class = "any"
+
 # Periodic deletion of expired quotes and of order events older than
 # cleanup-threshold. The defaults:
 # [db-cleanup]

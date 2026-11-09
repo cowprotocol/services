@@ -34,6 +34,7 @@ moka = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+protocol-fees = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
