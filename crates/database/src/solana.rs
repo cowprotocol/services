@@ -26,3 +26,13 @@ pub enum OrderEventLabel {
     Traded,
     Cancelled,
 }
+
+/// Which share a protocol fee policy takes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "solana.PolicyKind")]
+#[sqlx(rename_all = "lowercase")]
+pub enum PolicyKind {
+    Surplus,
+    Volume,
+    PriceImprovement,
+}
