@@ -12,9 +12,11 @@ use {
         fee_shares_before_settlement,
         protocol_fees_by_policy,
         surplus_over_limit,
+        tighten_limit,
     },
     chain_types::{
         Amount,
+        ChainTypes,
         MathError,
         evm::{Address, Evm, OrderUid, U256},
         solana::{IntentHash, Pubkey, Solana},
@@ -343,4 +345,156 @@ fn huge_legs_overflow_only_the_backward_math() {
         surplus.try_mul_f64(0.5)
     );
     assert_eq!(surplus_over_limit(&huge), Err(MathError::Overflow));
+}
+
+#[test]
+fn only_a_volume_policy_moves_the_limit() {
+    let volume = |factor| FeePolicy::<Solana>::Volume { factor };
+    let surplus = FeePolicy::<Solana>::Surplus {
+        factor: 0.5,
+        max_volume_factor: 0.5,
+    };
+    assert_eq!(tighten_limit::<Solana>(&[], Side::Sell, 1_000), 1_000);
+    assert_eq!(tighten_limit(&[surplus], Side::Sell, 1_000), 1_000);
+    assert_eq!(tighten_limit(&[surplus], Side::Buy, 1_000), 1_000);
+    assert_eq!(tighten_limit(&[volume(0.0)], Side::Sell, 1_000), 1_000);
+    // The fee rounds down: 1111 - 111 reaches 1000, 909 + 90 stays within it.
+    assert_eq!(tighten_limit(&[volume(0.1)], Side::Sell, 1_000), 1_111);
+    assert_eq!(tighten_limit(&[volume(0.1)], Side::Buy, 1_000), 909);
+    assert_eq!(tighten_limit(&[volume(0.1)], Side::Sell, 0), 0);
+}
+
+/// The fill meets the last policy last, so it tightens the limit first: 1000
+/// under 20% needs 1249, and 1249 under 10% needs 1387. The other order would
+/// need 1388.
+#[test]
+fn later_policies_tighten_first() {
+    let policies = [
+        FeePolicy::<Solana>::Volume { factor: 0.1 },
+        FeePolicy::Volume { factor: 0.2 },
+    ];
+    assert_eq!(tighten_limit(&policies, Side::Sell, 1_000), 1_387);
+}
+
+#[test]
+fn a_minimum_buy_whose_fee_overflows_saturates() {
+    let volume = [FeePolicy::<Solana>::Volume { factor: 0.5 }];
+    assert_eq!(tighten_limit(&volume, Side::Sell, u64::MAX), u64::MAX);
+    let volume = [FeePolicy::<Evm>::Volume { factor: 0.5 }];
+    assert_eq!(tighten_limit(&volume, Side::Sell, U256::MAX), U256::MAX);
+}
+
+#[test]
+fn a_maximum_sell_whose_fee_overflows_drops_to_zero() {
+    let volume = [FeePolicy::<Evm>::Volume { factor: 0.1 }];
+    assert_eq!(tighten_limit(&volume, Side::Buy, U256::MAX), U256::ZERO);
+}
+
+#[test]
+fn a_factor_of_one_leaves_no_reachable_limit() {
+    let volume = [FeePolicy::<Solana>::Volume { factor: 1.0 }];
+    assert_eq!(tighten_limit(&volume, Side::Sell, 1_000), u64::MAX);
+    assert_eq!(tighten_limit(&volume, Side::Buy, 1_000), 0);
+    let volume = [FeePolicy::<Evm>::Volume { factor: 1.0 }];
+    let limit = U256::from(1_000u64);
+    assert_eq!(tighten_limit(&volume, Side::Sell, limit), U256::MAX);
+    assert_eq!(tighten_limit(&volume, Side::Buy, limit), U256::ZERO);
+}
+
+/// A factor just under 1 needs millions of rounds to reach the boundary, so
+/// the limit gives up and no fill can meet it.
+#[test]
+fn a_factor_just_under_one_gives_up() {
+    let volume = [FeePolicy::<Evm>::Volume { factor: 0.999_999 }];
+    let limit = U256::from(10u64).pow(U256::from(18));
+    assert_eq!(tighten_limit(&volume, Side::Sell, limit), U256::MAX);
+    assert_eq!(tighten_limit(&volume, Side::Buy, limit), U256::ZERO);
+}
+
+#[test]
+fn a_factor_of_0_8_reaches_the_boundary_of_a_huge_limit() {
+    let volume = [FeePolicy::<Evm>::Volume { factor: 0.8 }];
+    let limit = U256::from(10u64).pow(U256::from(55));
+    assert!(tighten_limit(&volume, Side::Sell, limit) < U256::MAX);
+    assert!(tighten_limit(&volume, Side::Buy, limit) > U256::ZERO);
+}
+
+#[test]
+fn a_maximum_sell_at_u64_max_fits_with_its_fee() {
+    let max_sell = tighten_limit(
+        &[FeePolicy::<Solana>::Volume { factor: 0.5 }],
+        Side::Buy,
+        u64::MAX,
+    );
+    assert!(
+        max_sell
+            .checked_add(max_sell.try_mul_f64(0.5).unwrap())
+            .is_some()
+    );
+}
+
+/// A fill at exactly the tightened limit keeps `limit` after the volume fee,
+/// and a fill one atom worse does not, on both sides.
+fn assert_exact_boundary<C: ChainTypes>(
+    base: &Order<C>,
+    factor: f64,
+    limit: C::Amount,
+    atom: C::Amount,
+) {
+    let volume = [FeePolicy::Volume { factor }];
+    let after_fee = |side, executed_sell, executed_buy| {
+        let mut fill = Order {
+            side,
+            executed_sell,
+            executed_buy,
+            ..base.clone()
+        };
+        apply_protocol_fees(&mut fill, &volume).unwrap();
+        fill
+    };
+
+    let min_buy = tighten_limit(&volume, Side::Sell, limit);
+    assert!(
+        after_fee(Side::Sell, atom, min_buy).executed_buy >= limit,
+        "sell factor={factor} limit={limit:?}"
+    );
+    assert!(
+        after_fee(Side::Sell, atom, min_buy.try_sub(atom).unwrap()).executed_buy < limit,
+        "sell factor={factor} limit={limit:?}"
+    );
+
+    let max_sell = tighten_limit(&volume, Side::Buy, limit);
+    assert!(
+        after_fee(Side::Buy, max_sell, atom).executed_sell <= limit,
+        "buy factor={factor} limit={limit:?}"
+    );
+    assert!(
+        after_fee(Side::Buy, max_sell.try_add(atom).unwrap(), atom).executed_sell > limit,
+        "buy factor={factor} limit={limit:?}"
+    );
+}
+
+const BOUNDARY_FACTORS: [f64; 5] = [0.0001, 0.001, 0.05, 0.25, 0.5];
+
+#[test]
+fn tightened_limit_is_the_exact_boundary_of_the_solana_fee() {
+    let base = fill(Side::Sell, 1, 1, 1, 1);
+    for factor in BOUNDARY_FACTORS {
+        for limit in [1, 3, 1_000, 12_345, 1_000_000_000_000] {
+            assert_exact_boundary(&base, factor, limit, 1);
+        }
+    }
+}
+
+#[test]
+fn tightened_limit_is_the_exact_boundary_of_the_evm_fee() {
+    let base = evm_sell_fill();
+    for factor in BOUNDARY_FACTORS {
+        for exponent in [0, 3, 12, 18, 30, 50] {
+            for offset in [0u64, 1, 7] {
+                let limit = U256::from(10u64).pow(U256::from(exponent)) + U256::from(offset);
+                assert_exact_boundary(&base, factor, limit, U256::ONE);
+            }
+        }
+    }
 }

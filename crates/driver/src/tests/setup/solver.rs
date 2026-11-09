@@ -76,65 +76,44 @@ impl Solver {
             } else {
                 quote.order.buy_token
             };
+            // The driver tightens the limit leg by the volume fees before
+            // sending the order to solvers, so that withholding them keeps the
+            // signed limit. The solver fee is an extra volume policy after the
+            // order's own.
+            let volume_fees: Vec<protocol_fees::FeePolicy> = quote
+                .order
+                .fee_policy
+                .iter()
+                .filter_map(|policy| match policy {
+                    fee::Policy::Volume { factor } => Some(*factor),
+                    fee::Policy::Surplus { .. } | fee::Policy::PriceImprovement { .. } => None,
+                })
+                .chain(
+                    (config.solver_fee_bps > 0)
+                        .then(|| f64::from(config.solver_fee_bps) / 10_000.0),
+                )
+                .map(|factor| protocol_fees::FeePolicy::Volume { factor })
+                .collect();
             let sell_amount = match quote.order.side {
                 order::Side::Buy if config.quote => {
                     "22300745198530623141535718272648361505980416".to_owned()
                 }
-                order::Side::Buy => {
-                    let mut current_sell_amount = quote.sell_amount();
-                    // For volume based fees the driver artificially reduces the
-                    // limit sell amount for buy orders before sending to
-                    // solvers. This allows the driver to withhold the volume
-                    // based fee and not violate original limit prices.
-                    for fee_policy in &quote.order.fee_policy {
-                        if let fee::Policy::Volume { factor } = fee_policy {
-                            current_sell_amount = eth::TokenAmount(current_sell_amount)
-                                .apply_factor(1.0 / (1.0 + factor))
-                                .unwrap()
-                                .0;
-                        }
-                    }
-                    // The driver injects the solver fee as an additional volume
-                    // fee policy, so it tightens the limits for it exactly like
-                    // for the volume policies above.
-                    if config.solver_fee_bps > 0 {
-                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
-                        current_sell_amount = eth::TokenAmount(current_sell_amount)
-                            .apply_factor(1.0 / (1.0 + factor))
-                            .unwrap()
-                            .0;
-                    }
-                    current_sell_amount.to_string()
-                }
+                order::Side::Buy => protocol_fees::tighten_limit(
+                    &volume_fees,
+                    protocol_fees::Side::Buy,
+                    quote.sell_amount(),
+                )
+                .to_string(),
                 _ => quote.sell_amount().to_string(),
             };
             let buy_amount = match quote.order.side {
                 order::Side::Sell if config.quote => "1".to_owned(),
-                order::Side::Sell => {
-                    let mut current_buy_amount = quote.buy_amount();
-                    // For volume based fees the driver artificially increases
-                    // the limit buy amount for sell orders before sending to
-                    // solvers. This allows the driver to withhold the volume
-                    // based fee and not violate original limit prices.
-                    for fee_policy in &quote.order.fee_policy {
-                        if let fee::Policy::Volume { factor } = fee_policy {
-                            current_buy_amount = eth::TokenAmount(current_buy_amount)
-                                .apply_factor(1.0 / (1.0 - factor))
-                                .unwrap()
-                                .0;
-                        }
-                    }
-                    // Solver fee make-room (see comment in the buy-side branch
-                    // above).
-                    if config.solver_fee_bps > 0 {
-                        let factor = f64::from(config.solver_fee_bps) / 10_000.0;
-                        current_buy_amount = eth::TokenAmount(current_buy_amount)
-                            .apply_factor(1.0 / (1.0 - factor))
-                            .unwrap()
-                            .0;
-                    }
-                    current_buy_amount.to_string()
-                }
+                order::Side::Sell => protocol_fees::tighten_limit(
+                    &volume_fees,
+                    protocol_fees::Side::Sell,
+                    quote.buy_amount(),
+                )
+                .to_string(),
                 _ => quote.buy_amount().to_string(),
             };
 
