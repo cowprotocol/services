@@ -7740,6 +7740,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
 
 [[package]]
+name = "protocol-fees"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chain-types",
+]
+
+[[package]]
 name = "psl-types"
 version = "2.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13235,6 +13243,7 @@ dependencies = [
  "anyhow",
  "chain-types",
  "itertools 0.14.0",
+ "protocol-fees",
  "thiserror 1.0.69",
  "tracing",
 ]
