@@ -9,6 +9,9 @@ use {
     chain_types::{Amount, ChainTypes, MathError, MathResult, Zero, evm::Evm},
 };
 
+#[cfg(test)]
+mod tests;
+
 /// Order side (buy or sell).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Side {
@@ -155,6 +158,70 @@ fn protocol_fee<C: ChainTypes>(
         }
         FeePolicy::Volume { factor } => volume_fee(order, custom_prices, *factor),
     }
+}
+
+/// The fee `policy` takes from the fill `order` describes, in the surplus
+/// token, with the executed legs as the fee base. The inverse of
+/// [`protocol_fee`], which recovers the fee from the legs the fill settled
+/// at.
+fn fee_before_settlement<C: ChainTypes>(
+    order: &Order<C>,
+    policy: &FeePolicy<C>,
+) -> MathResult<C::Amount> {
+    let prices = calculate_custom_prices_from_executed(order);
+    let volume = match order.side {
+        Side::Sell => order.executed_buy,
+        Side::Buy => order.executed_sell,
+    };
+    match policy {
+        FeePolicy::Surplus {
+            factor,
+            max_volume_factor,
+        } => {
+            let surplus = surplus_over_limit_price(order, &prices)?;
+            Ok(surplus
+                .try_mul_f64(*factor)?
+                .min(volume.try_mul_f64(*max_volume_factor)?))
+        }
+        FeePolicy::PriceImprovement {
+            factor,
+            max_volume_factor,
+            quote,
+        } => {
+            let improvement = price_improvement_over_quote(order, &prices, quote)?;
+            Ok(improvement
+                .try_mul_f64(*factor)?
+                .min(volume.try_mul_f64(*max_volume_factor)?))
+        }
+        FeePolicy::Volume { factor } => volume.try_mul_f64(*factor),
+    }
+}
+
+/// Takes `policies` from the fill `fill` describes, in list order, each from
+/// the legs the one before left: a sell order delivers less buy token, a buy
+/// order pulls more sell token. Returns the total fee in the surplus token,
+/// which [`protocol_fees`] recovers from the settled legs.
+///
+/// The fees can push the fill past its signed limit. A surplus policy fails
+/// on a fill already under it, a price improvement policy takes nothing from
+/// a fill under its quote, a volume policy never checks, so the caller checks
+/// the limit on the result. On an error `fill` keeps the legs it came with.
+pub fn apply_protocol_fees<C: ChainTypes>(
+    fill: &mut Order<C>,
+    policies: &[FeePolicy<C>],
+) -> MathResult<C::Amount> {
+    let mut taken = fill.clone();
+    let mut total = C::Amount::zero();
+    for policy in policies {
+        let fee = fee_before_settlement(&taken, policy)?;
+        match taken.side {
+            Side::Sell => taken.executed_buy = taken.executed_buy.try_sub(fee)?,
+            Side::Buy => taken.executed_sell = taken.executed_sell.try_add(fee)?,
+        }
+        total = total.try_add(fee)?;
+    }
+    *fill = taken;
+    Ok(total)
 }
 
 /// Calculate surplus over limit price using custom clearing prices.

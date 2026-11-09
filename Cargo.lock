@@ -7745,6 +7745,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chain-types",
+ "rand 0.9.4",
 ]
 
 [[package]]
