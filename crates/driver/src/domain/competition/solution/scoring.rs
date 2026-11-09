@@ -130,45 +130,14 @@ impl Trade {
             buy_amount: self.signed_buy.amount.0,
             executed_sell: self.sell_amount()?.0,
             executed_buy: self.buy_amount()?.0,
-            side: match self.side {
-                Side::Sell => protocol_fees::Side::Sell,
-                Side::Buy => protocol_fees::Side::Buy,
-            },
+            side: self.side.into(),
         })
     }
 
     /// The policies as the generic fee math sees them. The score flag is read
     /// by [`Self::fees`], not by the fee math.
     fn policies(&self) -> Vec<protocol_fees::FeePolicy<Evm>> {
-        self.policies
-            .iter()
-            .map(|policy| match policy {
-                FeePolicy::Surplus {
-                    factor,
-                    max_volume_factor,
-                } => protocol_fees::FeePolicy::Surplus {
-                    factor: *factor,
-                    max_volume_factor: *max_volume_factor,
-                },
-                FeePolicy::PriceImprovement {
-                    factor,
-                    max_volume_factor,
-                    quote,
-                } => protocol_fees::FeePolicy::PriceImprovement {
-                    factor: *factor,
-                    max_volume_factor: *max_volume_factor,
-                    quote: protocol_fees::Quote {
-                        sell_amount: quote.sell.amount.0,
-                        buy_amount: quote.buy.amount.0,
-                        fee: quote.fee.amount.0,
-                        solver: quote.solver,
-                    },
-                },
-                FeePolicy::Volume { factor, .. } => {
-                    protocol_fees::FeePolicy::Volume { factor: *factor }
-                }
-            })
-            .collect()
+        self.policies.iter().map(Into::into).collect()
     }
 
     /// Amount of value the user got above the order's limit price
@@ -242,9 +211,10 @@ pub enum Error {
 mod tests {
     use {
         super::*,
-        crate::domain::competition::{
+        crate::domain::competition::solution::fee::{
+            self,
             PriceLimits,
-            solution::fee::{self, adjust_quote_to_order_limits},
+            adjust_quote_to_order_limits,
         },
         alloy::primitives::{Address, U256, address},
         auction::Price,

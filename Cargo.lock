@@ -7749,6 +7749,7 @@ version = "0.1.0"
 dependencies = [
  "chain-types",
  "rand 0.9.4",
+ "tracing",
 ]
 
 [[package]]
