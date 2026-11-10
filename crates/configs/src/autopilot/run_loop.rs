@@ -98,7 +98,9 @@ pub struct RunLoopConfig {
     /// If this is configured, a competition that ends less than
     /// `tx-propagation-latency` before the next slot gets one extra block of
     /// `submission-deadline`, because its settlement can no longer make the
-    /// next block.
+    /// next block. The check runs when the competition ends, before
+    /// post-processing, so `tx-propagation-latency` also has to cover the time
+    /// until `/settle` goes out.
     /// This should not be configured on chains with variable block
     /// production rates (including test chains).
     #[serde(default)]
