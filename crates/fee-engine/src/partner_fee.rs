@@ -16,12 +16,15 @@ pub enum PartnerFee {
 /// `get_partner_fee` caps them. A fee past the cap stays, with a zero volume
 /// share or volume cap.
 pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
+    // The autopilot's `get_partner_fee` falls back to no partner fees here.
+    // `RuleSet::new` already checked the cap, so this cannot fail; storing the
+    // cap as a `Decimal` would drop the branch.
     let Ok(cap) = Decimal::try_from(cap.get()) else {
         return vec![];
     };
     let mut accumulated = Decimal::ZERO;
     let mut volume_share = |bps: u64| {
-        capped(
+        capped_fee_factor(
             Decimal::from(bps) / Decimal::from(MAX_BPS),
             cap,
             &mut accumulated,
@@ -50,12 +53,13 @@ pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
         .collect()
 }
 
-/// Mirrors `shared::fee::capped_fee_factor`, quirks included: with three or
-/// more fees the compounded total can pass `cap` slightly.
-fn capped(requested: Decimal, cap: Decimal, accumulated: &mut Decimal) -> FeeFactor {
+/// Caps `value` to the headroom `(1 + cap) / (1 + accumulated) - 1` the fees
+/// before it left and advances `accumulated`. With three or more fees the
+/// compounded total can pass `cap` slightly.
+pub fn capped_fee_factor(value: Decimal, cap: Decimal, accumulated: &mut Decimal) -> FeeFactor {
     let remaining = (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
-    *accumulated += requested.min(cap - *accumulated);
-    let factor = requested.max(Decimal::ZERO).min(remaining);
+    *accumulated += value.min(cap - *accumulated);
+    let factor = value.max(Decimal::ZERO).min(remaining);
     FeeFactor::new(f64::try_from(factor).expect("a decimal in [0, 1) is a double"))
 }
 

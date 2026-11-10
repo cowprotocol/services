@@ -34,7 +34,7 @@ const KIND: &str = "kind";
 /// Grid units per basis point. Every argument must land on the
 /// [`FeeFactor::HIGH_PRECISION_SCALE`] grid; finer values are rejected, not
 /// rounded.
-const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
+pub(crate) const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
 /// Grid units per percent.
 pub(crate) const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
 

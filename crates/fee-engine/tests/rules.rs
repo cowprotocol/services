@@ -6,10 +6,12 @@ use {
     configs::fee_factor::FeeFactor,
     fee_engine::{
         AppData,
+        CompileError,
         Evaluation,
         Fee,
         Match,
         OrderView,
+        PartnerFees,
         RuleDefinition,
         RuleSet,
         RuleSetDefinition,
@@ -175,4 +177,16 @@ fn no_matching_rule_means_no_fee() {
             .matched
             .is_empty()
     );
+}
+
+#[test]
+fn refuses_a_partner_fee_cap_out_of_range() {
+    let error = RuleSet::new(RuleSetDefinition {
+        partner_fees: PartnerFees {
+            max_volume: FeeFactor::new(1.0),
+        },
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert!(matches!(error, CompileError::PartnerFeeCap { cap } if cap == 1.0));
 }

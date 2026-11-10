@@ -4,8 +4,8 @@
 # `order.inMarket` is what the host passes to `evaluate`.
 
 [partner_fees]
-# Percent: 1 is 1%, the autopilot's `max-partner-fee = 0.01`.
-max_volume = 1
+# Basis points: 100 is 1%, the autopilot's `max-partner-fee = 0.01`.
+max_volume_bps = 100
 
 [lists]
 jit_owners = []

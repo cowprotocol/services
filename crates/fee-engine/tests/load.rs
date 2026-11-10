@@ -119,14 +119,14 @@ fn partner_fee_under(source: &str) -> Vec<Fee> {
 }
 
 #[test]
-fn partner_fee_cap_is_in_percent_and_1_by_default() {
-    let volume = |percent: f64| Fee::Volume {
-        factor: (percent / 100.).try_into().unwrap(),
+fn partner_fee_cap_is_in_bps_and_100_by_default() {
+    let volume = |bps: f64| Fee::Volume {
+        factor: (bps / 10_000.).try_into().unwrap(),
     };
-    assert_eq!(partner_fee_under(""), [volume(1.)]);
+    assert_eq!(partner_fee_under(""), [volume(100.)]);
     assert_eq!(
-        partner_fee_under("[partner_fees]\nmax_volume = 0.5"),
-        [volume(0.5)]
+        partner_fee_under("[partner_fees]\nmax_volume_bps = 50"),
+        [volume(50.)]
     );
 }
 
@@ -183,7 +183,7 @@ fn refuses_bad_host_config_tables() {
     assert!(matches!(error("lists = []"), LoadError::Toml(_)));
     assert!(matches!(error("rule = 1"), LoadError::Toml(_)));
     assert!(matches!(
-        error("[partner_fees]\nmax_volume = 100"),
+        error("[partner_fees]\nmax_volume_bps = 10000"),
         LoadError::Toml(_)
     ));
     assert!(matches!(
@@ -238,9 +238,9 @@ fn refuses_bad_files() {
     for partner_fees in [
         "[partner_fees]",
         "[partner_fees]\nmax = 1",
-        "[partner_fees]\nmax_volume = 100",
-        "[partner_fees]\nmax_volume = -1",
-        "[partner_fees]\nmax_volume = 0.00001",
+        "[partner_fees]\nmax_volume_bps = 10000",
+        "[partner_fees]\nmax_volume_bps = -1",
+        "[partner_fees]\nmax_volume_bps = 0.001",
     ] {
         assert!(
             matches!(error(partner_fees), LoadError::Toml(_)),

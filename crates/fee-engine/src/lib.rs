@@ -22,9 +22,10 @@ pub use {
     fee::Fee,
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
     order_view::{AppData, Flashloan, OrderView},
-    partner_fee::PartnerFee,
+    partner_fee::{PartnerFee, capped_fee_factor},
     rules::{
         CompileError,
+        DEFAULT_MAX_VOLUME_BPS,
         Field,
         PartnerFees,
         Rule,

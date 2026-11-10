@@ -13,7 +13,7 @@ use {
     alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
-    configs::{autopilot::fee_policy::default_max_partner_fee, fee_factor::FeeFactor},
+    configs::fee_factor::FeeFactor,
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
     rust_decimal::{Decimal, prelude::FromPrimitive},
     serde::{Deserialize, Deserializer, de},
@@ -62,31 +62,36 @@ pub struct RuleSetDefinition {
     pub partner_fees: PartnerFees,
 }
 
-/// How the engine caps an order's partner fees. Without the table, the
-/// autopilot's default cap.
+/// How the engine caps an order's partner fees. Without the table,
+/// [`DEFAULT_MAX_VOLUME_BPS`].
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PartnerFees {
-    /// Percent of the volume all partner fees may take together.
-    #[serde(deserialize_with = "percent_of_volume")]
+    /// Basis points of the volume all partner fees may take together.
+    #[serde(rename = "max_volume_bps", deserialize_with = "bps_of_volume")]
     pub max_volume: FeeFactor,
 }
+
+/// The cap on an order's partner fees without a `[partner_fees]` table: 1%
+/// of the volume, the autopilot's default.
+pub const DEFAULT_MAX_VOLUME_BPS: u64 = 100;
 
 impl Default for PartnerFees {
     fn default() -> Self {
         Self {
-            max_volume: default_max_partner_fee(),
+            max_volume: FeeFactor::from_high_precision(DEFAULT_MAX_VOLUME_BPS * fee::BPS)
+                .expect("100 bps is on the grid and under 100%"),
         }
     }
 }
 
-/// A percent of the volume on the fee grid, like a `surplus` `max_volume`.
-fn percent_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
-    let percent = f64::deserialize(deserializer)?;
-    Decimal::from_f64(percent)
+/// Basis points of the volume on the fee grid, like a `volume` argument.
+fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
+    let bps = f64::deserialize(deserializer)?;
+    Decimal::from_f64(bps)
         .ok_or(fee::OUT_OF_RANGE)
-        .and_then(|number| fee::factor_on_grid(number, fee::PERCENT))
-        .map_err(|error| de::Error::custom(format!("max_volume = {percent} {error}")))
+        .and_then(|number| fee::factor_on_grid(number, fee::BPS))
+        .map_err(|error| de::Error::custom(format!("max_volume_bps = {bps} {error}")))
 }
 
 /// Names the evaluator binds itself; a list under one of them would be
@@ -102,6 +107,8 @@ pub enum CompileError {
     DuplicateRule { name: String },
     #[error("list `{name}` takes a name the engine binds itself")]
     ReservedList { name: String },
+    #[error("partner fee cap {cap} is not in [0, 1)")]
+    PartnerFeeCap { cap: f64 },
     #[error("rule `{rule}`: `{field}` does not compile: {message}")]
     Expression {
         rule: String,
@@ -244,6 +251,11 @@ impl RuleSet {
             .find(|name| RESERVED_NAMES.contains(&name.as_str()))
         {
             return Err(CompileError::ReservedList { name: name.clone() });
+        }
+        if FeeFactor::try_from(partner_fees.max_volume.get()).is_err() {
+            return Err(CompileError::PartnerFeeCap {
+                cap: partner_fees.max_volume.get(),
+            });
         }
         let mut names = HashSet::new();
         for (index, definition) in definitions.into_iter().enumerate() {

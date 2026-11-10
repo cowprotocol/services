@@ -247,27 +247,10 @@ pub fn check_fast_path_limit_fits(
     }
 }
 
-/// Applies the partner-fee compounding cap to a single requested fee
-/// factor and updates the running accumulator. Both the autopilot's
-/// `ProtocolFees::apply` and the orderbook's fast-path limit-price check
-/// route their per-fee cap decisions through this helper — the tricky
-/// multiplicative-cap math lives here in exactly one place.
-///
-/// Fees compound as `(1 + f_1)(1 + f_2)…` so the accumulator tracks the
-/// combined "extra" already committed and the remaining headroom is
-/// `(1 + cap)/(1 + accumulated) - 1`. Returns the effective factor for
-/// this fee (already clamped into `[0, remaining_factor]`) and advances
-/// the accumulator by the additive portion that was allowed through.
-pub fn capped_fee_factor(value: Decimal, cap: Decimal, accumulated: &mut Decimal) -> FeeFactor {
-    let remaining_factor = (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
-    *accumulated += value.min(cap - *accumulated);
-    FeeFactor::new(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
-}
-
 /// Extracts the volume-type partner fee factors from parsed app-data,
-/// enforcing the compounding cap via [`capped_fee_factor`]. Non-volume
-/// partner policies are skipped — they don't eat into the user-facing
-/// volume budget — so this yields exactly the subset of factors the
+/// enforcing the compounding cap via [`fee_engine::capped_fee_factor`].
+/// Non-volume partner policies are skipped — they don't eat into the
+/// user-facing volume budget — so this yields exactly the subset of factors the
 /// orderbook needs to size the fast-path limit-price check against.
 pub fn capped_partner_volume_factors(
     parsed_app_data: &app_data::ProtocolAppData,
@@ -283,7 +266,7 @@ pub fn capped_partner_volume_factors(
             continue;
         };
         let requested = Decimal::from(bps) / Decimal::from(MAX_BPS);
-        let factor = capped_fee_factor(requested, cap, &mut accumulated);
+        let factor = fee_engine::capped_fee_factor(requested, cap, &mut accumulated);
         if factor.get() > 0.0 {
             factors.push(factor);
         }

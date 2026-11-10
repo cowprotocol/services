@@ -54,15 +54,16 @@ fee:  surplus(50, 1)
 
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
 `[lists]` holds named lists of strings, each `[[rule]]` table is a rule,
-tried in file order, and `[partner_fees]` holds `max_volume`, the percent of
-the volume an order's partner fees may take together. Without the table it
-is 1, as in the autopilot; it lands on the fee grid like a fee argument.
+tried in file order, and `[partner_fees]` holds `max_volume_bps`, the basis
+points of the volume an order's partner fees may take together. Without the
+table it is 100 (1%), as in the autopilot; it lands on the fee grid like a
+fee argument.
 Unknown top-level and rule keys are refused; any key under `[lists]` is a
 list name, so a list that no rule names loads without error. The file goes
 through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
 refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown
-key, missing field, a rule field that is empty or a bad `max_volume`; names
-the line and column), `Rules` (a `CompileError`) or `SampleOrder` (every
+key, missing field, a rule field that is empty or a bad `max_volume_bps`;
+names the line and column), `Rules` (a `CompileError`) or `SampleOrder` (every
 `SampleOrderError`). A file without rules loads: no order pays a protocol
 fee.
 
@@ -75,7 +76,7 @@ and any other malformed value is a `Toml` error.
 
 ```toml
 [partner_fees]
-max_volume = 1
+max_volume_bps = 100
 
 [lists]
 stablecoins = [
@@ -159,10 +160,12 @@ fee: volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e20)))
 `format` and the rest of the
 [strings extension](https://github.com/google/cel-spec/blob/master/doc/extensions/strings.md).
 `lowerAscii` makes a pasted checksummed address compare equal to the
-lowercase view.
+lowercase view, and makes an `appCode` comparison case-insensitive: `==` is
+not, and the view keeps the code as the wallet wrote it.
 
 ```
 when: order.sellToken == "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".lowerAscii()
+when: order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"
 ```
 
 ### Lists
@@ -304,8 +307,13 @@ so reach it with `.?` or guard it with `has`.
 `metadata.enableFastPath` and `metadata.validFrom` are not here: read
 `order.fastPath` and `order.validFrom`, which hold the values in effect.
 
+`appCode` is free text in the case the wallet chose, and the same wallet
+does not always choose the same. Compare it through `lowerAscii()` against
+a lowercase literal; a plain `==` against a mixed-case literal matches only
+that spelling.
+
 ```
-when: order.appData.?appCode.orValue("") == "CoW Swap"
+when: order.appData.?appCode.orValue("").lowerAscii() == "cow swap"
 when: has(order.appData.metadata.flashloan)
 ```
 
@@ -322,5 +330,5 @@ diagnostics, and logs nothing itself:
   log or count them.
 - `partner_fees`: the fees `OrderView::partner_fees` asks for, in app-data
   order, also when no rule matched. The caller puts them after the fees of
-  the match it picks. They are capped by `max_volume` as the autopilot caps
-  them; a fee past the cap stays, with a zero volume share or volume cap.
+  the match it picks. They are capped by `max_volume_bps` as the autopilot
+  caps them; a fee past the cap stays, with a zero volume share or volume cap.
