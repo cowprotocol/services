@@ -105,17 +105,21 @@ impl Postgres {
         Ok(())
     }
 
-    /// Performs a `gin_clean_pending_list` over the
-    /// `competition_auctions_order_uids_gin` index.
+    /// Cleans the pending lists of all GIN indexes on `competition_auctions`.
+    /// An index left out here gets flushed inline by whichever insert pushes
+    /// its pending list past `gin_pending_list_limit`.
     pub async fn gin_clean_pending_list(&self) -> std::result::Result<(), sqlx::Error> {
         let _timer = Metrics::get()
             .database_queries
             .with_label_values(&["gin_clean_pending_competition_auctions"])
             .start_timer();
         let mut ex = self.pool.acquire().await?;
-        ex.execute("SELECT gin_clean_pending_list('competition_auctions_order_uids_gin')")
-            .await
-            .map(|_| ())
+        ex.execute(
+            "SELECT gin_clean_pending_list('competition_auctions_order_uids_gin'), \
+             gin_clean_pending_list('competition_auctions_price_tokens_gin')",
+        )
+        .await
+        .map(|_| ())
     }
 }
 
