@@ -19,7 +19,7 @@ mod rules;
 
 pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
-    fee::Fee,
+    fee::{FactorError, Fee, FeeError, FeeKind},
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
     order_view::{AppData, Flashloan, OrderView},
     partner_fee::{PartnerFee, capped_fee_factor},

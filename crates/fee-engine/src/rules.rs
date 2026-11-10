@@ -102,7 +102,7 @@ impl Default for PartnerFees {
 fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
     let bps = f64::deserialize(deserializer)?;
     Decimal::from_f64(bps)
-        .ok_or(fee::OUT_OF_RANGE)
+        .ok_or(fee::FactorError::OutOfRange)
         .and_then(|number| fee::factor_on_grid(number, fee::BPS))
         .map_err(|error| de::Error::custom(format!("max_volume_bps = {bps} {error}")))
 }
