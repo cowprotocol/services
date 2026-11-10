@@ -2,9 +2,10 @@
 //!
 //! The cap is the autopilot's: `get_partner_fee` in `autopilot::domain::fee`
 //! and the orderbook's fast-path check (`capped_partner_volume_factors` in
-//! `shared::fee`) call [`capped_fee_factor`] from here. Both return no partner
-//! fees when the cap does not convert to a `Decimal`; [`partner_fees`] keeps
-//! that behaviour.
+//! `shared::fee`) call [`capped_fee_factor`] from here. The autopilot returns
+//! no partner fees when the cap does not convert to a `Decimal`;
+//! [`partner_fees`] keeps that behaviour. The fast-path check spends no cap
+//! budget on surplus fees; [`partner_fees`] does, as the autopilot does.
 
 use {crate::Fee, configs::fee_factor::FeeFactor, rust_decimal::Decimal};
 
