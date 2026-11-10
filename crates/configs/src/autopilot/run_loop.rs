@@ -94,6 +94,15 @@ pub struct RunLoopConfig {
     /// production rates (including test chains).
     #[serde(default)]
     pub sync_solve_deadline_to_blockchain: Option<SlotConfig>,
+
+    /// If this is configured, a competition that ends less than
+    /// `tx-propagation-latency` before the next slot gets one extra block of
+    /// `submission-deadline`, because its settlement can no longer make the
+    /// next block.
+    /// This should not be configured on chains with variable block
+    /// production rates (including test chains).
+    #[serde(default)]
+    pub extend_submission_deadline_near_slot_end: Option<SlotConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,6 +131,7 @@ impl Default for RunLoopConfig {
             max_settlement_transaction_wait: default_max_settlement_transaction_wait(),
             min_solve_time: default_min_solve_time(),
             sync_solve_deadline_to_blockchain: None,
+            extend_submission_deadline_near_slot_end: None,
         }
     }
 }
@@ -158,6 +168,9 @@ mod tests {
         [sync-solve-deadline-to-blockchain]
             slot-length = "12s"
             tx-propagation-latency = "2s"
+        [extend-submission-deadline-near-slot-end]
+            slot-length = "12s"
+            tx-propagation-latency = "500ms"
         "#;
         let config: RunLoopConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.max_delay, Duration::from_secs(5));
@@ -181,5 +194,11 @@ mod tests {
                 .tx_propagation_latency,
             Duration::from_secs(2)
         );
+        let extend = config
+            .extend_submission_deadline_near_slot_end
+            .as_ref()
+            .unwrap();
+        assert_eq!(extend.slot_length, Duration::from_secs(12));
+        assert_eq!(extend.tx_propagation_latency, Duration::from_millis(500));
     }
 }

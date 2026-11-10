@@ -51,6 +51,7 @@ pub struct Config {
     pub max_settlement_transaction_wait: Duration,
     pub min_solve_time: Duration,
     pub sync_solve_deadline_to_blockchain: Option<SlotConfig>,
+    pub extend_submission_deadline_near_slot_end: Option<SlotConfig>,
     /// How much time past observing the current block the runloop is
     /// allowed to start before it has to re-synchronize to the blockchain
     /// by waiting for the next block to appear.
@@ -78,6 +79,12 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
                     tx_propagation_latency: cfg.tx_propagation_latency,
                 }
             }),
+            extend_submission_deadline_near_slot_end: value
+                .extend_submission_deadline_near_slot_end
+                .map(|cfg| SlotConfig {
+                    slot_length: cfg.slot_length,
+                    tx_propagation_latency: cfg.tx_propagation_latency,
+                }),
         }
     }
 }
@@ -418,8 +425,15 @@ impl RunLoop {
             Metrics::get().auction_winners.observe(num_winners_f64);
         }
 
-        let competition_simulation_block = self.eth.current_block().borrow().number;
-        let block_deadline = competition_simulation_block + self.config.submission_deadline;
+        let competition_simulation_block = *self.eth.current_block().borrow();
+        let block_deadline = pick_block_deadline(
+            Utc::now(),
+            self.config.submission_deadline,
+            self.config
+                .extend_submission_deadline_near_slot_end
+                .as_ref(),
+            competition_simulation_block,
+        );
 
         // Post-processing should not be executed asynchronously since it
         // includes steps of storing all the competition/auction-related
@@ -819,6 +833,45 @@ fn pick_solve_deadline_impl(
     }
 
     minimum_deadline
+}
+
+/// Picks the last block a winner's settlement may land in. When the
+/// competition ends too late in the slot for the settlement to make the next
+/// block, the deadline gets one extra block, so winners still get
+/// `submission_deadline` blocks they can reach.
+///
+/// This function panics if any of the time computations over- or
+/// underflow. This should not happen as we deal with times within
+/// seconds of the current time.
+fn pick_block_deadline(
+    now: DateTime<Utc>,
+    submission_deadline: u64,
+    slot_config: Option<&SlotConfig>,
+    current_block: BlockInfo,
+) -> u64 {
+    let deadline = current_block.number + submission_deadline;
+
+    let Some(SlotConfig {
+        slot_length,
+        tx_propagation_latency,
+    }) = slot_config
+    else {
+        return deadline;
+    };
+
+    let current_block_time =
+        DateTime::from_timestamp_secs(current_block.timestamp.try_into().unwrap()).unwrap();
+    let next_slot = current_block_time + *slot_length;
+    if now + *tx_propagation_latency <= next_slot {
+        return deadline;
+    }
+
+    tracing::debug!(
+        current_block = current_block.number,
+        deadline = deadline + 1,
+        "next block is out of reach, extending submission deadline"
+    );
+    deadline + 1
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1312,6 +1365,39 @@ mod tests {
         let deadline =
             pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
         assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
+    }
+
+    #[test]
+    fn block_deadline_extended_near_slot_end() {
+        type Ts = chrono::DateTime<chrono::Utc>;
+        let at = |time: &str| time.parse::<Ts>().unwrap();
+        let block = BlockInfo {
+            number: 100,
+            ..block_with_timestamp(at("2026-06-01T12:00:00Z").timestamp() as u64)
+        };
+        let slot_config = SlotConfig {
+            slot_length: Duration::from_secs(12),
+            tx_propagation_latency: Duration::from_millis(500),
+        };
+
+        // not configured -> current block + submission deadline
+        let deadline = pick_block_deadline(at("2026-06-01T12:00:11.8Z"), 1, None, block);
+        assert_eq!(deadline, 101);
+
+        // 1s before the next slot -> the next block is still reachable
+        let deadline =
+            pick_block_deadline(at("2026-06-01T12:00:11Z"), 1, Some(&slot_config), block);
+        assert_eq!(deadline, 101);
+
+        // 0.2s before the next slot -> the next block is out of reach
+        let deadline =
+            pick_block_deadline(at("2026-06-01T12:00:11.8Z"), 1, Some(&slot_config), block);
+        assert_eq!(deadline, 102);
+
+        // the next slot started before its block was observed
+        let deadline =
+            pick_block_deadline(at("2026-06-01T12:00:12.3Z"), 1, Some(&slot_config), block);
+        assert_eq!(deadline, 102);
     }
 
     #[test]
