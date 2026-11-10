@@ -1,4 +1,10 @@
 //! The partner fees the engine returns apart from the rule's fees.
+//!
+//! The cap is the autopilot's: `get_partner_fee` in `autopilot::domain::fee`
+//! and the orderbook's fast-path check (`capped_partner_volume_factors` in
+//! `shared::fee`) call [`capped_fee_factor`] from here. Both return no partner
+//! fees when the cap does not convert to a `Decimal`; [`partner_fees`] keeps
+//! that behaviour.
 
 use {crate::Fee, configs::fee_factor::FeeFactor, rust_decimal::Decimal};
 
@@ -12,11 +18,10 @@ pub enum PartnerFee {
     PriceImprovement { bps: u64, max_volume_bps: u64 },
 }
 
-/// The order's partner fees in app-data order, capped as the autopilot's
-/// `get_partner_fee` caps them. A fee past the cap stays, with a zero volume
-/// share or volume cap.
+/// The order's partner fees in app-data order, capped together at `cap` of
+/// the volume. A fee past the cap stays, with a zero volume share or volume
+/// cap.
 pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
-    // The autopilot's `get_partner_fee` falls back to no partner fees here.
     // `RuleSet::new` already checked the cap, so this cannot fail; storing the
     // cap as a `Decimal` would drop the branch.
     let Ok(cap) = Decimal::try_from(cap.get()) else {

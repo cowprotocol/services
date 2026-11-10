@@ -49,8 +49,20 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
 }
 
 /// A rule set as written: named lists, the rules in the order they are
-/// tried and the cap on partner fees. In TOML, `[lists]`, one `[[rule]]`
-/// table per rule and `[partner_fees]`.
+/// tried and the cap on partner fees.
+///
+/// ```toml
+/// [partner_fees]
+/// max_volume_bps = 100
+///
+/// [lists]
+/// stablecoins = ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
+///
+/// [[rule]]
+/// name = "Stable swaps"
+/// when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
+/// fee = "volume(0.3)"
+/// ```
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleSetDefinition {
@@ -85,7 +97,8 @@ impl Default for PartnerFees {
     }
 }
 
-/// Basis points of the volume on the fee grid, like a `volume` argument.
+/// Basis points of the volume as a fee factor. Finer than 0.01 bps is refused,
+/// not rounded, as for a `volume` argument.
 fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
     let bps = f64::deserialize(deserializer)?;
     Decimal::from_f64(bps)
