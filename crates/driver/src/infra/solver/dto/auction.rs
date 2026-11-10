@@ -5,7 +5,7 @@ use {
             Flashloan,
             competition::{
                 self,
-                order::{self, Side, fees, signature::Scheme},
+                order::{self, Side, signature::Scheme},
             },
             liquidity,
         },
@@ -97,28 +97,13 @@ pub fn new(
                 // to cover the fee.
                 //
                 // https://github.com/cowprotocol/services/issues/2440
-                order.protocol_fees.iter().for_each(|protocol_fee| {
-                    if let fees::FeePolicy::Volume { factor, .. } = protocol_fee {
-                        match order.side {
-                            Side::Buy => {
-                                // reduce sell amount by factor
-                                available.sell.amount = available
-                                    .sell
-                                    .amount
-                                    .apply_factor(1.0 / (1.0 + factor))
-                                    .unwrap_or_default();
-                            }
-                            Side::Sell => {
-                                // increase buy amount by factor
-                                available.buy.amount = available
-                                    .buy
-                                    .amount
-                                    .apply_factor(1.0 / (1.0 - factor))
-                                    .unwrap_or_default();
-                            }
-                        }
-                    }
-                });
+                let policies: Vec<protocol_fees::FeePolicy> =
+                    order.protocol_fees.iter().map(Into::into).collect();
+                let (side, limit) = match order.side {
+                    Side::Buy => (protocol_fees::Side::Buy, &mut available.sell.amount),
+                    Side::Sell => (protocol_fees::Side::Sell, &mut available.buy.amount),
+                };
+                *limit = protocol_fees::tighten_limit(&policies, side, limit.0).into();
                 solvers_dto::auction::Order {
                     uid: order.uid.into(),
                     sell_token: *available.sell.token,

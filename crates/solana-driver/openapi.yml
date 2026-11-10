@@ -204,6 +204,14 @@ components:
           $ref: "#/components/schemas/OrderUid"
         owner:
           $ref: "#/components/schemas/Address"
+        receiver:
+          description: |-
+            The wallet `buyTokenAccount` is the associated token account of,
+            when that is not the owner. A missing account at that address is
+            then created for this wallet, like the owner's own. Absent when
+            the owner receives the payout.
+          allOf:
+            - $ref: "#/components/schemas/Address"
         sellToken:
           $ref: "#/components/schemas/Address"
         buyToken:
@@ -221,8 +229,9 @@ components:
         buyTokenAccount:
           description: |-
             The token account the settlement pays out to. When it does not
-            exist yet and is the owner's associated token account, the
-            settlement creates it and the solver pays its rent. An account
+            exist yet and is the associated token account of the owner, or of
+            `receiver` when named, the settlement creates it and the solver
+            pays its rent. An account
             that is absent and cannot be created leaves the order out of the
             auction sent to the engine. For native SOL it is the wallet
             receiving the lamports, and a payout to a missing wallet creates
@@ -276,6 +285,13 @@ components:
             judging a solution.
           allOf:
             - $ref: "#/components/schemas/Transaction"
+        protocolFees:
+          description: |-
+            The protocol fee policies the driver takes from the order's fills,
+            in list order. The engine never sees them. Defaults to none.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeePolicy"
       required:
         - uid
         - owner
@@ -290,6 +306,89 @@ components:
         - partiallyFillable
         - orderPda
         - appData
+    FeePolicy:
+      description: |-
+        A protocol fee policy, keyed by its kind. A factor outside `[0, 1)`
+        fails the request with `InvalidFeePolicy`.
+      type: object
+      oneOf:
+        - $ref: "#/components/schemas/SurplusFee"
+        - $ref: "#/components/schemas/PriceImprovement"
+        - $ref: "#/components/schemas/VolumeFee"
+    SurplusFee:
+      type: object
+      properties:
+        surplus:
+          type: object
+          properties:
+            factor:
+              description: The share of the surplus over the order's limit price.
+              type: number
+              example: 0.5
+            maxVolumeFactor:
+              description: Never take more than this share of the order's volume.
+              type: number
+              example: 0.01
+          required:
+            - factor
+            - maxVolumeFactor
+      required:
+        - surplus
+    PriceImprovement:
+      type: object
+      properties:
+        priceImprovement:
+          type: object
+          properties:
+            factor:
+              description: The share of the improvement over the quote.
+              type: number
+              example: 0.5
+            maxVolumeFactor:
+              description: Never take more than this share of the order's volume.
+              type: number
+              example: 0.01
+            quote:
+              $ref: "#/components/schemas/Quote"
+          required:
+            - factor
+            - maxVolumeFactor
+            - quote
+      required:
+        - priceImprovement
+    VolumeFee:
+      type: object
+      properties:
+        volume:
+          type: object
+          properties:
+            factor:
+              description: |-
+                The share of the order's volume: the buy amount of a sell
+                order, the sell amount of a buy order.
+              type: number
+              example: 0.001
+          required:
+            - factor
+      required:
+        - volume
+    Quote:
+      description: The quote a price improvement policy measures the fill against.
+      type: object
+      properties:
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        fee:
+          $ref: "#/components/schemas/TokenAmount"
+        solver:
+          $ref: "#/components/schemas/Address"
+      required:
+        - sellAmount
+        - buyAmount
+        - fee
+        - solver
     SolveRequest:
       description: Request to the `/solve` endpoint.
       type: object
@@ -435,6 +534,7 @@ components:
         - FailedToSubmit
         - SettlementReverted
         - InvalidCreation
+        - InvalidFeePolicy
         - FailedToCreate
         - QuoteSameTokens
         - QuotingFailed
