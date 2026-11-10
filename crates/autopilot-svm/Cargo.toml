@@ -44,6 +44,7 @@ serde_with = { workspace = true }
 solana-sdk = { workspace = true }
 solana-system-interface = { workspace = true }
 solana-token = { workspace = true }
+solana-transaction-fee = { workspace = true }
 spl-associated-token-account-interface = { workspace = true }
 spl-token-2022-interface = { workspace = true }
 spl-token-interface = { workspace = true }

@@ -124,6 +124,7 @@ mod tests {
             sell_balance: None,
             quote,
             protocol_fees: Vec::new(),
+            creation_fee: None,
         }
     }
 

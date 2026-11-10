@@ -66,7 +66,9 @@ pub struct OrderRow {
     pub app_data: ByteArray<32>,
     pub created_on_chain: bool,
     pub executed: BigDecimal,
-    pub creation: Option<Vec<u8>>,
+    /// The stored creation transaction of a sponsored order, which stays
+    /// after the order is created on chain.
+    pub presigned_transaction: Option<Vec<u8>>,
     pub quote_sell_amount: Option<BigDecimal>,
     pub quote_buy_amount: Option<BigDecimal>,
     pub quote_solver: Option<ByteArray<32>>,
@@ -94,7 +96,7 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
            WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
            ELSE COALESCE(p.amount_received, 0)
        END AS executed,
-       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation,
+       o.presigned_transaction,
        q.sell_amount AS quote_sell_amount,
        q.buy_amount AS quote_buy_amount,
        q.solver AS quote_solver
@@ -720,6 +722,14 @@ impl TryFrom<OrderRow> for Order {
     type Error = anyhow::Error;
 
     fn try_from(row: OrderRow) -> Result<Self> {
+        let executed = to_amount(&row.executed).context("executed")?;
+        // The first fill repays the fee, so only an unfilled sponsored order
+        // owes it, whether its creation is pending or landed on its own.
+        let creation_fee = row
+            .presigned_transaction
+            .as_deref()
+            .filter(|_| executed == 0)
+            .and_then(creation_fee);
         Ok(Order {
             uid: IntentHash(row.uid.0),
             owner: Pubkey(row.owner.0),
@@ -739,8 +749,8 @@ impl TryFrom<OrderRow> for Order {
             order_pda: Pubkey(row.order_pda.0),
             app_data: AppData(row.app_data.0),
             created_on_chain: row.created_on_chain,
-            executed: to_amount(&row.executed).context("executed")?,
-            creation: row.creation,
+            executed,
+            creation: row.presigned_transaction.filter(|_| !row.created_on_chain),
             sell_balance: None,
             quote: match (
                 row.quote_sell_amount,
@@ -761,8 +771,20 @@ impl TryFrom<OrderRow> for Order {
                 _ => None,
             },
             protocol_fees: Vec::new(),
+            creation_fee,
         })
     }
+}
+
+/// What the funder pays for a stored creation transaction, in lamports.
+/// `None` for one that cannot be priced, which leaves the order uncharged.
+fn creation_fee(creation: &[u8]) -> Option<u64> {
+    let transaction: solana_sdk::transaction::VersionedTransaction = bincode::deserialize(creation)
+        .inspect_err(|err| tracing::warn!(?err, "stored creation does not decode"))
+        .ok()?;
+    solana_transaction_fee::max_fee_lamports(&transaction.message)
+        .inspect_err(|err| tracing::warn!(err, "stored creation cannot be priced"))
+        .ok()
 }
 
 /// Token amounts are `numeric(20,0)` in the database, u64 on chain.
@@ -905,11 +927,58 @@ mod tests {
             app_data: ByteArray([0; 32]),
             created_on_chain: true,
             executed: BigDecimal::from(0u64),
-            creation: None,
+            presigned_transaction: None,
             quote_sell_amount: None,
             quote_buy_amount: None,
             quote_solver: None,
         }
+    }
+
+    /// A sponsored order owes the fee of its stored creation, two signatures
+    /// here, until its first fill. The creation itself is only sent while
+    /// the order is not on chain.
+    #[test]
+    fn the_creation_fee_is_owed_until_the_first_fill() {
+        use solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            message::{Message, VersionedMessage},
+            pubkey::Pubkey,
+            signature::Signature,
+            transaction::VersionedTransaction,
+        };
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[],
+            vec![AccountMeta::new(Pubkey::new_unique(), true)],
+        );
+        let message = Message::new(&[instruction], Some(&Pubkey::new_unique()));
+        let creation = bincode::serialize(&VersionedTransaction {
+            signatures: vec![Signature::default(); 2],
+            message: VersionedMessage::Legacy(message),
+        })
+        .unwrap();
+        let pending = super::OrderRow {
+            created_on_chain: false,
+            presigned_transaction: Some(creation.clone()),
+            ..conversion_row()
+        };
+        let created = super::OrderRow {
+            created_on_chain: true,
+            ..pending.clone()
+        };
+        let filled = super::OrderRow {
+            executed: BigDecimal::from(1u64),
+            ..created.clone()
+        };
+        let order = |row| super::Order::try_from(row).unwrap();
+        let pending = order(pending);
+        assert_eq!(pending.creation, Some(creation));
+        assert_eq!(pending.creation_fee, Some(10_000));
+        let created = order(created);
+        assert_eq!(created.creation, None);
+        assert_eq!(created.creation_fee, Some(10_000));
+        assert_eq!(order(filled).creation_fee, None);
+        assert_eq!(order(conversion_row()).creation_fee, None);
     }
 
     #[test]
@@ -1234,7 +1303,10 @@ WHERE uid = $1
             .map(|order| order.receiver.map(|receiver| receiver.0))
             .collect();
         assert_eq!(receivers, vec![None, Some([0x23; 32]), None, None, None]);
-        let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
+        let creations: Vec<_> = orders
+            .iter()
+            .map(|order| order.presigned_transaction.clone())
+            .collect();
         assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
         // Only the first order carries its linked quote.
         let quotes: Vec<_> = orders

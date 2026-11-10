@@ -60,6 +60,10 @@ pub struct Order {
     /// The protocol fee policies the driver applies to the order's fills, in
     /// order.
     pub protocol_fees: Vec<FeePolicy>,
+    /// The lamports the funder paid for the creation transaction of a
+    /// sponsored order, which the order's first fill repays. `None` once the
+    /// order has a fill, and for an order the owner created on chain.
+    pub creation_fee: Option<u64>,
 }
 
 impl Order {
@@ -213,6 +217,7 @@ mod tests {
             sell_balance: None,
             quote: None,
             protocol_fees: Vec::new(),
+            creation_fee: None,
         }
     }
 

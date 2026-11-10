@@ -1583,6 +1583,7 @@ dependencies = [
  "solana-system-interface 3.2.0",
  "solana-testlib",
  "solana-token",
+ "solana-transaction-fee",
  "spl-associated-token-account-interface",
  "spl-token-2022-interface 2.1.0",
  "spl-token-interface 2.0.0",

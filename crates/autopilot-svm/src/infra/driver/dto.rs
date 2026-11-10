@@ -90,6 +90,11 @@ pub struct Order {
     /// in order. An empty list is omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub protocol_fees: Vec<FeePolicy>,
+    /// The lamports the funder paid to create a sponsored order that has no
+    /// fill yet. Absent for any other order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub creation_fee: Option<u64>,
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
@@ -184,6 +189,7 @@ impl From<&auction::Order> for Order {
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
             protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
+            creation_fee: order.creation_fee,
         }
     }
 }
@@ -273,6 +279,7 @@ mod tests {
             sell_balance: Some(500),
             quote: None,
             protocol_fees: Vec::new(),
+            creation_fee: None,
         }
     }
 
@@ -331,6 +338,15 @@ mod tests {
         };
         let json = serde_json::to_value(&sponsored).unwrap();
         assert_eq!(json["orders"][0]["creation"], "AQID");
+        // Only a sponsored order without a fill sends a creation fee.
+        assert!(json["orders"][0].get("creationFee").is_none());
+        let charged = Order {
+            creation_fee: Some(10_000),
+            ..Order::from(&order())
+        };
+        let wire = serde_json::to_value(&charged).unwrap();
+        assert_eq!(wire["creationFee"], "10000");
+        assert_eq!(serde_json::from_value::<Order>(wire).unwrap(), charged);
         // An order paid out to its owner sends no receiver, one paid out to
         // another wallet sends it as base58, precomputed for 32 bytes of 0x23.
         assert!(json["orders"][0].get("receiver").is_none());
