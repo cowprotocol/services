@@ -37,6 +37,8 @@ pub struct Request {
     body: bytes::Bytes,
     content_encoding: Option<HeaderValue>,
     deadline: chrono::DateTime<chrono::Utc>,
+    /// Whether to log how long the body takes to upload.
+    measure_upload: bool,
 }
 
 impl Request {
@@ -89,6 +91,7 @@ impl Request {
             auction_id,
             content_encoding: None,
             deadline,
+            measure_upload: true,
         }
     }
 
@@ -112,6 +115,14 @@ impl Request {
 
     pub fn body_size(&self) -> usize {
         self.body.len()
+    }
+
+    /// Sets whether to log how long the body takes to upload.
+    pub fn measure_upload(self, measure_upload: bool) -> Self {
+        Self {
+            measure_upload,
+            ..self
+        }
     }
 
     pub fn time_until_deadline(&self) -> Duration {
@@ -239,8 +250,13 @@ fn tokens(auction: &domain::Auction, trusted_tokens: &HashSet<Address>) -> Vec<T
 impl InjectIntoHttpRequest for Request {
     fn inject(&self, request: RequestBuilder) -> RequestBuilder {
         let body = futures::stream::iter([Ok::<_, Infallible>(self.body.clone())]);
+        let body = if self.measure_upload {
+            reqwest::Body::wrap_stream(Measured::new(body))
+        } else {
+            reqwest::Body::wrap_stream(body)
+        };
         let request = request
-            .body(reqwest::Body::wrap_stream(Measured::new(body)))
+            .body(body)
             // announce which auction this request is for in the
             // headers to help the driver detect duplicated
             // `/solve` requests before streaming the body
