@@ -216,6 +216,7 @@ mod tests {
             creations: std::collections::HashMap::new(),
             native_prices: std::collections::HashMap::new(),
             fee_policies: std::collections::HashMap::new(),
+            creation_fees: std::collections::HashMap::new(),
         };
 
         let solutions = solver

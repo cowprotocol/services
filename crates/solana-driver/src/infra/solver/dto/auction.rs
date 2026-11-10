@@ -536,6 +536,7 @@ mod tests {
         let order = domain_order(Side::Sell);
         let auction = domain::Auction {
             fee_policies: HashMap::from([(order.uid, vec![FeePolicy::Volume { factor: 0.001 }])]),
+            creation_fees: HashMap::new(),
             ..domain_auction(vec![order])
         };
         let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &Charge::default());
@@ -551,6 +552,7 @@ mod tests {
             creations: HashMap::new(),
             native_prices: HashMap::new(),
             fee_policies: HashMap::new(),
+            creation_fees: HashMap::new(),
         }
     }
 

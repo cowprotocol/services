@@ -1,8 +1,10 @@
 //! The execution costs the driver cuts from the fills it reports.
 //!
 //! A settlement costs its payer the network fee of its transaction and the
-//! rent of every buy token account it creates. A solver whose `fee-handler`
-//! is the driver has those lamports cut from every fill its engine reports,
+//! rent of every buy token account it creates, and a sponsored order cost
+//! the funder the fee of its creation transaction. A solver whose
+//! `fee-handler` is the driver has those lamports cut from every fill its
+//! engine reports,
 //! converted into the order's limit-leg token at the auction's native prices:
 //! a sell order delivers less buy token and a buy order pulls more sell token
 //! than the route achieved. The difference stays where the solver fee's
@@ -69,6 +71,9 @@ pub struct ExecutionCost<'a> {
     /// The lamports the settlement pays to create each order's buy token
     /// account, by uid. An order not listed needs no account created.
     pub rent: &'a HashMap<OrderUid, u64>,
+    /// The lamports the funder paid to create each sponsored order that has
+    /// no fill yet, by uid.
+    pub creation_fees: &'a HashMap<OrderUid, u64>,
     /// Lamports per 10^9 atoms of each auction token.
     pub native_prices: &'a HashMap<Pubkey, u64>,
 }
@@ -90,13 +95,14 @@ pub enum Rejected {
 impl ExecutionCost<'_> {
     /// The cut of each order a fill can be charged for: the atoms of its
     /// limit-leg token, the buy token of a sell order and the sell token of
-    /// a buy order, worth its rent plus `network_fee` lamports. An order
-    /// whose limit-leg token has no positive price is left out.
+    /// a buy order, worth its rent, its creation fee and `network_fee`
+    /// lamports. An order whose limit-leg token has no positive price is left
+    /// out.
     pub fn cuts(&self, orders: &[Order], network_fee: u64) -> HashMap<OrderUid, u64> {
         orders
             .iter()
             .filter_map(|order| {
-                let cut = self.cut(order, self.rent(order) + u128::from(network_fee));
+                let cut = self.cut(order, self.own_cost(order) + u128::from(network_fee));
                 if cut.is_none() {
                     tracing::debug!(
                         order = %order.uid,
@@ -108,12 +114,12 @@ impl ExecutionCost<'_> {
             .collect()
     }
 
-    /// Cuts every trade of `solution` by its order's rent and its share of
-    /// `network_fee`, the settlement's network fee split evenly over the
-    /// trades and rounded up. An order filled by several trades pays its
-    /// rent on the first. One failing trade rejects the whole solution, left
-    /// untouched. `Trade::solver_fee` carries the solver fee only, not the
-    /// cut.
+    /// Cuts every trade of `solution` by its order's rent and creation fee
+    /// and its share of `network_fee`, the settlement's network fee split
+    /// evenly over the trades and rounded up. An order filled by several
+    /// trades pays its rent and creation fee on the first. One failing trade
+    /// rejects the whole solution, left untouched. `Trade::solver_fee` carries
+    /// the solver fee only, not the cut.
     pub fn apply(
         &self,
         solution: &mut Solution,
@@ -124,7 +130,7 @@ impl ExecutionCost<'_> {
             return Ok(());
         };
         let fee_share = network_fee.div_ceil(trades.get());
-        let mut rent_charged = HashSet::new();
+        let mut own_cost_charged = HashSet::new();
         let solution_id = solution.id;
         let trades = solution
             .trades
@@ -134,12 +140,12 @@ impl ExecutionCost<'_> {
                     .get(&trade.order_uid)
                     .copied()
                     .ok_or(Rejected::UnknownOrder(trade.order_uid))?;
-                let rent = if rent_charged.insert(order.uid) {
-                    self.rent(order)
+                let own_cost = if own_cost_charged.insert(order.uid) {
+                    self.own_cost(order)
                 } else {
                     0
                 };
-                let lamports = rent + u128::from(fee_share);
+                let lamports = own_cost + u128::from(fee_share);
                 let atoms = self
                     .cut(order, lamports)
                     .ok_or(Rejected::MissingPrice(order.uid))?;
@@ -157,8 +163,12 @@ impl ExecutionCost<'_> {
         Ok(())
     }
 
-    fn rent(&self, order: &Order) -> u128 {
-        u128::from(self.rent.get(&order.uid).copied().unwrap_or(0))
+    /// The lamports only `order` pays: its rent and its creation fee.
+    fn own_cost(&self, order: &Order) -> u128 {
+        let lamports = |costs: &HashMap<OrderUid, u64>| {
+            u128::from(costs.get(&order.uid).copied().unwrap_or(0))
+        };
+        lamports(self.rent) + lamports(self.creation_fees)
     }
 
     /// The atoms of `order`'s limit-leg token worth `lamports`, rounded up.
@@ -284,8 +294,11 @@ mod tests {
         rent: &'a HashMap<OrderUid, u64>,
         prices: &'a HashMap<Pubkey, u64>,
     ) -> ExecutionCost<'a> {
+        static NO_CREATION_FEES: std::sync::LazyLock<HashMap<OrderUid, u64>> =
+            std::sync::LazyLock::new(HashMap::new);
         ExecutionCost {
             rent,
+            creation_fees: &NO_CREATION_FEES,
             native_prices: prices,
         }
     }
@@ -379,6 +392,43 @@ mod tests {
             .unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
         assert_eq!(sol.trades[1].executed_buy, 1_998);
+    }
+
+    /// A sponsored order repays the 10000 lamports of its creation with its
+    /// rent and the network fee: 2000 + 5000 + 10000 lamports are 34000 atoms
+    /// off the buy leg. A fill the limit cannot absorb that from is rejected.
+    /// A second trade of the order pays its share of the network fee alone.
+    #[test]
+    fn a_sponsored_order_repays_its_creation_fee_once() {
+        let uid = OrderUid([1; 32]);
+        let rent = HashMap::from([(uid, 2_000)]);
+        let creation_fees = HashMap::from([(uid, 10_000)]);
+        let prices = prices();
+        let cost = ExecutionCost {
+            creation_fees: &creation_fees,
+            ..cost(&rent, &prices)
+        };
+        let orders = [order(1, Side::Sell, 1_000, 1_000)];
+        assert_eq!(cost.cuts(&orders, 5_000)[&uid], 34_000);
+
+        let mut sol = solution(vec![trade(1, 1_000, 35_000)]);
+        cost.apply(&mut sol, &self::orders(&orders), 5_000).unwrap();
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(
+            cost.apply(
+                &mut solution(vec![trade(1, 1_000, 34_999)]),
+                &self::orders(&orders),
+                5_000
+            ),
+            Err(Rejected::LimitPrice(uid))
+        );
+
+        // 2500 lamports of network fee each: 29000 atoms off the first buy
+        // leg with the rent and the creation fee, 5000 off the second.
+        let mut sol = solution(vec![trade(1, 500, 30_000), trade(1, 500, 30_000)]);
+        cost.apply(&mut sol, &self::orders(&orders), 5_000).unwrap();
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(sol.trades[1].executed_buy, 25_000);
     }
 
     /// The limit leg sent to the engine, the signed limit moved by the cut,

@@ -292,6 +292,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        creationFee:
+          description: |-
+            The lamports the funder paid for the creation transaction of a
+            sponsored order that has no fill yet. A driver that handles the
+            fees cuts them from the order's first fill, with the buy token
+            account rent. Absent for any other order.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - uid
         - owner

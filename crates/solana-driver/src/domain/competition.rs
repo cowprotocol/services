@@ -200,6 +200,7 @@ impl Competition {
         let auction = Arc::new(auction);
         let costs = ExecutionCost {
             rent: &buy_token_accounts.missing,
+            creation_fees: &auction.creation_fees,
             native_prices: &auction.native_prices,
         };
         let orders = orders_by_uid(&auction.orders);
@@ -484,6 +485,7 @@ impl Competition {
             FeeHandler::Driver => {
                 let costs = ExecutionCost {
                     rent: buy_token_accounts.map_or(&no_rent, |accounts| &accounts.missing),
+                    creation_fees: &auction.creation_fees,
                     native_prices: &auction.native_prices,
                 };
                 let network_fee =
