@@ -31,12 +31,11 @@ pub enum Fee {
 
 const KIND: &str = "kind";
 
-/// Grid units per basis point. Every argument must land on the
-/// [`FeeFactor::HIGH_PRECISION_SCALE`] grid; finer values are rejected, not
-/// rounded.
-const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
-/// Grid units per percent.
-const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
+/// A fee factor is a whole number of steps of 1e-6 of the volume (the "grid",
+/// [`FeeFactor::HIGH_PRECISION_SCALE`] steps per 1). Steps per basis point.
+pub(crate) const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
+/// Steps per percent.
+pub(crate) const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
 
 /// Binds the fee functions. Each returns a tagged map that
 /// [`fees_from_value`] turns into a [`Fee`] after the rule has run.
@@ -113,19 +112,8 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
                 ));
             }
         };
-        let scaled = number
-            .checked_mul(Decimal::from(grid_units))
-            .ok_or_else(out_of_range)?;
-        if !scaled.is_integer() {
-            return Err(format!(
-                "`{kind}` argument `{name}` = {number} is finer than the fee precision (1e-6 of \
-                 the volume)"
-            ));
-        }
-        scaled
-            .to_u64()
-            .and_then(|units| FeeFactor::from_high_precision(units).ok())
-            .ok_or_else(out_of_range)
+        factor_on_grid(number, grid_units)
+            .map_err(|error| format!("`{kind}` argument `{name}` = {number} {error}"))
     };
     match kind.as_str() {
         "volume" => Ok(Fee::Volume {
@@ -142,6 +130,25 @@ fn fee_from_value(value: &Value) -> Result<Fee, String> {
         other => Err(format!("unknown fee kind `{other}`")),
     }
 }
+
+/// `number` in the unit `grid_units` sizes ([`PERCENT`], [`BPS`]) as a fee
+/// factor: `0.3` with `BPS` is 30 steps of 1e-6, i.e. 0.00003. A value that
+/// is not a whole number of steps is refused, not rounded.
+pub(crate) fn factor_on_grid(number: Decimal, grid_units: u64) -> Result<FeeFactor, &'static str> {
+    let scaled = number
+        .checked_mul(Decimal::from(grid_units))
+        .ok_or(OUT_OF_RANGE)?;
+    if !scaled.is_integer() {
+        return Err("is finer than the fee precision (1e-6 of the volume)");
+    }
+    scaled
+        .to_u64()
+        .and_then(|units| FeeFactor::from_high_precision(units).ok())
+        .ok_or(OUT_OF_RANGE)
+}
+
+/// Negative, 100% of the volume or more, or not a finite number.
+pub(crate) const OUT_OF_RANGE: &str = "is out of range";
 
 #[cfg(test)]
 mod tests {

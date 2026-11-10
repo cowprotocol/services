@@ -139,7 +139,7 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(bps) / Decimal::from(MAX_BPS);
                         // Create policy and update accumulator
-                        let factor = shared::fee::capped_fee_factor(
+                        let factor = fee_engine::capped_fee_factor(
                             fee_decimal,
                             max_partner_fee,
                             &mut accumulated,
@@ -155,7 +155,7 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = shared::fee::capped_fee_factor(
+                        let max_volume_factor = fee_engine::capped_fee_factor(
                             fee_decimal,
                             max_partner_fee,
                             &mut accumulated,
@@ -177,7 +177,7 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = shared::fee::capped_fee_factor(
+                        let max_volume_factor = fee_engine::capped_fee_factor(
                             fee_decimal,
                             max_partner_fee,
                             &mut accumulated,
