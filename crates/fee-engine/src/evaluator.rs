@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        fee::{self, Fee},
+        fee::{self, Fee, FeeError},
         order_view::{self, OrderView},
         partner_fee,
         rules::{Field, Rule, RuleSet},
@@ -61,7 +61,7 @@ pub enum RuleError {
     #[error("returned {0}, not a bool")]
     NotABool(ValueType),
     #[error("{0}")]
-    NotAFee(String),
+    NotAFee(#[from] FeeError),
 }
 
 /// A [`RuleSet`] with `now` and its lists bound, ready to evaluate orders.
@@ -146,7 +146,7 @@ impl<'r> Evaluator<'r> {
             .fee
             .execute(context)
             .map_err(|err| (Field::Fee, err.into()))?;
-        fee::fees_from_value(&value).map_err(|message| (Field::Fee, RuleError::NotAFee(message)))
+        fee::fees_from_value(&value).map_err(|error| (Field::Fee, error.into()))
     }
 }
 
