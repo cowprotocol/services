@@ -1,0 +1,12 @@
+[package]
+name = "solana-transaction-fee"
+version = "0.1.0"
+edition = "2024"
+description = "What a Solana transaction costs its fee payer, read from the transaction itself"
+
+[dependencies]
+solana-compute-budget-interface = { workspace = true }
+solana-sdk = { workspace = true }
+
+[lints]
+workspace = true
