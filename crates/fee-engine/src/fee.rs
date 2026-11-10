@@ -118,9 +118,9 @@ impl Argument {
         name: "bps",
         grid_units: BPS,
     };
-    const MAX_VOLUME: Self = Self {
-        name: "max_volume",
-        grid_units: PERCENT,
+    const MAX_VOLUME_BPS: Self = Self {
+        name: "max_volume_bps",
+        grid_units: BPS,
     };
     const SHARE: Self = Self {
         name: "share",
@@ -145,7 +145,10 @@ pub(crate) fn register_fee_functions(context: &mut Context) {
             |share: Value, max_volume: Value| {
                 fee_value(
                     FeeKind::Surplus,
-                    [(Argument::SHARE, share), (Argument::MAX_VOLUME, max_volume)],
+                    [
+                        (Argument::SHARE, share),
+                        (Argument::MAX_VOLUME_BPS, max_volume),
+                    ],
                 )
             },
         )
@@ -156,7 +159,10 @@ pub(crate) fn register_fee_functions(context: &mut Context) {
             |share: Value, max_volume: Value| {
                 fee_value(
                     FeeKind::PriceImprovement,
-                    [(Argument::SHARE, share), (Argument::MAX_VOLUME, max_volume)],
+                    [
+                        (Argument::SHARE, share),
+                        (Argument::MAX_VOLUME_BPS, max_volume),
+                    ],
                 )
             },
         )
@@ -215,14 +221,14 @@ impl Fee {
     fn surplus(args: Arguments<'_>) -> Result<Self, FeeError> {
         Ok(Fee::Surplus {
             factor: args.factor(Argument::SHARE)?,
-            max_volume_factor: args.factor(Argument::MAX_VOLUME)?,
+            max_volume_factor: args.factor(Argument::MAX_VOLUME_BPS)?,
         })
     }
 
     fn price_improvement(args: Arguments<'_>) -> Result<Self, FeeError> {
         Ok(Fee::PriceImprovement {
             factor: args.factor(Argument::SHARE)?,
-            max_volume_factor: args.factor(Argument::MAX_VOLUME)?,
+            max_volume_factor: args.factor(Argument::MAX_VOLUME_BPS)?,
         })
     }
 }
@@ -331,14 +337,14 @@ mod tests {
             }]
         );
         assert_eq!(
-            evaluate("surplus(50, 1)").unwrap(),
+            evaluate("surplus(50, 100)").unwrap(),
             vec![Fee::Surplus {
                 factor: factor(0.5),
                 max_volume_factor: factor(0.01)
             }]
         );
         assert_eq!(
-            evaluate("price_improvement(30, 0.5)").unwrap(),
+            evaluate("price_improvement(30, 50)").unwrap(),
             vec![Fee::PriceImprovement {
                 factor: factor(0.3),
                 max_volume_factor: factor(0.005)
@@ -350,7 +356,7 @@ mod tests {
     #[test]
     fn stacks_a_list_and_accepts_cel_arguments() {
         assert_eq!(
-            evaluate("[surplus(30, 1), volume(1 + 1)]").unwrap(),
+            evaluate("[surplus(30, 100), volume(1 + 1)]").unwrap(),
             vec![
                 Fee::Surplus {
                     factor: factor(0.3),
@@ -374,7 +380,7 @@ mod tests {
         assert_eq!(volume("volume(0.3)").to_high_precision(), 30);
         assert_eq!(volume("volume(0.33)").to_high_precision(), 33);
         assert_eq!(
-            evaluate("surplus(50, 0.98)").unwrap(),
+            evaluate("surplus(50, 98)").unwrap(),
             vec![Fee::Surplus {
                 factor: factor(0.5),
                 max_volume_factor: factor(0.0098)
@@ -385,14 +391,14 @@ mod tests {
     #[test]
     fn accepts_every_argument_down_to_the_grid() {
         assert_eq!(
-            evaluate("price_improvement(50.5, 0.9875)").unwrap(),
+            evaluate("price_improvement(50.5, 98.75)").unwrap(),
             vec![Fee::PriceImprovement {
                 factor: factor(0.505),
                 max_volume_factor: factor(0.009875)
             }]
         );
         assert_eq!(
-            evaluate("surplus(0.0001, 0.0001)").unwrap(),
+            evaluate("surplus(0.0001, 0.01)").unwrap(),
             vec![Fee::Surplus {
                 factor: factor(0.000001),
                 max_volume_factor: factor(0.000001)
@@ -404,9 +410,9 @@ mod tests {
     fn rejects_arguments_finer_than_the_grid() {
         for source in [
             "volume(0.333)",
-            "surplus(50.00001, 1)",
-            "surplus(50, 0.98765)",
-            "price_improvement(0.00005, 1)",
+            "surplus(50.00001, 100)",
+            "surplus(50, 98.765)",
+            "price_improvement(0.00005, 100)",
         ] {
             assert!(
                 matches!(

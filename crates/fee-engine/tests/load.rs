@@ -151,7 +151,7 @@ fn loads_the_tables_of_a_host_config() {
             .collect()
     };
     let rules = load_rules_toml(tables.clone()).unwrap();
-    assert_eq!(rules.max_partner_fee().get(), 0.01);
+    assert_eq!(rules.max_partner_fee().get(), 0.05);
     assert_eq!(names(rules), names(load_rules_from_str(RULES).unwrap()));
 
     assert!(

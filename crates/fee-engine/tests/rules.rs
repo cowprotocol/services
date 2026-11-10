@@ -46,7 +46,7 @@ fn rules() -> RuleSet {
             "order.sellToken in stablecoins && order.buyToken in stablecoins",
             "volume(10)",
         ),
-        rule("Default", "true", "surplus(50, 1)"),
+        rule("Default", "true", "surplus(50, 100)"),
     ];
     let lists = BTreeMap::from([
         (
