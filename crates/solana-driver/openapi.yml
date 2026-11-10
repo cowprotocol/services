@@ -295,9 +295,9 @@ components:
         creationFee:
           description: |-
             The lamports the funder paid for the creation transaction of a
-            sponsored order that has no fill yet. A driver that handles the
-            fees cuts them from the order's first fill, with the buy token
-            account rent. Absent for any other order.
+            sponsored order that has no fill yet. The driver cuts them from
+            the order's first fill for every solver, whichever side handles
+            the settlement's costs. Absent for any other order.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
       required:

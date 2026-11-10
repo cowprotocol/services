@@ -2,8 +2,10 @@
 //!
 //! A settlement costs its payer the network fee of its transaction and the
 //! rent of every buy token account it creates, and a sponsored order cost
-//! the funder the fee of its creation transaction. A solver whose
-//! `fee-handler` is the driver has those lamports cut from every fill its
+//! the funder the fee of its creation transaction. The creation fee is cut
+//! from the order's first fill for every solver: the funder paid it, so no
+//! engine has a reason to price it in. A solver whose `fee-handler` is the
+//! driver has the settlement's lamports cut as well from every fill its
 //! engine reports,
 //! converted into the order's limit-leg token at the auction's native prices:
 //! a sell order delivers less buy token and a buy order pulls more sell token
@@ -41,10 +43,13 @@ use {
 #[derive(Clone, Debug)]
 pub enum Charge {
     /// The engine: it is sent the signed limits tightened by the volume fee
-    /// policies, and the orders whose buy token account the settlement
-    /// creates.
+    /// policies and moved by the creation fee the driver cuts from the fill,
+    /// and the orders whose buy token account the settlement creates.
     Engine {
         missing_buy_token_accounts: HashSet<OrderUid>,
+        /// The atoms the driver cuts from an order's fill for its creation
+        /// fee, by uid. An order not listed is sent with its limit unmoved.
+        creation_fee_cuts: HashMap<OrderUid, u64>,
     },
     /// The driver: the engine is sent each order's limit leg tightened by
     /// the volume fee policies, moved by the atoms the driver cuts from its
@@ -60,6 +65,7 @@ impl Default for Charge {
     fn default() -> Self {
         Self::Engine {
             missing_buy_token_accounts: HashSet::new(),
+            creation_fee_cuts: HashMap::new(),
         }
     }
 }

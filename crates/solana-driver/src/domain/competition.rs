@@ -203,6 +203,13 @@ impl Competition {
             creation_fees: &auction.creation_fees,
             native_prices: &auction.native_prices,
         };
+        // The engine prices the settlement's costs for its own solver, but
+        // the funder paid the creation fee, so the driver cuts that one.
+        let no_rent = HashMap::new();
+        let creation_costs = ExecutionCost {
+            rent: &no_rent,
+            ..costs
+        };
         let orders = orders_by_uid(&auction.orders);
         let window_ms = window.as_millis() as u64;
         let mut kept = Vec::new();
@@ -332,6 +339,16 @@ impl Competition {
                     self.count_solution("cut_rejected");
                     continue;
                 }
+            } else if let Err(reason) = creation_costs.apply(&mut solution, &orders, 0) {
+                tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    orders = ?order_uids,
+                    %reason,
+                    "dropping solution the creation fee cannot be cut from"
+                );
+                self.count_solution("cut_rejected");
+                continue;
             }
             if let Err(reason) = protocol_fee::apply(&auction.fee_policies, &mut solution, &orders)
             {
@@ -461,7 +478,8 @@ impl Competition {
     }
 
     /// Send the auction to the solver engine and return its deduplicated
-    /// solutions without caching them. When the solver's fee handler is the
+    /// solutions without caching them. The limits sent to the engine are
+    /// always moved by the creation fee. When the solver's fee handler is the
     /// driver, the limits sent to the engine are moved by the execution cost
     /// at the policy's default compute units over `reserve_fees`, the
     /// cluster-wide fees, and every fill is tightened by the solver fee; the
@@ -481,6 +499,12 @@ impl Competition {
                 missing_buy_token_accounts: buy_token_accounts
                     .map(|accounts| accounts.missing.keys().copied().collect())
                     .unwrap_or_default(),
+                creation_fee_cuts: ExecutionCost {
+                    rent: &no_rent,
+                    creation_fees: &auction.creation_fees,
+                    native_prices: &auction.native_prices,
+                }
+                .cuts(&auction.orders, 0),
             },
             FeeHandler::Driver => {
                 let costs = ExecutionCost {

@@ -217,7 +217,12 @@ impl Auction {
                     let (cut, fee, missing_buy_token_account) = match charge {
                         Charge::Engine {
                             missing_buy_token_accounts,
-                        } => (0, None, missing_buy_token_accounts.contains(&order.uid)),
+                            creation_fee_cuts,
+                        } => (
+                            creation_fee_cuts.get(&order.uid).copied().unwrap_or(0),
+                            None,
+                            missing_buy_token_accounts.contains(&order.uid),
+                        ),
                         Charge::Driver { cuts, fee } => (*cuts.get(&order.uid)?, *fee, false),
                     };
                     let policies = auction
@@ -557,7 +562,8 @@ mod tests {
     }
 
     /// Charging the engine sends every order at its signed limit, flagging
-    /// the ones whose buy token account is missing. Charging the driver sends
+    /// the ones whose buy token account is missing, and moves a limit only by
+    /// the order's creation fee. Charging the driver sends
     /// only the orders with a cut, each at its moved limit and unflagged.
     #[test]
     fn the_charge_decides_the_orders_sent_their_limits_and_their_flags() {
@@ -570,10 +576,12 @@ mod tests {
 
         let engine = Charge::Engine {
             missing_buy_token_accounts: [order.uid].into(),
+            creation_fee_cuts: [(order.uid, 50)].into(),
         };
         let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine);
         assert_eq!(sent.orders.len(), 2);
-        assert_eq!(sent.orders[0].buy_amount, 1_000);
+        assert_eq!(sent.orders[0].buy_amount, 1_050);
+        assert_eq!(sent.orders[1].buy_amount, 1_000);
         assert!(sent.orders[0].missing_buy_token_account);
         assert!(!sent.orders[1].missing_buy_token_account);
 
