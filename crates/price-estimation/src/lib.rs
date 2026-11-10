@@ -8,7 +8,7 @@ use {
     anyhow::Result,
     eth_domain_types::Receiver,
     futures::{future::BoxFuture, stream::BoxStream},
-    model::order::OrderKind,
+    model::{order::OrderKind, quote::PriceQuality},
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     serde::{Deserialize, Serialize},
@@ -164,6 +164,9 @@ pub struct Query {
     /// execution; propagated to the driver.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
+    /// The price quality the quote was requested with; propagated to the
+    /// driver. Native price queries are `Fast`.
+    pub price_quality: PriceQuality,
     pub timeout: Duration,
 }
 

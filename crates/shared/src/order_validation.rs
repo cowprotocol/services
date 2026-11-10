@@ -38,7 +38,7 @@ use {
             SellTokenSource,
             VerificationError,
         },
-        quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
+        quote::{OrderQuoteSide, PriceQuality, QuoteSigningScheme, SellAmount},
         signature::{self, Signature, SigningScheme, hashed_eip712_message},
         time,
     },
@@ -1274,6 +1274,8 @@ pub async fn get_or_create_quote(
                 signing_scheme: quote_search_parameters.signing_scheme,
                 hook_gas: quote_search_parameters.hook_gas,
                 fast_path: false,
+                // Orders are only ever validated against verifying quoters.
+                price_quality: PriceQuality::Verified,
                 timeout: None, // let &dyn OrderQuoting chose default
             };
 
@@ -3075,6 +3077,7 @@ mod tests {
                 signing_scheme: QuoteSigningScheme::Eip712,
                 hook_gas: 0,
                 fast_path: false,
+                price_quality: PriceQuality::Verified,
                 timeout: None,
             }))
             .returning({
