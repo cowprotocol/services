@@ -2947,8 +2947,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     );
 
     // A named quote that does not match the order (wrong pair here) is
-    // dropped, no stored quote matches either, and the dead quoter has no
-    // route: the order lands unlinked.
+    // dropped and the dead quoter has no route: the order lands unlinked.
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let other_owner = solana_sdk::signer::keypair::Keypair::new();
     let other = sponsored_intent(other_owner.pubkey(), false);
@@ -2980,8 +2979,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         .unwrap();
     assert_eq!(copies, 1, "the mismatched quote must not be copied");
 
-    // An expired quote is dropped even when everything else matches, and the
-    // search skips it too.
+    // An expired quote is dropped even when everything else matches.
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let late_owner = solana_sdk::signer::keypair::Keypair::new();
     let late = sponsored_intent(late_owner.pubkey(), false);
@@ -3014,13 +3012,15 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     assert_eq!(copies, 1, "the expired quote must not be copied");
 }
 
-/// Without a usable `quoteId`, the order takes the best stored quote with its
-/// pair, side and fixed amount: the highest buy amount for its sell amount,
+/// An order naming no `quoteId` takes the best stored quote with its pair,
+/// side and fixed amount: the highest buy amount for its sell amount,
 /// unexpired. A quote that is expired, of another amount or of the other
-/// side is no match, however good.
+/// side is no match, however good. An order naming a quote the link drops
+/// is quoted afresh instead, like the EVM `find_quote`: with no driver to
+/// answer it lands unlinked, the matching stored quote notwithstanding.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
-async fn solana_db_create_order_takes_the_best_stored_quote_without_a_usable_id() {
+async fn solana_db_create_order_takes_the_best_stored_quote_when_it_names_none() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
     sqlx::query(
         "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
@@ -3057,7 +3057,8 @@ async fn solana_db_create_order_takes_the_best_stored_quote_without_a_usable_id(
         .await
         .unwrap();
 
-    // A named quote the link drops falls back to the search.
+    // A named quote the link drops is quoted afresh, not swapped for the
+    // matching stored one, and the dead quoter leaves the order unlinked.
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let response = reqwest::Client::new()
@@ -3067,7 +3068,15 @@ async fn solana_db_create_order_takes_the_best_stored_quote_without_a_usable_id(
         .await
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::CREATED);
-    // So does an order naming no quote.
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        copies, 0,
+        "a dropped quote id must not fall back to the search"
+    );
+    // An order naming no quote takes the best stored match.
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let other_owner = solana_sdk::signer::keypair::Keypair::new();
     let other = sponsored_intent(other_owner.pubkey(), false);
@@ -3083,7 +3092,7 @@ async fn solana_db_create_order_takes_the_best_stored_quote_without_a_usable_id(
             .fetch_all(&pool)
             .await
             .unwrap();
-    assert_eq!(linked, vec![(Some(best), "2500".to_owned()); 2]);
+    assert_eq!(linked, vec![(Some(best), "2500".to_owned())]);
 }
 
 /// When no stored quote matches, the drivers quote the order afresh and the

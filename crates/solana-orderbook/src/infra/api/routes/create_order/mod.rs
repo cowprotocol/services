@@ -617,40 +617,45 @@ async fn check_accounts(
 
 /// The quote copy to store under the order, the EVM `get_or_create_quote`:
 /// the quote `quote_id` names when it matches the order and is unexpired,
-/// else the best stored quote with the order's pair, side and fixed amount,
-/// else a fresh one from the quote competition, stored. `None` when the fresh
-/// quote finds no liquidity, the one quote failure an order is placed
-/// through. Any other failure of it rejects the order with the quote's reply.
+/// for an order naming none the best stored quote with its pair, side and
+/// fixed amount, else a fresh one from the quote competition, stored. A
+/// named quote that fails is quoted afresh, not swapped for another stored
+/// one. `None` when the fresh quote finds no liquidity, the one quote
+/// failure an order is placed through. Any other failure of it rejects the
+/// order with the quote's reply.
 async fn find_or_create_quote(
     state: &State,
     order: &db::SponsoredOrder,
     quote_id: Option<i64>,
 ) -> Result<Option<db::OrderQuote>, Failure> {
     let pool = state.pool();
-    if let Some(id) = quote_id
-        && let Some(quote) = link_quote(pool, id, order).await
-    {
-        return Ok(Some(quote));
-    }
     let order_uid = const_hex::encode_prefixed(order.uid.0);
     let now = chrono::Utc::now();
-    let search = db::QuoteSearch {
-        sell_token: order.sell_token,
-        buy_token: order.buy_token,
-        kind: order.kind,
-        amount: match order.kind {
-            OrderKind::Sell => order.sell_amount,
-            OrderKind::Buy => order.buy_amount,
-        },
-    };
-    match db::find_quote(pool, &search, now).await {
-        Ok(Some(quote)) => {
-            tracing::debug!(quote_id = quote.id, %order_uid, "found quote for order creation");
-            return Ok(Some(quote.into()));
+    let found = match quote_id {
+        Some(id) => link_quote(pool, id, order).await,
+        None => {
+            let search = db::QuoteSearch {
+                sell_token: order.sell_token,
+                buy_token: order.buy_token,
+                kind: order.kind,
+                amount: match order.kind {
+                    OrderKind::Sell => order.sell_amount,
+                    OrderKind::Buy => order.buy_amount,
+                },
+            };
+            match db::find_quote(pool, &search, now).await {
+                Ok(quote) => quote.map(Into::into),
+                // A fresh quote stands in, as on the EVM orderbook.
+                Err(err) => {
+                    tracing::warn!(%order_uid, ?err, "quote search failed, quoting afresh");
+                    None
+                }
+            }
         }
-        Ok(None) => {}
-        // A fresh quote stands in, as on the EVM orderbook.
-        Err(err) => tracing::warn!(%order_uid, ?err, "quote search failed, quoting afresh"),
+    };
+    if let Some(quote) = found {
+        tracing::debug!(quote_id = quote.quote_id, %order_uid, "found quote for order creation");
+        return Ok(Some(quote));
     }
     let request = quote_request(order);
     let quoted = match super::quote::compute(state, &request, now).await {
