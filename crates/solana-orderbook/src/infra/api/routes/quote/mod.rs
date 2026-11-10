@@ -32,6 +32,7 @@ use {
         sysvar,
     },
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
+    solana_transaction_fee::LAMPORTS_PER_SIGNATURE,
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
     std::{cmp::Reverse, collections::HashMap, num::NonZero, time::Duration},
@@ -127,12 +128,19 @@ pub async fn quote(
             .await
             .map_err(|err| price_error(token, err))
     };
-    let (quotes, buy_token_ata_costs, sell_price, buy_price) = futures::try_join!(
+    let (mut quotes, buy_token_ata_costs, sell_price, buy_price) = futures::try_join!(
         quotes,
         buy_account_rent(state.sponsoring(), &request, buy_program),
         price(request.sell_token),
         price(request.buy_token),
     )?;
+    // The driver cuts the creation fee from the fill with its network fee,
+    // so the quote takes both in the one conversion.
+    if request.sponsored {
+        for quote in &mut quotes {
+            quote.network_fee = quote.network_fee.saturating_add(SPONSORED_CREATION_FEE);
+        }
+    }
     // The cost comes out of the side the trader does not fix, the side the
     // driver cuts at settlement.
     let (token, price) = match kind {
@@ -281,6 +289,11 @@ pub async fn quote(
     }))
 }
 
+/// What the funder pays for a sponsored creation that sets no priority fee,
+/// in lamports: the funder's signature and the owner's. A priority fee is the
+/// wallet's choice after the quote, so the quote cannot know it.
+const SPONSORED_CREATION_FEE: u64 = 2 * LAMPORTS_PER_SIGNATURE;
+
 /// Every quote paired with its [`net`] self, best first. With
 /// `prefer_verified`, a verified quote ranks ahead of any unverified one
 /// whatever its amount. Within each group, quotes that absorb their cost
@@ -347,6 +360,7 @@ struct CompetitionRequest {
     amount: u64,
     kind: dto::Kind,
     price_quality: dto::PriceQuality,
+    sponsored: bool,
 }
 
 /// What the execution cost and the protocol fee were taken with, so the
@@ -393,7 +407,7 @@ struct CompetitionQuote {
     quoted_sell_amount: u64,
     #[serde_as(as = "DisplayFromStr")]
     quoted_buy_amount: u64,
-    /// In lamports.
+    /// In lamports. Includes the creation fee when the request is sponsored.
     #[serde_as(as = "DisplayFromStr")]
     network_fee: u64,
     verified: bool,
@@ -414,6 +428,7 @@ fn competition(
             amount,
             kind,
             price_quality: request.price_quality,
+            sponsored: request.sponsored,
         },
         metadata,
         quotes: ranked
@@ -922,6 +937,7 @@ mod tests {
             validity: None,
             app_data: Default::default(),
             price_quality: Default::default(),
+            sponsored: false,
         }
     }
 
