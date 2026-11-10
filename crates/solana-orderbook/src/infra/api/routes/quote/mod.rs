@@ -40,9 +40,12 @@ use {
 /// How long a quoted order stays valid when the request names no validity.
 const DEFAULT_VALIDITY: Duration = Duration::from_secs(30 * 60);
 
-/// TODO: fail the quote on a store error instead, like the EVM orderbook,
-/// once fee policies consume the link and the id becomes load-bearing.
+/// TODO: fail the quote on a store error instead, like the EVM orderbook.
 const SAVE_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// The error type of a quote no driver has a route for, the one quote
+/// failure an order is placed through, without a quote.
+pub(super) const NO_LIQUIDITY: &str = "NoLiquidity";
 
 /// Handle `POST /api/v1/quote`.
 pub async fn quote(
@@ -73,8 +76,117 @@ pub async fn quote(
         None,
         state.app_data_size_limit(),
     )?;
-    let buy_program = check_mints(state.sponsoring(), &request).await?;
+    let quoted = compute(&state, &request, now).await?;
+    // A fast quote is not stored. A failed insert answers without an id
+    // instead of failing the quote: placement quotes an order without a
+    // usable id again.
+    let id = match request.price_quality {
+        dto::PriceQuality::Fast => None,
+        dto::PriceQuality::Optimal | dto::PriceQuality::Verified => {
+            let row = quoted.row(&request);
+            let save = db::save_quote(state.pool(), &row);
+            match tokio::time::timeout(SAVE_TIMEOUT, save).await {
+                Ok(Ok(id)) => Some(id),
+                Ok(Err(err)) => {
+                    tracing::error!(?err, "quote insert failed");
+                    None
+                }
+                Err(_) => {
+                    tracing::error!("quote insert timed out");
+                    None
+                }
+            }
+        }
+    };
+    let response = dto::Response {
+        quote: dto::Quote {
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
+            receiver: request.receiver,
+            sell_amount: quoted.amounts.sell_amount,
+            buy_amount: quoted.amounts.buy_amount,
+            valid_to,
+            // A document answers with its hash alongside.
+            app_data: match &request.app_data {
+                OrderCreationAppData::Full { full } => OrderCreationAppData::Both {
+                    full: full.clone(),
+                    expected: request.app_data.hash(),
+                },
+                app_data => app_data.clone(),
+            },
+            fee_amount: quoted.amounts.fee_amount,
+            costs: dto::Costs {
+                token: quoted.cost_token,
+                network_fees: quoted.costs.network_fees,
+                buy_token_ata_costs: quoted.costs.buy_token_ata_costs,
+                protocol_fee: quoted.costs.protocol_fee,
+                total: quoted.costs.total,
+            },
+            kind: quoted.kind,
+            partially_fillable: false,
+        },
+        from: request.from,
+        expiration: quoted.expiration,
+        id,
+        verified: quoted.verified,
+        funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
+    };
+    quoted.log(id);
+    Ok(Json(response))
+}
 
+/// The winner of a quote competition, cut by its costs, with the competition
+/// to log once the quote is stored.
+pub(super) struct Quoted {
+    kind: dto::Kind,
+    amounts: Amounts,
+    costs: Costs,
+    /// The token the costs come out of.
+    cost_token: Pubkey,
+    solver: Pubkey,
+    verified: bool,
+    expiration: DateTime<Utc>,
+    competition: Competition,
+}
+
+impl Quoted {
+    /// The quote as stored: the amount an order placed on it signs for, the
+    /// amount it buys, and the solver.
+    pub(super) fn row(&self, request: &dto::Request) -> db::Quote {
+        db::Quote {
+            sell_token: ByteArray(request.sell_token.to_bytes()),
+            buy_token: ByteArray(request.buy_token.to_bytes()),
+            sell_amount: self.amounts.signed_sell_amount,
+            buy_amount: self.amounts.buy_amount,
+            kind: match self.kind {
+                dto::Kind::Sell => OrderKind::Sell,
+                dto::Kind::Buy => OrderKind::Buy,
+            },
+            solver: ByteArray(self.solver.to_bytes()),
+            expiration: self.expiration,
+        }
+    }
+
+    /// Log the competition under the id the store gave the quote, `None` for
+    /// one not stored.
+    pub(super) fn log(mut self, id: Option<i64>) {
+        self.competition.metadata.quote_id = id;
+        log_competition(&self.competition);
+    }
+}
+
+/// Quote `request` at `now`: every driver's route, netted of the network fee,
+/// the buy token account rent and the volume fee at the native prices, the
+/// best one cut into the amounts to answer. `NoLiquidity` when no driver has
+/// a route or a token has no native price, `SellAmountDoesNotCoverFee` when
+/// the costs swallow the amount, otherwise the refusals of the mint and
+/// native payout checks.
+pub(super) async fn compute(
+    state: &State,
+    request: &dto::Request,
+    now: DateTime<Utc>,
+) -> Result<Quoted, error::Reply> {
+    let buy_program = check_mints(state.sponsoring(), request).await?;
     let (kind, amount) = request.side.kind_and_amount();
     // Only a verified quote is simulated.
     let verifier = match request.price_quality {
@@ -97,7 +209,7 @@ pub async fn quote(
     let quotes = async {
         // Every driver failure answers as no liquidity, the EVM mapping for
         // estimator errors.
-        let no_liquidity = || error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found");
+        let no_liquidity = || error::reply(StatusCode::NOT_FOUND, NO_LIQUIDITY, "no route found");
         // A fast quote takes the first drivers to answer, the others wait
         // for every driver.
         let early_return = match request.price_quality {
@@ -129,7 +241,7 @@ pub async fn quote(
     };
     let (quotes, buy_token_ata_costs, sell_price, buy_price) = futures::try_join!(
         quotes,
-        buy_account_rent(state.sponsoring(), &request, buy_program),
+        buy_account_rent(state.sponsoring(), request, buy_program),
         price(request.sell_token),
         price(request.buy_token),
     )?;
@@ -164,8 +276,8 @@ pub async fn quote(
     );
     // Built before the winner is taken, so a competition without one is on the
     // record too. Logged after the insert, which is what gives it an id.
-    let mut competition = competition(
-        &request,
+    let competition = competition(
+        request,
         kind,
         amount,
         CompetitionMetadata {
@@ -208,77 +320,19 @@ pub async fn quote(
     quoted.count_win(order.kind);
     // The last exit before the insert, and the competition is worth having for
     // a quote this rejects.
-    check_native_payout(state.sponsoring(), &request, amounts.buy_amount)
+    check_native_payout(state.sponsoring(), request, amounts.buy_amount)
         .await
         .inspect_err(|_| log_competition(&competition))?;
-
-    // A failed insert answers without an id instead of failing the quote,
-    // since the fees are not yet implemented and stored quote are not mandatory
-    // at the moment.
-    let id = if fast {
-        None
-    } else {
-        let quote = db::Quote {
-            sell_token: ByteArray(request.sell_token.to_bytes()),
-            buy_token: ByteArray(request.buy_token.to_bytes()),
-            sell_amount: amounts.signed_sell_amount,
-            buy_amount: amounts.buy_amount,
-            kind: match kind {
-                dto::Kind::Sell => OrderKind::Sell,
-                dto::Kind::Buy => OrderKind::Buy,
-            },
-            solver: ByteArray(quoted.solver.to_bytes()),
-            expiration,
-        };
-        let save = db::save_quote(state.pool(), &quote);
-        match tokio::time::timeout(SAVE_TIMEOUT, save).await {
-            Ok(Ok(id)) => Some(id),
-            Ok(Err(err)) => {
-                tracing::error!(?err, "quote insert failed");
-                None
-            }
-            Err(_) => {
-                tracing::error!("quote insert timed out");
-                None
-            }
-        }
-    };
-    competition.metadata.quote_id = id;
-    log_competition(&competition);
-
-    Ok(Json(dto::Response {
-        quote: dto::Quote {
-            sell_token: request.sell_token,
-            buy_token: request.buy_token,
-            receiver: request.receiver,
-            sell_amount: amounts.sell_amount,
-            buy_amount: amounts.buy_amount,
-            valid_to,
-            // A document answers with its hash alongside.
-            app_data: match &request.app_data {
-                OrderCreationAppData::Full { full } => OrderCreationAppData::Both {
-                    full: full.clone(),
-                    expected: request.app_data.hash(),
-                },
-                app_data => app_data.clone(),
-            },
-            fee_amount: amounts.fee_amount,
-            costs: dto::Costs {
-                token,
-                network_fees: costs.network_fees,
-                buy_token_ata_costs: costs.buy_token_ata_costs,
-                protocol_fee: costs.protocol_fee,
-                total: costs.total,
-            },
-            kind,
-            partially_fillable: false,
-        },
-        from: request.from,
-        expiration,
-        id,
+    Ok(Quoted {
+        kind,
+        amounts,
+        costs,
+        cost_token: token,
+        solver: quoted.solver,
         verified: quoted.verified,
-        funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
-    }))
+        expiration,
+        competition,
+    })
 }
 
 /// Every quote paired with its [`net`] self, best first. With
@@ -629,7 +683,7 @@ fn price_error(token: Pubkey, err: prices::Error) -> error::Reply {
     match err {
         prices::Error::NoLiquidity | prices::Error::RateLimited => error::reply(
             StatusCode::NOT_FOUND,
-            "NoLiquidity",
+            NO_LIQUIDITY,
             format!("no native price for {token}"),
         ),
         prices::Error::Internal(err) => {

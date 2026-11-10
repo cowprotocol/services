@@ -12,14 +12,17 @@
 //! placement looks the wallet up instead.
 
 use {
-    super::mint::{ensure_settleable, is_token_program, token_mints},
+    super::{
+        mint::{ensure_settleable, is_token_program, token_mints},
+        quote::dto,
+    },
     crate::infra::{
         api::{Sponsoring, State, ValidationParameters, error},
         db,
     },
     app_data::{AppDataHash, OrderCreationAppData},
     axum::{Json, http::StatusCode},
-    bigdecimal::ToPrimitive,
+    bigdecimal::{BigDecimal, ToPrimitive},
     cow_settlement_interface::{
         SettlementError,
         data::intent::{
@@ -289,13 +292,7 @@ async fn place(
         return Err(PlacementError::DuplicatedOrder.into());
     }
 
-    // The link is best-effort: a quote that is missing, expired, or not the
-    // one this order came from is dropped instead of rejecting an otherwise
-    // valid order.
-    let quote = match params.quote_id {
-        Some(id) => link_quote(state.pool(), id, &order).await,
-        None => None,
-    };
+    let quote = find_or_create_quote(&state, &order, params.quote_id).await?;
 
     let uid = const_hex::encode_prefixed(order.uid.0);
     if let Err(err) =
@@ -618,15 +615,106 @@ async fn check_accounts(
     Ok(())
 }
 
+/// The quote copy to store under the order, the EVM `get_or_create_quote`:
+/// the quote `quote_id` names when it matches the order and is unexpired,
+/// else the best stored quote with the order's pair, side and fixed amount,
+/// else a fresh one from the quote competition, stored. `None` when the fresh
+/// quote finds no liquidity, the one quote failure an order is placed
+/// through. Any other failure of it rejects the order with the quote's reply.
+async fn find_or_create_quote(
+    state: &State,
+    order: &db::SponsoredOrder,
+    quote_id: Option<i64>,
+) -> Result<Option<db::OrderQuote>, Failure> {
+    let pool = state.pool();
+    if let Some(id) = quote_id
+        && let Some(quote) = link_quote(pool, id, order).await
+    {
+        return Ok(Some(quote));
+    }
+    let order_uid = const_hex::encode_prefixed(order.uid.0);
+    let now = chrono::Utc::now();
+    let search = db::QuoteSearch {
+        sell_token: order.sell_token,
+        buy_token: order.buy_token,
+        kind: order.kind,
+        amount: match order.kind {
+            OrderKind::Sell => order.sell_amount,
+            OrderKind::Buy => order.buy_amount,
+        },
+    };
+    match db::find_quote(pool, &search, now).await {
+        Ok(Some(quote)) => {
+            tracing::debug!(quote_id = quote.id, %order_uid, "found quote for order creation");
+            return Ok(Some(quote.into()));
+        }
+        Ok(None) => {}
+        // A fresh quote stands in, as on the EVM orderbook.
+        Err(err) => tracing::warn!(%order_uid, ?err, "quote search failed, quoting afresh"),
+    }
+    let request = quote_request(order);
+    let quoted = match super::quote::compute(state, &request, now).await {
+        Ok(quoted) => quoted,
+        Err(reply) if reply.1.error_type == super::quote::NO_LIQUIDITY => {
+            tracing::debug!(%order_uid, "placing order without quote");
+            return Ok(None);
+        }
+        Err(reply) => return Err(Failure::Replied(reply)),
+    };
+    let quote = quoted.row(&request);
+    let id = db::save_quote(pool, &quote)
+        .await
+        .map_err(|err| Failure::internal(err, "quote insert"))?;
+    quoted.log(Some(id));
+    tracing::debug!(
+        original_quote_id = ?quote_id,
+        quote_id = id,
+        %order_uid,
+        "computed fresh quote for order creation"
+    );
+    Ok(Some(db::OrderQuote {
+        quote_id: id,
+        sell_amount: BigDecimal::from(quote.sell_amount),
+        buy_amount: BigDecimal::from(quote.buy_amount),
+        solver: quote.solver,
+    }))
+}
+
+/// The request for a fresh quote of `order`: what its owner is quoted now for
+/// the amount the order fixes, by every driver, unverified. A sell order
+/// sells its amount whole, so that is a `sellAmountBeforeFee`. The buy token
+/// account stands as the receiver, so a missing one is priced as created at
+/// settlement.
+fn quote_request(order: &db::SponsoredOrder) -> dto::Request {
+    let key = |bytes: ByteArray<32>| Pubkey::new_from_array(bytes.0);
+    dto::Request {
+        from: key(order.owner),
+        sell_token: key(order.sell_token),
+        buy_token: key(order.buy_token),
+        receiver: Some(key(order.buy_token_account)),
+        side: match order.kind {
+            OrderKind::Sell => dto::Side::Sell {
+                sell_amount: dto::SellAmount::BeforeFee {
+                    value: order.sell_amount,
+                },
+            },
+            OrderKind::Buy => dto::Side::Buy {
+                buy_amount_after_fee: order.buy_amount,
+            },
+        },
+        validity: None,
+        app_data: OrderCreationAppData::Hash {
+            hash: AppDataHash(order.app_data.0),
+        },
+        price_quality: dto::PriceQuality::Optimal,
+    }
+}
+
 /// The quote copy to store under the order: filled when the stored quote
 /// matches the order (same pair and side, same fixed amount, unexpired),
 /// `None` otherwise. The unfixed side carries the user's slippage and stays
 /// unchecked, like the EVM `find_quote` match, so the linked quote's
 /// promised price is not a trustworthy value.
-/// TODO: once fee policies consume the link, a miss must re-quote and link
-/// the fresh quote instead of dropping the link, like the EVM orderbook's
-/// `find_quote` fallback, and the match must tighten (the unfixed side
-/// within the order's slippage) so the consumed price cannot be shopped in.
 async fn link_quote(
     pool: &sqlx::PgPool,
     id: i64,
@@ -672,12 +760,7 @@ async fn link_quote(
         );
         return None;
     }
-    Some(db::OrderQuote {
-        quote_id: id,
-        sell_amount: quote.sell_amount,
-        buy_amount: quote.buy_amount,
-        solver: quote.solver,
-    })
+    Some(quote.into())
 }
 
 /// Whether an order's limit sat within its quote when it was placed, the EVM
@@ -1177,6 +1260,50 @@ mod tests {
             buy_amount: buy_amount.into(),
             solver: ByteArray([0; 32]),
         }
+    }
+
+    /// A sell order is quoted for the amount it sells whole, a buy order for
+    /// the amount it buys, both paid into the order's buy token account.
+    #[test]
+    fn a_fresh_quote_asks_for_the_orders_fixed_amount() {
+        let order = db::SponsoredOrder {
+            uid: ByteArray([1; 32]),
+            owner: ByteArray([2; 32]),
+            receiver: None,
+            sell_token: ByteArray([3; 32]),
+            buy_token: ByteArray([4; 32]),
+            sell_token_account: ByteArray([5; 32]),
+            buy_token_account: ByteArray([6; 32]),
+            sell_amount: 1_000,
+            buy_amount: 2_000,
+            valid_to: 100,
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+            app_data: ByteArray([7; 32]),
+            order_pda: ByteArray([8; 32]),
+            presigned_transaction: vec![],
+            last_valid_block_height: 0,
+        };
+        let request = quote_request(&order);
+        assert_eq!(request.from, Pubkey::new_from_array([2; 32]));
+        assert_eq!(request.receiver, Some(Pubkey::new_from_array([6; 32])));
+        assert!(matches!(
+            request.side,
+            dto::Side::Sell {
+                sell_amount: dto::SellAmount::BeforeFee { value: 1_000 }
+            }
+        ));
+        assert_eq!(request.price_quality, dto::PriceQuality::Optimal);
+        let buy = quote_request(&db::SponsoredOrder {
+            kind: OrderKind::Buy,
+            ..order
+        });
+        assert!(matches!(
+            buy.side,
+            dto::Side::Buy {
+                buy_amount_after_fee: 2_000
+            }
+        ));
     }
 
     /// At the quote, or asking less buy for the sell (slippage), the order

@@ -327,8 +327,11 @@ paths:
                 quoteId:
                   description: |
                     The id the quote endpoint answered for this order. Stored
-                    with the order when the quote matches it, dropped
-                    otherwise.
+                    with the order when the quote matches it and is unexpired.
+                    Otherwise the order stores the best stored quote with its
+                    pair, side and fixed amount, or a fresh quote, whose
+                    failure rejects the order with the quote's error unless it
+                    is `NoLiquidity`, which places the order without a quote.
                   type: integer
                   format: int64
                   nullable: true
