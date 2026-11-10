@@ -250,7 +250,7 @@ impl Arguments<'_> {
         let number = match value {
             Value::Int(int) => Decimal::from(*int),
             Value::UInt(uint) => Decimal::from(*uint),
-            Value::Float(float) => Decimal::from_f64(*float).ok_or(FeeError::NotFinite {
+            Value::Float(float) => Decimal::from_f64(*float).ok_or(FeeError::NotRepresentable {
                 kind,
                 argument,
                 value: *float,
@@ -290,8 +290,9 @@ pub enum FeeError {
         argument: &'static str,
         found: ValueType,
     },
-    #[error("`{kind}` argument `{argument}` = {value} is not a finite number")]
-    NotFinite {
+    /// NaN, infinite, or too large for a [`Decimal`].
+    #[error("`{kind}` argument `{argument}` = {value} is out of range")]
+    NotRepresentable {
         kind: FeeKind,
         argument: &'static str,
         value: f64,
@@ -442,6 +443,10 @@ mod tests {
                 "{source}"
             );
         }
+        assert!(matches!(
+            evaluate("volume(1e30)").unwrap_err(),
+            FeeError::NotRepresentable { value, .. } if value == 1e30
+        ));
         assert!(matches!(
             evaluate("42").unwrap_err(),
             FeeError::NotAFee(ValueType::Int)
