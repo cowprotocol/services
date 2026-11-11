@@ -42,7 +42,6 @@ use {
         collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
-        time::Duration,
     },
     tokio::sync::mpsc,
     tracing::{Instrument, instrument},
@@ -98,8 +97,8 @@ impl Persistence {
         sender
     }
 
-    pub async fn leader(&self, key: String) -> LeaderLock {
-        LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
+    pub fn leader(&self, key: String) -> LeaderLock {
+        LeaderLock::spawn(&self.postgres.pool, key)
     }
 
     /// Fetches the ID that should be used for the next auction.
