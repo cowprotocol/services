@@ -338,7 +338,6 @@ mod tests {
         };
         let json = serde_json::to_value(&sponsored).unwrap();
         assert_eq!(json["orders"][0]["creation"], "AQID");
-        // Only a sponsored order without a fill sends a creation fee.
         assert!(json["orders"][0].get("creationFee").is_none());
         let charged = Order {
             creation_fee: Some(10_000),

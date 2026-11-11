@@ -66,8 +66,7 @@ pub struct OrderRow {
     pub app_data: ByteArray<32>,
     pub created_on_chain: bool,
     pub executed: BigDecimal,
-    /// The stored creation transaction of a sponsored order, which stays
-    /// after the order is created on chain.
+    /// The stored creation transaction of a sponsored order.
     pub presigned_transaction: Option<Vec<u8>>,
     pub quote_sell_amount: Option<BigDecimal>,
     pub quote_buy_amount: Option<BigDecimal>,

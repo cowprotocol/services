@@ -88,7 +88,7 @@ pub struct Auction {
     /// Empty for a quote.
     pub fee_policies: FeePolicies,
     /// The lamports the funder paid to create each sponsored order that has
-    /// no fill yet, by uid. The order's first fill repays them.
+    /// no fill yet, by uid.
     pub creation_fees: HashMap<OrderUid, u64>,
 }
 

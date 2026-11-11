@@ -7,20 +7,16 @@
 
 use {
     solana_sdk::{message::VersionedMessage, pubkey::Pubkey},
-    solana_sdk_ids::{
-        bpf_loader,
-        bpf_loader_deprecated,
-        bpf_loader_upgradeable,
-        compute_budget,
-        ed25519_program,
-        loader_v4,
-        secp256k1_program,
-        system_program,
-    },
+    solana_sdk_ids::{compute_budget, system_program},
 };
 
 /// The base fee of one signature, in lamports, on every cluster.
 pub const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
+
+/// What the funder pays for a sponsored creation that sets no priority fee,
+/// in lamports: the funder's signature and the owner's. A priority fee is the
+/// wallet's choice after the quote, so the quote cannot know it.
+pub const SPONSORED_CREATION_FEE: u64 = 2 * LAMPORTS_PER_SIGNATURE;
 
 /// The compute units a transaction can consume at most. The runtime lowers a
 /// higher limit to this, declared or default.
@@ -33,17 +29,9 @@ pub const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 const DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT: u32 = 200_000;
 const BUILTIN_INSTRUCTION_COMPUTE_UNIT_LIMIT: u32 = 3_000;
 
-/// Agave's builtin programs, from `solana-builtins-default-costs`.
-const BUILTINS: [Pubkey; 8] = [
-    system_program::ID,
-    compute_budget::ID,
-    bpf_loader_upgradeable::ID,
-    bpf_loader_deprecated::ID,
-    bpf_loader::ID,
-    loader_v4::ID,
-    secp256k1_program::ID,
-    ed25519_program::ID,
-];
+/// The Agave builtins a creation may name, of the cost map in
+/// `solana-builtins-default-costs`: the orderbook admits no other builtin.
+const BUILTINS: [Pubkey; 2] = [system_program::ID, compute_budget::ID];
 
 /// What the client asked the runtime to charge for priority.
 #[derive(Default)]

@@ -32,7 +32,7 @@ use {
         sysvar,
     },
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
-    solana_transaction_fee::LAMPORTS_PER_SIGNATURE,
+    solana_transaction_fee::SPONSORED_CREATION_FEE,
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::native_mint,
     std::{cmp::Reverse, collections::HashMap, num::NonZero, time::Duration},
@@ -288,11 +288,6 @@ pub async fn quote(
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
 }
-
-/// What the funder pays for a sponsored creation that sets no priority fee,
-/// in lamports: the funder's signature and the owner's. A priority fee is the
-/// wallet's choice after the quote, so the quote cannot know it.
-const SPONSORED_CREATION_FEE: u64 = 2 * LAMPORTS_PER_SIGNATURE;
 
 /// Every quote paired with its [`net`] self, best first. With
 /// `prefer_verified`, a verified quote ranks ahead of any unverified one

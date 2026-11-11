@@ -471,8 +471,8 @@ async fn quote_nets_the_volume_fee_once_effective() {
     }
 }
 
-/// The funder pays 10000 lamports for a sponsored creation, and the order's
-/// first fill repays them, so a sponsored quote reports that much more cost.
+/// The funder pays 10000 lamports for a sponsored creation, so a sponsored
+/// quote reports that much more cost.
 #[tokio::test]
 async fn quote_charges_a_sponsored_order_its_creation_fee() {
     let driver = spawn_mock_driver(serde_json::json!({
