@@ -1,3 +1,9 @@
+#[cfg(test)]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use {database::leader_pg_lock::LeaderLock, observe::metrics};
 
 /// Tracks the autopilot leader lock status across calls to
@@ -13,6 +19,9 @@ pub enum LeaderLockTracker {
         was_leader: bool,
         leader_lock: LeaderLock,
     },
+    /// A lease the test flips.
+    #[cfg(test)]
+    Scripted(Arc<AtomicBool>),
 }
 
 impl LeaderLockTracker {
@@ -73,6 +82,8 @@ impl LeaderLockTracker {
         match self {
             Self::Enabled { leader_lock, .. } => leader_lock.is_leader(),
             Self::Disabled => true,
+            #[cfg(test)]
+            Self::Scripted(leading) => leading.load(Ordering::Acquire),
         }
     }
 }
