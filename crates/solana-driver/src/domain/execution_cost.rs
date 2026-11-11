@@ -108,7 +108,7 @@ impl ExecutionCost<'_> {
         orders
             .iter()
             .filter_map(|order| {
-                let cut = self.cut(order, self.own_cost(order) + u128::from(network_fee));
+                let cut = self.cut(order, self.sponsored_costs(order) + u128::from(network_fee));
                 if cut.is_none() {
                     tracing::debug!(
                         order = %order.uid,
@@ -136,7 +136,7 @@ impl ExecutionCost<'_> {
             return Ok(());
         };
         let fee_share = network_fee.div_ceil(trades.get());
-        let mut own_cost_charged = HashSet::new();
+        let mut sponsored_costs_charged = HashSet::new();
         let solution_id = solution.id;
         let trades = solution
             .trades
@@ -146,12 +146,12 @@ impl ExecutionCost<'_> {
                     .get(&trade.order_uid)
                     .copied()
                     .ok_or(Rejected::UnknownOrder(trade.order_uid))?;
-                let own_cost = if own_cost_charged.insert(order.uid) {
-                    self.own_cost(order)
+                let sponsored_costs = if sponsored_costs_charged.insert(order.uid) {
+                    self.sponsored_costs(order)
                 } else {
                     0
                 };
-                let lamports = own_cost + u128::from(fee_share);
+                let lamports = sponsored_costs + u128::from(fee_share);
                 let atoms = self
                     .cut(order, lamports)
                     .ok_or(Rejected::MissingPrice(order.uid))?;
@@ -170,7 +170,7 @@ impl ExecutionCost<'_> {
     }
 
     /// The lamports only `order` pays: its rent and its creation fee.
-    fn own_cost(&self, order: &Order) -> u128 {
+    fn sponsored_costs(&self, order: &Order) -> u128 {
         let lamports = |costs: &HashMap<OrderUid, u64>| {
             u128::from(costs.get(&order.uid).copied().unwrap_or(0))
         };
