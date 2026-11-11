@@ -394,12 +394,10 @@ fn validate(
     // Wallets wrap the bundle in instructions of their own, before and after
     // ours, so those sit outside the template.
     let mut bundle = Vec::with_capacity(message.instructions().len());
-    let mut compute_budget = ComputeBudget::default();
+    let compute_budget = ComputeBudget::of(message).map_err(PlacementError::InvalidTransaction)?;
     for instruction in message.instructions() {
         match keys.get(usize::from(instruction.program_id_index)) {
-            Some(&solana_compute_budget_interface::ID) => compute_budget
-                .read(&instruction.data)
-                .map_err(PlacementError::InvalidTransaction)?,
+            Some(&solana_compute_budget_interface::ID) => {}
             Some(&LIGHTHOUSE_PROGRAM) => check_lighthouse(&instruction.data)?,
             _ => bundle.push(instruction),
         }

@@ -10835,8 +10835,8 @@ dependencies = [
 name = "solana-transaction-fee"
 version = "0.1.0"
 dependencies = [
- "solana-compute-budget-interface",
  "solana-sdk",
+ "solana-sdk-ids",
 ]
 
 [[package]]

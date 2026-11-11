@@ -141,6 +141,7 @@ solana-pubkey = "4"
 solana-rpc-client = "4.2.2"
 solana-rpc-client-api = "4"
 solana-sdk = "4"
+solana-sdk-ids = "3"
 solana-system-interface = "3"
 solana-testlib = { path = "crates/solana-testlib" }
 solana-token = { path = "crates/solana-token" }

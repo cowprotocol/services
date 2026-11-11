@@ -5,16 +5,47 @@
 
 #![forbid(unsafe_code)]
 
-use solana_sdk::message::VersionedMessage;
+use {
+    solana_sdk::{message::VersionedMessage, pubkey::Pubkey},
+    solana_sdk_ids::{
+        bpf_loader,
+        bpf_loader_deprecated,
+        bpf_loader_upgradeable,
+        compute_budget,
+        ed25519_program,
+        loader_v4,
+        secp256k1_program,
+        system_program,
+    },
+};
 
 /// The base fee of one signature, in lamports, on every cluster.
 pub const LAMPORTS_PER_SIGNATURE: u64 = 5_000;
 
-/// The compute units a transaction can consume at most, whatever it declares.
-/// A transaction that names no limit is priced against this, since the units
-/// the runtime would otherwise grant depend on which programs each
-/// instruction calls.
+/// The compute units a transaction can consume at most. The runtime lowers a
+/// higher limit to this, declared or default.
 pub const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+
+/// The compute units the runtime grants each instruction of a transaction
+/// that declares no limit: Agave's `DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT`
+/// and, for an instruction of a builtin program,
+/// `MAX_BUILTIN_ALLOCATION_COMPUTE_UNIT_LIMIT`.
+const DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT: u32 = 200_000;
+const BUILTIN_INSTRUCTION_COMPUTE_UNIT_LIMIT: u32 = 3_000;
+
+/// Agave's builtin programs, from `solana-builtins-default-costs`. The vote
+/// program is left out: it counts as a builtin only until its move to BPF
+/// activates, and pricing it as an ordinary program never undercharges.
+const BUILTINS: [Pubkey; 8] = [
+    system_program::ID,
+    compute_budget::ID,
+    bpf_loader_upgradeable::ID,
+    bpf_loader_deprecated::ID,
+    bpf_loader::ID,
+    loader_v4::ID,
+    secp256k1_program::ID,
+    ed25519_program::ID,
+];
 
 /// What the client asked the runtime to charge for priority.
 #[derive(Default)]
@@ -23,13 +54,35 @@ pub struct ComputeBudget {
     pub price: Option<u64>,
     /// Compute units the transaction may consume.
     pub limit: Option<u32>,
+    /// Compute units the runtime grants when `limit` is absent.
+    default_limit: u32,
 }
 
 impl ComputeBudget {
+    /// The compute budget of `message`, whose static keys must name every
+    /// program.
+    pub fn of(message: &VersionedMessage) -> Result<Self, &'static str> {
+        let keys = message.static_account_keys();
+        let mut budget = Self::default();
+        for instruction in message.instructions() {
+            let program = keys.get(usize::from(instruction.program_id_index));
+            if program == Some(&compute_budget::ID) {
+                budget.read(&instruction.data)?;
+            }
+            let units = if program.is_some_and(|program| BUILTINS.contains(program)) {
+                BUILTIN_INSTRUCTION_COMPUTE_UNIT_LIMIT
+            } else {
+                DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT
+            };
+            budget.default_limit = budget.default_limit.saturating_add(units);
+        }
+        Ok(budget)
+    }
+
     /// Read one compute-budget instruction. Duplicates of a kind are rejected
     /// because the runtime rejects them too, so accepting one would price the
     /// transaction off a value that never takes effect.
-    pub fn read(&mut self, data: &[u8]) -> Result<(), &'static str> {
+    fn read(&mut self, data: &[u8]) -> Result<(), &'static str> {
         // Discriminators of `SetComputeUnitLimit` (u32) and
         // `SetComputeUnitPrice` (u64), both little-endian.
         let (slot_taken, malformed) = match data.split_first() {
@@ -56,13 +109,16 @@ impl ComputeBudget {
         malformed
     }
 
-    /// The most the transaction could pay in priority fee, in lamports,
-    /// rounded up. An undeclared limit is priced at the network ceiling.
+    /// The priority fee the transaction pays, in lamports, rounded up. The
+    /// runtime charges the price over the limit, not over the units consumed.
     pub fn max_priority_fee_lamports(&self) -> u128 {
         let Some(price) = self.price else {
             return 0;
         };
-        let limit = self.limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
+        let limit = self
+            .limit
+            .unwrap_or(self.default_limit)
+            .min(MAX_COMPUTE_UNIT_LIMIT);
         // Micro-lamports per unit times units, rounded up to whole lamports.
         (u128::from(price) * u128::from(limit)).div_ceil(1_000_000)
     }
@@ -83,15 +139,7 @@ pub fn max_fee_lamports(message: &VersionedMessage) -> Result<u64, &'static str>
     {
         return Err("an address lookup table can hide a compute budget instruction");
     }
-    let keys = message.static_account_keys();
-    let mut budget = ComputeBudget::default();
-    for instruction in message.instructions() {
-        if keys.get(usize::from(instruction.program_id_index))
-            == Some(&solana_compute_budget_interface::ID)
-        {
-            budget.read(&instruction.data)?;
-        }
-    }
+    let budget = ComputeBudget::of(message)?;
     let signatures =
         u128::from(message.header().num_required_signatures) * u128::from(LAMPORTS_PER_SIGNATURE);
     u64::try_from(signatures + budget.max_priority_fee_lamports())
@@ -137,15 +185,37 @@ mod tests {
         assert_eq!(wide.max_priority_fee_lamports(), 1_400);
     }
 
-    /// No price means no priority fee. A price without a limit is priced at
-    /// the ceiling, since the transaction may consume up to it.
+    /// No price means no priority fee. A price without a limit is charged
+    /// over the runtime's default: 3000 units for the price instruction and
+    /// 200000 for each of the two program instructions. Eight of those reach
+    /// the ceiling.
     #[test]
-    fn an_undeclared_limit_is_priced_at_the_ceiling() {
-        assert_eq!(ComputeBudget::default().max_priority_fee_lamports(), 0);
+    fn an_undeclared_limit_is_priced_at_the_runtime_default() {
+        let program = || Instruction::new_with_bytes(Pubkey::new_unique(), &[], vec![]);
+        let budget = |instructions: &[Instruction]| {
+            let message = Message::new(instructions, Some(&Pubkey::new_unique()));
+            ComputeBudget::of(&VersionedMessage::Legacy(message)).unwrap()
+        };
+        let price = Instruction::new_with_bytes(compute_budget::ID, &set_price(700_000), vec![]);
 
-        let mut priced = ComputeBudget::default();
-        priced.read(&set_price(1_000_000)).unwrap();
-        assert_eq!(priced.max_priority_fee_lamports(), 1_400_000);
+        assert_eq!(budget(&[program()]).max_priority_fee_lamports(), 0);
+        assert_eq!(
+            budget(&[price.clone(), program(), program()]).max_priority_fee_lamports(),
+            282_100
+        );
+        let mut crowded = vec![price];
+        crowded.extend(std::iter::repeat_with(program).take(8));
+        assert_eq!(budget(&crowded).max_priority_fee_lamports(), 980_000);
+    }
+
+    /// The runtime lowers a declared limit to the ceiling, so the units past
+    /// it are never charged.
+    #[test]
+    fn a_limit_past_the_ceiling_is_priced_at_the_ceiling() {
+        let mut budget = ComputeBudget::default();
+        budget.read(&set_price(232)).unwrap();
+        budget.read(&set_limit(u32::MAX)).unwrap();
+        assert_eq!(budget.max_priority_fee_lamports(), 325);
     }
 
     /// The runtime rejects a repeated compute-budget instruction, so pricing
@@ -182,9 +252,7 @@ mod tests {
             &[],
             vec![AccountMeta::new(owner, true)],
         );
-        let budget = |data: Vec<u8>| {
-            Instruction::new_with_bytes(solana_compute_budget_interface::ID, &data, vec![])
-        };
+        let budget = |data: Vec<u8>| Instruction::new_with_bytes(compute_budget::ID, &data, vec![]);
         let fee = |instructions: &[Instruction]| {
             let message = Message::new_with_blockhash(instructions, Some(&payer), &Hash::default());
             max_fee_lamports(&VersionedMessage::Legacy(message))
