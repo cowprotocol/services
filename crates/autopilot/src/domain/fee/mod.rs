@@ -118,7 +118,7 @@ impl ProtocolFees {
             FeeFactor::try_from(factor).expect("value was clamped to the required range")
         }
 
-        let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
+        let Ok(max_partner_fee) = fee_engine::FeeFactor::try_from(max_partner_fee) else {
             return vec![];
         };
         let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
@@ -128,7 +128,7 @@ impl ProtocolFees {
             return vec![];
         };
 
-        let mut accumulated = Decimal::ZERO;
+        let mut budget = fee_engine::PartnerFeeBudget::new(max_partner_fee);
 
         parsed_app_data
             .partner_fee
@@ -139,11 +139,7 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(bps) / Decimal::from(MAX_BPS);
                         // Create policy and update accumulator
-                        let factor = fee_engine::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
-                        );
+                        let factor = FeeFactor::new(budget.capped_fee_factor(fee_decimal).to_f64());
                         Policy::Volume { factor }
                     }
                     app_data::FeePolicy::Surplus {
@@ -155,11 +151,8 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = fee_engine::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
-                        );
+                        let max_volume_factor =
+                            FeeFactor::new(budget.capped_fee_factor(fee_decimal).to_f64());
 
                         let factor = fee_factor_from_bps(bps);
 
@@ -177,11 +170,8 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = fee_engine::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
-                        );
+                        let max_volume_factor =
+                            FeeFactor::new(budget.capped_fee_factor(fee_decimal).to_f64());
 
                         let factor = fee_factor_from_bps(bps);
 

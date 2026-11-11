@@ -1,16 +1,13 @@
 //! Fees a rule returns and the CEL functions that build them.
 
 use {
+    crate::FeeFactor,
     cel::{
         Context,
         Value,
         objects::{KeyRef, Map, ValueType},
     },
-    configs::fee_factor::FeeFactor,
-    rust_decimal::{
-        Decimal,
-        prelude::{FromPrimitive, ToPrimitive},
-    },
+    rust_decimal::{Decimal, prelude::FromPrimitive},
     std::{collections::HashMap, fmt, str::FromStr},
 };
 
@@ -72,11 +69,13 @@ impl FromStr for FeeKind {
     }
 }
 
-/// A fee factor is a whole number of steps of 1e-6 of the volume (the "grid",
-/// [`FeeFactor::HIGH_PRECISION_SCALE`] steps per 1). Steps per basis point.
-pub(crate) const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
+/// A fee argument is a whole number of steps of 1e-6 of the volume (the
+/// "grid"): this many steps per 1.
+const GRID: u64 = 1_000_000;
+/// Steps per basis point.
+pub(crate) const BPS: u64 = GRID / 10_000;
 /// Steps per percent.
-pub(crate) const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
+pub(crate) const PERCENT: u64 = GRID / 100;
 
 /// `number` in the unit `grid_units` sizes ([`PERCENT`], [`BPS`]) as a fee
 /// factor: `0.3` with `BPS` is 30 steps of 1e-6, i.e. 0.00003. A value that
@@ -88,10 +87,7 @@ pub(crate) fn factor_on_grid(number: Decimal, grid_units: u64) -> Result<FeeFact
     if !scaled.is_integer() {
         return Err(FactorError::OffGrid);
     }
-    scaled
-        .to_u64()
-        .and_then(|units| FeeFactor::from_high_precision(units).ok())
-        .ok_or(FactorError::OutOfRange)
+    FeeFactor::try_from(scaled / Decimal::from(GRID))
 }
 
 /// Why a number is not a fee factor.
@@ -328,6 +324,10 @@ mod tests {
         FeeFactor::try_from(value).unwrap()
     }
 
+    fn steps(factor: FeeFactor) -> Decimal {
+        factor.get() * Decimal::from(GRID)
+    }
+
     #[test]
     fn builds_each_fee_kind() {
         assert_eq!(
@@ -376,9 +376,9 @@ mod tests {
             _ => panic!("expected one volume fee"),
         };
         assert_ne!(0.3 / 10_000., 0.00003);
-        assert_eq!(volume("volume(0.3)").get(), 0.00003);
-        assert_eq!(volume("volume(0.3)").to_high_precision(), 30);
-        assert_eq!(volume("volume(0.33)").to_high_precision(), 33);
+        assert_eq!(volume("volume(0.3)"), factor(0.00003));
+        assert_eq!(steps(volume("volume(0.3)")), Decimal::from(30));
+        assert_eq!(steps(volume("volume(0.33)")), Decimal::from(33));
         assert_eq!(
             evaluate("surplus(50, 98)").unwrap(),
             vec![Fee::Surplus {

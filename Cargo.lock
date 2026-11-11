@@ -4935,7 +4935,6 @@ dependencies = [
  "alloy-primitives",
  "cel",
  "chrono",
- "configs",
  "const-hex",
  "model",
  "rust_decimal",

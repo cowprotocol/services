@@ -7,6 +7,7 @@ use {
         AppData,
         CompileError,
         Fee,
+        FeeFactor,
         Field,
         LoadError,
         Match,
@@ -77,7 +78,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     assert_eq!(rule.name(), "Stablecoin bucket: 0.3 bps");
     assert!(matches!(
         fees[..],
-        [Fee::Surplus { .. }, Fee::Volume { factor }] if factor.to_high_precision() == 30
+        [Fee::Surplus { .. }, Fee::Volume { factor }] if factor == FeeFactor::try_from(0.00003).unwrap()
     ));
 
     let mut quoted = order(USDC, USDT);
@@ -151,7 +152,7 @@ fn loads_the_tables_of_a_host_config() {
             .collect()
     };
     let rules = load_rules_toml(tables.clone()).unwrap();
-    assert_eq!(rules.max_partner_fee().get(), 0.05);
+    assert_eq!(rules.max_partner_fee(), FeeFactor::try_from(0.05).unwrap());
     assert_eq!(names(rules), names(load_rules_from_str(RULES).unwrap()));
 
     assert!(
