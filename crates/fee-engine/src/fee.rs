@@ -142,12 +142,12 @@ pub(crate) fn register_fee_functions(context: &mut Context) {
     context
         .add_function(
             FeeKind::Surplus.name(),
-            |share: Value, max_volume: Value| {
+            |share: Value, max_volume_bps: Value| {
                 fee_value(
                     FeeKind::Surplus,
                     [
                         (Argument::SHARE, share),
-                        (Argument::MAX_VOLUME_BPS, max_volume),
+                        (Argument::MAX_VOLUME_BPS, max_volume_bps),
                     ],
                 )
             },
@@ -156,12 +156,12 @@ pub(crate) fn register_fee_functions(context: &mut Context) {
     context
         .add_function(
             FeeKind::PriceImprovement.name(),
-            |share: Value, max_volume: Value| {
+            |share: Value, max_volume_bps: Value| {
                 fee_value(
                     FeeKind::PriceImprovement,
                     [
                         (Argument::SHARE, share),
-                        (Argument::MAX_VOLUME_BPS, max_volume),
+                        (Argument::MAX_VOLUME_BPS, max_volume_bps),
                     ],
                 )
             },
