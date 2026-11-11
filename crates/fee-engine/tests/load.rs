@@ -137,12 +137,7 @@ fn empty_file_has_no_rules() {
 
 #[test]
 fn loads_the_tables_of_a_host_config() {
-    let mut config: toml::Table = toml::from_str(RULES).unwrap();
-    let tables = RulesToml {
-        lists: config.remove("lists"),
-        rules: config.remove("rule"),
-        partner_fees: config.remove("partner_fees"),
-    };
+    let tables: RulesToml = toml::from_str(RULES).unwrap();
     let names = |rules: RuleSet| -> Vec<String> {
         rules
             .rules()
@@ -170,16 +165,23 @@ fn loads_the_tables_of_a_host_config() {
 #[test]
 fn refuses_bad_host_config_tables() {
     let error = |source: &str| {
-        let mut config: toml::Table = toml::from_str(source).unwrap();
-        load_rules_toml(RulesToml {
-            lists: config.remove("lists"),
-            rules: config.remove("rule"),
-            partner_fees: config.remove("partner_fees"),
-        })
-        .unwrap_err()
+        toml::from_str::<RulesToml>(source)
+            .map_err(LoadError::from)
+            .and_then(load_rules_toml)
+            .unwrap_err()
     };
     let fine = rule("x", "true", "no_fee()");
 
+    for (typo, key) in [
+        ("[[rules]]\nname = 'x'\n", "rules"),
+        ("[partner-fees]\nmax_volume_bps = 500\n", "partner-fees"),
+    ] {
+        assert!(
+            error(typo)
+                .to_string()
+                .contains(&format!("unknown field `{key}`"))
+        );
+    }
     assert!(matches!(error("lists = []"), LoadError::Toml(_)));
     assert!(matches!(error("rule = 1"), LoadError::Toml(_)));
     assert!(matches!(

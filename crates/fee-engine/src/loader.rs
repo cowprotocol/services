@@ -29,10 +29,12 @@ fn join_sample_order_errors(errors: &[SampleOrderError]) -> String {
 
 /// The `lists`, `rule` and `partner_fees` tables of a rules file as raw TOML,
 /// e.g. from a section of a host config; `None` is an absent table, as in a
-/// file. [`load_rules_toml`] checks their shape.
-#[derive(Debug, Clone, Default, PartialEq)]
+/// file. Other keys are refused; [`load_rules_toml`] checks the tables' shape.
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RulesToml {
     pub lists: Option<toml::Value>,
+    #[serde(rename = "rule")]
     pub rules: Option<toml::Value>,
     pub partner_fees: Option<toml::Value>,
 }
