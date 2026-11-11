@@ -39,15 +39,16 @@ impl LeaderLockTracker {
         }
     }
 
-    /// Logs and records leadership changes since the last call. Called once
-    /// per cycle, right before the leader-only work.
-    pub fn update(&mut self) {
+    /// Logs and records leadership changes since the last call, and returns
+    /// whether this instance leads. Called once per cycle, right before the
+    /// leader-only work.
+    pub fn update(&mut self) -> bool {
         let Self::Enabled {
             was_leader,
             leader_lock,
         } = self
         else {
-            return;
+            return self.is_leader();
         };
 
         Metrics::leader_lock_errors(leader_lock.take_errors());
@@ -64,6 +65,7 @@ impl LeaderLockTracker {
             _ => {}
         }
         *was_leader = is_leader;
+        is_leader
     }
 
     /// Releases the lock. Called once the loop stops.

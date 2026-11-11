@@ -1,7 +1,10 @@
 //! Leader election between autopilot instances through a Postgres
-//! session-level advisory lock. Postgres closes the lock session once it
-//! stays silent for [`IDLE_TIMEOUT`], which frees the lock, and the holder
-//! stops acting before that.
+//! session-level advisory lock.
+//!
+//! The leader pings its lock session every 2 s. Postgres closes a session
+//! that runs no query for 10 s, which frees the lock, so a frozen leader
+//! loses it. The leader stops acting 8 s after its last ping, before Postgres
+//! can free the lock, and at once when a ping fails.
 
 use {
     sqlx::{
@@ -21,10 +24,8 @@ use {
     tokio::task::JoinHandle,
 };
 
-/// How long Postgres keeps a silent lock session open. A leader beats every
-/// fifth of it and stops acting a fifth of it before it runs out. A beat may
-/// take half of it, so a stuck beat fails before the session closes. A
-/// follower polls every fiftieth of it.
+/// How long Postgres keeps a silent lock session open. The other timings are
+/// shares of it, so tests can shrink them all at once.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Holds the leader lock, or competes for it, from a background task until
@@ -54,14 +55,14 @@ impl LeaderLock {
             let state = state.clone();
             async move {
                 loop {
+                    let held_lock = session.holds_lock;
                     let (leader_until, wait) = match session.beat().await {
-                        Ok(Some(leader_until)) => (Some(leader_until), idle_timeout / 5),
-                        // another instance leads: poll often to take over fast
-                        Ok(None) => (None, idle_timeout / 50),
+                        Ok(Some(leader_until)) => (Some(leader_until), session.heartbeat()),
+                        Ok(None) => (None, session.follower_poll()),
                         Err(err) => {
-                            tracing::error!(?err, "leader lock heartbeat failed");
+                            tracing::error!(?err, held_lock, "leader lock heartbeat failed");
                             state.errors.fetch_add(1, Ordering::Relaxed);
-                            (None, idle_timeout / 5)
+                            (None, session.heartbeat())
                         }
                     };
                     *state.leader_until.lock().unwrap() = leader_until;
@@ -75,18 +76,15 @@ impl LeaderLock {
     /// Whether this instance may act as the leader right now. The lock can
     /// be lost at any time, so check it right before every leader-only action.
     pub fn is_leader(&self) -> bool {
-        // a panicked heartbeat dropped its session, and the lock with it
-        !self.heartbeat.is_finished()
-            && self
-                .state
-                .leader_until
-                .lock()
-                .unwrap()
-                .is_some_and(|end| Instant::now() < end)
+        self.state
+            .leader_until
+            .lock()
+            .unwrap()
+            .is_some_and(|end| Instant::now() < end)
     }
 
-    /// Returns how often taking or keeping the lock failed since the last
-    /// call.
+    /// Returns how many heartbeats failed since the last call, and resets the
+    /// count.
     pub fn take_errors(&self) -> u64 {
         self.state.errors.swap(0, Ordering::Relaxed)
     }
@@ -94,16 +92,14 @@ impl LeaderLock {
     /// Stops the heartbeat and closes its session, which frees the lock.
     pub async fn release(mut self) {
         self.heartbeat.abort();
-        if let Err(err) = (&mut self.heartbeat).await
-            && err.is_panic()
-        {
-            tracing::error!(?err, "leader lock heartbeat panicked");
-        }
+        let _ = (&mut self.heartbeat).await;
     }
 }
 
 impl Drop for LeaderLock {
     fn drop(&mut self) {
+        // after `release` the task has finished, and `abort` on a finished
+        // task does nothing
         self.heartbeat.abort();
     }
 }
@@ -133,11 +129,36 @@ impl Session {
         }
     }
 
+    /// How often the leader pings, and how long anyone waits after a failed
+    /// query: 2 s.
+    fn heartbeat(&self) -> Duration {
+        self.idle_timeout / 5
+    }
+
+    /// How often a follower tries to take the lock: 200 ms, so it takes over
+    /// right after the lock is freed.
+    fn follower_poll(&self) -> Duration {
+        self.idle_timeout / 50
+    }
+
+    /// How long a query may take before it fails: 5 s. 2 s between pings plus
+    /// 5 s stays under the leader's 8 s, so a stuck ping fails first.
+    fn query_timeout(&self) -> Duration {
+        self.idle_timeout / 2
+    }
+
+    /// How long the leader acts after sending a ping: 8 s. Postgres closes the
+    /// session 10 s after it answered, which is later, so the leader stops
+    /// first.
+    fn leader_for(&self) -> Duration {
+        self.idle_timeout - self.heartbeat()
+    }
+
     /// Pings the session while it holds the lock, and tries to take the lock
     /// otherwise. Returns until when this instance may act as the leader.
     async fn beat(&mut self) -> Result<Option<Instant>, sqlx::Error> {
         let sent = Instant::now();
-        let result = tokio::time::timeout(self.idle_timeout / 2, self.query())
+        let result = tokio::time::timeout(self.query_timeout(), self.query())
             .await
             .unwrap_or_else(|_| Err(io::Error::from(io::ErrorKind::TimedOut).into()));
         if result.is_err() {
@@ -145,11 +166,7 @@ impl Session {
             self.holds_lock = false;
         }
         result?;
-        // Postgres closes the session a timeout after it answered, which is
-        // after `sent`, so the leader stops acting first.
-        Ok(self
-            .holds_lock
-            .then(|| sent + self.idle_timeout - self.idle_timeout / 5))
+        Ok(self.holds_lock.then(|| sent + self.leader_for()))
     }
 
     async fn query(&mut self) -> Result<(), sqlx::Error> {
@@ -194,7 +211,7 @@ mod tests {
             leader_until = leader.beat().await.unwrap();
             assert!(leader_until.is_some());
             assert_eq!(follower.beat().await.unwrap(), None);
-            tokio::time::sleep(IDLE_TIMEOUT / 5).await;
+            tokio::time::sleep(leader.heartbeat()).await;
         }
 
         let silent_since = Instant::now();
@@ -206,7 +223,7 @@ mod tests {
                 silent_since.elapsed() < 2 * IDLE_TIMEOUT,
                 "the follower never took over"
             );
-            tokio::time::sleep(IDLE_TIMEOUT / 5).await;
+            tokio::time::sleep(follower.follower_poll()).await;
         };
         assert!(leader_until.unwrap() < took_over);
 
