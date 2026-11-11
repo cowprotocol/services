@@ -665,6 +665,7 @@ fn convert_onchain_order_placement(
         // Same as `valid_from`: filled in from the app-data after it has been
         // fetched.
         fast_path: false,
+        wait_for_cow: false,
     };
     let onchain_order_placement_event = OnchainOrderPlacement {
         order_uid: ByteArray(order_uid.0),
@@ -714,7 +715,8 @@ fn extract_order_data_from_onchain_order_placement_event(
 
 /// Populates all app-data-derived order fields before the orders are
 /// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
-/// backfills `valid_from` for non-fast-path orders that requested one,
+/// sets `wait_for_cow` from the `enableWaitForCow` app-data flag, backfills
+/// `valid_from` for non-fast-path orders that requested one,
 /// and indexes pre/post hook interactions. Must run before the orders
 /// are inserted (it mutates them). Orders whose app-data is unknown are
 /// left unchanged. Orders whose app-data is unparseable or names a wrapper
@@ -777,6 +779,7 @@ async fn handle_app_data(
         match parsed.execution_mode {
             ExecutionMode::FastPath => order.fast_path = true,
             ExecutionMode::ValidFrom(valid_from) => order.valid_from = Some(i64::from(valid_from)),
+            ExecutionMode::WaitForCow => order.wait_for_cow = true,
             ExecutionMode::RegularAuction => {}
         }
     }
@@ -1125,6 +1128,7 @@ mod test {
             cancellation_timestamp: None,
             valid_from: None,
             fast_path: false,
+            wait_for_cow: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
@@ -1239,6 +1243,7 @@ mod test {
             cancellation_timestamp: None,
             valid_from: None,
             fast_path: false,
+            wait_for_cow: false,
         };
         assert_eq!(onchain_order_placement, expected_onchain_order_placement);
         assert_eq!(order, expected_order);
