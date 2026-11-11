@@ -1,5 +1,7 @@
 //! Leader election between autopilot instances through a Postgres
-//! session-level advisory lock.
+//! session-level advisory lock. The lock works as a lease: Postgres frees
+//! it when the holder's session goes silent, and the holder may act only
+//! until a deadline that each heartbeat moves forward.
 
 use {
     sqlx::{
