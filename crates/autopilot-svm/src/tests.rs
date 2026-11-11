@@ -314,7 +314,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             startup: Default::default(),
         },
     );
-    auction_loop.run_cycle(&|| true).await;
+    auction_loop.run_cycle().await;
 
     let settle = tokio::time::timeout(Duration::from_secs(5), settled.recv())
         .await

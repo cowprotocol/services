@@ -177,6 +177,9 @@ pub struct AuctionLoop<C: Cycle> {
     prev_auction: Option<C::Auction>,
     prev_tip: Option<C::Tip>,
     probes: Probes,
+    /// Set from the lock in [`Self::run_forever`]. Disabled before that, so
+    /// a bare [`Self::run_cycle`] leads.
+    leader: LeaderLockTracker,
 }
 
 impl<C: Cycle> AuctionLoop<C> {
@@ -202,6 +205,7 @@ impl<C: Cycle> AuctionLoop<C> {
             prev_auction: None,
             prev_tip: None,
             probes,
+            leader: LeaderLockTracker::Disabled,
         }
     }
 
@@ -213,27 +217,26 @@ impl<C: Cycle> AuctionLoop<C> {
         leader_lock: Option<LeaderLock>,
         shutdown: CancellationToken,
     ) {
-        let mut leader_lock_tracker = LeaderLockTracker::new(leader_lock);
+        self.leader = LeaderLockTracker::new(leader_lock);
         while !shutdown.is_cancelled() {
-            leader_lock_tracker.update();
-            if leader_lock_tracker.is_leader() {
-                self.run_cycle(&|| leader_lock_tracker.is_leader()).await;
+            self.leader.update();
+            if self.leader.is_leader() {
+                self.run_cycle().await;
             } else {
                 self.sync().await;
             }
         }
-        leader_lock_tracker.release().await;
+        self.leader.release().await;
     }
 
-    /// One iteration of the outer loop. `is_leader` tells whether the lease
-    /// still holds.
-    pub async fn run_cycle(&mut self, is_leader: &dyn Fn() -> bool) {
+    /// One iteration of the outer loop.
+    pub async fn run_cycle(&mut self) {
         let tip = self.sync().await;
         let Some(auction) = self.next_auction(&tip).await else {
             return;
         };
         let auction_id = auction.id();
-        self.single_run(&auction, is_leader)
+        self.single_run(&auction)
             .instrument(tracing::info_span!("auction", auction_id = %auction_id))
             .await;
     }
@@ -283,7 +286,7 @@ impl<C: Cycle> AuctionLoop<C> {
     }
 
     /// Runs one competition for the auction.
-    async fn single_run(&self, auction: &C::Auction, is_leader: &dyn Fn() -> bool) {
+    async fn single_run(&self, auction: &C::Auction) {
         self.observer.on_orders_ready(auction);
 
         let solutions = self.competition.solve(auction).await;
@@ -300,7 +303,7 @@ impl<C: Cycle> AuctionLoop<C> {
 
         // Solving takes seconds, long enough for the lease to end and another
         // instance to take over, so only a current leader records the result.
-        if !is_leader() {
+        if !self.leader.is_leader() {
             tracing::warn!("lost the leader lock while solving, dropping the auction");
             return;
         }
@@ -325,7 +328,7 @@ impl<C: Cycle> AuctionLoop<C> {
             .collect();
         self.observer.on_orders_matched(executing, considered);
 
-        if !is_leader() {
+        if !self.leader.is_leader() {
             tracing::warn!("lost the leader lock, not settling");
             return;
         }
@@ -544,7 +547,7 @@ mod tests {
     async fn a_new_auction_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) =
             scripted_loop([(true, NextAuction::Auction(TestAuction(vec![1])))]);
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         assert!(liveness.is_alive().await);
     }
 
@@ -568,29 +571,28 @@ mod tests {
                 startup: Arc::new(None),
             },
         );
-        auction_loop
-            .run_cycle(&|| leading.load(Ordering::Acquire))
-            .await;
+        auction_loop.leader = LeaderLockTracker::Scripted(leading);
+        auction_loop.run_cycle().await;
     }
 
     #[tokio::test]
     async fn an_empty_cut_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Empty)]);
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         assert!(liveness.is_alive().await);
     }
 
     #[tokio::test]
     async fn a_stale_cut_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Stale)]);
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         assert!(liveness.is_alive().await);
     }
 
     #[tokio::test]
     async fn a_failed_cut_does_not_refresh_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Failed)]);
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         assert!(!liveness.is_alive().await);
     }
 
@@ -600,9 +602,9 @@ mod tests {
             (true, NextAuction::Auction(TestAuction(vec![1]))),
             (true, NextAuction::Auction(TestAuction(vec![1]))),
         ]);
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         liveness.expire();
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         assert!(!liveness.is_alive().await);
     }
 
@@ -611,9 +613,9 @@ mod tests {
         let (mut auction_loop, _, startup) =
             scripted_loop([(false, NextAuction::Failed), (true, NextAuction::Failed)]);
         let started = || startup.as_ref().as_ref().unwrap().load(Ordering::Acquire);
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         assert!(!started());
-        auction_loop.run_cycle(&|| true).await;
+        auction_loop.run_cycle().await;
         assert!(started());
     }
 
