@@ -228,8 +228,7 @@ impl<C: Cycle> AuctionLoop<C> {
     pub async fn run_cycle(&mut self) {
         let tip = self.sync().await;
         // the lock can be lost during the wait for the tip, so decide after it
-        self.leader.update();
-        if !self.leader.is_leader() {
+        if !self.leader.update() {
             return;
         }
         let Some(auction) = self.next_auction(&tip).await else {
@@ -656,6 +655,9 @@ mod tests {
             [(true, NextAuction::Auction(TestAuction(vec![1])))],
         );
         let standby = LeaderLock::spawn(&pool, key);
+        // the standby's first heartbeat must find the lock taken before the
+        // cycle runs
+        tokio::time::sleep(Duration::from_millis(500)).await;
         auction_loop.run_forever(Some(standby), shutdown).await;
 
         assert!(startup.as_ref().as_ref().unwrap().load(Ordering::Acquire));
