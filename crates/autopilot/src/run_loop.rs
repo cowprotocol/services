@@ -234,8 +234,7 @@ impl RunLoop {
 
             // the lock can be lost during the wait for the block, so decide
             // after it
-            leader_lock_tracker.update();
-            if !leader_lock_tracker.is_leader() {
+            if !leader_lock_tracker.update() {
                 // While not leading another instance sends the auctions, so
                 // the previous auction this instance recorded is not the one
                 // the drivers received; ensure we start from a checkpoint when
