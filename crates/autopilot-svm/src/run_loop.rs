@@ -211,7 +211,6 @@ impl<C: Cycle> AuctionLoop<C> {
 
     /// Runs cycles until `shutdown` is cancelled, then releases the leader
     /// lock. The cycle in flight when the signal arrives runs to its end.
-    /// With a lock, a cycle on an instance that does not hold it only syncs.
     pub async fn run_forever(
         mut self,
         leader_lock: Option<LeaderLock>,
@@ -219,19 +218,20 @@ impl<C: Cycle> AuctionLoop<C> {
     ) {
         self.leader = LeaderLockTracker::new(leader_lock);
         while !shutdown.is_cancelled() {
-            self.leader.update();
-            if self.leader.is_leader() {
-                self.run_cycle().await;
-            } else {
-                self.sync().await;
-            }
+            self.run_cycle().await;
         }
         self.leader.release().await;
     }
 
-    /// One iteration of the outer loop.
+    /// One iteration of the outer loop. With a lock, an instance that does
+    /// not hold it only syncs.
     pub async fn run_cycle(&mut self) {
         let tip = self.sync().await;
+        // the lease can end during the wait for the tip, so decide after it
+        self.leader.update();
+        if !self.leader.is_leader() {
+            return;
+        }
         let Some(auction) = self.next_auction(&tip).await else {
             return;
         };

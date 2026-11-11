@@ -207,18 +207,20 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
 
     // Kill the leader's lock session and hold the lock from here, as a
     // follower that took over would. The leader keeps running but notices at
-    // its next heartbeat and stops cutting auctions.
+    // its next heartbeat and stops cutting auctions. The follower polls for
+    // the freed lock too, so kill and take until this connection wins.
     let mut lock_holder = sqlx::PgConnection::connect("postgresql://").await.unwrap();
-    sqlx::query(
-        "SELECT pg_terminate_backend(pid) FROM pg_locks WHERE locktype = 'advisory' AND granted \
-         AND objsubid = 1 AND classid = ((hashtextextended('autopilot_startup', 0) >> 32) & \
-         4294967295)::oid AND objid = (hashtextextended('autopilot_startup', 0) & 4294967295)::oid",
-    )
-    .execute(&mut lock_holder)
-    .await
-    .unwrap();
     let take_over = async {
         loop {
+            sqlx::query(
+                "SELECT pg_terminate_backend(pid, 5000) FROM pg_locks WHERE locktype = 'advisory' \
+                 AND granted AND objsubid = 1 AND classid = \
+                 ((hashtextextended('autopilot_startup', 0) >> 32) & 4294967295)::oid AND objid = \
+                 (hashtextextended('autopilot_startup', 0) & 4294967295)::oid",
+            )
+            .execute(&mut lock_holder)
+            .await
+            .unwrap();
             let locked: bool = sqlx::query_scalar(
                 "SELECT pg_try_advisory_lock(hashtextextended('autopilot_startup', 0))",
             )
@@ -235,25 +237,16 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         .await
         .expect("the killed session frees the lock");
 
-    // A leader cuts an auction on every block, so a block that takes no new
-    // auction id means the old leader stepped down. Both autopilots share one
+    // A leader cuts an auction on every block, so blocks that take no new
+    // auction id mean the old leader stepped down. Both autopilots share one
     // metrics registry in this process, so `is_leader` can't tell.
-    let stops_cutting = || async {
-        let before = last_auction_id(services.db()).await;
-        onchain.mint_block().await;
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        last_auction_id(services.db()).await == before
-    };
-    wait_for_condition(TIMEOUT, stops_cutting).await.unwrap();
+    wait_for_condition(TIMEOUT, || quiet_blocks(2, &onchain, services.db()))
+        .await
+        .unwrap();
 
     // Without the lock the old leader cuts no auction, however many blocks
     // pass.
-    let last_cut = last_auction_id(services.db()).await;
-    for _ in 0..3 {
-        onchain.mint_block().await;
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    assert_eq!(last_auction_id(services.db()).await, last_cut);
+    assert!(quiet_blocks(3, &onchain, services.db()).await);
 
     // Stop autopilot-leader, then free the lock: only the follower can take it
     manual_shutdown.shutdown();
@@ -319,6 +312,16 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         };
         wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
     }
+}
+
+/// Whether `n` blocks in a row pass without a new auction id.
+async fn quiet_blocks(n: usize, onchain: &OnchainComponents, db: &sqlx::PgPool) -> bool {
+    let before = last_auction_id(db).await;
+    for _ in 0..n {
+        onchain.mint_block().await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    last_auction_id(db).await == before
 }
 
 /// The id the autopilot took for its last cut. Read from the id sequence,
