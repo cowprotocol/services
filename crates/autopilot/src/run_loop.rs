@@ -211,20 +211,14 @@ impl RunLoop {
         let mut last_block = None;
 
         let self_arc = Arc::new(self);
-        let leader = if self_arc.config.enable_leader_lock {
-            Some(
-                self_arc
-                    .persistence
-                    .leader("autopilot_startup".to_string())
-                    .await,
-            )
-        } else {
-            None
-        };
+        let leader = self_arc
+            .config
+            .enable_leader_lock
+            .then(|| self_arc.persistence.leader("autopilot_startup".to_string()));
         let mut leader_lock_tracker = LeaderLockTracker::new(leader);
 
         while !control.should_shutdown() {
-            leader_lock_tracker.try_acquire().await;
+            leader_lock_tracker.update();
 
             // Wait for notify about some significant state change (e.g. new
             // order, new block). We only update the cache afterwards to update
@@ -257,7 +251,7 @@ impl RunLoop {
             {
                 let auction_id = auction.id;
                 self_arc
-                    .single_run(&auction, start_block)
+                    .single_run(&auction, start_block, &leader_lock_tracker)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
             }
@@ -395,7 +389,12 @@ impl RunLoop {
     }
 
     #[instrument(skip_all)]
-    async fn single_run(self: &Arc<Self>, auction: &Arc<domain::Auction>, start_block: BlockInfo) {
+    async fn single_run(
+        self: &Arc<Self>,
+        auction: &Arc<domain::Auction>,
+        start_block: BlockInfo,
+        leader: &LeaderLockTracker,
+    ) {
         tracing::info!(auction_id = ?auction.id, "solving");
 
         // Mark all auction orders as `Ready` for competition
@@ -420,6 +419,13 @@ impl RunLoop {
 
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
+
+        // Solving takes seconds, long enough for the lease to end and another
+        // instance to take over, so only a current leader records the result.
+        if !leader.is_leader() {
+            tracing::warn!("lost the leader lock while solving, dropping the auction");
+            return;
+        }
 
         // Post-processing should not be executed asynchronously since it
         // includes steps of storing all the competition/auction-related
@@ -452,6 +458,10 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "orders marked as considered");
         Metrics::winner_declared(start_block, self.eth.current_block());
 
+        if !leader.is_leader() {
+            tracing::warn!("lost the leader lock, not settling");
+            return;
+        }
         for (solution_uid, winner) in ranking.enumerated().filter(|(_, bid)| bid.is_winner()) {
             let (driver, solution) = (winner.driver(), winner.solution());
             tracing::info!(driver = %driver.name, solution = %solution.id(), "winner");
