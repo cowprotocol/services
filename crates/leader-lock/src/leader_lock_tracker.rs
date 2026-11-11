@@ -1,3 +1,9 @@
+#[cfg(feature = "test-util")]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use {crate::leader_pg_lock::LeaderLock, observe::metrics};
 
 /// Tracks the autopilot leader lock status.
@@ -16,6 +22,9 @@ pub enum LeaderLockTracker {
         was_leader: bool,
         leader_lock: LeaderLock,
     },
+    /// A lease the test flips.
+    #[cfg(feature = "test-util")]
+    Scripted(Arc<AtomicBool>),
 }
 
 impl LeaderLockTracker {
@@ -80,6 +89,8 @@ impl LeaderLockTracker {
         match self {
             Self::Enabled { leader_lock, .. } => leader_lock.is_leader(),
             Self::Disabled => true,
+            #[cfg(feature = "test-util")]
+            Self::Scripted(leading) => leading.load(Ordering::Acquire),
         }
     }
 }
