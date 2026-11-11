@@ -1398,9 +1398,19 @@ components:
             Earliest time (unix seconds) at which the order may enter a batch
             auction, taken from the order's `appData`. Omitted when the order
             has no lower bound (eligible immediately). Mutually exclusive with
-            `enableFastPath`: an order that sets both is rejected.
+            `enableFastPath` and `enableWaitForCow`: an order that sets more
+            than one of them is rejected.
           type: integer
           nullable: true
+        waitForCow:
+          description: >
+            Whether the order requested the wait-for-CoW execution mode via the
+            `enableWaitForCow` flag in its `appData`. Such orders are held back
+            until the next canonical batch auction starts to give them a higher
+            chance to be matched with a counterparty (a CoW). Omitted when `false`.
+            Mutually exclusive with `enableFastPath` and `validFrom`.
+          type: boolean
+          default: false
         settlementContract:
           description: >
             The address of the CoW Protocol settlement contract that this order
