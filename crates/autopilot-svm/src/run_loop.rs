@@ -215,9 +215,9 @@ impl<C: Cycle> AuctionLoop<C> {
     ) {
         let mut leader_lock_tracker = LeaderLockTracker::new(leader_lock);
         while !shutdown.is_cancelled() {
-            leader_lock_tracker.try_acquire().await;
+            leader_lock_tracker.update();
             if leader_lock_tracker.is_leader() {
-                self.run_cycle().await;
+                self.run_cycle(&|| leader_lock_tracker.is_leader()).await;
             } else {
                 self.sync().await;
             }
@@ -225,14 +225,15 @@ impl<C: Cycle> AuctionLoop<C> {
         leader_lock_tracker.release().await;
     }
 
-    /// One iteration of the outer loop.
-    pub async fn run_cycle(&mut self) {
+    /// One iteration of the outer loop. `is_leader` tells whether the lease
+    /// still holds.
+    pub async fn run_cycle(&mut self, is_leader: &dyn Fn() -> bool) {
         let tip = self.sync().await;
         let Some(auction) = self.next_auction(&tip).await else {
             return;
         };
         let auction_id = auction.id();
-        self.single_run(&auction)
+        self.single_run(&auction, is_leader)
             .instrument(tracing::info_span!("auction", auction_id = %auction_id))
             .await;
     }
@@ -282,7 +283,7 @@ impl<C: Cycle> AuctionLoop<C> {
     }
 
     /// Runs one competition for the auction.
-    async fn single_run(&self, auction: &C::Auction) {
+    async fn single_run(&self, auction: &C::Auction, is_leader: &dyn Fn() -> bool) {
         self.observer.on_orders_ready(auction);
 
         let solutions = self.competition.solve(auction).await;
@@ -296,6 +297,13 @@ impl<C: Cycle> AuctionLoop<C> {
         // the deadline derives from the tip observed after ranking
         let ranking_tip = self.trigger.current_tip();
         let deadline = C::submission_deadline(&ranking_tip, self.submission_deadline_allowance);
+
+        // Solving takes seconds, long enough for the lease to end and another
+        // instance to take over, so only a current leader records the result.
+        if !is_leader() {
+            tracing::warn!("lost the leader lock while solving, dropping the auction");
+            return;
+        }
 
         // storing the outcome must finish before any settlement starts
         if let Err(err) = self
@@ -317,6 +325,10 @@ impl<C: Cycle> AuctionLoop<C> {
             .collect();
         self.observer.on_orders_matched(executing, considered);
 
+        if !is_leader() {
+            tracing::warn!("lost the leader lock, not settling");
+            return;
+        }
         self.executor
             .execute(auction.id(), &ranking, &ranking_tip, deadline)
             .await;
@@ -469,6 +481,24 @@ mod tests {
         }
     }
 
+    /// Returns one solution and ranks it, and the lease ends while the
+    /// solvers work.
+    struct LeaseEndsWhileSolving(Arc<AtomicBool>);
+
+    #[async_trait]
+    impl SolverCompetition<TestCycle> for LeaseEndsWhileSolving {
+        async fn solve(&self, _auction: &TestAuction) -> Vec<()> {
+            self.0.store(false, Ordering::Release);
+            vec![()]
+        }
+    }
+
+    impl WinnerSelection<TestCycle> for LeaseEndsWhileSolving {
+        fn arbitrate(&self, _solutions: Vec<()>, _auction: &TestAuction) -> NoRanking {
+            NoRanking
+        }
+    }
+
     /// A loop that runs the scripted cycles. Its liveness probe fails until
     /// the loop records an auction, and its startup probe fails until the
     /// first successful sync.
@@ -514,28 +544,53 @@ mod tests {
     async fn a_new_auction_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) =
             scripted_loop([(true, NextAuction::Auction(TestAuction(vec![1])))]);
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         assert!(liveness.is_alive().await);
+    }
+
+    /// A leader whose lease ends while the solvers work stores and settles
+    /// nothing, which [`Stub`] asserts.
+    #[tokio::test]
+    async fn a_leader_that_loses_the_lock_while_solving_stores_and_settles_nothing() {
+        let leading = Arc::new(AtomicBool::new(true));
+        let mut auction_loop = AuctionLoop::new(
+            Box::new(Stub),
+            Box::new(ScriptedProvider(Mutex::new(
+                [(true, NextAuction::Auction(TestAuction(vec![1])))].into(),
+            ))),
+            Box::new(LeaseEndsWhileSolving(leading.clone())),
+            Box::new(LeaseEndsWhileSolving(leading.clone())),
+            Box::new(Stub),
+            Box::new(Stub),
+            0,
+            Probes {
+                liveness: Arc::new(Liveness::new(Duration::from_secs(60))),
+                startup: Arc::new(None),
+            },
+        );
+        auction_loop
+            .run_cycle(&|| leading.load(Ordering::Acquire))
+            .await;
     }
 
     #[tokio::test]
     async fn an_empty_cut_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Empty)]);
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         assert!(liveness.is_alive().await);
     }
 
     #[tokio::test]
     async fn a_stale_cut_refreshes_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Stale)]);
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         assert!(liveness.is_alive().await);
     }
 
     #[tokio::test]
     async fn a_failed_cut_does_not_refresh_the_liveness_probe() {
         let (mut auction_loop, liveness, _) = scripted_loop([(true, NextAuction::Failed)]);
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         assert!(!liveness.is_alive().await);
     }
 
@@ -545,9 +600,9 @@ mod tests {
             (true, NextAuction::Auction(TestAuction(vec![1]))),
             (true, NextAuction::Auction(TestAuction(vec![1]))),
         ]);
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         liveness.expire();
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         assert!(!liveness.is_alive().await);
     }
 
@@ -556,9 +611,9 @@ mod tests {
         let (mut auction_loop, _, startup) =
             scripted_loop([(false, NextAuction::Failed), (true, NextAuction::Failed)]);
         let started = || startup.as_ref().as_ref().unwrap().load(Ordering::Acquire);
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         assert!(!started());
-        auction_loop.run_cycle().await;
+        auction_loop.run_cycle(&|| true).await;
         assert!(started());
     }
 
@@ -584,15 +639,21 @@ mod tests {
     async fn solana_db_a_standby_syncs_without_cutting() {
         let pool = crate::test_db::pool().await;
         let key = "solana_db_a_standby_syncs_without_cutting".to_string();
-        let mut leader = LeaderLock::new(pool.clone(), key.clone(), Duration::ZERO);
-        assert!(leader.try_acquire().await.unwrap());
+        let leader = LeaderLock::spawn(&pool, key.clone());
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !leader.is_leader() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the first instance takes the lock");
 
         let shutdown = CancellationToken::new();
         let (auction_loop, liveness, startup) = scripted_loop_with(
             Box::new(ShutdownMidCycle(shutdown.clone())),
             [(true, NextAuction::Auction(TestAuction(vec![1])))],
         );
-        let standby = LeaderLock::new(pool, key, Duration::ZERO);
+        let standby = LeaderLock::spawn(&pool, key);
         auction_loop.run_forever(Some(standby), shutdown).await;
 
         assert!(startup.as_ref().as_ref().unwrap().load(Ordering::Acquire));

@@ -6149,6 +6149,7 @@ dependencies = [
  "prometheus",
  "prometheus-metric-storage",
  "sqlx",
+ "tokio",
  "tracing",
 ]
 

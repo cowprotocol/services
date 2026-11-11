@@ -44,7 +44,7 @@ jobs:
             unit=*
             e2e=e2e
             driver=driver
-            db=autopilot database orderbook
+            db=autopilot database leader-lock orderbook
             db-solana=autopilot-svm solana-indexer solana-orderbook
             doc=autopilot driver number testlib
             event-bus=event-bus-dto

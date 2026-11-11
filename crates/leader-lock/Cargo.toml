@@ -10,7 +10,11 @@ observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 sqlx = { workspace = true }
+tokio = { workspace = true, features = ["rt", "time"] }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }
 
 [lints]
 workspace = true
