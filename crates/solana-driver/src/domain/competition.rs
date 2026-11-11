@@ -270,7 +270,7 @@ impl Competition {
                 // under it would fail the settlement.
                 solution.cu_estimate = Some(self.priority_fee.compute_unit_limit(units));
             }
-            if let Some(fees) = fees {
+            let (charged, network_fee) = if let Some(fees) = fees {
                 let outcome = match &fees {
                     Ok(Ok(_)) => "read",
                     Ok(Err(error)) => error_label(error),
@@ -328,24 +328,17 @@ impl Competition {
                         continue;
                     }
                 };
-                if let Err(reason) = costs.apply(&mut solution, &orders, network_fee) {
-                    tracing::warn!(
-                        solver = %self.solver.name(),
-                        solution_id = solution.id,
-                        orders = ?order_uids,
-                        %reason,
-                        "dropping solution the execution costs cannot be cut from"
-                    );
-                    self.count_solution("cut_rejected");
-                    continue;
-                }
-            } else if let Err(reason) = creation_costs.apply(&mut solution, &orders, 0) {
+                (costs, network_fee)
+            } else {
+                (creation_costs, 0)
+            };
+            if let Err(reason) = charged.apply(&mut solution, &orders, network_fee) {
                 tracing::warn!(
                     solver = %self.solver.name(),
                     solution_id = solution.id,
                     orders = ?order_uids,
                     %reason,
-                    "dropping solution the creation fee cannot be cut from"
+                    "dropping solution the execution costs cannot be cut from"
                 );
                 self.count_solution("cut_rejected");
                 continue;
