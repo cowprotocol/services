@@ -1114,6 +1114,10 @@ impl OrderValidating for OrderValidator {
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
         );
+        let wait_for_cow = matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::WaitForCow
+        );
 
         let order = Order {
             metadata: OrderMetadata {
@@ -1133,6 +1137,7 @@ impl OrderValidating for OrderValidator {
                     .map_err(ValidationError::Other)?,
                 valid_from,
                 fast_path,
+                wait_for_cow,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1932,6 +1937,7 @@ mod tests {
         let (order, _) = validate(fast_path).await.unwrap();
         assert!(order.metadata.valid_from.is_none());
         assert!(order.metadata.fast_path);
+        assert!(!order.metadata.wait_for_cow);
 
         let both = OrderCreation {
             app_data: OrderCreationAppData::Full {
@@ -1944,6 +1950,32 @@ mod tests {
             validate(both).await,
             Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
         );
+
+        // Wait-for-CoW orders are flagged as such, with no `valid_from` and
+        // not fast-path.
+        let with_metadata = |metadata: serde_json::Value| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": metadata }).to_string(),
+            },
+            ..plain(now + 150)
+        };
+        let (order, _) = validate(with_metadata(json!({ "enableWaitForCow": true })))
+            .await
+            .unwrap();
+        assert!(order.metadata.valid_from.is_none());
+        assert!(!order.metadata.fast_path);
+        assert!(order.metadata.wait_for_cow);
+
+        // ...and are mutually exclusive with the other execution modes.
+        for conflicting in [
+            json!({ "enableWaitForCow": true, "enableFastPath": true }),
+            json!({ "enableWaitForCow": true, "validFrom": now + 50 }),
+        ] {
+            std::assert_matches!(
+                validate(with_metadata(conflicting)).await,
+                Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+            );
+        }
     }
 
     #[tokio::test]
