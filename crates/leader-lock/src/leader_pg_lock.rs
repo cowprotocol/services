@@ -19,9 +19,10 @@ use {
     tokio::task::JoinHandle,
 };
 
-/// How long Postgres keeps a silent lock session open. Heartbeats, query
-/// timeouts and the margin a leader keeps before its lease ends are a fifth
-/// of it.
+/// How long Postgres keeps a silent lock session open. A leader beats every
+/// fifth of it and stops acting a fifth of it before the lease ends. A beat
+/// may take half of it, so a stuck beat fails before the lease ends. A
+/// follower polls every fiftieth of it.
 const LEASE: Duration = Duration::from_secs(10);
 
 /// Holds the leader lock, or competes for it, from a background task until
@@ -51,13 +52,18 @@ impl LeaderLock {
             let state = state.clone();
             async move {
                 loop {
-                    let lease_end = session.beat().await.unwrap_or_else(|err| {
-                        tracing::error!(?err, "failed to become leader");
-                        state.errors.fetch_add(1, Ordering::Relaxed);
-                        None
-                    });
+                    let (lease_end, wait) = match session.beat().await {
+                        Ok(Some(lease_end)) => (Some(lease_end), lease / 5),
+                        // another instance leads: poll often to take over fast
+                        Ok(None) => (None, lease / 50),
+                        Err(err) => {
+                            tracing::error!(?err, "leader lock heartbeat failed");
+                            state.errors.fetch_add(1, Ordering::Relaxed);
+                            (None, lease / 5)
+                        }
+                    };
                     *state.lease_end.lock().unwrap() = lease_end;
-                    tokio::time::sleep(lease / 5).await;
+                    tokio::time::sleep(wait).await;
                 }
             }
         });
@@ -67,11 +73,14 @@ impl LeaderLock {
     /// Whether this instance may act as the leader right now. The lease can
     /// end at any time, so check it right before every leader-only action.
     pub fn is_leader(&self) -> bool {
-        self.state
-            .lease_end
-            .lock()
-            .unwrap()
-            .is_some_and(|end| Instant::now() < end)
+        // a panicked heartbeat dropped its session, and the lock with it
+        !self.heartbeat.is_finished()
+            && self
+                .state
+                .lease_end
+                .lock()
+                .unwrap()
+                .is_some_and(|end| Instant::now() < end)
     }
 
     /// Returns how often taking or keeping the lock failed since the last
@@ -83,7 +92,11 @@ impl LeaderLock {
     /// Stops the heartbeat and closes its session, which frees the lock.
     pub async fn release(mut self) {
         self.heartbeat.abort();
-        let _ = (&mut self.heartbeat).await;
+        if let Err(err) = (&mut self.heartbeat).await
+            && err.is_panic()
+        {
+            tracing::error!(?err, "leader lock heartbeat panicked");
+        }
     }
 }
 
@@ -121,7 +134,7 @@ impl Session {
     /// otherwise. Returns until when this instance may act as the leader.
     async fn beat(&mut self) -> Result<Option<Instant>, sqlx::Error> {
         let sent = Instant::now();
-        let result = tokio::time::timeout(self.lease / 5, self.query())
+        let result = tokio::time::timeout(self.lease / 2, self.query())
             .await
             .unwrap_or_else(|_| Err(io::Error::from(io::ErrorKind::TimedOut).into()));
         if result.is_err() {
