@@ -15,6 +15,9 @@ pub struct OrderView<'a> {
     pub order: &'a model::order::Order,
     /// The order's app data, which the host copies from the parsed document.
     pub app_data: &'a AppData,
+    /// The partner fees of the app data. Rules do not see them; the engine
+    /// caps them and returns them apart (`Evaluation::partner_fees`).
+    pub partner_fees: &'a [crate::PartnerFee],
     /// Whether the limit price is inside the market price of the order's quote;
     /// false when the order has no quote. The engine trusts it as given.
     pub in_market: bool,
@@ -28,6 +31,7 @@ pub(crate) fn order_view(
         order,
         app_data,
         in_market,
+        ..
     }: OrderView,
 ) -> Value {
     let (data, meta) = (&order.data, &order.metadata);
@@ -143,6 +147,7 @@ mod tests {
         let view = order_view(OrderView {
             order: &order,
             app_data: &AppData::default(),
+            partner_fees: &[],
             in_market: false,
         });
 
@@ -224,6 +229,7 @@ mod tests {
         let mut view = order_view(OrderView {
             order: &order,
             app_data: &crate::rules::sample_app_data(),
+            partner_fees: &[],
             in_market: true,
         });
         let fields = view.as_object_mut().unwrap();
@@ -256,6 +262,7 @@ mod tests {
         let view = order_view(OrderView {
             order: &fully_set_order(),
             app_data: &crate::rules::sample_app_data(),
+            partner_fees: &[],
             in_market: true,
         });
 
@@ -313,6 +320,7 @@ mod tests {
             order_view(OrderView {
                 order,
                 app_data: &crate::rules::sample_app_data(),
+                partner_fees: &[],
                 in_market: false,
             })
         };
@@ -335,6 +343,7 @@ mod tests {
         let view = order_view(OrderView {
             order: &order,
             app_data: &AppData::default(),
+            partner_fees: &[],
             in_market: false,
         });
 
@@ -355,6 +364,7 @@ mod tests {
         let view = order_view(OrderView {
             order: &fully_set_order(),
             app_data: &crate::rules::sample_app_data(),
+            partner_fees: &[],
             in_market: true,
         });
         assert_eq!(field_paths(&sample), field_paths(&view));

@@ -122,10 +122,12 @@ impl ExecutionCost<'_> {
 
     /// Cuts every trade of `solution` by its order's rent and creation fee
     /// and its share of `network_fee`, the settlement's network fee split
-    /// evenly over the trades and rounded up. An order filled by several
-    /// trades pays its rent and creation fee on the first. One failing trade
-    /// rejects the whole solution, left untouched. `Trade::solver_fee` carries
-    /// the solver fee only, not the cut.
+    /// evenly over the trades and rounded up. The settlement creates a buy
+    /// token account once, so only the first trade paying into it pays its
+    /// rent, also when several orders share it. An order filled by several
+    /// trades pays its creation fee on the first. One failing trade rejects
+    /// the whole solution, left untouched. `Trade::solver_fee` carries the
+    /// solver fee only, not the cut.
     pub fn apply(
         &self,
         solution: &mut Solution,
@@ -136,7 +138,8 @@ impl ExecutionCost<'_> {
             return Ok(());
         };
         let fee_share = network_fee.div_ceil(trades.get());
-        let mut sponsored_costs_charged = HashSet::new();
+        let mut rent_charged = HashSet::new();
+        let mut creation_fees_charged = HashSet::new();
         let solution_id = solution.id;
         let trades = solution
             .trades
@@ -146,12 +149,17 @@ impl ExecutionCost<'_> {
                     .get(&trade.order_uid)
                     .copied()
                     .ok_or(Rejected::UnknownOrder(trade.order_uid))?;
-                let sponsored_costs = if sponsored_costs_charged.insert(order.uid) {
-                    self.sponsored_costs(order)
+                let rent = if rent_charged.insert(order.buy_token_account) {
+                    self.rent(order)
                 } else {
                     0
                 };
-                let lamports = sponsored_costs + u128::from(fee_share);
+                let creation_fee = if creation_fees_charged.insert(order.uid) {
+                    u128::from(self.creation_fees.get(&order.uid).copied().unwrap_or(0))
+                } else {
+                    0
+                };
+                let lamports = rent + creation_fee + u128::from(fee_share);
                 let atoms = self
                     .cut(order, lamports)
                     .ok_or(Rejected::MissingPrice(order.uid))?;
@@ -171,10 +179,11 @@ impl ExecutionCost<'_> {
 
     /// The lamports only `order` pays: its rent and its creation fee.
     fn sponsored_costs(&self, order: &Order) -> u128 {
-        let lamports = |costs: &HashMap<OrderUid, u64>| {
-            u128::from(costs.get(&order.uid).copied().unwrap_or(0))
-        };
-        lamports(self.rent) + lamports(self.creation_fees)
+        self.rent(order) + u128::from(self.creation_fees.get(&order.uid).copied().unwrap_or(0))
+    }
+
+    fn rent(&self, order: &Order) -> u128 {
+        u128::from(self.rent.get(&order.uid).copied().unwrap_or(0))
     }
 
     /// The atoms of `order`'s limit-leg token worth `lamports`, rounded up.
@@ -435,6 +444,34 @@ mod tests {
         cost.apply(&mut sol, &self::orders(&orders), 5_000).unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
         assert_eq!(sol.trades[1].executed_buy, 25_000);
+    }
+
+    /// Orders 1 and 2 pay into one missing account and order 3 into another.
+    /// The first trade into each account pays its 1000 lamports as 2000
+    /// atoms, and order 2 pays nothing.
+    #[test]
+    fn orders_sharing_a_buy_token_account_pay_its_rent_once() {
+        let rent = HashMap::from([1, 2, 3].map(|uid| (OrderUid([uid; 32]), 1_000)));
+        let prices = prices();
+        let orders = [
+            order(1, Side::Sell, 1_000, 1_000),
+            order(2, Side::Sell, 1_000, 1_000),
+            Order {
+                buy_token_account: pubkey(0x68),
+                ..order(3, Side::Sell, 1_000, 1_000)
+            },
+        ];
+        let mut sol = solution(vec![
+            trade(1, 1_000, 3_000),
+            trade(2, 1_000, 3_000),
+            trade(3, 1_000, 3_000),
+        ]);
+        cost(&rent, &prices)
+            .apply(&mut sol, &self::orders(&orders), 0)
+            .unwrap();
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(sol.trades[1].executed_buy, 3_000);
+        assert_eq!(sol.trades[2].executed_buy, 1_000);
     }
 
     /// The limit leg sent to the engine, the signed limit moved by the cut,

@@ -1,4 +1,4 @@
-//! A [`RuleSet`] from a TOML rules file or from the two tables of one.
+//! A [`RuleSet`] from a TOML rules file or from the tables of one.
 
 use crate::{CompileError, RuleDefinition, RuleSet, RuleSetDefinition, SampleOrderError};
 
@@ -27,13 +27,14 @@ fn join_sample_order_errors(errors: &[SampleOrderError]) -> String {
         .join("; ")
 }
 
-/// The `lists` table and the `rule` array of a rules file as raw TOML, e.g.
-/// from a section of a host config; `None` is empty, as an absent table is in
-/// a file. [`load_rules_toml`] checks their shape.
+/// The `lists`, `rule` and `partner_fees` tables of a rules file as raw TOML,
+/// e.g. from a section of a host config; `None` is an absent table, as in a
+/// file. [`load_rules_toml`] checks their shape.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RulesToml {
     pub lists: Option<toml::Value>,
     pub rules: Option<toml::Value>,
+    pub partner_fees: Option<toml::Value>,
 }
 
 /// Parses a whole rules file, then loads it as [`load_rules_toml`] does.
@@ -41,15 +42,25 @@ pub fn load_rules_from_str(source: &str) -> Result<RuleSet, LoadError> {
     load_rule_set_definition(toml::from_str(source)?)
 }
 
-/// Checks the shape of both tables, compiles the rules and validates them on
+/// Checks the shape of the tables, compiles the rules and validates them on
 /// a sample order. Any failure refuses the whole set.
-pub fn load_rules_toml(RulesToml { lists, rules }: RulesToml) -> Result<RuleSet, LoadError> {
+pub fn load_rules_toml(
+    RulesToml {
+        lists,
+        rules,
+        partner_fees,
+    }: RulesToml,
+) -> Result<RuleSet, LoadError> {
     load_rule_set_definition(RuleSetDefinition {
         lists: lists
             .map(toml::Value::try_into)
             .transpose()?
             .unwrap_or_default(),
         rules: rules.map(rule_definitions).transpose()?.unwrap_or_default(),
+        partner_fees: partner_fees
+            .map(toml::Value::try_into)
+            .transpose()?
+            .unwrap_or_default(),
     })
 }
 
