@@ -232,8 +232,8 @@ impl RunLoop {
                 startup.store(true, Ordering::Release);
             }
 
-            // the lease can end during the wait for the block, so decide after
-            // it
+            // the lock can be lost during the wait for the block, so decide
+            // after it
             leader_lock_tracker.update();
             if !leader_lock_tracker.is_leader() {
                 // While not leading another instance sends the auctions, so
@@ -421,7 +421,7 @@ impl RunLoop {
         let competition_simulation_block = self.eth.current_block().borrow().number;
         let block_deadline = competition_simulation_block + self.config.submission_deadline;
 
-        // Solving takes seconds, long enough for the lease to end and another
+        // Solving takes seconds, long enough to lose the lock and for another
         // instance to take over, so only a current leader records the result.
         if !leader.is_leader() {
             tracing::warn!("lost the leader lock while solving, dropping the auction");

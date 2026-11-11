@@ -227,7 +227,7 @@ impl<C: Cycle> AuctionLoop<C> {
     /// not hold it only syncs.
     pub async fn run_cycle(&mut self) {
         let tip = self.sync().await;
-        // the lease can end during the wait for the tip, so decide after it
+        // the lock can be lost during the wait for the tip, so decide after it
         self.leader.update();
         if !self.leader.is_leader() {
             return;
@@ -301,7 +301,7 @@ impl<C: Cycle> AuctionLoop<C> {
         let ranking_tip = self.trigger.current_tip();
         let deadline = C::submission_deadline(&ranking_tip, self.submission_deadline_allowance);
 
-        // Solving takes seconds, long enough for the lease to end and another
+        // Solving takes seconds, long enough to lose the lock and for another
         // instance to take over, so only a current leader records the result.
         if !self.leader.is_leader() {
             tracing::warn!("lost the leader lock while solving, dropping the auction");
@@ -484,19 +484,19 @@ mod tests {
         }
     }
 
-    /// Returns one solution and ranks it, and the lease ends while the
+    /// Returns one solution and ranks it, and the lock is lost while the
     /// solvers work.
-    struct LeaseEndsWhileSolving(Arc<AtomicBool>);
+    struct LockLostWhileSolving(Arc<AtomicBool>);
 
     #[async_trait]
-    impl SolverCompetition<TestCycle> for LeaseEndsWhileSolving {
+    impl SolverCompetition<TestCycle> for LockLostWhileSolving {
         async fn solve(&self, _auction: &TestAuction) -> Vec<()> {
             self.0.store(false, Ordering::Release);
             vec![()]
         }
     }
 
-    impl WinnerSelection<TestCycle> for LeaseEndsWhileSolving {
+    impl WinnerSelection<TestCycle> for LockLostWhileSolving {
         fn arbitrate(&self, _solutions: Vec<()>, _auction: &TestAuction) -> NoRanking {
             NoRanking
         }
@@ -551,7 +551,7 @@ mod tests {
         assert!(liveness.is_alive().await);
     }
 
-    /// A leader whose lease ends while the solvers work stores and settles
+    /// A leader that loses the lock while the solvers work stores and settles
     /// nothing, which [`Stub`] asserts.
     #[tokio::test]
     async fn a_leader_that_loses_the_lock_while_solving_stores_and_settles_nothing() {
@@ -561,8 +561,8 @@ mod tests {
             Box::new(ScriptedProvider(Mutex::new(
                 [(true, NextAuction::Auction(TestAuction(vec![1])))].into(),
             ))),
-            Box::new(LeaseEndsWhileSolving(leading.clone())),
-            Box::new(LeaseEndsWhileSolving(leading.clone())),
+            Box::new(LockLostWhileSolving(leading.clone())),
+            Box::new(LockLostWhileSolving(leading.clone())),
             Box::new(Stub),
             Box::new(Stub),
             0,
