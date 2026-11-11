@@ -597,7 +597,7 @@ mod tests {
                 "order.?validFrom.orValue(0u) + 1u > 0u",
                 "no_fee()",
             ),
-            rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
+            rule("Default", "true", "[surplus(50, 100), volume(0.3)]"),
         ])
         .unwrap();
 

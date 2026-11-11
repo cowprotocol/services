@@ -4,8 +4,8 @@
 # `order.inMarket` is what the host passes to `evaluate`.
 
 [partner_fees]
-# Basis points: 100 is 1%, the autopilot's `max-partner-fee = 0.01`.
-max_volume_bps = 100
+# Basis points: 500 is 5%, the prod autopilot's `max-partner-fee = 0.05`.
+max_volume_bps = 500
 
 [lists]
 jit_owners = []
@@ -30,19 +30,19 @@ fee = "no_fee()"
 [[rule]]
 name = "Same token (incl. WETH -> ETH): no volume fee"
 when = 'order.sellToken == order.buyToken || (order.sellToken in wrapped_native && order.buyToken == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")'
-fee = "order.inMarket ? price_improvement(50, 0.98) : surplus(50, 0.98)"
+fee = "order.inMarket ? price_improvement(50, 98) : surplus(50, 98)"
 
 [[rule]]
 name = "Stablecoin bucket: 0.3 bps"
 when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
-fee = "[order.inMarket ? price_improvement(50, 0.98) : surplus(50, 0.98), volume(0.3)]"
+fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(0.3)]"
 
 [[rule]]
 name = "ETH-correlated bucket: 0.3 bps"
 when = 'order.sellToken in eth_correlated && (order.buyToken in eth_correlated || order.buyToken == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")'
-fee = "[order.inMarket ? price_improvement(50, 0.98) : surplus(50, 0.98), volume(0.3)]"
+fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(0.3)]"
 
 [[rule]]
 name = "Default: 2 bps"
 when = "true"
-fee = "[order.inMarket ? price_improvement(50, 0.98) : surplus(50, 0.98), volume(2)]"
+fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]"

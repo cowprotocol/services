@@ -196,7 +196,7 @@ mod tests {
                 "order.sellToken in stablecoins && order.buyToken in stablecoins",
                 "volume(10)",
             ),
-            rule("Default", "true", "surplus(50, 1)"),
+            rule("Default", "true", "surplus(50, 100)"),
         ]
     }
 

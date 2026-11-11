@@ -47,7 +47,7 @@ fee:  volume(10)
 
 name: Default
 when: true
-fee:  surplus(50, 1)
+fee:  surplus(50, 100)
 ```
 
 ## The rules file
@@ -91,6 +91,11 @@ when = 'order.owner in jit_makers'
 fee  = 'no_fee()'
 
 [[rule]]
+name = "Trust Wallet"
+when = 'order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"'
+fee  = 'no_fee()'
+
+[[rule]]
 name = "Stablecoin swaps"
 when = 'order.sellToken in stablecoins && order.buyToken in stablecoins'
 fee  = 'volume(10)'
@@ -98,7 +103,7 @@ fee  = 'volume(10)'
 [[rule]]
 name = "Default"
 when = 'true'
-fee  = 'surplus(50, 1)'
+fee  = 'surplus(50, 100)'
 ```
 
 `tests/mainnet.toml` is the mainnet policy as rules, with short token
@@ -121,7 +126,7 @@ order may lack without failing; see the `order` section.
 
 ```
 when: order.kind == "sell" && order.sellAmount > 1e21
-fee:  surplus(order.partiallyFillable ? 40 : 50, 1)
+fee:  surplus(order.partiallyFillable ? 40 : 50, 100)
 ```
 
 ### Fee functions
@@ -132,14 +137,14 @@ must land on a grid of 1e-6 of the volume (two decimal places for `bps`,
 four for a percent); a finer value is rejected, not rounded.
 
 - `volume(bps)` — `bps / 10000` of the volume.
-- `surplus(share, max_volume)` — `share` percent of the surplus over the limit
-  price, at most `max_volume` percent of the volume.
-- `price_improvement(share, max_volume)` — `share` percent of the improvement
-  over the quote, with the same cap.
+- `surplus(share, max_volume_bps)` — `share` percent of the surplus over the
+  limit price, at most `max_volume_bps / 10000` of the volume.
+- `price_improvement(share, max_volume_bps)` — `share` percent of the
+  improvement over the quote, with the same cap.
 - `no_fee()` — no protocol fee.
 
 ```
-fee: [volume(order.kind == "sell" ? 2 : 5), price_improvement(30, 0.5)]
+fee: [volume(order.kind == "sell" ? 2 : 5), price_improvement(30, 50)]
 fee: no_fee()
 ```
 
@@ -282,7 +287,7 @@ of it.
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
 when: timestamp(int(order.validTo)) - now > duration("1h")
 when: order.?quote.sellAmount.orValue(0.0) > 0.0
-fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
+fee:  order.inMarket ? price_improvement(50, 100) : surplus(50, 100)
 ```
 
 A hex literal compares equal to the view only in lowercase: write it so, or
