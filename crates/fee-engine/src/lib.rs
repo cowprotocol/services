@@ -16,6 +16,7 @@ mod fee_factor;
 mod loader;
 mod order_view;
 mod partner_fee;
+mod report;
 mod rules;
 
 pub use {
@@ -25,6 +26,7 @@ pub use {
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
     order_view::{AppData, Flashloan, OrderView},
     partner_fee::{PartnerFee, PartnerFeeBudget},
+    report::{Mismatch, Outcome, report_comparison, reset_comparison_counters},
     rules::{
         CompileError,
         DEFAULT_MAX_VOLUME_BPS,

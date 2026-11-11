@@ -1,9 +1,16 @@
 use {
-    crate::{arguments::TokenBucketFeeOverride, order_validation::is_same_buy_and_sell_token},
+    crate::{
+        arguments::TokenBucketFeeOverride,
+        order_quoting::Quote,
+        order_validation::is_same_buy_and_sell_token,
+    },
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
-    configs::fee_factor::FeeFactor,
-    model::order::{BUY_ETH_ADDRESS, OrderKind},
+    app_data::ValidatedAppData,
+    chrono::Utc,
+    configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
+    model::order::{BUY_ETH_ADDRESS, Order, OrderKind},
     rust_decimal::Decimal,
+    std::sync::Arc,
 };
 
 /// Number of basis points that make up 100%. Used across bps ↔ decimal
@@ -273,9 +280,129 @@ pub fn capped_partner_volume_factors(
     Some(factors)
 }
 
+/// Where the orderbook's volume fees come from. Only here while the legacy
+/// source and the fee engine both exist; goes away with the legacy source.
+pub trait OrderbookFees: Send + Sync {
+    /// The volume fee a quote gets; `order` is the one `quote` describes,
+    /// before the fee. `app_code` is the one the caller read from `app_data`.
+    fn quote_volume_fee(
+        &self,
+        order: &Order,
+        quote: &Quote,
+        app_data: &ValidatedAppData,
+        app_code: Option<&str>,
+    ) -> Option<FeeFactor>;
+
+    /// The protocol, then the capped partner, volume factors a fast-path
+    /// order must leave room for, in the order the autopilot compounds them.
+    fn fast_path_volume_fees(
+        &self,
+        order: &Order,
+        quote: &Quote,
+        app_data: &ValidatedAppData,
+    ) -> Vec<FeeFactor>;
+}
+
+/// The volume fees of `[volume-fee]`, the bucket overrides and the partner fee
+/// cap. The default charges nothing.
+#[derive(Default)]
+pub struct LegacyVolumeFees {
+    /// Quotes get no volume fee without it, or before its effective timestamp.
+    pub config: Option<VolumeFeeConfig>,
+    pub policy: Option<Arc<VolumeFeePolicy>>,
+    /// Should mirror the autopilot's `fee_policies.max_partner_fee`; `None`
+    /// counts no partner fee.
+    pub max_partner_fee: Option<FeeFactor>,
+}
+
+impl OrderbookFees for LegacyVolumeFees {
+    fn quote_volume_fee(
+        &self,
+        order: &Order,
+        _: &Quote,
+        _: &ValidatedAppData,
+        _: Option<&str>,
+    ) -> Option<FeeFactor> {
+        // Only apply volume fee if effective timestamp has come
+        self.config.as_ref().filter(|config| {
+            config
+                .effective_from_timestamp
+                .is_none_or(|ts| ts <= Utc::now())
+        })?;
+        // Determine applicable fee factor considering same-token config and
+        // overrides
+        self.policy.as_ref()?.get_applicable_volume_fee_factor(
+            order.data.buy_token,
+            order.data.sell_token,
+            None,
+        )
+    }
+
+    fn fast_path_volume_fees(
+        &self,
+        order: &Order,
+        _: &Quote,
+        app_data: &ValidatedAppData,
+    ) -> Vec<FeeFactor> {
+        let data = &order.data;
+        let protocol_factor = self.policy.as_ref().and_then(|policy| {
+            policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
+        });
+        let partner_factors = self
+            .max_partner_fee
+            .and_then(|cap| capped_partner_volume_factors(&app_data.protocol, cap))
+            .unwrap_or_default();
+        protocol_factor.into_iter().chain(partner_factors).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_quote_fee_waits_for_the_effective_timestamp() {
+        let factor = FeeFactor::try_from(0.0002).unwrap();
+        let get = |config: Option<VolumeFeeConfig>| {
+            let fees = LegacyVolumeFees {
+                config,
+                policy: Some(Arc::new(VolumeFeePolicy::new(
+                    vec![],
+                    Some(factor),
+                    false,
+                    Default::default(),
+                ))),
+                max_partner_fee: None,
+            };
+            let order = Order {
+                data: model::order::OrderData {
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let app_data = app_data::Validator::new(8192).validate(b"{}").unwrap();
+            fees.quote_volume_fee(&order, &Quote::default(), &app_data, None)
+        };
+        let config = |effective_from_timestamp| {
+            Some(VolumeFeeConfig {
+                factor: Some(factor),
+                effective_from_timestamp,
+            })
+        };
+
+        assert_eq!(get(None), None);
+        assert_eq!(
+            get(config(Some(Utc::now() + chrono::Duration::hours(1)))),
+            None
+        );
+        assert_eq!(
+            get(config(Some(Utc::now() - chrono::Duration::hours(1)))),
+            Some(factor)
+        );
+        assert_eq!(get(config(None)), Some(factor));
+    }
 
     #[test]
     fn test_volume_fee_bucket_override() {

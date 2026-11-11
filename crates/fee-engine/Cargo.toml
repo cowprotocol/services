@@ -11,11 +11,15 @@ cel = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 const-hex = { workspace = true }
 model = { workspace = true }
+observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

@@ -52,8 +52,8 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
 /// tried and the cap on partner fees.
 ///
 /// ```toml
-/// [partner_fees]
-/// max_volume_bps = 100
+/// [partner-fees]
+/// max-volume-bps = 100
 ///
 /// [lists]
 /// stablecoins = ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
@@ -64,7 +64,7 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
 /// fee = "volume(0.3)"
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RuleSetDefinition {
     #[serde(default)]
     pub lists: BTreeMap<String, Vec<String>>,
@@ -80,11 +80,11 @@ pub struct RuleSetDefinition {
 #[serde(deny_unknown_fields)]
 pub struct PartnerFees {
     /// Basis points of the volume all partner fees may take together.
-    #[serde(rename = "max_volume_bps", deserialize_with = "bps_of_volume")]
+    #[serde(rename = "max-volume-bps", deserialize_with = "bps_of_volume")]
     pub max_volume: FeeFactor,
 }
 
-/// The cap on an order's partner fees without a `[partner_fees]` table: 1%
+/// The cap on an order's partner fees without a `[partner-fees]` table: 1%
 /// of the volume, the autopilot's default.
 pub const DEFAULT_MAX_VOLUME_BPS: u64 = 100;
 
@@ -104,7 +104,7 @@ fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor
     Decimal::from_f64(bps)
         .ok_or(fee::FactorError::OutOfRange)
         .and_then(|number| fee::factor_on_grid(number, fee::BPS))
-        .map_err(|error| de::Error::custom(format!("max_volume_bps = {bps} {error}")))
+        .map_err(|error| de::Error::custom(format!("max-volume-bps = {bps} {error}")))
 }
 
 /// Names the evaluator binds itself; a list under one of them would be
@@ -559,11 +559,6 @@ mod tests {
     fn validates_every_expression_on_a_sample_order() {
         validate(vec![
             rule(
-                "Quoted",
-                "order.?quote.sellAmount.orValue(0.0) > 0.0",
-                "volume(1)",
-            ),
-            rule(
                 "Ethflow",
                 "order.?ethflowData.userValidTo.orValue(0u) > 0u",
                 "no_fee()",
@@ -576,7 +571,7 @@ mod tests {
             ),
             rule(
                 "Ratio",
-                "order.?quote.optMap(q, q.buyAmount / q.sellAmount).orValue(0.0) > 0.0",
+                "order.?ethflowData.optMap(e, e.userValidTo + 1u).orValue(0u) > 0u",
                 "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
             ),
             rule(
@@ -632,13 +627,13 @@ mod tests {
         validate(vec![
             rule(
                 "Guarded",
-                "order.?quote.sellAmount.orValue(0.0) > 0.0",
+                "order.?onchainOrderData.sender.orValue('') != ''",
                 "volume(1)",
             ),
             rule(
                 "Fee behind its guard",
-                "order.?quote.hasValue()",
-                "volume(order.quote.feeAmount)",
+                "order.?validFrom.hasValue()",
+                "volume(order.validFrom > 0u ? 1 : 2)",
             ),
             rule(
                 "Nested",
@@ -649,7 +644,11 @@ mod tests {
         .unwrap();
 
         let errors = validate(vec![
-            rule("Unguarded", "order.quote.sellAmount > 0", "volume(1)"),
+            rule(
+                "Unguarded",
+                "order.onchainOrderData.sender != ''",
+                "volume(1)",
+            ),
             rule(
                 "Last field only",
                 "has(order.ethflowData.userValidTo)",
@@ -677,7 +676,10 @@ mod tests {
             RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
         )));
         let message = errors[1].to_string();
-        assert!(message.contains("No such key: quote"), "{message}");
+        assert!(
+            message.contains("No such key: onchainOrderData"),
+            "{message}"
+        );
         assert!(message.ends_with("on a sample order with no optional field"));
     }
 
