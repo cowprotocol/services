@@ -160,12 +160,12 @@ mod tests {
         super::*,
         crate::{
             AppData,
+            FeeFactor,
             PartnerFee,
             rules::{RuleDefinition, RuleSetDefinition},
         },
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
-        configs::fee_factor::FeeFactor,
         model::order::{Order, OrderData, OrderMetadata},
         std::collections::BTreeMap,
     };

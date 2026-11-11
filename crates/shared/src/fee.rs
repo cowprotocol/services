@@ -266,7 +266,9 @@ pub fn capped_partner_volume_factors(
             continue;
         };
         let requested = Decimal::from(bps) / Decimal::from(MAX_BPS);
-        let factor = fee_engine::capped_fee_factor(requested, cap, &mut accumulated);
+        let factor = FeeFactor::new(
+            fee_engine::capped_fee_factor(requested, cap, &mut accumulated).to_f64(),
+        );
         if factor.get() > 0.0 {
             factors.push(factor);
         }

@@ -4,6 +4,7 @@ use {
     crate::{
         AppData,
         Evaluator,
+        FeeFactor,
         Flashloan,
         OrderView,
         evaluator::{RuleError, Skipped},
@@ -13,7 +14,6 @@ use {
     alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
-    configs::fee_factor::FeeFactor,
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
     rust_decimal::{Decimal, prelude::FromPrimitive},
     serde::{Deserialize, Deserializer, de},
@@ -91,7 +91,7 @@ pub const DEFAULT_MAX_VOLUME_BPS: u64 = 100;
 impl Default for PartnerFees {
     fn default() -> Self {
         Self {
-            max_volume: FeeFactor::from_high_precision(DEFAULT_MAX_VOLUME_BPS * fee::BPS)
+            max_volume: fee::factor_on_grid(Decimal::from(DEFAULT_MAX_VOLUME_BPS), fee::BPS)
                 .expect("100 bps is on the grid and under 100%"),
         }
     }
@@ -120,8 +120,6 @@ pub enum CompileError {
     DuplicateRule { name: String },
     #[error("list `{name}` takes a name the engine binds itself")]
     ReservedList { name: String },
-    #[error("partner fee cap {cap} is not in [0, 1)")]
-    PartnerFeeCap { cap: f64 },
     #[error("rule `{rule}`: `{field}` does not compile: {message}")]
     Expression {
         rule: String,
@@ -264,11 +262,6 @@ impl RuleSet {
             .find(|name| RESERVED_NAMES.contains(&name.as_str()))
         {
             return Err(CompileError::ReservedList { name: name.clone() });
-        }
-        if FeeFactor::try_from(partner_fees.max_volume.get()).is_err() {
-            return Err(CompileError::PartnerFeeCap {
-                cap: partner_fees.max_volume.get(),
-            });
         }
         let mut names = HashSet::new();
         for (index, definition) in definitions.into_iter().enumerate() {

@@ -3,15 +3,13 @@
 use {
     alloy_primitives::{Address, U256, address},
     chrono::{TimeZone, Utc},
-    configs::fee_factor::FeeFactor,
     fee_engine::{
         AppData,
-        CompileError,
         Evaluation,
         Fee,
+        FeeFactor,
         Match,
         OrderView,
-        PartnerFees,
         RuleDefinition,
         RuleSet,
         RuleSetDefinition,
@@ -114,7 +112,7 @@ fn reports_the_matching_rules_per_order() {
     assert_eq!(
         fees,
         vec![Fee::Volume {
-            factor: FeeFactor::new(0.0001)
+            factor: FeeFactor::try_from(0.0001).unwrap()
         }]
     );
 
@@ -129,7 +127,7 @@ fn reports_the_matching_rules_per_order() {
     assert_eq!(
         fees,
         vec![Fee::Volume {
-            factor: FeeFactor::new(0.001)
+            factor: FeeFactor::try_from(0.001).unwrap()
         }]
     );
 
@@ -143,8 +141,8 @@ fn reports_the_matching_rules_per_order() {
     assert_eq!(
         fees,
         vec![Fee::Surplus {
-            factor: FeeFactor::new(0.5),
-            max_volume_factor: FeeFactor::new(0.01),
+            factor: FeeFactor::try_from(0.5).unwrap(),
+            max_volume_factor: FeeFactor::try_from(0.01).unwrap(),
         }]
     );
 
@@ -177,16 +175,4 @@ fn no_matching_rule_means_no_fee() {
             .matched
             .is_empty()
     );
-}
-
-#[test]
-fn refuses_a_partner_fee_cap_out_of_range() {
-    let error = RuleSet::new(RuleSetDefinition {
-        partner_fees: PartnerFees {
-            max_volume: FeeFactor::new(1.0),
-        },
-        ..Default::default()
-    })
-    .unwrap_err();
-    assert!(matches!(error, CompileError::PartnerFeeCap { cap } if cap == 1.0));
 }

@@ -139,10 +139,13 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(bps) / Decimal::from(MAX_BPS);
                         // Create policy and update accumulator
-                        let factor = fee_engine::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
+                        let factor = FeeFactor::new(
+                            fee_engine::capped_fee_factor(
+                                fee_decimal,
+                                max_partner_fee,
+                                &mut accumulated,
+                            )
+                            .to_f64(),
                         );
                         Policy::Volume { factor }
                     }
@@ -155,10 +158,13 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = fee_engine::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
+                        let max_volume_factor = FeeFactor::new(
+                            fee_engine::capped_fee_factor(
+                                fee_decimal,
+                                max_partner_fee,
+                                &mut accumulated,
+                            )
+                            .to_f64(),
                         );
 
                         let factor = fee_factor_from_bps(bps);
@@ -177,10 +183,13 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = fee_engine::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
+                        let max_volume_factor = FeeFactor::new(
+                            fee_engine::capped_fee_factor(
+                                fee_decimal,
+                                max_partner_fee,
+                                &mut accumulated,
+                            )
+                            .to_f64(),
                         );
 
                         let factor = fee_factor_from_bps(bps);

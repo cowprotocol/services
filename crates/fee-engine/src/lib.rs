@@ -12,6 +12,7 @@
 
 mod evaluator;
 mod fee;
+mod fee_factor;
 mod loader;
 mod order_view;
 mod partner_fee;
@@ -20,6 +21,7 @@ mod rules;
 pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::{FactorError, Fee, FeeError, FeeKind},
+    fee_factor::FeeFactor,
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
     order_view::{AppData, Flashloan, OrderView},
     partner_fee::{PartnerFee, capped_fee_factor},
