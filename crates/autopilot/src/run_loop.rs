@@ -218,8 +218,6 @@ impl RunLoop {
         let mut leader_lock_tracker = LeaderLockTracker::new(leader);
 
         while !control.should_shutdown() {
-            leader_lock_tracker.update();
-
             // Wait for notify about some significant state change (e.g. new
             // order, new block). We only update the cache afterwards to update
             // to the most recent state.
@@ -234,6 +232,9 @@ impl RunLoop {
                 startup.store(true, Ordering::Release);
             }
 
+            // the lease can end during the wait for the block, so decide after
+            // it
+            leader_lock_tracker.update();
             if !leader_lock_tracker.is_leader() {
                 // While not leading another instance sends the auctions, so
                 // the previous auction this instance recorded is not the one

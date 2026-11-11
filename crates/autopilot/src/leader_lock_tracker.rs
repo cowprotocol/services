@@ -33,8 +33,8 @@ impl LeaderLockTracker {
         }
     }
 
-    /// Logs and records leadership changes since the last call
-    /// Should be called at the beginning of every run loop iteration
+    /// Logs and records leadership changes since the last call. Called once
+    /// per iteration, right before the leader-only work.
     pub fn update(&mut self) {
         let Self::Enabled {
             was_leader,
