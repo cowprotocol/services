@@ -2,7 +2,7 @@
 //!
 //! The cap is the autopilot's: `get_partner_fee` in `autopilot::domain::fee`
 //! and the orderbook's fast-path check (`capped_partner_volume_factors` in
-//! `shared::fee`) call [`capped_fee_factor`] from here. The fast-path check
+//! `shared::fee`) use [`PartnerFeeBudget`] from here. The fast-path check
 //! spends no cap budget on surplus fees; [`partner_fees`] does, as the
 //! autopilot does.
 
@@ -25,15 +25,9 @@ pub enum PartnerFee {
 /// the volume. A fee past the cap stays, with a zero volume share or volume
 /// cap.
 pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
-    let cap = cap.get();
-    let mut accumulated = Decimal::ZERO;
-    let mut volume_share = |bps: u64| {
-        capped_fee_factor(
-            Decimal::from(bps) / Decimal::from(MAX_BPS),
-            cap,
-            &mut accumulated,
-        )
-    };
+    let mut budget = PartnerFeeBudget::new(cap);
+    let mut volume_share =
+        |bps: u64| budget.capped_fee_factor(Decimal::from(bps) / Decimal::from(MAX_BPS));
     fees.iter()
         .map(|fee| match *fee {
             PartnerFee::Volume { bps } => Fee::Volume {
@@ -57,14 +51,36 @@ pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
         .collect()
 }
 
-/// Caps `value` to the headroom `(1 + cap) / (1 + accumulated) - 1` the fees
-/// before it left and advances `accumulated`. With three or more fees the
-/// compounded total can pass `cap` slightly. `cap` must be in [0, 1).
-pub fn capped_fee_factor(value: Decimal, cap: Decimal, accumulated: &mut Decimal) -> FeeFactor {
-    let remaining = (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
-    *accumulated += value.min(cap - *accumulated);
-    let factor = value.max(Decimal::ZERO).min(remaining);
-    FeeFactor::try_from(factor).expect("at most the cap, which is in [0, 1)")
+/// The share of the volume an order's partner fees may still take, spent fee
+/// by fee in app-data order.
+#[derive(Debug)]
+pub struct PartnerFeeBudget {
+    cap: FeeFactor,
+    /// In [0, `cap`].
+    accumulated: Decimal,
+}
+
+impl PartnerFeeBudget {
+    pub fn new(cap: FeeFactor) -> Self {
+        Self {
+            cap,
+            accumulated: Decimal::ZERO,
+        }
+    }
+
+    /// Caps `value` to the headroom `(1 + cap) / (1 + accumulated) - 1` the
+    /// fees before it left and spends it. With three or more fees the
+    /// compounded total can pass `cap` slightly. A negative `value` is zero.
+    pub fn capped_fee_factor(&mut self, value: Decimal) -> FeeFactor {
+        let cap = self.cap.get();
+        // Clamped before it is spent too, so a negative value cannot lower
+        // `accumulated` and raise the headroom past the cap.
+        let value = value.max(Decimal::ZERO);
+        let remaining = (Decimal::ONE + cap) / (Decimal::ONE + self.accumulated) - Decimal::ONE;
+        self.accumulated += value.min(cap - self.accumulated);
+        FeeFactor::try_from(value.min(remaining))
+            .expect("in [0, cap] because accumulated is in [0, cap]")
+    }
 }
 
 /// A share of the surplus or improvement, just under 100% at most.
@@ -167,5 +183,13 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_negative_value_spends_nothing() {
+        let mut budget = PartnerFeeBudget::new(factor(0.01));
+        assert_eq!(budget.capped_fee_factor(Decimal::from(-1)), FeeFactor::ZERO);
+        assert_eq!(budget.capped_fee_factor(Decimal::from(2)), factor(0.01));
+        assert_eq!(budget.capped_fee_factor(Decimal::from(2)), FeeFactor::ZERO);
     }
 }

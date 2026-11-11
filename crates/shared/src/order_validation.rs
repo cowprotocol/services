@@ -568,7 +568,7 @@ impl OrderValidator {
         });
         let partner_factors = self
             .max_partner_fee
-            .map(|cap| crate::fee::capped_partner_volume_factors(&app_data.protocol, cap))
+            .and_then(|cap| crate::fee::capped_partner_volume_factors(&app_data.protocol, cap))
             .unwrap_or_default();
 
         crate::fee::check_fast_path_limit_fits(
