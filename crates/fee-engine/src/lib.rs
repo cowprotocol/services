@@ -22,7 +22,7 @@ pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::{FactorError, Fee, FeeError, FeeKind},
     fee_factor::FeeFactor,
-    loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
+    loader::{LoadError, load_rules, load_rules_from_str},
     order_view::{AppData, Flashloan, OrderView},
     partner_fee::{PartnerFee, PartnerFeeBudget},
     rules::{

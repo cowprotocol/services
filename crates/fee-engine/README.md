@@ -54,7 +54,7 @@ fee:  surplus(50, 100)
 
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
 `[lists]` holds named lists of strings, each `[[rule]]` table is a rule,
-tried in file order, and `[partner_fees]` holds `max_volume_bps`, the basis
+tried in file order, and `[partner-fees]` holds `max-volume-bps`, the basis
 points of the volume an order's partner fees may take together. Without the
 table it is 100 (1%), as in the autopilot; it lands on the fee grid like a
 fee argument.
@@ -62,21 +62,19 @@ Unknown top-level and rule keys are refused; any key under `[lists]` is a
 list name, so a list that no rule names loads without error. The file goes
 through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
 refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown
-key, missing field, a rule field that is empty or a bad `max_volume_bps`;
+key, missing field, a rule field that is empty or a bad `max-volume-bps`;
 names the line and column), `Rules` (a `CompileError`) or `SampleOrder` (every
 `SampleOrderError`). A file without rules loads: no order pays a protocol
 fee.
 
-`load_rules_toml(RulesToml { lists, rules, partner_fees })` loads the same
-tables as raw `toml::Value`s, e.g. from a section of a host config, so the
-host need not know their shape. `None` is an absent table, as in a file. It
-refuses them as `load_rules_from_str` does, but without a line or column: a
-malformed rule is a `MalformedRule` error that names the rule by its number,
-and any other malformed value is a `Toml` error.
+`load_rules(definition)` loads a `RuleSetDefinition` the caller already has,
+e.g. a section of a host config, as `load_rules_from_str` loads a file. A
+caller that adds lists of its own does so in the definition before it loads
+it.
 
 ```toml
-[partner_fees]
-max_volume_bps = 100
+[partner-fees]
+max-volume-bps = 100
 
 [lists]
 stablecoins = [
@@ -335,5 +333,5 @@ diagnostics, and logs nothing itself:
   log or count them.
 - `partner_fees`: the fees `OrderView::partner_fees` asks for, in app-data
   order, also when no rule matched. The caller puts them after the fees of
-  the match it picks. They are capped by `max_volume_bps` as the autopilot
+  the match it picks. They are capped by `max-volume-bps` as the autopilot
   caps them; a fee past the cap stays, with a zero volume share or volume cap.

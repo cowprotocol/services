@@ -15,8 +15,11 @@ use {
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
-    rust_decimal::{Decimal, prelude::FromPrimitive},
-    serde::{Deserialize, Deserializer, de},
+    rust_decimal::{
+        Decimal,
+        prelude::{FromPrimitive, ToPrimitive},
+    },
+    serde::{Deserialize, Deserializer, Serialize, Serializer, de},
     std::{
         collections::{BTreeMap, HashSet},
         fmt,
@@ -25,7 +28,7 @@ use {
 };
 
 /// A rule as written: a name and two CEL expressions.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleDefinition {
     #[serde(deserialize_with = "non_empty")]
@@ -52,8 +55,8 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
 /// tried and the cap on partner fees.
 ///
 /// ```toml
-/// [partner_fees]
-/// max_volume_bps = 100
+/// [partner-fees]
+/// max-volume-bps = 100
 ///
 /// [lists]
 /// stablecoins = ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
@@ -63,8 +66,8 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
 /// when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
 /// fee = "volume(0.3)"
 /// ```
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RuleSetDefinition {
     #[serde(default)]
     pub lists: BTreeMap<String, Vec<String>>,
@@ -76,15 +79,19 @@ pub struct RuleSetDefinition {
 
 /// How the engine caps an order's partner fees. Without the table,
 /// [`DEFAULT_MAX_VOLUME_BPS`].
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PartnerFees {
     /// Basis points of the volume all partner fees may take together.
-    #[serde(rename = "max_volume_bps", deserialize_with = "bps_of_volume")]
+    #[serde(
+        rename = "max-volume-bps",
+        deserialize_with = "bps_of_volume",
+        serialize_with = "serialize_bps_of_volume"
+    )]
     pub max_volume: FeeFactor,
 }
 
-/// The cap on an order's partner fees without a `[partner_fees]` table: 1%
+/// The cap on an order's partner fees without a `[partner-fees]` table: 1%
 /// of the volume, the autopilot's default.
 pub const DEFAULT_MAX_VOLUME_BPS: u64 = 100;
 
@@ -104,7 +111,15 @@ fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor
     Decimal::from_f64(bps)
         .ok_or(fee::FactorError::OutOfRange)
         .and_then(|number| fee::factor_on_grid(number, fee::BPS))
-        .map_err(|error| de::Error::custom(format!("max_volume_bps = {bps} {error}")))
+        .map_err(|error| de::Error::custom(format!("max-volume-bps = {bps} {error}")))
+}
+
+fn serialize_bps_of_volume<S: Serializer>(
+    factor: &FeeFactor,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let bps = factor.get() * Decimal::from(10_000);
+    serializer.serialize_f64(bps.to_f64().expect("a decimal under 10000 is a double"))
 }
 
 /// Names the evaluator binds itself; a list under one of them would be

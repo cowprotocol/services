@@ -14,9 +14,9 @@ use {
         OrderView,
         PartnerFee,
         RuleSet,
-        RulesToml,
+        RuleSetDefinition,
+        load_rules,
         load_rules_from_str,
-        load_rules_toml,
     },
     model::order::{Order, OrderData},
 };
@@ -126,7 +126,7 @@ fn partner_fee_cap_is_in_bps_and_100_by_default() {
     };
     assert_eq!(partner_fee_under(""), [volume(100.)]);
     assert_eq!(
-        partner_fee_under("[partner_fees]\nmax_volume_bps = 50"),
+        partner_fee_under("[partner-fees]\nmax-volume-bps = 50"),
         [volume(50.)]
     );
 }
@@ -137,13 +137,7 @@ fn empty_file_has_no_rules() {
 }
 
 #[test]
-fn loads_the_tables_of_a_host_config() {
-    let mut config: toml::Table = toml::from_str(RULES).unwrap();
-    let tables = RulesToml {
-        lists: config.remove("lists"),
-        rules: config.remove("rule"),
-        partner_fees: config.remove("partner_fees"),
-    };
+fn a_definition_loads_like_the_file() {
     let names = |rules: RuleSet| -> Vec<String> {
         rules
             .rules()
@@ -151,82 +145,23 @@ fn loads_the_tables_of_a_host_config() {
             .map(|rule| rule.name().to_owned())
             .collect()
     };
-    let rules = load_rules_toml(tables.clone()).unwrap();
+    let section: RuleSetDefinition = toml::from_str(RULES).unwrap();
+    let rules = load_rules(section).unwrap();
     assert_eq!(rules.max_partner_fee(), FeeFactor::try_from(0.05).unwrap());
     assert_eq!(names(rules), names(load_rules_from_str(RULES).unwrap()));
 
-    assert!(
-        load_rules_toml(RulesToml::default())
-            .unwrap()
-            .rules()
-            .is_empty()
-    );
-    let lists_only = RulesToml {
-        rules: None,
-        ..tables
-    };
-    assert!(load_rules_toml(lists_only).unwrap().rules().is_empty());
+    let empty = load_rules(RuleSetDefinition::default()).unwrap();
+    assert!(empty.rules().is_empty());
+    assert_eq!(empty.max_partner_fee(), FeeFactor::try_from(0.01).unwrap());
 }
 
 #[test]
-fn refuses_bad_host_config_tables() {
-    let error = |source: &str| {
-        let mut config: toml::Table = toml::from_str(source).unwrap();
-        load_rules_toml(RulesToml {
-            lists: config.remove("lists"),
-            rules: config.remove("rule"),
-            partner_fees: config.remove("partner_fees"),
-        })
-        .unwrap_err()
-    };
-    let fine = rule("x", "true", "no_fee()");
-
-    assert!(matches!(error("lists = []"), LoadError::Toml(_)));
-    assert!(matches!(error("rule = 1"), LoadError::Toml(_)));
-    assert!(matches!(
-        error("[partner_fees]\nmax_volume_bps = 10000"),
-        LoadError::Toml(_)
-    ));
-    assert!(matches!(
-        error(&(fine.clone() + "[[rule]]\nname = 'y'\nwhen = 'true'\n")),
-        LoadError::MalformedRule { number: 2, .. }
-    ));
-    assert!(matches!(
-        error(&(fine.clone() + &rule("y", "true", "no_fee()") + "extra = 1\n")),
-        LoadError::MalformedRule { number: 2, .. }
-    ));
-    for empty in ["", " "] {
-        for definition in [
-            rule(empty, "true", "no_fee()"),
-            rule("y", empty, "no_fee()"),
-            rule("y", "true", empty),
-        ] {
-            assert!(matches!(
-                error(&(fine.clone() + &definition)),
-                LoadError::MalformedRule { number: 2, .. }
-            ));
-        }
-    }
-    assert!(matches!(
-        error(&rule("x", "order.sellToken in", "no_fee()")),
-        LoadError::Rules(CompileError::Expression {
-            field: Field::When,
-            ..
-        })
-    ));
-    assert!(matches!(
-        error(&(fine.clone() + &fine)),
-        LoadError::Rules(CompileError::DuplicateRule { .. })
-    ));
-    assert!(matches!(
-        error(&rule("x", "false", "volume(0.001)")),
-        LoadError::SampleOrder(_)
-    ));
+fn a_section_round_trips_through_toml() {
+    let section: RuleSetDefinition = toml::from_str(RULES).unwrap();
+    let written = toml::to_string(&section).unwrap();
     assert_eq!(
-        error(&(fine.clone() + "[[rule]]\nname = 'y'\nwhen = 'true'\n"))
-            .to_string()
-            .trim_end(),
-        "rule number 2 is malformed: missing field `fee`"
+        toml::from_str::<RuleSetDefinition>(&written).unwrap(),
+        section
     );
 }
 
@@ -237,11 +172,11 @@ fn refuses_bad_files() {
     assert!(matches!(error("[lists"), LoadError::Toml(_)));
     assert!(matches!(error("[caps]\nvolume = 1"), LoadError::Toml(_)));
     for partner_fees in [
-        "[partner_fees]",
-        "[partner_fees]\nmax = 1",
-        "[partner_fees]\nmax_volume_bps = 10000",
-        "[partner_fees]\nmax_volume_bps = -1",
-        "[partner_fees]\nmax_volume_bps = 0.001",
+        "[partner-fees]",
+        "[partner-fees]\nmax = 1",
+        "[partner-fees]\nmax-volume-bps = 10000",
+        "[partner-fees]\nmax-volume-bps = -1",
+        "[partner-fees]\nmax-volume-bps = 0.001",
     ] {
         assert!(
             matches!(error(partner_fees), LoadError::Toml(_)),
