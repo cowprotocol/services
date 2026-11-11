@@ -33,9 +33,7 @@ pub const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 const DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT: u32 = 200_000;
 const BUILTIN_INSTRUCTION_COMPUTE_UNIT_LIMIT: u32 = 3_000;
 
-/// Agave's builtin programs, from `solana-builtins-default-costs`. The vote
-/// program is left out: it counts as a builtin only until its move to BPF
-/// activates, and pricing it as an ordinary program never undercharges.
+/// Agave's builtin programs, from `solana-builtins-default-costs`.
 const BUILTINS: [Pubkey; 8] = [
     system_program::ID,
     compute_budget::ID,
