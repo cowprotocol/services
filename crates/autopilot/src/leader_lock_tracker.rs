@@ -74,7 +74,7 @@ impl LeaderLockTracker {
     }
 
     /// Returns true while the leader lock is held. Check it right before
-    /// every leader-only action, the lease can end at any time
+    /// every leader-only action, the lock can be lost at any time
     /// If the feature is disabled, always returns true
     pub fn is_leader(&self) -> bool {
         match self {

@@ -19,7 +19,7 @@ pub enum LeaderLockTracker {
         was_leader: bool,
         leader_lock: LeaderLock,
     },
-    /// A lease the test flips.
+    /// Leadership the test flips.
     #[cfg(test)]
     Scripted(Arc<AtomicBool>),
 }
