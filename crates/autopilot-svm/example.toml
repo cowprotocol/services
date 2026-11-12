@@ -11,6 +11,9 @@ max-auction-age = "5m"
 min-auction-interval = "2s"
 # Slots the indexer may lag behind the tip before auction cuts are skipped.
 max-indexer-lag-slots = 150
+# Lets several instances run at once: only the one holding a lock in the
+# database cuts auctions. Off by default.
+enable-leader-lock = true
 
 [database]
 # The Postgres database the indexer writes to. A value like "%DB_WRITE_URL"
@@ -32,6 +35,20 @@ wrapped-native-mint = "So11111111111111111111111111111111111111112"
 max-winners = 1
 solve-deadline = "6s"
 submission-deadline-slots = 25
+
+# Protocol fee policies by order class, read like the EVM autopilot's
+# [fee-policies]. A policy applies to market orders (the linked quote meets
+# the order's limit), to limit orders, or to any order. Without the section
+# no order carries a policy.
+[[fee-policies.policies]]
+kind.volume = { factor = 0.001 }
+order-class = "any"
+
+# Periodic deletion of expired quotes and of order events older than
+# cleanup-threshold. The defaults:
+# [db-cleanup]
+# cleanup-interval = "1d"
+# cleanup-threshold = "30d"
 
 [[drivers]]
 name = "baseline"

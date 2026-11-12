@@ -27,8 +27,8 @@ pub struct Solution {
     pub trades: Vec<Trade>,
     /// Solana instructions to execute as part of the settlement.
     pub interactions: Vec<Instruction>,
-    /// The settlement's compute unit limit: the solver's estimate, or else one
-    /// derived from simulating the settlement.
+    /// The settlement's compute unit limit: the simulated usage plus the
+    /// headroom, or the solver's estimate until the simulation measures it.
     pub cu_estimate: Option<u32>,
 }
 
@@ -43,4 +43,7 @@ pub struct Trade {
     /// Solver fee units retained, in the buy mint for a sell order and the
     /// sell mint for a buy order. Zero when the solver charges no fee.
     pub solver_fee: u64,
+    /// Protocol fee units taken, in the buy mint for a sell order and the
+    /// sell mint for a buy order. Zero when the order carries no policy.
+    pub protocol_fee: u64,
 }

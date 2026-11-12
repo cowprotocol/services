@@ -644,16 +644,20 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let run_loop_config = run_loop::Config::from(config.run_loop);
 
+    let shared_origins =
+        &infra::solvers::shared_origins(config.drivers.iter().map(|driver| &driver.url));
     let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
             let extensions = infra::SupportedExtensions::from(&driver);
+            let measure_upload = !shared_origins.contains(&driver.url.origin());
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.submission_account,
                 extensions,
+                measure_upload,
             )
             .await
             .map(Arc::new)
@@ -724,6 +728,8 @@ async fn shadow_mode(config: Configuration) -> ! {
         config.shadow.expect("missing shadow mode configuration"),
     );
 
+    let shared_origins =
+        &infra::solvers::shared_origins(config.drivers.iter().map(|driver| &driver.url));
     let drivers_futures = config
         .drivers
         .into_iter()
@@ -733,6 +739,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 auction_deltas: false,
                 ..infra::SupportedExtensions::from(&driver)
             };
+            let measure_upload = !shared_origins.contains(&driver.url.origin());
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
@@ -746,6 +753,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
                 extensions,
+                measure_upload,
             )
             .await
             .map(Arc::new)

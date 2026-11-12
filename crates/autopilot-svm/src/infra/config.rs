@@ -2,6 +2,7 @@
 
 use {
     configs::{
+        autopilot::fee_policy::FeePoliciesConfig,
         database::DatabasePoolConfig,
         deserialize_env::deserialize_string_from_env,
         shared::LoggingConfig,
@@ -50,6 +51,11 @@ pub struct Config {
     /// Competition parameters.
     #[serde(default)]
     pub competition: Competition,
+    /// Protocol fee policies by order class, the EVM autopilot's section.
+    /// Without it no order carries a policy. `max-partner-fee` is read but
+    /// unused: Solana orders carry no partner fee.
+    #[serde(default)]
+    pub fee_policies: FeePoliciesConfig,
     /// Port the metrics and probes server binds to, on every interface.
     #[serde(default = "default_metrics_port")]
     pub metrics_port: u16,
@@ -68,6 +74,10 @@ pub struct Config {
     /// skipped, so a stalled indexer stops feeding stale orders to solvers.
     #[serde(default = "default_max_indexer_lag_slots")]
     pub max_indexer_lag_slots: u64,
+    /// Take a leader lock in the database, so several instances can run and
+    /// only the one holding it cuts auctions.
+    #[serde(default)]
+    pub enable_leader_lock: bool,
     /// The driver endpoints participating in every auction.
     #[serde(deserialize_with = "deserialize_nonempty_vec")]
     pub drivers: Vec<Driver>,
@@ -79,9 +89,34 @@ pub struct Config {
     /// source: pricing through a third party is a deployment decision,
     /// never a silent fallback.
     pub native_prices: NativePrices,
+    /// Periodic deletion of expired quotes and old order events.
+    #[serde(default)]
+    pub db_cleanup: DbCleanup,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
+}
+
+/// Periodic deletion of expired quotes and old order events.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields, default)]
+pub struct DbCleanup {
+    /// Time between cleanup runs.
+    #[serde(with = "humantime_serde")]
+    pub cleanup_interval: Duration,
+    /// Age at which an order event is deleted. An expired quote is deleted
+    /// at any age.
+    #[serde(with = "humantime_serde")]
+    pub cleanup_threshold: Duration,
+}
+
+impl Default for DbCleanup {
+    fn default() -> Self {
+        Self {
+            cleanup_interval: Duration::from_hours(24),
+            cleanup_threshold: Duration::from_hours(30 * 24),
+        }
+    }
 }
 
 /// Native price lookups.
@@ -320,10 +355,18 @@ mod tests {
         assert_eq!(config.competition.max_winners.get(), 1);
         assert_eq!(config.competition.solve_deadline, Duration::from_secs(6));
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
+        assert_eq!(config.fee_policies.policies.len(), 1);
+        assert!(config.fee_policies.upcoming_policies.policies.is_empty());
         assert_eq!(config.api_address, "0.0.0.0:12088".parse().unwrap());
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
+        assert!(config.enable_leader_lock);
+        assert_eq!(config.db_cleanup.cleanup_interval, Duration::from_hours(24));
+        assert_eq!(
+            config.db_cleanup.cleanup_threshold,
+            Duration::from_hours(30 * 24)
+        );
         assert_eq!(config.native_prices.ttl, Duration::from_secs(30));
         assert_eq!(config.native_prices.driver_probe_lamports, 10_000_000);
         assert_eq!(config.native_prices.results_required.get(), 2);

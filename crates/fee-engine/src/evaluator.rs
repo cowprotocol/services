@@ -2,12 +2,13 @@
 
 use {
     crate::{
-        fee::{self, Fee},
-        order_view,
+        fee::{self, Fee, FeeError},
+        order_view::{self, OrderView},
+        partner_fee,
         rules::{Field, Rule, RuleSet},
     },
     cel::{Context, Value, objects::ValueType},
-    model::order::Order,
+    chrono::{DateTime, Utc},
     std::fmt,
 };
 
@@ -17,10 +18,13 @@ use {
 #[derive(Debug)]
 pub struct Evaluation<'r> {
     /// Every rule whose `when` held, in rule order, with its fees. Empty means
-    /// no fee applies (check `skipped` to ensure no fees were ignored).
+    /// no protocol fee applies (check `skipped` to ensure none was ignored).
     pub matched: Vec<Match<'r>>,
     /// Rules that failed to evaluate, in rule order.
     pub skipped: Vec<Skipped<'r>>,
+    /// The order's partner fees, capped. They come after the fees of the
+    /// match the caller picks, and apply when no rule matched too.
+    pub partner_fees: Vec<Fee>,
 }
 
 /// A rule whose `when` held for an order, and its fees.
@@ -58,27 +62,34 @@ pub enum RuleError {
     #[error("returned {0}, not a bool")]
     NotABool(ValueType),
     #[error("{0}")]
-    NotAFee(String),
+    NotAFee(#[from] FeeError),
 }
 
-/// A [`RuleSet`] with `now` and its lists bound, ready to evaluate orders.
+/// A [`RuleSet`] at a fixed `now`, ready to evaluate orders.
 pub struct Evaluator<'r> {
     rules: &'r RuleSet,
-    context: Context<'static, 'static>,
+    /// The rule set's context with `now` bound.
+    context: Context<'r, 'static>,
 }
 
 impl<'r> Evaluator<'r> {
-    pub fn new(rules: &'r RuleSet, context: Context<'static, 'static>) -> Self {
+    pub(crate) fn new(rules: &'r RuleSet, now: DateTime<Utc>) -> Self {
+        let mut context = rules.context.new_inner_scope();
+        context.add_variable_from_value("now", now.fixed_offset());
         Self { rules, context }
     }
 
     /// Runs every rule against `order`. A rule that fails to evaluate is
     /// skipped and reported; it never blocks the others.
-    pub fn evaluate(&self, order: &Order) -> Evaluation<'r> {
+    pub fn evaluate(&self, order: OrderView) -> Evaluation<'r> {
         let context = self.scope(order);
         let mut evaluation = Evaluation {
             matched: Vec::new(),
             skipped: Vec::new(),
+            partner_fees: partner_fee::partner_fees(
+                order.partner_fees,
+                self.rules.max_partner_fee(),
+            ),
         };
         for rule in self.rules.rules() {
             match Self::evaluate_rule(rule, &context) {
@@ -92,7 +103,7 @@ impl<'r> Evaluator<'r> {
 
     /// Runs both expressions of every rule against `order`, whatever `when`
     /// says, and reports every one that fails, in rule order.
-    pub(crate) fn evaluate_all_expressions(&self, order: &Order) -> Vec<Skipped<'r>> {
+    pub(crate) fn evaluate_all_expressions(&self, order: OrderView) -> Vec<Skipped<'r>> {
         let context = self.scope(order);
         let mut skipped = Vec::new();
         for rule in self.rules.rules() {
@@ -107,7 +118,7 @@ impl<'r> Evaluator<'r> {
         skipped
     }
 
-    fn scope(&self, order: &Order) -> Context<'_, '_> {
+    fn scope(&self, order: OrderView) -> Context<'_, 'static> {
         let mut context = self.context.new_inner_scope();
         context
             .add_variable("order", order_view::order_view(order))
@@ -139,7 +150,7 @@ impl<'r> Evaluator<'r> {
             .fee
             .execute(context)
             .map_err(|err| (Field::Fee, err.into()))?;
-        fee::fees_from_value(&value).map_err(|message| (Field::Fee, RuleError::NotAFee(message)))
+        fee::fees_from_value(&value).map_err(|error| (Field::Fee, error.into()))
     }
 }
 
@@ -147,11 +158,15 @@ impl<'r> Evaluator<'r> {
 mod tests {
     use {
         super::*,
-        crate::rules::RuleDefinition,
+        crate::{
+            AppData,
+            FeeFactor,
+            PartnerFee,
+            rules::{RuleDefinition, RuleSetDefinition},
+        },
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
-        configs::fee_factor::FeeFactor,
-        model::order::{OrderData, OrderMetadata},
+        model::order::{Order, OrderData, OrderMetadata},
         std::collections::BTreeMap,
     };
 
@@ -181,7 +196,7 @@ mod tests {
                 "order.sellToken in stablecoins && order.buyToken in stablecoins",
                 "volume(10)",
             ),
-            rule("Default", "true", "surplus(50, 1)"),
+            rule("Default", "true", "surplus(50, 100)"),
         ]
     }
 
@@ -196,11 +211,16 @@ mod tests {
     }
 
     fn rule_set(definitions: Vec<RuleDefinition>) -> RuleSet {
-        RuleSet::new(definitions, sample_lists()).unwrap()
+        RuleSet::new(RuleSetDefinition {
+            lists: sample_lists(),
+            rules: definitions,
+            ..Default::default()
+        })
+        .unwrap()
     }
 
-    fn order(sell: Address, buy: Address) -> Order {
-        Order {
+    fn order(sell: Address, buy: Address) -> model::order::Order {
+        model::order::Order {
             metadata: OrderMetadata {
                 owner: address!("0x2222222222222222222222222222222222222222"),
                 ..Default::default()
@@ -215,6 +235,16 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+
+    /// `order` evaluated with no app data and no partner fees.
+    fn evaluate<'r>(evaluator: &Evaluator<'r>, order: &Order, in_market: bool) -> Evaluation<'r> {
+        evaluator.evaluate(OrderView {
+            order,
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market,
+        })
     }
 
     fn after_launch() -> DateTime<Utc> {
@@ -241,13 +271,13 @@ mod tests {
         let rules = rule_set(sample_rules());
         let evaluator = rules.evaluator(after_launch());
 
-        let evaluation = evaluator.evaluate(&order(USDC, USDT));
+        let evaluation = evaluate(&evaluator, &order(USDC, USDT), false);
         assert_eq!(names(&evaluation), ["Stablecoin swaps", "Default"]);
         let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Stablecoin swaps");
         assert_eq!(fees, vec![volume(10.)]);
 
-        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert_eq!(names(&evaluation), ["Default"]);
         let (rule, fees) = matched(&evaluation);
         assert_eq!(rule, "Default");
@@ -261,7 +291,7 @@ mod tests {
 
         let mut jit = order(USDC, USDT);
         jit.metadata.owner = MAKER;
-        let evaluation = evaluator.evaluate(&jit);
+        let evaluation = evaluate(&evaluator, &jit, false);
         assert_eq!(
             names(&evaluation),
             ["JIT makers", "Stablecoin swaps", "Default"]
@@ -288,7 +318,7 @@ mod tests {
 
         let sequence: Vec<_> = [&large, &small, &jit, &small, &large, &jit]
             .into_iter()
-            .map(|order| names(&evaluator.evaluate(order)))
+            .map(|order| names(&evaluate(&evaluator, order, false)))
             .collect();
         assert_eq!(
             sequence,
@@ -307,7 +337,7 @@ mod tests {
     fn now_is_the_evaluator_time() {
         let rules = rule_set(sample_rules());
         let launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
-        let (rule, fees) = matched(&launch.evaluate(&order(USDC, USDT)));
+        let (rule, fees) = matched(&evaluate(&launch, &order(USDC, USDT), false));
         assert_eq!(rule, "Stablecoin launch month");
         assert_eq!(fees, vec![volume(1.)]);
     }
@@ -318,17 +348,18 @@ mod tests {
             "stablecoins".to_owned(),
             vec![USDC.to_string().to_uppercase().replace("0X", "0x")],
         )]);
-        let rules = RuleSet::new(
-            vec![rule(
+        let rules = RuleSet::new(RuleSetDefinition {
+            lists,
+            rules: vec![rule(
                 "Stable sells",
                 "order.sellToken in stablecoins",
                 "volume(1)",
             )],
-            lists,
-        )
+            ..Default::default()
+        })
         .unwrap();
         let evaluator = rules.evaluator(after_launch());
-        let (rule, _) = matched(&evaluator.evaluate(&order(USDC, WETH)));
+        let (rule, _) = matched(&evaluate(&evaluator, &order(USDC, WETH), false));
         assert_eq!(rule, "Stable sells");
     }
 
@@ -342,7 +373,7 @@ mod tests {
             rule("Broken below", "true", "volume(0.001)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
-        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert_eq!(names(&evaluation), ["Default"]);
         let (_, fees) = matched(&evaluation);
         assert_eq!(fees, vec![volume(2.)]);
@@ -383,7 +414,7 @@ mod tests {
             "volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e5)))",
         )]);
         let evaluator = rules.evaluator(after_launch());
-        let (_, fees) = matched(&evaluator.evaluate(&order(WETH, USDT)));
+        let (_, fees) = matched(&evaluate(&evaluator, &order(WETH, USDT), false));
         assert_eq!(fees, vec![volume(10.)]);
     }
 
@@ -395,7 +426,7 @@ mod tests {
             "volume(1)",
         )]);
         let evaluator = rules.evaluator(after_launch());
-        let (rule, _) = matched(&evaluator.evaluate(&order(USDC, WETH)));
+        let (rule, _) = matched(&evaluate(&evaluator, &order(USDC, WETH), false));
         assert_eq!(rule, "Checksummed literal");
     }
 
@@ -403,27 +434,84 @@ mod tests {
     fn absent_optional_fields_are_tested_with_has() {
         let rules = rule_set(vec![
             rule("Quoted", "has(order.quote)", "volume(1)"),
-            rule("Fast path", "has(order.fastPath)", "volume(2)"),
+            rule("Fast path", "order.fastPath", "volume(2)"),
             rule("Default", "true", "volume(3)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
 
-        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert_eq!(names(&evaluation), ["Default"]);
         assert!(evaluation.skipped.is_empty());
 
         let mut quoted = order(WETH, USDT);
         quoted.metadata.quote = Some(Default::default());
         quoted.metadata.fast_path = true;
-        let evaluation = evaluator.evaluate(&quoted);
+        let evaluation = evaluate(&evaluator, &quoted, false);
         assert_eq!(names(&evaluation), ["Quoted", "Fast path", "Default"]);
+    }
+
+    #[test]
+    fn rules_read_the_app_data() {
+        let rules = rule_set(vec![rule(
+            "CoW Swap",
+            r#"has(order.appData.appCode) && order.appData.appCode == "CoW Swap""#,
+            "volume(1)",
+        )]);
+        let evaluator = rules.evaluator(after_launch());
+
+        let order = order(WETH, USDT);
+        let evaluation = evaluate(&evaluator, &order, false);
+        assert!(evaluation.matched.is_empty());
+        assert!(evaluation.skipped.is_empty());
+
+        let app_data = AppData {
+            app_code: Some("CoW Swap".to_owned()),
+            ..Default::default()
+        };
+        let evaluation = evaluator.evaluate(OrderView {
+            order: &order,
+            app_data: &app_data,
+            partner_fees: &[],
+            in_market: false,
+        });
+        assert!(evaluation.skipped.is_empty());
+        assert_eq!(names(&evaluation), ["CoW Swap"]);
+    }
+
+    #[test]
+    fn partner_fees_apply_when_no_rule_matches() {
+        let rules = rule_set(vec![rule("Never", "false", "volume(1)")]);
+        let order = order(WETH, USDT);
+        let evaluation = rules.evaluator(after_launch()).evaluate(OrderView {
+            order: &order,
+            app_data: &AppData::default(),
+            partner_fees: &[PartnerFee::Volume { bps: 60 }],
+            in_market: false,
+        });
+
+        assert!(evaluation.matched.is_empty());
+        assert_eq!(evaluation.partner_fees, [volume(60.0)]);
+    }
+
+    #[test]
+    fn in_market_comes_from_the_order_view() {
+        // An order carries no `inMarket`; the view exposes the `in_market` bool
+        // the host passes, and a rule reads back exactly that value.
+        let rules = rule_set(vec![
+            rule("Inside", "order.inMarket", "volume(1)"),
+            rule("Outside", "!order.inMarket", "volume(2)"),
+        ]);
+        let evaluator = rules.evaluator(after_launch());
+        let order = order(WETH, USDT);
+        assert_eq!(names(&evaluate(&evaluator, &order, true)), ["Inside"]);
+        assert_eq!(names(&evaluate(&evaluator, &order, false)), ["Outside"]);
     }
 
     #[test]
     fn no_rules_means_no_fee() {
         let rules = rule_set(vec![]);
         let evaluator = rules.evaluator(after_launch());
-        let evaluation = evaluator.evaluate(&order(WETH, USDT));
+        let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
         assert!(evaluation.matched.is_empty());
         assert!(evaluation.skipped.is_empty());
     }

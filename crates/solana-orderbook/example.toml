@@ -22,6 +22,16 @@ autopilot = "http://localhost:12088"
 # min-validity = "1m"
 # max-validity = "1y"
 # quote-expiry = "1m"
+# Drivers a priceQuality: fast quote waits for before it answers with the
+# best of them. Defaults to 2.
+# fast-results-required = 2
+
+# The volume protocol fee netted out of quotes, the factor the autopilot's
+# volume policy charges. Omit the section to quote without a protocol fee.
+# [volume-fee]
+# factor = 0.001
+# From when the factor applies. Omit it to apply the factor at once.
+# effective-from-timestamp = "2026-12-01T00:00:00Z"
 
 [logging]
 filter = "info,solana_orderbook=debug"
@@ -41,3 +51,20 @@ filter = "info,solana_orderbook=debug"
 # The most the funder pays in priority fee for one creation, in lamports.
 # Defaults to 100000.
 # max-priority-fee-lamports = 100000
+
+# Quote verification: each driver's quoted settlement is simulated behind the
+# quoted order's creation. Omit the section to leave every quote unverified.
+# Requires the [rpc] section.
+# [quote-verification]
+# Whether a verified quote outranks an unverified one: "unverified" (the
+# default, the amounts alone rank) or "prefer".
+# mode = "prefer"
+# A node with the Jito simulateBundle extension.
+# bundle-endpoint = "https://bundles.example.com"
+# A node serving getTokenLargestAccounts, which needs the spl-token-mint
+# account index. Without it, quotes selling a mint without a mint authority
+# stay unverified.
+# holders-endpoint = "https://solana-mainnet.g.alchemy.com/v2/<key>"
+# The share of the sell or buy amount the settlement program's buffers may
+# pay before the quote is dropped. Defaults to 1.
+# quote-inaccuracy-limit = 0.000001

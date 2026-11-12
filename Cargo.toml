@@ -69,6 +69,7 @@ eth-domain-types = { path = "crates/eth-domain-types" }
 ethrpc = { path = "crates/ethrpc" }
 event-bus-dto = { path = "crates/event-bus-dto" }
 event-indexing = { path = "crates/event-indexing" }
+fee-engine = { path = "crates/fee-engine" }
 flate2 = "1.0.30"
 futures = "0.3.30"
 gas-price-estimation = { path = "crates/gas-price-estimation" }
@@ -106,6 +107,7 @@ proc-macro2 = "1.0.103"
 prometheus = "0.14"
 prometheus-client = "0.25"
 prometheus-metric-storage = "0.6"
+protocol-fees = { path = "crates/protocol-fees" }
 quote = "1.0.41"
 rand = "0.9.4"
 rate-limit = { path = "crates/rate-limit" }
@@ -129,6 +131,7 @@ sha2 = "0.10"
 shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
+solana-account-decoder-client-types = "4"
 solana-client = "4"
 solana-commitment-config = "3"
 solana-compute-budget-interface = "3"

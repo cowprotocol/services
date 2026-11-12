@@ -9,11 +9,13 @@ use {
         db,
         prices,
         quoter,
+        verifier::Verifier,
     },
     app_data::OrderCreationAppData,
     axum::{Json, http::StatusCode},
-    chain_types::{ChainTypes, solana::Solana},
+    chain_types::{Amount, ChainTypes, solana::Solana},
     chrono::{DateTime, Utc},
+    configs::fee_factor::FeeFactor,
     cow_settlement_interface::{
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
         token_program::TokenProgram,
@@ -25,6 +27,8 @@ use {
         account::{Account, from_account},
         pubkey::Pubkey,
         rent::Rent,
+        signature::Keypair,
+        signer::Signer,
         sysvar,
     },
     solana_token::{ata_rent, max_ata_rent, receivable_token_account},
@@ -72,6 +76,14 @@ pub async fn quote(
     let buy_program = check_mints(state.sponsoring(), &request).await?;
 
     let (kind, amount) = request.side.kind_and_amount();
+    // Only a verified quote is simulated.
+    let verifier = match request.price_quality {
+        dto::PriceQuality::Verified => state.verifier(),
+        dto::PriceQuality::Fast | dto::PriceQuality::Optimal => None,
+    };
+    // A fresh wallet owns the quoted order, so no real balance or existing
+    // account sways the simulation.
+    let owner = verifier.map(|_| Keypair::new().pubkey());
     let order = quoter::Order {
         sell_token: request.sell_token,
         buy_token: request.buy_token,
@@ -80,17 +92,31 @@ pub async fn quote(
             dto::Kind::Sell => quoter::Kind::Sell,
             dto::Kind::Buy => quoter::Kind::Buy,
         },
+        owner,
     };
     let quotes = async {
         // Every driver failure answers as no liquidity, the EVM mapping for
         // estimator errors.
-        state
+        let no_liquidity = || error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found");
+        // A fast quote takes the first drivers to answer, the others wait
+        // for every driver.
+        let early_return = match request.price_quality {
+            dto::PriceQuality::Fast => Some(state.fast_results_required()),
+            dto::PriceQuality::Optimal | dto::PriceQuality::Verified => None,
+        };
+        let quotes = state
             .quoter()
-            .quotes(&order)
+            .quotes(&order, early_return)
             .await
-            .map_err(|quoter::Error::NoQuotes| {
-                error::reply(StatusCode::NOT_FOUND, "NoLiquidity", "no route found")
-            })
+            .map_err(|quoter::Error::NoQuotes| no_liquidity())?;
+        let quotes = match (verifier, owner) {
+            (Some(verifier), Some(owner)) => verifier.verify(&order, owner, quotes).await,
+            _ => quotes,
+        };
+        if quotes.is_empty() {
+            return Err(no_liquidity());
+        }
+        Ok(quotes)
     };
     // The autopilot leaves an order on a token no estimator prices out of
     // every auction, so the quote fails before such an order is placed.
@@ -115,8 +141,27 @@ pub async fn quote(
     };
     let price =
         NonZero::new(price).ok_or_else(|| price_error(token, prices::Error::NoLiquidity))?;
-    let expiration = now + state.quote_expiry();
-    let ranked = rank(quotes, kind, buy_token_ata_costs, price);
+    // The fee answers in the sell token, so the sell token needs a price too.
+    let sell_token_price = NonZero::new(sell_price)
+        .ok_or_else(|| price_error(request.sell_token, prices::Error::NoLiquidity))?;
+    // A fast quote is not accurate enough to honor or store, so it expires
+    // at once.
+    let fast = matches!(request.price_quality, dto::PriceQuality::Fast);
+    let expiration = if fast {
+        DateTime::<Utc>::UNIX_EPOCH
+    } else {
+        now + state.quote_expiry()
+    };
+    let prefer_verified = verifier.is_some_and(Verifier::prefers_verified);
+    let volume_fee = state.volume_fee(now);
+    let ranked = rank(
+        quotes,
+        kind,
+        buy_token_ata_costs,
+        price,
+        volume_fee,
+        prefer_verified,
+    );
     // Built before the winner is taken, so a competition without one is on the
     // record too. Logged after the insert, which is what gives it an id.
     let mut competition = competition(
@@ -128,50 +173,74 @@ pub async fn quote(
             sell_token_price: sell_price,
             buy_token_price: buy_price,
             buy_token_ata_rent: buy_token_ata_costs,
+            volume_fee_factor: volume_fee.map(|factor| factor.get()),
             expiration,
         },
         &ranked,
     );
-    let Some((quoted, costs)) = ranked.into_iter().find_map(|(_, netted)| netted) else {
-        log_competition(&competition);
-        return Err(error::reply(
+    let does_not_cover_fee = || {
+        error::reply(
             StatusCode::BAD_REQUEST,
             "SellAmountDoesNotCoverFee",
             "the quoted amount does not cover the execution cost",
-        ));
+        )
+    };
+    let Some((route, (quoted, costs))) = ranked
+        .into_iter()
+        .next()
+        .and_then(|(route, netted)| Some((route, netted?)))
+    else {
+        log_competition(&competition);
+        return Err(does_not_cover_fee());
+    };
+    let Some((amounts, costs)) = amounts(
+        &request.side,
+        &route,
+        &quoted,
+        costs,
+        volume_fee,
+        sell_token_price,
+        buy_price,
+    ) else {
+        log_competition(&competition);
+        return Err(does_not_cover_fee());
     };
     quoted.count_win(order.kind);
     // The last exit before the insert, and the competition is worth having for
     // a quote this rejects.
-    check_native_payout(state.sponsoring(), &request, quoted.buy_amount)
+    check_native_payout(state.sponsoring(), &request, amounts.buy_amount)
         .await
         .inspect_err(|_| log_competition(&competition))?;
 
     // A failed insert answers without an id instead of failing the quote,
     // since the fees are not yet implemented and stored quote are not mandatory
     // at the moment.
-    let quote = db::Quote {
-        sell_token: ByteArray(request.sell_token.to_bytes()),
-        buy_token: ByteArray(request.buy_token.to_bytes()),
-        sell_amount: quoted.sell_amount,
-        buy_amount: quoted.buy_amount,
-        kind: match kind {
-            dto::Kind::Sell => OrderKind::Sell,
-            dto::Kind::Buy => OrderKind::Buy,
-        },
-        solver: ByteArray(quoted.solver.to_bytes()),
-        expiration,
-    };
-    let save = db::save_quote(state.pool(), &quote);
-    let id = match tokio::time::timeout(SAVE_TIMEOUT, save).await {
-        Ok(Ok(id)) => Some(id),
-        Ok(Err(err)) => {
-            tracing::error!(?err, "quote insert failed");
-            None
-        }
-        Err(_) => {
-            tracing::error!("quote insert timed out");
-            None
+    let id = if fast {
+        None
+    } else {
+        let quote = db::Quote {
+            sell_token: ByteArray(request.sell_token.to_bytes()),
+            buy_token: ByteArray(request.buy_token.to_bytes()),
+            sell_amount: amounts.signed_sell_amount,
+            buy_amount: amounts.buy_amount,
+            kind: match kind {
+                dto::Kind::Sell => OrderKind::Sell,
+                dto::Kind::Buy => OrderKind::Buy,
+            },
+            solver: ByteArray(quoted.solver.to_bytes()),
+            expiration,
+        };
+        let save = db::save_quote(state.pool(), &quote);
+        match tokio::time::timeout(SAVE_TIMEOUT, save).await {
+            Ok(Ok(id)) => Some(id),
+            Ok(Err(err)) => {
+                tracing::error!(?err, "quote insert failed");
+                None
+            }
+            Err(_) => {
+                tracing::error!("quote insert timed out");
+                None
+            }
         }
     };
     competition.metadata.quote_id = id;
@@ -182,8 +251,8 @@ pub async fn quote(
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             receiver: request.receiver,
-            sell_amount: quoted.sell_amount,
-            buy_amount: quoted.buy_amount,
+            sell_amount: amounts.sell_amount,
+            buy_amount: amounts.buy_amount,
             valid_to,
             // A document answers with its hash alongside.
             app_data: match &request.app_data {
@@ -193,12 +262,12 @@ pub async fn quote(
                 },
                 app_data => app_data.clone(),
             },
-            fee_amount: 0,
+            fee_amount: amounts.fee_amount,
             costs: dto::Costs {
                 token,
                 network_fees: costs.network_fees,
                 buy_token_ata_costs: costs.buy_token_ata_costs,
-                protocol_fee: 0,
+                protocol_fee: costs.protocol_fee,
                 total: costs.total,
             },
             kind,
@@ -207,35 +276,43 @@ pub async fn quote(
         from: request.from,
         expiration,
         id,
-        verified: false,
+        verified: quoted.verified,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     }))
 }
 
-/// Every quote paired with its [`net`] self, best netted first. Quotes that
-/// cannot absorb their cost rank last, so the first netted one is the winner.
+/// Every quote paired with its [`net`] self, best first. With
+/// `prefer_verified`, a verified quote ranks ahead of any unverified one
+/// whatever its amount. Within each group, quotes that absorb their cost
+/// rank first, by netted amount. Only the first quote can win: when it
+/// cannot absorb its cost, the quote fails.
 fn rank(
     quotes: Vec<quoter::Quote>,
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
+    volume_fee: Option<FeeFactor>,
+    prefer_verified: bool,
 ) -> Vec<(quoter::Quote, Option<(quoter::Quote, Costs)>)> {
     let mut ranked: Vec<_> = quotes
         .into_iter()
         .map(|quote| {
-            let netted = net(quote.clone(), kind, rent, price);
+            let netted = net(quote.clone(), kind, rent, price, volume_fee);
             (quote, netted)
         })
         .collect();
+    let unverified = |quote: &quoter::Quote| !(prefer_verified && quote.verified);
     match kind {
-        dto::Kind::Sell => ranked.sort_by_key(|(_, netted)| {
+        dto::Kind::Sell => ranked.sort_by_key(|(quote, netted)| {
             (
+                unverified(quote),
                 netted.is_none(),
                 netted.as_ref().map(|(q, _)| Reverse(q.buy_amount)),
             )
         }),
-        dto::Kind::Buy => ranked.sort_by_key(|(_, netted)| {
+        dto::Kind::Buy => ranked.sort_by_key(|(quote, netted)| {
             (
+                unverified(quote),
                 netted.is_none(),
                 netted.as_ref().map(|(q, _)| q.sell_amount),
             )
@@ -269,10 +346,11 @@ struct CompetitionRequest {
     #[serde_as(as = "DisplayFromStr")]
     amount: u64,
     kind: dto::Kind,
+    price_quality: dto::PriceQuality,
 }
 
-/// What the execution cost was taken with, so the netted amounts can be
-/// recomputed from the quoted ones.
+/// What the execution cost and the protocol fee were taken with, so the
+/// netted amounts can be recomputed from the quoted ones.
 #[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -290,12 +368,15 @@ struct CompetitionMetadata {
     /// same cost in token atoms, under `costs.buyTokenAtaCosts`.
     #[serde_as(as = "DisplayFromStr")]
     buy_token_ata_rent: u64,
+    /// The volume protocol fee factor in force, taken off the leg the costs
+    /// left. `None` when no protocol fee is charged.
+    volume_fee_factor: Option<f64>,
     /// When the stored quote stops matching an order placed with it.
     expiration: DateTime<Utc>,
 }
 
 /// One driver's answer: `sell_amount` and `buy_amount` are after the execution
-/// cost, `quoted_*` as the driver returned them.
+/// cost and the protocol fee, `quoted_*` as the driver returned them.
 #[serde_as]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -315,6 +396,7 @@ struct CompetitionQuote {
     /// In lamports.
     #[serde_as(as = "DisplayFromStr")]
     network_fee: u64,
+    verified: bool,
     elapsed_ms: u64,
 }
 
@@ -331,6 +413,7 @@ fn competition(
             buy_token: request.buy_token,
             amount,
             kind,
+            price_quality: request.price_quality,
         },
         metadata,
         quotes: ranked
@@ -343,54 +426,191 @@ fn competition(
                 quoted_sell_amount: quote.sell_amount,
                 quoted_buy_amount: quote.buy_amount,
                 network_fee: quote.network_fee,
+                verified: quote.verified,
                 elapsed_ms: quote.elapsed.as_millis().try_into().unwrap_or(u64::MAX),
             })
             .collect(),
     }
 }
 
-/// A quote's execution cost in the token it comes out of.
+/// A quote's execution cost and protocol fee in the token they come out of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Costs {
     network_fees: u64,
     buy_token_ata_costs: u64,
+    /// The volume fee the driver takes at settlement.
+    protocol_fee: u64,
     /// The sum, what the quote is cut by.
     total: u64,
 }
 
-/// `quote` with its execution cost, `rent` plus its own network fee, taken
-/// out of the side the trader does not fix: a sell order delivers less buy
-/// token, a buy order pulls more sell token. Each cost converts at `price` on
-/// its own, rounded up against the trader. `None` when the amount cannot
-/// absorb the cost.
+/// The amounts of the answer in the EVM shape: `fee_amount` is the cut as the
+/// sell token, `sell_amount` and `buy_amount` what the trader trades net of
+/// it, `signed_sell_amount` the sell amount plus the fee, what an order placed
+/// on the quote sells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Amounts {
+    sell_amount: u64,
+    buy_amount: u64,
+    fee_amount: u64,
+    signed_sell_amount: u64,
+}
+
+/// The amounts for `side`, from `route` as the driver quoted it, `quoted` net
+/// of `costs`, and the native prices, with the costs the answer reports. A
+/// buy order's cut is already in the sell token and goes on top of the
+/// route's sell amount. A sell order's cut comes out of the buy token, so the
+/// fee converts at the two prices, rounded up against the trader. A
+/// `sellAmountBeforeFee` amount pays the fee from itself and buys the cut
+/// amount. A `sellAmountAfterFee` amount pays the fee on top and buys the
+/// route's full amount, so its protocol fee is the one on that amount grossed
+/// up, see [`fee_on_top`]. `None` when the fee swallows the amount or the sum
+/// does not fit.
+fn amounts(
+    side: &dto::Side,
+    route: &quoter::Quote,
+    quoted: &quoter::Quote,
+    costs: Costs,
+    volume_fee: Option<FeeFactor>,
+    sell_price: NonZero<u64>,
+    buy_price: u64,
+) -> Option<(Amounts, Costs)> {
+    match side {
+        dto::Side::Buy { .. } => Some((
+            Amounts {
+                sell_amount: route.sell_amount,
+                buy_amount: quoted.buy_amount,
+                fee_amount: costs.total,
+                signed_sell_amount: route.sell_amount.checked_add(costs.total)?,
+            },
+            costs,
+        )),
+        dto::Side::Sell { sell_amount } => {
+            // The cut's worth as the sell token: in lamports times the price
+            // denominator, over the sell price, rounded up.
+            let in_sell_token = |cut: u64| {
+                let worth = u128::from(cut) * u128::from(buy_price);
+                u64::try_from(worth.div_ceil(u128::from(sell_price.get()))).ok()
+            };
+            match sell_amount {
+                dto::SellAmount::BeforeFee { value } => {
+                    let fee_amount = in_sell_token(costs.total)?;
+                    Some((
+                        Amounts {
+                            sell_amount: value.checked_sub(fee_amount).filter(|net| *net > 0)?,
+                            buy_amount: quoted.buy_amount,
+                            fee_amount,
+                            signed_sell_amount: *value,
+                        },
+                        costs,
+                    ))
+                }
+                dto::SellAmount::AfterFee { value } => {
+                    let costs = fee_on_top(costs, route.buy_amount, volume_fee)?;
+                    let fee_amount = in_sell_token(costs.total)?;
+                    Some((
+                        Amounts {
+                            sell_amount: *value,
+                            buy_amount: route.buy_amount,
+                            fee_amount,
+                            signed_sell_amount: value.checked_add(fee_amount)?,
+                        },
+                        costs,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+/// `costs` with the protocol fee of an order that buys `buy_amount` whole:
+/// the fee at `factor` on the least leg that still leaves `buy_amount` once
+/// the driver takes its share, as the driver computes it. `None` when no leg
+/// reaches `buy_amount` or the sum does not fit.
+fn fee_on_top(costs: Costs, buy_amount: u64, factor: Option<FeeFactor>) -> Option<Costs> {
+    let protocol_fee = match factor {
+        Some(factor) => {
+            let policy = [protocol_fees::FeePolicy::Volume {
+                factor: factor.get(),
+            }];
+            let leg = protocol_fees::tighten_limit::<Solana>(
+                &policy,
+                protocol_fees::Side::Sell,
+                buy_amount,
+            );
+            // The saturated answer for a leg no fill reaches.
+            if leg == u64::MAX {
+                return None;
+            }
+            leg.checked_sub(buy_amount)?
+        }
+        None => 0,
+    };
+    Some(Costs {
+        protocol_fee,
+        total: costs
+            .network_fees
+            .checked_add(costs.buy_token_ata_costs)?
+            .checked_add(protocol_fee)?,
+        ..costs
+    })
+}
+
+/// `quote` with its execution cost, `rent` plus its own network fee, and then
+/// the volume protocol fee at `factor`, taken out of the side the trader does
+/// not fix: a sell order delivers less buy token, a buy order pulls more sell
+/// token. Each cost converts at `price` on its own, rounded up against the
+/// trader. The fee is the factor's share of the leg the cost left, the leg
+/// the driver takes it from at settlement, computed as the driver computes
+/// it. `None` when the amount cannot absorb the cost.
 fn net(
     quote: quoter::Quote,
     kind: dto::Kind,
     rent: u64,
     price: NonZero<u64>,
+    factor: Option<FeeFactor>,
 ) -> Option<(quoter::Quote, Costs)> {
     let network_fees = in_token(quote.network_fee, price)?;
     let buy_token_ata_costs = in_token(rent, price)?;
-    let total = network_fees.checked_add(buy_token_ata_costs)?;
-    let quote = match kind {
-        dto::Kind::Sell => quoter::Quote {
-            buy_amount: quote
+    let costs = network_fees.checked_add(buy_token_ata_costs)?;
+    let fee = |leg: u64| match factor {
+        Some(factor) => leg.try_mul_f64(factor.get()).ok(),
+        None => Some(0),
+    };
+    let (quote, protocol_fee) = match kind {
+        dto::Kind::Sell => {
+            let cut = quote
                 .buy_amount
-                .checked_sub(total)
-                .filter(|delivered| *delivered > 0)?,
-            ..quote
-        },
-        dto::Kind::Buy => quoter::Quote {
-            sell_amount: quote.sell_amount.checked_add(total)?,
-            ..quote
-        },
+                .checked_sub(costs)
+                .filter(|delivered| *delivered > 0)?;
+            let protocol_fee = fee(cut)?;
+            (
+                quoter::Quote {
+                    buy_amount: cut.checked_sub(protocol_fee)?,
+                    ..quote
+                },
+                protocol_fee,
+            )
+        }
+        dto::Kind::Buy => {
+            let cut = quote.sell_amount.checked_add(costs)?;
+            let protocol_fee = fee(cut)?;
+            (
+                quoter::Quote {
+                    sell_amount: cut.checked_add(protocol_fee)?,
+                    ..quote
+                },
+                protocol_fee,
+            )
+        }
     };
     Some((
         quote,
         Costs {
             network_fees,
             buy_token_ata_costs,
-            total,
+            protocol_fee,
+            total: costs.checked_add(protocol_fee)?,
         },
     ))
 }
@@ -672,6 +892,7 @@ fn same_token(sell: &Pubkey, buy: &Pubkey) -> bool {
 mod tests {
     use {
         super::*,
+        chain_types::solana::{IntentHash, Pubkey as ChainPubkey},
         cow_solana_rpc::{Mocks, RpcRequest, SolanaRPC},
         solana_sdk::{account::create_account_for_test, program_pack::Pack},
         solana_testlib::{
@@ -700,6 +921,7 @@ mod tests {
             },
             validity: None,
             app_data: Default::default(),
+            price_quality: Default::default(),
         }
     }
 
@@ -755,6 +977,8 @@ mod tests {
             buy_amount,
             solver: Pubkey::default(),
             network_fee,
+            transaction: None,
+            verified: false,
         }
     }
 
@@ -762,15 +986,189 @@ mod tests {
         NonZero::new(native_price).unwrap()
     }
 
+    fn costs(total: u64) -> Costs {
+        Costs {
+            network_fees: total,
+            buy_token_ata_costs: 0,
+            protocol_fee: 0,
+            total,
+        }
+    }
+
+    fn selling(sell_amount: dto::SellAmount) -> dto::Side {
+        dto::Side::Sell { sell_amount }
+    }
+
+    /// Five atoms of a buy token worth two lamports each are ten lamports,
+    /// three and a third atoms of a sell token worth three, so four.
+    #[test]
+    fn a_sell_orders_fee_is_its_cut_as_the_sell_token_rounded_up() {
+        let side = selling(dto::SellAmount::BeforeFee { value: 100 });
+        assert_eq!(
+            amounts(
+                &side,
+                &quote(100, 1_000, 0),
+                &quote(100, 995, 0),
+                costs(5),
+                None,
+                price(3),
+                2
+            ),
+            Some((
+                Amounts {
+                    sell_amount: 96,
+                    buy_amount: 995,
+                    fee_amount: 4,
+                    signed_sell_amount: 100,
+                },
+                costs(5)
+            ))
+        );
+    }
+
+    /// The fee on top covers the cut, so the route's full buy amount stays.
+    #[test]
+    fn an_after_fee_amount_stays_and_signs_the_fee_on_top() {
+        let side = selling(dto::SellAmount::AfterFee { value: 100 });
+        assert_eq!(
+            amounts(
+                &side,
+                &quote(100, 1_000, 0),
+                &quote(100, 995, 0),
+                costs(5),
+                None,
+                price(3),
+                2
+            ),
+            Some((
+                Amounts {
+                    sell_amount: 100,
+                    buy_amount: 1_000,
+                    fee_amount: 4,
+                    signed_sell_amount: 104,
+                },
+                costs(5)
+            ))
+        );
+    }
+
+    #[test]
+    fn a_buy_order_pays_its_cut_on_top_of_the_route() {
+        let side = dto::Side::Buy {
+            buy_amount_after_fee: 1_000,
+        };
+        assert_eq!(
+            amounts(
+                &side,
+                &quote(1_000, 1_000, 0),
+                &quote(1_050, 1_000, 0),
+                costs(50),
+                None,
+                price(1),
+                1
+            ),
+            Some((
+                Amounts {
+                    sell_amount: 1_000,
+                    buy_amount: 1_000,
+                    fee_amount: 50,
+                    signed_sell_amount: 1_050,
+                },
+                costs(50)
+            ))
+        );
+    }
+
+    #[test]
+    fn a_fee_that_swallows_the_sell_amount_is_no_quote() {
+        for value in [3, 4] {
+            let side = selling(dto::SellAmount::BeforeFee { value });
+            assert_eq!(
+                amounts(
+                    &side,
+                    &quote(value, 1_000, 0),
+                    &quote(value, 995, 0),
+                    costs(5),
+                    None,
+                    price(3),
+                    2
+                ),
+                None,
+                "{value}"
+            );
+        }
+    }
+
+    /// An order placed on a `sellAmountAfterFee` quote buys the route's full
+    /// amount, so its fee on top is grossed up: the leg the driver's cut
+    /// leaves, taxed as the driver taxes it, comes down to the route's amount
+    /// to the atom. A lamport an atom on both sides, so the fee on top buys as
+    /// much buy token as it costs. A leg no fill reaches is no quote.
+    #[test]
+    fn an_after_fee_orders_fee_on_top_survives_the_drivers_take() {
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
+        let side = selling(dto::SellAmount::AfterFee { value: 1_000 });
+        for factor in [0.0007, 0.001, 0.5] {
+            let policies = [protocol_fees::FeePolicy::Volume { factor }];
+            for (buy_amount, rent) in [(1_000_000, 0), (7_777_777, 2_039_280), (3, 1), (1, 0)] {
+                let route = quote(1_000, buy_amount, 0);
+                let (quoted, costs) = net(
+                    route.clone(),
+                    dto::Kind::Sell,
+                    rent,
+                    lamport_an_atom,
+                    Some(FeeFactor::new(factor)),
+                )
+                .unwrap();
+                let (amounts, costs) = amounts(
+                    &side,
+                    &route,
+                    &quoted,
+                    costs,
+                    Some(FeeFactor::new(factor)),
+                    lamport_an_atom,
+                    Solana::NATIVE_PRICE_DENOMINATOR,
+                )
+                .unwrap();
+                assert_eq!(
+                    (amounts.buy_amount, amounts.fee_amount),
+                    (buy_amount, costs.total)
+                );
+                // The fill after the driver's cut: the route's amount plus what
+                // the fee on top bought, less the rent.
+                let executed_buy = buy_amount + costs.total - rent;
+                let mut fill = protocol_fees::Order::<Solana> {
+                    uid: IntentHash([0; 32]),
+                    sell_token: ChainPubkey([1; 32]),
+                    buy_token: ChainPubkey([2; 32]),
+                    sell_amount: amounts.signed_sell_amount,
+                    buy_amount,
+                    executed_sell: amounts.signed_sell_amount,
+                    executed_buy,
+                    side: protocol_fees::Side::Sell,
+                };
+                let fee = protocol_fees::apply_protocol_fees(&mut fill, &policies).unwrap();
+                assert_eq!(
+                    (fill.executed_buy, fee),
+                    (buy_amount, costs.protocol_fee),
+                    "{factor} {buy_amount} {rent}"
+                );
+            }
+        }
+        assert!(fee_on_top(costs(0), u64::MAX - 1, Some(FeeFactor::new(0.001))).is_none());
+    }
+
     fn best(
         quotes: Vec<quoter::Quote>,
         kind: dto::Kind,
         rent: u64,
         price: NonZero<u64>,
+        prefer_verified: bool,
     ) -> Option<(quoter::Quote, Costs)> {
-        rank(quotes, kind, rent, price)
+        rank(quotes, kind, rent, price, None, prefer_verified)
             .into_iter()
-            .find_map(|(_, netted)| netted)
+            .next()
+            .and_then(|(_, netted)| netted)
     }
 
     fn legs(quote: &quoter::Quote) -> (u64, u64) {
@@ -784,19 +1182,21 @@ mod tests {
     #[test]
     fn the_cost_comes_out_of_the_side_the_trader_does_not_fix() {
         let price = price(Solana::NATIVE_PRICE_DENOMINATOR / 2);
-        let (sell, costs) = net(quote(1_000, 5_000, 400), dto::Kind::Sell, 600, price).unwrap();
+        let (sell, costs) =
+            net(quote(1_000, 5_000, 400), dto::Kind::Sell, 600, price, None).unwrap();
         assert_eq!(legs(&sell), (1_000, 3_000));
         assert_eq!(
             costs,
             Costs {
                 network_fees: 800,
                 buy_token_ata_costs: 1_200,
+                protocol_fee: 0,
                 total: 2_000,
             }
         );
-        let (buy, _) = net(quote(1_000, 5_000, 400), dto::Kind::Buy, 600, price).unwrap();
+        let (buy, _) = net(quote(1_000, 5_000, 400), dto::Kind::Buy, 600, price, None).unwrap();
         assert_eq!(legs(&buy), (3_000, 5_000));
-        let (free, _) = net(quote(1_000, 5_000, 0), dto::Kind::Sell, 0, price).unwrap();
+        let (free, _) = net(quote(1_000, 5_000, 0), dto::Kind::Sell, 0, price, None).unwrap();
         assert_eq!(legs(&free), (1_000, 5_000));
     }
 
@@ -807,12 +1207,26 @@ mod tests {
     fn the_cut_rounds_up_against_the_trader() {
         let price = price(3 * Solana::NATIVE_PRICE_DENOMINATOR);
         for (lamports, buy_amount) in [(1, 4_999), (3, 4_999), (4, 4_998)] {
-            let (sell, _) = net(quote(1_000, 5_000, lamports), dto::Kind::Sell, 0, price).unwrap();
+            let (sell, _) = net(
+                quote(1_000, 5_000, lamports),
+                dto::Kind::Sell,
+                0,
+                price,
+                None,
+            )
+            .unwrap();
             assert_eq!(sell.buy_amount, buy_amount);
-            let (buy, _) = net(quote(1_000, 5_000, lamports), dto::Kind::Buy, 0, price).unwrap();
+            let (buy, _) = net(
+                quote(1_000, 5_000, lamports),
+                dto::Kind::Buy,
+                0,
+                price,
+                None,
+            )
+            .unwrap();
             assert_eq!(buy.sell_amount, 1_000 + 5_000 - buy_amount);
         }
-        let (sell, costs) = net(quote(1_000, 5_000, 1), dto::Kind::Sell, 1, price).unwrap();
+        let (sell, costs) = net(quote(1_000, 5_000, 1), dto::Kind::Sell, 1, price, None).unwrap();
         assert_eq!((sell.buy_amount, costs.total), (4_998, 2));
     }
 
@@ -827,12 +1241,143 @@ mod tests {
                 dto::Kind::Sell,
                 0,
                 lamport_an_atom,
+                None,
             )
         };
         assert!(sell(500, 500).is_none());
         assert_eq!(sell(501, 500).unwrap().0.buy_amount, 1);
-        assert!(net(quote(u64::MAX, 500, 1), dto::Kind::Buy, 0, lamport_an_atom).is_none());
-        assert!(net(quote(1_000, 5_000, u64::MAX), dto::Kind::Sell, 0, price(1)).is_none());
+        assert!(
+            net(
+                quote(u64::MAX, 500, 1),
+                dto::Kind::Buy,
+                0,
+                lamport_an_atom,
+                None
+            )
+            .is_none()
+        );
+        assert!(
+            net(
+                quote(1_000, 5_000, u64::MAX),
+                dto::Kind::Sell,
+                0,
+                price(1),
+                None
+            )
+            .is_none()
+        );
+    }
+
+    /// Ten basis points off the leg the cost left: a sell order's buy leg,
+    /// a buy order's sell leg once the cost is on it. A zero factor and no
+    /// factor take nothing, and a sell leg can overflow with the fee on top.
+    #[test]
+    fn the_volume_fee_is_its_share_of_the_cut_leg() {
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
+        let ten_bps = Some(FeeFactor::new(0.001));
+        let (sell, costs) = net(
+            quote(1_000, 1_000_000, 0),
+            dto::Kind::Sell,
+            0,
+            lamport_an_atom,
+            ten_bps,
+        )
+        .unwrap();
+        assert_eq!(legs(&sell), (1_000, 999_000));
+        assert_eq!(
+            costs,
+            Costs {
+                network_fees: 0,
+                buy_token_ata_costs: 0,
+                protocol_fee: 1_000,
+                total: 1_000,
+            }
+        );
+        let (buy, costs) = net(
+            quote(1_000_000, 5_000, 1_000),
+            dto::Kind::Buy,
+            0,
+            lamport_an_atom,
+            ten_bps,
+        )
+        .unwrap();
+        assert_eq!(legs(&buy), (1_002_001, 5_000));
+        assert_eq!((costs.protocol_fee, costs.total), (1_001, 2_001));
+        for factor in [None, Some(FeeFactor::new(0.0))] {
+            let (free, costs) = net(
+                quote(1_000, 1_000_000, 0),
+                dto::Kind::Sell,
+                0,
+                lamport_an_atom,
+                factor,
+            )
+            .unwrap();
+            assert_eq!(legs(&free), (1_000, 1_000_000));
+            assert_eq!((costs.protocol_fee, costs.total), (0, 0));
+        }
+        assert!(
+            net(
+                quote(u64::MAX - 1, 5_000, 0),
+                dto::Kind::Buy,
+                0,
+                lamport_an_atom,
+                ten_bps,
+            )
+            .is_none()
+        );
+    }
+
+    /// The fee comes off the leg the cost left, the leg the driver takes it
+    /// from at settlement, computed as the driver computes it, so the quote
+    /// promises what the driver delivers for the same route.
+    #[test]
+    fn the_quote_takes_the_fee_the_driver_takes() {
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
+        let factor = FeeFactor::new(0.0007);
+        let policies = [protocol_fees::FeePolicy::Volume {
+            factor: factor.get(),
+        }];
+        for (kind, side) in [
+            (dto::Kind::Sell, protocol_fees::Side::Sell),
+            (dto::Kind::Buy, protocol_fees::Side::Buy),
+        ] {
+            for (sell_amount, buy_amount, network_fee, rent) in [
+                (1_000, 1_000_000, 0, 0),
+                (333_333, 7_777_777, 1_234, 2_039_280),
+                (7, 3, 1, 0),
+            ] {
+                let (quoted, costs) = net(
+                    quote(sell_amount, buy_amount, network_fee),
+                    kind,
+                    rent,
+                    lamport_an_atom,
+                    Some(factor),
+                )
+                .unwrap();
+                // The fill as the driver's cut leaves it, before the fee.
+                let cut = costs.total - costs.protocol_fee;
+                let (executed_sell, executed_buy) = match kind {
+                    dto::Kind::Sell => (sell_amount, buy_amount - cut),
+                    dto::Kind::Buy => (sell_amount + cut, buy_amount),
+                };
+                let mut fill = protocol_fees::Order::<Solana> {
+                    uid: IntentHash([0; 32]),
+                    sell_token: ChainPubkey([1; 32]),
+                    buy_token: ChainPubkey([2; 32]),
+                    sell_amount: executed_sell,
+                    buy_amount: executed_buy,
+                    executed_sell,
+                    executed_buy,
+                    side,
+                };
+                let fee = protocol_fees::apply_protocol_fees(&mut fill, &policies).unwrap();
+                assert_eq!(
+                    (fill.executed_sell, fill.executed_buy, fee),
+                    (quoted.sell_amount, quoted.buy_amount, costs.protocol_fee),
+                    "{kind:?} {sell_amount} {buy_amount} {network_fee} {rent}"
+                );
+            }
+        }
     }
 
     /// The raw-best quote loses to the one whose own network fee leaves the
@@ -845,20 +1390,60 @@ mod tests {
             quote(1_000, 5_100, 200),
             quote(1_000, 10, 0),
         ];
-        let (sell, _) = best(quotes, dto::Kind::Sell, 50, lamport_an_atom).unwrap();
+        let (sell, _) = best(quotes, dto::Kind::Sell, 50, lamport_an_atom, false).unwrap();
         assert_eq!((sell.buy_amount, sell.network_fee), (4_950, 0));
         let quotes = vec![quote(1_000, 5_000, 0), quote(900, 5_000, 200)];
-        let (buy, _) = best(quotes, dto::Kind::Buy, 50, lamport_an_atom).unwrap();
+        let (buy, _) = best(quotes, dto::Kind::Buy, 50, lamport_an_atom, false).unwrap();
         assert_eq!((buy.sell_amount, buy.network_fee), (1_050, 0));
         assert!(
             best(
                 vec![quote(1_000, 10, 0)],
                 dto::Kind::Sell,
                 50,
-                lamport_an_atom
+                lamport_an_atom,
+                false
             )
             .is_none()
         );
+    }
+
+    /// Preferring verified quotes, a verified quote beats a better unverified
+    /// one on either side, the best verified quote wins among verified ones,
+    /// and a verified quote that cannot absorb its cost fails the quote. Not
+    /// preferring them, the amounts alone rank.
+    #[test]
+    fn a_verified_quote_outranks_a_better_unverified_one_when_preferred() {
+        let lamport_an_atom = price(Solana::NATIVE_PRICE_DENOMINATOR);
+        let verified = |sell_amount, buy_amount| quoter::Quote {
+            verified: true,
+            ..quote(sell_amount, buy_amount, 0)
+        };
+        let sells = || {
+            vec![
+                quote(1_000, 5_000, 0),
+                verified(1_000, 4_000),
+                verified(1_000, 4_500),
+            ]
+        };
+        let (sell, _) = best(sells(), dto::Kind::Sell, 0, lamport_an_atom, true).unwrap();
+        assert_eq!((sell.buy_amount, sell.verified), (4_500, true));
+        let (sell, _) = best(sells(), dto::Kind::Sell, 0, lamport_an_atom, false).unwrap();
+        assert_eq!((sell.buy_amount, sell.verified), (5_000, false));
+        let buys = || {
+            vec![
+                quote(1_000, 5_000, 0),
+                verified(1_200, 5_000),
+                verified(1_100, 5_000),
+            ]
+        };
+        let (buy, _) = best(buys(), dto::Kind::Buy, 0, lamport_an_atom, true).unwrap();
+        assert_eq!((buy.sell_amount, buy.verified), (1_100, true));
+        let (buy, _) = best(buys(), dto::Kind::Buy, 0, lamport_an_atom, false).unwrap();
+        assert_eq!((buy.sell_amount, buy.verified), (1_000, false));
+        let uncovered = || vec![quote(1_000, 5_000, 0), verified(1_000, 10)];
+        assert!(best(uncovered(), dto::Kind::Sell, 50, lamport_an_atom, true).is_none());
+        let (sell, _) = best(uncovered(), dto::Kind::Sell, 50, lamport_an_atom, false).unwrap();
+        assert_eq!((sell.buy_amount, sell.verified), (4_950, false));
     }
 
     #[test]
@@ -877,6 +1462,8 @@ mod tests {
             dto::Kind::Sell,
             50,
             lamport_an_atom,
+            None,
+            false,
         );
         let order = ranked
             .iter()
@@ -906,6 +1493,8 @@ mod tests {
                 kind,
                 50,
                 lamport_an_atom,
+                None,
+                false,
             )
             .swap_remove(0)
             .0
@@ -924,6 +1513,8 @@ mod tests {
             dto::Kind::Sell,
             100,
             price,
+            None,
+            false,
         );
         let request = request(Pubkey::new_unique(), Pubkey::new_unique(), None);
         let expiration = Utc::now();
@@ -932,6 +1523,7 @@ mod tests {
             sell_token_price: 7,
             buy_token_price: Solana::NATIVE_PRICE_DENOMINATOR,
             buy_token_ata_rent: 100,
+            volume_fee_factor: None,
             expiration,
         };
         let json = serde_json::to_value(competition(
@@ -957,12 +1549,14 @@ mod tests {
         );
         // Filled in once the winner is stored.
         assert!(json["metadata"]["quoteId"].is_null());
+        assert!(json["metadata"]["volumeFeeFactor"].is_null());
         let winner = &json["quotes"][0];
         assert_eq!(winner["driver"], "driver");
         assert_eq!(winner["solver"], Pubkey::default().to_string());
         assert_eq!(winner["buyAmount"], "4500");
         assert_eq!(winner["quotedBuyAmount"], "5000");
         assert_eq!(winner["networkFee"], "400");
+        assert_eq!(winner["verified"], false);
         assert_eq!(winner["elapsedMs"], 1);
         let dropped = &json["quotes"][1];
         assert!(dropped["sellAmount"].is_null());

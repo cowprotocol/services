@@ -1,17 +1,20 @@
 //! HTTP API server.
 
 use {
-    super::{prices::NativePrices, quoter::Quoter},
+    super::{prices::NativePrices, quoter::Quoter, verifier::Verifier},
     axum::{
         Router,
         http,
         routing::{get, post, put},
     },
+    chrono::{DateTime, Utc},
+    configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     sqlx::PgPool,
     std::{
         io,
         net::SocketAddr,
+        num::NonZero,
         sync::Arc,
         time::{Duration, Instant},
     },
@@ -48,8 +51,14 @@ pub struct Api {
     pub validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     pub quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fast_results_required: NonZero<usize>,
+    /// The volume protocol fee quotes net out, absent when none is charged.
+    pub volume_fee: Option<VolumeFeeConfig>,
     /// Sponsored placement dependencies, absent when the feature is off.
     pub sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     pub app_data_size_limit: usize,
 }
@@ -106,7 +115,10 @@ impl Api {
             self.prices,
             self.validation,
             self.quote_expiry,
+            self.fast_results_required,
+            self.volume_fee,
             self.sponsoring,
+            self.verifier,
             self.app_data_size_limit,
         );
 
@@ -190,13 +202,17 @@ pub struct Sponsoring {
 }
 
 impl State {
+    #[expect(clippy::too_many_arguments)]
     fn new(
         pool: PgPool,
         quoter: Quoter,
         prices: NativePrices,
         validation: ValidationParameters,
         quote_expiry: std::time::Duration,
+        fast_results_required: NonZero<usize>,
+        volume_fee: Option<VolumeFeeConfig>,
         sponsoring: Option<Sponsoring>,
+        verifier: Option<Verifier>,
         app_data_size_limit: usize,
     ) -> Self {
         Self(Arc::new(Inner {
@@ -205,7 +221,10 @@ impl State {
             prices,
             validation,
             quote_expiry,
+            fast_results_required,
+            volume_fee,
             sponsoring,
+            verifier,
             app_data_size_limit,
             block_height: Mutex::default(),
         }))
@@ -237,9 +256,29 @@ impl State {
         self.0.quote_expiry
     }
 
+    /// Drivers a `fast` quote waits for before it answers.
+    pub fn fast_results_required(&self) -> NonZero<usize> {
+        self.0.fast_results_required
+    }
+
+    /// The volume protocol fee factor in force at `now`, `None` when no
+    /// protocol fee is charged.
+    pub fn volume_fee(&self, now: DateTime<Utc>) -> Option<FeeFactor> {
+        self.0
+            .volume_fee
+            .as_ref()
+            .filter(|fee| fee.effective_from_timestamp.is_none_or(|from| from <= now))
+            .and_then(|fee| fee.factor)
+    }
+
     /// Sponsored placement dependencies, absent when the feature is off.
     pub fn sponsoring(&self) -> Option<&Sponsoring> {
         self.0.sponsoring.as_ref()
+    }
+
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    pub fn verifier(&self) -> Option<&Verifier> {
+        self.0.verifier.as_ref()
     }
 
     /// Most bytes an app data document may have.
@@ -289,8 +328,14 @@ struct Inner {
     validation: ValidationParameters,
     /// How long the quoted amounts are honored.
     quote_expiry: std::time::Duration,
+    /// Drivers a `fast` quote waits for before it answers.
+    fast_results_required: NonZero<usize>,
+    /// The volume protocol fee quotes net out, absent when none is charged.
+    volume_fee: Option<VolumeFeeConfig>,
     /// Sponsored placement dependencies, absent when the feature is off.
     sponsoring: Option<Sponsoring>,
+    /// Settles quotes in simulation, absent when every quote is unverified.
+    verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     app_data_size_limit: usize,
     /// The last block height read and when, see [`State::block_height`].

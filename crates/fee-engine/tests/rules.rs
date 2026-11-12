@@ -3,8 +3,17 @@
 use {
     alloy_primitives::{Address, U256, address},
     chrono::{TimeZone, Utc},
-    configs::fee_factor::FeeFactor,
-    fee_engine::{Evaluation, Fee, Match, RuleDefinition, RuleSet},
+    fee_engine::{
+        AppData,
+        Evaluation,
+        Fee,
+        FeeFactor,
+        Match,
+        OrderView,
+        RuleDefinition,
+        RuleSet,
+        RuleSetDefinition,
+    },
     model::order::{Order, OrderData, OrderMetadata},
     std::collections::BTreeMap,
 };
@@ -35,7 +44,7 @@ fn rules() -> RuleSet {
             "order.sellToken in stablecoins && order.buyToken in stablecoins",
             "volume(10)",
         ),
-        rule("Default", "true", "surplus(50, 1)"),
+        rule("Default", "true", "surplus(50, 100)"),
     ];
     let lists = BTreeMap::from([
         (
@@ -44,7 +53,12 @@ fn rules() -> RuleSet {
         ),
         ("jit_makers".to_owned(), vec![MAKER.to_string()]),
     ]);
-    RuleSet::new(definitions, lists).unwrap()
+    RuleSet::new(RuleSetDefinition {
+        lists,
+        rules: definitions,
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 fn order(owner: Address, sell: Address, buy: Address) -> Order {
@@ -85,7 +99,12 @@ fn reports_the_matching_rules_per_order() {
     let user = address!("0x2222222222222222222222222222222222222222");
 
     let before_launch = rules.evaluator(Utc.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap());
-    let (rule, fees) = matched(before_launch.evaluate(&order(user, USDC, USDT)));
+    let (rule, fees) = matched(before_launch.evaluate(OrderView {
+        order: &order(user, USDC, USDT),
+        app_data: &AppData::default(),
+        partner_fees: &[],
+        in_market: false,
+    }));
     assert_eq!(
         rule,
         ["Stablecoin launch month", "Stablecoin swaps", "Default"]
@@ -93,42 +112,67 @@ fn reports_the_matching_rules_per_order() {
     assert_eq!(
         fees,
         vec![Fee::Volume {
-            factor: FeeFactor::new(0.0001)
+            factor: FeeFactor::try_from(0.0001).unwrap()
         }]
     );
 
     let after_launch = rules.evaluator(Utc.with_ymd_and_hms(2027, 1, 1, 0, 0, 0).unwrap());
-    let (rule, fees) = matched(after_launch.evaluate(&order(user, USDC, USDT)));
+    let (rule, fees) = matched(after_launch.evaluate(OrderView {
+        order: &order(user, USDC, USDT),
+        app_data: &AppData::default(),
+        partner_fees: &[],
+        in_market: false,
+    }));
     assert_eq!(rule, ["Stablecoin swaps", "Default"]);
     assert_eq!(
         fees,
         vec![Fee::Volume {
-            factor: FeeFactor::new(0.001)
+            factor: FeeFactor::try_from(0.001).unwrap()
         }]
     );
 
-    let (rule, fees) = matched(after_launch.evaluate(&order(user, WETH, USDT)));
+    let (rule, fees) = matched(after_launch.evaluate(OrderView {
+        order: &order(user, WETH, USDT),
+        app_data: &AppData::default(),
+        partner_fees: &[],
+        in_market: false,
+    }));
     assert_eq!(rule, ["Default"]);
     assert_eq!(
         fees,
         vec![Fee::Surplus {
-            factor: FeeFactor::new(0.5),
-            max_volume_factor: FeeFactor::new(0.01),
+            factor: FeeFactor::try_from(0.5).unwrap(),
+            max_volume_factor: FeeFactor::try_from(0.01).unwrap(),
         }]
     );
 
-    let (rule, fees) = matched(after_launch.evaluate(&order(MAKER, USDC, USDT)));
+    let (rule, fees) = matched(after_launch.evaluate(OrderView {
+        order: &order(MAKER, USDC, USDT),
+        app_data: &AppData::default(),
+        partner_fees: &[],
+        in_market: false,
+    }));
     assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
     assert_eq!(fees, vec![]);
 }
 
 #[test]
 fn no_matching_rule_means_no_fee() {
-    let rules = RuleSet::new(
-        vec![rule("Sells only", r#"order.kind == "sell""#, "volume(1)")],
-        BTreeMap::new(),
-    )
+    let rules = RuleSet::new(RuleSetDefinition {
+        rules: vec![rule("Sells only", r#"order.kind == "sell""#, "volume(1)")],
+        ..Default::default()
+    })
     .unwrap();
     let evaluator = rules.evaluator(Utc::now());
-    assert!(evaluator.evaluate(&Order::default()).matched.is_empty());
+    assert!(
+        evaluator
+            .evaluate(OrderView {
+                order: &Order::default(),
+                app_data: &AppData::default(),
+                partner_fees: &[],
+                in_market: false
+            })
+            .matched
+            .is_empty()
+    );
 }
