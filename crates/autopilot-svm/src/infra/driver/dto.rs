@@ -90,14 +90,10 @@ pub struct Order {
     /// in order. An empty list is omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub protocol_fees: Vec<FeePolicy>,
-    /// The lamports the funder paid to create a sponsored order that has no
-    /// fill yet. Absent for any other order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<DisplayFromStr>")]
-    pub creation_fee: Option<u64>,
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
@@ -111,6 +107,13 @@ pub enum FeePolicy {
     },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+    /// Solana only: the creation fee of a sponsored order, in atoms of its
+    /// surplus token.
+    #[serde(rename_all = "camelCase")]
+    SponsoredCreation {
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+    },
 }
 
 /// The quote a price improvement policy measures the fill against.
@@ -153,6 +156,7 @@ impl From<&fee::FeePolicy> for FeePolicy {
                 },
             },
             fee::FeePolicy::Volume { factor } => Self::Volume { factor },
+            fee::FeePolicy::SponsoredCreation { amount } => Self::SponsoredCreation { amount },
         }
     }
 }
@@ -189,7 +193,6 @@ impl From<&auction::Order> for Order {
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
             protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
-            creation_fee: order.creation_fee,
         }
     }
 }
@@ -338,14 +341,6 @@ mod tests {
         };
         let json = serde_json::to_value(&sponsored).unwrap();
         assert_eq!(json["orders"][0]["creation"], "AQID");
-        assert!(json["orders"][0].get("creationFee").is_none());
-        let charged = Order {
-            creation_fee: Some(10_000),
-            ..Order::from(&order())
-        };
-        let wire = serde_json::to_value(&charged).unwrap();
-        assert_eq!(wire["creationFee"], "10000");
-        assert_eq!(serde_json::from_value::<Order>(wire).unwrap(), charged);
         // An order paid out to its owner sends no receiver, one paid out to
         // another wallet sends it as base58, precomputed for 32 bytes of 0x23.
         assert!(json["orders"][0].get("receiver").is_none());
@@ -372,6 +367,7 @@ mod tests {
         let charged = SolveRequest {
             orders: vec![Order::from(&auction::Order {
                 protocol_fees: vec![
+                    fee::FeePolicy::SponsoredCreation { amount: 10_000 },
                     fee::FeePolicy::Surplus {
                         factor: 0.5,
                         max_volume_factor: 0.01,
@@ -396,6 +392,7 @@ mod tests {
         assert_eq!(
             json["orders"][0]["protocolFees"],
             serde_json::json!([
+                {"sponsoredCreation": {"amount": "10000"}},
                 {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}},
                 {"priceImprovement": {
                     "factor": 0.5,

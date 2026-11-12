@@ -657,16 +657,17 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
         let mut insert = QueryBuilder::<Postgres>::new(
             "INSERT INTO solana.fee_policies (auction_id, order_uid, kind, surplus_factor, \
              surplus_max_volume_factor, price_improvement_factor, \
-             price_improvement_max_volume_factor, volume_factor) ",
+             price_improvement_max_volume_factor, volume_factor, sponsored_creation_amount) ",
         );
         insert.push_values(policies, |mut row, (order_uid, policy)| {
-            let (kind, surplus, price_improvement, volume) = match *policy {
+            let (kind, surplus, price_improvement, volume, sponsored_creation) = match *policy {
                 FeePolicy::Surplus {
                     factor,
                     max_volume_factor,
                 } => (
                     PolicyKind::Surplus,
                     Some((factor, max_volume_factor)),
+                    None,
                     None,
                     None,
                 ),
@@ -679,8 +680,18 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
                     None,
                     Some((factor, max_volume_factor)),
                     None,
+                    None,
                 ),
-                FeePolicy::Volume { factor } => (PolicyKind::Volume, None, None, Some(factor)),
+                FeePolicy::Volume { factor } => {
+                    (PolicyKind::Volume, None, None, Some(factor), None)
+                }
+                FeePolicy::SponsoredCreation { amount } => (
+                    PolicyKind::SponsoredCreation,
+                    None,
+                    None,
+                    None,
+                    Some(amount),
+                ),
             };
             row.push_bind(competition.auction_id)
                 .push_bind(*order_uid)
@@ -689,7 +700,8 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
                 .push_bind(surplus.map(|(_, cap)| cap))
                 .push_bind(price_improvement.map(|(factor, _)| factor))
                 .push_bind(price_improvement.map(|(_, cap)| cap))
-                .push_bind(volume);
+                .push_bind(volume)
+                .push_bind(sponsored_creation.map(BigDecimal::from));
         });
         insert
             .build()
@@ -1138,6 +1150,7 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
                 (
                     charged,
                     vec![
+                        FeePolicy::SponsoredCreation { amount: 7 },
                         FeePolicy::Surplus {
                             factor: 0.5,
                             max_volume_factor: 0.9,
@@ -1183,6 +1196,15 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
             vec![
                 (
                     uid.clone(),
+                    "sponsoredcreation".to_string(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None
+                ),
+                (
+                    uid.clone(),
                     "surplus".to_string(),
                     Some(0.5),
                     Some(0.9),
@@ -1210,6 +1232,14 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
                 ),
             ]
         );
+        let amounts: Vec<Option<String>> = sqlx::query_scalar(
+            "SELECT sponsored_creation_amount::text FROM solana.fee_policies WHERE auction_id = \
+             88 ORDER BY application_order",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(amounts, vec![Some("7".to_string()), None, None, None]);
     }
 
     #[tokio::test]

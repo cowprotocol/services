@@ -119,14 +119,10 @@ pub struct Order {
     /// in order. Missing means none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     protocol_fees: Vec<FeePolicy>,
-    /// The lamports the funder paid to create a sponsored order that has no
-    /// fill yet. Absent for any other order.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde_as(as = "Option<DisplayFromStr>")]
-    creation_fee: Option<u64>,
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
@@ -140,6 +136,13 @@ pub enum FeePolicy {
     },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+    /// Solana only: the creation fee of a sponsored order, in atoms of its
+    /// surplus token.
+    #[serde(rename_all = "camelCase")]
+    SponsoredCreation {
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+    },
 }
 
 /// The best quote the order got, which a price improvement policy measures
@@ -193,6 +196,9 @@ impl FeePolicy {
             Self::Volume { factor: volume } => protocol_fee::FeePolicy::Volume {
                 factor: factor(volume)?,
             },
+            Self::SponsoredCreation { amount } => {
+                protocol_fee::FeePolicy::SponsoredCreation { amount }
+            }
         })
     }
 }
@@ -243,11 +249,7 @@ impl SolveRequest {
         let id = domain::auction::Id::try_from(self.id)?;
         let mut creations = HashMap::new();
         let mut fee_policies = HashMap::new();
-        let mut creation_fees = HashMap::new();
         for order in &self.orders {
-            if let Some(fee) = order.creation_fee {
-                creation_fees.insert(order.uid, fee);
-            }
             if let Some(bytes) = &order.creation {
                 let creation = bincode::deserialize(bytes).map_err(|_| Error::InvalidCreation)?;
                 creations.insert(order.uid, creation);
@@ -275,7 +277,6 @@ impl SolveRequest {
                 .map(|(mint, token)| (mint, token.price))
                 .collect(),
             fee_policies,
-            creation_fees,
         })
     }
 }
@@ -308,7 +309,6 @@ mod tests {
             creation: Some(vec![1, 2, 3]),
             sell_balance: Some(500),
             protocol_fees: Vec::new(),
-            creation_fee: None,
         }
     }
 
@@ -332,6 +332,7 @@ mod tests {
     #[test]
     fn protocol_fees_pin_the_evm_wire_shape() {
         let request = request_with_policies(serde_json::json!([
+            {"sponsoredCreation": {"amount": "10000"}},
             {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}},
             {"priceImprovement": {
                 "factor": 0.5,
@@ -349,6 +350,7 @@ mod tests {
         assert_eq!(
             auction.fee_policies[&OrderUid([0x11; 32])],
             vec![
+                protocol_fee::FeePolicy::SponsoredCreation { amount: 10_000 },
                 protocol_fee::FeePolicy::Surplus {
                     factor: 0.5,
                     max_volume_factor: 0.01,
@@ -450,30 +452,6 @@ mod tests {
         let parsed: Order = serde_json::from_value(json).unwrap();
         assert_eq!(parsed.receiver, Some(pubkey(0x23)));
         assert_eq!(domain::Order::from(parsed).receiver, Some(pubkey(0x23)));
-    }
-
-    /// An order without a creation fee is serialized without the key, one
-    /// with it lists the lamports under its uid.
-    #[test]
-    fn the_creation_fee_is_optional() {
-        let mut json = serde_json::to_value(Order {
-            creation: None,
-            ..order()
-        })
-        .unwrap();
-        assert!(json.get("creationFee").is_none());
-
-        json["creationFee"] = serde_json::json!("10000");
-        let request = SolveRequest {
-            id: 7,
-            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
-            orders: vec![serde_json::from_value(json).unwrap()],
-            tokens: HashMap::new(),
-        };
-        assert_eq!(
-            request.into_domain().unwrap().creation_fees,
-            HashMap::from([(OrderUid([0x11; 32]), 10_000)])
-        );
     }
 
     #[test]

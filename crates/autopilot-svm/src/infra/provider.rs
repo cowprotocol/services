@@ -2,7 +2,11 @@
 
 use {
     crate::{
-        domain::{auction::Order, cycle::SolanaCycle, fee::ProtocolFees},
+        domain::{
+            auction::Order,
+            cycle::SolanaCycle,
+            fee::{self, ProtocolFees},
+        },
         infra::{db, order_events, prices::NativePrices},
         run_loop::{AuctionProvider, NextAuction},
     },
@@ -353,6 +357,12 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
                 order
             })
             .collect();
+        let placeholder_prices = matches!(self.prices, NativePrices::Denominated);
+        let (orders, unchargeable) = charged_orders(orders, &prices, placeholder_prices);
+        self.track_filtered_orders(OrderFilterReason::UnpricedCreationFee, unchargeable);
+        if orders.is_empty() {
+            return NextAuction::Empty;
+        }
         let mut auction = crate::domain::auction::Auction {
             id: 0,
             orders,
@@ -416,6 +426,8 @@ enum OrderFilterReason {
     UnfundedSellTokenAccount,
     /// No estimator prices the sell or buy token.
     MissingNativePrice,
+    /// No price converts the creation fee the order owes.
+    UnpricedCreationFee,
 }
 
 impl OrderFilterReason {
@@ -428,6 +440,7 @@ impl OrderFilterReason {
             Self::UnreceivableBuyTokenAccount => "unreceivable_buy_token_account",
             Self::UnfundedSellTokenAccount => "unfunded_sell_token_account",
             Self::MissingNativePrice => "missing_native_price",
+            Self::UnpricedCreationFee => "unpriced_creation_fee",
         }
     }
 }
@@ -554,6 +567,36 @@ fn priced_orders(
         priced,
         unpriced.into_iter().map(|order| order.uid).collect(),
     )
+}
+
+/// Puts the policy that repays an order's creation fee ahead of its other
+/// policies, so they measure the fill after it. An order whose fee has no
+/// price to convert at is dropped: sent without the policy, its fill would
+/// leave the funder unpaid. Placeholder prices convert no fee: they price
+/// every token at the denominator.
+/// Returns the kept orders and the uids of the dropped ones.
+fn charged_orders(
+    orders: Vec<Order>,
+    prices: &HashMap<Pubkey, u64>,
+    placeholder_prices: bool,
+) -> (Vec<Order>, Vec<IntentHash>) {
+    let mut unchargeable = Vec::new();
+    let charged = orders
+        .into_iter()
+        .filter_map(|mut order| {
+            let Some(lamports) = order.creation_fee else {
+                return Some(order);
+            };
+            let policy = fee::sponsored_creation(&order, lamports, prices);
+            let Some(policy) = policy.filter(|_| !placeholder_prices) else {
+                unchargeable.push(order.uid);
+                return None;
+            };
+            order.protocol_fees.insert(0, policy);
+            Some(order)
+        })
+        .collect();
+    (charged, unchargeable)
 }
 
 /// Drop native SOL buys that sell wSOL: they reach solvers as wSOL for wSOL.
@@ -827,6 +870,46 @@ mod tests {
         let (kept, dropped) = priced_orders(orders.clone(), &prices);
         assert_eq!(kept, [orders[0].clone()]);
         assert_eq!(dropped, [orders[1].uid, orders[2].uid]);
+    }
+
+    /// An order that owes a creation fee gets its policy ahead of the ones
+    /// it already has, at a lamport an atom. One whose surplus token prices
+    /// at zero is dropped, and so is every such order under placeholder
+    /// prices. An order that owes no fee passes untouched either way.
+    #[test]
+    fn charges_the_creation_fee_first_or_drops_the_order() {
+        use {crate::domain::fee::FeePolicy, chain_types::ChainTypes};
+        let volume = FeePolicy::Volume { factor: 0.001 };
+        let owing = Order {
+            creation_fee: Some(10_000),
+            protocol_fees: vec![volume],
+            ..order([0x01; 32], true)
+        };
+        let unpriced = Order {
+            buy_token: ChainPubkey([0x88; 32]),
+            ..owing.clone()
+        };
+        let free = order([0x03; 32], true);
+        let prices = HashMap::from([
+            (
+                Pubkey::new_from_array(owing.buy_token.0),
+                chain_types::solana::Solana::NATIVE_PRICE_DENOMINATOR,
+            ),
+            (Pubkey::new_from_array([0x88; 32]), 0),
+        ]);
+        let orders = vec![owing.clone(), unpriced.clone(), free.clone()];
+
+        let (kept, dropped) = charged_orders(orders.clone(), &prices, false);
+        let charged = Order {
+            protocol_fees: vec![FeePolicy::SponsoredCreation { amount: 10_000 }, volume],
+            ..owing.clone()
+        };
+        assert_eq!(kept, [charged, free.clone()]);
+        assert_eq!(dropped, [unpriced.uid]);
+
+        let (kept, dropped) = charged_orders(orders, &prices, true);
+        assert_eq!(kept, [free]);
+        assert_eq!(dropped, [owing.uid, unpriced.uid]);
     }
 
     /// Native SOL buys that sell wSOL stay out. Other native buys pass whatever

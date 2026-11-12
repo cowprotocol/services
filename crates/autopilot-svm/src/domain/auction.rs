@@ -61,8 +61,9 @@ pub struct Order {
     /// order.
     pub protocol_fees: Vec<FeePolicy>,
     /// The lamports the funder paid for the creation transaction of a
-    /// sponsored order, which the order's first fill repays. `None` once the
-    /// order has a fill, and for an order the owner created on chain.
+    /// sponsored order, which the order's first fill repays through a
+    /// [`FeePolicy::SponsoredCreation`]. `None` once the order has a fill,
+    /// and for an order the owner created on chain.
     pub creation_fee: Option<u64>,
 }
 

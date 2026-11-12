@@ -35,4 +35,5 @@ pub enum PolicyKind {
     Surplus,
     Volume,
     PriceImprovement,
+    SponsoredCreation,
 }

@@ -110,11 +110,11 @@ impl Order {
     }
 
     /// Build the wire order from a domain order, the taker and the settlement
-    /// program id. The volume fees among `policies` tighten the limit leg
-    /// first, then `cut` moves it by what the driver cuts from the fill, and
-    /// `fee` tightens it last: a sell order's minimum buy rises, a buy
-    /// order's maximum sell falls. A minimum buy past `u64::MAX` saturates:
-    /// no fill can meet it.
+    /// program id. The volume and sponsored creation fees among `policies`
+    /// tighten the limit leg first, then `cut` moves it by what the driver cuts
+    /// from the fill, and `fee` tightens it last: a sell order's minimum buy
+    /// rises, a buy order's maximum sell falls. A minimum buy past `u64::MAX`
+    /// saturates: no fill can meet it.
     ///
     /// The swap output must land in the buy-mint buffer PDA so that
     /// `FinalizeSettle` can push it to the user's buy token account. Solvers
@@ -217,12 +217,7 @@ impl Auction {
                     let (cut, fee, missing_buy_token_account) = match charge {
                         Charge::Engine {
                             missing_buy_token_accounts,
-                            creation_fee_cuts,
-                        } => (
-                            creation_fee_cuts.get(&order.uid).copied().unwrap_or(0),
-                            None,
-                            missing_buy_token_accounts.contains(&order.uid),
-                        ),
+                        } => (0, None, missing_buy_token_accounts.contains(&order.uid)),
                         Charge::Driver { cuts, fee } => (*cuts.get(&order.uid)?, *fee, false),
                     };
                     let policies = auction
@@ -541,7 +536,6 @@ mod tests {
         let order = domain_order(Side::Sell);
         let auction = domain::Auction {
             fee_policies: HashMap::from([(order.uid, vec![FeePolicy::Volume { factor: 0.001 }])]),
-            creation_fees: HashMap::new(),
             ..domain_auction(vec![order])
         };
         let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &Charge::default());
@@ -557,13 +551,11 @@ mod tests {
             creations: HashMap::new(),
             native_prices: HashMap::new(),
             fee_policies: HashMap::new(),
-            creation_fees: HashMap::new(),
         }
     }
 
     /// Charging the engine sends every order at its signed limit, flagging
-    /// the ones whose buy token account is missing, and moves a limit only by
-    /// the order's creation fee. Charging the driver sends
+    /// the ones whose buy token account is missing. Charging the driver sends
     /// only the orders with a cut, each at its moved limit and unflagged.
     #[test]
     fn the_charge_decides_the_orders_sent_their_limits_and_their_flags() {
@@ -576,12 +568,10 @@ mod tests {
 
         let engine = Charge::Engine {
             missing_buy_token_accounts: [order.uid].into(),
-            creation_fee_cuts: [(order.uid, 50)].into(),
         };
         let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine);
         assert_eq!(sent.orders.len(), 2);
-        assert_eq!(sent.orders[0].buy_amount, 1_050);
-        assert_eq!(sent.orders[1].buy_amount, 1_000);
+        assert_eq!(sent.orders[0].buy_amount, 1_000);
         assert!(sent.orders[0].missing_buy_token_account);
         assert!(!sent.orders[1].missing_buy_token_account);
 

@@ -87,9 +87,6 @@ pub struct Auction {
     /// The protocol fee policies of each order, see [`super::protocol_fee`].
     /// Empty for a quote.
     pub fee_policies: FeePolicies,
-    /// The lamports the funder paid to create each sponsored order that has
-    /// no fill yet, by uid.
-    pub creation_fees: HashMap<OrderUid, u64>,
 }
 
 impl Auction {
@@ -446,7 +443,6 @@ mod tests {
             creations: HashMap::new(),
             native_prices: HashMap::new(),
             fee_policies: HashMap::new(),
-            creation_fees: HashMap::new(),
         }
     }
 
