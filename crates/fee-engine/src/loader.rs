@@ -27,7 +27,7 @@ fn join_sample_order_errors(errors: &[SampleOrderError]) -> String {
         .join("; ")
 }
 
-/// The `lists`, `rule` and `partner_fees` tables of a rules file as raw TOML,
+/// The `lists`, `rule` and `partner-fees` tables of a rules file as raw TOML,
 /// e.g. from a section of a host config; `None` is an absent table, as in a
 /// file. [`load_rules_toml`] checks their shape.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -57,10 +57,7 @@ pub fn load_rules_toml(
             .transpose()?
             .unwrap_or_default(),
         rules: rules.map(rule_definitions).transpose()?.unwrap_or_default(),
-        partner_fees: partner_fees
-            .map(toml::Value::try_into)
-            .transpose()?
-            .unwrap_or_default(),
+        partner_fees: partner_fees.map(toml::Value::try_into).transpose()?,
     })
 }
 

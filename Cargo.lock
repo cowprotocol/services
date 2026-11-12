@@ -4937,11 +4937,15 @@ dependencies = [
  "chrono",
  "const-hex",
  "model",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "rust_decimal",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
  "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -6986,6 +6990,7 @@ dependencies = [
  "eth-domain-types",
  "ethrpc",
  "event-bus-dto",
+ "fee-engine",
  "futures",
  "gas-price-estimation",
  "hex-literal",

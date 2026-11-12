@@ -120,13 +120,13 @@ fn partner_fee_under(source: &str) -> Vec<Fee> {
 }
 
 #[test]
-fn partner_fee_cap_is_in_bps_and_100_by_default() {
+fn partner_fee_cap_is_in_bps_and_none_without_the_table() {
     let volume = |bps: f64| Fee::Volume {
         factor: (bps / 10_000.).try_into().unwrap(),
     };
-    assert_eq!(partner_fee_under(""), [volume(100.)]);
+    assert_eq!(partner_fee_under(""), []);
     assert_eq!(
-        partner_fee_under("[partner_fees]\nmax_volume_bps = 50"),
+        partner_fee_under("[partner-fees]\nmax-volume-bps = 50"),
         [volume(50.)]
     );
 }
@@ -142,7 +142,7 @@ fn loads_the_tables_of_a_host_config() {
     let tables = RulesToml {
         lists: config.remove("lists"),
         rules: config.remove("rule"),
-        partner_fees: config.remove("partner_fees"),
+        partner_fees: config.remove("partner-fees"),
     };
     let names = |rules: RuleSet| -> Vec<String> {
         rules
@@ -152,7 +152,10 @@ fn loads_the_tables_of_a_host_config() {
             .collect()
     };
     let rules = load_rules_toml(tables.clone()).unwrap();
-    assert_eq!(rules.max_partner_fee(), FeeFactor::try_from(0.05).unwrap());
+    assert_eq!(
+        rules.max_partner_fee(),
+        Some(FeeFactor::try_from(0.05).unwrap())
+    );
     assert_eq!(names(rules), names(load_rules_from_str(RULES).unwrap()));
 
     assert!(
@@ -175,7 +178,7 @@ fn refuses_bad_host_config_tables() {
         load_rules_toml(RulesToml {
             lists: config.remove("lists"),
             rules: config.remove("rule"),
-            partner_fees: config.remove("partner_fees"),
+            partner_fees: config.remove("partner-fees"),
         })
         .unwrap_err()
     };
@@ -184,7 +187,7 @@ fn refuses_bad_host_config_tables() {
     assert!(matches!(error("lists = []"), LoadError::Toml(_)));
     assert!(matches!(error("rule = 1"), LoadError::Toml(_)));
     assert!(matches!(
-        error("[partner_fees]\nmax_volume_bps = 10000"),
+        error("[partner-fees]\nmax-volume-bps = 10000"),
         LoadError::Toml(_)
     ));
     assert!(matches!(
@@ -237,11 +240,11 @@ fn refuses_bad_files() {
     assert!(matches!(error("[lists"), LoadError::Toml(_)));
     assert!(matches!(error("[caps]\nvolume = 1"), LoadError::Toml(_)));
     for partner_fees in [
-        "[partner_fees]",
-        "[partner_fees]\nmax = 1",
-        "[partner_fees]\nmax_volume_bps = 10000",
-        "[partner_fees]\nmax_volume_bps = -1",
-        "[partner_fees]\nmax_volume_bps = 0.001",
+        "[partner-fees]",
+        "[partner-fees]\nmax = 1",
+        "[partner-fees]\nmax-volume-bps = 10000",
+        "[partner-fees]\nmax-volume-bps = -1",
+        "[partner-fees]\nmax-volume-bps = 0.001",
     ] {
         assert!(
             matches!(error(partner_fees), LoadError::Toml(_)),

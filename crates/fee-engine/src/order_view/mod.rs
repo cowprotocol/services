@@ -23,9 +23,10 @@ pub struct OrderView<'a> {
     pub in_market: bool,
 }
 
-/// The order as rules see it: every field a rule can read, with amounts and
-/// prices as doubles and hex in lowercase. Unset optional fields are absent,
-/// not `null`. Execution state, settlement and legacy fields are left out.
+/// The order as rules see it: every field a rule can read, with amounts as
+/// doubles and hex in lowercase. Unset optional fields are absent, not `null`.
+/// Execution state, settlement and legacy fields are left out, and so is the
+/// quote: a quote request has none, so its fee could not match.
 pub(crate) fn order_view(
     OrderView {
         order,
@@ -55,16 +56,6 @@ pub(crate) fn order_view(
         "appData": app_data_view(app_data),
         "fastPath": meta.fast_path,
         "inMarket": in_market,
-        "quote": meta.quote.as_ref().map(|quote| json!({
-            "sellAmount": number(quote.sell_amount),
-            "buyAmount": number(quote.buy_amount),
-            "feeAmount": number(quote.fee_amount),
-            "gasAmount": number(quote.gas_amount.to_plain_string()),
-            "gasPrice": number(quote.gas_price.to_plain_string()),
-            "sellTokenPrice": number(quote.sell_token_price.to_plain_string()),
-            "solver": hex(quote.solver.as_slice()),
-            "verified": quote.verified,
-        })),
         "ethflowData": meta.ethflow_data.as_ref().map(|ethflow| json!({
             "userValidTo": ethflow.user_valid_to,
         })),
@@ -81,7 +72,7 @@ fn hex(bytes: &[u8]) -> String {
     const_hex::encode_prefixed(bytes)
 }
 
-/// A decimal amount or price as a double, rounded once from its plain text.
+/// A decimal amount as a double, rounded once from its plain text.
 fn number(decimal: impl ToString) -> f64 {
     decimal
         .to_string()
@@ -239,7 +230,7 @@ mod tests {
     }
 
     /// Every field of `view` as a dotted path, nested objects included, e.g.
-    /// `quote.sellAmount`.
+    /// `ethflowData.userValidTo`.
     fn field_paths(view: &Value) -> BTreeSet<String> {
         let mut paths = BTreeSet::new();
         if let Value::Object(fields) = view {
@@ -294,15 +285,11 @@ mod tests {
                 "appData",
                 "fastPath",
                 "inMarket",
-                "quote",
                 "ethflowData",
                 "onchainOrderData",
                 "onchainUser",
             ])
         );
-        assert_eq!(view["quote"]["gasPrice"], 1234.5);
-        assert_eq!(view["quote"]["sellTokenPrice"], 1e-7);
-        assert_eq!(view["quote"]["sellAmount"], 1e21);
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
         assert_eq!(
             view["onchainOrderData"],
