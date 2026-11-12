@@ -2262,7 +2262,6 @@ mod tests {
             sell_amount: 10.into(),
             buy_amount: 100.into(),
             valid_to: 10_000,
-            creation_timestamp: Utc::now(),
             wait_for_cow: true,
             ..Default::default()
         };
