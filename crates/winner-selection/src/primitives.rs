@@ -1,6 +1,10 @@
 //! Primitive types for winner selection, generic over the chain.
 
-pub use crate::evm::{Address, NATIVE_TOKEN, OrderUid, U256, as_erc20};
+pub use {
+    crate::evm::{Address, NATIVE_TOKEN, OrderUid, U256, as_erc20},
+    protocol_fees::{FeePolicy, Quote, Side},
+};
+
 use crate::{chain::ChainTypes, evm::Evm};
 
 /// A directed token pair for tracking uniform clearing prices.
@@ -12,35 +16,4 @@ use crate::{chain::ChainTypes, evm::Evm};
 pub struct DirectedTokenPair<C: ChainTypes = Evm> {
     pub sell: C::TokenId,
     pub buy: C::TokenId,
-}
-
-/// Order side (buy or sell).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Side {
-    Buy,
-    Sell,
-}
-
-/// Protocol fee policy.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum FeePolicy<C: ChainTypes = Evm> {
-    /// Fee as a percentage of surplus over limit price.
-    Surplus { factor: f64, max_volume_factor: f64 },
-    /// Fee as a percentage of price improvement over quote.
-    PriceImprovement {
-        factor: f64,
-        max_volume_factor: f64,
-        quote: Quote<C>,
-    },
-    /// Fee as a percentage of order volume.
-    Volume { factor: f64 },
-}
-
-/// Quote data for price improvement fee calculation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Quote<C: ChainTypes = Evm> {
-    pub sell_amount: C::Amount,
-    pub buy_amount: C::Amount,
-    pub fee: C::Amount,
-    pub solver: C::AccountId,
 }

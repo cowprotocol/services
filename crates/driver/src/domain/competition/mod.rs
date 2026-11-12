@@ -1188,12 +1188,6 @@ pub struct Amounts {
     pub executed_buy: eth::TokenAmount,
 }
 
-#[derive(Clone, Debug)]
-pub struct PriceLimits {
-    pub sell: eth::TokenAmount,
-    pub buy: eth::TokenAmount,
-}
-
 /// Winning solution information revealed to the protocol by the driver before
 /// the onchain settlement happens. Calldata is first time revealed at this
 /// point.

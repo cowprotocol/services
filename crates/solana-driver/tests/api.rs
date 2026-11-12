@@ -95,11 +95,7 @@ async fn blockchain_with(mocks: impl Into<MocksMap>) -> Arc<Solana> {
         RpcRequest::GetMultipleAccounts,
         multiple_accounts_json([mint_account_json(), mint_account_json()]),
     );
-    let blockchain = Solana::new(
-        SolanaRPC::new_mock_with_mocks_map(mocks.clone()),
-        SolanaRPC::new_mock_with_mocks_map(mocks),
-        program_id(),
-    );
+    let blockchain = Solana::new(SolanaRPC::new_mock_with_mocks_map(mocks), program_id());
     blockchain
         .token_programs([pubkey(0x33), pubkey(0x44)])
         .await
@@ -597,6 +593,44 @@ async fn solve_drops_an_order_whose_buy_account_cannot_be_created() {
     let body = call_solve_with(addr, request).await;
     assert!(response_ids(&body).is_empty());
     assert!(requests.lock().unwrap().is_none());
+}
+
+/// With `receiver` naming the wallet the absent buy token account belongs to,
+/// the settlement can create it: the order stays in and is flagged to the
+/// engine like a missing account of the owner.
+#[tokio::test]
+async fn solve_flags_a_receivers_missing_buy_token_account_to_the_engine() {
+    let receiver = Pubkey::find_program_address(&[b"vault"], &pubkey(0xcc)).0;
+    let buy_token_account =
+        associated_token_address(&receiver, &pubkey(0x44), TokenProgram::SplToken);
+    let intent = OrderIntent {
+        buy: Asset::TokenProgram(TokenAsset {
+            mint: pubkey(0x44),
+            token_account: buy_token_account,
+        }),
+        ..test_order_intent()
+    };
+    let uid = format!("0x{}", const_hex::encode(intent.uid().to_bytes()));
+    let mut response = engine_response(&[(1, "2000")]);
+    response["solutions"][0]["trades"][0]["orderUid"] = serde_json::json!(uid);
+    let (engine, requests) = spawn_recording_solver_engine(response).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let mut request = solve_request();
+    let order = &mut request["orders"][0];
+    order["uid"] = serde_json::json!(uid);
+    order["orderPda"] =
+        serde_json::json!(find_order_pda(&program_id(), &intent.uid()).0.to_string());
+    order["receiver"] = serde_json::json!(receiver.to_string());
+    order["buyTokenAccount"] = serde_json::json!(buy_token_account.to_string());
+
+    let body = call_solve_with(addr, request).await;
+    assert_eq!(response_ids(&body), vec![1]);
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(
+        request["orders"][0]["missingBuyTokenAccount"],
+        serde_json::json!(true)
+    );
 }
 
 /// Two solutions with the same id: the driver keeps only the last occurrence
@@ -1144,6 +1178,77 @@ async fn solve_does_not_send_an_unpriced_order_it_would_cut() {
     let body = call_solve(addr).await;
     assert!(response_ids(&body).is_empty());
     assert!(requests.lock().unwrap().is_none());
+}
+
+/// The standard solve request with `policies` on its order.
+fn solve_request_with_policies(
+    mut request: serde_json::Value,
+    policies: serde_json::Value,
+) -> serde_json::Value {
+    request["orders"][0]["protocolFees"] = policies;
+    request
+}
+
+/// The auction order sells 1000 for at least 2000, the cut is 100 atoms, the
+/// solver fee 500 bps and the protocol fee 10 bps of the volume. The engine
+/// is asked for 2213: 2002 is the least leg the protocol fee leaves at 2000,
+/// the cut moves it to 2102 and the solver fee tightens that. Its route
+/// paying 3000 is reported at 2748: 3000 less the 150 solver fee, the cut,
+/// and the 2 protocol fee of what is left. The engine sees no policy.
+#[tokio::test]
+async fn solve_takes_the_protocol_fee_after_the_cut_and_the_solver_fee() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 500).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let request = solve_request_with_policies(
+        solve_request_priced_for_a_cut_of(100),
+        serde_json::json!([{"volume": {"factor": 0.001}}]),
+    );
+    let body = call_solve_with(addr, request).await;
+    let amounts = &body["solutions"][0]["orders"][uid()];
+    assert_eq!(amounts["executedSell"], "1000");
+    assert_eq!(amounts["executedBuy"], "2748");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2213");
+    assert!(request["orders"][0].get("protocolFees").is_none());
+}
+
+/// An engine pricing its own costs still has the protocol fee taken: half
+/// the 1000 surplus over the 2000 limit, capped at 1% of the 3000 bought. A
+/// surplus policy leaves the engine's limit alone.
+#[tokio::test]
+async fn solve_takes_the_protocol_fee_from_a_self_pricing_engines_fill() {
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let request = solve_request_with_policies(
+        solve_request(),
+        serde_json::json!([{"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}}]),
+    );
+    let body = call_solve_with(addr, request).await;
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2970");
+
+    let request = requests.lock().unwrap().take().unwrap();
+    assert_eq!(request["orders"][0]["buyAmount"], "2000");
+}
+
+#[tokio::test]
+async fn solve_rejects_a_fee_policy_factor_outside_the_unit_interval() {
+    let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+
+    let request = solve_request_with_policies(
+        solve_request(),
+        serde_json::json!([{"volume": {"factor": 1.0}}]),
+    );
+    let response = post_solve(addr, &request).await;
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(body["kind"], "InvalidFeePolicy");
 }
 
 /// A quote shrinks by the fee like a fill, but not by the execution costs:

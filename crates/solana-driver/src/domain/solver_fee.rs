@@ -170,6 +170,7 @@ mod tests {
         Order {
             uid: OrderUid([8; 32]),
             owner: pubkey(0x22),
+            receiver: None,
             sell_token: pubkey(0x33),
             buy_token: pubkey(0x44),
             sell_token_account: pubkey(0x55),
@@ -196,6 +197,7 @@ mod tests {
                 executed_sell,
                 executed_buy,
                 solver_fee: 0,
+                protocol_fee: 0,
             }],
             interactions: vec![],
             cu_estimate: None,
@@ -392,6 +394,7 @@ mod tests {
             executed_sell: 1_000,
             executed_buy: 1_000,
             solver_fee: 0,
+            protocol_fee: 0,
         });
         let mut m = orders(&order);
         let mut order2 = order.clone();
