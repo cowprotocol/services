@@ -19,10 +19,9 @@ use {
     },
     alloy::primitives::Address,
     anyhow::Context,
-    app_data::ProtocolAppData,
     chrono::{DateTime, Utc},
     configs::{fee_engine::FeeEngineConfig, fee_factor::FeeFactor},
-    fee_engine::{Evaluation, Fee, Outcome, PartnerFee, RuleSet, RulesToml},
+    fee_engine::{Evaluation, Fee, FeeSource, Outcome, RuleSet, RulesToml},
     std::sync::Arc,
 };
 
@@ -77,7 +76,6 @@ impl FeeEngineFees {
     fn evaluate(
         &self,
         order: &boundary::Order,
-        partner_fees: fn(&ProtocolAppData) -> Vec<PartnerFee>,
         in_market: bool,
         now: DateTime<Utc>,
     ) -> Evaluation<'_> {
@@ -93,7 +91,7 @@ impl FeeEngineFees {
                 let app_code = app_data::app_code(document.as_bytes());
                 Some((
                     shared::fee_engine::app_data(&protocol, app_code),
-                    partner_fees(&protocol),
+                    shared::fee_engine::partner_fees(&protocol),
                 ))
             })
             .unwrap_or_default();
@@ -120,21 +118,19 @@ impl FeeEngineFees {
             &(&quote).into(),
             order.data.kind,
         );
-        let evaluation = self.evaluate(order, shared::fee_engine::partner_fees, in_market, now);
+        let evaluation = self.evaluate(order, in_market, now);
         let fees = policies(&evaluation, &quote);
         (evaluation, fees)
     }
 
-    /// The volume fee policies of a fast-path order.
+    /// The volume fee policies of a fast-path order: as the legacy source,
+    /// the volume ones among its auction fees without a quote.
     fn fast_path_fees(
         &self,
         order: &boundary::Order,
         now: DateTime<Utc>,
     ) -> (Evaluation<'_>, Vec<PolicyWithOrigin>) {
-        // A fast-path order settles at its quote, so it is in market.
-        let evaluation =
-            self.evaluate(order, shared::fee_engine::fast_path_partner_fees, true, now);
-        let mut fees = policies(&evaluation, &reference_quote(order, None));
+        let (evaluation, mut fees) = self.auction_fees(order, None, now);
         fees.retain(|fee| matches!(fee.policy, Policy::Volume { .. }));
         (evaluation, fees)
     }
@@ -178,10 +174,14 @@ impl ComparedFees {
         surplus_capturing_jit_order_owners: &[Address],
         now: DateTime<Utc>,
     ) -> (Vec<PolicyWithOrigin>, Outcome) {
-        let legacy =
+        let check = Check::Auction.as_str();
+        let legacy = fee_engine::time_evaluation(check, FeeSource::Legacy, || {
             self.legacy
-                .auction_fees(order, quote, surplus_capturing_jit_order_owners, now);
-        let (evaluation, engine) = self.engine.auction_fees(order, quote, now);
+                .auction_fees(order, quote, surplus_capturing_jit_order_owners, now)
+        });
+        let (evaluation, engine) = fee_engine::time_evaluation(check, FeeSource::Engine, || {
+            self.engine.auction_fees(order, quote, now)
+        });
         let outcome = report(Check::Auction, order, &evaluation, &engine, &legacy);
         (outcome.fees(engine, legacy), outcome)
     }
@@ -192,10 +192,14 @@ impl ComparedFees {
         surplus_capturing_jit_order_owners: &[Address],
         now: DateTime<Utc>,
     ) -> (Vec<PolicyWithOrigin>, Outcome) {
-        let legacy =
+        let check = Check::FastPath.as_str();
+        let legacy = fee_engine::time_evaluation(check, FeeSource::Legacy, || {
             self.legacy
-                .fast_path_volume_fees(order, surplus_capturing_jit_order_owners, now);
-        let (evaluation, engine) = self.engine.fast_path_fees(order, now);
+                .fast_path_volume_fees(order, surplus_capturing_jit_order_owners, now)
+        });
+        let (evaluation, engine) = fee_engine::time_evaluation(check, FeeSource::Engine, || {
+            self.engine.fast_path_fees(order, now)
+        });
         let outcome = report(Check::FastPath, order, &evaluation, &engine, &legacy);
         (outcome.fees(engine, legacy), outcome)
     }
@@ -629,7 +633,7 @@ fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]
     fn fast_path_agrees_on_the_volume_fees() {
         let compared = compared(0.0002);
         for (sell, buy) in PAIRS {
-            for document in [None, Some("{}"), Some(VOLUME_PARTNER_FEES)] {
+            for document in DOCUMENTS {
                 let (fees, outcome) =
                     compared.fast_path_outcome(&order(sell, buy, document), &[], Utc::now());
                 assert_eq!(
@@ -655,14 +659,16 @@ fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]
     }
 
     #[test]
-    fn fast_path_partner_surplus_fees_leave_the_cap_to_the_volume_fees() {
+    fn fast_path_partner_surplus_fees_take_from_the_cap_as_in_the_legacy_source() {
         let order = order(USDC, WETH, Some(SURPLUS_THEN_VOLUME_PARTNER_FEES));
-        let (_, fees) = engine().fast_path_fees(&order, Utc::now());
+        let (fees, outcome) = compared(0.0002).fast_path_outcome(&order, &[], Utc::now());
+        assert_eq!(outcome, Outcome::Match);
+        // What the 5% cap leaves after the 4.8% and the 0.1%.
         assert_eq!(
             fees,
             [
                 volume(0.0002, Origin::Protocol),
-                volume(0.005, Origin::Partner),
+                volume(0.0009532888465204958, Origin::Partner),
             ]
         );
     }
