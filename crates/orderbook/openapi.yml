@@ -620,6 +620,40 @@ paths:
           description: Version
           content:
             text/plain: {}
+  /api/v1/wait_for_cow/next_batch:
+    get:
+      operationId: getWaitForCowNextBatch
+      summary: Get the next batch-auction edge for `waitForCow` orders.
+      description: >
+        **UNSTABLE.** This endpoint exists for the CoW Swap frontend and is
+        not part of the public API contract. Its path, response shape and
+        semantics can change or be removed without notice or deprecation
+        period. External projects must not rely on it.
+
+
+        Returns the unix timestamp a `waitForCow` order placed right now is
+        expected to receive as `validFrom`: the next multiple of the
+        configured batch-auction interval. The value is a prediction, not a
+        guarantee; the protocol assigns the actual `validFrom` when it first
+        processes the order, which can fall into the following window if the
+        edge passes in between.
+      responses:
+        "200":
+          description: Next batch-auction edge.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - nextValidFrom
+                  - batchAuctionInterval
+                properties:
+                  nextValidFrom:
+                    description: Unix seconds of the next batch-auction edge.
+                    type: integer
+                  batchAuctionInterval:
+                    description: Length of a batch-auction window in seconds.
+                    type: integer
   "/api/v1/app_data/{app_data_hash}":
     get:
       operationId: getAppDataByHash
@@ -1396,9 +1430,15 @@ components:
         validFrom:
           description: >
             Earliest time (unix seconds) at which the order may enter a batch
-            auction, taken from the order's `appData`. Omitted when the order
-            has no lower bound (eligible immediately). Mutually exclusive with
-            `enableFastPath`: an order that sets both is rejected.
+            auction. Taken from the order's `appData` when set there, or
+            assigned by the protocol shortly after placement for orders whose
+            `appData` sets `waitForCow: true` (the next multiple of the
+            configured batch-auction interval, so that such orders are
+            collected into a periodic batch). Omitted when the order has no
+            lower bound (eligible immediately) or has not been assigned one
+            yet. `validFrom`, `enableFastPath` and `waitForCow` are mutually
+            exclusive in `appData`: an order that sets more than one is
+            rejected.
           type: integer
           nullable: true
         settlementContract:

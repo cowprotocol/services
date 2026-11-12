@@ -458,7 +458,18 @@ pub struct OrderValidator {
     /// fees entirely for the fast-path limit-price check.
     max_partner_fee: Option<configs::fee_factor::FeeFactor>,
     wrapper_validator: order_validation::wrappers::Validator,
+    /// Length of the periodic batch-auction window `waitForCow` orders wait
+    /// for. The autopilot assigns `valid_from` at the next multiple of this
+    /// interval, so at placement the worst case is `now + interval`; orders
+    /// whose `valid_to` can't outlive that are rejected here rather than
+    /// landing un-settleable. Must mirror the autopilot's
+    /// `batch_auction_interval`.
+    batch_auction_interval: Duration,
 }
+
+/// Default for [`OrderValidator::batch_auction_interval`]; overridden with
+/// [`OrderValidator::with_batch_auction_interval`].
+pub const DEFAULT_BATCH_AUCTION_INTERVAL: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Eq, PartialEq, Default)]
 pub struct PreOrderData {
@@ -549,7 +560,14 @@ impl OrderValidator {
             protocol_volume_fee_policy,
             max_partner_fee,
             wrapper_validator,
+            batch_auction_interval: DEFAULT_BATCH_AUCTION_INTERVAL,
         }
+    }
+
+    /// Sets the batch-auction interval used to validate `waitForCow` orders.
+    pub fn with_batch_auction_interval(mut self, batch_auction_interval: Duration) -> Self {
+        self.batch_auction_interval = batch_auction_interval;
+        self
     }
 
     /// Validates that a fast-path order's signed sell/buy amounts leave
@@ -794,19 +812,32 @@ impl OrderValidator {
             return Ok(None);
         }
 
-        // Non-fast-path orders may still declare `valid_from` explicitly
-        // in app-data.
-        let valid_from = match app_data.inner.protocol.execution_mode {
-            ExecutionMode::ValidFrom(valid_from) => Some(valid_from),
-            _ => None,
-        };
-        if let Some(valid_from) = valid_from {
-            let min = self.validity_configuration.min.as_secs();
-            if u64::from(order.valid_to) < u64::from(valid_from) + min {
-                return Err(ValidationError::InvalidValidFrom);
+        let min = self.validity_configuration.min.as_secs();
+        match app_data.inner.protocol.execution_mode {
+            // Explicit `valid_from` declared in app-data.
+            ExecutionMode::ValidFrom(valid_from) => {
+                if u64::from(order.valid_to) < u64::from(valid_from) + min {
+                    return Err(ValidationError::InvalidValidFrom);
+                }
+                Ok(Some(valid_from))
             }
+            // The autopilot's solvable-orders cache owns `valid_from` for
+            // these orders (`SolvableOrdersCache::assign_wait_for_cow_valid_from`
+            // in `crates/autopilot/src/solvable_orders.rs`) and writes it at
+            // the next `batch_auction_interval` boundary. That is at most
+            // `now + interval` away, so make sure the order still has the
+            // minimum validity window left after the latest possible
+            // assignment; otherwise it could never be settled.
+            ExecutionMode::WaitForCow => {
+                let now = time::now_in_epoch_seconds();
+                let latest_valid_from = u64::from(now) + self.batch_auction_interval.as_secs();
+                if u64::from(order.valid_to) < latest_valid_from + min {
+                    return Err(ValidationError::InvalidValidFrom);
+                }
+                Ok(None)
+            }
+            ExecutionMode::RegularAuction | ExecutionMode::FastPath => Ok(None),
         }
-        Ok(valid_from)
     }
 }
 
@@ -1969,6 +2000,55 @@ mod tests {
         };
         std::assert_matches!(
             validate(both).await,
+            Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+        );
+
+        // `waitForCow` orders don't carry `valid_from` at placement either —
+        // the autopilot's solvable-orders cache assigns it at the next
+        // batch-auction boundary. The validator only checks that `valid_to`
+        // outlives the latest possible assignment (`now + interval`) by the
+        // minimum validity period (60s here).
+        let wait_for_cow = |valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "waitForCow": true } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        // Default interval (5m): nothing inside the 200s max validity fits.
+        std::assert_matches!(
+            validate(wait_for_cow(now + 150)).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+
+        // With a 30s interval the order needs `valid_to >= now + 30 + 60`.
+        let validator = validator.with_batch_auction_interval(Duration::from_secs(30));
+        let validate = async |creation| {
+            validator
+                .validate_and_construct_order(
+                    creation,
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+        std::assert_matches!(
+            validate(wait_for_cow(now + 80)).await,
+            Err(ValidationError::InvalidValidFrom)
+        );
+        let (order, _) = validate(wait_for_cow(now + 150)).await.unwrap();
+        assert!(order.metadata.valid_from.is_none());
+        assert!(!order.metadata.fast_path);
+
+        let wait_and_fast_path = OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "waitForCow": true, "enableFastPath": true } })
+                    .to_string(),
+            },
+            ..plain(now + 150)
+        };
+        std::assert_matches!(
+            validate(wait_and_fast_path).await,
             Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
         );
     }

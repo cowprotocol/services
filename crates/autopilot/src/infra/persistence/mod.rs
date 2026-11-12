@@ -659,11 +659,22 @@ impl Persistence {
             // reorganized, the same order with the same
             // UID might be created in the new block, and the temporary quote
             // associated with it may have changed in the meantime.
+            //
+            // Orders whose `valid_from` crossed since the checkpoint are
+            // re-selected by the query above even though they were created
+            // long before it (`waitForCow` orders sit out a whole
+            // batch-auction interval; user-set `validFrom` can be hours),
+            // so their quote has to be fetched now as well.
+            let after_epoch = after_timestamp.timestamp();
             let order_uids = current_orders
                 .values()
                 .filter_map(|order| {
                     (order.metadata.onchain_user.is_some()
-                        || order.metadata.creation_date > after_timestamp)
+                        || order.metadata.creation_date > after_timestamp
+                        || order
+                            .metadata
+                            .valid_from
+                            .is_some_and(|valid_from| i64::from(valid_from) > after_epoch))
                         .then_some(ByteArray(order.metadata.uid.0))
                 })
                 .collect::<Vec<_>>();
@@ -1057,6 +1068,24 @@ impl Persistence {
         let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
         database::orders::set_valid_from(&mut ex, &ByteArray(uid.0), valid_from).await?;
         Ok(())
+    }
+
+    /// Sets `orders.valid_from` for a `waitForCow` order the solvable-orders
+    /// cache has assigned to a batch-auction boundary, but only if nothing
+    /// else wrote it first (another replica, or a previous run of this
+    /// process before a restart). Returns whether this call was the writer.
+    #[instrument(skip_all)]
+    pub async fn set_order_valid_from_if_unset(
+        &self,
+        uid: domain::OrderUid,
+        valid_from: u32,
+    ) -> anyhow::Result<bool> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["set_order_valid_from_if_unset"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        Ok(database::orders::set_valid_from_if_unset(&mut ex, &ByteArray(uid.0), valid_from).await?)
     }
 
     /// Bulk-flushes fast-path orders whose `valid_from` was never

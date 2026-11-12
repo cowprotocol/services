@@ -33,6 +33,10 @@ const fn default_max_gas_per_order() -> u64 {
     8_000_000
 }
 
+const fn default_batch_auction_interval() -> Duration {
+    Duration::from_secs(300) // 5m
+}
+
 /// Rules governing order validity periods, gas limits, and token policies.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -63,6 +67,17 @@ pub struct OrderValidationConfig {
     /// Policy for orders where the buy and sell tokens are equal.
     #[serde(default)]
     pub same_tokens_policy: SameTokensPolicy,
+
+    /// Length of the periodic batch-auction window that `waitForCow` orders
+    /// wait for. The autopilot assigns such orders a `valid_from` at the next
+    /// multiple of this interval; the orderbook only uses it to reject orders
+    /// whose `valid_to` cannot possibly outlive that assignment. Must match the
+    /// autopilot's `batch-auction-interval`.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_batch_auction_interval"
+    )]
+    pub batch_auction_interval: Duration,
 }
 
 impl Default for OrderValidationConfig {
@@ -73,6 +88,7 @@ impl Default for OrderValidationConfig {
             max_limit_orders_per_user: default_max_limit_orders_per_user(),
             max_gas_per_order: default_max_gas_per_order(),
             same_tokens_policy: Default::default(),
+            batch_auction_interval: default_batch_auction_interval(),
         }
     }
 }
@@ -89,6 +105,7 @@ mod tests {
             config.max_order_validity_period,
             Duration::from_secs(31_536_000)
         );
+        assert_eq!(config.batch_auction_interval, Duration::from_secs(300));
     }
 
     #[test]
@@ -99,6 +116,7 @@ mod tests {
         max-limit-orders-per-user = 10
         max-gas-per-order = 5000000
         same-tokens-policy = "allow-sell"
+        batch-auction-interval = "30s"
         "#;
         let config: OrderValidationConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
@@ -109,6 +127,7 @@ mod tests {
         assert_eq!(config.max_limit_orders_per_user, 10);
         assert_eq!(config.max_gas_per_order, 5_000_000);
         assert_eq!(config.same_tokens_policy, SameTokensPolicy::AllowSell);
+        assert_eq!(config.batch_auction_interval, Duration::from_secs(30));
     }
 
     #[test]
@@ -119,6 +138,7 @@ mod tests {
             max_limit_orders_per_user: 5,
             max_gas_per_order: 5_000_000,
             same_tokens_policy: SameTokensPolicy::AllowSell,
+            batch_auction_interval: Duration::from_secs(30),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();

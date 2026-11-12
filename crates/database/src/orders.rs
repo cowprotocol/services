@@ -253,6 +253,29 @@ pub async fn set_valid_from(
     Ok(())
 }
 
+/// Sets `valid_from` on the given order only if it is still unset. The
+/// autopilot's solvable-orders cache uses this for `waitForCow` orders,
+/// which the orderbook inserts with `valid_from = NULL` and which get their
+/// timestamp (the next batch-auction boundary) assigned post hoc. The
+/// `IS NULL` guard makes the write idempotent across autopilot replicas and
+/// restarts: the first writer wins and everyone else is a no-op.
+///
+/// Returns whether a row was actually updated.
+#[instrument(skip_all)]
+pub async fn set_valid_from_if_unset(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+    valid_from: u32,
+) -> Result<bool, sqlx::Error> {
+    const QUERY: &str = "UPDATE orders SET valid_from = $2 WHERE uid = $1 AND valid_from IS NULL";
+    let result = sqlx::query(QUERY)
+        .bind(uid)
+        .bind(valid_from as i64)
+        .execute(ex)
+        .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 /// Flushes any fast-path orders whose `valid_from` was never populated
 /// by setting them to `now`. Called on autopilot startup: notifications
 /// for orders placed while the process was down are gone, and by the
@@ -2237,6 +2260,36 @@ mod tests {
                 ByteArray([3u8; 56]),
             ]
         )
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_set_valid_from_if_unset() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order {
+            uid: ByteArray([7u8; 56]),
+            valid_to: 10_000,
+            creation_timestamp: Utc::now(),
+            valid_from: None,
+            ..Default::default()
+        };
+        insert_order(&mut db, &order).await.unwrap();
+
+        // First write lands.
+        assert!(set_valid_from_if_unset(&mut db, &order.uid, 300).await.unwrap());
+        // A second writer (other replica, restart) is a no-op and keeps the
+        // original assignment.
+        assert!(!set_valid_from_if_unset(&mut db, &order.uid, 600).await.unwrap());
+        let stored = single_full_order_with_quote(&mut db, &order.uid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.full_order.valid_from, Some(300));
+        // Unknown order: nothing to update.
+        assert!(!set_valid_from_if_unset(&mut db, &ByteArray([8u8; 56]), 300).await.unwrap());
     }
 
     #[tokio::test]

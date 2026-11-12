@@ -247,7 +247,8 @@ impl IntoResponse for ValidationErrorWrapper {
                 StatusCode::BAD_REQUEST,
                 error(
                     "InvalidValidFrom",
-                    "appData validFrom must be earlier than the order's validTo.",
+                    "appData validFrom (or, for waitForCow orders, the next batch-auction \
+                     boundary) must leave the minimum validity period before the order's validTo.",
                 ),
             )
                 .into_response(),

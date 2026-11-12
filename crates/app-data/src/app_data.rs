@@ -51,6 +51,11 @@ pub enum ExecutionMode {
     ValidFrom(u32),
     /// Out-of-competition ("fast path") execution.
     FastPath,
+    /// Wait for the next periodic batch auction. The autopilot assigns
+    /// `valid_from` post hoc to the next `batch_auction_interval` boundary
+    /// so that every order placed in the same window becomes solvable in
+    /// the same auction, increasing the chance of a coincidence of wants.
+    WaitForCow,
 }
 
 /// Contains information to hint at how a solver could make
@@ -315,11 +320,11 @@ pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error>
 }
 
 /// The wire form of [`ProtocolAppData`], mirroring the flat JSON `metadata`
-/// object one-to-one. It exists because `enableFastPath` and `validFrom` arrive
-/// as two independent JSON fields but are modelled as one [`ExecutionMode`]:
-/// serde deserializes into this struct, then [`ProtocolAppData::try_from`]
-/// collapses the two fields into the enum and rejects any orders try to set
-/// both fields simultaneously.
+/// object one-to-one. It exists because `enableFastPath`, `validFrom` and
+/// `waitForCow` arrive as independent JSON fields but are modelled as one
+/// [`ExecutionMode`]: serde deserializes into this struct, then
+/// [`ProtocolAppData::try_from`] collapses the fields into the enum and rejects
+/// any order that tries to set more than one of them simultaneously.
 #[derive(Default, Deserialize)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
 #[serde(rename_all = "camelCase")]
@@ -336,19 +341,35 @@ struct RawProtocolAppData {
     #[serde(default)]
     enable_fast_path: bool,
     valid_from: Option<u32>,
+    #[serde(default)]
+    wait_for_cow: bool,
 }
 
 impl TryFrom<RawProtocolAppData> for ProtocolAppData {
-    type Error = &'static str;
+    type Error = String;
 
     fn try_from(raw: RawProtocolAppData) -> Result<Self, Self::Error> {
-        let execution_mode = match (raw.enable_fast_path, raw.valid_from) {
-            (true, Some(_)) => {
-                return Err("`enableFastPath` and `validFrom` are mutually exclusive");
-            }
-            (true, None) => ExecutionMode::FastPath,
-            (false, Some(valid_from)) => ExecutionMode::ValidFrom(valid_from),
-            (false, None) => ExecutionMode::RegularAuction,
+        // Each execution-mode field maps to one bit; the error names every
+        // set bit so that a client sees all conflicts in one round trip.
+        let fields = [
+            ("enableFastPath", raw.enable_fast_path),
+            ("validFrom", raw.valid_from.is_some()),
+            ("waitForCow", raw.wait_for_cow),
+        ];
+        let set: Vec<String> = fields
+            .iter()
+            .filter(|(_, present)| *present)
+            .map(|(name, _)| format!("`{name}`"))
+            .collect();
+        if set.len() > 1 {
+            return Err(format!("{} are mutually exclusive", set.join(", ")));
+        }
+
+        let execution_mode = match (raw.enable_fast_path, raw.valid_from, raw.wait_for_cow) {
+            (true, _, _) => ExecutionMode::FastPath,
+            (_, Some(valid_from), _) => ExecutionMode::ValidFrom(valid_from),
+            (_, _, true) => ExecutionMode::WaitForCow,
+            (false, None, false) => ExecutionMode::RegularAuction,
         };
         Ok(Self {
             hooks: raw.hooks,
@@ -364,10 +385,11 @@ impl TryFrom<RawProtocolAppData> for ProtocolAppData {
 
 impl From<ProtocolAppData> for RawProtocolAppData {
     fn from(protocol: ProtocolAppData) -> Self {
-        let (enable_fast_path, valid_from) = match protocol.execution_mode {
-            ExecutionMode::RegularAuction => (false, None),
-            ExecutionMode::FastPath => (true, None),
-            ExecutionMode::ValidFrom(valid_from) => (false, Some(valid_from)),
+        let (enable_fast_path, valid_from, wait_for_cow) = match protocol.execution_mode {
+            ExecutionMode::RegularAuction => (false, None, false),
+            ExecutionMode::FastPath => (true, None, false),
+            ExecutionMode::ValidFrom(valid_from) => (false, Some(valid_from), false),
+            ExecutionMode::WaitForCow => (false, None, true),
         };
         Self {
             hooks: protocol.hooks,
@@ -378,6 +400,7 @@ impl From<ProtocolAppData> for RawProtocolAppData {
             wrappers: protocol.wrappers,
             enable_fast_path,
             valid_from,
+            wait_for_cow,
         }
     }
 }
@@ -465,31 +488,49 @@ impl Root {
     }
 }
 
-/// Caches whether a given app data document contains wrappers, keyed by
-/// hash. This avoids re-parsing the same JSON across orders and auction
-/// cycles. We're using the default TinyLFU eviction policy, but the capacity is
-/// large enough that we don't expect eviction to be a problem in practice, but
-/// we limit the size to prevent potential memory exhaustion attacks.
-pub struct WrapperCache(Cache<AppDataHash, bool>);
+/// The app-data facts the autopilot needs per order on every solvable-orders
+/// refresh. One parse per distinct document answers all of them at once.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AppDataFlags {
+    /// The document lists at least one wrapper call.
+    pub has_wrappers: bool,
+    /// The document sets `waitForCow: true`.
+    pub wait_for_cow: bool,
+}
 
-impl WrapperCache {
+impl From<&ProtocolAppData> for AppDataFlags {
+    fn from(protocol: &ProtocolAppData) -> Self {
+        Self {
+            has_wrappers: !protocol.wrappers.is_empty(),
+            wait_for_cow: matches!(protocol.execution_mode, ExecutionMode::WaitForCow),
+        }
+    }
+}
+
+/// Memoizes [`AppDataFlags`] per app-data hash, so that the JSON parse runs
+/// once per distinct document instead of once per order per refresh. TinyLFU
+/// eviction; the capacity is large enough that eviction is not expected in
+/// practice, but bounded to prevent memory exhaustion attacks.
+pub struct AppDataFlagsCache(Cache<AppDataHash, AppDataFlags>);
+
+impl AppDataFlagsCache {
     pub fn new(capacity: u64) -> Self {
         Self(Cache::new(capacity))
     }
 
-    /// Returns `true` if order appData contains non-empty wrappers
-    pub fn has_wrappers(&self, hash: &AppDataHash, document: Option<&str>) -> bool {
+    /// Returns the flags for the document. An absent or unparsable document
+    /// yields all-false flags: the orderbook requires a valid document to
+    /// accept any of the underlying fields.
+    pub fn get(&self, hash: &AppDataHash, document: Option<&str>) -> AppDataFlags {
         if let Some(cached) = self.0.get(hash) {
             return cached;
         }
-        let result = document.is_some_and(|doc| {
-            serde_json::from_str::<Root>(doc)
-                .ok()
-                .and_then(|root| root.metadata)
-                .is_some_and(|m| !m.wrappers.is_empty())
-        });
-        self.0.insert(*hash, result);
-        result
+        let flags = document
+            .and_then(|doc| parse(doc.as_bytes()).ok())
+            .map(|protocol| AppDataFlags::from(&protocol))
+            .unwrap_or_default();
+        self.0.insert(*hash, flags);
+        flags
     }
 }
 
@@ -669,6 +710,22 @@ mod tests {
                 execution_mode: ExecutionMode::ValidFrom(1_700_000_000),
                 ..Default::default()
             },
+        );
+    }
+
+    #[test]
+    fn wait_for_cow() {
+        assert_app_data!(
+            r#"{ "metadata": { "waitForCow": true } }"#,
+            ProtocolAppData {
+                execution_mode: ExecutionMode::WaitForCow,
+                ..Default::default()
+            },
+        );
+        // An explicit `false` is the same as absent.
+        assert_app_data!(
+            r#"{ "metadata": { "waitForCow": false } }"#,
+            ProtocolAppData::default(),
         );
     }
 
@@ -968,21 +1025,39 @@ mod tests {
     }
 
     #[test]
-    fn wrapper_cache_detects_wrappers() {
-        let cache = WrapperCache::new(100);
+    fn flags_cache_detects_wrappers_and_wait_for_cow() {
+        let cache = AppDataFlagsCache::new(100);
         let h = |b: u8| AppDataHash([b; 32]);
+        let none = AppDataFlags::default();
 
-        assert!(!cache.has_wrappers(&h(1), None));
-        assert!(!cache.has_wrappers(&h(2), Some("{}")));
-        assert!(!cache.has_wrappers(&h(3), Some(r#"{"metadata": {}}"#)));
-        assert!(!cache.has_wrappers(&h(4), Some(r#"{"metadata": {"wrappers": []}}"#)));
-        assert!(cache.has_wrappers(
-            &h(5),
-            Some(r#"{"metadata": {"wrappers": [{"address": "0x0000000000000000000000000000000000000001", "data": "0x"}]}}"#),
-        ));
+        assert_eq!(cache.get(&h(1), None), none);
+        assert_eq!(cache.get(&h(2), Some("{}")), none);
+        assert_eq!(cache.get(&h(3), Some(r#"{"metadata": {}}"#)), none);
+        assert_eq!(
+            cache.get(&h(4), Some(r#"{"metadata": {"wrappers": []}}"#)),
+            none
+        );
+        assert_eq!(
+            cache.get(
+                &h(5),
+                Some(r#"{"metadata": {"wrappers": [{"address": "0x0000000000000000000000000000000000000001", "data": "0x"}]}}"#),
+            ),
+            AppDataFlags {
+                has_wrappers: true,
+                wait_for_cow: false,
+            }
+        );
+        assert_eq!(
+            cache.get(&h(6), Some(r#"{"metadata": {"waitForCow": true}}"#)),
+            AppDataFlags {
+                has_wrappers: false,
+                wait_for_cow: true,
+            }
+        );
 
         // Second call hits the cache
-        assert!(cache.has_wrappers(&h(5), None));
+        assert!(cache.get(&h(5), None).has_wrappers);
+        assert!(cache.get(&h(6), None).wait_for_cow);
     }
 
     #[test]
@@ -1034,5 +1109,39 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn validate_rejects_wait_for_cow_with_fast_path_or_valid_from() {
+        let validator = Validator::default();
+
+        validator
+            .validate(r#"{ "metadata": { "waitForCow": true } }"#.as_bytes())
+            .unwrap();
+
+        for (document, expected) in [
+            (
+                r#"{ "metadata": { "waitForCow": true, "enableFastPath": true } }"#,
+                "`enableFastPath`, `waitForCow` are mutually exclusive",
+            ),
+            (
+                r#"{ "metadata": { "waitForCow": true, "validFrom": 1700000000 } }"#,
+                "`validFrom`, `waitForCow` are mutually exclusive",
+            ),
+            (
+                r#"{ "metadata": { "waitForCow": true, "enableFastPath": true, "validFrom": 1 } }"#,
+                "`enableFastPath`, `validFrom`, `waitForCow` are mutually exclusive",
+            ),
+        ] {
+            let err = validator.validate(document.as_bytes()).unwrap_err();
+            assert!(err.to_string().contains(expected), "{document}: {err}");
+        }
+
+        // `waitForCow: false` does not conflict with anything.
+        validator
+            .validate(
+                r#"{ "metadata": { "waitForCow": false, "enableFastPath": true } }"#.as_bytes(),
+            )
+            .unwrap();
     }
 }
