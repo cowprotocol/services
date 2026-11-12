@@ -81,7 +81,9 @@ fn pending() -> MutexGuard<'static, Pending> {
             .spawn(|| {
                 loop {
                     std::thread::sleep(LOG_PERIOD);
-                    std::mem::take(&mut *PENDING.lock().unwrap()).log();
+                    // A temporary guard would stay locked until the `;`.
+                    let pending = std::mem::take(&mut *PENDING.lock().unwrap());
+                    pending.log();
                 }
             })
             .expect("spawning the fee engine log thread");
