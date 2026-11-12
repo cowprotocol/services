@@ -38,6 +38,7 @@ use {
     futures::{StreamExt, TryStreamExt},
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
+    sqlx::PgConnection,
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
@@ -496,9 +497,9 @@ impl Persistence {
             .collect::<HashMap<_, _>>();
 
             // get quotes for all orders with PriceImprovement fee policy
-            let quotes = self
-                .postgres
-                .read_quotes(fee_policies.iter().filter_map(|(order_uid, policies)| {
+            let quotes = Postgres::read_quotes(
+                &mut ex,
+                fee_policies.iter().filter_map(|(order_uid, policies)| {
                     policies
                         .iter()
                         .any(|policy| {
@@ -508,9 +509,10 @@ impl Persistence {
                             )
                         })
                         .then_some(order_uid)
-                }))
-                .await
-                .map_err(error::Auction::DatabaseError)?;
+                }),
+            )
+            .await
+            .map_err(error::Auction::DatabaseError)?;
 
             // compile order data
             let mut orders = HashMap::new();
@@ -717,7 +719,7 @@ impl Persistence {
 
     /// Returns the trade events that are associated with the settlement event
     pub async fn get_trades_for_settlement(
-        &self,
+        ex: &mut PgConnection,
         settlement: &SettlementEvent,
     ) -> Result<Vec<TradeEvent>, DatabaseError> {
         let _timer = Metrics::get()
@@ -725,9 +727,8 @@ impl Persistence {
             .with_label_values(&["get_trades_for_settlement"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.acquire().await?;
         database::trades::get_trades_for_settlement(
-            &mut ex,
+            ex,
             EventIndex {
                 block_number: i64::try_from(settlement.block.0).context("block overflow")?,
                 log_index: i64::try_from(settlement.log_index).context("log index overflow")?,
@@ -861,8 +862,7 @@ impl Persistence {
             if !jit_orders.is_empty() {
                 // each jit order should have a corresponding trade event, try
                 // to find them
-                let trade_events = self
-                    .get_trades_for_settlement(&event)
+                let trade_events = Self::get_trades_for_settlement(&mut ex, &event)
                     .await?
                     .into_iter()
                     .map(|event| (event.order_uid, (event.block, event.log_index)))
@@ -1294,5 +1294,55 @@ pub mod error {
         InvalidFeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error("invalid price fetched from database for token: {0:?}")]
         InvalidPrice(eth::TokenAddress),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {super::*, crate::database::Config, std::num::NonZeroU32};
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_reads_finish_on_a_single_connection_pool() {
+        let postgres = Postgres::new(
+            "postgresql://",
+            Config {
+                max_pool_size: NonZeroU32::new(1).unwrap(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        database::clear_DANGER(&postgres.pool).await.unwrap();
+        database::auction::save(
+            &mut postgres.pool.acquire().await.unwrap(),
+            database::auction::Auction {
+                id: 1,
+                block: 1,
+                deadline: 2,
+                order_uids: vec![],
+                price_tokens: vec![],
+                price_values: vec![],
+                surplus_capturing_jit_order_owners: vec![],
+                penalty_caps_native: None,
+                fast_path_quote_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        let persistence = Persistence::new(None, Arc::new(postgres)).await;
+
+        // A read that holds the only connection and asks the pool for another
+        // one waits until the acquire timeout.
+        let timeout = Duration::from_secs(5);
+        let auction = tokio::time::timeout(timeout, persistence.get_auction(1, &[]))
+            .await
+            .expect("get_auction waits for a second connection")
+            .unwrap();
+        assert_eq!(auction.id, 1);
+        tokio::time::timeout(timeout, persistence.all_solvable_orders(0))
+            .await
+            .expect("all_solvable_orders waits for a second connection")
+            .unwrap();
     }
 }

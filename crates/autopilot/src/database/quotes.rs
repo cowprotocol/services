@@ -6,7 +6,7 @@ use {
     },
     anyhow::Result,
     database::byte_array::ByteArray,
-    sqlx::types::chrono::Utc,
+    sqlx::{PgConnection, types::chrono::Utc},
     std::collections::HashMap,
 };
 
@@ -24,9 +24,11 @@ impl Postgres {
 
     /// Get quotes for all orders in the auction.
     ///
-    /// Doesn't guarantee that all orders have quotes.
+    /// Doesn't guarantee that all orders have quotes. Runs on the caller's
+    /// connection, because a caller holding a transaction while it waits for
+    /// a second pool connection can exhaust the pool.
     pub async fn read_quotes(
-        &self,
+        ex: &mut PgConnection,
         orders: impl Iterator<Item = &domain::OrderUid>,
     ) -> Result<HashMap<domain::OrderUid, domain::Quote>, sqlx::Error> {
         let _timer = super::Metrics::get()
@@ -34,9 +36,8 @@ impl Postgres {
             .with_label_values(&["read_quotes"])
             .start_timer();
 
-        let mut ex = self.pool.acquire().await?;
         let order_uids: Vec<_> = orders.map(|uid| ByteArray(uid.0)).collect();
-        let quotes: HashMap<_, _> = database::orders::read_quotes(&mut ex, &order_uids)
+        let quotes: HashMap<_, _> = database::orders::read_quotes(ex, &order_uids)
             .await?
             .into_iter()
             .filter_map(|quote| {
