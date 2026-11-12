@@ -2,7 +2,7 @@ pub mod baseline;
 pub mod dex;
 
 pub use self::{
-    baseline::{Config, Request, Route, Segment, Solver as Baseline},
+    baseline::{Config, EthrpcConfig, Request, Route, Segment, Solver as Baseline},
     dex::Dex,
 };
 use crate::domain::{auction, solution};
