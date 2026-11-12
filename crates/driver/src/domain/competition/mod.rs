@@ -585,15 +585,15 @@ impl Competition {
             })?;
         // The quote was solved outside of any auction; its settlement runs
         // under the auction the autopilot allocated for it.
-        // `Tokens` is not `IntoIterator`, so iterate by ref and collect the
-        // (Copy) addresses: this keeps `tokens` intact for its reuse below and
-        // holds no borrow across the await (the future must stay `Send`).
-        let tokens: Vec<eth::TokenAddress> = cached
+        // Mapping over `&Token` instead would make this future non-`Send`,
+        // so the clone clippy flags is required.
+        #[expect(clippy::redundant_iter_cloned)]
+        let tokens = cached
             .auction
             .tokens
             .iter()
-            .map(|token| token.address)
-            .collect();
+            .cloned()
+            .map(|token| token.address);
         let prices = self.native_price_cache.get_many(tokens).await;
         let auction = Auction {
             id: auction::Kind::Competition(auction_id),

@@ -246,13 +246,11 @@ impl Utilities {
         };
 
         // Record the auction's native prices for the fast path to reuse.
-        // Collected so no borrow of `auction_domain` is held across the await,
-        // keeping the enclosing (/solve route) future `Send`.
         let observed_prices = auction_domain
             .tokens()
             .iter()
-            .filter_map(|token| token.price.map(|price| (token.address, price)))
-            .collect::<Vec<_>>();
+            .cloned()
+            .filter_map(|token| token.price.map(|price| (token.address, price)));
         self.native_price_cache.insert_many(observed_prices).await;
 
         Ok(auction_domain)
