@@ -45,6 +45,7 @@ pub struct Config {
 pub struct EthrpcConfig {
     pub max_batch_size: Option<usize>,
     pub max_concurrent_requests: Option<usize>,
+    pub batch_delay: Option<std::time::Duration>,
 }
 
 impl From<EthrpcConfig> for ethrpc::Config {
@@ -55,7 +56,7 @@ impl From<EthrpcConfig> for ethrpc::Config {
             ethrpc_max_concurrent_requests: config
                 .max_concurrent_requests
                 .unwrap_or(defaults.ethrpc_max_concurrent_requests),
-            ..defaults
+            ethrpc_batch_delay: config.batch_delay.unwrap_or(defaults.ethrpc_batch_delay),
         }
     }
 }
