@@ -120,11 +120,11 @@ fn partner_fee_under(source: &str) -> Vec<Fee> {
 }
 
 #[test]
-fn partner_fee_cap_is_in_bps_and_100_by_default() {
+fn partner_fee_cap_is_in_bps_and_none_without_the_table() {
     let volume = |bps: f64| Fee::Volume {
         factor: (bps / 10_000.).try_into().unwrap(),
     };
-    assert_eq!(partner_fee_under(""), [volume(100.)]);
+    assert_eq!(partner_fee_under(""), []);
     assert_eq!(
         partner_fee_under("[partner-fees]\nmax-volume-bps = 50"),
         [volume(50.)]
@@ -152,7 +152,10 @@ fn loads_the_tables_of_a_host_config() {
             .collect()
     };
     let rules = load_rules_toml(tables.clone()).unwrap();
-    assert_eq!(rules.max_partner_fee(), FeeFactor::try_from(0.05).unwrap());
+    assert_eq!(
+        rules.max_partner_fee(),
+        Some(FeeFactor::try_from(0.05).unwrap())
+    );
     assert_eq!(names(rules), names(load_rules_from_str(RULES).unwrap()));
 
     assert!(

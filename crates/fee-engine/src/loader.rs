@@ -80,10 +80,7 @@ pub fn load_rules_toml(
             .transpose()?
             .unwrap_or_default(),
         rules: rules.map(rule_definitions).transpose()?.unwrap_or_default(),
-        partner_fees: partner_fees
-            .map(toml::Value::try_into)
-            .transpose()?
-            .unwrap_or_default(),
+        partner_fees: partner_fees.map(toml::Value::try_into).transpose()?,
     })
 }
 

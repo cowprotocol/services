@@ -34,8 +34,8 @@ The pass has limits:
   sample is out of market, so the bad argument in `order.inMarket ?
   volume(0.001) : volume(1)` is not found; a static check of every branch is
   planned.
-- Every amount and price in the samples is 1, and every timestamp is `now`.
-  A fee computed from the order is checked only at those values:
+- Every amount in the samples is 1, and every timestamp is `now`. A fee
+  computed from the order is checked only at those values:
   `volume(order.buyAmount / order.sellAmount)` passes, but on a real order
   it can give an out-of-range argument, and the rule is then skipped and
   reported.
@@ -55,9 +55,10 @@ fee:  surplus(50, 100)
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
 `[lists]` holds named lists of strings, each `[[rule]]` table is a rule,
 tried in file order, and `[partner-fees]` holds `max-volume-bps`, the basis
-points of the volume an order's partner fees may take together. Without the
-table it is 100 (1%), as in the autopilot; it lands on the fee grid like a
-fee argument.
+points of the volume an order's partner fees may take together; it lands on
+the fee grid like a fee argument. Without the table the engine returns no
+partner fee, as the orderbook counts none without
+`order-quoting.max-partner-fee`.
 Unknown top-level and rule keys are refused; any key under `[lists]` is a
 list name, so a list that no rule names loads without error. The file goes
 through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
@@ -212,7 +213,7 @@ order.
 
 The fields of the API order that a fee can depend on, under the API names
 except for the app data (see `order.appData`), built field by field in
-`order_view/mod.rs`. Amounts and prices are doubles, whole numbers
+`order_view/mod.rs`. Amounts are doubles, whole numbers
 (`validTo`, `validFrom`, `ethflowData.userValidTo`) are `uint`s and hex is
 lowercase. An order with every field set looks like this (hashes shortened):
 
@@ -320,3 +321,4 @@ diagnostics, and logs nothing itself:
   order, also when no rule matched. The caller puts them after the fees of
   the match it picks. They are capped by `max-volume-bps` as the autopilot
   caps them; a fee past the cap stays, with a zero volume share or volume cap.
+  Without `[partner-fees]` the list is empty.

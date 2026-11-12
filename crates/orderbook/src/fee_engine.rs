@@ -348,8 +348,7 @@ mod tests {
     }
 
     /// `prod_buckets` and a 2 bps default as rules, the way prod configures
-    /// them: a list and a rule per bucket. No cap is 0, as the orderbook
-    /// counts no partner fee without one.
+    /// them: a list and a rule per bucket, with the cap of the legacy fees.
     fn prod_rules(max_partner_fee: Option<f64>) -> RuleSetDefinition {
         RuleSetDefinition {
             lists: BTreeMap::from([
@@ -378,9 +377,9 @@ mod tests {
                 ),
                 rule("Default: 2 bps", "true", "volume(2)"),
             ],
-            partner_fees: PartnerFees {
-                max_volume: max_partner_fee.unwrap_or(0.).try_into().unwrap(),
-            },
+            partner_fees: max_partner_fee.map(|cap| PartnerFees {
+                max_volume: cap.try_into().unwrap(),
+            }),
         }
     }
 

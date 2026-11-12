@@ -22,8 +22,9 @@ pub struct Evaluation<'r> {
     pub matched: Vec<Match<'r>>,
     /// Rules that failed to evaluate, in rule order.
     pub skipped: Vec<Skipped<'r>>,
-    /// The order's partner fees, capped. They come after the fees of the
-    /// match the caller picks, and apply when no rule matched too.
+    /// The order's partner fees, capped; none when the rule set has no cap.
+    /// They come after the fees of the match the caller picks, and apply when
+    /// no rule matched too.
     pub partner_fees: Vec<Fee>,
 }
 
@@ -86,10 +87,11 @@ impl<'r> Evaluator<'r> {
         let mut evaluation = Evaluation {
             matched: Vec::new(),
             skipped: Vec::new(),
-            partner_fees: partner_fee::partner_fees(
-                order.partner_fees,
-                self.rules.max_partner_fee(),
-            ),
+            partner_fees: self
+                .rules
+                .max_partner_fee()
+                .map(|cap| partner_fee::partner_fees(order.partner_fees, cap))
+                .unwrap_or_default(),
         };
         for rule in self.rules.rules() {
             match Self::evaluate_rule(rule, &context) {
@@ -163,7 +165,7 @@ mod tests {
             AppData,
             FeeFactor,
             PartnerFee,
-            rules::{RuleDefinition, RuleSetDefinition},
+            rules::{PartnerFees, RuleDefinition, RuleSetDefinition},
         },
         alloy_primitives::{Address, U256, address},
         chrono::{DateTime, TimeZone, Utc},
@@ -485,17 +487,30 @@ mod tests {
 
     #[test]
     fn partner_fees_apply_when_no_rule_matches() {
-        let rules = rule_set(vec![rule("Never", "false", "volume(1)")]);
         let order = order(WETH, USDT);
-        let evaluation = rules.evaluator(after_launch()).evaluate(OrderView {
-            order: &order,
-            app_data: &AppData::default(),
-            partner_fees: &[PartnerFee::Volume { bps: 60 }],
-            in_market: false,
-        });
+        let evaluate = |partner_fees| {
+            let rules = RuleSet::new(RuleSetDefinition {
+                rules: vec![rule("Never", "false", "volume(1)")],
+                partner_fees,
+                ..Default::default()
+            })
+            .unwrap();
+            let evaluation = rules.evaluator(after_launch()).evaluate(OrderView {
+                order: &order,
+                app_data: &AppData::default(),
+                partner_fees: &[PartnerFee::Volume { bps: 60 }],
+                in_market: false,
+            });
+            assert!(evaluation.matched.is_empty());
+            evaluation.partner_fees
+        };
 
-        assert!(evaluation.matched.is_empty());
-        assert_eq!(evaluation.partner_fees, [volume(60.0)]);
+        let cap = PartnerFees {
+            max_volume: FeeFactor::try_from(0.01).unwrap(),
+        };
+        assert_eq!(evaluate(Some(cap)), [volume(60.0)]);
+        // Without a cap the engine counts no partner fee.
+        assert_eq!(evaluate(None), []);
     }
 
     #[test]
