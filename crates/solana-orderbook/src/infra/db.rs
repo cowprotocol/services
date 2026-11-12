@@ -16,6 +16,7 @@ use {
 pub struct OrderRow {
     pub uid: ByteArray<32>,
     pub owner: ByteArray<32>,
+    pub receiver: Option<ByteArray<32>>,
     pub sell_token: ByteArray<32>,
     pub buy_token: ByteArray<32>,
     pub sell_token_account: ByteArray<32>,
@@ -43,7 +44,7 @@ pub struct OrderRow {
 pub async fn find_order_by_uid(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<Option<OrderRow>> {
     let _timer = query_timer("find_order_by_uid");
     const QUERY: &str = r#"
-SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
+SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.app_data,
        convert_from(a.full_app_data, 'UTF8') AS full_app_data,
@@ -74,7 +75,7 @@ pub async fn get_orders_by_owner(
 ) -> Result<Vec<OrderRow>> {
     let _timer = query_timer("get_orders_by_owner");
     const QUERY: &str = r#"
-SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
+SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.app_data,
        convert_from(a.full_app_data, 'UTF8') AS full_app_data,
@@ -172,6 +173,9 @@ pub async fn order_has_trade(ex: impl PgExecutor<'_>, uid: [u8; 32]) -> Result<b
 pub struct SponsoredOrder {
     pub uid: ByteArray<32>,
     pub owner: ByteArray<32>,
+    /// The wallet the buy token account belongs to, when that is not the
+    /// owner.
+    pub receiver: Option<ByteArray<32>>,
     pub sell_token: ByteArray<32>,
     pub buy_token: ByteArray<32>,
     pub sell_token_account: ByteArray<32>,
@@ -218,16 +222,17 @@ pub async fn insert_sponsored_order(
 ) -> Result<()> {
     let _timer = query_timer("insert_sponsored_order");
     const QUERY: &str = r#"
-INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
-    buy_token_account, sell_amount, buy_amount, valid_to, kind,
-    partially_fillable, app_data, creation_timestamp, order_pda,
+INSERT INTO solana.orders (uid, owner, receiver, sell_token, buy_token,
+    sell_token_account, buy_token_account, sell_amount, buy_amount, valid_to,
+    kind, partially_fillable, app_data, creation_timestamp, order_pda,
     presigned_transaction, last_valid_block_height)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, $14, $15)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14, $15, $16)
     "#;
     let mut tx = pool.begin().await.context("begin sponsored order insert")?;
     sqlx::query(QUERY)
         .bind(order.uid)
         .bind(order.owner)
+        .bind(order.receiver)
         .bind(order.sell_token)
         .bind(order.buy_token)
         .bind(order.sell_token_account)
@@ -763,6 +768,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         let order = SponsoredOrder {
             uid: ByteArray([0x11; 32]),
             owner: ByteArray([0xAA; 32]),
+            receiver: Some(ByteArray([0x23; 32])),
             sell_token: ByteArray([0x66; 32]),
             buy_token: ByteArray([0x55; 32]),
             sell_token_account: ByteArray([0x33; 32]),
@@ -800,6 +806,11 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
             .unwrap();
         assert_eq!(creation.presigned_transaction, vec![0xC0; 128]);
         assert_eq!(creation.last_valid_block_height, 12_345);
+        let stored = find_order_by_uid(&pool, order.uid.0)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.receiver.map(|receiver| receiver.0), Some([0x23; 32]));
         let copied: (Vec<u8>, Option<i64>, String, Vec<u8>) = sqlx::query_as(
             "SELECT order_uid, quote_id, buy_amount::text, solver FROM solana.order_quotes",
         )

@@ -1,22 +1,58 @@
 //! Database access for the Solana autopilot.
 
 use {
-    crate::domain::auction::{Order, OrderKind},
+    crate::domain::{
+        auction::{Order, OrderKind},
+        fee::{FeePolicy, Quote},
+    },
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
-    database::{byte_array::ByteArray, solana::OrderEventLabel},
-    sqlx::{PgExecutor, Postgres, QueryBuilder},
+    chrono::{DateTime, Utc},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, PolicyKind},
+    },
+    sqlx::{PgExecutor, PgPool, Postgres, QueryBuilder},
+    std::time::Duration,
 };
 
 /// The channel the schema's `solana.settlements` trigger notifies.
 pub const SETTLEMENT_FINALIZED_CHANNEL: &str = "solana_settlement_finalized";
 
-/// The `solana.orders` columns auction assembly reads.
+/// Tables the `autopilot_table_rows` gauge counts exactly.
+const TABLES: &[&str] = &[
+    "app_data",
+    "auctions",
+    "dead_letter",
+    "indexer_state",
+    "order_pda",
+    "quotes",
+    "reference_scores",
+    "settlement_executions",
+    "settlements",
+    "trades",
+];
+
+/// Tables the gauge reports from the planner's estimate: a full scan every
+/// minute would weigh on the largest ones.
+const LARGE_TABLES: &[&str] = &[
+    "competition_auctions",
+    "fee_policies",
+    "orders",
+    "order_events",
+    "order_quotes",
+    "proposed_solutions",
+    "proposed_trade_executions",
+];
+
+/// The `solana.orders` columns auction assembly reads, with the quote
+/// `solana.order_quotes` links the order to.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct OrderRow {
     pub uid: ByteArray<32>,
     pub owner: ByteArray<32>,
+    pub receiver: Option<ByteArray<32>>,
     pub sell_token: ByteArray<32>,
     pub buy_token: ByteArray<32>,
     pub sell_token_account: ByteArray<32>,
@@ -31,6 +67,9 @@ pub struct OrderRow {
     pub created_on_chain: bool,
     pub executed: BigDecimal,
     pub creation: Option<Vec<u8>>,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_solver: Option<ByteArray<32>>,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -47,7 +86,7 @@ pub async fn open_orders(
 ) -> Result<Vec<OrderRow>> {
     let _timer = query_timer("open_orders");
     const QUERY: &str = r#"
-SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
+SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.order_pda, o.app_data,
        p.order_uid IS NOT NULL AS created_on_chain,
@@ -55,9 +94,13 @@ SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.sell_token_account,
            WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
            ELSE COALESCE(p.amount_received, 0)
        END AS executed,
-       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation
+       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation,
+       q.sell_amount AS quote_sell_amount,
+       q.buy_amount AS quote_buy_amount,
+       q.solver AS quote_solver
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.order_quotes q ON q.order_uid = o.uid
 WHERE o.valid_to >= $1
   AND NOT COALESCE(p.is_reorged, false)
   AND (o.valid_from IS NULL OR o.valid_from <= $1)
@@ -518,10 +561,13 @@ pub struct Competition {
     pub price_values: Vec<BigDecimal>,
     pub solutions: Vec<ProposedSolution>,
     pub reference_scores: Vec<ReferenceScore>,
+    /// The policies of every order a ranked solution trades, in application
+    /// order.
+    pub fee_policies: Vec<(ByteArray<32>, Vec<FeePolicy>)>,
 }
 
-/// Persist a competition: the auction snapshot and every proposed solution
-/// with its executions, in one transaction.
+/// Persist a competition: the auction snapshot, every proposed solution with
+/// its executions, and the traded orders' fee policies, in one transaction.
 pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition) -> Result<()> {
     let _timer = query_timer("persist_competition");
     let mut tx = pool.begin().await.context("begin competition persist")?;
@@ -601,6 +647,55 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
             .await
             .context("insert reference scores")?;
     }
+    let policies: Vec<_> = competition
+        .fee_policies
+        .iter()
+        .flat_map(|(order_uid, policies)| policies.iter().map(move |policy| (order_uid, policy)))
+        .collect();
+    if !policies.is_empty() {
+        let mut insert = QueryBuilder::<Postgres>::new(
+            "INSERT INTO solana.fee_policies (auction_id, order_uid, kind, surplus_factor, \
+             surplus_max_volume_factor, price_improvement_factor, \
+             price_improvement_max_volume_factor, volume_factor) ",
+        );
+        insert.push_values(policies, |mut row, (order_uid, policy)| {
+            let (kind, surplus, price_improvement, volume) = match *policy {
+                FeePolicy::Surplus {
+                    factor,
+                    max_volume_factor,
+                } => (
+                    PolicyKind::Surplus,
+                    Some((factor, max_volume_factor)),
+                    None,
+                    None,
+                ),
+                FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                    ..
+                } => (
+                    PolicyKind::PriceImprovement,
+                    None,
+                    Some((factor, max_volume_factor)),
+                    None,
+                ),
+                FeePolicy::Volume { factor } => (PolicyKind::Volume, None, None, Some(factor)),
+            };
+            row.push_bind(competition.auction_id)
+                .push_bind(*order_uid)
+                .push_bind(kind)
+                .push_bind(surplus.map(|(factor, _)| factor))
+                .push_bind(surplus.map(|(_, cap)| cap))
+                .push_bind(price_improvement.map(|(factor, _)| factor))
+                .push_bind(price_improvement.map(|(_, cap)| cap))
+                .push_bind(volume);
+        });
+        insert
+            .build()
+            .execute(&mut *tx)
+            .await
+            .context("insert fee policies")?;
+    }
     tx.commit().await.context("commit competition persist")
 }
 
@@ -628,6 +723,7 @@ impl TryFrom<OrderRow> for Order {
         Ok(Order {
             uid: IntentHash(row.uid.0),
             owner: Pubkey(row.owner.0),
+            receiver: row.receiver.map(|receiver| Pubkey(receiver.0)),
             sell_token: Pubkey(row.sell_token.0),
             buy_token: Pubkey(row.buy_token.0),
             sell_token_account: Pubkey(row.sell_token_account.0),
@@ -646,6 +742,25 @@ impl TryFrom<OrderRow> for Order {
             executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
             sell_balance: None,
+            quote: match (
+                row.quote_sell_amount,
+                row.quote_buy_amount,
+                row.quote_solver,
+            ) {
+                // A quote amount past `u64` leaves the order unlinked, out of
+                // market as the orderbook classed it, instead of dropping it.
+                (Some(sell_amount), Some(buy_amount), Some(solver)) => to_amount(&sell_amount)
+                    .ok()
+                    .zip(to_amount(&buy_amount).ok())
+                    .map(|(sell_amount, buy_amount)| Quote {
+                        sell_amount,
+                        buy_amount,
+                        fee: 0,
+                        solver: Pubkey(solver.0),
+                    }),
+                _ => None,
+            },
+            protocol_fees: Vec::new(),
         })
     }
 }
@@ -657,6 +772,36 @@ fn to_amount(value: &BigDecimal) -> Result<u64> {
         .with_context(|| format!("amount {value} does not fit u64"))
 }
 
+/// Deletes the quotes that expired by `now`. Returns how many.
+pub async fn remove_expired_quotes(ex: impl PgExecutor<'_>, now: DateTime<Utc>) -> Result<u64> {
+    let _timer = query_timer("remove_expired_quotes");
+    const QUERY: &str = r#"DELETE FROM solana.quotes WHERE expiration_timestamp < $1"#;
+    let result = sqlx::query(QUERY)
+        .bind(now)
+        .execute(ex)
+        .await
+        .context("delete expired quotes")?;
+    Ok(result.rows_affected())
+}
+
+/// Deletes the order events recorded before `timestamp`, except `invalid`
+/// ones: [`unrecorded_dead_creations`] reads them to record each dead
+/// creation once. Returns how many.
+pub async fn delete_order_events_before(
+    ex: impl PgExecutor<'_>,
+    timestamp: DateTime<Utc>,
+) -> Result<u64> {
+    let _timer = query_timer("delete_order_events_before");
+    const QUERY: &str = r#"DELETE FROM solana.order_events WHERE timestamp < $1 AND label <> $2"#;
+    let result = sqlx::query(QUERY)
+        .bind(timestamp)
+        .bind(OrderEventLabel::Invalid)
+        .execute(ex)
+        .await
+        .context("delete old order events")?;
+    Ok(result.rows_affected())
+}
+
 /// Starts timing a query, recorded under `query` when the timer drops.
 pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
     Metrics::instance(observe::metrics::get_storage_registry())
@@ -666,8 +811,46 @@ pub(super) fn query_timer(query: &str) -> prometheus::HistogramTimer {
         .start_timer()
 }
 
+/// Refreshes `autopilot_table_rows` every minute. The first refresh waits a
+/// minute so the counts stay off the busy startup.
+pub fn spawn_table_rows_metric(pool: PgPool) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+            if let Err(err) = update_table_rows(&pool).await {
+                tracing::error!(?err, "failed to update table rows metric");
+            }
+        }
+    });
+}
+
+async fn update_table_rows(pool: &PgPool) -> Result<()> {
+    let metrics = Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+    for &table in TABLES {
+        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM solana.{table}"))
+            .fetch_one(pool)
+            .await?;
+        metrics.table_rows.with_label_values(&[table]).set(count);
+    }
+    for &table in LARGE_TABLES {
+        let count: i64 = sqlx::query_scalar(&format!(
+            "SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = \
+             'solana.{table}'::regclass"
+        ))
+        .fetch_one(pool)
+        .await?;
+        metrics.table_rows.with_label_values(&[table]).set(count);
+    }
+    Ok(())
+}
+
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
+    /// Rows per `solana.*` table, exact for small tables and the planner's
+    /// estimate for large ones.
+    #[metric(name = "autopilot_table_rows", labels("table"))]
+    table_rows: prometheus::IntGaugeVec,
+
     /// Query durations, by query.
     #[metric(
         name = "autopilot_database_queries",
@@ -684,15 +867,22 @@ struct Metrics {
 mod tests {
     use {
         super::{
+            Competition,
+            FeePolicy,
+            Quote,
+            delete_order_events_before,
             in_flight_orders,
             last_indexed_slot,
             open_orders,
+            persist_competition,
+            remove_expired_quotes,
             revert_settlement_window,
             skip_settlement_window,
             unrecorded_dead_creations,
         },
         bigdecimal::{BigDecimal, ToPrimitive},
         chain_types::solana::Pubkey,
+        chrono::Utc,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
     };
@@ -701,6 +891,7 @@ mod tests {
         super::OrderRow {
             uid: ByteArray([1; 32]),
             owner: ByteArray([2; 32]),
+            receiver: None,
             sell_token: ByteArray([3; 32]),
             buy_token: ByteArray([4; 32]),
             sell_token_account: ByteArray([5; 32]),
@@ -715,7 +906,42 @@ mod tests {
             created_on_chain: true,
             executed: BigDecimal::from(0u64),
             creation: None,
+            quote_sell_amount: None,
+            quote_buy_amount: None,
+            quote_solver: None,
         }
+    }
+
+    #[test]
+    fn a_linked_quote_converts_with_a_zero_fee() {
+        assert_eq!(
+            super::Order::try_from(conversion_row()).unwrap().quote,
+            None
+        );
+        let linked = super::OrderRow {
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(2_000u64)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        };
+        assert_eq!(
+            super::Order::try_from(linked).unwrap().quote,
+            Some(Quote {
+                sell_amount: 1_000,
+                buy_amount: 2_000,
+                fee: 0,
+                solver: Pubkey([9; 32]),
+            })
+        );
+        // The orderbook stores the quote's unfixed side unchecked, so it can
+        // exceed `u64`. The order then stays in the auction without a quote.
+        let oversized = super::OrderRow {
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(u64::MAX) + BigDecimal::from(1u64)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        };
+        assert_eq!(super::Order::try_from(oversized).unwrap().quote, None);
     }
 
     #[test]
@@ -789,19 +1015,159 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
 
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_table_rows_count_every_listed_table() {
+        let pool = crate::test_db::pool().await;
+        sqlx::query("DELETE FROM solana.app_data")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        super::update_table_rows(&pool).await.unwrap();
+        let metrics = super::Metrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 0);
+
+        sqlx::query(
+            "INSERT INTO solana.app_data (contract_app_data, full_app_data) VALUES ($1, $2)",
+        )
+        .bind([7u8; 32].to_vec())
+        .bind(b"{}".to_vec())
+        .execute(&pool)
+        .await
+        .unwrap();
+        super::update_table_rows(&pool).await.unwrap();
+        assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 1);
+    }
+
+    /// Every policy of a traded order lands in its application order with
+    /// the EVM columns, an order without policies stores no row.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_persist_competition_stores_the_fee_policies_in_order() {
+        let pool = crate::test_db::pool().await;
+        for table in [
+            "fee_policies",
+            "reference_scores",
+            "proposed_trade_executions",
+            "proposed_solutions",
+            "competition_auctions",
+        ] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let charged = ByteArray([1; 32]);
+        let competition = Competition {
+            auction_id: 88,
+            tip_slot: 1,
+            deadline_slot: 100,
+            order_uids: vec![charged.0.to_vec(), vec![2; 32]],
+            price_tokens: vec![],
+            price_values: vec![],
+            solutions: vec![],
+            reference_scores: vec![],
+            fee_policies: vec![
+                (
+                    charged,
+                    vec![
+                        FeePolicy::Surplus {
+                            factor: 0.5,
+                            max_volume_factor: 0.9,
+                        },
+                        FeePolicy::PriceImprovement {
+                            factor: 0.3,
+                            max_volume_factor: 0.01,
+                            quote: Quote {
+                                sell_amount: 1,
+                                buy_amount: 2,
+                                fee: 0,
+                                solver: Pubkey([9; 32]),
+                            },
+                        },
+                        FeePolicy::Volume { factor: 0.001 },
+                    ],
+                ),
+                (ByteArray([2; 32]), vec![]),
+            ],
+        };
+        persist_competition(&pool, &competition).await.unwrap();
+
+        type Row = (
+            Vec<u8>,
+            String,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+        );
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT order_uid, kind::text, surplus_factor, surplus_max_volume_factor, \
+             price_improvement_factor, price_improvement_max_volume_factor, volume_factor FROM \
+             solana.fee_policies WHERE auction_id = 88 ORDER BY application_order",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let uid = charged.0.to_vec();
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    uid.clone(),
+                    "surplus".to_string(),
+                    Some(0.5),
+                    Some(0.9),
+                    None,
+                    None,
+                    None
+                ),
+                (
+                    uid.clone(),
+                    "priceimprovement".to_string(),
+                    None,
+                    None,
+                    Some(0.3),
+                    Some(0.01),
+                    None
+                ),
+                (
+                    uid,
+                    "volume".to_string(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(0.001)
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_open_orders_applies_the_solvability_predicates() {
         let pool = crate::test_db::pool().await;
         let mut tx = pool.begin().await.unwrap();
 
-        for table in ["trades", "order_pda", "orders"] {
+        for table in ["trades", "order_pda", "order_quotes", "orders"] {
             sqlx::query(&format!("DELETE FROM solana.{table}"))
                 .execute(&mut *tx)
                 .await
                 .unwrap();
         }
 
-        // Kept: signed and unexpired, no PDA yet.
+        // Kept: signed and unexpired, no PDA yet. Placed against a quote.
         insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query(
+            "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
+             solver) VALUES ($1, 7, 1000, 2100, $2)",
+        )
+        .bind(ByteArray([1u8; 32]))
+        .bind(ByteArray([0xCC; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         // Dropped: expired.
         insert_order(&mut tx, 2, 500, true, database::solana::OrderKind::Sell).await;
         // Dropped: no PDA and nothing for the driver to create it from.
@@ -816,9 +1182,15 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
             .execute(&mut *tx)
             .await
             .unwrap();
-        // Kept: live PDA, partially filled.
+        // Kept: live PDA, partially filled, paid out to a receiver.
         insert_order(&mut tx, 5, 2_000, true, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 5, false, 999, 0).await;
+        sqlx::query(r#"UPDATE solana.orders SET receiver = $1 WHERE uid = $2"#)
+            .bind(database::byte_array::ByteArray([0x23u8; 32]))
+            .bind(database::byte_array::ByteArray([5u8; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
         // Kept: created directly on chain, no off-chain material.
         insert_order(&mut tx, 6, 2_000, false, database::solana::OrderKind::Sell).await;
         insert_pda(&mut tx, 6, false, 0, 0).await;
@@ -857,8 +1229,29 @@ WHERE uid = $1
             .map(|order| order.executed.to_u64().unwrap())
             .collect();
         assert_eq!(executed, vec![0, 999, 0, 0, 500]);
+        let receivers: Vec<_> = orders
+            .iter()
+            .map(|order| order.receiver.map(|receiver| receiver.0))
+            .collect();
+        assert_eq!(receivers, vec![None, Some([0x23; 32]), None, None, None]);
         let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
         assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
+        // Only the first order carries its linked quote.
+        let quotes: Vec<_> = orders
+            .iter()
+            .map(|order| {
+                order
+                    .quote_buy_amount
+                    .as_ref()
+                    .map(|amount| amount.to_u64().unwrap())
+            })
+            .collect();
+        assert_eq!(quotes, vec![Some(2_100), None, None, None, None]);
+        assert_eq!(
+            orders[0].quote_sell_amount.as_ref().unwrap().to_u64(),
+            Some(1_000)
+        );
+        assert_eq!(orders[0].quote_solver, Some(ByteArray([0xCC; 32])));
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
@@ -1136,5 +1529,59 @@ VALUES ($1, now(), $2)
             .await
             .unwrap();
         assert_eq!(last_indexed_slot(&mut *tx).await.unwrap(), Some(42));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_cleanup_deletes_only_expired_rows() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query(r#"DELETE FROM solana.quotes"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(r#"DELETE FROM solana.order_events"#)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.quotes (sell_token, buy_token, sell_amount, buy_amount, kind, solver, expiration_timestamp)
+VALUES ($1, $1, 1, 2, 'sell', $1, now() - interval '1 minute'),
+       ($1, $1, 1, 2, 'sell', $1, now() + interval '1 hour')
+            "#,
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"
+INSERT INTO solana.order_events (order_uid, timestamp, label)
+VALUES ($1, now() - interval '40 days', 'created'),
+       ($1, now() - interval '40 days', 'invalid'),
+       ($1, now(), 'created')
+            "#,
+        )
+        .bind(ByteArray([1u8; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+        let now = Utc::now();
+        assert_eq!(remove_expired_quotes(&mut *tx, now).await.unwrap(), 1);
+        assert_eq!(
+            delete_order_events_before(&mut *tx, now - chrono::Duration::days(30))
+                .await
+                .unwrap(),
+            1
+        );
+        let left: (i64, i64) = sqlx::query_as(
+            r#"SELECT (SELECT count(*) FROM solana.quotes), (SELECT count(*) FROM solana.order_events)"#,
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(left, (1, 2));
     }
 }

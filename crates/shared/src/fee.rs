@@ -247,48 +247,30 @@ pub fn check_fast_path_limit_fits(
     }
 }
 
-/// Applies the partner-fee compounding cap to a single requested fee
-/// factor and updates the running accumulator. Both the autopilot's
-/// `ProtocolFees::apply` and the orderbook's fast-path limit-price check
-/// route their per-fee cap decisions through this helper — the tricky
-/// multiplicative-cap math lives here in exactly one place.
-///
-/// Fees compound as `(1 + f_1)(1 + f_2)…` so the accumulator tracks the
-/// combined "extra" already committed and the remaining headroom is
-/// `(1 + cap)/(1 + accumulated) - 1`. Returns the effective factor for
-/// this fee (already clamped into `[0, remaining_factor]`) and advances
-/// the accumulator by the additive portion that was allowed through.
-pub fn capped_fee_factor(value: Decimal, cap: Decimal, accumulated: &mut Decimal) -> FeeFactor {
-    let remaining_factor = (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
-    *accumulated += value.min(cap - *accumulated);
-    FeeFactor::new(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
-}
-
 /// Extracts the volume-type partner fee factors from parsed app-data,
-/// enforcing the compounding cap via [`capped_fee_factor`]. Non-volume
-/// partner policies are skipped — they don't eat into the user-facing
-/// volume budget — so this yields exactly the subset of factors the
-/// orderbook needs to size the fast-path limit-price check against.
+/// enforcing the compounding cap via [`fee_engine::PartnerFeeBudget`].
+/// Non-volume partner policies are skipped — they don't eat into the
+/// user-facing volume budget — so this yields exactly the subset of factors the
+/// orderbook needs to size the fast-path limit-price check against. `None`
+/// when `max_partner_fee` is not in [0, 1), which only `FeeFactor::new` makes.
 pub fn capped_partner_volume_factors(
     parsed_app_data: &app_data::ProtocolAppData,
     max_partner_fee: FeeFactor,
-) -> Vec<FeeFactor> {
-    let cap = Decimal::try_from(max_partner_fee.get())
-        .expect("FeeFactor is always [0, 1] which means this conversion can't fail");
-
-    let mut accumulated = Decimal::ZERO;
+) -> Option<Vec<FeeFactor>> {
+    let cap = fee_engine::FeeFactor::try_from(max_partner_fee.get()).ok()?;
+    let mut budget = fee_engine::PartnerFeeBudget::new(cap);
     let mut factors = Vec::new();
     for partner_fee in parsed_app_data.partner_fee.iter() {
         let app_data::FeePolicy::Volume { bps } = partner_fee.policy else {
             continue;
         };
         let requested = Decimal::from(bps) / Decimal::from(MAX_BPS);
-        let factor = capped_fee_factor(requested, cap, &mut accumulated);
+        let factor = FeeFactor::new(budget.capped_fee_factor(requested).to_f64());
         if factor.get() > 0.0 {
             factors.push(factor);
         }
     }
-    factors
+    Some(factors)
 }
 
 #[cfg(test)]
@@ -591,7 +573,7 @@ mod tests {
             }
         }"#;
         let parsed = app_data::parse(json).unwrap();
-        let factors = capped_partner_volume_factors(&parsed, factor(0.03)); // 3% cap
+        let factors = capped_partner_volume_factors(&parsed, factor(0.03)).unwrap(); // 3% cap
         assert_eq!(factors.len(), 2);
         // First fee: 100 bps = 1% (fits inside 3% cap).
         assert!((factors[0].get() - 0.01).abs() < 1e-9);
@@ -599,5 +581,7 @@ mod tests {
         // and the cap applies to the compounded overhead. With 1% already
         // accumulated the remaining headroom is (1.03/1.01) - 1 ≈ 1.9802%.
         assert!((factors[1].get() - (1.03_f64 / 1.01 - 1.0)).abs() < 1e-9);
+
+        assert!(capped_partner_volume_factors(&parsed, FeeFactor::new(1.5)).is_none());
     }
 }

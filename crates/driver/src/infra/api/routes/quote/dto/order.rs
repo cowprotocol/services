@@ -16,6 +16,11 @@ impl Order {
             },
             deadline: self.deadline,
             enable_fast_path: self.enable_fast_path,
+            price_quality: match self.price_quality {
+                PriceQuality::Fast => quote::PriceQuality::Fast,
+                PriceQuality::Optimal => quote::PriceQuality::Optimal,
+                PriceQuality::Verified => quote::PriceQuality::Verified,
+            },
             quote_id: quote::Id(self.quote_id),
         }
     }
@@ -33,6 +38,7 @@ pub struct Order {
     deadline: chrono::DateTime<chrono::Utc>,
     #[serde(default)]
     enable_fast_path: bool,
+    price_quality: PriceQuality,
     quote_id: i64,
 }
 
@@ -41,6 +47,14 @@ pub struct Order {
 enum Kind {
     Sell,
     Buy,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum PriceQuality {
+    Fast,
+    Optimal,
+    Verified,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,12 +83,20 @@ mod tests {
     /// malformed.
     #[test]
     fn quote_request_without_a_quote_id_is_rejected() {
-        assert!(from_query(ORDER).is_err());
+        assert!(from_query(&format!("{ORDER}&priceQuality=verified")).is_err());
     }
 
     #[test]
-    fn quote_request_with_a_quote_id_keeps_it() {
-        let order = from_query(&format!("{ORDER}&quoteId=42")).unwrap();
-        assert_eq!(order.into_domain().quote_id, quote::Id(42));
+    fn quote_request_without_a_price_quality_is_rejected() {
+        assert!(from_query(&format!("{ORDER}&quoteId=42")).is_err());
+    }
+
+    #[test]
+    fn quote_request_keeps_quote_id_and_price_quality() {
+        let order = from_query(&format!("{ORDER}&quoteId=42&priceQuality=optimal"))
+            .unwrap()
+            .into_domain();
+        assert_eq!(order.quote_id, quote::Id(42));
+        assert_eq!(order.price_quality, quote::PriceQuality::Optimal);
     }
 }
