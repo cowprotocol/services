@@ -34,6 +34,30 @@ pub struct Config {
     pub solution_gas_offset: eth::SignedGas,
     pub native_token_price_estimation_amount: eth::U256,
     pub uni_v3_node_url: Option<Url>,
+    pub ethrpc: EthrpcConfig,
+}
+
+/// Overrides for the RPC client used to quote Uniswap V3 pools. A baseline
+/// quote issues one `eth_call` per candidate pool, so the batching limits cap
+/// how many quotes the solver can serve concurrently. `None` keeps the
+/// `ethrpc` crate's default.
+#[derive(Default)]
+pub struct EthrpcConfig {
+    pub max_batch_size: Option<usize>,
+    pub max_concurrent_requests: Option<usize>,
+}
+
+impl From<EthrpcConfig> for ethrpc::Config {
+    fn from(config: EthrpcConfig) -> Self {
+        let defaults = Self::default();
+        Self {
+            ethrpc_max_batch_size: config.max_batch_size.unwrap_or(defaults.ethrpc_max_batch_size),
+            ethrpc_max_concurrent_requests: config
+                .max_concurrent_requests
+                .unwrap_or(defaults.ethrpc_max_concurrent_requests),
+            ..defaults
+        }
+    }
 }
 
 struct Inner {
@@ -75,7 +99,7 @@ impl Solver {
     pub async fn new(config: Config) -> Self {
         let uni_v3_quoter_v2 = match config.uni_v3_node_url {
             Some(url) => {
-                let web3 = ethrpc::web3(Default::default(), &url, Some("baseline"));
+                let web3 = ethrpc::web3(config.ethrpc.into(), &url, Some("baseline"));
                 contracts::UniswapV3QuoterV2::Instance::deployed(&web3.provider)
                     .await
                     .map(Arc::new)

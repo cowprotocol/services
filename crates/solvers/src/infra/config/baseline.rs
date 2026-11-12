@@ -48,6 +48,16 @@ struct Config {
     /// If this is configured the solver will also use the Uniswap V3 liquidity
     /// sources that rely on RPC request.
     uni_v3_node_url: Option<Url>,
+
+    /// Maximum number of `eth_call`s packed into a single RPC batch when
+    /// quoting Uniswap V3 pools. Defaults to the `ethrpc` crate's default.
+    ethrpc_max_batch_size: Option<usize>,
+
+    /// Maximum number of RPC batches in flight at once when quoting Uniswap V3
+    /// pools. Together with `ethrpc-max-batch-size` this caps how many quotes
+    /// the solver can serve concurrently. Defaults to the `ethrpc` crate's
+    /// default.
+    ethrpc_max_concurrent_requests: Option<usize>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -85,6 +95,10 @@ pub async fn load(path: &Path) -> solver::Config {
         solution_gas_offset: config.solution_gas_offset.into(),
         native_token_price_estimation_amount: config.native_token_price_estimation_amount,
         uni_v3_node_url: config.uni_v3_node_url,
+        ethrpc: solver::EthrpcConfig {
+            max_batch_size: config.ethrpc_max_batch_size,
+            max_concurrent_requests: config.ethrpc_max_concurrent_requests,
+        },
     }
 }
 
