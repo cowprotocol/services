@@ -23,10 +23,10 @@ pub struct OrderView<'a> {
     pub in_market: bool,
 }
 
-/// The order as rules see it: every field a rule can read, with amounts and
-/// prices as doubles and hex in lowercase. Unset optional fields are absent,
-/// not `null`. Execution state, settlement and legacy fields are left out, and
-/// so is the quote: a quote request has none, so its fee could not match.
+/// The order as rules see it: every field a rule can read, with amounts as
+/// doubles and hex in lowercase. Unset optional fields are absent, not `null`.
+/// Execution state, settlement and legacy fields are left out, and so is the
+/// quote: a quote request has none, so its fee could not match.
 pub(crate) fn order_view(
     OrderView {
         order,
@@ -72,7 +72,7 @@ fn hex(bytes: &[u8]) -> String {
     const_hex::encode_prefixed(bytes)
 }
 
-/// A decimal amount or price as a double, rounded once from its plain text.
+/// A decimal amount as a double, rounded once from its plain text.
 fn number(decimal: impl ToString) -> f64 {
     decimal
         .to_string()

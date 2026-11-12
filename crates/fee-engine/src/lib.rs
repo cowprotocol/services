@@ -29,7 +29,6 @@ pub use {
     report::{Mismatch, Outcome, report_comparison, reset_comparison_counters},
     rules::{
         CompileError,
-        DEFAULT_MAX_VOLUME_BPS,
         Field,
         PartnerFees,
         Rule,

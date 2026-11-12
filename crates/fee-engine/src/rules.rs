@@ -14,7 +14,7 @@ use {
     alloy_primitives::{Address, U256},
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
-    model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
+    model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata},
     rust_decimal::{Decimal, prelude::FromPrimitive},
     serde::{Deserialize, Deserializer, de},
     std::{
@@ -70,31 +70,17 @@ pub struct RuleSetDefinition {
     pub lists: BTreeMap<String, Vec<String>>,
     #[serde(default, rename = "rule")]
     pub rules: Vec<RuleDefinition>,
-    #[serde(default)]
-    pub partner_fees: PartnerFees,
+    /// Without the table the engine returns no partner fee.
+    pub partner_fees: Option<PartnerFees>,
 }
 
-/// How the engine caps an order's partner fees. Without the table,
-/// [`DEFAULT_MAX_VOLUME_BPS`].
+/// How the engine caps an order's partner fees.
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PartnerFees {
     /// Basis points of the volume all partner fees may take together.
     #[serde(rename = "max-volume-bps", deserialize_with = "bps_of_volume")]
     pub max_volume: FeeFactor,
-}
-
-/// The cap on an order's partner fees without a `[partner-fees]` table: 1%
-/// of the volume, the autopilot's default.
-pub const DEFAULT_MAX_VOLUME_BPS: u64 = 100;
-
-impl Default for PartnerFees {
-    fn default() -> Self {
-        Self {
-            max_volume: fee::factor_on_grid(Decimal::from(DEFAULT_MAX_VOLUME_BPS), fee::BPS)
-                .expect("100 bps is on the grid and under 100%"),
-        }
-    }
 }
 
 /// Basis points of the volume as a fee factor. Finer than 0.01 bps is refused,
@@ -141,8 +127,7 @@ pub struct SampleOrderError {
 /// The sample order an expression failed on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sample {
-    /// Every optional field present, every timestamp `now`, amounts and
-    /// prices 1.
+    /// Every optional field present, every timestamp `now`, amounts 1.
     Full,
     /// No optional field present; otherwise the same.
     Bare,
@@ -228,7 +213,7 @@ pub struct RuleSet {
     rules: Vec<Rule>,
     /// The fee functions and the lists, bound once for every evaluation.
     pub(crate) context: Context<'static, 'static>,
-    max_partner_fee: FeeFactor,
+    max_partner_fee: Option<FeeFactor>,
 }
 
 impl fmt::Debug for RuleSet {
@@ -244,7 +229,7 @@ impl RuleSet {
     /// Compiles the rules in the order they are tried against the CEL
     /// stdlib plus its math and strings extensions. Each list becomes a CEL
     /// list under its name. `partner_fees` caps an order's partner fees
-    /// together. Any failure refuses the whole set.
+    /// together; without it there are none. Any failure refuses the whole set.
     pub fn new(
         RuleSetDefinition {
             lists,
@@ -283,7 +268,7 @@ impl RuleSet {
         Ok(Self {
             rules,
             context,
-            max_partner_fee: partner_fees.max_volume,
+            max_partner_fee: partner_fees.map(|fees| fees.max_volume),
         })
     }
 
@@ -340,7 +325,8 @@ impl RuleSet {
     }
 
     /// The cap on an order's partner fees together, as a share of the volume.
-    pub fn max_partner_fee(&self) -> FeeFactor {
+    /// `None` counts no partner fee.
+    pub fn max_partner_fee(&self) -> Option<FeeFactor> {
         self.max_partner_fee
     }
 
@@ -371,7 +357,7 @@ pub(crate) fn bare_sample_order(now: DateTime<Utc>) -> Order {
 }
 
 /// The bare sample with every optional field present, so that a rule can
-/// reach any name the view may hold. Prices are 1, like the amounts.
+/// reach any name the view may hold.
 pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
     let mut order = bare_sample_order(now);
     order.metadata = OrderMetadata {
@@ -382,15 +368,6 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
         onchain_order_data: Some(OnchainOrderData::default()),
         onchain_user: Some(Default::default()),
         valid_from: Some(now.timestamp() as u32),
-        quote: Some(OrderQuote {
-            sell_amount: U256::ONE,
-            buy_amount: U256::ONE,
-            fee_amount: U256::ONE,
-            gas_amount: 1.into(),
-            gas_price: 1.into(),
-            sell_token_price: 1.into(),
-            ..Default::default()
-        }),
         fast_path: true,
         ..order.metadata
     };
