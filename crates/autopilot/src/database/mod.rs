@@ -95,16 +95,6 @@ impl Postgres {
         Ok(())
     }
 
-    #[instrument(skip_all)]
-    pub async fn update_large_tables_stats(&self) -> sqlx::Result<()> {
-        let mut ex = self.pool.acquire().await?;
-        for &table in database::LARGE_TABLES {
-            analyze_table(&mut ex, table).await?;
-        }
-
-        Ok(())
-    }
-
     /// Cleans the pending lists of all GIN indexes on `competition_auctions`.
     /// An index left out here gets flushed inline by whichever insert pushes
     /// its pending list past `gin_pending_list_limit`.
@@ -128,14 +118,18 @@ async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result
     sqlx::query_scalar(&query).fetch_one(ex).await
 }
 
+/// Estimates the row count the way the query planner does: tuples per page
+/// from the last `VACUUM` or `ANALYZE`, times the table's current page count.
+/// Returns 0 for a table that was never vacuumed or analyzed.
 async fn estimate_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
-    let query = format!("SELECT reltuples::bigint FROM pg_class WHERE relname='{table}';");
-    sqlx::query_scalar(&query).fetch_one(ex).await
-}
-
-async fn analyze_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<()> {
-    let query = format!("ANALYZE {table};");
-    ex.execute(sqlx::query(&query)).await.map(|_| ())
+    sqlx::query_scalar(
+        "SELECT CASE WHEN relpages > 0 AND reltuples >= 0 THEN reltuples::float8 / relpages * \
+         (pg_relation_size(oid) / current_setting('block_size')::int) ELSE 0 END::bigint FROM \
+         pg_class WHERE oid = $1::regclass",
+    )
+    .bind(table)
+    .fetch_one(ex)
+    .await
 }
 
 #[derive(prometheus_metric_storage::MetricStorage)]
@@ -171,8 +165,6 @@ impl Metrics {
 }
 
 pub fn run_database_metrics_work(db: Postgres) {
-    // Spawn the task for updating large table statistics
-    tokio::spawn(update_large_tables_stats(db.clone()));
     // Spawn the task for database metrics
     tokio::task::spawn(database_metrics(db));
 }
@@ -189,18 +181,12 @@ async fn database_metrics(db: Postgres) -> ! {
     }
 }
 
-async fn update_large_tables_stats(db: Postgres) -> ! {
-    loop {
-        if let Err(err) = db.update_large_tables_stats().await {
-            tracing::error!(?err, "failed to update large tables stats");
-        }
-        tokio::time::sleep(Duration::from_secs(60 * 60)).await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        database::{byte_array::ByteArray, orders::Order},
+    };
 
     #[tokio::test]
     #[ignore]
@@ -216,5 +202,47 @@ mod tests {
             .unwrap();
         let count = count_rows_in_table(&mut ex, "orders").await.unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_estimate_rows_in_table_() {
+        let db = Postgres::with_defaults().await.unwrap();
+        let mut ex = db.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+
+        let count = estimate_rows_in_table(&mut ex, "orders").await.unwrap();
+        assert_eq!(count, 0);
+
+        for i in 0..100 {
+            let order = Order {
+                uid: ByteArray([i; 56]),
+                ..Default::default()
+            };
+            database::orders::insert_order(&mut ex, &order)
+                .await
+                .unwrap();
+        }
+        sqlx::query("ANALYZE orders")
+            .execute(&mut *ex)
+            .await
+            .unwrap();
+        let analyzed = estimate_rows_in_table(&mut ex, "orders").await.unwrap();
+        assert_eq!(analyzed, 100);
+
+        for i in 100..200 {
+            let order = Order {
+                uid: ByteArray([i; 56]),
+                ..Default::default()
+            };
+            database::orders::insert_order(&mut ex, &order)
+                .await
+                .unwrap();
+        }
+        let grown = estimate_rows_in_table(&mut ex, "orders").await.unwrap();
+        assert!(
+            grown > analyzed,
+            "estimate {grown} did not grow past {analyzed}"
+        );
     }
 }
