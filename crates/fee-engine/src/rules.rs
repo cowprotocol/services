@@ -4,6 +4,7 @@ use {
     crate::{
         AppData,
         Evaluator,
+        Fee,
         FeeFactor,
         Flashloan,
         OrderView,
@@ -12,13 +13,21 @@ use {
         order_view,
     },
     alloy_primitives::{Address, U256},
-    cel::{Context, Env, Program, Value},
+    cel::{
+        Context,
+        Env,
+        Program,
+        common::{
+            types::{CelBool, CelMap, CelMapKey},
+            value::Val,
+        },
+    },
     chrono::{DateTime, Utc},
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
     rust_decimal::{Decimal, prelude::FromPrimitive},
     serde::{Deserialize, Deserializer, de},
     std::{
-        collections::{BTreeMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         fmt,
         sync::Arc,
     },
@@ -178,6 +187,9 @@ pub struct Rule {
     name: String,
     pub(crate) when: Program,
     pub(crate) fee: Program,
+    /// The fees of a `fee` that names no variable, e.g. `volume(2)`: the same
+    /// for every order, so evaluated once.
+    pub(crate) constant_fees: Option<Vec<Fee>>,
 }
 
 impl fmt::Debug for Rule {
@@ -205,7 +217,24 @@ impl Rule {
         };
         let when = compile(Field::When, &when)?;
         let fee = compile(Field::Fee, &fee)?;
-        Ok(Self { name, when, fee })
+        Ok(Self {
+            name,
+            when,
+            fee,
+            constant_fees: None,
+        })
+    }
+
+    /// Evaluates the `fee` now if it names no variable. One that fails stays
+    /// unevaluated, so that it is reported like any other.
+    fn evaluate_constant_fee(&mut self, context: &Context) {
+        if self.fee.references().variables().is_empty() {
+            self.constant_fees = self
+                .fee
+                .execute(context)
+                .ok()
+                .and_then(|value| fee::fees_from_value(&value).ok());
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -278,7 +307,10 @@ impl RuleSet {
         let mut context = Context::with_env(env);
         fee::register_fee_functions(&mut context);
         for (name, list) in list_values(&lists) {
-            context.add_variable_from_value(name, list);
+            context.add_variable_as_val(name, list);
+        }
+        for rule in &mut rules {
+            rule.evaluate_constant_fee(&context);
         }
         Ok(Self {
             rules,
@@ -413,19 +445,22 @@ pub(crate) fn sample_app_data() -> AppData {
     }
 }
 
-/// Each list as the CEL list rules test with `in`, e.g.
-/// `order.sellToken in stablecoins`, hex members lowercased like the order
-/// view's. `in` scans a list; a member-to-`true` map would make it a key
-/// lookup if lists ever grow large.
-fn list_values(lists: &BTreeMap<String, Vec<String>>) -> Vec<(String, Value)> {
+/// Each list as a CEL map of its members to `true`, hex members lowercased
+/// like the order view's. `in`, e.g. `order.sellToken in stablecoins`, is
+/// then a key lookup; it would scan a CEL list.
+fn list_values(lists: &BTreeMap<String, Vec<String>>) -> Vec<(String, Box<dyn Val>)> {
     lists
         .iter()
         .map(|(name, members)| {
-            let members: Vec<String> = members
+            let members: HashMap<_, _> = members
                 .iter()
-                .map(|member| order_view::normalize(member))
+                .map(|member| {
+                    let present: Box<dyn Val> = Box::new(CelBool::from(true));
+                    (CelMapKey::from(order_view::normalize(member)), present)
+                })
                 .collect();
-            (name.clone(), Value::from(members))
+            let members: Box<dyn Val> = Box::new(CelMap::from(members));
+            (name.clone(), members)
         })
         .collect()
 }
@@ -472,7 +507,11 @@ mod tests {
         )]);
         let rules = RuleSet::new(RuleSetDefinition {
             lists,
-            rules: vec![rule("Lowercase", "tokens == ['0xabc', 'Acme']", "no_fee()")],
+            rules: vec![rule(
+                "Lowercase",
+                "'0xabc' in tokens && 'Acme' in tokens && size(tokens) == 2",
+                "no_fee()",
+            )],
             ..Default::default()
         })
         .unwrap();
@@ -483,6 +522,45 @@ mod tests {
             in_market: false,
         });
         assert_eq!(evaluation.matched.len(), 1);
+    }
+
+    #[test]
+    fn evaluates_once_only_a_fee_that_names_no_variable() {
+        let rules = RuleSet::new(RuleSetDefinition {
+            rules: vec![
+                rule("constant", "true", "[surplus(50, 98), volume(2)]"),
+                rule("reads the order", "true", "volume(order.inMarket ? 1 : 2)"),
+                rule("reads the time", "true", "volume(now > now ? 1 : 2)"),
+                rule("fails", "true", "volume(-1)"),
+            ],
+            ..Default::default()
+        })
+        .unwrap();
+        let constant: Vec<_> = rules
+            .rules()
+            .iter()
+            .map(|rule| rule.constant_fees.clone())
+            .collect();
+        let fees = vec![
+            Fee::Surplus {
+                factor: FeeFactor::try_from(0.5).unwrap(),
+                max_volume_factor: FeeFactor::try_from(0.0098).unwrap(),
+            },
+            Fee::Volume {
+                factor: FeeFactor::try_from(0.0002).unwrap(),
+            },
+        ];
+        assert_eq!(constant, [Some(fees.clone()), None, None, None]);
+
+        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+            order: &Order::default(),
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market: false,
+        });
+        assert_eq!(evaluation.matched[0].fees, fees);
+        assert_eq!(evaluation.skipped.len(), 1);
+        assert_eq!(evaluation.skipped[0].rule.name(), "fails");
     }
 
     #[test]

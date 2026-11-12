@@ -137,6 +137,10 @@ so a fee can depend on the order. A list stacks several fees. Every argument
 must land on a grid of 1e-6 of the volume (two decimal places for `bps`,
 four for a percent); a finer value is rejected, not rounded.
 
+A `fee` that names no variable, such as `[surplus(50, 98), volume(2)]`, is
+evaluated once when the rules load, not for each order. Where the evaluation
+cost matters, put the condition in `when` and keep the `fee` constant.
+
 - `volume(bps)` — `bps / 10000` of the volume.
 - `surplus(share, max_volume_bps)` — `share` percent of the surplus over the
   limit price, at most `max_volume_bps / 10000` of the volume.
@@ -176,8 +180,10 @@ when: order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"
 
 ### Lists
 
-Each entry of the lists map is a CEL list of strings under its name. `in`
-tests membership and the list macros work on it. Hex members are lowercased
+Each entry of the lists map is a set of strings under its name: a CEL map of
+each member to `true`, so `in` is a lookup whatever the size of the list.
+`size()` and the macros work on its members, in no set order; indexing and
+`+` do not. Hex members are lowercased
 when the set is built, as are the hex strings in `order`, so address case
 does not matter. The names `order`, `now` and `math` are reserved.
 

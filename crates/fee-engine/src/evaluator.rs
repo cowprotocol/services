@@ -120,9 +120,7 @@ impl<'r> Evaluator<'r> {
 
     fn scope(&self, order: OrderView) -> Context<'_, 'static> {
         let mut context = self.context.new_inner_scope();
-        context
-            .add_variable("order", order_view::order_view(order))
-            .expect("JSON converts to CEL values");
+        context.add_variable_as_val("order", order_view::order_view(order));
         context
     }
 
@@ -146,6 +144,9 @@ impl<'r> Evaluator<'r> {
     }
 
     fn fees(rule: &Rule, context: &Context<'_, '_>) -> Result<Vec<Fee>, (Field, RuleError)> {
+        if let Some(fees) = &rule.constant_fees {
+            return Ok(fees.clone());
+        }
         let value = rule
             .fee
             .execute(context)

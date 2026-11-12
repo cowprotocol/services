@@ -1,10 +1,10 @@
 //! The order's app data as a rule sees it.
 
 use {
-    super::{hex, number},
+    super::{hex, map, number, text},
     alloy_primitives::{Address, U256},
+    cel::common::value::Val,
     model::order::OrderUid,
-    serde_json::{Value, json},
 };
 
 /// The app data a rule can read. The host copies it from the protocol's
@@ -28,32 +28,48 @@ pub struct Flashloan {
 
 /// The app data under the app-data schema's names, typed like the rest of
 /// the view.
-pub(super) fn app_data_view(app_data: &AppData) -> Value {
-    json!({
-        "appCode": app_data.app_code,
-        "metadata": {
-            "signer": app_data.signer.map(|signer| hex(signer.as_slice())),
-            "replacedOrder": app_data.replaced_order.map(|uid| json!({ "uid": hex(&uid.0) })),
-            "flashloan": app_data.flashloan.as_ref().map(|flashloan| json!({
-                "liquidityProvider": hex(flashloan.liquidity_provider.as_slice()),
-                "protocolAdapter": hex(flashloan.protocol_adapter.as_slice()),
-                "receiver": hex(flashloan.receiver.as_slice()),
-                "token": hex(flashloan.token.as_slice()),
-                "amount": number(flashloan.amount),
-            })),
-        },
-    })
+pub(super) fn app_data_view(app_data: &AppData) -> Box<dyn Val> {
+    let address = |address: Address| text(hex(address.as_slice()));
+    map([
+        ("appCode", app_data.app_code.clone().and_then(text)),
+        (
+            "metadata",
+            Some(map([
+                ("signer", app_data.signer.and_then(address)),
+                (
+                    "replacedOrder",
+                    app_data
+                        .replaced_order
+                        .map(|uid| map([("uid", text(hex(&uid.0)))])),
+                ),
+                (
+                    "flashloan",
+                    app_data.flashloan.as_ref().map(|flashloan| {
+                        map([
+                            ("liquidityProvider", address(flashloan.liquidity_provider)),
+                            ("protocolAdapter", address(flashloan.protocol_adapter)),
+                            ("receiver", address(flashloan.receiver)),
+                            ("token", address(flashloan.token)),
+                            ("amount", number(flashloan.amount)),
+                        ])
+                    }),
+                ),
+            ])),
+        ),
+    ])
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy_primitives::address};
+    use {
+        super::*,
+        alloy_primitives::address,
+        serde_json::{Value, json},
+    };
 
-    /// The view as the order view holds it: no `null` fields.
+    /// The view as JSON.
     fn view(app_data: &AppData) -> Value {
-        let mut view = app_data_view(app_data);
-        crate::order_view::remove_nulls(&mut view);
-        view
+        crate::order_view::json(app_data_view(app_data).as_ref())
     }
 
     #[test]
