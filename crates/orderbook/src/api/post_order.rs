@@ -251,6 +251,17 @@ impl IntoResponse for ValidationErrorWrapper {
                 ),
             )
                 .into_response(),
+            ValidationError::InsufficientValidToForCanonicalBatch => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "InsufficientValidToForCanonicalBatch",
+                    "Orders with enableWaitForCow only trade in canonical batches, and validTo \
+                     ends before this order can take part in its first one. It must be at least \
+                     one batch interval plus the minimum order validity after the first batch \
+                     time; see /api/v1/canonical_batch_schedule.",
+                ),
+            )
+                .into_response(),
             ValidationError::FastPathLimitTooTight => (
                 StatusCode::BAD_REQUEST,
                 error(

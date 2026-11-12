@@ -26,17 +26,18 @@ use {
     alloy::primitives::B256,
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
-    database::order_events::OrderEventLabel,
+    database::order_events::{OrderEventLabel, OrderFilterReason},
     eth_domain_types::Address,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
     futures::{StreamExt, TryFutureExt},
     itertools::Itertools,
+    model::time::now_in_epoch_seconds,
     num::ToPrimitive,
     rand::seq::SliceRandom,
-    shared::token_list::AutoUpdatingTokenList,
+    shared::{canonical_batch, token_list::AutoUpdatingTokenList},
     std::{
         collections::{HashMap, HashSet},
-        num::NonZeroUsize,
+        num::{NonZeroU32, NonZeroUsize},
         sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
@@ -59,11 +60,23 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
     pub auction_delta_checkpoint_interval: Duration,
+    /// When canonical batches start. Orders placed with `enableWaitForCow`
+    /// only trade in canonical batches. `None` turns canonical batches off.
+    pub canonical_batches: Option<canonical_batch::Schedule>,
 }
 
 impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
     fn from(value: configs::autopilot::run_loop::RunLoopConfig) -> Self {
+        let canonical_batches = value.canonical_batch_interval.map(|interval| {
+            u32::try_from(interval.as_secs())
+                .ok()
+                .and_then(NonZeroU32::new)
+                .zip(u32::try_from(value.canonical_batch_cutoff.as_secs()).ok())
+                .and_then(|(interval, cutoff)| canonical_batch::Schedule::new(interval, cutoff))
+                .expect("canonical batch settings are validated when the config is loaded")
+        });
         Self {
+            canonical_batches,
             submission_deadline: value.submission_deadline,
             max_settlement_transaction_wait: value.max_settlement_transaction_wait,
             min_solve_time: value.min_solve_time,
@@ -209,6 +222,12 @@ impl RunLoop {
     pub async fn run_forever(self, mut control: ShutdownController) {
         let mut last_auction = None;
         let mut last_block = None;
+        // The batch time of the last canonical batch this instance ran. Kept
+        // in memory only: after a restart or a change of leader the first
+        // auction is a canonical batch, which can repeat a batch the previous
+        // leader already ran in the same period.
+        let mut last_canonical_batch = None;
+        let mut canonical_batch_schedule_published = false;
 
         let self_arc = Arc::new(self);
         let leader = if self_arc.config.enable_leader_lock {
@@ -226,11 +245,29 @@ impl RunLoop {
         while !control.should_shutdown() {
             leader_lock_tracker.try_acquire().await;
 
+            // The leader publishes the schedule it runs canonical batches on,
+            // so the orderbook can validate wait-for-CoW orders and tell the
+            // frontend when the next batch starts. Followers don't write, so
+            // during a rolling deploy the published schedule switches when the
+            // new version starts leading, which is also when batches switch.
+            if leader_lock_tracker.just_stepped_up() {
+                canonical_batch_schedule_published = false;
+            }
+            if leader_lock_tracker.is_leader() && !canonical_batch_schedule_published {
+                canonical_batch_schedule_published =
+                    self_arc.publish_canonical_batch_schedule().await;
+            }
+
             // Wait for notify about some significant state change (e.g. new
             // order, new block). We only update the cache afterwards to update
             // to the most recent state.
             self_arc.wake_notify.notified().await;
             let start_block = self_arc.wait_until_auction_start(&last_block).await;
+            // Read the clock before the caches read the database. A canonical
+            // batch only runs once the clock has reached its batch time, so
+            // every order created more than the cutoff before that time has
+            // been committed or indexed by the time the caches read it.
+            let now = now_in_epoch_seconds();
             self_arc
                 .update_caches(start_block, leader_lock_tracker.is_leader())
                 .await;
@@ -251,10 +288,24 @@ impl RunLoop {
                 continue;
             }
 
+            let canonical_batch = self_arc
+                .config
+                .canonical_batches
+                .as_ref()
+                .and_then(|schedule| canonical_batch_to_run(schedule, now, last_canonical_batch));
             if let Some(auction) = self_arc
-                .next_auction(start_block, &mut last_auction, &mut last_block)
+                .next_auction(
+                    start_block,
+                    canonical_batch,
+                    now,
+                    &mut last_auction,
+                    &mut last_block,
+                )
                 .await
             {
+                if canonical_batch.is_some() {
+                    last_canonical_batch = canonical_batch;
+                }
                 let auction_id = auction.id;
                 self_arc
                     .single_run(&auction, start_block)
@@ -336,16 +387,19 @@ impl RunLoop {
     }
 
     /// Sleeps until the next auction is supposed to start, builds it and
-    /// returns it.
+    /// returns it. With `canonical_batch` set, the auction is the canonical
+    /// batch for that batch time; `now` is when the run loop decided that.
     #[instrument(skip_all)]
     async fn next_auction(
         &self,
         start_block: BlockInfo,
+        canonical_batch: Option<u32>,
+        now: u32,
         prev_auction: &mut Option<Arc<domain::Auction>>,
         prev_block: &mut Option<B256>,
     ) -> Option<Arc<domain::Auction>> {
         // wait for appropriate time to start building the auction
-        let auction = self.cut_auction().await?;
+        let (auction, canonical_batch_orders) = self.cut_auction(canonical_batch).await?;
         tracing::trace!(auction_id = ?auction.id, "auction cut");
 
         // Only run the solvers if the auction or block has changed.
@@ -355,17 +409,47 @@ impl RunLoop {
             return None;
         }
 
+        if let Some(batch_time) = canonical_batch {
+            Metrics::canonical_batch(batch_time, now, canonical_batch_orders);
+        }
         observe::log_auction_delta(previous_auction.as_deref(), &auction, &start_block);
         self.probes.liveness.auction();
         Metrics::auction_ready(start_block.observed_at);
         Some(auction)
     }
 
-    async fn cut_auction(&self) -> Option<Arc<domain::Auction>> {
-        let Some(auction) = self.solvable_orders_cache.current_auction().await else {
+    /// Builds the auction from the solvable orders cache. With
+    /// `canonical_batch` set, it also contains the wait-for-CoW orders taking
+    /// part in that canonical batch. Returns the auction and the number of
+    /// wait-for-CoW orders in it.
+    async fn cut_auction(
+        &self,
+        canonical_batch: Option<u32>,
+    ) -> Option<(Arc<domain::Auction>, usize)> {
+        let Some(current) = self
+            .solvable_orders_cache
+            .current_auction(canonical_batch)
+            .await
+        else {
             tracing::debug!("no current auction");
             return None;
         };
+        // Wait-for-CoW orders left out of this auction keep the status
+        // `scheduled` until their canonical batch. These events are stored
+        // here and not by the cache, which can't know whether the auction is
+        // a canonical batch: an order would otherwise get this event and
+        // `Ready` at almost the same time, from two background tasks that can
+        // finish in either order.
+        if !current.waiting.is_empty() {
+            self.persistence.store_order_events_owned(
+                current.waiting,
+                std::convert::identity,
+                OrderEventLabel::Filtered,
+                Some(OrderFilterReason::WaitingForCanonicalBatch),
+            );
+        }
+        let canonical_batch_orders = current.canonical_batch_orders;
+        let auction = current.auction;
         let id = self
             .persistence
             .get_next_auction_id()
@@ -385,13 +469,37 @@ impl RunLoop {
             tracing::debug!("skipping empty auction");
             return None;
         }
-        Some(Arc::new(domain::Auction {
+        let auction = Arc::new(domain::Auction {
             id,
             block: auction.block,
             orders: auction.orders,
             prices: auction.prices,
             surplus_capturing_jit_order_owners: auction.surplus_capturing_jit_order_owners,
-        }))
+        });
+        Some((auction, canonical_batch_orders))
+    }
+
+    /// Publishes the canonical batch schedule this instance runs on, or
+    /// removes it when canonical batches are off. Returns whether that
+    /// worked; if not, the run loop tries again in its next iteration.
+    async fn publish_canonical_batch_schedule(&self) -> bool {
+        match self
+            .persistence
+            .publish_canonical_batch_schedule(self.config.canonical_batches)
+            .await
+        {
+            Ok(()) => {
+                tracing::info!(
+                    schedule = ?self.config.canonical_batches,
+                    "published canonical batch schedule"
+                );
+                true
+            }
+            Err(err) => {
+                tracing::error!(?err, "failed to publish canonical batch schedule");
+                false
+            }
+        }
     }
 
     #[instrument(skip_all)]
@@ -767,6 +875,19 @@ impl RunLoop {
     }
 }
 
+/// Returns the batch time of the canonical batch the next auction has to be,
+/// if any: the latest batch time at or before `now`, unless this instance
+/// already ran the batch for it. Several batch times that passed without an
+/// auction merge into one batch.
+fn canonical_batch_to_run(
+    schedule: &canonical_batch::Schedule,
+    now: u32,
+    last_run: Option<u32>,
+) -> Option<u32> {
+    let latest = schedule.latest_batch(now);
+    (last_run < Some(latest)).then_some(latest)
+}
+
 /// Picks a `/solve` deadline that ends shortly before a block gets
 /// mined to maximize the chance that solutions get mined instantly.
 /// If the auction needs to cross block boundaries solvers just get
@@ -941,6 +1062,14 @@ struct Metrics {
         )
     )]
     solve_request_body_size: prometheus::HistogramVec,
+
+    /// Seconds between a canonical batch time and the moment the run loop
+    /// started building the auction for that batch.
+    #[metric(buckets(0, 1, 2, 4, 6, 8, 12, 16, 24, 36, 48, 60, 120, 300))]
+    canonical_batch_delay: prometheus::Histogram,
+
+    /// Number of wait-for-CoW orders in the latest canonical batch.
+    canonical_batch_orders: prometheus::IntGauge,
 }
 
 impl Metrics {
@@ -950,6 +1079,15 @@ impl Metrics {
 
     fn auction(auction_id: domain::auction::Id) {
         Self::get().auction.set(auction_id)
+    }
+
+    fn canonical_batch(batch_time: u32, now: u32, orders: usize) {
+        let delay = now.saturating_sub(batch_time);
+        tracing::info!(batch_time, orders, delay, "canonical batch");
+        Self::get().canonical_batch_delay.observe(f64::from(delay));
+        Self::get()
+            .canonical_batch_orders
+            .set(i64::try_from(orders).unwrap_or(i64::MAX));
     }
 
     fn solve_ok(driver: &infra::Driver, elapsed: Duration) {
@@ -1201,6 +1339,23 @@ pub mod observe {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_batch_to_run_runs_each_batch_once() {
+        let schedule = canonical_batch::Schedule::new(NonZeroU32::new(60).unwrap(), 5).unwrap();
+        let to_run = |now, last_run| canonical_batch_to_run(&schedule, now, last_run);
+
+        // The first auction after startup is a canonical batch, for the
+        // latest batch time.
+        assert_eq!(to_run(130, None), Some(120));
+        // Once it ran, later auctions in the same period are regular ones.
+        assert_eq!(to_run(130, Some(120)), None);
+        assert_eq!(to_run(179, Some(120)), None);
+        // The next batch time starts the next batch.
+        assert_eq!(to_run(180, Some(120)), Some(180));
+        // Batch times that passed without an auction merge into one batch.
+        assert_eq!(to_run(400, Some(120)), Some(360));
+    }
 
     fn block_with_timestamp(unix_timestamp: u64) -> BlockInfo {
         BlockInfo {

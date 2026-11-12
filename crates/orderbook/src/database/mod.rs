@@ -1,5 +1,6 @@
 pub mod app_data;
 pub mod auctions;
+pub mod canonical_batch_schedule;
 pub mod debug_report;
 mod fee_policies;
 pub mod orders;

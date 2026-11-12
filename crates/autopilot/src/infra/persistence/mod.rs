@@ -1039,6 +1039,34 @@ impl Persistence {
             .collect())
     }
 
+    /// Publishes the canonical batch schedule, so the orderbook can validate
+    /// wait-for-CoW orders and tell the frontend when the next batch starts.
+    /// `None` removes it, which tells the orderbook canonical batches are off.
+    #[instrument(skip_all)]
+    pub async fn publish_canonical_batch_schedule(
+        &self,
+        schedule: Option<shared::canonical_batch::Schedule>,
+    ) -> anyhow::Result<()> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["publish_canonical_batch_schedule"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        match schedule {
+            Some(schedule) => {
+                let schedule = database::canonical_batch_schedule::Schedule {
+                    interval_seconds: i32::try_from(schedule.interval())
+                        .context("canonical batch interval does not fit in i32")?,
+                    cutoff_seconds: i32::try_from(schedule.cutoff())
+                        .context("canonical batch cutoff does not fit in i32")?,
+                };
+                database::canonical_batch_schedule::upsert(&mut ex, schedule).await?;
+            }
+            None => database::canonical_batch_schedule::delete(&mut ex).await?,
+        }
+        Ok(())
+    }
+
     /// Sets `orders.valid_from` for a fast-path order the handler has
     /// classified. Writing this column is what makes the order eligible
     /// for the solvable-orders cache — either immediately (`now`, when

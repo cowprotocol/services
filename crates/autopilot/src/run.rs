@@ -518,6 +518,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     let surplus_capturing_jit_order_owners =
         Arc::new(config.surplus_capturing_jit_order_owners.clone());
 
+    let run_loop_config = run_loop::Config::from(config.run_loop);
+
     let solvable_orders_cache = SolvableOrdersCache::new(
         config.min_order_validity_period,
         persistence.clone(),
@@ -532,6 +534,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         config.native_price_timeout,
         *eth.contracts().settlement().address(),
         config.disable_order_balance_filter,
+        run_loop_config.canonical_batches,
     );
 
     let liveness = Arc::new(Liveness::new(config.max_auction_age));
@@ -639,8 +642,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
         maintenance.add_ethflow_indexing(onchain_order_indexer, refund_event_handler);
     }
-
-    let run_loop_config = run_loop::Config::from(config.run_loop);
 
     let shared_origins =
         &infra::solvers::shared_origins(config.drivers.iter().map(|driver| &driver.url));

@@ -37,6 +37,20 @@ Contains only the current auction to decouple auction creation in the `autopilot
 Indexes:
 - PRIMARY KEY: btree(`id`)
 
+### canonical\_batch\_schedule
+
+The canonical batch schedule the `autopilot` uses. Orders placed with `enableWaitForCow` only trade in canonical batches: auctions that start at multiples of `interval_seconds` since the Unix epoch. The `autopilot` leader writes this row when it starts leading, and deletes it when canonical batches are off. The `orderbook` reads it to validate wait-for-CoW orders and to tell the frontend when the next batch starts. At most one row.
+
+ Column            | Type        | Nullable | Details
+-------------------|-------------|----------|--------
+ singleton         | bool        | not null | always `true`; keeps the table to one row
+ interval\_seconds | integer     | not null | seconds between two canonical batch times
+ cutoff\_seconds   | integer     | not null | orders created less than this many seconds before a batch time join the batch after it; shorter than `interval_seconds`
+ updated\_at       | timestamptz | not null | when the row was last written
+
+Indexes:
+- PRIMARY KEY: btree(`singleton`)
+
 ### competition\_auctions
 
 Contains all auctions for which a valid solver competition exists.
@@ -575,6 +589,7 @@ The `pool-indexer` service uses its own per-network database, not these shared D
  insufficient\_balance  | owner does not have enough sell token balance or allowance
  dust\_order            | order value is too small to be worth settling
  missing\_native\_price | no native price available for the order's tokens
+ waiting\_for\_canonical\_batch | wait-for-CoW order left out of an auction that isn't a canonical batch
 
 #### orderkind
 

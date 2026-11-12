@@ -1,5 +1,6 @@
 use {
     crate::{
+        canonical_batch,
         fee::OrderbookFees,
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
@@ -331,6 +332,9 @@ pub enum ValidationError {
     /// `valid_from` leaves too small a window before `valid_to` for the order
     /// to be settled.
     InvalidValidFrom,
+    /// A wait-for-CoW order only trades in canonical batches, and `valid_to`
+    /// would end before the order can take part in its first one.
+    InsufficientValidToForCanonicalBatch,
     /// The order opts into the fast path but the signed limit price doesn't
     /// leave room for the configured protocol and partner volume fees.
     /// Applying those fees would push the effective execution price past
@@ -452,6 +456,10 @@ pub struct OrderValidator {
     /// The volume fees the fast-path limit-price check leaves room for.
     volume_fees: Arc<dyn OrderbookFees>,
     wrapper_validator: order_validation::wrappers::Validator,
+    /// The canonical batch schedule the autopilot published. Used to reject
+    /// wait-for-CoW orders that would expire before their first canonical
+    /// batch. `None` skips that check.
+    canonical_batch_schedule: Option<Arc<dyn canonical_batch::ScheduleReading>>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -533,7 +541,40 @@ impl OrderValidator {
             same_tokens_policy,
             volume_fees,
             wrapper_validator,
+            canonical_batch_schedule: None,
         }
+    }
+
+    /// Validates wait-for-CoW orders against the canonical batch schedule
+    /// `schedule` reads.
+    pub fn with_canonical_batch_schedule(
+        mut self,
+        schedule: Arc<dyn canonical_batch::ScheduleReading>,
+    ) -> Self {
+        self.canonical_batch_schedule = Some(schedule);
+        self
+    }
+
+    /// A wait-for-CoW order only trades in canonical batches, so it has to
+    /// stay valid long enough to take part in its first one. That batch can
+    /// start up to an interval late, because it waits for a new block and
+    /// for any auction still running, and the autopilot drops orders with
+    /// less than the minimum validity period left when it reads them. So
+    /// require `valid_to` to be at least one interval plus the minimum
+    /// validity period after the first batch time.
+    fn check_valid_through_first_canonical_batch(
+        &self,
+        order: &OrderData,
+        schedule: &canonical_batch::Schedule,
+        created: u32,
+    ) -> Result<(), ValidationError> {
+        let required = u64::from(schedule.first_batch(created))
+            + u64::from(schedule.interval())
+            + self.validity_configuration.min.as_secs();
+        if u64::from(order.valid_to) < required {
+            return Err(ValidationError::InsufficientValidToForCanonicalBatch);
+        }
+        Ok(())
     }
 
     /// Validates that a fast-path order's signed sell/buy amounts leave
@@ -1119,10 +1160,26 @@ impl OrderValidating for OrderValidator {
             ExecutionMode::WaitForCow
         );
 
+        // Read the schedule before taking the creation date: the canonical
+        // batch cutoff has to cover the time between the creation date and
+        // the moment the order is stored, so keep that gap as short as it is
+        // for every other order.
+        let canonical_batch_schedule = match &self.canonical_batch_schedule {
+            Some(reader) if wait_for_cow => {
+                reader.schedule().await.map_err(ValidationError::Other)?
+            }
+            _ => None,
+        };
+        let creation_date = chrono::offset::Utc::now();
+        if let Some(schedule) = &canonical_batch_schedule {
+            let created = u32::try_from(creation_date.timestamp()).unwrap_or(u32::MAX);
+            self.check_valid_through_first_canonical_batch(&data, schedule, created)?;
+        }
+
         let order = Order {
             metadata: OrderMetadata {
                 owner,
-                creation_date: chrono::offset::Utc::now(),
+                creation_date,
                 uid,
                 settlement_contract,
                 full_app_data: match order.app_data {
@@ -1976,6 +2033,84 @@ mod tests {
                 Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
             );
         }
+
+        // Wait-for-CoW orders only trade in canonical batches, so they have to
+        // stay valid through their first one: at least one interval plus the
+        // minimum validity (60s here) after their first batch time.
+        struct FixedSchedule(Option<canonical_batch::Schedule>);
+        #[async_trait::async_trait]
+        impl canonical_batch::ScheduleReading for FixedSchedule {
+            async fn schedule(&self) -> anyhow::Result<Option<canonical_batch::Schedule>> {
+                Ok(self.0)
+            }
+        }
+        let schedule =
+            canonical_batch::Schedule::new(std::num::NonZeroU32::new(60).unwrap(), 5).unwrap();
+        let wait_for_cow = |valid_to: u32| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableWaitForCow": true } }).to_string(),
+            },
+            ..plain(valid_to)
+        };
+        let with_schedule = |schedule| {
+            validator
+                .clone()
+                .with_canonical_batch_schedule(Arc::new(FixedSchedule(schedule)))
+        };
+        let validate_with = async |validator: &OrderValidator, creation| {
+            validator
+                .validate_and_construct_order(
+                    creation,
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+        let published = with_schedule(Some(schedule));
+
+        // The first batch is more than 5s and at most 65s away, so the order
+        // needs more than 125s and at most 185s of validity, whatever the
+        // current time.
+        std::assert_matches!(
+            validate_with(&published, wait_for_cow(now + 90)).await,
+            Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+        let (order, _) = validate_with(&published, wait_for_cow(now + 200))
+            .await
+            .unwrap();
+        assert!(order.metadata.wait_for_cow);
+        // Regular orders aren't affected by the schedule.
+        validate_with(&published, plain(now + 90)).await.unwrap();
+        // Without a published schedule, canonical batches are off and there's
+        // nothing to check.
+        validate_with(&with_schedule(None), wait_for_cow(now + 90))
+            .await
+            .unwrap();
+
+        // The exact limit, for a fixed creation time.
+        let check = |created, valid_to| {
+            published.check_valid_through_first_canonical_batch(
+                &OrderData {
+                    valid_to,
+                    ..Default::default()
+                },
+                &schedule,
+                created,
+            )
+        };
+        // Created at 100: the first batch is at 120.
+        check(100, 240).unwrap();
+        std::assert_matches!(
+            check(100, 239),
+            Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+        // Created within the cutoff before 120: the first batch is at 180.
+        std::assert_matches!(
+            check(115, 240),
+            Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+        check(115, 300).unwrap();
     }
 
     #[tokio::test]

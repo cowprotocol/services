@@ -46,6 +46,7 @@ pub enum OrderFilterReason {
     InsufficientBalance,
     DustOrder,
     MissingNativePrice,
+    WaitingForCanonicalBatch,
 }
 
 impl OrderFilterReason {
@@ -58,6 +59,7 @@ impl OrderFilterReason {
             Self::InsufficientBalance => "insufficient_balance",
             Self::DustOrder => "dust_order",
             Self::MissingNativePrice => "missing_native_price",
+            Self::WaitingForCanonicalBatch => "waiting_for_canonical_batch",
         }
     }
 }
@@ -248,6 +250,30 @@ mod tests {
         assert_eq!(
             latest.timestamp.timestamp_micros(),
             event_b.timestamp.timestamp_micros()
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_waiting_for_canonical_batch_reason_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut ex = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut ex).await.unwrap();
+
+        let uid = ByteArray([1; 56]);
+        let event = OrderEvent {
+            order_uid: uid,
+            timestamp: Utc::now(),
+            label: OrderEventLabel::Filtered,
+            reason: Some(OrderFilterReason::WaitingForCanonicalBatch),
+        };
+        insert_order_event(&mut ex, &event).await.unwrap();
+
+        let latest = get_latest(&mut ex, &uid).await.unwrap().unwrap();
+        assert_eq!(latest.label, OrderEventLabel::Filtered);
+        assert_eq!(
+            latest.reason,
+            Some(OrderFilterReason::WaitingForCanonicalBatch)
         );
     }
 
