@@ -67,6 +67,42 @@ impl UpcomingProtocolFees {
 
 pub type ProtocolFeeExemptAddresses = HashSet<Address>;
 
+/// Where the autopilot's fee policies come from. Only here while the legacy
+/// source and the fee engine both exist; goes away with the legacy source.
+pub trait AutopilotFees: Send + Sync {
+    /// The fee policies of an order in an auction, protocol then partner.
+    fn auction_fees(
+        &self,
+        order: &boundary::Order,
+        quote: Option<&domain::Quote>,
+        surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
+    ) -> Vec<PolicyWithOrigin>;
+
+    /// The volume fee policies of a fast-path order.
+    fn fast_path_volume_fees(
+        &self,
+        order: &boundary::Order,
+        surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
+    ) -> Vec<PolicyWithOrigin>;
+}
+
+/// In case there is no quote, we assume 0 buy amount so that the order
+/// ends up being considered out of market price.
+pub(crate) fn reference_quote(
+    order: &boundary::Order,
+    quote: Option<&domain::Quote>,
+) -> domain::Quote {
+    quote.cloned().unwrap_or(domain::Quote {
+        order_uid: order.metadata.uid.into(),
+        sell_amount: order.data.sell_amount.into(),
+        buy_amount: U256::ZERO.into(),
+        fee: order.data.fee_amount.into(),
+        solver: Address::ZERO,
+    })
+}
+
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
@@ -201,16 +237,9 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: Option<&domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
     ) -> Vec<PolicyWithOrigin> {
-        // In case there is no quote, we assume 0 buy amount so that the order
-        // ends up being considered out of market price.
-        let reference_quote = quote.cloned().unwrap_or(domain::Quote {
-            order_uid: order.metadata.uid.into(),
-            sell_amount: order.data.sell_amount.into(),
-            buy_amount: U256::ZERO.into(),
-            fee: order.data.fee_amount.into(),
-            solver: Address::ZERO,
-        });
+        let reference_quote = reference_quote(order, quote);
 
         let partner_fee =
             Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
@@ -219,7 +248,7 @@ impl ProtocolFees {
             return partner_fee;
         }
 
-        self.apply_policies(order, &reference_quote, partner_fee)
+        self.apply_policies(order, &reference_quote, partner_fee, now)
     }
 
     fn apply_policies(
@@ -227,8 +256,8 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: &domain::Quote,
         partner_fees: Vec<PolicyWithOrigin>,
+        now: DateTime<Utc>,
     ) -> Vec<PolicyWithOrigin> {
-        let now = Utc::now();
         let fee_policies = self
             .upcoming_fee_policies
             .as_ref()
@@ -274,6 +303,30 @@ impl ProtocolFees {
             (false, FeePolicyOrderClass::Market) => Some(&protocol_fee.policy),
             _ => None,
         }
+    }
+}
+
+impl AutopilotFees for ProtocolFees {
+    fn auction_fees(
+        &self,
+        order: &boundary::Order,
+        quote: Option<&domain::Quote>,
+        surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
+    ) -> Vec<PolicyWithOrigin> {
+        self.apply(order, quote, surplus_capturing_jit_order_owners, now)
+    }
+
+    fn fast_path_volume_fees(
+        &self,
+        order: &boundary::Order,
+        surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
+    ) -> Vec<PolicyWithOrigin> {
+        self.apply(order, None, surplus_capturing_jit_order_owners, now)
+            .into_iter()
+            .filter(|fee| matches!(fee.policy, Policy::Volume { .. }))
+            .collect()
     }
 }
 
@@ -339,7 +392,7 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn from_domain(value: &domain::Quote) -> Self {
+    pub(crate) fn from_domain(value: &domain::Quote) -> Self {
         Self {
             sell_amount: value.sell_amount.0,
             buy_amount: value.buy_amount.0,

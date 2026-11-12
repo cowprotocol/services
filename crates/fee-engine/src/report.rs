@@ -63,7 +63,7 @@ impl Pending {
                 count,
                 group,
                 example,
-                "fee engine disagreed with the legacy volume fees; served the legacy ones"
+                "fee engine disagreed with the legacy fees; served the legacy ones"
             );
         }
         for (skipped, count) in self.skipped {
