@@ -64,7 +64,9 @@ impl Observer {
         // On mainnet it's common to have multiple settlements in the
         // same block. So even if we process every block immediately,
         // we should still post-process multiple settlements concurrently.
-        const MAX_CONCURRENCY: usize = 10;
+        // Kept well below the default DB pool size of 10, so post-processing
+        // leaves connections for the run loop.
+        const MAX_CONCURRENCY: usize = 4;
         futures::stream::iter(settlements)
             .for_each_concurrent(MAX_CONCURRENCY, |settlement| async move {
                 tracing::debug!(tx = ?settlement.transaction, "start post processing of settlement");

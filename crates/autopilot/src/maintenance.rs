@@ -31,6 +31,11 @@ use {
     tracing::{Instrument, instrument},
 };
 
+/// Upper bound for one settlement attribution pass, so a slow pass can't delay
+/// indexing of the next block. Settlements the pass doesn't reach stay
+/// unprocessed and the next pass picks them up.
+const SETTLEMENT_ATTRIBUTION_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Component to sync with the maintenance logic that runs in a background task.
 /// This allows us to run the maintenance logic as soon as we see a new block
 /// while still making the autopilot run loop only wait for updates that are
@@ -234,9 +239,17 @@ impl Maintenance {
             ),
             Self::timed_future(
                 "settlement_attribution",
-                self.settlement_observer
-                    .post_process_outstanding_settlement_transactions()
-                    .map(|_| Ok(()))
+                tokio::time::timeout(
+                    SETTLEMENT_ATTRIBUTION_TIMEOUT,
+                    self.settlement_observer
+                        .post_process_outstanding_settlement_transactions(),
+                )
+                .map(|result| {
+                    if result.is_err() {
+                        tracing::warn!("settlement attribution timed out");
+                    }
+                    Ok(())
+                })
             )
         )?;
 
