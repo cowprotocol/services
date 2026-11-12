@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        domain::{auction::Order, cycle::SolanaCycle},
+        domain::{auction::Order, cycle::SolanaCycle, fee::ProtocolFees},
         infra::{db, order_events, prices::NativePrices},
         run_loop::{AuctionProvider, NextAuction},
     },
@@ -35,6 +35,8 @@ pub struct DbAuctionProvider {
     /// The settlement state PDA: the delegate a sell token account must
     /// approve for the settlement to pull from it.
     state_pda: Pubkey,
+    /// The protocol fee policies each cut attaches to its orders.
+    protocol_fees: ProtocolFees,
     /// The verdicts on the mints the cuts read so far.
     mints: MintVerdicts,
     /// Block height of the last successful lookup.
@@ -48,6 +50,7 @@ impl DbAuctionProvider {
         max_indexer_lag: u64,
         prices: NativePrices,
         state_pda: Pubkey,
+        protocol_fees: ProtocolFees,
     ) -> Self {
         Self {
             pool,
@@ -55,6 +58,7 @@ impl DbAuctionProvider {
             max_indexer_lag,
             prices,
             state_pda,
+            protocol_fees,
             mints: MintVerdicts::default(),
             last_block_height: Mutex::default(),
         }
@@ -341,6 +345,14 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         if orders.is_empty() {
             return NextAuction::Empty;
         }
+        let cut_time = chrono::Utc::now();
+        let orders = orders
+            .into_iter()
+            .map(|mut order| {
+                order.protocol_fees = self.protocol_fees.apply(&order, cut_time);
+                order
+            })
+            .collect();
         let mut auction = crate::domain::auction::Auction {
             id: 0,
             orders,
@@ -612,6 +624,8 @@ mod tests {
             executed: 0,
             creation: None,
             sell_balance: None,
+            quote: None,
+            protocol_fees: Vec::new(),
         }
     }
 
@@ -624,6 +638,7 @@ mod tests {
             150,
             NativePrices::seeded([]),
             Pubkey::new_from_array(crate::tests::STATE_PDA),
+            ProtocolFees::default(),
         )
     }
 

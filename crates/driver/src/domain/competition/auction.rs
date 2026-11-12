@@ -43,6 +43,8 @@ pub enum Kind {
         /// Whether the quote opted into fast-path (out-of-competition)
         /// execution.
         fast_path: bool,
+        /// The price quality the quote was requested with.
+        price_quality: crate::domain::quote::PriceQuality,
     },
 }
 
@@ -103,29 +105,9 @@ impl Auction {
         }
     }
 
-    /// The id of the quote this auction computes, or [`None`] if it is a
-    /// competition auction.
-    pub fn quote_id(&self) -> Option<crate::domain::quote::Id> {
-        match self.id {
-            Kind::Competition(_) => None,
-            Kind::Quote { id, .. } => Some(id),
-        }
-    }
-
     /// Whether this auction only computes a quote.
     pub fn is_quote(&self) -> bool {
         matches!(self.id, Kind::Quote { .. })
-    }
-
-    /// Whether this is a fast-path quote.
-    pub fn fast_path(&self) -> bool {
-        matches!(
-            self.id,
-            Kind::Quote {
-                fast_path: true,
-                ..
-            }
-        )
     }
 
     /// The orders for the auction.

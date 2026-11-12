@@ -71,12 +71,13 @@ pub struct Settlement {
 /// [`Settlement::resolve_accounts`]: the setup accounts the settlement
 /// transaction requires.
 ///
-/// The transaction creates the missing setup accounts (buy-mint buffer PDAs,
-/// the payer's sell-mint ATAs and its wSOL ATA for native SOL buys, the
-/// orders' buy-mint ATAs), then runs `BeginSettle` (pulls sell tokens into the
-/// payer's sell ATAs), the solver interactions, the funding of the native SOL
-/// buffer for native SOL buys, and `FinalizeSettle` (pushes buy tokens out of
-/// the buy-mint buffer PDAs and native SOL out of the native SOL buffer). It
+/// The transaction creates the missing setup accounts (buffer PDAs, the
+/// payer's sell-mint ATAs and its wSOL ATA for native SOL buys, the orders'
+/// buy-mint ATAs), then runs `BeginSettle` (pulls sell tokens into the payer's
+/// sell ATAs and the buy orders' protocol fees into their sell-mint buffers),
+/// the solver interactions, the funding of the native SOL buffer for native
+/// SOL buys, and `FinalizeSettle` (pushes buy tokens out of the buy-mint
+/// buffer PDAs and native SOL out of the native SOL buffer). It
 /// is a v1 transaction: no lookup tables, and its compute budget (the
 /// solution's optional unit limit and the driver's priority fee) in the
 /// message config.
@@ -208,18 +209,27 @@ impl Settlement {
     }
 
     /// The buffer PDAs and payer ATAs the settlement needs: a buffer per
-    /// token buy mint, a payer ATA per sell mint, and the payer's wSOL ATA when
-    /// an order buys native SOL.
+    /// token buy mint and per sell mint a buy order pays a protocol fee in, a
+    /// payer ATA per sell mint, and the payer's wSOL ATA when an order buys
+    /// native SOL.
     fn setup_accounts(
         &self,
         payer: Pubkey,
         token_programs: &TokenPrograms,
     ) -> Result<(Vec<SetupAccount>, Vec<SetupAccount>), ResolveError> {
-        let buffers = self
+        let buy_buffers = self
             .orders
             .iter()
             .filter(|order| !order.buys_native_sol())
-            .map(|order| SetupAccount::new_buffer(order.buy_token, self.program_id))
+            .map(|order| order.buy_token);
+        let fee_buffers = self
+            .orders
+            .iter()
+            .filter(|order| order.side == Side::Buy && protocol_fee(order, &self.solution) > 0)
+            .map(|order| order.sell_token);
+        let buffers = buy_buffers
+            .chain(fee_buffers)
+            .map(|mint| SetupAccount::new_buffer(mint, self.program_id))
             .collect();
         let wsol = self
             .orders
@@ -266,7 +276,14 @@ impl ResolvedSettlement {
                 // moves.
                 let checked_push = !order.buys_native_sol()
                     && transfer_checked(self.token_programs.get(order.buy_token)?);
-                SettlementOrder::new(order, &payer, amounts, sell_program, checked_push)
+                SettlementOrder::new(
+                    order,
+                    &payer,
+                    &self.settlement.program_id,
+                    amounts,
+                    sell_program,
+                    checked_push,
+                )
             })
             .collect::<Result<_, Error>>()?;
         // The program takes the orders strictly increasing by order PDA and
@@ -626,10 +643,13 @@ impl TryFrom<&Order> for OrderIntent {
     }
 }
 
-/// The executed sell and buy amounts for one order.
+/// The executed sell and buy amounts for one order, and the protocol fee
+/// inside them: in the buy amount of a sell order, in the sell amount of a buy
+/// order.
 struct ExecutedAmounts {
     sell: u64,
     buy: u64,
+    protocol_fee: u64,
 }
 
 fn dedup_orders(orders: &mut Vec<Order>) {
@@ -705,6 +725,12 @@ fn validate_orders(
         if !respects_limit(order, amounts.sell, amounts.buy) {
             return Err(Error::LimitPriceViolated(order.uid));
         }
+
+        // A buy order's protocol fee is pulled out of its executed sell
+        // amount, so it must fit in there.
+        if order.side == Side::Buy && amounts.protocol_fee > amounts.sell {
+            return Err(Error::ProtocolFeeExceedsSell(order.uid));
+        }
     }
     Ok(())
 }
@@ -730,15 +756,28 @@ fn executed_amounts(order: &Order, solution: &Solution) -> Result<ExecutedAmount
             ExecutedAmounts {
                 sell: first.executed_sell,
                 buy: first.executed_buy,
+                protocol_fee: first.protocol_fee,
             },
             |amounts, trade| {
                 Some(ExecutedAmounts {
                     sell: amounts.sell.checked_add(trade.executed_sell)?,
                     buy: amounts.buy.checked_add(trade.executed_buy)?,
+                    protocol_fee: amounts.protocol_fee.checked_add(trade.protocol_fee)?,
                 })
             },
         )
         .ok_or(Error::ExecutedAmountOverflow)
+}
+
+/// The protocol fee of the trades filling `order`. `Settlement::new` already
+/// bounded the sum, so it cannot saturate.
+fn protocol_fee(order: &Order, solution: &Solution) -> u64 {
+    solution
+        .trades
+        .iter()
+        .filter(|trade| trade.order_uid == order.uid)
+        .map(|trade| trade.protocol_fee)
+        .fold(0, u64::saturating_add)
 }
 
 /// An order as prepared for the settlement transaction.
@@ -748,6 +787,10 @@ struct SettlementOrder {
     order_pda: Pubkey,
     pulls: Vec<Pull>,
     buy_amount: u64,
+    /// The protocol fee of a sell order, in the buy mint. The swap delivers
+    /// it on top of `buy_amount` and the push leaves it in the buffer. Zero
+    /// for a buy order, whose fee is one of its pulls.
+    buy_mint_fee: u64,
     /// Whether the sell tokens are pulled with `TransferChecked`.
     checked_pull: bool,
     /// Whether the buy tokens are pushed with `TransferChecked`.
@@ -756,28 +799,47 @@ struct SettlementOrder {
 
 impl SettlementOrder {
     /// Build a settlement order from a domain order: its intent, its sell-mint
-    /// pull into the payer's sell ATA, and its buy-mint push, made with
-    /// `TransferChecked` when `checked_push` is set.
+    /// pulls, and its buy-mint push, made with `TransferChecked` when
+    /// `checked_push` is set.
     ///
     /// The swap output lands in the buy-mint buffer PDA, or the payer's wSOL
     /// ATA for a native SOL buy (see `infra/solver/dto/auction.rs`), so the
     /// sell tokens are pulled into the payer's sell ATA, derived under the sell
-    /// mint's token program, rather than a buffer.
+    /// mint's token program, rather than a buffer. A buy order's protocol fee
+    /// is pulled separately into the sell mint's buffer PDA under
+    /// `program_id`.
     fn new(
         order: &Order,
         payer: &Pubkey,
+        program_id: &Pubkey,
         amounts: ExecutedAmounts,
         sell_program: TokenProgram,
         checked_push: bool,
     ) -> Result<Self, Error> {
+        let sell_ata = associated_token_address(payer, &order.sell_token, sell_program);
+        let (sell_mint_fee, buy_mint_fee) = match order.side {
+            Side::Buy => (amounts.protocol_fee, 0),
+            Side::Sell => (0, amounts.protocol_fee),
+        };
+        let mut pulls = vec![Pull {
+            destination: sell_ata,
+            amount: amounts
+                .sell
+                .checked_sub(sell_mint_fee)
+                .ok_or(Error::ProtocolFeeExceedsSell(order.uid))?,
+        }];
+        if sell_mint_fee > 0 {
+            pulls.push(Pull {
+                destination: find_buffer_pda(program_id, &order.sell_token).0,
+                amount: sell_mint_fee,
+            });
+        }
         Ok(Self {
             intent: order.try_into()?,
             order_pda: order.order_pda,
-            pulls: vec![Pull {
-                destination: associated_token_address(payer, &order.sell_token, sell_program),
-                amount: amounts.sell,
-            }],
+            pulls,
             buy_amount: amounts.buy,
+            buy_mint_fee,
             checked_pull: transfer_checked(sell_program),
             checked_push,
         })
@@ -916,8 +978,9 @@ fn finalize_settle(
 /// to unwrap the swap output, then transfer exactly the payouts to the native
 /// SOL buffer. The payer's own SOL covers a gap within `max_shortfall`, and
 /// the check reverts the settlement on a larger one. Only pushes move lamports
-/// out of the buffer, so any excess would stay there. Empty without a native
-/// SOL buy.
+/// out of the buffer, so whatever they leave stays there: any excess, and the
+/// sell orders' protocol fees, which the payouts include. Empty without a
+/// native SOL buy.
 fn native_payout_funding(
     program_id: &Pubkey,
     payer: &Pubkey,
@@ -927,13 +990,13 @@ fn native_payout_funding(
     let mut payouts = orders
         .iter()
         .filter(|order| matches!(order.intent.buy, Asset::Native(_)))
-        .map(|order| order.buy_amount)
+        .map(|order| order.buy_amount.checked_add(order.buy_mint_fee))
         .peekable();
     if payouts.peek().is_none() {
         return Ok(Vec::new());
     }
     let total = payouts
-        .try_fold(0, u64::checked_add)
+        .try_fold(0u64, |total, payout| total.checked_add(payout?))
         .ok_or(Error::ExecutedAmountOverflow)?;
     let required = max_shortfall.map_or(total, |max| max.required_output(total));
     let wsol_ata = associated_token_address(payer, &native_mint::ID, TokenProgram::SplToken);
@@ -956,6 +1019,9 @@ pub enum Error {
     /// The sum of the executed amounts overflowed `u64`.
     #[error("executed amounts overflow u64")]
     ExecutedAmountOverflow,
+    /// A buy order's protocol fee exceeds the sell amount it is pulled from.
+    #[error("order {0} pays a protocol fee above its executed sell amount")]
+    ProtocolFeeExceedsSell(OrderUid),
     /// The order is not partially fillable but was not filled exactly.
     #[error("order {0} was not filled exactly")]
     NotExactlyFilled(OrderUid),
@@ -1058,11 +1124,22 @@ mod tests {
 
     /// A trade filling the order with the given uid.
     fn trade(order_uid: OrderUid, executed_sell: u64, executed_buy: u64) -> Trade {
+        fee_trade(order_uid, executed_sell, executed_buy, 0)
+    }
+
+    /// A trade filling the order with the given uid and taking `protocol_fee`.
+    fn fee_trade(
+        order_uid: OrderUid,
+        executed_sell: u64,
+        executed_buy: u64,
+        protocol_fee: u64,
+    ) -> Trade {
         Trade {
             order_uid,
             executed_sell,
             executed_buy,
             solver_fee: 0,
+            protocol_fee,
         }
     }
 
@@ -1448,6 +1525,172 @@ mod tests {
             destination,
             associated_token_address(&payer, &sell_token, TokenProgram::SplToken),
         );
+    }
+
+    /// Parse the `BeginSettle` order at `index` into its pull destinations
+    /// and amounts.
+    fn begin_pulls(begin: &Instruction, index: usize) -> (Vec<Pubkey>, Vec<u64>) {
+        let accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let input = BeginSettleInput::parse(&begin.data, &accounts).unwrap();
+        let order = input.orders.iter().nth(index).unwrap();
+        (
+            order.destinations.to_vec(),
+            order
+                .amounts
+                .iter()
+                .map(|a| u64::from_le_bytes(*a))
+                .collect(),
+        )
+    }
+
+    /// The mints the settlement sets a buffer up for.
+    fn buffer_mints(settlement: &Settlement, payer: Pubkey) -> Vec<Pubkey> {
+        let (buffers, _) = settlement
+            .setup_accounts(payer, &spl_token_programs(settlement))
+            .unwrap();
+        buffers.iter().map(|buffer| buffer.mint).collect()
+    }
+
+    #[test]
+    fn a_buy_orders_protocol_fee_is_pulled_into_the_sell_mint_buffer() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        let (uid, sell_token, buy_token) = (order.uid, order.sell_token, order.buy_token);
+        let settlement = test_settlement(
+            &[order],
+            &[fee_trade(uid, 580, 1_200, 20), fee_trade(uid, 420, 800, 30)],
+        )
+        .unwrap();
+        assert_eq!(
+            buffer_mints(&settlement, payer),
+            vec![buy_token, sell_token]
+        );
+
+        let instructions = resolve_for_test(settlement, payer).instructions().unwrap();
+        // [BeginSettle, FinalizeSettle].
+        let (destinations, amounts) = begin_pulls(&instructions[0], 0);
+        assert_eq!(
+            destinations,
+            vec![
+                associated_token_address(&payer, &sell_token, TokenProgram::SplToken),
+                find_buffer_pda(&program_id, &sell_token).0,
+            ]
+        );
+        assert_eq!(amounts, vec![950, 50]);
+        let finalize = &instructions[1];
+        let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        let finalize_input =
+            FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+        assert_eq!(finalize_input.pushes.iter().next().unwrap().amount, 2_000);
+    }
+
+    #[test]
+    fn a_buy_orders_protocol_fee_above_its_sell_amount_is_rejected() {
+        let program_id = pubkey(0xaa);
+        let order = test_order_with(&program_id, |order| order.side = Side::Buy);
+        let err = test_settlement(
+            slice::from_ref(&order),
+            &[fee_trade(order.uid, 1_000, 2_000, 1_001)],
+        )
+        .unwrap_err();
+        assert_eq!(err, Error::ProtocolFeeExceedsSell(order.uid));
+    }
+
+    #[test]
+    fn a_sell_orders_protocol_fee_stays_in_the_buy_mint_buffer() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order(&program_id);
+        let (uid, sell_token, buy_token) = (order.uid, order.sell_token, order.buy_token);
+        let settlement = test_settlement(&[order], &[fee_trade(uid, 1_000, 2_000, 10)]).unwrap();
+        assert_eq!(buffer_mints(&settlement, payer), vec![buy_token]);
+
+        let instructions = resolve_for_test(settlement, payer).instructions().unwrap();
+        let (destinations, amounts) = begin_pulls(&instructions[0], 0);
+        assert_eq!(
+            destinations,
+            vec![associated_token_address(
+                &payer,
+                &sell_token,
+                TokenProgram::SplToken
+            )]
+        );
+        assert_eq!(amounts, vec![1_000]);
+        let finalize = &instructions[1];
+        let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        let finalize_input =
+            FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+        assert_eq!(finalize_input.pushes.iter().next().unwrap().amount, 2_000);
+    }
+
+    #[test]
+    fn a_native_sol_buys_protocol_fee_is_funded_into_the_native_buffer() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let wallet = pubkey(0x68);
+        let order = native_sol_order(&program_id, wallet, pubkey(0x45));
+        let settlement = test_settlement(
+            slice::from_ref(&order),
+            &[fee_trade(order.uid, 1_000, 2_000, 100)],
+        )
+        .unwrap();
+
+        let instructions = resolve_for_test(settlement, payer).instructions().unwrap();
+        // [BeginSettle, Transfer (self), CloseAccount, Transfer,
+        // FinalizeSettle].
+        assert_eq!(instructions.len(), 5);
+        let wsol_ata = associated_token_address(&payer, &native_mint::ID, TokenProgram::SplToken);
+        assert_eq!(
+            instructions[1],
+            spl_token_interface::instruction::transfer(
+                &spl_token_interface::ID,
+                &wsol_ata,
+                &wsol_ata,
+                &payer,
+                &[],
+                2_100,
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            instructions[3],
+            transfer(&payer, &find_native_sol_buffer_pda(&program_id).0, 2_100)
+        );
+        let finalize = &instructions[4];
+        let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        let finalize_input =
+            FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+        let push = finalize_input.pushes.iter().next().unwrap();
+        assert_eq!((*push.destination, push.amount), (wallet, 2_000));
+    }
+
+    #[test]
+    fn a_native_sol_buy_orders_protocol_fee_is_pulled_not_funded() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order_with(&program_id, |order| {
+            order.side = Side::Buy;
+            order.buy_token = ENCODED_NATIVE_SOL_TRANSFER;
+            order.buy_token_account = pubkey(0x68);
+        });
+        let sell_token = order.sell_token;
+        let settlement = test_settlement(
+            slice::from_ref(&order),
+            &[fee_trade(order.uid, 1_000, 2_000, 50)],
+        )
+        .unwrap();
+        assert_eq!(buffer_mints(&settlement, payer), vec![sell_token]);
+
+        let instructions = resolve_for_test(settlement, payer).instructions().unwrap();
+        assert_eq!(instructions.len(), 5);
+        assert_eq!(
+            instructions[3],
+            transfer(&payer, &find_native_sol_buffer_pda(&program_id).0, 2_000)
+        );
+        let (destinations, amounts) = begin_pulls(&instructions[0], 0);
+        assert_eq!(destinations[1], find_buffer_pda(&program_id, &sell_token).0);
+        assert_eq!(amounts, vec![950, 50]);
     }
 
     /// Pin: a fill that respects the user's limit still validates after the

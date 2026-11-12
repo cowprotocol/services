@@ -38,14 +38,16 @@ use {
 /// sent accordingly.
 #[derive(Clone, Debug)]
 pub enum Charge {
-    /// The engine: it is sent the signed limits and the orders whose buy
-    /// token account the settlement creates.
+    /// The engine: it is sent the signed limits tightened by the volume fee
+    /// policies, and the orders whose buy token account the settlement
+    /// creates.
     Engine {
         missing_buy_token_accounts: HashSet<OrderUid>,
     },
-    /// The driver: the engine is sent each order's limit leg moved by the
-    /// atoms the driver cuts from its fill, by uid, and tightened by the
-    /// solver fee. An order without a cut is not sent.
+    /// The driver: the engine is sent each order's limit leg tightened by
+    /// the volume fee policies, moved by the atoms the driver cuts from its
+    /// fill, by uid, and tightened by the solver fee. An order without a cut
+    /// is not sent.
     Driver {
         cuts: HashMap<OrderUid, u64>,
         fee: Option<SolverFee>,
@@ -108,10 +110,11 @@ impl ExecutionCost<'_> {
 
     /// Cuts every trade of `solution` by its order's rent and its share of
     /// `network_fee`, the settlement's network fee split evenly over the
-    /// trades and rounded up. An order filled by several trades pays its
-    /// rent on the first. One failing trade rejects the whole solution, left
-    /// untouched. `Trade::solver_fee` carries the solver fee only, not the
-    /// cut.
+    /// trades and rounded up. The settlement creates a buy token account
+    /// once, so only the first trade paying into it pays its rent, also when
+    /// several orders share it. One failing trade rejects the whole solution,
+    /// left untouched. `Trade::solver_fee` carries the solver fee only, not
+    /// the cut.
     pub fn apply(
         &self,
         solution: &mut Solution,
@@ -132,7 +135,7 @@ impl ExecutionCost<'_> {
                     .get(&trade.order_uid)
                     .copied()
                     .ok_or(Rejected::UnknownOrder(trade.order_uid))?;
-                let rent = if rent_charged.insert(order.uid) {
+                let rent = if rent_charged.insert(order.buy_token_account) {
                     self.rent(order)
                 } else {
                     0
@@ -250,6 +253,7 @@ mod tests {
             executed_sell,
             executed_buy,
             solver_fee: 7,
+            protocol_fee: 0,
         }
     }
 
@@ -376,6 +380,34 @@ mod tests {
             .unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
         assert_eq!(sol.trades[1].executed_buy, 1_998);
+    }
+
+    /// Orders 1 and 2 pay into one missing account and order 3 into another.
+    /// The first trade into each account pays its 1000 lamports as 2000
+    /// atoms, and order 2 pays nothing.
+    #[test]
+    fn orders_sharing_a_buy_token_account_pay_its_rent_once() {
+        let rent = HashMap::from([1, 2, 3].map(|uid| (OrderUid([uid; 32]), 1_000)));
+        let prices = prices();
+        let orders = [
+            order(1, Side::Sell, 1_000, 1_000),
+            order(2, Side::Sell, 1_000, 1_000),
+            Order {
+                buy_token_account: pubkey(0x68),
+                ..order(3, Side::Sell, 1_000, 1_000)
+            },
+        ];
+        let mut sol = solution(vec![
+            trade(1, 1_000, 3_000),
+            trade(2, 1_000, 3_000),
+            trade(3, 1_000, 3_000),
+        ]);
+        cost(&rent, &prices)
+            .apply(&mut sol, &self::orders(&orders), 0)
+            .unwrap();
+        assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(sol.trades[1].executed_buy, 3_000);
+        assert_eq!(sol.trades[2].executed_buy, 1_000);
     }
 
     /// The limit leg sent to the engine, the signed limit moved by the cut,

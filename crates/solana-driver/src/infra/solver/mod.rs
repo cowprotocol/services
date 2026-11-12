@@ -215,6 +215,7 @@ mod tests {
             deadline: chrono::Utc::now() - chrono::Duration::seconds(10),
             creations: std::collections::HashMap::new(),
             native_prices: std::collections::HashMap::new(),
+            fee_policies: std::collections::HashMap::new(),
         };
 
         let solutions = solver

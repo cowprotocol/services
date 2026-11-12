@@ -3,7 +3,8 @@
 Rule-based protocol fees. A `RuleSet` holds named lists and an ordered list
 of rules. For every order every rule runs; the engine reports each rule whose
 `when` is true, in rule order, with its fee. The caller picks which matches
-to act on, e.g. the first.
+to act on, e.g. the first. The partner fees of the order's app data are not
+rules: the engine returns them apart, capped, to follow the picked fees.
 
 ## Rules
 
@@ -46,30 +47,37 @@ fee:  volume(10)
 
 name: Default
 when: true
-fee:  surplus(50, 1)
+fee:  surplus(50, 100)
 ```
 
 ## The rules file
 
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
-`[lists]` holds named lists of strings and each `[[rule]]` table is a rule,
-tried in file order. Unknown top-level and rule keys are refused; any key
-under `[lists]` is a list name, so a list that no rule names loads without
-error. The file goes through `RuleSet::new` and
-`RuleSet::validate_on_sample_order`; any failure refuses the whole file as a
-`LoadError`: `Toml` (does not parse, unknown key, missing field or a rule
-field that is empty; names the line and column), `Rules` (a `CompileError`)
-or `SampleOrder` (every `SampleOrderError`). A file without rules loads: no
-order pays a protocol fee.
+`[lists]` holds named lists of strings, each `[[rule]]` table is a rule,
+tried in file order, and `[partner_fees]` holds `max_volume_bps`, the basis
+points of the volume an order's partner fees may take together. Without the
+table it is 100 (1%), as in the autopilot; it lands on the fee grid like a
+fee argument.
+Unknown top-level and rule keys are refused; any key under `[lists]` is a
+list name, so a list that no rule names loads without error. The file goes
+through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
+refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown
+key, missing field, a rule field that is empty or a bad `max_volume_bps`;
+names the line and column), `Rules` (a `CompileError`) or `SampleOrder` (every
+`SampleOrderError`). A file without rules loads: no order pays a protocol
+fee.
 
-`load_rules_toml(RulesToml { lists, rules })` loads the same two tables as
-raw `toml::Value`s, e.g. from a section of a host config, so the host need
-not know their shape. `None` is an empty table, like an absent one in a
-file. It refuses them as `load_rules_from_str` does, but without a line or
-column: a malformed rule is a `MalformedRule` error that names the rule by
-its number, and any other malformed value is a `Toml` error.
+`load_rules_toml(RulesToml { lists, rules, partner_fees })` loads the same
+tables as raw `toml::Value`s, e.g. from a section of a host config, so the
+host need not know their shape. `None` is an absent table, as in a file. It
+refuses them as `load_rules_from_str` does, but without a line or column: a
+malformed rule is a `MalformedRule` error that names the rule by its number,
+and any other malformed value is a `Toml` error.
 
 ```toml
+[partner_fees]
+max_volume_bps = 100
+
 [lists]
 stablecoins = [
   "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", # USDC
@@ -83,6 +91,11 @@ when = 'order.owner in jit_makers'
 fee  = 'no_fee()'
 
 [[rule]]
+name = "Trust Wallet"
+when = 'order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"'
+fee  = 'no_fee()'
+
+[[rule]]
 name = "Stablecoin swaps"
 when = 'order.sellToken in stablecoins && order.buyToken in stablecoins'
 fee  = 'volume(10)'
@@ -90,7 +103,7 @@ fee  = 'volume(10)'
 [[rule]]
 name = "Default"
 when = 'true'
-fee  = 'surplus(50, 1)'
+fee  = 'surplus(50, 100)'
 ```
 
 `tests/mainnet.toml` is the mainnet policy as rules, with short token
@@ -113,7 +126,7 @@ order may lack without failing; see the `order` section.
 
 ```
 when: order.kind == "sell" && order.sellAmount > 1e21
-fee:  surplus(order.partiallyFillable ? 40 : 50, 1)
+fee:  surplus(order.partiallyFillable ? 40 : 50, 100)
 ```
 
 ### Fee functions
@@ -124,14 +137,14 @@ must land on a grid of 1e-6 of the volume (two decimal places for `bps`,
 four for a percent); a finer value is rejected, not rounded.
 
 - `volume(bps)` — `bps / 10000` of the volume.
-- `surplus(share, max_volume)` — `share` percent of the surplus over the limit
-  price, at most `max_volume` percent of the volume.
-- `price_improvement(share, max_volume)` — `share` percent of the improvement
-  over the quote, with the same cap.
+- `surplus(share, max_volume_bps)` — `share` percent of the surplus over the
+  limit price, at most `max_volume_bps / 10000` of the volume.
+- `price_improvement(share, max_volume_bps)` — `share` percent of the
+  improvement over the quote, with the same cap.
 - `no_fee()` — no protocol fee.
 
 ```
-fee: [volume(order.kind == "sell" ? 2 : 5), price_improvement(30, 0.5)]
+fee: [volume(order.kind == "sell" ? 2 : 5), price_improvement(30, 50)]
 fee: no_fee()
 ```
 
@@ -152,10 +165,12 @@ fee: volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e20)))
 `format` and the rest of the
 [strings extension](https://github.com/google/cel-spec/blob/master/doc/extensions/strings.md).
 `lowerAscii` makes a pasted checksummed address compare equal to the
-lowercase view.
+lowercase view, and makes an `appCode` comparison case-insensitive: `==` is
+not, and the view keeps the code as the wallet wrote it.
 
 ```
 when: order.sellToken == "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".lowerAscii()
+when: order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"
 ```
 
 ### Lists
@@ -272,7 +287,7 @@ of it.
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
 when: timestamp(int(order.validTo)) - now > duration("1h")
 when: order.?quote.sellAmount.orValue(0.0) > 0.0
-fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
+fee:  order.inMarket ? price_improvement(50, 100) : surplus(50, 100)
 ```
 
 A hex literal compares equal to the view only in lowercase: write it so, or
@@ -288,8 +303,8 @@ and `fullAppData` is the document as text; the view has the parsed document
 as `appData`, and no hash.
 
 The order above shows every field. No other key of the document is here,
-hooks, wrappers and partner fees included; the host appends the partner
-fees after the rule's fees. The host passes `AppData::default()` when the
+hooks, wrappers and partner fees included (see `partner_fees` under
+Outcome). The host passes `AppData::default()` and no partner fees when the
 order has no document or the protocol cannot parse it. `appData` and
 `appData.metadata` are always present; every field under them is optional,
 so reach it with `.?` or guard it with `has`.
@@ -297,8 +312,13 @@ so reach it with `.?` or guard it with `has`.
 `metadata.enableFastPath` and `metadata.validFrom` are not here: read
 `order.fastPath` and `order.validFrom`, which hold the values in effect.
 
+`appCode` is free text in the case the wallet chose, and the same wallet
+does not always choose the same. Compare it through `lowerAscii()` against
+a lowercase literal; a plain `==` against a mixed-case literal matches only
+that spelling.
+
 ```
-when: order.appData.?appCode.orValue("") == "CoW Swap"
+when: order.appData.?appCode.orValue("").lowerAscii() == "cow swap"
 when: has(order.appData.metadata.flashloan)
 ```
 
@@ -313,3 +333,7 @@ diagnostics, and logs nothing itself:
 - `skipped`: every rule that failed to evaluate, in rule order, each with
   the field (`when` or `fee`) and the `RuleError`. The caller decides how to
   log or count them.
+- `partner_fees`: the fees `OrderView::partner_fees` asks for, in app-data
+  order, also when no rule matched. The caller puts them after the fees of
+  the match it picks. They are capped by `max_volume_bps` as the autopilot
+  caps them; a fee past the cap stays, with a zero volume share or volume cap.

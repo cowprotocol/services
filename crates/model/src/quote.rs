@@ -23,7 +23,7 @@ use {
     std::time::Duration,
 };
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum PriceQuality {
     /// We pick the best quote of the fastest `n` price estimators.

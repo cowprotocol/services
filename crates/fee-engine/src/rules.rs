@@ -4,6 +4,7 @@ use {
     crate::{
         AppData,
         Evaluator,
+        FeeFactor,
         Flashloan,
         OrderView,
         evaluator::{RuleError, Skipped},
@@ -14,6 +15,7 @@ use {
     cel::{Context, Env, Program, Value},
     chrono::{DateTime, Utc},
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
+    rust_decimal::{Decimal, prelude::FromPrimitive},
     serde::{Deserialize, Deserializer, de},
     std::{
         collections::{BTreeMap, HashSet},
@@ -46,15 +48,63 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
     Ok(value)
 }
 
-/// A rule set as written: named lists and the rules in the order they are
-/// tried. In TOML, `[lists]` and one `[[rule]]` table per rule.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+/// A rule set as written: named lists, the rules in the order they are
+/// tried and the cap on partner fees.
+///
+/// ```toml
+/// [partner_fees]
+/// max_volume_bps = 100
+///
+/// [lists]
+/// stablecoins = ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
+///
+/// [[rule]]
+/// name = "Stable swaps"
+/// when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
+/// fee = "volume(0.3)"
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleSetDefinition {
     #[serde(default)]
     pub lists: BTreeMap<String, Vec<String>>,
     #[serde(default, rename = "rule")]
     pub rules: Vec<RuleDefinition>,
+    #[serde(default)]
+    pub partner_fees: PartnerFees,
+}
+
+/// How the engine caps an order's partner fees. Without the table,
+/// [`DEFAULT_MAX_VOLUME_BPS`].
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartnerFees {
+    /// Basis points of the volume all partner fees may take together.
+    #[serde(rename = "max_volume_bps", deserialize_with = "bps_of_volume")]
+    pub max_volume: FeeFactor,
+}
+
+/// The cap on an order's partner fees without a `[partner_fees]` table: 1%
+/// of the volume, the autopilot's default.
+pub const DEFAULT_MAX_VOLUME_BPS: u64 = 100;
+
+impl Default for PartnerFees {
+    fn default() -> Self {
+        Self {
+            max_volume: fee::factor_on_grid(Decimal::from(DEFAULT_MAX_VOLUME_BPS), fee::BPS)
+                .expect("100 bps is on the grid and under 100%"),
+        }
+    }
+}
+
+/// Basis points of the volume as a fee factor. Finer than 0.01 bps is refused,
+/// not rounded, as for a `volume` argument.
+fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
+    let bps = f64::deserialize(deserializer)?;
+    Decimal::from_f64(bps)
+        .ok_or(fee::FactorError::OutOfRange)
+        .and_then(|number| fee::factor_on_grid(number, fee::BPS))
+        .map_err(|error| de::Error::custom(format!("max_volume_bps = {bps} {error}")))
 }
 
 /// Names the evaluator binds itself; a list under one of them would be
@@ -175,15 +225,17 @@ impl Rule {
 
 /// A checked, immutable set of rules.
 pub struct RuleSet {
-    pub(crate) env: Arc<Env>,
     rules: Vec<Rule>,
-    pub(crate) lists: Vec<(String, Value)>,
+    /// The fee functions and the lists, bound once for every evaluation.
+    pub(crate) context: Context<'static, 'static>,
+    max_partner_fee: FeeFactor,
 }
 
 impl fmt::Debug for RuleSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuleSet")
             .field("rules", &self.rules)
+            .field("max_partner_fee", &self.max_partner_fee)
             .finish_non_exhaustive()
     }
 }
@@ -191,11 +243,13 @@ impl fmt::Debug for RuleSet {
 impl RuleSet {
     /// Compiles the rules in the order they are tried against the CEL
     /// stdlib plus its math and strings extensions. Each list becomes a CEL
-    /// list under its name. Any failure refuses the whole set.
+    /// list under its name. `partner_fees` caps an order's partner fees
+    /// together. Any failure refuses the whole set.
     pub fn new(
         RuleSetDefinition {
             lists,
             rules: definitions,
+            partner_fees,
         }: RuleSetDefinition,
     ) -> Result<Self, CompileError> {
         let mut env = Env::stdlib();
@@ -221,10 +275,15 @@ impl RuleSet {
             }
             rules.push(Rule::compile(&env, definition)?);
         }
+        let mut context = Context::with_env(env);
+        fee::register_fee_functions(&mut context);
+        for (name, list) in list_values(&lists) {
+            context.add_variable_from_value(name, list);
+        }
         Ok(Self {
-            env,
             rules,
-            lists: list_values(&lists),
+            context,
+            max_partner_fee: partner_fees.max_volume,
         })
     }
 
@@ -246,6 +305,7 @@ impl RuleSet {
             .evaluate_all_expressions(OrderView {
                 order: &full_sample_order(now),
                 app_data: &sample_app_data(),
+                partner_fees: &[],
                 in_market: false,
             })
             .into_iter()
@@ -255,6 +315,7 @@ impl RuleSet {
             .evaluate(OrderView {
                 order: &bare_sample_order(now),
                 app_data: &AppData::default(),
+                partner_fees: &[],
                 in_market: false,
             })
             .skipped
@@ -278,16 +339,15 @@ impl RuleSet {
         &self.rules
     }
 
-    /// Binds lists, functions and `now` once; each order evaluated through
-    /// the result gets a cheap child scope on top.
+    /// The cap on an order's partner fees together, as a share of the volume.
+    pub fn max_partner_fee(&self) -> FeeFactor {
+        self.max_partner_fee
+    }
+
+    /// Evaluates orders at `now`. Cheap: lists and functions are bound
+    /// once, in [`RuleSet::new`].
     pub fn evaluator(&self, now: DateTime<Utc>) -> Evaluator<'_> {
-        let mut context = Context::with_env(self.env.clone());
-        fee::register_fee_functions(&mut context);
-        for (name, list) in &self.lists {
-            context.add_variable_from_value(name.clone(), list.clone());
-        }
-        context.add_variable_from_value("now", now.fixed_offset());
-        Evaluator::new(self, context)
+        Evaluator::new(self, now)
     }
 }
 
@@ -399,6 +459,12 @@ mod tests {
     }
 
     #[test]
+    fn rule_set_is_shared_across_threads() {
+        fn shared<T: Send + Sync>() {}
+        shared::<RuleSet>();
+    }
+
+    #[test]
     fn lowercases_hex_list_members() {
         let lists = BTreeMap::from([(
             "tokens".to_owned(),
@@ -406,17 +472,17 @@ mod tests {
         )]);
         let rules = RuleSet::new(RuleSetDefinition {
             lists,
+            rules: vec![rule("Lowercase", "tokens == ['0xabc', 'Acme']", "no_fee()")],
             ..Default::default()
         })
         .unwrap();
-        let [(name, members)] = &rules.lists[..] else {
-            panic!("expected one list");
-        };
-        assert_eq!(name, "tokens");
-        assert_eq!(
-            *members,
-            Value::from(vec!["0xabc".to_owned(), "Acme".to_owned()])
-        );
+        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+            order: &Order::default(),
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market: false,
+        });
+        assert_eq!(evaluation.matched.len(), 1);
     }
 
     #[test]
@@ -524,7 +590,7 @@ mod tests {
                 "order.?validFrom.orValue(0u) + 1u > 0u",
                 "no_fee()",
             ),
-            rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
+            rule("Default", "true", "[surplus(50, 100), volume(0.3)]"),
         ])
         .unwrap();
 

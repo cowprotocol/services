@@ -11,6 +11,7 @@ use {
         order_uid::OrderUid,
         priority_fee::{self, MAX_COMPUTE_UNIT_LIMIT, PriorityFeePolicy},
         program_error::ProgramError,
+        protocol_fee,
         quote,
         settlement::{self, ResolveError, writable_accounts},
         slot::Slot,
@@ -112,9 +113,10 @@ impl Competition {
     /// (over the byte limit or failing in simulation), cut the execution costs
     /// from the rest when the solver's fee handler is the driver, at the
     /// compute units their settlement declares and the fees their route's
-    /// accounts recently paid, and cache them for a later `settle`. A
-    /// solution whose route's fees could not be read keeps going, priced at
-    /// the cluster-wide fees the limits were moved by.
+    /// accounts recently paid, take every fill's protocol fees last, whoever
+    /// the fee handler is, and cache them for a later `settle`. A solution
+    /// whose route's fees could not be read keeps going, priced at the
+    /// cluster-wide fees the limits were moved by.
     pub async fn solve(
         &self,
         auction_id: Id,
@@ -329,6 +331,18 @@ impl Competition {
                     self.count_solution("cut_rejected");
                     continue;
                 }
+            }
+            if let Err(reason) = protocol_fee::apply(&auction.fee_policies, &mut solution, &orders)
+            {
+                tracing::warn!(
+                    solver = %self.solver.name(),
+                    solution_id = solution.id,
+                    orders = ?order_uids,
+                    %reason,
+                    "dropping solution the protocol fees cannot be taken from"
+                );
+                self.count_solution("protocol_fee_rejected");
+                continue;
             }
             self.solutions.insert(
                 Key {
@@ -1095,8 +1109,9 @@ struct Metrics {
     solve_simulations: prometheus::IntCounterVec,
     /// Solve-time solutions by outcome and solver: kept, or the reason they
     /// were dropped, `fee_rejected` for a solution whose fill the solver fee
-    /// cannot be applied to before the simulation. The outcomes add up to
-    /// the engine's deduplicated solutions.
+    /// cannot be applied to before the simulation, `protocol_fee_rejected`
+    /// for one whose fill cannot take its protocol fees after the cut. The
+    /// outcomes add up to the engine's deduplicated solutions.
     #[metric(labels("outcome", "solver"))]
     solve_solutions: prometheus::IntCounterVec,
     /// Solve-time reads of a solution's route prioritization fees by outcome

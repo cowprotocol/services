@@ -38,6 +38,7 @@ bigdecimal = { workspace = true }
 bytes = { workspace = true }
 bytes-hex = { workspace = true }  # may get marked as unused but it's used with serde
 chain = { workspace = true }
+chain-types = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }
 configs = { workspace = true }
 const-hex = { workspace = true }
@@ -61,6 +62,7 @@ number = { workspace = true }
 price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+protocol-fees = { workspace = true }
 rand = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["query", "stream"] }

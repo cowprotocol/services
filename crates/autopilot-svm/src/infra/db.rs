@@ -1,12 +1,18 @@
 //! Database access for the Solana autopilot.
 
 use {
-    crate::domain::auction::{Order, OrderKind},
+    crate::domain::{
+        auction::{Order, OrderKind},
+        fee::{FeePolicy, Quote},
+    },
     anyhow::{Context, Result},
     bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::solana::{AppData, IntentHash, Pubkey},
     chrono::{DateTime, Utc},
-    database::{byte_array::ByteArray, solana::OrderEventLabel},
+    database::{
+        byte_array::ByteArray,
+        solana::{OrderEventLabel, PolicyKind},
+    },
     sqlx::{PgExecutor, PgPool, Postgres, QueryBuilder},
     std::time::Duration,
 };
@@ -32,6 +38,7 @@ const TABLES: &[&str] = &[
 /// minute would weigh on the largest ones.
 const LARGE_TABLES: &[&str] = &[
     "competition_auctions",
+    "fee_policies",
     "orders",
     "order_events",
     "order_quotes",
@@ -39,7 +46,8 @@ const LARGE_TABLES: &[&str] = &[
     "proposed_trade_executions",
 ];
 
-/// The `solana.orders` columns auction assembly reads.
+/// The `solana.orders` columns auction assembly reads, with the quote
+/// `solana.order_quotes` links the order to.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct OrderRow {
     pub uid: ByteArray<32>,
@@ -59,6 +67,9 @@ pub struct OrderRow {
     pub created_on_chain: bool,
     pub executed: BigDecimal,
     pub creation: Option<Vec<u8>>,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_solver: Option<ByteArray<32>>,
 }
 
 /// Orders open for solving: unexpired, settleable by a driver, not cancelled
@@ -83,9 +94,13 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
            WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
            ELSE COALESCE(p.amount_received, 0)
        END AS executed,
-       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation
+       CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation,
+       q.sell_amount AS quote_sell_amount,
+       q.buy_amount AS quote_buy_amount,
+       q.solver AS quote_solver
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
+LEFT JOIN solana.order_quotes q ON q.order_uid = o.uid
 WHERE o.valid_to >= $1
   AND NOT COALESCE(p.is_reorged, false)
   AND (o.valid_from IS NULL OR o.valid_from <= $1)
@@ -546,10 +561,13 @@ pub struct Competition {
     pub price_values: Vec<BigDecimal>,
     pub solutions: Vec<ProposedSolution>,
     pub reference_scores: Vec<ReferenceScore>,
+    /// The policies of every order a ranked solution trades, in application
+    /// order.
+    pub fee_policies: Vec<(ByteArray<32>, Vec<FeePolicy>)>,
 }
 
-/// Persist a competition: the auction snapshot and every proposed solution
-/// with its executions, in one transaction.
+/// Persist a competition: the auction snapshot, every proposed solution with
+/// its executions, and the traded orders' fee policies, in one transaction.
 pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition) -> Result<()> {
     let _timer = query_timer("persist_competition");
     let mut tx = pool.begin().await.context("begin competition persist")?;
@@ -629,6 +647,55 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
             .await
             .context("insert reference scores")?;
     }
+    let policies: Vec<_> = competition
+        .fee_policies
+        .iter()
+        .flat_map(|(order_uid, policies)| policies.iter().map(move |policy| (order_uid, policy)))
+        .collect();
+    if !policies.is_empty() {
+        let mut insert = QueryBuilder::<Postgres>::new(
+            "INSERT INTO solana.fee_policies (auction_id, order_uid, kind, surplus_factor, \
+             surplus_max_volume_factor, price_improvement_factor, \
+             price_improvement_max_volume_factor, volume_factor) ",
+        );
+        insert.push_values(policies, |mut row, (order_uid, policy)| {
+            let (kind, surplus, price_improvement, volume) = match *policy {
+                FeePolicy::Surplus {
+                    factor,
+                    max_volume_factor,
+                } => (
+                    PolicyKind::Surplus,
+                    Some((factor, max_volume_factor)),
+                    None,
+                    None,
+                ),
+                FeePolicy::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                    ..
+                } => (
+                    PolicyKind::PriceImprovement,
+                    None,
+                    Some((factor, max_volume_factor)),
+                    None,
+                ),
+                FeePolicy::Volume { factor } => (PolicyKind::Volume, None, None, Some(factor)),
+            };
+            row.push_bind(competition.auction_id)
+                .push_bind(*order_uid)
+                .push_bind(kind)
+                .push_bind(surplus.map(|(factor, _)| factor))
+                .push_bind(surplus.map(|(_, cap)| cap))
+                .push_bind(price_improvement.map(|(factor, _)| factor))
+                .push_bind(price_improvement.map(|(_, cap)| cap))
+                .push_bind(volume);
+        });
+        insert
+            .build()
+            .execute(&mut *tx)
+            .await
+            .context("insert fee policies")?;
+    }
     tx.commit().await.context("commit competition persist")
 }
 
@@ -675,6 +742,25 @@ impl TryFrom<OrderRow> for Order {
             executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
             sell_balance: None,
+            quote: match (
+                row.quote_sell_amount,
+                row.quote_buy_amount,
+                row.quote_solver,
+            ) {
+                // A quote amount past `u64` leaves the order unlinked, out of
+                // market as the orderbook classed it, instead of dropping it.
+                (Some(sell_amount), Some(buy_amount), Some(solver)) => to_amount(&sell_amount)
+                    .ok()
+                    .zip(to_amount(&buy_amount).ok())
+                    .map(|(sell_amount, buy_amount)| Quote {
+                        sell_amount,
+                        buy_amount,
+                        fee: 0,
+                        solver: Pubkey(solver.0),
+                    }),
+                _ => None,
+            },
+            protocol_fees: Vec::new(),
         })
     }
 }
@@ -781,10 +867,14 @@ struct Metrics {
 mod tests {
     use {
         super::{
+            Competition,
+            FeePolicy,
+            Quote,
             delete_order_events_before,
             in_flight_orders,
             last_indexed_slot,
             open_orders,
+            persist_competition,
             remove_expired_quotes,
             revert_settlement_window,
             skip_settlement_window,
@@ -816,7 +906,42 @@ mod tests {
             created_on_chain: true,
             executed: BigDecimal::from(0u64),
             creation: None,
+            quote_sell_amount: None,
+            quote_buy_amount: None,
+            quote_solver: None,
         }
+    }
+
+    #[test]
+    fn a_linked_quote_converts_with_a_zero_fee() {
+        assert_eq!(
+            super::Order::try_from(conversion_row()).unwrap().quote,
+            None
+        );
+        let linked = super::OrderRow {
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(2_000u64)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        };
+        assert_eq!(
+            super::Order::try_from(linked).unwrap().quote,
+            Some(Quote {
+                sell_amount: 1_000,
+                buy_amount: 2_000,
+                fee: 0,
+                solver: Pubkey([9; 32]),
+            })
+        );
+        // The orderbook stores the quote's unfixed side unchecked, so it can
+        // exceed `u64`. The order then stays in the auction without a quote.
+        let oversized = super::OrderRow {
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(u64::MAX) + BigDecimal::from(1u64)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        };
+        assert_eq!(super::Order::try_from(oversized).unwrap().quote, None);
     }
 
     #[test]
@@ -913,21 +1038,136 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         assert_eq!(metrics.table_rows.with_label_values(&["app_data"]).get(), 1);
     }
 
+    /// Every policy of a traded order lands in its application order with
+    /// the EVM columns, an order without policies stores no row.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_persist_competition_stores_the_fee_policies_in_order() {
+        let pool = crate::test_db::pool().await;
+        for table in [
+            "fee_policies",
+            "reference_scores",
+            "proposed_trade_executions",
+            "proposed_solutions",
+            "competition_auctions",
+        ] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let charged = ByteArray([1; 32]);
+        let competition = Competition {
+            auction_id: 88,
+            tip_slot: 1,
+            deadline_slot: 100,
+            order_uids: vec![charged.0.to_vec(), vec![2; 32]],
+            price_tokens: vec![],
+            price_values: vec![],
+            solutions: vec![],
+            reference_scores: vec![],
+            fee_policies: vec![
+                (
+                    charged,
+                    vec![
+                        FeePolicy::Surplus {
+                            factor: 0.5,
+                            max_volume_factor: 0.9,
+                        },
+                        FeePolicy::PriceImprovement {
+                            factor: 0.3,
+                            max_volume_factor: 0.01,
+                            quote: Quote {
+                                sell_amount: 1,
+                                buy_amount: 2,
+                                fee: 0,
+                                solver: Pubkey([9; 32]),
+                            },
+                        },
+                        FeePolicy::Volume { factor: 0.001 },
+                    ],
+                ),
+                (ByteArray([2; 32]), vec![]),
+            ],
+        };
+        persist_competition(&pool, &competition).await.unwrap();
+
+        type Row = (
+            Vec<u8>,
+            String,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+        );
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT order_uid, kind::text, surplus_factor, surplus_max_volume_factor, \
+             price_improvement_factor, price_improvement_max_volume_factor, volume_factor FROM \
+             solana.fee_policies WHERE auction_id = 88 ORDER BY application_order",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let uid = charged.0.to_vec();
+        assert_eq!(
+            rows,
+            vec![
+                (
+                    uid.clone(),
+                    "surplus".to_string(),
+                    Some(0.5),
+                    Some(0.9),
+                    None,
+                    None,
+                    None
+                ),
+                (
+                    uid.clone(),
+                    "priceimprovement".to_string(),
+                    None,
+                    None,
+                    Some(0.3),
+                    Some(0.01),
+                    None
+                ),
+                (
+                    uid,
+                    "volume".to_string(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(0.001)
+                ),
+            ]
+        );
+    }
+
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_open_orders_applies_the_solvability_predicates() {
         let pool = crate::test_db::pool().await;
         let mut tx = pool.begin().await.unwrap();
 
-        for table in ["trades", "order_pda", "orders"] {
+        for table in ["trades", "order_pda", "order_quotes", "orders"] {
             sqlx::query(&format!("DELETE FROM solana.{table}"))
                 .execute(&mut *tx)
                 .await
                 .unwrap();
         }
 
-        // Kept: signed and unexpired, no PDA yet.
+        // Kept: signed and unexpired, no PDA yet. Placed against a quote.
         insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query(
+            "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
+             solver) VALUES ($1, 7, 1000, 2100, $2)",
+        )
+        .bind(ByteArray([1u8; 32]))
+        .bind(ByteArray([0xCC; 32]))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
         // Dropped: expired.
         insert_order(&mut tx, 2, 500, true, database::solana::OrderKind::Sell).await;
         // Dropped: no PDA and nothing for the driver to create it from.
@@ -996,6 +1236,22 @@ WHERE uid = $1
         assert_eq!(receivers, vec![None, Some([0x23; 32]), None, None, None]);
         let creations: Vec<_> = orders.iter().map(|order| order.creation.clone()).collect();
         assert_eq!(creations, vec![None, None, None, Some(vec![1]), None]);
+        // Only the first order carries its linked quote.
+        let quotes: Vec<_> = orders
+            .iter()
+            .map(|order| {
+                order
+                    .quote_buy_amount
+                    .as_ref()
+                    .map(|amount| amount.to_u64().unwrap())
+            })
+            .collect();
+        assert_eq!(quotes, vec![Some(2_100), None, None, None, None]);
+        assert_eq!(
+            orders[0].quote_sell_amount.as_ref().unwrap().to_u64(),
+            Some(1_000)
+        );
+        assert_eq!(orders[0].quote_solver, Some(ByteArray([0xCC; 32])));
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);

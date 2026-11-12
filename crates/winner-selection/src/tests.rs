@@ -261,6 +261,38 @@ fn evm_surplus_fee_policy_doubles_score() {
     assert_eq!(ranking.ranked[0].score(), U256::from(10u64));
 }
 
+/// The same policy on Solana scores the same: `u64` amounts through the
+/// same fee math.
+#[test]
+fn solana_surplus_fee_policy_doubles_score() {
+    let uid = sol_uid(1);
+    let (mint_a, mint_b) = (Pubkey([1; 32]), Pubkey([2; 32]));
+    let context = AuctionContext::<Solana> {
+        fee_policies: HashMap::from([(
+            uid,
+            vec![FeePolicy::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.9,
+            }],
+        )]),
+        native_prices: HashMap::from([(mint_b, SOL_UNIT_PRICE)]),
+        ..Default::default()
+    };
+    let solutions = vec![Solution::new(
+        1,
+        Pubkey([3; 32]),
+        vec![sell_order::<Solana>(uid, mint_a, mint_b, 95, |n| n)],
+    )];
+    let arbitrator = Arbitrator::<Solana> {
+        max_winners: 1,
+        wrapped_native: Pubkey([0xff; 32]),
+    };
+
+    let ranking = arbitrator.arbitrate(solutions, &context);
+
+    assert_eq!(ranking.ranked[0].score(), 10);
+}
+
 /// A solution that only settles a scoring order at exactly the limit price
 /// scores zero, but is still retained (and wins if unopposed) because it
 /// contributes to score.

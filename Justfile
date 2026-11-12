@@ -23,21 +23,24 @@ _format_generated_contracts:
 generate-event-schemas:
     cargo run -p event-bus-dto --bin event-bus-schemas
 
-# Run unit tests
-test-unit:
-    cargo nextest run
+# Run unit tests. The arguments go to nextest, for example `-E 'package(=number)'`.
+[positional-arguments]
+test-unit *args:
+    cargo nextest run "$@"
 
 # Run doc tests
 test-doc:
     cargo test --doc --workspace --exclude 'cow-contract-*'
 
-# Run database tests
-test-db:
-    cargo nextest run postgres --test-threads 1 --run-ignored ignored-only
+# Run database tests. The arguments go to nextest.
+[positional-arguments]
+test-db *args:
+    cargo nextest run postgres --test-threads 1 --run-ignored ignored-only "$@"
 
-# Run solana database tests (schema from database/sql-solana)
-test-db-solana:
-    cargo nextest run solana_db --test-threads 1 --run-ignored ignored-only --no-tests=pass
+# Run solana database tests (schema from database/sql-solana). The arguments go to nextest.
+[positional-arguments]
+test-db-solana *args:
+    cargo nextest run solana_db --test-threads 1 --run-ignored ignored-only --no-tests=pass "$@"
 
 # Run End-to-end tests on local node (this machine)
 test-e2e-local *extra: (test-e2e "local_node" extra)

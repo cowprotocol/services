@@ -3,3 +3,4 @@
 pub mod arbitrator;
 pub mod auction;
 pub mod cycle;
+pub mod fee;

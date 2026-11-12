@@ -4,7 +4,14 @@
 
 use {
     crate::{
-        domain::{self, Side, execution_cost::Charge, order_uid::OrderUid, solver_fee::SolverFee},
+        domain::{
+            self,
+            Side,
+            execution_cost::Charge,
+            order_uid::OrderUid,
+            protocol_fee::FeePolicy,
+            solver_fee::SolverFee,
+        },
         infra::blockchain::associated_token_address,
     },
     cow_settlement_interface::{
@@ -103,10 +110,11 @@ impl Order {
     }
 
     /// Build the wire order from a domain order, the taker and the settlement
-    /// program id. `cut` moves the limit leg by what the driver cuts from the
-    /// fill before `fee` tightens it: a sell order's minimum buy rises by it,
-    /// a buy order's maximum sell falls by it. A minimum buy past `u64::MAX`
-    /// saturates: no fill can meet it.
+    /// program id. The volume fees among `policies` tighten the limit leg
+    /// first, then `cut` moves it by what the driver cuts from the fill, and
+    /// `fee` tightens it last: a sell order's minimum buy rises, a buy
+    /// order's maximum sell falls. A minimum buy past `u64::MAX` saturates:
+    /// no fill can meet it.
     ///
     /// The swap output must land in the buy-mint buffer PDA so that
     /// `FinalizeSettle` can push it to the user's buy token account. Solvers
@@ -124,19 +132,35 @@ impl Order {
         program_id: Pubkey,
         cut: u64,
         fee: Option<SolverFee>,
+        policies: &[FeePolicy],
         missing_buy_token_account: bool,
     ) -> Self {
-        let tighten = |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
+        let tighten_for_solver_fee =
+            |side, limit| fee.map_or(limit, |fee| fee.tighten_limit(side, limit));
         let available = order.available();
         let (sell_amount, buy_amount) = match order.side {
-            Side::Sell => (
-                available.sell,
-                tighten(Side::Sell, available.buy.saturating_add(cut)),
-            ),
-            Side::Buy => (
-                tighten(Side::Buy, available.sell.saturating_sub(cut)),
-                available.buy,
-            ),
+            Side::Sell => {
+                let min_buy = protocol_fees::tighten_limit(
+                    policies,
+                    protocol_fees::Side::Sell,
+                    available.buy,
+                );
+                (
+                    available.sell,
+                    tighten_for_solver_fee(Side::Sell, min_buy.saturating_add(cut)),
+                )
+            }
+            Side::Buy => {
+                let max_sell = protocol_fees::tighten_limit(
+                    policies,
+                    protocol_fees::Side::Buy,
+                    available.sell,
+                );
+                (
+                    tighten_for_solver_fee(Side::Buy, max_sell.saturating_sub(cut)),
+                    available.buy,
+                )
+            }
         };
         let (buy_mint, buy_destination) = if order.buys_native_sol() {
             (
@@ -175,7 +199,8 @@ impl Auction {
     /// The `taker` is the solver that signs the settlement transaction, and its
     /// wSOL ATA receives native SOL buys. `program_id` derives the buy-mint
     /// buffer PDA that every other order swaps into. `charge` decides each
-    /// order's limit leg and flag, see [`Charge`].
+    /// order's limit leg and flag, see [`Charge`], and the auction's volume
+    /// fee policies tighten the limit leg before it.
     pub fn new(
         auction: &domain::Auction,
         taker: Pubkey,
@@ -195,12 +220,17 @@ impl Auction {
                         } => (0, None, missing_buy_token_accounts.contains(&order.uid)),
                         Charge::Driver { cuts, fee } => (*cuts.get(&order.uid)?, *fee, false),
                     };
+                    let policies = auction
+                        .fee_policies
+                        .get(&order.uid)
+                        .map_or(&[][..], Vec::as_slice);
                     Some(Order::new(
                         order,
                         taker,
                         program_id,
                         cut,
                         fee,
+                        policies,
                         missing_buy_token_account,
                     ))
                 })
@@ -327,7 +357,7 @@ mod tests {
             sell_balance: Some(500),
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&order, pubkey(3), pubkey(0xaa), 0, None, false);
+        let order = Order::new(&order, pubkey(3), pubkey(0xaa), 0, None, &[], false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (500, 500, 500)
@@ -346,6 +376,7 @@ mod tests {
             pubkey(0xaa),
             0,
             None,
+            &[],
             false,
         );
         assert_eq!((order.sell_amount, order.buy_amount), (1_000, 1_000));
@@ -364,6 +395,7 @@ mod tests {
             pubkey(0xaa),
             0,
             fee,
+            &[],
             false,
         );
         assert_eq!((sell.sell_amount, sell.buy_amount), (1_000, 1_053));
@@ -378,6 +410,7 @@ mod tests {
             pubkey(0xaa),
             0,
             fee,
+            &[],
             false,
         );
         assert_eq!((buy.sell_amount, buy.buy_amount), (952, 1_000));
@@ -397,7 +430,7 @@ mod tests {
             executed: 400,
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), 0, fee, false);
+        let order = Order::new(&sell, pubkey(3), pubkey(0xaa), 0, fee, &[], false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (600, 632, 600)
@@ -412,7 +445,7 @@ mod tests {
             side: Side::Buy,
             ..sell
         };
-        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), 0, fee, false);
+        let order = Order::new(&buy, pubkey(3), pubkey(0xaa), 0, fee, &[], false);
         assert_eq!(
             (order.sell_amount, order.buy_amount, order.amount),
             (571, 600, 600)
@@ -429,11 +462,13 @@ mod tests {
         let order = domain_order(Side::Sell);
 
         let flagged =
-            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, true)).unwrap();
+            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, &[], true))
+                .unwrap();
         assert_eq!(flagged["missingBuyTokenAccount"], json!(true));
 
         let unflagged =
-            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, false)).unwrap();
+            serde_json::to_value(Order::new(&order, taker, program_id, 0, None, &[], false))
+                .unwrap();
         assert!(unflagged.get("missingBuyTokenAccount").is_none());
     }
 
@@ -451,6 +486,7 @@ mod tests {
                 pubkey(0xaa),
                 cut,
                 fee,
+                &[],
                 false,
             );
             (order.sell_amount, order.buy_amount)
@@ -463,6 +499,49 @@ mod tests {
         assert_eq!(legs(Side::Buy, 1_001, None), (0, 1_000));
     }
 
+    /// The volume policy raises a sell order's 1000 minimum buy to 1001, the
+    /// least leg 0.1% leaves at 1000, the cut moves it to 1051 and the fee
+    /// tightens that to 1107. A buy order's maximum sell falls to 999, 949
+    /// and 903. A surplus policy moves nothing.
+    #[test]
+    fn a_volume_policy_tightens_the_limit_before_the_cut_and_the_fee() {
+        let fee = Some(SolverFee::try_from(500).unwrap());
+        let volume = [FeePolicy::Volume { factor: 0.001 }];
+        let surplus = [FeePolicy::Surplus {
+            factor: 0.5,
+            max_volume_factor: 0.01,
+        }];
+        let legs = |side, cut, fee, policies: &[FeePolicy]| {
+            let order = Order::new(
+                &domain_order(side),
+                pubkey(3),
+                pubkey(0xaa),
+                cut,
+                fee,
+                policies,
+                false,
+            );
+            (order.sell_amount, order.buy_amount)
+        };
+        assert_eq!(legs(Side::Sell, 0, None, &volume), (1_000, 1_001));
+        assert_eq!(legs(Side::Sell, 50, fee, &volume), (1_000, 1_107));
+        assert_eq!(legs(Side::Sell, 50, fee, &surplus), (1_000, 1_106));
+        assert_eq!(legs(Side::Buy, 0, None, &volume), (999, 1_000));
+        assert_eq!(legs(Side::Buy, 50, fee, &volume), (903, 1_000));
+        assert_eq!(legs(Side::Buy, 50, fee, &surplus), (904, 1_000));
+    }
+
+    #[test]
+    fn the_auctions_policies_tighten_the_sent_limit() {
+        let order = domain_order(Side::Sell);
+        let auction = domain::Auction {
+            fee_policies: HashMap::from([(order.uid, vec![FeePolicy::Volume { factor: 0.001 }])]),
+            ..domain_auction(vec![order])
+        };
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &Charge::default());
+        assert_eq!(sent.orders[0].buy_amount, 1_001);
+    }
+
     fn domain_auction(orders: Vec<domain::Order>) -> domain::Auction {
         domain::Auction {
             id: Some(domain::Id::new(1).unwrap()),
@@ -471,6 +550,7 @@ mod tests {
             deadline: chrono::Utc::now(),
             creations: HashMap::new(),
             native_prices: HashMap::new(),
+            fee_policies: HashMap::new(),
         }
     }
 
@@ -509,7 +589,15 @@ mod tests {
     #[test]
     fn a_token_buy_lands_in_the_buffer_pda() {
         let (taker, program_id) = (pubkey(3), pubkey(0xaa));
-        let order = Order::new(&domain_order(Side::Sell), taker, program_id, 0, None, false);
+        let order = Order::new(
+            &domain_order(Side::Sell),
+            taker,
+            program_id,
+            0,
+            None,
+            &[],
+            false,
+        );
         assert_eq!(order.buy_mint, pubkey(2));
         assert_eq!(
             order.buy_destination,
@@ -524,7 +612,7 @@ mod tests {
             buy_token: ENCODED_NATIVE_SOL_TRANSFER,
             ..domain_order(Side::Sell)
         };
-        let order = Order::new(&native_buy, taker, program_id, 0, None, false);
+        let order = Order::new(&native_buy, taker, program_id, 0, None, &[], false);
         assert_eq!(order.buy_mint, native_mint::ID);
         assert_eq!(
             order.buy_destination,
