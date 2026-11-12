@@ -294,8 +294,7 @@ fn solana_surplus_fee_policy_doubles_score() {
 }
 
 /// A fill that repaid a 3 atom creation fee scores what its route achieved:
-/// the 7 atoms it left over the limit and the fee. A driver loses no score
-/// to one that reports the route without taking the fee.
+/// the 7 atoms it left over the limit and the fee.
 #[test]
 fn solana_sponsored_creation_fee_counts_towards_the_score() {
     let uid = sol_uid(1);
