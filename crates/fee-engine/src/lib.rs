@@ -24,7 +24,7 @@ pub use {
     fee::{FactorError, Fee, FeeError, FeeKind},
     fee_factor::FeeFactor,
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
-    order_view::{AppData, Flashloan, OrderView},
+    order_view::{AppData, OrderView},
     partner_fee::{PartnerFee, PartnerFeeBudget},
     report::{Mismatch, Outcome, report_comparison, reset_comparison_counters},
     rules::{

@@ -4,28 +4,13 @@
 use {
     app_data::{FeePolicy, ProtocolAppData},
     fee_engine::PartnerFee,
-    model::order::OrderUid,
 };
 
 /// The app data of an order as the rules see it.
 pub fn app_data(protocol: &ProtocolAppData, app_code: Option<String>) -> fee_engine::AppData {
     fee_engine::AppData {
         app_code,
-        signer: protocol.signer,
-        replaced_order: protocol
-            .replaced_order
-            .as_ref()
-            .map(|replaced| OrderUid(replaced.uid.0)),
-        flashloan: protocol
-            .flashloan
-            .as_ref()
-            .map(|flashloan| fee_engine::Flashloan {
-                liquidity_provider: flashloan.liquidity_provider,
-                protocol_adapter: flashloan.protocol_adapter,
-                receiver: flashloan.receiver,
-                token: flashloan.token,
-                amount: flashloan.amount,
-            }),
+        flashloan: protocol.flashloan.is_some(),
     }
 }
 

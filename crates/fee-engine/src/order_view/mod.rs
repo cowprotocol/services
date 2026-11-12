@@ -2,7 +2,7 @@
 
 mod app_data;
 
-pub use app_data::{AppData, Flashloan};
+pub use app_data::AppData;
 use {
     self::app_data::app_data_view,
     cel::common::{
@@ -52,7 +52,6 @@ pub(crate) fn order_view(
 ) -> Box<dyn Val> {
     let (data, meta) = (&order.data, &order.metadata);
     map([
-        ("uid", text(hex(&meta.uid.0))),
         ("owner", text(hex(meta.owner.as_slice()))),
         ("creationDate", serialized(meta.creation_date)),
         ("sellToken", text(hex(data.sell_token.as_slice()))),
@@ -60,11 +59,8 @@ pub(crate) fn order_view(
         ("receiver", text(hex(data.receiver.raw_bytes()))),
         ("sellAmount", number(data.sell_amount)),
         ("buyAmount", number(data.buy_amount)),
-        ("feeAmount", number(data.fee_amount)),
         ("kind", serialized(data.kind)),
         ("partiallyFillable", serialized(data.partially_fillable)),
-        ("sellTokenBalance", serialized(data.sell_token_balance)),
-        ("buyTokenBalance", serialized(data.buy_token_balance)),
         ("signingScheme", serialized(order.signature.scheme())),
         ("validTo", serialized(data.valid_to)),
         ("validFrom", serialized(meta.valid_from)),
@@ -76,17 +72,6 @@ pub(crate) fn order_view(
             meta.ethflow_data
                 .as_ref()
                 .map(|ethflow| map([("userValidTo", serialized(ethflow.user_valid_to))])),
-        ),
-        (
-            "onchainOrderData",
-            meta.onchain_order_data
-                .as_ref()
-                .map(|onchain| map([("sender", text(hex(onchain.sender.as_slice())))])),
-        ),
-        (
-            "onchainUser",
-            meta.onchain_user
-                .and_then(|user| text(hex(user.as_slice()))),
         ),
     ])
 }
@@ -355,7 +340,6 @@ mod tests {
         assert_eq!(
             fields,
             BTreeSet::from([
-                "uid",
                 "owner",
                 "creationDate",
                 "sellToken",
@@ -363,11 +347,8 @@ mod tests {
                 "receiver",
                 "sellAmount",
                 "buyAmount",
-                "feeAmount",
                 "kind",
                 "partiallyFillable",
-                "sellTokenBalance",
-                "buyTokenBalance",
                 "signingScheme",
                 "validTo",
                 "validFrom",
@@ -375,16 +356,9 @@ mod tests {
                 "fastPath",
                 "inMarket",
                 "ethflowData",
-                "onchainOrderData",
-                "onchainUser",
             ])
         );
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
-        assert_eq!(
-            view["onchainOrderData"],
-            json!({ "sender": format!("0x{}cd", "0".repeat(38)) })
-        );
-        assert_eq!(view["onchainUser"], format!("0x{}ef", "0".repeat(38)));
         assert_eq!(view["validFrom"], 4);
     }
 
@@ -411,7 +385,6 @@ mod tests {
         let order = model::order::Order {
             metadata: OrderMetadata {
                 ethflow_data: Some(EthflowData::default()),
-                onchain_order_data: Some(OnchainOrderData::default()),
                 ..Default::default()
             },
             ..Default::default()
@@ -424,10 +397,6 @@ mod tests {
         });
 
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
-        assert_eq!(
-            view["onchainOrderData"],
-            json!({ "sender": format!("0x{}", "0".repeat(40)) })
-        );
     }
 
     #[test]

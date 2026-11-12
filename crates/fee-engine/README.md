@@ -34,9 +34,8 @@ The pass has limits:
   sample is out of market, so the bad argument in `order.inMarket ?
   volume(0.001) : volume(1)` is not found; a static check of every branch is
   planned.
-- Every amount and price in the samples is 1, except `feeAmount`, which is 0
-  as on every order the API accepts, and every timestamp is `now`. A fee
-  computed from the order is checked only at those values:
+- Every amount and price in the samples is 1, and every timestamp is `now`.
+  A fee computed from the order is checked only at those values:
   `volume(order.buyAmount / order.sellAmount)` passes, but on a real order
   it can give an out-of-range argument, and the rule is then skipped and
   reported.
@@ -219,7 +218,6 @@ lowercase. An order with every field set looks like this (hashes shortened):
 
 ```json
 {
-  "uid": "0x5f2a…d1e6",
   "owner": "0x40a50cf069e992aa4536211b23f286ef88752187",
   "creationDate": "2026-10-28T14:03:11.520Z",
   "sellToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -227,37 +225,22 @@ lowercase. An order with every field set looks like this (hashes shortened):
   "receiver": "0x0000000000000000000000000000000000000000",
   "sellAmount": 2.5e9,
   "buyAmount": 6.21e17,
-  "feeAmount": 0.0,
   "kind": "sell",
   "partiallyFillable": false,
-  "sellTokenBalance": "erc20",
-  "buyTokenBalance": "erc20",
   "signingScheme": "eip712",
   "validTo": 1793284991,
   "validFrom": 1793281391,
   "appData": {
     "appCode": "CoW Swap",
     "metadata": {
-      "signer": "0x40a50cf069e992aa4536211b23f286ef88752187",
-      "replacedOrder": { "uid": "0x9b4c…e1f0" },
-      "flashloan": {
-        "liquidityProvider": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
-        "protocolAdapter": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
-        "receiver": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
-        "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-        "amount": 2.5e9
-      }
+      "flashloan": true
     }
   },
   "fastPath": false,
   "inMarket": true,
   "ethflowData": {
     "userValidTo": 1793284991
-  },
-  "onchainOrderData": {
-    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187"
-  },
-  "onchainUser": "0x40a50cf069e992aa4536211b23f286ef88752187"
+  }
 }
 ```
 
@@ -266,8 +249,9 @@ check it: the host must pass false when the order has no quote.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
-`settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
-quote are not in the view: a quote request has no quote, so a fee that read it
+`settlementContract`), legacy fields (`class`, `isLiquidityOrder`), fields no
+fee has depended on (`uid`, `feeAmount`, the token balances, the onchain
+placement) and the quote are not in the view: a quote request has no quote, so a fee that read it
 could not be quoted. An unset `receiver` is the zero address. Other optional
 fields are absent when unset, not `null`. Reach one with the optional
 operator `.?`: it yields an absent value instead of failing and
@@ -300,8 +284,9 @@ reads no app-data text. In the order the API returns, `appData` is the hash
 and `fullAppData` is the document as text; the view has the parsed document
 as `appData`, and no hash.
 
-The order above shows every field. No other key of the document is here,
-hooks, wrappers and partner fees included (see `partner_fees` under
+The order above shows every field: the `appCode`, and `metadata.flashloan`
+as `true` when the document asks for a flashloan. No other key of the
+document is here, hooks, wrappers and partner fees included (see `partner_fees` under
 Outcome). The host passes `AppData::default()` and no partner fees when the
 order has no document or the protocol cannot parse it. `appData` and
 `appData.metadata` are always present; every field under them is optional,

@@ -6,13 +6,12 @@ use {
         Evaluator,
         Fee,
         FeeFactor,
-        Flashloan,
         OrderView,
         evaluator::{RuleError, Skipped},
         fee,
         order_view,
     },
-    alloy_primitives::{Address, U256},
+    alloy_primitives::U256,
     cel::{
         Context,
         Env,
@@ -433,15 +432,7 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
 pub(crate) fn sample_app_data() -> AppData {
     AppData {
         app_code: Some("sample".to_owned()),
-        signer: Some(Address::ZERO),
-        replaced_order: Some(Default::default()),
-        flashloan: Some(Flashloan {
-            liquidity_provider: Address::ZERO,
-            protocol_adapter: Address::ZERO,
-            receiver: Address::ZERO,
-            token: Address::ZERO,
-            amount: U256::ONE,
-        }),
+        flashloan: true,
     }
 }
 
@@ -705,7 +696,7 @@ mod tests {
         validate(vec![
             rule(
                 "Guarded",
-                "order.?onchainOrderData.sender.orValue('') != ''",
+                "order.?ethflowData.userValidTo.orValue(0u) != 0u",
                 "volume(1)",
             ),
             rule(
@@ -724,7 +715,7 @@ mod tests {
         let errors = validate(vec![
             rule(
                 "Unguarded",
-                "order.onchainOrderData.sender != ''",
+                "order.ethflowData.userValidTo != 0u",
                 "volume(1)",
             ),
             rule(
@@ -754,10 +745,7 @@ mod tests {
             RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
         )));
         let message = errors[1].to_string();
-        assert!(
-            message.contains("No such key: onchainOrderData"),
-            "{message}"
-        );
+        assert!(message.contains("No such key: ethflowData"), "{message}");
         assert!(message.ends_with("on a sample order with no optional field"));
     }
 
