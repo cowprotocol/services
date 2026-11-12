@@ -33,6 +33,8 @@ pub async fn get_checkpoint(pool: &PgPool, contract: &Address) -> Result<Option<
     Ok(row.map(|r| r.get::<i64, _>("block_number").cast_unsigned()))
 }
 
+/// Inserts the initial checkpoint for `contract`. On conflict (a checkpoint
+/// already exists) this is a no-op.
 pub async fn insert_checkpoint(
     tx: &mut Transaction<'_, Postgres>,
     contract: &Address,
@@ -51,8 +53,9 @@ pub async fn insert_checkpoint(
     Ok(())
 }
 
-/// Moves the checkpoint from `from` to `to`. Returns `false`, changing
-/// nothing, if it isn't at `from` because another writer already moved it.
+/// Moves the checkpoint from `from` to `to`. If the stored checkpoint no longer
+/// matches `from` (another writer already advanced it), this is a no-op and
+/// returns `false`.
 pub async fn advance_checkpoint(
     tx: &mut Transaction<'_, Postgres>,
     contract: &Address,

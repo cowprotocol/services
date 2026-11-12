@@ -368,6 +368,9 @@ impl UniswapV3Indexer {
         Ok(true)
     }
 
+    /// Persists the chunk's changes and advances the checkpoint in a single
+    /// transaction. Returns `true` if this writer applied the chunk, or `false`
+    /// if another writer already advanced the checkpoint (nothing is applied).
     async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<bool> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
         if !db::advance_checkpoint(&mut tx, &self.factory, chunk.start - 1, chunk.end).await? {
