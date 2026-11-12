@@ -538,9 +538,7 @@ impl OrderValidator {
 
     /// Validates that a fast-path order's signed sell/buy amounts leave
     /// enough room for the compounded protocol + partner volume fees the
-    /// autopilot would charge at settlement time. The pure math lives in
-    /// [`crate::fee::check_fast_path_limit_fits`]; the autopilot's
-    /// fast-path handler calls the same helper.
+    /// autopilot would charge at settlement time.
     fn check_fast_path_limit_price_fits(
         &self,
         order: &Order,
