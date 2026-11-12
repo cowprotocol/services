@@ -440,9 +440,12 @@ fn quote_order(
             creation_date: Utc::now(),
             owner: request.from,
             fast_path: matches!(execution_mode, ExecutionMode::FastPath),
+            wait_for_cow: matches!(execution_mode, ExecutionMode::WaitForCow),
             valid_from: match execution_mode {
                 ExecutionMode::ValidFrom(valid_from) => Some(*valid_from),
-                ExecutionMode::RegularAuction | ExecutionMode::FastPath => None,
+                ExecutionMode::RegularAuction
+                | ExecutionMode::FastPath
+                | ExecutionMode::WaitForCow => None,
             },
             ..Default::default()
         },
