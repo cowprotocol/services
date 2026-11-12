@@ -120,6 +120,9 @@ async fn count_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result
 
 /// Estimates the row count the way the query planner does: tuples per page
 /// from the last `VACUUM` or `ANALYZE`, times the table's current page count.
+/// See <https://www.postgresql.org/docs/current/row-estimation-examples.html>.
+/// Inserts into free space and deletes don't change the page count, so they
+/// show up only after autovacuum next processes the table.
 /// Returns 0 for a table that was never vacuumed or analyzed.
 async fn estimate_rows_in_table(ex: &mut PgConnection, table: &str) -> sqlx::Result<i64> {
     sqlx::query_scalar(
