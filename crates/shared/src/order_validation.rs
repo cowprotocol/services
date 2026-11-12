@@ -1,6 +1,6 @@
 use {
     crate::{
-        fee::VolumeFeePolicy,
+        fee::OrderbookFees,
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
             AdditionalCost,
@@ -449,14 +449,8 @@ pub struct OrderValidator {
     app_data_validator: Validator,
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
-    /// Volume-fee policy the orderbook consults to determine the protocol
-    /// volume factor applicable to a fast-path order's token pair. `None`
-    /// means no protocol volume fee is applied (partner fees may still be).
-    protocol_volume_fee_policy: Option<Arc<VolumeFeePolicy>>,
-    /// Upper bound the orderbook enforces on the combined partner
-    /// volume-fee factor from an order's app-data. `None` disables partner
-    /// fees entirely for the fast-path limit-price check.
-    max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+    /// The volume fees the fast-path limit-price check leaves room for.
+    volume_fees: Arc<dyn OrderbookFees>,
     wrapper_validator: order_validation::wrappers::Validator,
 }
 
@@ -518,16 +512,7 @@ impl OrderValidator {
         app_data_validator: Validator,
         max_gas_per_order: u64,
         same_tokens_policy: SameTokensPolicy,
-        // Default fast-path exclusivity applied when the app-data doesn't
-        // Volume-fee policy the fast-path limit-price check consults for the
-        // protocol side of the fee stack. `None` skips the protocol
-        // contribution.
-        protocol_volume_fee_policy: Option<Arc<VolumeFeePolicy>>,
-        // Max partner volume-fee budget consulted by the fast-path
-        // limit-price check; should mirror the autopilot's
-        // `fee_policies.max_partner_fee`. `None` disables partner fees for
-        // the check.
-        max_partner_fee: Option<configs::fee_factor::FeeFactor>,
+        volume_fees: Arc<dyn OrderbookFees>,
         wrapper_validator: order_validation::wrappers::Validator,
     ) -> Self {
         Self {
@@ -546,8 +531,7 @@ impl OrderValidator {
             app_data_validator,
             max_gas_per_order,
             same_tokens_policy,
-            protocol_volume_fee_policy,
-            max_partner_fee,
+            volume_fees,
             wrapper_validator,
         }
     }
@@ -559,25 +543,19 @@ impl OrderValidator {
     /// fast-path handler calls the same helper.
     fn check_fast_path_limit_price_fits(
         &self,
-        data: &OrderData,
+        order: &Order,
         quote: &Quote,
         app_data: &ValidatedAppData,
     ) -> Result<(), ValidationError> {
-        let protocol_factor = self.protocol_volume_fee_policy.as_ref().and_then(|policy| {
-            policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
-        });
-        let partner_factors = self
-            .max_partner_fee
-            .and_then(|cap| crate::fee::capped_partner_volume_factors(&app_data.protocol, cap))
-            .unwrap_or_default();
-
+        let data = &order.data;
         crate::fee::check_fast_path_limit_fits(
             data.kind,
             data.sell_amount,
             data.buy_amount,
             quote.sell_amount,
             quote.buy_amount,
-            protocol_factor.into_iter().chain(partner_factors),
+            self.volume_fees
+                .fast_path_volume_fees(order, quote, app_data),
         )
         .map_err(|_| ValidationError::FastPathLimitTooTight)
     }
@@ -767,26 +745,12 @@ impl OrderValidator {
     fn compute_and_validate_valid_from(
         &self,
         app_data: &OrderAppData,
-        quote: Option<&Quote>,
         order: &OrderData,
     ) -> Result<Option<u32>, ValidationError> {
         if matches!(
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
         ) {
-            let Some(quote) = quote else {
-                return Err(ValidationError::FastPathLimitTooTight);
-            };
-            // Fast-path settlement has no surplus by design — the solver's
-            // on-chain output is what the quote said. Any volume fees the
-            // autopilot would charge at settlement time eat into that
-            // output. If the user signed a limit that doesn't leave room
-            // for those fees, the trade would revert on chain and the
-            // solver would be blamed for a failure they had no way to
-            // avoid. Reject at placement instead so integrators find out
-            // before signing rather than after landing an un-settleable
-            // order.
-            self.check_fast_path_limit_price_fits(order, quote, &app_data.inner)?;
             // The autopilot's fast-path handler owns `valid_from` for
             // these orders (see `crates/autopilot/src/fast_path.rs`); the
             // orderbook writes `NULL` so the handler can classify the
@@ -1147,7 +1111,7 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        let valid_from = self.compute_and_validate_valid_from(&app_data, quote.as_ref(), &data)?;
+        let valid_from = self.compute_and_validate_valid_from(&app_data, &data)?;
         let fast_path = matches!(
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
@@ -1177,6 +1141,22 @@ impl OrderValidating for OrderValidator {
             data,
             interactions: app_data.interactions,
         };
+
+        if fast_path {
+            let Some(quote) = &quote else {
+                return Err(ValidationError::FastPathLimitTooTight);
+            };
+            // Fast-path settlement has no surplus by design — the solver's
+            // on-chain output is what the quote said. Any volume fees the
+            // autopilot would charge at settlement time eat into that
+            // output. If the user signed a limit that doesn't leave room
+            // for those fees, the trade would revert on chain and the
+            // solver would be blamed for a failure they had no way to
+            // avoid. Reject at placement instead so integrators find out
+            // before signing rather than after landing an un-settleable
+            // order.
+            self.check_fast_path_limit_price_fits(&order, quote, &app_data.inner)?;
+        }
 
         Ok((order, quote))
     }
@@ -1370,6 +1350,7 @@ mod tests {
     use {
         super::*,
         crate::{
+            fee::LegacyVolumeFees,
             order_creation_simulation::MockOrderSimulating,
             order_quoting::{
                 FindQuoteError,
@@ -1445,8 +1426,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -1515,8 +1495,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
         std::assert_matches!(
@@ -1647,8 +1626,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
         let order = || PreOrderData {
@@ -1715,8 +1693,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::AllowSell,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -1815,8 +1792,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Allow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -1892,8 +1868,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2021,8 +1996,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2234,8 +2208,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2310,8 +2283,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2374,8 +2346,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
         let order = OrderCreation {
@@ -2431,8 +2402,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2492,8 +2462,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2559,8 +2528,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2627,8 +2595,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2689,8 +2656,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -2762,8 +2728,7 @@ mod tests {
                 Default::default(),
                 u64::MAX,
                 SameTokensPolicy::Disallow,
-                None,
-                None,
+                Arc::new(LegacyVolumeFees::default()),
                 wrapper_validator(),
             );
 
@@ -2859,8 +2824,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -3279,8 +3243,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         );
 
@@ -3395,8 +3358,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            None,
-            None,
+            Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
         )
     }

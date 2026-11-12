@@ -23,9 +23,10 @@ not return valid fees is reported. This catches a misspelt name or a bad fee
 argument such as `volume(0.001)` at load time instead of on the first order.
 On the bare sample (no optional field present) the rules run as on a real
 order, and every rule that is skipped is reported. This catches a rule that
-reads a field an order may lack, such as `order.quote.sellAmount`, directly
-instead of through the optional operator (`order.?quote.sellAmount`), which
-would be skipped on every order without a quote.
+reads a field an order may lack, such as `order.ethflowData.userValidTo`,
+directly instead of through the optional operator
+(`order.?ethflowData.userValidTo`), which would be skipped on every order
+that is not an ethflow order.
 
 The pass has limits:
 
@@ -54,7 +55,7 @@ fee:  surplus(50, 100)
 
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
 `[lists]` holds named lists of strings, each `[[rule]]` table is a rule,
-tried in file order, and `[partner_fees]` holds `max_volume_bps`, the basis
+tried in file order, and `[partner-fees]` holds `max-volume-bps`, the basis
 points of the volume an order's partner fees may take together. Without the
 table it is 100 (1%), as in the autopilot; it lands on the fee grid like a
 fee argument.
@@ -62,7 +63,7 @@ Unknown top-level and rule keys are refused; any key under `[lists]` is a
 list name, so a list that no rule names loads without error. The file goes
 through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
 refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown
-key, missing field, a rule field that is empty or a bad `max_volume_bps`;
+key, missing field, a rule field that is empty or a bad `max-volume-bps`;
 names the line and column), `Rules` (a `CompileError`) or `SampleOrder` (every
 `SampleOrderError`). A file without rules loads: no order pays a protocol
 fee.
@@ -75,8 +76,8 @@ malformed rule is a `MalformedRule` error that names the rule by its number,
 and any other malformed value is a `Toml` error.
 
 ```toml
-[partner_fees]
-max_volume_bps = 100
+[partner-fees]
+max-volume-bps = 100
 
 [lists]
 stablecoins = [
@@ -244,16 +245,6 @@ lowercase. An order with every field set looks like this (hashes shortened):
   },
   "fastPath": false,
   "inMarket": true,
-  "quote": {
-    "sellAmount": 2.5e9,
-    "buyAmount": 6.24e17,
-    "feeAmount": 1.83e6,
-    "gasAmount": 145000.0,
-    "gasPrice": 1.2e9,
-    "sellTokenPrice": 2.5e8,
-    "solver": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
-    "verified": true
-  },
   "ethflowData": {
     "userValidTo": 1793284991
   },
@@ -269,10 +260,11 @@ check it: the host must pass false when the order has no quote.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
-`settlementContract`) and legacy fields (`class`, `isLiquidityOrder`) are
-not in the view. An unset `receiver` is the zero address. Other optional
+`settlementContract`), legacy fields (`class`, `isLiquidityOrder`) and the
+quote are not in the view: a quote request has no quote, so a fee that read it
+could not be quoted. An unset `receiver` is the zero address. Other optional
 fields are absent when unset, not `null`. Reach one with the optional
-operator `order.?quote`: it yields an absent value instead of failing and
+operator `.?`: it yields an absent value instead of failing and
 reaches through an optional parent, so `order.?ethflowData.userValidTo`
 reads on any order, where `order.ethflowData.userValidTo` needs a
 `has(order.ethflowData)` guard first. End the chain with `.orValue(d)` for a
@@ -286,7 +278,7 @@ of it.
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
 when: timestamp(int(order.validTo)) - now > duration("1h")
-when: order.?quote.sellAmount.orValue(0.0) > 0.0
+when: order.?ethflowData.hasValue()
 fee:  order.inMarket ? price_improvement(50, 100) : surplus(50, 100)
 ```
 
@@ -335,5 +327,5 @@ diagnostics, and logs nothing itself:
   log or count them.
 - `partner_fees`: the fees `OrderView::partner_fees` asks for, in app-data
   order, also when no rule matched. The caller puts them after the fees of
-  the match it picks. They are capped by `max_volume_bps` as the autopilot
+  the match it picks. They are capped by `max-volume-bps` as the autopilot
   caps them; a fee past the cap stays, with a zero volume share or volume cap.

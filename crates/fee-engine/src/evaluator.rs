@@ -366,7 +366,11 @@ mod tests {
     #[test]
     fn failing_rules_are_skipped() {
         let rules = rule_set(vec![
-            rule("Broken when", "order.quote.sellAmount == 1", "volume(1)"),
+            rule(
+                "Broken when",
+                "order.ethflowData.userValidTo == 1",
+                "volume(1)",
+            ),
             rule("Not a bool", "order.sellAmount", "volume(1)"),
             rule("Broken fee", "true", r#"volume("ten")"#),
             rule("Default", "true", "volume(2)"),
@@ -433,7 +437,7 @@ mod tests {
     #[test]
     fn absent_optional_fields_are_tested_with_has() {
         let rules = rule_set(vec![
-            rule("Quoted", "has(order.quote)", "volume(1)"),
+            rule("Ethflow", "has(order.ethflowData)", "volume(1)"),
             rule("Fast path", "order.fastPath", "volume(2)"),
             rule("Default", "true", "volume(3)"),
         ]);
@@ -443,11 +447,11 @@ mod tests {
         assert_eq!(names(&evaluation), ["Default"]);
         assert!(evaluation.skipped.is_empty());
 
-        let mut quoted = order(WETH, USDT);
-        quoted.metadata.quote = Some(Default::default());
-        quoted.metadata.fast_path = true;
-        let evaluation = evaluate(&evaluator, &quoted, false);
-        assert_eq!(names(&evaluation), ["Quoted", "Fast path", "Default"]);
+        let mut ethflow = order(WETH, USDT);
+        ethflow.metadata.ethflow_data = Some(Default::default());
+        ethflow.metadata.fast_path = true;
+        let evaluation = evaluate(&evaluator, &ethflow, false);
+        assert_eq!(names(&evaluation), ["Ethflow", "Fast path", "Default"]);
     }
 
     #[test]
