@@ -7,7 +7,7 @@ use {
     price_estimation::gas::SETTLEMENT_OVERHEAD,
     reqwest::Url,
     serde::Deserialize,
-    std::path::Path,
+    std::{path::Path, time::Duration},
     tokio::fs,
 };
 
@@ -58,6 +58,14 @@ struct Config {
     /// the solver can serve concurrently. Defaults to the `ethrpc` crate's
     /// default.
     ethrpc_max_concurrent_requests: Option<usize>,
+
+    /// How long to wait for further requests before sending out an incomplete
+    /// RPC batch. The default of zero dispatches a batch as soon as anything
+    /// is queued, which keeps batches small and so costs one HTTP request per
+    /// handful of `eth_call`s. A few milliseconds lets batches fill up and
+    /// trades a little latency for far fewer requests.
+    #[serde(with = "humantime_serde", default)]
+    ethrpc_batch_delay: Option<Duration>,
 }
 
 /// Load the driver configuration from a TOML file.
@@ -98,6 +106,7 @@ pub async fn load(path: &Path) -> solver::Config {
         ethrpc: solver::EthrpcConfig {
             max_batch_size: config.ethrpc_max_batch_size,
             max_concurrent_requests: config.ethrpc_max_concurrent_requests,
+            batch_delay: config.ethrpc_batch_delay,
         },
     }
 }
