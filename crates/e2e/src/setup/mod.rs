@@ -88,6 +88,7 @@ const DEFAULT_FILTERS: &[&str] = &[
     "autopilot=debug",
     "driver=debug",
     "e2e=debug",
+    "leader_lock=debug",
     "orderbook=debug",
     "shared=debug",
     "solver=debug",

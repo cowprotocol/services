@@ -24,7 +24,7 @@ use {
     chain_types::solana::Pubkey,
     clap::Parser,
     cow_solana_rpc::{CommitmentConfig, SolanaRPC},
-    database::leader_pg_lock::LeaderLock,
+    leader_lock::LeaderLock,
     observe::metrics::LivenessChecking,
     sqlx::postgres::PgPoolOptions,
     std::{
