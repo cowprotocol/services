@@ -106,6 +106,7 @@ fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
         orders: vec![Order {
             uid: OrderUid([0; 32]),
             owner: Pubkey::default(),
+            receiver: None,
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             sell_token_account: Pubkey::default(),
@@ -124,5 +125,6 @@ fn quote_auction(request: &dto::QuoteRequest, side: auction::Side) -> Auction {
         deadline: request.deadline,
         creations: std::collections::HashMap::new(),
         native_prices: std::collections::HashMap::new(),
+        fee_policies: std::collections::HashMap::new(),
     }
 }

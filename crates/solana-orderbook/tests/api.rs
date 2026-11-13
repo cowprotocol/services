@@ -2,6 +2,7 @@
 
 use {
     base64::Engine,
+    configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
     cow_solana_rpc::{Mocks, MocksMap, RpcRequest, SolanaRPC},
     database::{
         byte_array::ByteArray,
@@ -32,10 +33,11 @@ async fn mock_api() -> Api {
         // quote insert degrades to an id-less answer, nothing else queries.
         pool: PgPool::connect_lazy("postgresql://127.0.0.1:1/").unwrap(),
         quoter: dead_quoter(),
-        prices: spawn_mock_autopilot(Some(1_000_000_000)).await,
+        prices: spawn_mock_autopilot(|_| Some(1_000_000_000)).await,
         validation: Default::default(),
         quote_expiry: Duration::from_secs(60),
         fast_results_required: NonZero::new(2).unwrap(),
+        volume_fee: None,
         sponsoring: None,
         verifier: None,
         app_data_size_limit: 8192,
@@ -68,20 +70,24 @@ async fn spawn_server_with(quoter: Quoter) -> SocketAddr {
     addr
 }
 
-/// A tiny axum server that answers `/native_price/{mint}` with `price` for
-/// every mint, or 404 without one. It stands in for the autopilot.
-async fn spawn_mock_autopilot(price: Option<u64>) -> NativePrices {
+/// A tiny axum server that answers `/native_price/{mint}` with `price(mint)`,
+/// or 404 without one. It stands in for the autopilot.
+async fn spawn_mock_autopilot(
+    price: impl Fn(&str) -> Option<u64> + Clone + Send + Sync + 'static,
+) -> NativePrices {
     let app = axum::Router::new().route(
         "/native_price/{mint}",
-        axum::routing::get(move || async move {
-            match price {
-                Some(price) => (
-                    axum::http::StatusCode::OK,
-                    serde_json::json!({ "price": price.to_string() }).to_string(),
-                ),
-                None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
-            }
-        }),
+        axum::routing::get(
+            move |axum::extract::Path(mint): axum::extract::Path<String>| async move {
+                match price(&mint) {
+                    Some(price) => (
+                        axum::http::StatusCode::OK,
+                        serde_json::json!({ "price": price.to_string() }).to_string(),
+                    ),
+                    None => (axum::http::StatusCode::NOT_FOUND, "No liquidity".to_owned()),
+                }
+            },
+        ),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -416,6 +422,55 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
     }
 }
 
+/// With a volume fee configured, the quote nets its share of the amount the
+/// costs left and reports it under `costs.protocolFee`, in `total` and in
+/// `feeAmount`. A factor that is not yet effective takes nothing.
+#[tokio::test]
+async fn quote_nets_the_volume_fee_once_effective() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let later = chrono::Utc::now() + chrono::TimeDelta::hours(1);
+    // The costs leave 1_234_567 atoms, ten basis points of which are 1_234.
+    for (effective_from, sell_amount, buy_amount, fee_amount, protocol_fee, total) in [
+        (None, "7772126", "1233333", "2227874", "1234", "2227874"),
+        (Some(later), "7773360", "1234567", "2226640", "0", "2226640"),
+    ] {
+        let api = Api {
+            quoter: Quoter::new(
+                vec![format!("http://{driver}/").parse().unwrap()],
+                Duration::from_secs(1),
+            ),
+            volume_fee: Some(VolumeFeeConfig {
+                factor: Some(FeeFactor::new(0.001)),
+                effective_from_timestamp: effective_from,
+            }),
+            ..mock_api().await
+        };
+        let (listener, addr) = api.bind().await.unwrap();
+        let shutdown = CancellationToken::new();
+        tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/quote"))
+            .json(&quote_body(serde_json::json!({"validFor": 1800})))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let json: serde_json::Value = response.json().await.unwrap();
+        let quote = &json["quote"];
+        assert_eq!(quote["sellAmount"], sell_amount);
+        assert_eq!(quote["buyAmount"], buy_amount);
+        assert_eq!(quote["feeAmount"], fee_amount);
+        assert_eq!(quote["costs"]["protocolFee"], protocol_fee);
+        assert_eq!(quote["costs"]["total"], total);
+    }
+}
+
 /// The full happy path: the driver's amounts come back in the EVM response
 /// shape with the request's own fields echoed, net of the buy token account
 /// rent and the driver's network fee at the mock price of a lamport an atom.
@@ -456,12 +511,16 @@ async fn quote_answers_in_the_evm_shape() {
                 "sellToken": body["sellToken"],
                 "buyToken": body["buyToken"],
                 "receiver": body["receiver"],
-                "sellAmount": "10000000",
+                // The requested amount minus the fee, the amount to sign is
+                // the requested one.
+                "sellAmount": "7773360",
                 "buyAmount": "1234567",
                 "validTo": valid_to,
                 "appData": body["appData"],
                 "appDataHash": body["appDataHash"],
-                "feeAmount": "0",
+                // The cut as the sell token, a lamport an atom on both sides
+                // at the mocked prices.
+                "feeAmount": "2226640",
                 // In the buy token, at the mocked lamport an atom. Without
                 // sponsoring the buy token account is not read, so it counts
                 // as the costliest a settleable mint can need at the SDK's
@@ -1125,7 +1184,8 @@ async fn quote_charges_a_buy_order_on_the_sell_side() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
     assert_eq!(json["quote"]["kind"], "buy");
-    assert_eq!(json["quote"]["sellAmount"], "12226640");
+    assert_eq!(json["quote"]["sellAmount"], "10000000");
+    assert_eq!(json["quote"]["feeAmount"], "2226640");
     assert_eq!(json["quote"]["buyAmount"], "1234567");
     assert_eq!(
         json["quote"]["costs"],
@@ -1136,6 +1196,156 @@ async fn quote_charges_a_buy_order_on_the_sell_side() {
             "protocolFee": "0",
             "total": "2226640",
         })
+    );
+}
+
+/// A `sellAmountAfterFee` request sells that amount, the fee goes on top and
+/// covers the cut, so the route's full buy amount stays.
+#[tokio::test]
+async fn quote_sells_an_after_fee_amount_as_is() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["sellAmountAfterFee"] = serde_json::json!("10000000");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["sellAmount"], "10000000");
+    assert_eq!(json["quote"]["feeAmount"], "2226640");
+    assert_eq!(json["quote"]["buyAmount"], "3461207");
+}
+
+/// With a volume fee, a `sellAmountAfterFee` quote still buys the route's
+/// full amount, so the fee on top is grossed up to the leg that comes down to
+/// that amount once the driver takes its share: ten basis points of 3_464_671
+/// are 3_464, which leave the route's 3_461_207.
+#[tokio::test]
+async fn quote_grosses_up_the_volume_fee_on_an_after_fee_amount() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        volume_fee: Some(VolumeFeeConfig {
+            factor: Some(FeeFactor::new(0.001)),
+            effective_from_timestamp: None,
+        }),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["sellAmountAfterFee"] = serde_json::json!("10000000");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    let quote = &json["quote"];
+    assert_eq!(quote["sellAmount"], "10000000");
+    assert_eq!(quote["buyAmount"], "3461207");
+    assert_eq!(quote["feeAmount"], "2230104");
+    assert_eq!(quote["costs"]["protocolFee"], "3464");
+    assert_eq!(quote["costs"]["total"], "2230104");
+}
+
+/// A sell order's fee converts the cut at both native prices: the buy token
+/// at a lamport an atom, the sell token at two, so half as many atoms.
+#[tokio::test]
+async fn quote_converts_a_sell_orders_fee_at_both_native_prices() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let api = Api {
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        prices: spawn_mock_autopilot(|mint| {
+            Some(match mint {
+                "So11111111111111111111111111111111111111112" => 2_000_000_000,
+                _ => 1_000_000_000,
+            })
+        })
+        .await,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&quote_body(serde_json::json!({"validFor": 1800})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["feeAmount"], "1113320");
+    assert_eq!(json["quote"]["sellAmount"], "8886680");
+    assert_eq!(json["quote"]["buyAmount"], "1234567");
+    assert_eq!(json["quote"]["costs"]["total"], "2226640");
+}
+
+/// A `sellAmountBeforeFee` amount the fee swallows is no quote, even when the
+/// buy side absorbs the cut.
+#[tokio::test]
+async fn quote_rejects_a_sell_amount_under_its_fee() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "2000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body["sellAmountBeforeFee"] = serde_json::json!("2000000");
+    let (status, kind) = post_quote(addr, body).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (
+            reqwest::StatusCode::BAD_REQUEST,
+            "SellAmountDoesNotCoverFee"
+        )
     );
 }
 
@@ -1232,7 +1442,7 @@ async fn quote_without_a_native_price_is_no_liquidity() {
             vec![format!("http://{driver}/").parse().unwrap()],
             Duration::from_secs(1),
         ),
-        prices: spawn_mock_autopilot(None).await,
+        prices: spawn_mock_autopilot(|_| None).await,
         ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
@@ -1300,6 +1510,57 @@ async fn quote_checks_the_app_data_forms() {
             "{app_data:?} {app_data_hash:?}"
         );
     }
+}
+
+/// The stored quote sells what an order placed on it signs, the answered
+/// `sellAmount` plus `feeAmount`, and buys the answered `buyAmount`.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_quote_stores_the_amount_to_sign() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query("TRUNCATE solana.quotes")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "10000000",
+        "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+    }))
+    .await;
+    let api = Api {
+        pool: pool.clone(),
+        quoter: Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        ),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+
+    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
+    body["sellAmountAfterFee"] = serde_json::json!("10000000");
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/quote"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["quote"]["sellAmount"], "10000000");
+    assert_eq!(json["quote"]["feeAmount"], "2220240");
+    assert_eq!(json["quote"]["buyAmount"], "10000000");
+
+    let stored: (String, String) =
+        sqlx::query_as("SELECT sell_amount::text, buy_amount::text FROM solana.quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, ("12220240".to_owned(), "10000000".to_owned()));
 }
 
 /// The answered quote, net of the execution cost, lands in `solana.quotes`
@@ -2790,6 +3051,156 @@ async fn solana_db_create_order_accepts_a_custom_receiver() {
     assert_eq!(stored, intent.buy.encode().1.to_bytes().to_vec());
 }
 
+/// A placement may name the wallet the buy token account belongs to: a
+/// missing account at that wallet's associated token address is the
+/// settlement's to create, like the owner's own, and the order reports the
+/// wallet. An off-curve wallet derives like any other. The lookup answers
+/// the sell and buy mints, the Clock sysvar, then nothing for the account.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_creates_a_receivers_missing_buy_token_account() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let receiver = solana_sdk::pubkey::Pubkey::find_program_address(&[b"vault"], &program_id()).0;
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    let buy_mint = intent.buy.encode().0;
+    intent.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint: buy_mint,
+            token_account: ata(receiver, buy_mint),
+        },
+    );
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let classic = Some(mint_account(spl_token_interface::ID));
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            accounts_response(&[classic.clone(), classic, None, None]),
+        ),
+    )
+    .await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({
+            "partiallySignedTx": transaction,
+            "receiver": receiver.to_string(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uid: String = response.json().await.unwrap();
+    assert_eq!(
+        get_order(addr, &uid).await["receiver"],
+        receiver.to_string()
+    );
+    let stored: Option<Vec<u8>> = sqlx::query_scalar("SELECT receiver FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, Some(receiver.to_bytes().to_vec()));
+}
+
+/// Naming the owner as the receiver is the same as naming nobody: the order
+/// is placed like one without a receiver and reports none. The lookup
+/// answers the sell and buy mints, the Clock sysvar, then nothing for the
+/// buy account.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_treats_the_owner_as_no_receiver() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+         CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let classic = Some(mint_account(spl_token_interface::ID));
+    let addr = spawn_sponsored_server_with(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            accounts_response(&[classic.clone(), classic, None, None]),
+        ),
+    )
+    .await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({
+            "partiallySignedTx": transaction,
+            "receiver": owner.pubkey().to_string(),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let uid: String = response.json().await.unwrap();
+    assert!(get_order(addr, &uid).await["receiver"].is_null());
+    let stored: Option<Vec<u8>> = sqlx::query_scalar("SELECT receiver FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored, None);
+}
+
+/// A receiver the buy token account does not belong to is refused: a wallet
+/// whose associated token account is not the buy account, the owner's own
+/// included, and a wallet other than the paid one for a native SOL buy. Each
+/// lookup answers the mints, the Clock sysvar, then nothing for the buy
+/// account or wallet.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_refuses_a_receiver_the_buy_token_account_does_not_belong_to() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let classic = Some(mint_account(spl_token_interface::ID));
+    let token_buy = (
+        sponsored_intent(owner.pubkey(), false),
+        accounts_response(&[classic.clone(), classic.clone(), None, None]),
+    );
+    let native_buy = (
+        native_buy_intent(owner.pubkey(), 890_880),
+        accounts_response(&[classic, None, None]),
+    );
+    for (intent, accounts) in [token_buy, native_buy] {
+        let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+        let addr =
+            spawn_sponsored_server_with(pool.clone(), funder, sponsored_mocks(true, accounts))
+                .await;
+        let (status, kind) = post_order_body(
+            addr,
+            serde_json::json!({
+                "partiallySignedTx": transaction,
+                "receiver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+            }),
+        )
+        .await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, "InvalidBuyTokenAccount")
+        );
+    }
+}
+
 /// Token-2022 mints place like classic ones: the delegation goes through
 /// Token-2022, and the buy account is the owner's missing Token-2022
 /// associated token account, which the settlement creates. The lookup
@@ -3007,6 +3418,7 @@ async fn solana_db_orders_report_a_dead_creation_as_expired() {
     let order = db::SponsoredOrder {
         uid: ByteArray([0x11; 32]),
         owner: ByteArray(owner.to_bytes()),
+        receiver: None,
         sell_token: ByteArray([0x66; 32]),
         buy_token: ByteArray([0x55; 32]),
         sell_token_account: ByteArray([0x33; 32]),

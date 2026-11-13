@@ -1491,6 +1491,7 @@ dependencies = [
  "bytes",
  "bytes-hex",
  "chain",
+ "chain-types",
  "chrono",
  "clap",
  "configs",
@@ -1502,6 +1503,7 @@ dependencies = [
  "eth-domain-types",
  "ethrpc",
  "event-indexing",
+ "fee-engine",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -1520,6 +1522,7 @@ dependencies = [
  "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
+ "protocol-fees",
  "rand 0.9.4",
  "reqwest 0.13.4",
  "rust_decimal",
@@ -1570,6 +1573,7 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
+ "protocol-fees",
  "request-sharing",
  "reqwest 0.13.4",
  "serde",
@@ -1587,6 +1591,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tikv-jemallocator",
  "tokio",
+ "tokio-util",
  "toml",
  "tower",
  "tower-http",
@@ -4499,6 +4504,7 @@ dependencies = [
  "bytes",
  "bytes-hex",
  "chain",
+ "chain-types",
  "chrono",
  "clap",
  "configs",
@@ -4528,6 +4534,7 @@ dependencies = [
  "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
+ "protocol-fees",
  "rand 0.9.4",
  "request-sharing",
  "reqwest 0.13.4",
@@ -4928,14 +4935,17 @@ dependencies = [
  "alloy-primitives",
  "cel",
  "chrono",
- "configs",
  "const-hex",
  "model",
+ "observe",
+ "prometheus",
+ "prometheus-metric-storage",
  "rust_decimal",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
  "toml",
+ "tracing",
 ]
 
 [[package]]
@@ -5425,9 +5435,9 @@ checksum = "e712f64ec3850b98572bffac52e2c6f282b29fe6c5fa6d42334b30be438d95c1"
 
 [[package]]
 name = "hickory-net"
-version = "0.26.1"
+version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2295ed2f9c31e471e1428a8f88a3f0e1f4b27c15049592138d1eebe9c35b183"
+checksum = "c480823ed7c2c5d0f09c41020cb6b7c28029ce60ec42dc942158dcf22f8e0a4d"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -5449,9 +5459,9 @@ dependencies = [
 
 [[package]]
 name = "hickory-proto"
-version = "0.26.1"
+version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0bab31817bfb44672a252e97fe81cd0c18d1b2cf892108922f6818820df8c643"
+checksum = "12b92608f679a6fa515dd1d15c1ff89443026e391200a2c840c7afcba482893d"
 dependencies = [
  "data-encoding",
  "idna",
@@ -5469,9 +5479,9 @@ dependencies = [
 
 [[package]]
 name = "hickory-resolver"
-version = "0.26.1"
+version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0d58d28879ceecde6607729660c2667a081ccdc082e082675042793960f178c"
+checksum = "3f3da5255c95d5a716857d54b5b8f4e8d67c3484d3beaaaae2ce25063b3ba981"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -6807,9 +6817,9 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "openssl"
-version = "0.10.79"
+version = "0.10.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf0b434746ee2832f4f0baf10137e1cabb18cbe6912c69e2e33263c45250f542"
+checksum = "4de8111e94a56adca7ebfe6c365b6d42f99deb69b74b6becacd4204e2f193aa2"
 dependencies = [
  "bitflags 2.10.0",
  "cfg-if",
@@ -6844,9 +6854,9 @@ checksum = "9f50d9b3dabb09ecd771ad0aa242ca6894994c130308ca3d7684634df8037391"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.117"
+version = "0.9.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b47e7e6bb2c38cd930d25a23b40fa52e068c10e85f3e03a7f5ba5aaca5713695"
+checksum = "19c413d6ec9ebaf5e1c829d355cb3e9f783778d700f135be0921d52fce3c60ae"
 dependencies = [
  "cc",
  "libc",
@@ -6980,6 +6990,7 @@ dependencies = [
  "eth-domain-types",
  "ethrpc",
  "event-bus-dto",
+ "fee-engine",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -7737,6 +7748,15 @@ name = "protoc-bin-vendored-win32"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95067976aca6421a523e491fce939a3e65249bac4b977adee0ee9771568e8aa3"
+
+[[package]]
+name = "protocol-fees"
+version = "0.1.0"
+dependencies = [
+ "chain-types",
+ "rand 0.9.4",
+ "tracing",
+]
 
 [[package]]
 name = "psl-types"
@@ -9042,6 +9062,7 @@ dependencies = [
  "derive_more 1.0.0",
  "eth-domain-types",
  "ethrpc",
+ "fee-engine",
  "futures",
  "gas-price-estimation",
  "hex-literal",
@@ -9613,6 +9634,7 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
+ "protocol-fees",
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
@@ -10062,6 +10084,7 @@ dependencies = [
  "observe",
  "prometheus",
  "prometheus-metric-storage",
+ "protocol-fees",
  "reqwest 0.13.4",
  "serde",
  "serde-ext",
@@ -12913,7 +12936,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -13234,6 +13257,7 @@ dependencies = [
  "anyhow",
  "chain-types",
  "itertools 0.14.0",
+ "protocol-fees",
  "thiserror 1.0.69",
  "tracing",
 ]
