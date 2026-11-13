@@ -64,8 +64,10 @@ impl Unit {
 
     /// Whether `field` (exactly `width()` bytes, big-endian) holds `stamp`.
     ///
-    /// Makers stamp milliseconds with sub-second precision, so for that unit
-    /// any instant within the quoted second is the stamp.
+    /// Makers stamp milliseconds with sub-second precision, and reference
+    /// feeds (e.g. Metric's Pyth oracle) carry the wall-clock publish time
+    /// within the slot rather than the upcoming block's timestamp, so any
+    /// millisecond timestamp after the parent block up to `stamp` is matched.
     fn holds(self, field: &[u8], stamp: u32) -> bool {
         // u64::from_be_bytes() but with &[u8] instead of [u8; 8]
         let value = field
@@ -73,7 +75,8 @@ impl Unit {
             .fold(0u64, |value, byte| (value << 8) | u64::from(*byte));
         match self {
             Unit::Seconds => value == u64::from(stamp),
-            Unit::Millis => value / 1000 == u64::from(stamp),
+            Unit::Millis => (u64::from(stamp).saturating_sub(11)..=u64::from(stamp))
+                .contains(&(value / 1000)),
         }
     }
 
@@ -995,10 +998,23 @@ mod tests {
         let expected: B256 = "0x5f3f82df171805f5e2f401018738ad0713148735fecc13140001a07bb2af5800"
             .parse()
             .unwrap();
+        // Metric's Pyth reference oracle carries the publish time within the
+        // slot (1788781709400ms, 5.6s before `quoted_at`) at bytes 14..20.
+        let pyth_original: B256 =
+            "0x000000000000000000000000000001a07bb2c858ffff025400000004bf966209"
+                .parse()
+                .unwrap();
+        let pyth_expected: B256 =
+            "0x000000000000000000000000000001a07bb2af58ffff025400000004bf966209"
+                .parse()
+                .unwrap();
         let (quoted_at, simulated_at) = (1_788_781_715u32, 1_788_781_703u64);
         let mut venues = Venues::default();
         venues.update(
-            registry_frame(Address::ZERO, &[(lane(1), original)]),
+            registry_frame(
+                Address::ZERO,
+                &[(lane(1), original), (lane(2), pyth_original)],
+            ),
             Some(quoted_at),
         );
         let (sender, receiver) = watch::channel(non_empty_snapshot(0, Instant::now()));
@@ -1007,6 +1023,7 @@ mod tests {
 
         let overrides = handle.overrides_for(25_925_279, simulated_at).unwrap();
         assert_eq!(lanes_of(&overrides)[&lane(1)], expected);
+        assert_eq!(lanes_of(&overrides)[&lane(2)], pyth_expected);
 
         // Simulated at the block it was quoted for, the word is already right.
         let overrides = handle.overrides_for(25_925_280, quoted_at.into()).unwrap();
