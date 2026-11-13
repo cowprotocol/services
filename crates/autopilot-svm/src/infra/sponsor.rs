@@ -7,14 +7,19 @@ use {
     cow_solana_rpc::{SolanaRPC, UiTransactionError},
     cow_solana_signer::Signer,
     database::solana::OrderEventLabel,
+    moka::sync::Cache,
     solana_sdk::{
         account::Account,
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
     },
+    solana_transaction_fee::max_fee_lamports,
     sqlx::PgPool,
-    std::collections::{HashMap, HashSet},
+    std::{
+        collections::{HashMap, HashSet},
+        time::Duration,
+    },
     tokio::sync::Mutex,
 };
 
@@ -30,6 +35,13 @@ pub struct Sponsor {
     /// pending, and let more than `max_displaced_creations` go out at once. A
     /// cycle that finds a run in flight skips.
     displacing: Mutex<()>,
+    /// The most the funder spends on creation fees within the window, in
+    /// lamports. `None` is no limit.
+    max_creation_fee_lamports: Option<u64>,
+    /// The fee of each order's creation that went out, kept for one window
+    /// from the first send. In memory only, so a restart forgets what the
+    /// window spent.
+    sent_creations: Cache<IntentHash, u64>,
 }
 
 /// A stored sponsored creation the indexer has not seen on chain.
@@ -78,6 +90,58 @@ impl Sponsor {
             pool,
             max_displaced_creations,
             displacing: Mutex::new(()),
+            max_creation_fee_lamports: None,
+            sent_creations: sent_creations(Duration::from_secs(60 * 60)),
+        }
+    }
+
+    /// Limit the creation fees the funder spends within each `window`.
+    pub fn with_creation_fee_budget(mut self, lamports: Option<u64>, window: Duration) -> Self {
+        self.max_creation_fee_lamports = lamports;
+        self.sent_creations = sent_creations(window);
+        self
+    }
+
+    /// The pending sponsored orders, of those given with their stored
+    /// creation, that the creation fee budget cannot pay for. The budget
+    /// left in the window goes to the orders in the given order. An order
+    /// whose creation already went out costs no second fee. One whose
+    /// creation cannot be priced is over budget.
+    pub fn over_budget<'a>(
+        &self,
+        creations: impl Iterator<Item = (IntentHash, &'a [u8])>,
+    ) -> HashSet<IntentHash> {
+        let Some(budget) = self.max_creation_fee_lamports else {
+            return HashSet::new();
+        };
+        let spent = self.sent_creations.iter().map(|(_, fee)| fee).sum();
+        let mut left = budget.saturating_sub(spent);
+        creations
+            .filter(|(uid, creation)| {
+                if self.sent_creations.contains_key(uid) {
+                    return false;
+                }
+                match creation_fee(creation) {
+                    Some(fee) if fee <= left => {
+                        left -= fee;
+                        false
+                    }
+                    _ => true,
+                }
+            })
+            .map(|(uid, _)| uid)
+            .collect()
+    }
+
+    /// Count the fee of a creation that goes out. A creation lands at most
+    /// once however often it is sent, so an order counts once.
+    fn record_sent(&self, uid: IntentHash, creation: &[u8]) {
+        let Some(fee) = creation_fee(creation) else {
+            return;
+        };
+        // An insert over an existing entry would restart its window.
+        if self.sent_creations.entry(uid).or_insert(fee).is_fresh() {
+            metrics().creation_fee_lamports.inc_by(fee);
         }
     }
 
@@ -102,6 +166,7 @@ impl Sponsor {
                 creation => creation,
             }
             .with_context(|| format!("order 0x{}", const_hex::encode(stored.uid.0)))?;
+            self.record_sent(IntentHash(stored.uid.0), &stored.transaction);
             creations.push(creation);
         }
         Ok(creations)
@@ -214,6 +279,7 @@ impl Sponsor {
             match self.rpc.send_transaction(&transaction).await {
                 Ok(signature) => {
                     tracing::info!(%order_uid, %signature, "sent a displaced order's creation");
+                    self.record_sent(creation.uid, &creation.bytes);
                     displaced.sent.push(creation.uid);
                 }
                 Err(err)
@@ -321,6 +387,19 @@ impl Sponsor {
     }
 }
 
+/// A record of sent creation fees that forgets each one `window` after its
+/// insert.
+fn sent_creations(window: Duration) -> Cache<IntentHash, u64> {
+    Cache::builder().time_to_live(window).build()
+}
+
+/// The most a stored creation can cost the funder in fees, in lamports.
+/// `None` for one that does not decode or that cannot be priced.
+fn creation_fee(creation: &[u8]) -> Option<u64> {
+    let transaction: VersionedTransaction = bincode::deserialize(creation).ok()?;
+    max_fee_lamports(&transaction.message).ok()
+}
+
 /// The associated token accounts a creation opens with the funder as payer.
 /// Creations carry no lookup tables, so the static keys resolve every index.
 fn funder_paid_accounts(creation: &VersionedTransaction, funder: &Pubkey) -> Vec<Pubkey> {
@@ -359,6 +438,10 @@ struct Metrics {
     /// Displaced creations sent without a settlement. Each one costs the
     /// funder a fee, so the rate is the spend signal the cap bounds.
     displaced_creations_sent: prometheus::IntCounter,
+    /// The fees of the creations sent, with a settlement or displaced, in
+    /// lamports. An upper limit on what the funder paid: a creation that
+    /// went out can fail to land.
+    creation_fee_lamports: prometheus::IntCounter,
 }
 
 fn metrics() -> &'static Metrics {
@@ -440,6 +523,45 @@ mod tests {
             PgPool::connect_lazy("postgres://localhost/unused").unwrap(),
             max_displaced_creations,
         )
+    }
+
+    /// Each pending creation costs one signature, 5000 lamports. A budget of
+    /// 12000 pays for two, in the given order, and for one more once one of
+    /// them went out. The one sent stays affordable and counts once.
+    #[tokio::test]
+    async fn the_budget_left_in_the_window_decides_what_is_affordable() {
+        let funder = Keypair::new();
+        let creations: Vec<_> = (0..3)
+            .map(|_| pending_creation(&funder, Pubkey::new_unique(), Pubkey::new_unique()))
+            .collect();
+        let over_budget = |sponsor: &Sponsor| {
+            sponsor.over_budget(
+                creations
+                    .iter()
+                    .map(|creation| (creation.uid, creation.bytes.as_slice())),
+            )
+        };
+        let hour = Duration::from_secs(60 * 60);
+
+        let unlimited = sponsor(&funder, MocksMap::default(), [], 0);
+        assert!(over_budget(&unlimited).is_empty());
+
+        let limited = sponsor(&funder, MocksMap::default(), [], 0)
+            .with_creation_fee_budget(Some(12_000), hour);
+        assert_eq!(over_budget(&limited), HashSet::from([creations[2].uid]));
+
+        limited.record_sent(creations[2].uid, &creations[2].bytes);
+        limited.record_sent(creations[2].uid, &creations[2].bytes);
+        assert_eq!(over_budget(&limited), HashSet::from([creations[1].uid]));
+
+        let undecodable = [(IntentHash([0; 32]), [0u8].as_slice())];
+        assert_eq!(limited.over_budget(undecodable.into_iter()).len(), 1);
+
+        // A sent creation leaves the window at once, so the budget is whole.
+        let forgetful = sponsor(&funder, MocksMap::default(), [], 0)
+            .with_creation_fee_budget(Some(12_000), Duration::ZERO);
+        forgetful.record_sent(creations[2].uid, &creations[2].bytes);
+        assert_eq!(over_budget(&forgetful), HashSet::from([creations[2].uid]));
     }
 
     /// Countersigning fills exactly the funder's slot and leaves the owner's

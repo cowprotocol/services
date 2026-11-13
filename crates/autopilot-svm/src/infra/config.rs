@@ -260,6 +260,20 @@ pub struct Sponsoring {
     /// each, and its order may never fill. Zero, the default, sends none.
     #[serde(default)]
     pub max_displaced_creations: usize,
+    /// The most the funder spends on creation fees within
+    /// `creation-fee-window`, in lamports. With the budget spent, the cut
+    /// keeps pending sponsored orders out of the auction until earlier
+    /// creations leave the window. Absent, the default, there is no limit.
+    #[serde(default)]
+    pub max_creation_fee_lamports: Option<u64>,
+    /// How long a sent creation's fee counts against
+    /// `max-creation-fee-lamports`.
+    #[serde(with = "humantime_serde", default = "default_creation_fee_window")]
+    pub creation_fee_window: Duration,
+}
+
+fn default_creation_fee_window() -> Duration {
+    Duration::from_secs(60 * 60)
 }
 
 /// On-chain addresses: programs and mints.
