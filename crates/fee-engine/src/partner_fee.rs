@@ -2,12 +2,14 @@
 //!
 //! The cap is the autopilot's: `get_partner_fee` in `autopilot::domain::fee`
 //! and the orderbook's fast-path check (`capped_partner_volume_factors` in
-//! `shared::fee`) call [`capped_fee_factor`] from here. The autopilot returns
-//! no partner fees when the cap does not convert to a `Decimal`;
-//! [`partner_fees`] keeps that behaviour. The fast-path check spends no cap
-//! budget on surplus fees; [`partner_fees`] does, as the autopilot does.
+//! `shared::fee`) use [`PartnerFeeBudget`] from here. The fast-path check
+//! spends no cap budget on surplus fees; [`partner_fees`] does, as the
+//! autopilot does.
 
-use {crate::Fee, configs::fee_factor::FeeFactor, rust_decimal::Decimal};
+use {
+    crate::{Fee, FeeFactor},
+    rust_decimal::Decimal,
+};
 
 const MAX_BPS: u64 = 10_000;
 
@@ -23,19 +25,9 @@ pub enum PartnerFee {
 /// the volume. A fee past the cap stays, with a zero volume share or volume
 /// cap.
 pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
-    // `RuleSet::new` already checked the cap, so this cannot fail; storing the
-    // cap as a `Decimal` would drop the branch.
-    let Ok(cap) = Decimal::try_from(cap.get()) else {
-        return vec![];
-    };
-    let mut accumulated = Decimal::ZERO;
-    let mut volume_share = |bps: u64| {
-        capped_fee_factor(
-            Decimal::from(bps) / Decimal::from(MAX_BPS),
-            cap,
-            &mut accumulated,
-        )
-    };
+    let mut budget = PartnerFeeBudget::new(cap);
+    let mut volume_share =
+        |bps: u64| budget.capped_fee_factor(Decimal::from(bps) / Decimal::from(MAX_BPS));
     fees.iter()
         .map(|fee| match *fee {
             PartnerFee::Volume { bps } => Fee::Volume {
@@ -59,29 +51,82 @@ pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
         .collect()
 }
 
-/// Caps `value` to the headroom `(1 + cap) / (1 + accumulated) - 1` the fees
-/// before it left and advances `accumulated`. With three or more fees the
-/// compounded total can pass `cap` slightly.
-pub fn capped_fee_factor(value: Decimal, cap: Decimal, accumulated: &mut Decimal) -> FeeFactor {
-    let remaining = (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
-    *accumulated += value.min(cap - *accumulated);
-    let factor = value.max(Decimal::ZERO).min(remaining);
-    FeeFactor::new(f64::try_from(factor).expect("a decimal in [0, 1) is a double"))
+/// The share of the volume an order's partner fees may still take, spent fee
+/// by fee in app-data order.
+#[derive(Debug)]
+pub struct PartnerFeeBudget {
+    cap: FeeFactor,
+    /// In [0, `cap`].
+    accumulated: Decimal,
+}
+
+impl PartnerFeeBudget {
+    pub fn new(cap: FeeFactor) -> Self {
+        Self {
+            cap,
+            accumulated: Decimal::ZERO,
+        }
+    }
+
+    /// Caps `value` to the headroom `(1 + cap) / (1 + accumulated) - 1` the
+    /// fees before it left and spends it. With three or more fees the
+    /// compounded total can pass `cap` slightly. A negative `value` is zero.
+    pub fn capped_fee_factor(&mut self, value: Decimal) -> FeeFactor {
+        let cap = self.cap.get();
+        // Clamped before it is spent too, so a negative value cannot lower
+        // `accumulated` and raise the headroom past the cap.
+        let value = value.max(Decimal::ZERO);
+        let remaining = (Decimal::ONE + cap) / (Decimal::ONE + self.accumulated) - Decimal::ONE;
+        self.accumulated += value.min(cap - self.accumulated);
+        FeeFactor::try_from(value.min(remaining))
+            .expect("in [0, cap] because accumulated is in [0, cap]")
+    }
 }
 
 /// A share of the surplus or improvement, just under 100% at most.
 fn share(bps: u64) -> FeeFactor {
-    FeeFactor::new(bps.min(MAX_BPS - 1) as f64 / MAX_BPS as f64)
+    FeeFactor::try_from(Decimal::from(bps.min(MAX_BPS - 1)) / Decimal::from(MAX_BPS))
+        .expect("under 100%")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn factor(value: f64) -> FeeFactor {
+        FeeFactor::try_from(value).unwrap()
+    }
+
     fn volume(factor: f64) -> Fee {
         Fee::Volume {
-            factor: FeeFactor::new(factor),
+            factor: self::factor(factor),
         }
+    }
+
+    /// The fees with their factors as doubles, as the autopilot computes them.
+    fn as_f64(fees: &[Fee]) -> Vec<Fee> {
+        let round = |factor: FeeFactor| self::factor(factor.to_f64());
+        fees.iter()
+            .map(|fee| match *fee {
+                Fee::Volume { factor } => Fee::Volume {
+                    factor: round(factor),
+                },
+                Fee::Surplus {
+                    factor,
+                    max_volume_factor,
+                } => Fee::Surplus {
+                    factor: round(factor),
+                    max_volume_factor: round(max_volume_factor),
+                },
+                Fee::PriceImprovement {
+                    factor,
+                    max_volume_factor,
+                } => Fee::PriceImprovement {
+                    factor: round(factor),
+                    max_volume_factor: round(max_volume_factor),
+                },
+            })
+            .collect()
     }
 
     #[test]
@@ -101,7 +146,7 @@ mod tests {
             let fees: Vec<_> = bps.iter().map(|&bps| PartnerFee::Volume { bps }).collect();
             let expected: Vec<_> = expected.iter().copied().map(volume).collect();
             assert_eq!(
-                partner_fees(&fees, FeeFactor::new(cap)),
+                as_f64(&partner_fees(&fees, factor(cap))),
                 expected,
                 "{bps:?} at {cap}"
             );
@@ -122,21 +167,29 @@ mod tests {
                     max_volume_bps: 10,
                 },
             ],
-            FeeFactor::new(0.01),
+            factor(0.01),
         );
         assert_eq!(
             fees,
             [
                 Fee::Surplus {
-                    factor: FeeFactor::new(0.9999),
-                    max_volume_factor: FeeFactor::new(0.01),
+                    factor: factor(0.9999),
+                    max_volume_factor: factor(0.01),
                 },
                 volume(0.0),
                 Fee::PriceImprovement {
-                    factor: FeeFactor::new(0.3),
-                    max_volume_factor: FeeFactor::new(0.0),
+                    factor: factor(0.3),
+                    max_volume_factor: factor(0.0),
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_negative_value_spends_nothing() {
+        let mut budget = PartnerFeeBudget::new(factor(0.01));
+        assert_eq!(budget.capped_fee_factor(Decimal::from(-1)), FeeFactor::ZERO);
+        assert_eq!(budget.capped_fee_factor(Decimal::from(2)), factor(0.01));
+        assert_eq!(budget.capped_fee_factor(Decimal::from(2)), FeeFactor::ZERO);
     }
 }

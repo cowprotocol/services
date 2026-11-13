@@ -23,9 +23,10 @@ not return valid fees is reported. This catches a misspelt name or a bad fee
 argument such as `volume(0.001)` at load time instead of on the first order.
 On the bare sample (no optional field present) the rules run as on a real
 order, and every rule that is skipped is reported. This catches a rule that
-reads a field an order may lack, such as `order.quote.sellAmount`, directly
-instead of through the optional operator (`order.?quote.sellAmount`), which
-would be skipped on every order without a quote.
+reads a field an order may lack, such as `order.ethflowData.userValidTo`,
+directly instead of through the optional operator
+(`order.?ethflowData.userValidTo`), which would be skipped on every order
+that is not an ethflow order.
 
 The pass has limits:
 
@@ -33,8 +34,7 @@ The pass has limits:
   sample is out of market, so the bad argument in `order.inMarket ?
   volume(0.001) : volume(1)` is not found; a static check of every branch is
   planned.
-- Every amount and price in the samples is 1, except `feeAmount`, which is 0
-  as on every order the API accepts, and every timestamp is `now`. A fee
+- Every amount in the samples is 1, and every timestamp is `now`. A fee
   computed from the order is checked only at those values:
   `volume(order.buyAmount / order.sellAmount)` passes, but on a real order
   it can give an out-of-range argument, and the rule is then skipped and
@@ -47,22 +47,23 @@ fee:  volume(10)
 
 name: Default
 when: true
-fee:  surplus(50, 1)
+fee:  surplus(50, 100)
 ```
 
 ## The rules file
 
 `load_rules_from_str(source)` reads a `RuleSetDefinition` from TOML:
 `[lists]` holds named lists of strings, each `[[rule]]` table is a rule,
-tried in file order, and `[partner_fees]` holds `max_volume_bps`, the basis
-points of the volume an order's partner fees may take together. Without the
-table it is 100 (1%), as in the autopilot; it lands on the fee grid like a
-fee argument.
+tried in file order, and `[partner-fees]` holds `max-volume-bps`, the basis
+points of the volume an order's partner fees may take together; it lands on
+the fee grid like a fee argument. Without the table the engine returns no
+partner fee, as the orderbook counts none without
+`order-quoting.max-partner-fee`.
 Unknown top-level and rule keys are refused; any key under `[lists]` is a
 list name, so a list that no rule names loads without error. The file goes
 through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure
 refuses the whole file as a `LoadError`: `Toml` (does not parse, unknown
-key, missing field, a rule field that is empty or a bad `max_volume_bps`;
+key, missing field, a rule field that is empty or a bad `max-volume-bps`;
 names the line and column), `Rules` (a `CompileError`) or `SampleOrder` (every
 `SampleOrderError`). A file without rules loads: no order pays a protocol
 fee.
@@ -75,8 +76,8 @@ malformed rule is a `MalformedRule` error that names the rule by its number,
 and any other malformed value is a `Toml` error.
 
 ```toml
-[partner_fees]
-max_volume_bps = 100
+[partner-fees]
+max-volume-bps = 100
 
 [lists]
 stablecoins = [
@@ -91,6 +92,11 @@ when = 'order.owner in jit_makers'
 fee  = 'no_fee()'
 
 [[rule]]
+name = "Trust Wallet"
+when = 'order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"'
+fee  = 'no_fee()'
+
+[[rule]]
 name = "Stablecoin swaps"
 when = 'order.sellToken in stablecoins && order.buyToken in stablecoins'
 fee  = 'volume(10)'
@@ -98,7 +104,7 @@ fee  = 'volume(10)'
 [[rule]]
 name = "Default"
 when = 'true'
-fee  = 'surplus(50, 1)'
+fee  = 'surplus(50, 100)'
 ```
 
 `tests/mainnet.toml` is the mainnet policy as rules, with short token
@@ -121,7 +127,7 @@ order may lack without failing; see the `order` section.
 
 ```
 when: order.kind == "sell" && order.sellAmount > 1e21
-fee:  surplus(order.partiallyFillable ? 40 : 50, 1)
+fee:  surplus(order.partiallyFillable ? 40 : 50, 100)
 ```
 
 ### Fee functions
@@ -131,15 +137,19 @@ so a fee can depend on the order. A list stacks several fees. Every argument
 must land on a grid of 1e-6 of the volume (two decimal places for `bps`,
 four for a percent); a finer value is rejected, not rounded.
 
+A `fee` that names no variable, such as `[surplus(50, 98), volume(2)]`, is
+evaluated once when the rules load, not for each order. Where the evaluation
+cost matters, put the condition in `when` and keep the `fee` constant.
+
 - `volume(bps)` — `bps / 10000` of the volume.
-- `surplus(share, max_volume)` — `share` percent of the surplus over the limit
-  price, at most `max_volume` percent of the volume.
-- `price_improvement(share, max_volume)` — `share` percent of the improvement
-  over the quote, with the same cap.
+- `surplus(share, max_volume_bps)` — `share` percent of the surplus over the
+  limit price, at most `max_volume_bps / 10000` of the volume.
+- `price_improvement(share, max_volume_bps)` — `share` percent of the
+  improvement over the quote, with the same cap.
 - `no_fee()` — no protocol fee.
 
 ```
-fee: [volume(order.kind == "sell" ? 2 : 5), price_improvement(30, 0.5)]
+fee: [volume(order.kind == "sell" ? 2 : 5), price_improvement(30, 50)]
 fee: no_fee()
 ```
 
@@ -170,8 +180,10 @@ when: order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"
 
 ### Lists
 
-Each entry of the lists map is a CEL list of strings under its name. `in`
-tests membership and the list macros work on it. Hex members are lowercased
+Each entry of the lists map is a set of strings under its name: a CEL map of
+each member to `true`, so `in` is a lookup whatever the size of the list.
+`size()` and the macros work on its members, in no set order; indexing and
+`+` do not. Hex members are lowercased
 when the set is built, as are the hex strings in `order`, so address case
 does not matter. The names `order`, `now` and `math` are reserved.
 
@@ -201,13 +213,12 @@ order.
 
 The fields of the API order that a fee can depend on, under the API names
 except for the app data (see `order.appData`), built field by field in
-`order_view/mod.rs`. Amounts and prices are doubles, whole numbers
+`order_view/mod.rs`. Amounts are doubles, whole numbers
 (`validTo`, `validFrom`, `ethflowData.userValidTo`) are `uint`s and hex is
 lowercase. An order with every field set looks like this (hashes shortened):
 
 ```json
 {
-  "uid": "0x5f2a…d1e6",
   "owner": "0x40a50cf069e992aa4536211b23f286ef88752187",
   "creationDate": "2026-10-28T14:03:11.520Z",
   "sellToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
@@ -215,47 +226,22 @@ lowercase. An order with every field set looks like this (hashes shortened):
   "receiver": "0x0000000000000000000000000000000000000000",
   "sellAmount": 2.5e9,
   "buyAmount": 6.21e17,
-  "feeAmount": 0.0,
   "kind": "sell",
   "partiallyFillable": false,
-  "sellTokenBalance": "erc20",
-  "buyTokenBalance": "erc20",
   "signingScheme": "eip712",
   "validTo": 1793284991,
   "validFrom": 1793281391,
   "appData": {
     "appCode": "CoW Swap",
     "metadata": {
-      "signer": "0x40a50cf069e992aa4536211b23f286ef88752187",
-      "replacedOrder": { "uid": "0x9b4c…e1f0" },
-      "flashloan": {
-        "liquidityProvider": "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
-        "protocolAdapter": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
-        "receiver": "0x7d9c4dee56933151bc5c909cfe09def0d315cb4a",
-        "token": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-        "amount": 2.5e9
-      }
+      "flashloan": true
     }
   },
   "fastPath": false,
   "inMarket": true,
-  "quote": {
-    "sellAmount": 2.5e9,
-    "buyAmount": 6.24e17,
-    "feeAmount": 1.83e6,
-    "gasAmount": 145000.0,
-    "gasPrice": 1.2e9,
-    "sellTokenPrice": 2.5e8,
-    "solver": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
-    "verified": true
-  },
   "ethflowData": {
     "userValidTo": 1793284991
-  },
-  "onchainOrderData": {
-    "sender": "0x40a50cf069e992aa4536211b23f286ef88752187"
-  },
-  "onchainUser": "0x40a50cf069e992aa4536211b23f286ef88752187"
+  }
 }
 ```
 
@@ -264,10 +250,12 @@ check it: the host must pass false when the order has no quote.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
-`settlementContract`) and legacy fields (`class`, `isLiquidityOrder`) are
-not in the view. An unset `receiver` is the zero address. Other optional
+`settlementContract`), legacy fields (`class`, `isLiquidityOrder`), fields no
+fee has depended on (`uid`, `feeAmount`, the token balances, the onchain
+placement) and the quote are not in the view: a quote request has no quote, so a fee that read it
+could not be quoted. An unset `receiver` is the zero address. Other optional
 fields are absent when unset, not `null`. Reach one with the optional
-operator `order.?quote`: it yields an absent value instead of failing and
+operator `.?`: it yields an absent value instead of failing and
 reaches through an optional parent, so `order.?ethflowData.userValidTo`
 reads on any order, where `order.ethflowData.userValidTo` needs a
 `has(order.ethflowData)` guard first. End the chain with `.orValue(d)` for a
@@ -281,8 +269,8 @@ of it.
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
 when: timestamp(int(order.validTo)) - now > duration("1h")
-when: order.?quote.sellAmount.orValue(0.0) > 0.0
-fee:  order.inMarket ? price_improvement(50, 1) : surplus(50, 1)
+when: order.?ethflowData.hasValue()
+fee:  order.inMarket ? price_improvement(50, 100) : surplus(50, 100)
 ```
 
 A hex literal compares equal to the view only in lowercase: write it so, or
@@ -297,8 +285,9 @@ reads no app-data text. In the order the API returns, `appData` is the hash
 and `fullAppData` is the document as text; the view has the parsed document
 as `appData`, and no hash.
 
-The order above shows every field. No other key of the document is here,
-hooks, wrappers and partner fees included (see `partner_fees` under
+The order above shows every field: the `appCode`, and `metadata.flashloan`
+as `true` when the document asks for a flashloan. No other key of the
+document is here, hooks, wrappers and partner fees included (see `partner_fees` under
 Outcome). The host passes `AppData::default()` and no partner fees when the
 order has no document or the protocol cannot parse it. `appData` and
 `appData.metadata` are always present; every field under them is optional,
@@ -330,5 +319,6 @@ diagnostics, and logs nothing itself:
   log or count them.
 - `partner_fees`: the fees `OrderView::partner_fees` asks for, in app-data
   order, also when no rule matched. The caller puts them after the fees of
-  the match it picks. They are capped by `max_volume_bps` as the autopilot
+  the match it picks. They are capped by `max-volume-bps` as the autopilot
   caps them; a fee past the cap stays, with a zero volume share or volume cap.
+  Without `[partner-fees]` the list is empty.

@@ -1,16 +1,13 @@
 //! Fees a rule returns and the CEL functions that build them.
 
 use {
+    crate::FeeFactor,
     cel::{
         Context,
         Value,
         objects::{KeyRef, Map, ValueType},
     },
-    configs::fee_factor::FeeFactor,
-    rust_decimal::{
-        Decimal,
-        prelude::{FromPrimitive, ToPrimitive},
-    },
+    rust_decimal::{Decimal, prelude::FromPrimitive},
     std::{collections::HashMap, fmt, str::FromStr},
 };
 
@@ -72,11 +69,13 @@ impl FromStr for FeeKind {
     }
 }
 
-/// A fee factor is a whole number of steps of 1e-6 of the volume (the "grid",
-/// [`FeeFactor::HIGH_PRECISION_SCALE`] steps per 1). Steps per basis point.
-pub(crate) const BPS: u64 = FeeFactor::HIGH_PRECISION_SCALE / 10_000;
+/// A fee argument is a whole number of steps of 1e-6 of the volume (the
+/// "grid"): this many steps per 1.
+const GRID: u64 = 1_000_000;
+/// Steps per basis point.
+pub(crate) const BPS: u64 = GRID / 10_000;
 /// Steps per percent.
-pub(crate) const PERCENT: u64 = FeeFactor::HIGH_PRECISION_SCALE / 100;
+pub(crate) const PERCENT: u64 = GRID / 100;
 
 /// `number` in the unit `grid_units` sizes ([`PERCENT`], [`BPS`]) as a fee
 /// factor: `0.3` with `BPS` is 30 steps of 1e-6, i.e. 0.00003. A value that
@@ -88,10 +87,7 @@ pub(crate) fn factor_on_grid(number: Decimal, grid_units: u64) -> Result<FeeFact
     if !scaled.is_integer() {
         return Err(FactorError::OffGrid);
     }
-    scaled
-        .to_u64()
-        .and_then(|units| FeeFactor::from_high_precision(units).ok())
-        .ok_or(FactorError::OutOfRange)
+    FeeFactor::try_from(scaled / Decimal::from(GRID))
 }
 
 /// Why a number is not a fee factor.
@@ -118,9 +114,9 @@ impl Argument {
         name: "bps",
         grid_units: BPS,
     };
-    const MAX_VOLUME: Self = Self {
-        name: "max_volume",
-        grid_units: PERCENT,
+    const MAX_VOLUME_BPS: Self = Self {
+        name: "max_volume_bps",
+        grid_units: BPS,
     };
     const SHARE: Self = Self {
         name: "share",
@@ -142,10 +138,13 @@ pub(crate) fn register_fee_functions(context: &mut Context) {
     context
         .add_function(
             FeeKind::Surplus.name(),
-            |share: Value, max_volume: Value| {
+            |share: Value, max_volume_bps: Value| {
                 fee_value(
                     FeeKind::Surplus,
-                    [(Argument::SHARE, share), (Argument::MAX_VOLUME, max_volume)],
+                    [
+                        (Argument::SHARE, share),
+                        (Argument::MAX_VOLUME_BPS, max_volume_bps),
+                    ],
                 )
             },
         )
@@ -153,10 +152,13 @@ pub(crate) fn register_fee_functions(context: &mut Context) {
     context
         .add_function(
             FeeKind::PriceImprovement.name(),
-            |share: Value, max_volume: Value| {
+            |share: Value, max_volume_bps: Value| {
                 fee_value(
                     FeeKind::PriceImprovement,
-                    [(Argument::SHARE, share), (Argument::MAX_VOLUME, max_volume)],
+                    [
+                        (Argument::SHARE, share),
+                        (Argument::MAX_VOLUME_BPS, max_volume_bps),
+                    ],
                 )
             },
         )
@@ -215,14 +217,14 @@ impl Fee {
     fn surplus(args: Arguments<'_>) -> Result<Self, FeeError> {
         Ok(Fee::Surplus {
             factor: args.factor(Argument::SHARE)?,
-            max_volume_factor: args.factor(Argument::MAX_VOLUME)?,
+            max_volume_factor: args.factor(Argument::MAX_VOLUME_BPS)?,
         })
     }
 
     fn price_improvement(args: Arguments<'_>) -> Result<Self, FeeError> {
         Ok(Fee::PriceImprovement {
             factor: args.factor(Argument::SHARE)?,
-            max_volume_factor: args.factor(Argument::MAX_VOLUME)?,
+            max_volume_factor: args.factor(Argument::MAX_VOLUME_BPS)?,
         })
     }
 }
@@ -322,6 +324,10 @@ mod tests {
         FeeFactor::try_from(value).unwrap()
     }
 
+    fn steps(factor: FeeFactor) -> Decimal {
+        factor.get() * Decimal::from(GRID)
+    }
+
     #[test]
     fn builds_each_fee_kind() {
         assert_eq!(
@@ -331,14 +337,14 @@ mod tests {
             }]
         );
         assert_eq!(
-            evaluate("surplus(50, 1)").unwrap(),
+            evaluate("surplus(50, 100)").unwrap(),
             vec![Fee::Surplus {
                 factor: factor(0.5),
                 max_volume_factor: factor(0.01)
             }]
         );
         assert_eq!(
-            evaluate("price_improvement(30, 0.5)").unwrap(),
+            evaluate("price_improvement(30, 50)").unwrap(),
             vec![Fee::PriceImprovement {
                 factor: factor(0.3),
                 max_volume_factor: factor(0.005)
@@ -350,7 +356,7 @@ mod tests {
     #[test]
     fn stacks_a_list_and_accepts_cel_arguments() {
         assert_eq!(
-            evaluate("[surplus(30, 1), volume(1 + 1)]").unwrap(),
+            evaluate("[surplus(30, 100), volume(1 + 1)]").unwrap(),
             vec![
                 Fee::Surplus {
                     factor: factor(0.3),
@@ -370,11 +376,11 @@ mod tests {
             _ => panic!("expected one volume fee"),
         };
         assert_ne!(0.3 / 10_000., 0.00003);
-        assert_eq!(volume("volume(0.3)").get(), 0.00003);
-        assert_eq!(volume("volume(0.3)").to_high_precision(), 30);
-        assert_eq!(volume("volume(0.33)").to_high_precision(), 33);
+        assert_eq!(volume("volume(0.3)"), factor(0.00003));
+        assert_eq!(steps(volume("volume(0.3)")), Decimal::from(30));
+        assert_eq!(steps(volume("volume(0.33)")), Decimal::from(33));
         assert_eq!(
-            evaluate("surplus(50, 0.98)").unwrap(),
+            evaluate("surplus(50, 98)").unwrap(),
             vec![Fee::Surplus {
                 factor: factor(0.5),
                 max_volume_factor: factor(0.0098)
@@ -385,14 +391,14 @@ mod tests {
     #[test]
     fn accepts_every_argument_down_to_the_grid() {
         assert_eq!(
-            evaluate("price_improvement(50.5, 0.9875)").unwrap(),
+            evaluate("price_improvement(50.5, 98.75)").unwrap(),
             vec![Fee::PriceImprovement {
                 factor: factor(0.505),
                 max_volume_factor: factor(0.009875)
             }]
         );
         assert_eq!(
-            evaluate("surplus(0.0001, 0.0001)").unwrap(),
+            evaluate("surplus(0.0001, 0.01)").unwrap(),
             vec![Fee::Surplus {
                 factor: factor(0.000001),
                 max_volume_factor: factor(0.000001)
@@ -404,9 +410,9 @@ mod tests {
     fn rejects_arguments_finer_than_the_grid() {
         for source in [
             "volume(0.333)",
-            "surplus(50.00001, 1)",
-            "surplus(50, 0.98765)",
-            "price_improvement(0.00005, 1)",
+            "surplus(50.00001, 100)",
+            "surplus(50, 98.765)",
+            "price_improvement(0.00005, 100)",
         ] {
             assert!(
                 matches!(

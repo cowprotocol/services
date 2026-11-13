@@ -12,20 +12,23 @@
 
 mod evaluator;
 mod fee;
+mod fee_factor;
 mod loader;
 mod order_view;
 mod partner_fee;
+mod report;
 mod rules;
 
 pub use {
     evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
     fee::{FactorError, Fee, FeeError, FeeKind},
+    fee_factor::FeeFactor,
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
-    order_view::{AppData, Flashloan, OrderView},
-    partner_fee::{PartnerFee, capped_fee_factor},
+    order_view::{AppData, OrderView},
+    partner_fee::{PartnerFee, PartnerFeeBudget},
+    report::{Mismatch, Outcome, report_comparison, reset_comparison_counters},
     rules::{
         CompileError,
-        DEFAULT_MAX_VOLUME_BPS,
         Field,
         PartnerFees,
         Rule,

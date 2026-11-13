@@ -2,10 +2,25 @@
 
 mod app_data;
 
-pub use app_data::{AppData, Flashloan};
+pub use app_data::AppData;
 use {
     self::app_data::app_data_view,
-    serde_json::{Value, json},
+    cel::common::{
+        types::{
+            CelBool,
+            CelDouble,
+            CelInt,
+            CelList,
+            CelMap,
+            CelMapKey,
+            CelNull,
+            CelString,
+            CelUInt,
+        },
+        value::Val,
+    },
+    serde_json::Value,
+    std::collections::HashMap,
 };
 
 /// An order as the host hands it to the engine: the API order plus the facts
@@ -23,9 +38,10 @@ pub struct OrderView<'a> {
     pub in_market: bool,
 }
 
-/// The order as rules see it: every field a rule can read, with amounts and
-/// prices as doubles and hex in lowercase. Unset optional fields are absent,
-/// not `null`. Execution state, settlement and legacy fields are left out.
+/// The order as rules see it: every field a rule can read, with amounts as
+/// doubles and hex in lowercase. Unset optional fields are absent, not `null`.
+/// Execution state, settlement and legacy fields are left out, and so is the
+/// quote: a quote request has none, so its fee could not match.
 pub(crate) fn order_view(
     OrderView {
         order,
@@ -33,73 +49,92 @@ pub(crate) fn order_view(
         in_market,
         ..
     }: OrderView,
-) -> Value {
+) -> Box<dyn Val> {
     let (data, meta) = (&order.data, &order.metadata);
-    let mut view = json!({
-        "uid": hex(&meta.uid.0),
-        "owner": hex(meta.owner.as_slice()),
-        "creationDate": meta.creation_date,
-        "sellToken": hex(data.sell_token.as_slice()),
-        "buyToken": hex(data.buy_token.as_slice()),
-        "receiver": hex(data.receiver.raw_bytes()),
-        "sellAmount": number(data.sell_amount),
-        "buyAmount": number(data.buy_amount),
-        "feeAmount": number(data.fee_amount),
-        "kind": data.kind,
-        "partiallyFillable": data.partially_fillable,
-        "sellTokenBalance": data.sell_token_balance,
-        "buyTokenBalance": data.buy_token_balance,
-        "signingScheme": order.signature.scheme(),
-        "validTo": data.valid_to,
-        "validFrom": meta.valid_from,
-        "appData": app_data_view(app_data),
-        "fastPath": meta.fast_path,
-        "inMarket": in_market,
-        "quote": meta.quote.as_ref().map(|quote| json!({
-            "sellAmount": number(quote.sell_amount),
-            "buyAmount": number(quote.buy_amount),
-            "feeAmount": number(quote.fee_amount),
-            "gasAmount": number(quote.gas_amount.to_plain_string()),
-            "gasPrice": number(quote.gas_price.to_plain_string()),
-            "sellTokenPrice": number(quote.sell_token_price.to_plain_string()),
-            "solver": hex(quote.solver.as_slice()),
-            "verified": quote.verified,
-        })),
-        "ethflowData": meta.ethflow_data.as_ref().map(|ethflow| json!({
-            "userValidTo": ethflow.user_valid_to,
-        })),
-        "onchainOrderData": meta.onchain_order_data.as_ref().map(|onchain| json!({
-            "sender": hex(onchain.sender.as_slice()),
-        })),
-        "onchainUser": meta.onchain_user.map(|user| hex(user.as_slice())),
-    });
-    remove_nulls(&mut view);
-    view
+    map([
+        ("owner", text(hex(meta.owner.as_slice()))),
+        ("creationDate", serialized(meta.creation_date)),
+        ("sellToken", text(hex(data.sell_token.as_slice()))),
+        ("buyToken", text(hex(data.buy_token.as_slice()))),
+        ("receiver", text(hex(data.receiver.raw_bytes()))),
+        ("sellAmount", number(data.sell_amount)),
+        ("buyAmount", number(data.buy_amount)),
+        ("kind", serialized(data.kind)),
+        ("partiallyFillable", serialized(data.partially_fillable)),
+        ("signingScheme", serialized(order.signature.scheme())),
+        ("validTo", serialized(data.valid_to)),
+        ("validFrom", serialized(meta.valid_from)),
+        ("appData", Some(app_data_view(app_data))),
+        ("fastPath", serialized(meta.fast_path)),
+        ("inMarket", serialized(in_market)),
+        (
+            "ethflowData",
+            meta.ethflow_data
+                .as_ref()
+                .map(|ethflow| map([("userValidTo", serialized(ethflow.user_valid_to))])),
+        ),
+    ])
+}
+
+/// A CEL map of the fields that are set: an unset option is absent, not
+/// `null`, so `.?` and `has` both read it as missing.
+fn map<const N: usize>(fields: [(&'static str, Option<Box<dyn Val>>); N]) -> Box<dyn Val> {
+    let mut map = HashMap::with_capacity(N);
+    for (name, value) in fields {
+        if let Some(value) = value {
+            map.insert(CelMapKey::from(name), value);
+        }
+    }
+    Box::new(CelMap::from(map))
+}
+
+fn text(value: String) -> Option<Box<dyn Val>> {
+    Some(Box::new(CelString::from(value)))
+}
+
+/// A field typed as its API JSON, e.g. an enum as its name; absent if `null`.
+fn serialized(value: impl serde::Serialize) -> Option<Box<dyn Val>> {
+    let value = serde_json::to_value(value).expect("order fields serialize");
+    (!value.is_null()).then(|| cel_value(value))
+}
+
+/// JSON as the value CEL evaluates, typed as `Context::add_variable` types it.
+/// Recursive: a field is as deep as its type.
+fn cel_value(value: Value) -> Box<dyn Val> {
+    match value {
+        Value::Null => Box::new(CelNull),
+        Value::Bool(value) => Box::new(CelBool::from(value)),
+        Value::Number(number) => match (number.as_u64(), number.as_i64()) {
+            (Some(value), _) => Box::new(CelUInt::from(value)),
+            (None, Some(value)) => Box::new(CelInt::from(value)),
+            (None, None) => Box::new(CelDouble::from(
+                number.as_f64().expect("a JSON number is a double"),
+            )),
+        },
+        Value::String(value) => Box::new(CelString::from(value)),
+        Value::Array(values) => Box::new(CelList::from(
+            values.into_iter().map(cel_value).collect::<Vec<_>>(),
+        )),
+        Value::Object(fields) => Box::new(CelMap::from(
+            fields
+                .into_iter()
+                .map(|(name, value)| (CelMapKey::from(name), cel_value(value)))
+                .collect::<HashMap<_, _>>(),
+        )),
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
     const_hex::encode_prefixed(bytes)
 }
 
-/// A decimal amount or price as a double, rounded once from its plain text.
-fn number(decimal: impl ToString) -> f64 {
-    decimal
+/// A decimal amount as a double, rounded once from its plain text.
+fn number(decimal: impl ToString) -> Option<Box<dyn Val>> {
+    let number: f64 = decimal
         .to_string()
         .parse()
-        .expect("decimals parse as doubles")
-}
-
-/// Drops `null` fields, so an unset option is absent, not `null`: `.?` and
-/// `has` both read an absent field as missing. Iterative over a heap stack, so
-/// no depth of nesting can exhaust the call stack.
-fn remove_nulls(value: &mut Value) {
-    let mut stack = vec![value];
-    while let Some(value) = stack.pop() {
-        if let Value::Object(fields) = value {
-            fields.retain(|_, field| !field.is_null());
-            stack.extend(fields.values_mut());
-        }
-    }
+        .expect("decimals parse as doubles");
+    Some(Box::new(CelDouble::from(number)))
 }
 
 fn is_hex(text: &str) -> bool {
@@ -115,6 +150,30 @@ pub(crate) fn normalize(text: &str) -> String {
     }
 }
 
+/// A CEL value as JSON, for tests to compare the view with.
+#[cfg(test)]
+pub(crate) fn json(value: &dyn Val) -> Value {
+    fn json(value: &cel::Value) -> Value {
+        match value {
+            cel::Value::Map(map) => map
+                .map
+                .iter()
+                .map(|(name, value)| (name.to_string(), json(value)))
+                .collect::<serde_json::Map<_, _>>()
+                .into(),
+            cel::Value::List(values) => values.iter().map(json).collect::<Vec<_>>().into(),
+            cel::Value::String(value) => value.as_str().into(),
+            cel::Value::Float(value) => (*value).into(),
+            cel::Value::UInt(value) => (*value).into(),
+            cel::Value::Int(value) => (*value).into(),
+            cel::Value::Bool(value) => (*value).into(),
+            cel::Value::Null => Value::Null,
+            other => panic!("{other:?} is not in the view"),
+        }
+    }
+    json(&cel::Value::try_from(value).unwrap())
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -128,8 +187,14 @@ mod tests {
             OrderMetadata,
             OrderQuote,
         },
+        serde_json::json,
         std::collections::BTreeSet,
     };
+
+    /// The view as JSON.
+    fn order_view(order: OrderView) -> Value {
+        json(super::order_view(order).as_ref())
+    }
 
     #[test]
     fn order_view_uses_api_names_numbers_and_lowercase_hex() {
@@ -239,7 +304,7 @@ mod tests {
     }
 
     /// Every field of `view` as a dotted path, nested objects included, e.g.
-    /// `quote.sellAmount`.
+    /// `ethflowData.userValidTo`.
     fn field_paths(view: &Value) -> BTreeSet<String> {
         let mut paths = BTreeSet::new();
         if let Value::Object(fields) = view {
@@ -275,7 +340,6 @@ mod tests {
         assert_eq!(
             fields,
             BTreeSet::from([
-                "uid",
                 "owner",
                 "creationDate",
                 "sellToken",
@@ -283,32 +347,18 @@ mod tests {
                 "receiver",
                 "sellAmount",
                 "buyAmount",
-                "feeAmount",
                 "kind",
                 "partiallyFillable",
-                "sellTokenBalance",
-                "buyTokenBalance",
                 "signingScheme",
                 "validTo",
                 "validFrom",
                 "appData",
                 "fastPath",
                 "inMarket",
-                "quote",
                 "ethflowData",
-                "onchainOrderData",
-                "onchainUser",
             ])
         );
-        assert_eq!(view["quote"]["gasPrice"], 1234.5);
-        assert_eq!(view["quote"]["sellTokenPrice"], 1e-7);
-        assert_eq!(view["quote"]["sellAmount"], 1e21);
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
-        assert_eq!(
-            view["onchainOrderData"],
-            json!({ "sender": format!("0x{}cd", "0".repeat(38)) })
-        );
-        assert_eq!(view["onchainUser"], format!("0x{}ef", "0".repeat(38)));
         assert_eq!(view["validFrom"], 4);
     }
 
@@ -335,7 +385,6 @@ mod tests {
         let order = model::order::Order {
             metadata: OrderMetadata {
                 ethflow_data: Some(EthflowData::default()),
-                onchain_order_data: Some(OnchainOrderData::default()),
                 ..Default::default()
             },
             ..Default::default()
@@ -348,9 +397,21 @@ mod tests {
         });
 
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
+    }
+
+    #[test]
+    fn cel_value_is_typed_like_the_serialized_view() {
+        let view = order_view(OrderView {
+            order: &crate::rules::full_sample_order(chrono::Utc::now()),
+            app_data: &crate::rules::sample_app_data(),
+            partner_fees: &[],
+            in_market: true,
+        });
+        // An array and a negative number, which the view has none of.
+        let view = json!({ "order": view, "others": [-1, null] });
         assert_eq!(
-            view["onchainOrderData"],
-            json!({ "sender": format!("0x{}", "0".repeat(40)) })
+            cel::Value::try_from(cel_value(view.clone()).as_ref()).unwrap(),
+            cel::to_value(&view).unwrap()
         );
     }
 
@@ -376,15 +437,5 @@ mod tests {
         assert_eq!(normalize("Acme"), "Acme");
         assert_eq!(normalize("0x"), "0x");
         assert_eq!(normalize("0xzz"), "0xzz");
-    }
-
-    #[test]
-    fn removes_nulls_at_every_level() {
-        let mut value = json!({
-            "a": null,
-            "b": { "c": null, "d": 1, "e": { "f": null, "g": 2 } },
-        });
-        remove_nulls(&mut value);
-        assert_eq!(value, json!({ "b": { "d": 1, "e": { "g": 2 } } }));
     }
 }

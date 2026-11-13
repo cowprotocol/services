@@ -161,7 +161,7 @@ impl UniswapV3Indexer {
             );
         }
         let mut tx = self.db.begin().await.context("begin checkpoint tx")?;
-        db::set_checkpoint(&mut tx, &self.factory, from_block).await?;
+        db::insert_checkpoint(&mut tx, &self.factory, from_block).await?;
         tx.commit().await.context("commit checkpoint tx")?;
 
         self.catch_up_to_finalized().await
@@ -199,14 +199,19 @@ impl UniswapV3Indexer {
         }
 
         // Fetch chunks in parallel, commit in order.
-        futures::stream::iter(self.pending_chunks(last_indexed_block, finalized_block))
-            .map(|chunk| async move {
-                let logs = self.fetch_logs_bisecting(chunk.start, chunk.end).await?;
-                Ok::<_, anyhow::Error>((chunk, logs))
-            })
-            .buffered(self.fetch_concurrency)
-            .try_for_each(|(chunk, logs)| self.commit_chunk(chunk, logs, finalized_block))
-            .await?;
+        let mut chunks =
+            futures::stream::iter(self.pending_chunks(last_indexed_block, finalized_block))
+                .map(|chunk| async move {
+                    let logs = self.fetch_logs_bisecting(chunk.start, chunk.end).await?;
+                    Ok::<_, anyhow::Error>((chunk, logs))
+                })
+                .buffered(self.fetch_concurrency);
+        while let Some((chunk, logs)) = chunks.try_next().await? {
+            if !self.commit_chunk(chunk, logs, finalized_block).await? {
+                // Another writer is ahead; the next run picks up from there.
+                return Ok(());
+            }
+        }
 
         tracing::info!(
             block = finalized_block,
@@ -285,7 +290,14 @@ impl UniswapV3Indexer {
         chunk: ChunkRange,
         logs: Vec<Log>,
         target_block: u64,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        // Skip the reads below if another writer already moved the checkpoint.
+        // `persist_chunk` checks it again, so this only saves work.
+        if self.last_indexed_block().await? != chunk.start - 1 {
+            tracing::warn!(?chunk, "checkpoint moved by another writer, re-reading it");
+            return Ok(false);
+        }
+
         // Pre-fetch decimals + load base states + known pools in parallel
         // before opening the chunk tx. Symbols are deliberately excluded:
         // a hung `symbol()` call must never block pool inserts, so the
@@ -337,7 +349,9 @@ impl UniswapV3Indexer {
                 .inc_by(count as u64);
         }
 
-        self.persist_chunk(chunk, changes).await?;
+        if !self.persist_chunk(chunk, changes).await? {
+            return Ok(false);
+        }
 
         metrics
             .indexed_block
@@ -351,19 +365,25 @@ impl UniswapV3Indexer {
             .indexer_lag_blocks
             .with_label_values(&[network, factory])
             .set(i64::try_from(lag).unwrap_or(i64::MAX));
-        Ok(())
+        Ok(true)
     }
 
-    async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<()> {
+    /// Persists the chunk's changes and advances the checkpoint in a single
+    /// transaction. Returns `true` if this writer applied the chunk, or `false`
+    /// if another writer already advanced the checkpoint (nothing is applied).
+    async fn persist_chunk(&self, chunk: ChunkRange, changes: ChunkChanges) -> Result<bool> {
         let mut tx = self.db.begin().await.context("begin transaction")?;
+        if !db::advance_checkpoint(&mut tx, &self.factory, chunk.start - 1, chunk.end).await? {
+            tracing::warn!(?chunk, "checkpoint moved by another writer, re-reading it");
+            return Ok(false);
+        }
         db::insert_pools(&mut tx, &self.factory, &changes.new_pools).await?;
         db::upsert_pool_states(&mut tx, &self.factory, &changes.pool_states).await?;
         db::batch_update_pool_liquidity(&mut tx, &self.factory, &changes.liquidity_updates).await?;
         db::batch_update_ticks(&mut tx, &self.factory, &changes.tick_deltas).await?;
-        db::set_checkpoint(&mut tx, &self.factory, chunk.end).await?;
         tx.commit().await.context("commit transaction")?;
 
-        Ok(())
+        Ok(true)
     }
 
     /// Concurrent `decimals()` fetches for tokens in this chunk's
@@ -684,16 +704,17 @@ const MAX_BISECTION_DEPTH: u32 = 8;
 
 /// Retry transient `eth_getLogs` failures (timeout, reset, throttle) with
 /// backoff, capped by a per-call timeout, so one blip can't abort a long
-/// cold-seed scan. Range-size rejections are bisected, not retried.
+/// cold-seed scan. Range-size rejections are bisected, not retried, and so are
+/// cut-off replies while the range can still shrink.
 const GETLOGS_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_GETLOGS_RETRIES: u32 = 6;
 const GETLOGS_RETRY_BACKOFF: Duration = Duration::from_secs(2);
 
 /// Fetches logs for `[from, to]` filtered by the given contract addresses
 /// and `topic0` event signatures, sequentially bisecting the block range on
-/// "too large" rejections until each sub-range is tractable. An empty
-/// `addresses` list means "any contract". Bisection depth is capped by
-/// [`MAX_BISECTION_DEPTH`].
+/// "too large" rejections or cut-off replies until each sub-range is
+/// tractable. An empty `addresses` list means "any contract". Bisection depth
+/// is capped by [`MAX_BISECTION_DEPTH`].
 pub(crate) fn bisecting_get_logs(
     provider: &AlloyProvider,
     from: u64,
@@ -731,6 +752,17 @@ fn bisecting_get_logs_with_depth(
                             anyhow::Error::new(err).context(format!("get_logs({from}..={to})"))
                         );
                     }
+                    break;
+                }
+                // Reply cut off, e.g. by a proxy whose buffer it overflowed:
+                // bisect while the range can still shrink. The batching layer
+                // flattens transport errors into strings, hence the name match.
+                Ok(Err(err))
+                    if format!("{err:?}").contains("IncompleteMessage")
+                        && to > from
+                        && depth < MAX_BISECTION_DEPTH =>
+                {
+                    tracing::warn!(?err, from, to, "get_logs reply cut off, bisecting");
                     break;
                 }
                 Ok(Err(err)) => anyhow::Error::new(err).context(format!("get_logs({from}..={to})")),
@@ -1134,6 +1166,41 @@ mod tests {
         pools.iter().copied().collect()
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn get_logs_bisects_only_cut_off_replies() {
+        let asserter = alloy_provider::mock::Asserter::new();
+        let provider = alloy_provider::ProviderBuilder::new()
+            .connect_mocked_client(asserter.clone())
+            .erased();
+        let logs = |blocks: std::ops::RangeInclusive<u64>| -> Vec<Log> {
+            blocks
+                .map(|block| Log {
+                    block_number: Some(block),
+                    ..Default::default()
+                })
+                .collect()
+        };
+        let fetched_blocks = async || -> Vec<u64> {
+            bisecting_get_logs(&provider, 1, 4, vec![], vec![])
+                .await
+                .unwrap()
+                .iter()
+                .map(|log| log.block_number.unwrap())
+                .collect()
+        };
+
+        // Cut off: split into 1..=2 and 3..=4.
+        asserter.push_failure_msg("batch call failed: hyper::Error(IncompleteMessage)");
+        asserter.push_success(&logs(1..=2));
+        asserter.push_success(&logs(3..=4));
+        assert_eq!(fetched_blocks().await, [1, 2, 3, 4]);
+
+        // Throttled: retried on the same range, not split.
+        asserter.push_failure_msg("batch call failed: HttpError(429)");
+        asserter.push_success(&logs(1..=4));
+        assert_eq!(fetched_blocks().await, [1, 2, 3, 4]);
+    }
+
     #[test]
     fn empty_logs_produce_empty_changes() {
         let c = collect_log_changes(
@@ -1438,5 +1505,75 @@ mod tests {
             "foreign-emitter Swap must be dropped"
         );
         assert!(c.tick_deltas.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_chunk_gets_applied_once() {
+        let pg = PgPool::connect("postgresql:///pool_indexer").await.unwrap();
+        sqlx::query(
+            "TRUNCATE uniswap_v3_ticks, uniswap_v3_pool_states, uniswap_v3_pools, \
+             pool_indexer_checkpoints",
+        )
+        .execute(&pg)
+        .await
+        .unwrap();
+        let mut tx = pg.begin().await.unwrap();
+        db::insert_checkpoint(&mut tx, &FACTORY, 99).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let provider = alloy_provider::ProviderBuilder::new()
+            .connect_mocked_client(Default::default())
+            .erased();
+        let indexer = UniswapV3Indexer::new(
+            provider,
+            pg.clone(),
+            &IndexerConfig {
+                network: NetworkName::new("test"),
+                chain_id: 1,
+                factory_address: FACTORY,
+                chunk_size: 100,
+                use_latest: true,
+                fetch_concurrency: 1,
+                prefetch_concurrency: 1,
+            },
+        );
+        let chunk = ChunkRange {
+            start: 100,
+            end: 199,
+        };
+        let changes = || ChunkChanges {
+            new_pools: vec![NewPoolData {
+                address: POOL,
+                token0: TOKEN0,
+                token1: TOKEN1,
+                fee: 500,
+                token0_decimals: None,
+                token1_decimals: None,
+                token0_symbol: None,
+                token1_symbol: None,
+                created_block: 100,
+            }],
+            pool_states: vec![],
+            liquidity_updates: vec![],
+            tick_deltas: vec![TickDeltaData {
+                pool_address: POOL,
+                tick_idx: 0,
+                delta: 1000,
+            }],
+        };
+        let (a, b) = tokio::join!(
+            indexer.persist_chunk(chunk, changes()),
+            indexer.persist_chunk(chunk, changes()),
+        );
+        assert!(
+            matches!((a.unwrap(), b.unwrap()), (true, false) | (false, true)),
+            "exactly one writer commits"
+        );
+
+        let ticks = db::get_ticks(&pg, &POOL).await.unwrap();
+        assert_eq!(ticks.len(), 1);
+        assert_eq!(ticks[0].liquidity_net, bigdecimal::BigDecimal::from(1000));
+        assert_eq!(db::get_checkpoint(&pg, &FACTORY).await.unwrap(), Some(199));
     }
 }
