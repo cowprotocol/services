@@ -1738,8 +1738,6 @@ async fn spawn_sponsored_server_with(
     spawn_sponsored_server_with_min_compute_unit_limit(pool, funder, mocks, 0).await
 }
 
-/// A sponsored-placement server that refuses a creation declaring fewer
-/// compute units than `min_compute_unit_limit`.
 async fn spawn_sponsored_server_with_min_compute_unit_limit(
     pool: PgPool,
     funder: solana_sdk::pubkey::Pubkey,
