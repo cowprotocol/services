@@ -1,7 +1,7 @@
 //! Configuration of infrastructural components.
 
 use {
-    crate::infra::api::ValidationParameters,
+    crate::infra::api::{ValidationParameters, routes::MAX_COMPUTE_UNIT_LIMIT},
     configs::{
         database::DatabasePoolConfig,
         orderbook::VolumeFeeConfig,
@@ -156,6 +156,17 @@ pub struct Sponsoring {
     /// product this bounds, so it caps what a placement can spend.
     #[serde(default = "default_max_priority_fee_lamports")]
     pub max_priority_fee_lamports: u64,
+    /// The fewest compute units a creation may declare. A creation that runs
+    /// out of units fails on chain and the funder still pays its base fee. A
+    /// creation that declares no limit passes: the runtime then grants it
+    /// 200,000 units for the settlement program's instruction alone.
+    #[serde(default)]
+    pub min_compute_unit_limit: u32,
+    /// The most compute units a creation may declare. Defaults to the most a
+    /// transaction can consume. A deployment lowers it to refuse limits its
+    /// clients never send.
+    #[serde(default = "default_max_compute_unit_limit")]
+    pub max_compute_unit_limit: u32,
 }
 
 /// Quote verification configuration: each driver's quoted settlement is
@@ -214,6 +225,10 @@ fn default_quote_inaccuracy_limit() -> f64 {
 /// placement over burning funder lamports.
 fn default_max_priority_fee_lamports() -> u64 {
     100_000
+}
+
+fn default_max_compute_unit_limit() -> u32 {
+    MAX_COMPUTE_UNIT_LIMIT
 }
 
 fn default_settlement_program_id() -> Pubkey {

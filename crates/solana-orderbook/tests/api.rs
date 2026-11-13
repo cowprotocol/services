@@ -406,6 +406,8 @@ async fn quote_reads_the_wallet_of_a_small_native_buy() {
                 settlement_program: program_id(),
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
+                min_compute_unit_limit: 0,
+                max_compute_unit_limit: 1_400_000,
                 mints: Default::default(),
                 blockhash_catch_up: Duration::ZERO,
             }),
@@ -609,6 +611,8 @@ async fn quote_names_the_funder_when_sponsoring_is_on() {
                 classic_mints(),
             )])),
             max_priority_fee_lamports: 100_000,
+            min_compute_unit_limit: 0,
+            max_compute_unit_limit: 1_400_000,
             mints: Default::default(),
             blockhash_catch_up: Duration::ZERO,
         }),
@@ -676,6 +680,8 @@ async fn quote_prices_the_missing_buy_token_account_by_its_mint() {
                 settlement_program: cow_settlement_interface::id(),
                 rpc: SolanaRPC::new_mock_with_mocks_map(mocks),
                 max_priority_fee_lamports: 100_000,
+                min_compute_unit_limit: 0,
+                max_compute_unit_limit: 1_400_000,
                 mints: Default::default(),
                 blockhash_catch_up: Duration::ZERO,
             }),
@@ -1729,6 +1735,15 @@ async fn spawn_sponsored_server_with(
     funder: solana_sdk::pubkey::Pubkey,
     mocks: Mocks,
 ) -> SocketAddr {
+    spawn_sponsored_server_with_min_compute_unit_limit(pool, funder, mocks, 0).await
+}
+
+async fn spawn_sponsored_server_with_min_compute_unit_limit(
+    pool: PgPool,
+    funder: solana_sdk::pubkey::Pubkey,
+    mocks: Mocks,
+    min_compute_unit_limit: u32,
+) -> SocketAddr {
     let api = Api {
         pool,
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
@@ -1736,6 +1751,8 @@ async fn spawn_sponsored_server_with(
             settlement_program: program_id(),
             rpc: SolanaRPC::new_mock_with_mocks(mocks),
             max_priority_fee_lamports: 100_000,
+            min_compute_unit_limit,
+            max_compute_unit_limit: 1_400_000,
             mints: Default::default(),
             blockhash_catch_up: Duration::ZERO,
         }),
@@ -2314,6 +2331,42 @@ async fn create_order_checks_the_app_data() {
             (status, kind.as_str()),
             (reqwest::StatusCode::BAD_REQUEST, PASSED_ACCOUNT_CHECKS),
             "{app_data:?} {app_data_hash:?}"
+        );
+    }
+}
+
+/// The funder pays the base fee of a creation that runs out of compute units,
+/// so a declared limit outside the sponsored bounds is refused. An undeclared
+/// limit is not bounded. A passing order moves on to the blockhash check.
+#[tokio::test]
+async fn create_order_bounds_the_declared_compute_unit_limit() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = sponsored_intent(owner.pubkey(), false);
+    for (min, limit, expected) in [
+        (10_000, Some(9_999), "InvalidTransaction"),
+        (10_000, Some(10_000), PASSED_ACCOUNT_CHECKS),
+        (10_000, None, PASSED_ACCOUNT_CHECKS),
+        (0, Some(1_400_000), PASSED_ACCOUNT_CHECKS),
+        (0, Some(1_400_001), "InvalidTransaction"),
+    ] {
+        let addr = spawn_sponsored_server_with_min_compute_unit_limit(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            sponsored_mocks(false, classic_mints()),
+            min,
+        )
+        .await;
+        let trailing = limit
+            .map(solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit)
+            .into_iter()
+            .collect();
+        let transaction = creation_tx_wrapped(funder, &owner, &intent, vec![], trailing, true);
+        let (status, kind) = post_order(addr, transaction).await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected),
+            "minimum {min}, declared {limit:?}"
         );
     }
 }
