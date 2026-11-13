@@ -934,6 +934,8 @@ mod tests {
                 accounts,
             )])),
             max_priority_fee_lamports: 100_000,
+            min_compute_unit_limit: 0,
+            max_compute_unit_limit: 1_400_000,
             mints: Default::default(),
             blockhash_catch_up: Duration::ZERO,
         }

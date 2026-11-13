@@ -51,6 +51,13 @@ filter = "info,solana_orderbook=debug"
 # The most the funder pays in priority fee for one creation, in lamports.
 # Defaults to 100000.
 # max-priority-fee-lamports = 100000
+# The fewest compute units a creation may declare. A creation that runs out of
+# units fails on chain and the funder still pays its base fee. A creation that
+# declares no limit passes. Defaults to 0.
+# min-compute-unit-limit = 0
+# The most compute units a creation may declare. Defaults to 1400000, the most
+# a transaction can consume.
+# max-compute-unit-limit = 1400000
 
 # Quote verification: each driver's quoted settlement is simulated behind the
 # quoted order's creation. Omit the section to leave every quote unverified.
