@@ -12,7 +12,6 @@ humantime-serde = { workspace = true }
 s3 = { workspace = true, optional = true }
 serde = { workspace = true }
 tempfile = { workspace = true, optional = true }
-thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
 toml = { workspace = true }
 tracing = { workspace = true }

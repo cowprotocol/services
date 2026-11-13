@@ -43,8 +43,7 @@ alloy-primitives = { workspace = true }
 alloy-sol-types = { workspace = true }
 alloy-contract = { workspace = true }
 alloy-provider = { workspace = true }
-anyhow = { workspace = true }
-
+{deployment_dependencies}
 [lints]
 workspace = true
 ";
@@ -357,7 +356,13 @@ impl Contract {
         std::fs::create_dir_all(&src_dir)?;
 
         // Generate Cargo.toml
-        let cargo_toml = CARGO_TOML_TEMPLATE.replace("{crate_name}", &crate_name);
+        // Only the deployment helpers use anyhow.
+        let deployment_dependencies = (!self.networks.is_empty())
+            .then(|| "anyhow = { workspace = true }\n")
+            .unwrap_or_default();
+        let cargo_toml = CARGO_TOML_TEMPLATE
+            .replace("{crate_name}", &crate_name)
+            .replace("{deployment_dependencies}", deployment_dependencies);
         std::fs::write(crate_dir.join("Cargo.toml"), cargo_toml)?;
 
         // Generate lib.rs

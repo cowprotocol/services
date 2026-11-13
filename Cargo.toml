@@ -13,7 +13,6 @@ alloy-consensus = { version = "2.4.1", default-features = false }
 alloy-contract = { version = "2.4.1", default-features = false }
 alloy-dyn-abi = { version = "1.6.1", default-features = false }
 alloy-eips = { version = "2.4.1", default-features = false }
-alloy-json-abi = { version = "1.6.1", default-features = false }
 alloy-json-rpc = { version = "2.4.1", default-features = false }
 alloy-network = { version = "2.4.1", default-features = false }
 alloy-primitives = { version = "1.6.1", default-features = false }
@@ -75,15 +74,12 @@ futures = "0.3.30"
 gas-price-estimation = { path = "crates/gas-price-estimation" }
 hex-literal = "1.1.0"
 hmac = "0.12.1"
-http-body = "1"
-http-body-util = "0.1"
 http-client = { path = "crates/http-client" }
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
 indexmap = "2.2.6"
 itertools = "0.14"
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
-jsonrpc-core = "18.0.0"
 liquidity-sources = { path = "crates/liquidity-sources" }
 maplit = "1.0.2"
 mockall = "0.12.1"
@@ -101,14 +97,11 @@ order-validation = { path = "crates/order-validation" }
 orderbook = { path = "crates/orderbook" }
 pin-project-lite = "0.2.14"
 pool-indexer = { path = "crates/pool-indexer" }
-prettyplease = "0.2.37"
 price-estimation = { path = "crates/price-estimation" }
-proc-macro2 = "1.0.103"
 prometheus = "0.14"
 prometheus-client = "0.25"
 prometheus-metric-storage = "0.6"
 protocol-fees = { path = "crates/protocol-fees" }
-quote = "1.0.41"
 rand = "0.9.4"
 rate-limit = { path = "crates/rate-limit" }
 refunder = { path = "crates/refunder" }
@@ -132,12 +125,9 @@ shared = { path = "crates/shared" }
 signature-validator = { path = "crates/signature-validator" }
 simulator = { path = "crates/simulator" }
 solana-account-decoder-client-types = "4"
-solana-client = "4"
 solana-commitment-config = "3"
 solana-compute-budget-interface = "3"
-solana-driver = { path = "crates/solana-driver" }
 solana-fee-structure = "3"
-solana-indexer = { path = "crates/solana-indexer" }
 solana-pubkey = "4"
 solana-rpc-client = "4.2.2"
 solana-rpc-client-api = "4"
@@ -158,7 +148,6 @@ sqlx = {
   features = ["bigdecimal", "chrono", "derive", "macros", "postgres", "runtime-tokio", "tls-native-tls"]
 }
 strum = { version = "0.27.2", features = ["derive"] }
-syn = "2.0.108"
 tempfile = "3.10.1"
 testlib = { path = "crates/testlib" }
 thiserror = "1.0.61"
