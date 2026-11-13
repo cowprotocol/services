@@ -4,7 +4,10 @@ use {
     super::{prices::NativePrices, quoter::Quoter, verifier::Verifier},
     axum::{
         Router,
-        http,
+        extract::MatchedPath,
+        http::{self, StatusCode},
+        middleware::{self, Next},
+        response::Response,
         routing::{get, post, put},
     },
     chrono::{DateTime, Utc},
@@ -109,6 +112,8 @@ impl Api {
             .map_request(record_trace_id);
 
         routes::initialize_metrics();
+        let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+        metrics.reset_requests_rejected();
         let state = State::new(
             self.pool,
             self.quoter,
@@ -135,42 +140,61 @@ impl Api {
             ])
             .allow_headers([http::header::ORIGIN, http::header::CONTENT_TYPE]);
 
-        let app = Router::new()
-            .route("/healthz", get(routes::healthz))
-            .route("/api/v1/ready", get(routes::ready))
-            .route("/api/v1/version", get(routes::version))
-            .route(
+        let endpoints = [
+            ("GET", "/healthz", get(routes::healthz)),
+            ("GET", "/api/v1/ready", get(routes::ready)),
+            ("GET", "/api/v1/version", get(routes::version)),
+            (
+                "GET",
                 "/api/v1/account/{owner}/orders",
                 get(routes::account_orders),
-            )
-            .route("/api/v1/orders/{uid}", get(routes::order))
-            .route("/api/v1/orders/{uid}/status", get(routes::order_status))
-            .route("/api/v2/trades", get(routes::trades))
-            .route(
+            ),
+            ("GET", "/api/v1/orders/{uid}", get(routes::order)),
+            (
+                "GET",
+                "/api/v1/orders/{uid}/status",
+                get(routes::order_status),
+            ),
+            ("GET", "/api/v2/trades", get(routes::trades)),
+            (
+                "GET",
                 "/api/v2/solver_competition/latest",
                 get(routes::solver_competition_latest),
-            )
-            .route(
+            ),
+            (
+                "GET",
                 "/api/v2/solver_competition/by_tx_hash/{tx_hash}",
                 get(routes::solver_competition_by_tx_hash),
-            )
-            .route(
+            ),
+            (
+                "GET",
                 "/api/v2/solver_competition/{auction_id}",
                 get(routes::solver_competition_by_id),
-            )
-            .route(
+            ),
+            (
+                "GET",
                 "/restricted/api/v2/solver_competition/{auction_id}",
                 get(routes::solver_competition_by_id_unfiltered),
-            )
-            .route("/api/v1/orders", post(routes::create_order))
-            .route("/api/v1/quote", post(routes::quote))
-            .route("/api/v1/app_data", put(routes::put_app_data))
-            .route(
+            ),
+            ("POST", "/api/v1/orders", post(routes::create_order)),
+            ("POST", "/api/v1/quote", post(routes::quote)),
+            ("PUT", "/api/v1/app_data", put(routes::put_app_data)),
+            ("GET", "/api/v1/app_data/{hash}", get(routes::get_app_data)),
+            (
+                "PUT",
                 "/api/v1/app_data/{hash}",
-                get(routes::get_app_data).put(routes::put_app_data_by_hash),
-            )
+                put(routes::put_app_data_by_hash),
+            ),
+        ];
+        let mut app = Router::new();
+        for (method, path, method_router) in endpoints {
+            metrics.reset_requests_complete(method, path);
+            app = app.route(path, method_router);
+        }
+        let app = app
             .layer(cors)
             .layer(RequestDecompressionLayer::new())
+            .layer(middleware::from_fn(with_matched_path_metric))
             .layer(tracing_layer)
             .with_state(state);
 
@@ -340,4 +364,96 @@ struct Inner {
     app_data_size_limit: usize,
     /// The last block height read and when, see [`State::block_height`].
     block_height: Mutex<Option<(Instant, i64)>>,
+}
+
+/// Counts and times every request by method and matched route.
+async fn with_matched_path_metric(req: http::Request<axum::body::Body>, next: Next) -> Response {
+    let metrics = ApiMetrics::instance(observe::metrics::get_storage_registry()).unwrap();
+
+    let http_method = req.method().as_str();
+    let matched_path = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|path| path.as_str())
+        .unwrap_or("unknown");
+    let method_with_path = format!("{http_method} {matched_path}");
+
+    metrics
+        .requests_started
+        .with_label_values(&[method_with_path.as_str()])
+        .inc();
+
+    let response = {
+        let _timer = metrics
+            .requests_duration_seconds
+            .with_label_values(&[&method_with_path])
+            .start_timer();
+        next.run(req).await
+    };
+    let status = response.status();
+
+    metrics
+        .requests_complete
+        .with_label_values(&[method_with_path.as_str(), status.as_str()])
+        .inc();
+
+    if status.is_client_error() || status.is_server_error() {
+        metrics
+            .requests_rejected
+            .with_label_values(&[status.as_str()])
+            .inc();
+    }
+
+    response
+}
+
+/// API request metrics. The `method` label holds the HTTP method and the
+/// matched route, e.g. `POST /api/v1/quote`.
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "api")]
+struct ApiMetrics {
+    /// Number of started API requests.
+    #[metric(labels("method"))]
+    requests_started: prometheus::IntCounterVec,
+
+    /// Number of completed API requests.
+    #[metric(labels("method", "status_code"))]
+    requests_complete: prometheus::IntCounterVec,
+
+    /// Number of rejected API requests.
+    #[metric(labels("status_code"))]
+    requests_rejected: prometheus::IntCounterVec,
+
+    /// Execution time for each API request.
+    #[metric(labels("method"), buckets(0.1, 0.5, 1, 2, 4, 6, 8, 10))]
+    requests_duration_seconds: prometheus::HistogramVec,
+}
+
+impl ApiMetrics {
+    /// Status codes the routes answer with.
+    const INITIAL_STATUSES: &'static [StatusCode] = &[
+        StatusCode::OK,
+        StatusCode::CREATED,
+        StatusCode::BAD_REQUEST,
+        StatusCode::NOT_FOUND,
+        StatusCode::TOO_MANY_REQUESTS,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    ];
+
+    fn reset_requests_rejected(&self) {
+        for status in Self::INITIAL_STATUSES {
+            self.requests_rejected
+                .with_label_values(&[status.as_str()])
+                .reset();
+        }
+    }
+
+    fn reset_requests_complete(&self, method: &str, path: &str) {
+        let method_with_path = format!("{method} {path}");
+        for status in Self::INITIAL_STATUSES {
+            self.requests_complete
+                .with_label_values(&[method_with_path.as_str(), status.as_str()])
+                .reset();
+        }
+    }
 }

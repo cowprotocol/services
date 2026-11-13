@@ -133,6 +133,27 @@ async fn healthz_returns_200() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 }
 
+/// Request metrics carry the route template, not the requested path.
+#[tokio::test]
+async fn requests_count_under_their_route() {
+    let addr = spawn_server().await;
+    let response = reqwest::get(format!("http://{addr}/api/v1/orders/not-a-uid"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let metrics = observe::metrics::encode(observe::metrics::get_registry());
+    let value = |series: &str| {
+        metrics
+            .lines()
+            .find_map(|line| line.strip_prefix(series)?.trim().parse::<u64>().ok())
+    };
+    assert_eq!(
+        value(r#"api_requests_complete{method="GET /api/v1/orders/{uid}",status_code="400"}"#),
+        Some(1)
+    );
+}
+
 /// Spawn the API server on `pool` and return the status and the body of
 /// `GET /api/v1/ready`.
 async fn get_ready(pool: PgPool) -> (reqwest::StatusCode, String) {
