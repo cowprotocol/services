@@ -12,7 +12,7 @@ use {
     app_data::{AppDataHash, Validator},
     bigdecimal::ToPrimitive,
     chrono::Utc,
-    database::order_events::OrderEventLabel,
+    database::order_events::{OrderEventLabel, OrderFilterReason},
     model::{
         DomainSeparator,
         order::{
@@ -611,8 +611,12 @@ impl Orderbook {
             None => (),
         }
 
-        let latest_event = self.database.latest_order_event(uid).await?;
-        let status = match latest_event.ok_or(OrderStatusError::NotFound)?.label {
+        let latest_event = self
+            .database
+            .latest_order_event(uid)
+            .await?
+            .ok_or(OrderStatusError::NotFound)?;
+        let status = match latest_event.label {
             OrderEventLabel::Ready => dto::order::Status::Active,
             OrderEventLabel::Created => dto::order::Status::Scheduled,
             OrderEventLabel::Considered => dto::order::Status::Solved(latest_competition.await?),
@@ -620,6 +624,13 @@ impl Orderbook {
             // order executed but not fully indexed and processed
             OrderEventLabel::Traded => dto::order::Status::Traded(latest_competition.await?),
             OrderEventLabel::Cancelled => dto::order::Status::Cancelled,
+            // Wait-for-CoW orders only trade in canonical batches. Between
+            // batches they are scheduled for the next one.
+            OrderEventLabel::Filtered
+                if latest_event.reason == Some(OrderFilterReason::WaitingForCanonicalBatch) =>
+            {
+                dto::order::Status::Scheduled
+            }
             OrderEventLabel::Filtered => dto::order::Status::Open,
             OrderEventLabel::Invalid => dto::order::Status::Open,
         };

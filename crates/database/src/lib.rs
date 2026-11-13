@@ -1,6 +1,7 @@
 pub mod app_data;
 pub mod auction;
 pub mod byte_array;
+pub mod canonical_batch_schedule;
 pub mod ethflow_orders;
 pub mod events;
 pub mod fast_path;
@@ -49,6 +50,7 @@ pub type PgPool = sqlx::PgPool;
 pub const TABLES: &[&str] = &[
     "app_data",
     "auctions",
+    "canonical_batch_schedule",
     "ethflow_orders",
     "ethflow_refunds",
     "interactions",

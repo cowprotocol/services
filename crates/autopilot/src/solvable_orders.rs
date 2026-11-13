@@ -28,7 +28,7 @@ use {
     },
     price_estimation::{native::to_normalized_price, native_price_cache::NativePriceUpdater},
     prometheus::{Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec},
-    shared::remaining_amounts,
+    shared::{canonical_batch, remaining_amounts},
     std::{
         collections::{BTreeMap, HashMap, HashSet},
         future::Future,
@@ -69,6 +69,10 @@ pub struct Metrics {
     /// Auction filtered orders grouped by class.
     #[metric(labels("reason"))]
     auction_filtered_orders: IntGaugeVec,
+
+    /// Number of solvable wait-for-CoW orders, which only trade in canonical
+    /// batches.
+    canonical_batch_waiting_orders: IntGauge,
 }
 
 impl Metrics {
@@ -127,13 +131,31 @@ pub struct SolvableOrdersCache {
     settlement_contract: Address,
     disable_order_balance_filter: bool,
     wrapper_cache: app_data::WrapperCache,
+    /// When canonical batches start. `None` turns them off, and wait-for-CoW
+    /// orders then trade like regular orders.
+    canonical_batches: Option<canonical_batch::Schedule>,
 }
 
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
+    /// The auction with the regular orders.
     auction: domain::RawAuctionData,
+    /// Solvable wait-for-CoW orders. They only trade in canonical batches,
+    /// so they are only added to the auction when the run loop asks for a
+    /// canonical batch. Empty when canonical batches are off.
+    wait_for_cow: Vec<domain::Order>,
     solvable_orders: boundary::SolvableOrders,
+}
+
+/// The auction to run next, see [`SolvableOrdersCache::current_auction`].
+pub struct CurrentAuction {
+    pub auction: domain::RawAuctionData,
+    /// Number of wait-for-CoW orders in the auction.
+    pub canonical_batch_orders: usize,
+    /// Wait-for-CoW orders left out of the auction. They wait for their
+    /// next canonical batch.
+    pub waiting: Vec<domain::OrderUid>,
 }
 
 impl SolvableOrdersCache {
@@ -152,6 +174,7 @@ impl SolvableOrdersCache {
         native_price_timeout: Duration,
         settlement_contract: Address,
         disable_order_balance_filter: bool,
+        canonical_batches: Option<canonical_batch::Schedule>,
     ) -> Arc<Self> {
         Arc::new(Self {
             min_order_validity_period,
@@ -169,15 +192,31 @@ impl SolvableOrdersCache {
             settlement_contract,
             disable_order_balance_filter,
             wrapper_cache: app_data::WrapperCache::new(20_000),
+            canonical_batches,
         })
     }
 
-    pub async fn current_auction(&self) -> Option<domain::RawAuctionData> {
-        self.cache
-            .lock()
-            .await
-            .as_ref()
-            .map(|inner| inner.auction.clone())
+    /// Returns the auction to run next. With `canonical_batch` set, the
+    /// auction is the canonical batch for that batch time and also contains
+    /// the wait-for-CoW orders taking part in it: the ones whose first batch
+    /// is that batch time or earlier. Wait-for-CoW orders are never in any
+    /// other auction.
+    pub async fn current_auction(&self, canonical_batch: Option<u32>) -> Option<CurrentAuction> {
+        let cache = self.cache.lock().await;
+        let inner = cache.as_ref()?;
+        let (batch_orders, waiting) = select_canonical_batch_orders(
+            &inner.wait_for_cow,
+            self.canonical_batches.as_ref(),
+            canonical_batch,
+        );
+        let mut auction = inner.auction.clone();
+        let canonical_batch_orders = batch_orders.len();
+        auction.orders.extend(batch_orders);
+        Some(CurrentAuction {
+            auction,
+            canonical_batch_orders,
+            waiting,
+        })
     }
 
     /// Manually update solvable orders. Usually called by the background
@@ -285,7 +324,15 @@ impl SolvableOrdersCache {
         Metrics::track_filtered_orders(MissingNativePrice, &removed);
         filtered_order_events.extend(removed.into_iter().map(|uid| (uid, MissingNativePrice)));
 
+        // Wait-for-CoW orders went through every filter above, so their
+        // balances and native prices are current when a canonical batch runs.
+        // They are kept apart from the auction until the run loop asks for
+        // one.
+        let (orders, wait_for_cow) = split_wait_for_cow(orders, self.canonical_batches.is_some());
         Metrics::track_orders_in_final_auction(&orders);
+        Metrics::get()
+            .canonical_batch_waiting_orders
+            .set(i64::try_from(wait_for_cow.len()).unwrap_or(i64::MAX));
 
         if store_events {
             self.store_events_by_reason(invalid_order_uids, OrderEventLabel::Invalid);
@@ -307,29 +354,31 @@ impl SolvableOrdersCache {
             .filter(|owner| !in_flight_owners.contains(*owner))
             .copied()
             .collect();
+        let (orders, wait_for_cow) = tracing::info_span!("assemble_orders").in_scope(|| {
+            let to_domain = |order: &Order| {
+                let quote = db_solvable_orders
+                    .quotes
+                    .get(&order.metadata.uid.into())
+                    .map(|quote| quote.as_ref().clone());
+                let penalty_cap_native = self
+                    .penalty_cap_calculator
+                    .as_ref()
+                    .map(|calculator| calculator.calculate(order, &prices));
+                let protocol_fees = self.protocol_fees.apply(
+                    order,
+                    quote.as_ref(),
+                    &surplus_capturing_jit_order_owners,
+                );
+                boundary::order::to_domain(order, protocol_fees, quote, penalty_cap_native)
+            };
+            (
+                orders.into_iter().map(to_domain).collect::<Vec<_>>(),
+                wait_for_cow.into_iter().map(to_domain).collect::<Vec<_>>(),
+            )
+        });
         let auction = domain::RawAuctionData {
             block,
-            orders: tracing::info_span!("assemble_orders").in_scope(|| {
-                orders
-                    .into_iter()
-                    .map(|order| {
-                        let quote = db_solvable_orders
-                            .quotes
-                            .get(&order.metadata.uid.into())
-                            .map(|quote| quote.as_ref().clone());
-                        let penalty_cap_native = self
-                            .penalty_cap_calculator
-                            .as_ref()
-                            .map(|calculator| calculator.calculate(order, &prices));
-                        let protocol_fees = self.protocol_fees.apply(
-                            order,
-                            quote.as_ref(),
-                            &surplus_capturing_jit_order_owners,
-                        );
-                        boundary::order::to_domain(order, protocol_fees, quote, penalty_cap_native)
-                    })
-                    .collect()
-            }),
+            orders,
             prices: prices
                 .into_iter()
                 .map(|(key, value)| Price::try_new(value.into()).map(|price| (key.into(), price)))
@@ -339,6 +388,7 @@ impl SolvableOrdersCache {
 
         *self.cache.lock().await = Some(Inner {
             auction,
+            wait_for_cow,
             solvable_orders: db_solvable_orders,
         });
 
@@ -500,6 +550,47 @@ impl SolvableOrdersCache {
             );
         }
     }
+}
+
+/// Splits the orders into regular orders and wait-for-CoW orders, which only
+/// trade in canonical batches. With canonical batches off, wait-for-CoW orders
+/// trade like regular orders.
+fn split_wait_for_cow(
+    orders: Vec<&Order>,
+    canonical_batches_on: bool,
+) -> (Vec<&Order>, Vec<&Order>) {
+    if !canonical_batches_on {
+        return (orders, Vec::new());
+    }
+    orders
+        .into_iter()
+        .partition(|order| !order.metadata.wait_for_cow)
+}
+
+/// Picks the wait-for-CoW orders taking part in the canonical batch for
+/// `batch_time`: the ones whose first batch is that batch time or earlier.
+/// Returns them, and the UIDs of the orders that keep waiting. Without a
+/// canonical batch, every order keeps waiting.
+fn select_canonical_batch_orders(
+    wait_for_cow: &[domain::Order],
+    schedule: Option<&canonical_batch::Schedule>,
+    batch_time: Option<u32>,
+) -> (Vec<domain::Order>, Vec<domain::OrderUid>) {
+    let mut batch = Vec::new();
+    let mut waiting = Vec::new();
+    for order in wait_for_cow {
+        let in_batch = schedule
+            .zip(batch_time)
+            .is_some_and(|(schedule, batch_time)| {
+                schedule.first_batch(order.created) <= batch_time
+            });
+        if in_batch {
+            batch.push(order.clone());
+        } else {
+            waiting.push(order.uid);
+        }
+    }
+    (batch, waiting)
 }
 
 /// Finds all orders whose owners, receivers or account that placed the order
@@ -752,8 +843,78 @@ mod tests {
                 NativePriceUpdater,
             },
         },
+        std::num::NonZeroU32,
         token_info::DenyListedTokens,
     };
+
+    fn wait_for_cow_order(uid: u8, created: i64) -> Order {
+        Order {
+            metadata: OrderMetadata {
+                uid: OrderUid([uid; 56]),
+                creation_date: chrono::DateTime::from_timestamp(created, 0).unwrap(),
+                wait_for_cow: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn wait_for_cow_orders_are_kept_apart_only_with_canonical_batches_on() {
+        let regular = Order {
+            metadata: OrderMetadata {
+                uid: OrderUid([1; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let wait_for_cow = wait_for_cow_order(2, 0);
+        let uids = |orders: &[&Order]| orders.iter().map(|o| o.metadata.uid).collect::<Vec<_>>();
+
+        let (auction, apart) = split_wait_for_cow(vec![&regular, &wait_for_cow], true);
+        assert_eq!(uids(&auction), [regular.metadata.uid]);
+        assert_eq!(uids(&apart), [wait_for_cow.metadata.uid]);
+
+        // Off: wait-for-CoW orders trade like regular orders.
+        let (auction, apart) = split_wait_for_cow(vec![&regular, &wait_for_cow], false);
+        assert_eq!(
+            uids(&auction),
+            [regular.metadata.uid, wait_for_cow.metadata.uid]
+        );
+        assert!(apart.is_empty());
+    }
+
+    #[test]
+    fn canonical_batch_takes_orders_created_more_than_the_cutoff_before_it() {
+        let schedule = canonical_batch::Schedule::new(NonZeroU32::new(60).unwrap(), 5).unwrap();
+        let orders = [(1, 54), (2, 55), (3, 100)]
+            .map(|(uid, created)| {
+                boundary::order::to_domain(&wait_for_cow_order(uid, created), vec![], None, None)
+            })
+            .to_vec();
+        let uid = |byte: u8| domain::OrderUid([byte; 56]);
+        let select =
+            |batch_time| select_canonical_batch_orders(&orders, Some(&schedule), batch_time);
+        let batch_uids = |batch: Vec<domain::Order>| {
+            batch.into_iter().map(|order| order.uid).collect::<Vec<_>>()
+        };
+
+        // Not a canonical batch: every order keeps waiting.
+        let (batch, waiting) = select(None);
+        assert!(batch.is_empty());
+        assert_eq!(waiting, [uid(1), uid(2), uid(3)]);
+
+        // The batch at 60 only takes the order created more than 5s before it.
+        let (batch, waiting) = select(Some(60));
+        assert_eq!(batch_uids(batch), [uid(1)]);
+        assert_eq!(waiting, [uid(2), uid(3)]);
+
+        // An order whose first batch has passed takes part in every later
+        // batch until it's filled.
+        let (batch, waiting) = select(Some(120));
+        assert_eq!(batch_uids(batch), [uid(1), uid(2), uid(3)]);
+        assert!(waiting.is_empty());
+    }
 
     #[tokio::test]
     async fn get_orders_with_native_prices_with_timeout() {

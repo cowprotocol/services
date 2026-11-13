@@ -31,6 +31,10 @@ const fn default_auction_delta_checkpoint_interval() -> Duration {
     Duration::from_mins(2)
 }
 
+const fn default_canonical_batch_cutoff() -> Duration {
+    Duration::from_secs(5)
+}
+
 /// Configuration for the autopilot run loop timing.
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
@@ -94,6 +98,44 @@ pub struct RunLoopConfig {
     /// production rates (including test chains).
     #[serde(default)]
     pub sync_solve_deadline_to_blockchain: Option<SlotConfig>,
+
+    /// Interval between canonical batches. Orders placed with
+    /// `enableWaitForCow` only trade in canonical batches, which start at
+    /// multiples of this interval since the Unix epoch. `None` disables
+    /// canonical batches: wait-for-CoW orders trade like regular orders.
+    #[serde(with = "humantime_serde", default)]
+    pub canonical_batch_interval: Option<Duration>,
+
+    /// Wait-for-CoW orders created less than this long before a canonical
+    /// batch time join the batch after it, so that every order in a batch has
+    /// been committed or indexed before the batch is built. Must be shorter
+    /// than `canonical-batch-interval`.
+    #[serde(with = "humantime_serde", default = "default_canonical_batch_cutoff")]
+    pub canonical_batch_cutoff: Duration,
+}
+
+impl RunLoopConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let Some(interval) = self.canonical_batch_interval else {
+            return Ok(());
+        };
+        anyhow::ensure!(
+            interval.subsec_nanos() == 0 && self.canonical_batch_cutoff.subsec_nanos() == 0,
+            "canonical-batch-interval and canonical-batch-cutoff must be whole seconds"
+        );
+        // The orderbook reads the published interval as a 32-bit signed
+        // integer.
+        anyhow::ensure!(
+            interval >= Duration::from_secs(1)
+                && interval.as_secs() <= i32::MAX.unsigned_abs().into(),
+            "canonical-batch-interval must be between 1 and i32::MAX seconds"
+        );
+        anyhow::ensure!(
+            self.canonical_batch_cutoff < interval,
+            "canonical-batch-cutoff must be shorter than canonical-batch-interval"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,6 +164,8 @@ impl Default for RunLoopConfig {
             max_settlement_transaction_wait: default_max_settlement_transaction_wait(),
             min_solve_time: default_min_solve_time(),
             sync_solve_deadline_to_blockchain: None,
+            canonical_batch_interval: None,
+            canonical_batch_cutoff: default_canonical_batch_cutoff(),
         }
     }
 }
@@ -148,6 +192,42 @@ mod tests {
             config.auction_delta_checkpoint_interval,
             Duration::from_mins(2)
         );
+        assert_eq!(config.canonical_batch_interval, None);
+        assert_eq!(config.canonical_batch_cutoff, Duration::from_secs(5));
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn validate_canonical_batches() {
+        let config = |interval: Option<Duration>, cutoff: Duration| RunLoopConfig {
+            canonical_batch_interval: interval,
+            canonical_batch_cutoff: cutoff,
+            ..Default::default()
+        };
+        let secs = Duration::from_secs;
+
+        // Off: the cutoff isn't checked.
+        config(None, secs(120)).validate().unwrap();
+
+        config(Some(secs(60)), secs(5)).validate().unwrap();
+        config(Some(secs(60)), secs(0)).validate().unwrap();
+        config(Some(secs(1)), secs(0)).validate().unwrap();
+
+        // The cutoff must be shorter than the interval.
+        assert!(config(Some(secs(60)), secs(60)).validate().is_err());
+        // No zero interval.
+        assert!(config(Some(secs(0)), secs(0)).validate().is_err());
+        // Whole seconds only.
+        assert!(
+            config(Some(Duration::from_millis(1500)), secs(0))
+                .validate()
+                .is_err()
+        );
+        assert!(
+            config(Some(secs(60)), Duration::from_millis(500))
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]
@@ -155,6 +235,8 @@ mod tests {
         let toml = r#"
         max-delay = "5s"
         auction-delta-checkpoint-interval = "30s"
+        canonical-batch-interval = "1m"
+        canonical-batch-cutoff = "3s"
         [sync-solve-deadline-to-blockchain]
             slot-length = "12s"
             tx-propagation-latency = "2s"
@@ -165,6 +247,11 @@ mod tests {
             config.auction_delta_checkpoint_interval,
             Duration::from_secs(30)
         );
+        assert_eq!(
+            config.canonical_batch_interval,
+            Some(Duration::from_mins(1))
+        );
+        assert_eq!(config.canonical_batch_cutoff, Duration::from_secs(3));
         assert_eq!(
             config
                 .sync_solve_deadline_to_blockchain

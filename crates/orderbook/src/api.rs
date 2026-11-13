@@ -18,6 +18,7 @@ use {
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     serde::{Deserialize, Serialize},
+    shared::canonical_batch::ScheduleReading,
     std::{
         borrow::Cow,
         fmt::Debug,
@@ -34,6 +35,7 @@ mod debug_order;
 mod debug_simulation;
 mod get_app_data;
 mod get_auction;
+mod get_canonical_batch_schedule;
 mod get_native_price;
 mod get_order_by_uid;
 mod get_order_status;
@@ -72,6 +74,8 @@ pub struct AppState {
     pub quote_timeout: Duration,
     pub current_block_stream: CurrentBlockWatcher,
     pub hide_competition_before_deadline: bool,
+    /// The canonical batch schedule the autopilot published.
+    pub canonical_batch_schedule: Arc<dyn ScheduleReading>,
 }
 
 impl AppState {
@@ -167,6 +171,7 @@ pub fn handle_all_routes(
     quote_timeout: Duration,
     current_block_stream: CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
+    canonical_batch_schedule: Arc<dyn ScheduleReading>,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -180,6 +185,7 @@ pub fn handle_all_routes(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
+        canonical_batch_schedule,
     });
 
     let routes = [
@@ -272,6 +278,12 @@ pub fn handle_all_routes(
             get(get_total_surplus::get_total_surplus_handler),
         ),
         ("GET", "/api/v1/version", get(version::version_handler)),
+        // UNSTABLE: frontend helper, see `get_canonical_batch_schedule`.
+        (
+            "GET",
+            "/api/v1/canonical_batch_schedule",
+            get(get_canonical_batch_schedule::get_canonical_batch_schedule_handler),
+        ),
         ("GET", "/api/v1/ready", get(ready::get_ready_handler)),
         // Routes under `/restricted/api/` are not exposed publicly. WAF and
         // infra rules restrict access to authenticated partners.

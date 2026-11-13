@@ -620,6 +620,32 @@ paths:
           description: Version
           content:
             text/plain: {}
+  /api/v1/canonical_batch_schedule:
+    get:
+      operationId: getCanonicalBatchSchedule
+      summary: Get the canonical batch schedule.
+      description: >
+        **UNSTABLE.** This endpoint exists for the CoW Swap frontend and is
+        not part of the public API contract. Its path, response shape and
+        semantics can change or be removed without notice.
+
+
+        Orders whose `appData` sets `enableWaitForCow` only trade in canonical
+        batches: auctions that start every `intervalSeconds`, at multiples of
+        the interval since the Unix epoch. An order created at time C first
+        trades in the first batch time after C + `cutoffSeconds`, and orders
+        that are already waiting trade in `nextBatch`. The times are when a
+        batch starts: its auction begins at most about one block later, and
+        solving and settlement then take the usual time.
+      responses:
+        "200":
+          description: The canonical batch schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanonicalBatchSchedule"
+        "404":
+          description: Canonical batches are off.
   "/api/v1/app_data/{app_data_hash}":
     get:
       operationId: getAppDataByHash
@@ -1398,9 +1424,23 @@ components:
             Earliest time (unix seconds) at which the order may enter a batch
             auction, taken from the order's `appData`. Omitted when the order
             has no lower bound (eligible immediately). Mutually exclusive with
-            `enableFastPath`: an order that sets both is rejected.
+            `enableFastPath` and `enableWaitForCow`: an order that sets more
+            than one of them is rejected.
           type: integer
           nullable: true
+        waitForCow:
+          description: >
+            Whether the order requested the wait-for-CoW execution mode via the
+            `enableWaitForCow` flag in its `appData`. Such orders only trade in
+            canonical batches, auctions that start at fixed times, to give them
+            a higher chance to be matched with a counterparty (a CoW). An order
+            that isn't filled in a batch waits for the next one. See
+            `GET /api/v1/canonical_batch_schedule` for when batches start; when
+            canonical batches are off, these orders trade like regular orders.
+            Omitted when `false`. Mutually exclusive with `enableFastPath` and
+            `validFrom`.
+          type: boolean
+          default: false
         settlementContract:
           description: >
             The address of the CoW Protocol settlement contract that this order
@@ -1640,6 +1680,33 @@ components:
       required:
         - sell
         - buy
+    CanonicalBatchSchedule:
+      description: >
+        When canonical batches start. See
+        `GET /api/v1/canonical_batch_schedule`.
+      type: object
+      properties:
+        intervalSeconds:
+          description: Seconds between two canonical batch times.
+          type: integer
+        cutoffSeconds:
+          description: >
+            Orders created less than this many seconds before a batch time
+            join the batch after it.
+          type: integer
+        nextBatch:
+          description: The first batch time after `serverTime`, in Unix seconds.
+          type: integer
+        serverTime:
+          description: >
+            The server's current time, in Unix seconds. Use it rather than the
+            client's clock to work out how long until `nextBatch`.
+          type: integer
+      required:
+        - intervalSeconds
+        - cutoffSeconds
+        - nextBatch
+        - serverTime
     CompetitionOrderStatus:
       type: object
       properties:
@@ -1870,6 +1937,7 @@ components:
             - UnsupportedSellTokenSource
             - UnsupportedOrderType
             - InsufficientValidTo
+            - InsufficientValidToForCanonicalBatch
             - ExcessiveValidTo
             - InvalidNativeSellToken
             - SameBuyAndSellToken

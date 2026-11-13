@@ -41,6 +41,7 @@ use {
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
     },
     shared::{
+        canonical_batch::ScheduleReading,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
@@ -447,7 +448,13 @@ pub async fn run(config: Configuration) {
     )
     .expect("fee engine rules must load");
 
-    let order_validator = Arc::new(OrderValidator::new(
+    // The canonical batch schedule the autopilot leader publishes. Used to
+    // validate wait-for-CoW orders and served to the frontend.
+    let canonical_batch_schedule: Arc<dyn ScheduleReading> = Arc::new(
+        crate::canonical_batch::ScheduleCache::new(postgres_read.clone(), Duration::from_secs(5)),
+    );
+
+    let order_validator = OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             chainalysis_oracle,
@@ -476,7 +483,9 @@ pub async fn run(config: Configuration) {
         config.order_validation.same_tokens_policy,
         volume_fees.clone(),
         order_validation::wrappers::Validator::new(authenticator, *settlement_contract.address()),
-    ));
+    )
+    .with_canonical_batch_schedule(canonical_batch_schedule.clone());
+    let order_validator = Arc::new(order_validator);
     let ipfs = config
         .ipfs
         .map(|ipfs| {
@@ -531,6 +540,7 @@ pub async fn run(config: Configuration) {
         config.price_estimation.quote_timeout,
         current_block_stream,
         config.hide_competition_before_deadline,
+        canonical_batch_schedule,
     );
 
     let mut metrics_address = config.bind_address;
@@ -578,6 +588,7 @@ fn serve_api(
     quote_timeout: Duration,
     current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
+    canonical_batch_schedule: Arc<dyn ScheduleReading>,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -589,6 +600,7 @@ fn serve_api(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
+        canonical_batch_schedule,
     );
     tracing::info!(%address, "serving order book");
 

@@ -682,6 +682,10 @@ pub struct OrderMetadata {
     /// regular auction.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
+    /// Whether the caller asked for the wait-for-CoW execution mode (the
+    /// `enableWaitForCow` app-data flag was set).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wait_for_cow: bool,
     /// If the order was created with a quote, then this field contains that
     /// quote data for reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]

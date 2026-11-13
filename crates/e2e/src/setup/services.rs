@@ -841,6 +841,26 @@ impl<'a> Services<'a> {
         }
     }
 
+    /// Get the canonical batch schedule the autopilot published.
+    pub async fn get_canonical_batch_schedule(
+        &self,
+    ) -> Result<serde_json::Value, (StatusCode, String)> {
+        let response = self
+            .http
+            .get(format!("{API_HOST}/api/v1/canonical_batch_schedule"))
+            .send()
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let body = response.text().await.unwrap();
+
+        match status {
+            StatusCode::OK => Ok(serde_json::from_str(&body).unwrap()),
+            code => Err((code, body)),
+        }
+    }
+
     /// Cancel a single order (deprecated endpoint)
     pub async fn cancel_order_single(
         &self,
