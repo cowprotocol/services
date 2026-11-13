@@ -4914,6 +4914,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fee-engine-compiled"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "cel",
+ "chrono",
+ "const-hex",
+ "fee-engine",
+ "model",
+ "rust_decimal",
+ "serde_json",
+ "thiserror 1.0.69",
+ "toml",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
