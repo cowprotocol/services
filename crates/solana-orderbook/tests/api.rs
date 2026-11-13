@@ -2599,33 +2599,33 @@ async fn create_order_rejects_creating_the_buy_token_account() {
     }
 }
 
-/// A message header that leaves the owner outside the signer region is
-/// rejected: on chain the creation would demand the owner's signature, so
-/// accepting it would only defer the failure past a won auction.
+/// A creation whose two required signers leave the owner outside the signer
+/// region is rejected: on chain the creation would demand the owner's
+/// signature, so accepting it would only defer the failure past a won auction.
 #[tokio::test]
 async fn create_order_requires_the_owner_as_signer() {
     let funder = solana_sdk::pubkey::Pubkey::new_unique();
     let owner = solana_sdk::signer::keypair::Keypair::new();
+    let stranger = solana_sdk::pubkey::Pubkey::new_unique();
     let addr =
         spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
     let intent = sponsored_intent(owner.pubkey(), false);
-    let instruction: solana_sdk::instruction::Instruction =
-        cow_settlement_client::instruction::CreateOrder {
-            program_id: program_id(),
-            owner: owner.pubkey(),
-            created_by: funder,
-            intent: &intent,
-        }
-        .into();
-    let mut message = solana_sdk::message::Message::new_with_blockhash(
-        &[instruction],
+    let mut create = create_order(funder, owner.pubkey(), &intent);
+    // Demote the owner out of the signer region.
+    for account in &mut create.accounts {
+        account.is_signer &= account.pubkey != owner.pubkey();
+    }
+    let message = solana_sdk::message::Message::new_with_blockhash(
+        &[
+            solana_system_interface::instruction::transfer(&stranger, &stranger, 1),
+            create,
+        ],
         Some(&funder),
         &solana_sdk::hash::Hash::new_unique(),
     );
-    // Demote the owner out of the signer region.
-    message.header.num_required_signatures = 1;
+    assert_eq!(message.header.num_required_signatures, 2);
     let tx = solana_sdk::transaction::VersionedTransaction {
-        signatures: vec![solana_sdk::signature::Signature::default()],
+        signatures: vec![solana_sdk::signature::Signature::default(); 2],
         message: solana_sdk::message::VersionedMessage::Legacy(message),
     };
     let transaction = base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap());
@@ -2633,6 +2633,55 @@ async fn create_order_requires_the_owner_as_signer() {
     assert_eq!(
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "InvalidSignature")
+    );
+}
+
+/// The funder pays the base fee of every required signature, so a creation
+/// padded with a third signer is rejected even when every signer signed.
+#[tokio::test]
+async fn create_order_rejects_an_extra_required_signer() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let extra = solana_sdk::signer::keypair::Keypair::new();
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+    let intent = sponsored_intent(owner.pubkey(), false);
+    // Compute-budget instructions sit outside the template, so the extra
+    // signer rides on one without breaking it.
+    let mut padding =
+        solana_compute_budget_interface::ComputeBudgetInstruction::set_compute_unit_limit(200_000);
+    padding
+        .accounts
+        .push(solana_sdk::instruction::AccountMeta::new_readonly(
+            extra.pubkey(),
+            true,
+        ));
+    let message = solana_sdk::message::Message::new_with_blockhash(
+        &[create_order(funder, owner.pubkey(), &intent), padding],
+        Some(&funder),
+        &solana_sdk::hash::Hash::new_unique(),
+    );
+    assert_eq!(message.header.num_required_signatures, 3);
+    let serialized = message.serialize();
+    let signatures = message.account_keys[..3]
+        .iter()
+        .map(|key| {
+            [&owner, &extra]
+                .into_iter()
+                .find(|signer| signer.pubkey() == *key)
+                .map(|signer| signer.sign_message(&serialized))
+                .unwrap_or_default()
+        })
+        .collect();
+    let tx = solana_sdk::transaction::VersionedTransaction {
+        signatures,
+        message: solana_sdk::message::VersionedMessage::Legacy(message),
+    };
+    let transaction = base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap());
+    let (status, kind) = post_order(addr, transaction).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::BAD_REQUEST, "InvalidTransaction")
     );
 }
 

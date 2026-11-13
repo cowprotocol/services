@@ -390,6 +390,11 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
+    if message.header().num_required_signatures != 2 {
+        return Err(PlacementError::InvalidTransaction(
+            "a creation transaction must have exactly two required signers",
+        ));
+    }
     // Wallets wrap the bundle in instructions of their own, before and after
     // ours, so those sit outside the template.
     let mut bundle = Vec::with_capacity(message.instructions().len());
@@ -1107,6 +1112,37 @@ mod tests {
         let rpc = validity_answers([false, false]);
         let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
         assert!(!valid.unwrap());
+    }
+
+    #[test]
+    fn a_header_without_exactly_two_required_signers_is_rejected() {
+        let funder = Pubkey::new_unique();
+        let sponsoring = Sponsoring {
+            funder,
+            settlement_program: Pubkey::new_unique(),
+            rpc: validity_answers([]),
+            max_priority_fee_lamports: 0,
+            mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
+        };
+        for signers in [1, 3] {
+            let mut message = solana_sdk::message::Message::new_with_blockhash(
+                &[],
+                Some(&funder),
+                &Hash::new_unique(),
+            );
+            message.header.num_required_signatures = signers;
+            let transaction = VersionedTransaction {
+                signatures: Vec::new(),
+                message: VersionedMessage::Legacy(message),
+            };
+            assert!(matches!(
+                validate(&sponsoring, &transaction, ValidationParameters::default()),
+                Err(PlacementError::InvalidTransaction(
+                    "a creation transaction must have exactly two required signers"
+                ))
+            ));
+        }
     }
 
     fn set_limit(units: u32) -> Vec<u8> {
