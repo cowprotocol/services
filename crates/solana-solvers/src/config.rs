@@ -124,6 +124,11 @@ pub struct BitgetConfig {
 
     #[serde(default)]
     pub fee: Fee,
+
+    /// Bound on each Bitget request. A co-sign that outlives the driver's
+    /// settle deadline is wasted, so this keeps `/cosign` from hanging past it.
+    #[serde(with = "humantime_serde", default = "default_request_timeout")]
+    pub request_timeout: Duration,
 }
 
 /// Bitget's fee on each route.
@@ -144,6 +149,10 @@ fn default_max_accounts() -> u16 {
 
 fn default_partner_code() -> String {
     "cowswap".to_string()
+}
+
+fn default_request_timeout() -> Duration {
+    Duration::from_secs(5)
 }
 
 /// Load and parse the TOML config file.

@@ -164,6 +164,7 @@ mod tests {
             slippage_bps: 20,
             max_accounts: 48,
             fee: Fee::Exempt,
+            request_timeout: Duration::from_secs(5),
         })
         .unwrap();
         let solver = Solver::new(

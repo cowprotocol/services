@@ -25,3 +25,6 @@ max-accounts = 48
 # Bitget's fee: "standard" (1 bp, the default) or "exempt" (none, but each
 # route then needs Bitget's co-signature, collected at settle time).
 # fee = "exempt"
+# Bound on each Bitget request. A co-sign still pending when the driver's
+# settle deadline passes is wasted, so this keeps /cosign from outliving it.
+# request-timeout = "5s"

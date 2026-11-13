@@ -39,7 +39,9 @@ pub struct Bitget {
 impl Bitget {
     pub fn new(config: &BitgetConfig) -> Result<Self, Error> {
         Ok(Self {
-            client: reqwest::Client::builder().build()?,
+            client: reqwest::Client::builder()
+                .timeout(config.request_timeout)
+                .build()?,
             endpoint: config.endpoint.clone(),
             api_key: config.api_key.clone(),
             api_secret: config.api_secret.clone(),
@@ -143,7 +145,7 @@ mod tests {
             message::{VersionedMessage, v1},
             signature::Signature,
         },
-        std::str::FromStr,
+        std::{str::FromStr, time::Duration},
     };
 
     fn live_config() -> BitgetConfig {
@@ -157,7 +159,46 @@ mod tests {
             slippage_bps: 20,
             max_accounts: 48,
             fee: Fee::Standard,
+            request_timeout: Duration::from_secs(5),
         }
+    }
+
+    /// A hung `/signBgwSolTx` fails the co-sign at the request timeout rather
+    /// than holding the driver's `/cosign` open past its deadline.
+    #[tokio::test]
+    async fn cosign_gives_up_at_the_request_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+        let hung = axum::Router::new().route(
+            &format!("/{COSIGN_PATH}"),
+            axum::routing::post(std::future::pending::<()>),
+        );
+        tokio::spawn(async move { axum::serve(listener, hung).await.unwrap() });
+        let bitget = Bitget::new(&BitgetConfig {
+            endpoint: endpoint.parse().unwrap(),
+            api_key: "key".into(),
+            api_secret: "secret".into(),
+            partner_code: "cowswap".into(),
+            slippage_bps: 20,
+            max_accounts: 48,
+            fee: Fee::Exempt,
+            request_timeout: Duration::from_millis(100),
+        })
+        .unwrap();
+
+        // Bounded so a client without the timeout fails here instead of
+        // hanging.
+        let err = tokio::time::timeout(
+            Duration::from_secs(1),
+            bitget.cosign(&VersionedTransaction::default()),
+        )
+        .await
+        .expect("the request timeout fires")
+        .unwrap_err();
+        assert!(
+            matches!(&err, Error::Http(err) if err.is_timeout()),
+            "{err:?}"
+        );
     }
 
     /// 1 USDC for wSOL, paid into the settlement's wSOL buffer.
