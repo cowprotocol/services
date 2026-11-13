@@ -18,6 +18,8 @@ use {
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::order::{OrderCreation, OrderKind},
     number::units::EthUnit,
+    sqlx::Connection,
+    std::time::Duration,
 };
 
 #[tokio::test]
@@ -203,7 +205,50 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
     }
 
-    // Stop autopilot-leader, follower should take over
+    // Kill the leader's lock session and hold the lock from here, as a
+    // follower that took over would. The leader keeps running but notices at
+    // its next heartbeat and stops cutting auctions. The follower polls for
+    // the freed lock too, so kill and take until this connection wins.
+    let mut lock_holder = sqlx::PgConnection::connect("postgresql://").await.unwrap();
+    let take_over = async {
+        loop {
+            sqlx::query(
+                "SELECT pg_terminate_backend(pid, 5000) FROM pg_locks WHERE locktype = 'advisory' \
+                 AND granted AND objsubid = 1 AND classid = \
+                 ((hashtextextended('autopilot_startup', 0) >> 32) & 4294967295)::oid AND objid = \
+                 (hashtextextended('autopilot_startup', 0) & 4294967295)::oid",
+            )
+            .execute(&mut lock_holder)
+            .await
+            .unwrap();
+            let locked: bool = sqlx::query_scalar(
+                "SELECT pg_try_advisory_lock(hashtextextended('autopilot_startup', 0))",
+            )
+            .fetch_one(&mut lock_holder)
+            .await
+            .unwrap();
+            if locked {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    };
+    tokio::time::timeout(TIMEOUT, take_over)
+        .await
+        .expect("the killed session frees the lock");
+
+    // A leader cuts an auction on every block, so blocks that take no new
+    // auction id mean the old leader stepped down. Both autopilots share one
+    // metrics registry in this process, so `is_leader` can't tell.
+    wait_for_condition(TIMEOUT, || quiet_blocks(2, &onchain, services.db()))
+        .await
+        .unwrap();
+
+    // Without the lock the old leader cuts no auction, however many blocks
+    // pass.
+    assert!(quiet_blocks(3, &onchain, services.db()).await);
+
+    // Stop autopilot-leader, then free the lock: only the follower can take it
     manual_shutdown.shutdown();
     let is_leader_shutdown = || async {
         onchain.mint_block().await;
@@ -212,6 +257,7 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
     wait_for_condition(TIMEOUT, is_leader_shutdown)
         .await
         .unwrap();
+    lock_holder.close().await.unwrap();
 
     // Wait for the follower to step up as leader by checking its metrics
     // endpoint
@@ -266,4 +312,25 @@ async fn dual_autopilot_only_leader_produces_auctions(web3: Web3) {
         };
         wait_for_condition(TIMEOUT, indexed_trades).await.unwrap();
     }
+}
+
+/// Whether `n` blocks in a row pass without a new auction id.
+async fn quiet_blocks(n: usize, onchain: &OnchainComponents, db: &sqlx::PgPool) -> bool {
+    let before = last_auction_id(db).await;
+    for _ in 0..n {
+        onchain.mint_block().await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    last_auction_id(db).await == before
+}
+
+/// The id the autopilot took for its last cut. Read from the id sequence,
+/// because a background task archives the auction itself.
+async fn last_auction_id(db: &sqlx::PgPool) -> Option<i64> {
+    sqlx::query_scalar(
+        "SELECT pg_sequence_last_value(pg_get_serial_sequence('auctions', 'id')::regclass)",
+    )
+    .fetch_one(db)
+    .await
+    .unwrap()
 }
