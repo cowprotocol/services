@@ -7,6 +7,7 @@
 //! can free the lock, and at once when a ping fails.
 
 use {
+    crate::LeaderLock,
     sqlx::{
         Connection,
         PgConnection,
@@ -30,7 +31,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Holds the leader lock, or competes for it, from a background task until
 /// released.
-pub struct LeaderLock {
+pub struct LeaderPgLock {
     state: Arc<State>,
     heartbeat: JoinHandle<()>,
 }
@@ -39,11 +40,11 @@ pub struct LeaderLock {
 struct State {
     /// Until when this instance may act as the leader.
     leader_until: Mutex<Option<Instant>>,
-    /// Errors not yet returned by [`LeaderLock::take_errors`].
+    /// Errors not yet returned by [`LeaderPgLock::take_errors`].
     errors: AtomicU64,
 }
 
-impl LeaderLock {
+impl LeaderPgLock {
     pub fn spawn(pool: &PgPool, key: String) -> Self {
         Self::spawn_with_idle_timeout(pool, key, IDLE_TIMEOUT)
     }
@@ -96,7 +97,22 @@ impl LeaderLock {
     }
 }
 
-impl Drop for LeaderLock {
+#[async_trait::async_trait]
+impl LeaderLock for LeaderPgLock {
+    fn is_leader(&self) -> bool {
+        LeaderPgLock::is_leader(self)
+    }
+
+    fn take_errors(&self) -> u64 {
+        LeaderPgLock::take_errors(self)
+    }
+
+    async fn release(self: Box<Self>) {
+        LeaderPgLock::release(*self).await
+    }
+}
+
+impl Drop for LeaderPgLock {
     fn drop(&mut self) {
         // after `release` the task has finished, and `abort` on a finished
         // task does nothing
@@ -237,10 +253,10 @@ mod tests {
     async fn postgres_released_lock_passes_to_the_follower() {
         let pool = PgPool::connect("postgresql://").await.unwrap();
         let key = "postgres_released_lock_passes_to_the_follower".to_string();
-        let leader = LeaderLock::spawn_with_idle_timeout(&pool, key.clone(), IDLE_TIMEOUT);
+        let leader = LeaderPgLock::spawn_with_idle_timeout(&pool, key.clone(), IDLE_TIMEOUT);
         wait_until(|| leader.is_leader()).await;
 
-        let follower = LeaderLock::spawn_with_idle_timeout(&pool, key, IDLE_TIMEOUT);
+        let follower = LeaderPgLock::spawn_with_idle_timeout(&pool, key, IDLE_TIMEOUT);
         tokio::time::sleep(IDLE_TIMEOUT).await;
         assert!(!follower.is_leader());
 

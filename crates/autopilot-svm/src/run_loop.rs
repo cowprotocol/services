@@ -17,9 +17,9 @@
 //! others only sync to the tip so one can take over at once.
 
 use {
-    crate::{leader_lock_tracker::LeaderLockTracker, run::Liveness},
+    crate::run::Liveness,
     async_trait::async_trait,
-    database::leader_pg_lock::LeaderLock,
+    leader_lock::{LeaderLockTracker, LeaderPgLock},
     std::{
         collections::HashSet,
         fmt::Debug,
@@ -213,7 +213,7 @@ impl<C: Cycle> AuctionLoop<C> {
     /// lock. The cycle in flight when the signal arrives runs to its end.
     pub async fn run_forever(
         mut self,
-        leader_lock: Option<LeaderLock>,
+        leader_lock: Option<LeaderPgLock>,
         shutdown: CancellationToken,
     ) {
         self.leader = LeaderLockTracker::new(leader_lock);
@@ -343,6 +343,7 @@ impl<C: Cycle> AuctionLoop<C> {
 mod tests {
     use {
         super::*,
+        leader_lock::test_util::ScriptedLeaderLock,
         observe::metrics::LivenessChecking,
         std::{collections::VecDeque, sync::Mutex, time::Duration},
     };
@@ -570,7 +571,7 @@ mod tests {
                 startup: Arc::new(None),
             },
         );
-        auction_loop.leader = LeaderLockTracker::Scripted(leading);
+        auction_loop.leader = LeaderLockTracker::new(Some(ScriptedLeaderLock(leading)));
         auction_loop.run_cycle().await;
     }
 
@@ -640,7 +641,7 @@ mod tests {
     async fn solana_db_a_standby_syncs_without_cutting() {
         let pool = crate::test_db::pool().await;
         let key = "solana_db_a_standby_syncs_without_cutting".to_string();
-        let leader = LeaderLock::spawn(&pool, key.clone());
+        let leader = LeaderPgLock::spawn(&pool, key.clone());
         tokio::time::timeout(Duration::from_secs(10), async {
             while !leader.is_leader() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -654,7 +655,7 @@ mod tests {
             Box::new(ShutdownMidCycle(shutdown.clone())),
             [(true, NextAuction::Auction(TestAuction(vec![1])))],
         );
-        let standby = LeaderLock::spawn(&pool, key);
+        let standby = LeaderPgLock::spawn(&pool, key);
         // the standby's first heartbeat must find the lock taken before the
         // cycle runs
         tokio::time::sleep(Duration::from_millis(500)).await;

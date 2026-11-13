@@ -1,38 +1,32 @@
-#[cfg(test)]
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use {crate::LeaderLock, observe::metrics};
 
-use {database::leader_pg_lock::LeaderLock, observe::metrics};
-
-/// Tracks the autopilot leader lock status across calls to
-/// [`Self::update`].
+/// Tracks the autopilot leader lock status.
 pub enum LeaderLockTracker {
-    /// No lock: the only running instance leads.
+    /// Leader lock mechanism is disabled.
+    /// Only one autopilot instance should be running at all times.
     Disabled,
-    /// Several instances may run at once, and only the one holding the lock
-    /// cuts auctions. The others keep syncing to the tip so they can take
-    /// over at once.
+    /// Leader lock mechanism is enabled.
+    /// This allows for multiple autopilots to run simultaneously with only one
+    /// driving the auctions forward.
+    /// The autopilot followers (not holding the lock) will keep their caches
+    /// warm. It facilitates zero downtime deployments.
     Enabled {
-        /// Whether the instance led at the last `update`.
+        /// Whether the instance was the leader at the last call to
+        /// `update()`
         was_leader: bool,
-        leader_lock: LeaderLock,
+        leader_lock: Box<dyn LeaderLock>,
     },
-    /// Leadership the test flips.
-    #[cfg(test)]
-    Scripted(Arc<AtomicBool>),
 }
 
 impl LeaderLockTracker {
-    pub fn new(leader_lock: Option<LeaderLock>) -> Self {
+    pub fn new(leader_lock: Option<impl LeaderLock + 'static>) -> Self {
         match leader_lock {
             Some(leader_lock) => {
                 // followers export 0, so a missing leader shows up
                 Metrics::leader_step_down();
                 Self::Enabled {
                     was_leader: false,
-                    leader_lock,
+                    leader_lock: Box::new(leader_lock),
                 }
             }
             None => Self::Disabled,
@@ -40,15 +34,15 @@ impl LeaderLockTracker {
     }
 
     /// Logs and records leadership changes since the last call, and returns
-    /// whether this instance leads. Called once per cycle, right before the
-    /// leader-only work.
+    /// whether this instance leads. Called once per iteration, right before
+    /// the leader-only work.
     pub fn update(&mut self) -> bool {
         let Self::Enabled {
             was_leader,
             leader_lock,
         } = self
         else {
-            return self.is_leader();
+            return true;
         };
 
         Metrics::leader_lock_errors(leader_lock.take_errors());
@@ -68,7 +62,9 @@ impl LeaderLockTracker {
         is_leader
     }
 
-    /// Releases the lock. Called once the loop stops.
+    /// Releases the leader lock
+    /// Should be called after breaking out of run loop (for example: due to
+    /// shutdown)
     pub async fn release(self) {
         if let Self::Enabled { leader_lock, .. } = self {
             if leader_lock.is_leader() {
@@ -79,24 +75,25 @@ impl LeaderLockTracker {
         }
     }
 
-    /// Whether this instance leads right now. Always true without a lock.
+    /// Returns true while the leader lock is held. Check it right before
+    /// every leader-only action, the lock can be lost at any time
+    /// If the feature is disabled, always returns true
     pub fn is_leader(&self) -> bool {
         match self {
             Self::Enabled { leader_lock, .. } => leader_lock.is_leader(),
             Self::Disabled => true,
-            #[cfg(test)]
-            Self::Scripted(leading) => leading.load(Ordering::Acquire),
         }
     }
 }
-
 #[derive(prometheus_metric_storage::MetricStorage)]
 #[metric(subsystem = "leader_lock_tracker")]
 struct Metrics {
-    /// 1 while this instance leads, 0 while it follows.
+    /// Tracks the current leader status
+    /// 1 - is currently autopilot leader
+    /// 0 - is currently autopilot follower
     is_leader: prometheus::IntGauge,
 
-    /// Errors taking or keeping the leader lock.
+    /// Tracks the count of errors taking or keeping the leader lock
     leader_lock_error: prometheus::IntCounter,
 }
 

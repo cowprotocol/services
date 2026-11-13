@@ -55,7 +55,6 @@ model = { workspace = true, features = ["e2e"] }
 number = { workspace = true }
 observe = { workspace = true }
 orderbook = { workspace = true, features = ["e2e", "test-util"] }
-pool-indexer = { workspace = true }
 price-estimation = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "query"] }
 serde = { workspace = true }
@@ -68,7 +67,6 @@ solvers = { workspace = true }
 solvers-dto = { workspace = true }
 sqlx = { workspace = true }
 tempfile = { workspace = true }
-testlib = { workspace = true }
 tokio = { workspace = true, features = ["macros", "process"] }
 toml = { workspace = true }
 tracing = { workspace = true }
@@ -76,8 +74,10 @@ url = { workspace = true }
 
 [dev-dependencies]
 brotli = { workspace = true }
+pool-indexer = { workspace = true }
 refunder = { workspace = true }
 rstest = { workspace = true }
+testlib = { workspace = true }
 
 [lints]
 workspace = true

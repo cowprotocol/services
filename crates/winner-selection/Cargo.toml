@@ -11,3 +11,6 @@ itertools = { workspace = true }
 protocol-fees = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+
+[lints]
+workspace = true

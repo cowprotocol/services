@@ -2,7 +2,7 @@ node-url = "http://chain:8545"
 simulation-node-url = "http://chain:8545"
 
 [logging]
-filter = "warn,autopilot=debug,shared=info,price_estimation=info"
+filter = "warn,autopilot=debug,leader_lock=debug,shared=info,price_estimation=info"
 
 [current-block]
 poll-interval = "1s"

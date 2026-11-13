@@ -60,7 +60,6 @@ contracts = { workspace = true }
 model = { workspace = true }
 observe = { workspace = true }
 shared = { workspace = true }
-solver = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
