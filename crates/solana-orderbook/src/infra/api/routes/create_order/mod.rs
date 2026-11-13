@@ -415,9 +415,6 @@ fn validate(
             "the priority fee is above the sponsored ceiling",
         ));
     }
-    // A creation that runs out of compute units fails on chain, and the
-    // funder still pays its base fee. An undeclared limit gets the runtime's
-    // default, which covers a creation.
     if compute_budget
         .limit
         .is_some_and(|limit| limit < sponsoring.min_compute_unit_limit)
