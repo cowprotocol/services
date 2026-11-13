@@ -140,17 +140,23 @@ async fn run(config: Config) {
                 .await
                 .expect("load the funder signer");
             tracing::info!(funder = %signer.pubkey(), "loaded the funder signer");
-            Some(Arc::new(Sponsor::new(
-                signer,
-                SolanaRPC::new_with_timeout_and_commitment(
-                    &config.rpc.endpoint,
-                    config.rpc.request_timeout,
-                    CommitmentConfig::confirmed(),
-                    "sponsoring",
+            Some(Arc::new(
+                Sponsor::new(
+                    signer,
+                    SolanaRPC::new_with_timeout_and_commitment(
+                        &config.rpc.endpoint,
+                        config.rpc.request_timeout,
+                        CommitmentConfig::confirmed(),
+                        "sponsoring",
+                    ),
+                    pool.clone(),
+                    sponsoring.max_displaced_creations,
+                )
+                .with_creation_fee_budget(
+                    sponsoring.max_creation_fee_lamports,
+                    sponsoring.creation_fee_window,
                 ),
-                pool.clone(),
-                sponsoring.max_displaced_creations,
-            )))
+            ))
         }
         None => None,
     };
@@ -195,6 +201,7 @@ async fn run(config: Config) {
             prices,
             config.contracts.state_pda(),
             ProtocolFees::new(config.fee_policies.clone()),
+            sponsor.clone(),
         )),
         Box::new(DriverCompetition::new(
             drivers.clone(),

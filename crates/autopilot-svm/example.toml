@@ -94,3 +94,7 @@ filter = "info,autopilot_svm=debug"
 # only in losing solutions, at most one per owner. The funder pays for each,
 # and the order may never fill. Zero, the default, sends none.
 # max-displaced-creations = 10
+# The most the funder spends on creation fees per window, in lamports. With
+# the budget spent, pending sponsored orders stay out of the auction.
+# max-creation-fee-lamports = 50000000
+# creation-fee-window = "1h"
