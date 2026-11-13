@@ -35,7 +35,7 @@ use {
     },
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
-    leader_lock::LeaderLock,
+    leader_lock::LeaderPgLock,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
     sqlx::PgConnection,
@@ -98,8 +98,8 @@ impl Persistence {
         sender
     }
 
-    pub fn leader(&self, key: String) -> LeaderLock {
-        LeaderLock::spawn(&self.postgres.pool, key)
+    pub fn leader(&self, key: String) -> LeaderPgLock {
+        LeaderPgLock::spawn(&self.postgres.pool, key)
     }
 
     /// Fetches the ID that should be used for the next auction.
