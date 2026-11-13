@@ -38,4 +38,8 @@ ignore = [
   "RUSTSEC-2026-0391",
   "RUSTSEC-2026-0398",
   "RUSTSEC-2026-0403",
+
+  # libsqlite3-sys - `libsqlite3-sys` via C SQLite CVE-2026-119375 (RUSTSEC-2026-0459).
+  # No semver-compatible fix (patched: >=0.39.0).
+  "RUSTSEC-2026-0459",
 ]

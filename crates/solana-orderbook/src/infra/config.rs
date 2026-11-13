@@ -4,6 +4,7 @@ use {
     crate::infra::api::ValidationParameters,
     configs::{
         database::DatabasePoolConfig,
+        orderbook::VolumeFeeConfig,
         price_estimation::QuoteVerificationMode,
         shared::LoggingConfig,
     },
@@ -49,6 +50,10 @@ pub struct Config {
     pub http: Http,
     /// Quote endpoint configuration.
     pub quoting: Quoting,
+    /// The volume protocol fee netted out of quotes, the factor the
+    /// autopilot's volume policy charges. Absent, quotes carry no protocol
+    /// fee.
+    pub volume_fee: Option<VolumeFeeConfig>,
     /// The Solana JSON-RPC node. Required by sponsored order placement.
     pub rpc: Option<Rpc>,
     /// Sponsored order placement. Absent disables `POST /api/v1/orders`.

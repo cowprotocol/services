@@ -3,12 +3,14 @@
 //! These structs contain only the data needed for winner selection,
 //! making them small enough to efficiently send to/from the Pod Service.
 
-pub use state::{RankType, Unscored};
+pub use {
+    protocol_fees::Order,
+    state::{RankType, Unscored},
+};
 
 use crate::{
     chain::ChainTypes,
     evm::{Evm, U256},
-    primitives::Side,
     state,
 };
 pub type Scored = state::Scored<U256>;
@@ -78,46 +80,4 @@ impl<C: ChainTypes> Solution<Unscored, C> {
             state: Unscored,
         }
     }
-}
-
-/// Minimal order data needed for winner selection.
-///
-/// Contains the essential information about how an order was executed,
-/// including limit amounts (from the original order) and executed amounts
-/// (what actually happened in this solution).
-#[derive(Debug, Clone)]
-pub struct Order<C: ChainTypes = Evm> {
-    /// Unique order identifier.
-    pub uid: C::OrderUid,
-
-    /// Sell token address.
-    pub sell_token: C::TokenId,
-
-    /// Buy token address.
-    pub buy_token: C::TokenId,
-
-    /// Limit amount of sell token (from original order parameters).
-    ///
-    /// This is the maximum amount the user is willing to sell.
-    pub sell_amount: C::Amount,
-
-    /// Limit amount of buy token (from original order parameters).
-    ///
-    /// This is the minimum amount the user wants to receive.
-    pub buy_amount: C::Amount,
-
-    /// Amount of sell token that left the user's wallet (including fees).
-    ///
-    /// This is the actual executed amount in this solution.
-    pub executed_sell: C::Amount,
-
-    /// Amount of buy token the user received (after fees).
-    ///
-    /// This is the actual amount the user got in this solution.
-    pub executed_buy: C::Amount,
-
-    /// Order side (Buy or Sell).
-    ///
-    /// Determines how surplus is calculated.
-    pub side: Side,
 }

@@ -43,4 +43,7 @@ pub struct Trade {
     /// Solver fee units retained, in the buy mint for a sell order and the
     /// sell mint for a buy order. Zero when the solver charges no fee.
     pub solver_fee: u64,
+    /// Protocol fee units taken, in the buy mint for a sell order and the
+    /// sell mint for a buy order. Zero when the order carries no policy.
+    pub protocol_fee: u64,
 }

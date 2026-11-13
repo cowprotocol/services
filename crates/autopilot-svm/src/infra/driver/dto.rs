@@ -5,7 +5,7 @@
 //! strings (u64 does not survive JSON number consumers).
 
 use {
-    crate::domain::auction,
+    crate::domain::{auction, fee},
     chain_types::solana::{AppData, IntentHash, Pubkey, Signature},
     serde::{Deserialize, Serialize},
     serde_with::{DisplayFromStr, base64::Base64, serde_as},
@@ -47,6 +47,11 @@ pub struct Order {
     pub uid: IntentHash,
     #[serde_as(as = "DisplayFromStr")]
     pub owner: Pubkey,
+    /// The wallet `buy_token_account` is the associated token account of,
+    /// when that is not the owner. Absent when the owner receives the payout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub receiver: Option<Pubkey>,
     #[serde_as(as = "DisplayFromStr")]
     pub sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
@@ -81,6 +86,70 @@ pub struct Order {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub sell_balance: Option<u64>,
+    /// The protocol fee policies the driver takes from the order's fills,
+    /// in order. An empty list is omitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocol_fees: Vec<FeePolicy>,
+}
+
+/// A protocol fee policy, in the EVM driver's wire shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeePolicy {
+    #[serde(rename_all = "camelCase")]
+    Surplus { factor: f64, max_volume_factor: f64 },
+    #[serde(rename_all = "camelCase")]
+    PriceImprovement {
+        factor: f64,
+        max_volume_factor: f64,
+        quote: Quote,
+    },
+    #[serde(rename_all = "camelCase")]
+    Volume { factor: f64 },
+}
+
+/// The quote a price improvement policy measures the fill against.
+#[serde_as]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    #[serde_as(as = "DisplayFromStr")]
+    pub sell_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub buy_amount: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub fee: u64,
+    #[serde_as(as = "DisplayFromStr")]
+    pub solver: Pubkey,
+}
+
+impl From<&fee::FeePolicy> for FeePolicy {
+    fn from(policy: &fee::FeePolicy) -> Self {
+        match *policy {
+            fee::FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => Self::Surplus {
+                factor,
+                max_volume_factor,
+            },
+            fee::FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => Self::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote: Quote {
+                    sell_amount: quote.sell_amount,
+                    buy_amount: quote.buy_amount,
+                    fee: quote.fee,
+                    solver: quote.solver,
+                },
+            },
+            fee::FeePolicy::Volume { factor } => Self::Volume { factor },
+        }
+    }
 }
 
 /// Whether the order sells or buys an exact amount.
@@ -96,6 +165,7 @@ impl From<&auction::Order> for Order {
         Self {
             uid: order.uid,
             owner: order.owner,
+            receiver: order.receiver,
             sell_token: order.sell_token,
             buy_token: order.buy_token,
             sell_token_account: order.sell_token_account,
@@ -113,6 +183,7 @@ impl From<&auction::Order> for Order {
             executed: order.executed,
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
+            protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
         }
     }
 }
@@ -184,6 +255,7 @@ mod tests {
         auction::Order {
             uid: IntentHash([0x11; 32]),
             owner: Pubkey([0x22; 32]),
+            receiver: None,
             sell_token: Pubkey([0x33; 32]),
             buy_token: Pubkey([0x44; 32]),
             sell_token_account: Pubkey([0x55; 32]),
@@ -199,6 +271,8 @@ mod tests {
             executed: 400,
             creation: None,
             sell_balance: Some(500),
+            quote: None,
+            protocol_fees: Vec::new(),
         }
     }
 
@@ -257,6 +331,74 @@ mod tests {
         };
         let json = serde_json::to_value(&sponsored).unwrap();
         assert_eq!(json["orders"][0]["creation"], "AQID");
+        // An order paid out to its owner sends no receiver, one paid out to
+        // another wallet sends it as base58, precomputed for 32 bytes of 0x23.
+        assert!(json["orders"][0].get("receiver").is_none());
+        let received = SolveRequest {
+            orders: vec![Order {
+                receiver: Some(Pubkey([0x23; 32])),
+                ..Order::from(&order())
+            }],
+            ..sponsored
+        };
+        let json = serde_json::to_value(&received).unwrap();
+        assert_eq!(
+            json["orders"][0]["receiver"],
+            "3NAM1YJMhSPvtAkmGTRABe1hYZN3aE2hZHKy3JZy9fHk"
+        );
+        // An order without policies sends none.
+        assert!(json["orders"][0].get("protocolFees").is_none());
+        assert_eq!(
+            serde_json::from_value::<SolveRequest>(json).unwrap(),
+            received
+        );
+        // One with policies sends them externally tagged, amounts as decimal
+        // strings, the quote's solver as base58.
+        let charged = SolveRequest {
+            orders: vec![Order::from(&auction::Order {
+                protocol_fees: vec![
+                    fee::FeePolicy::Surplus {
+                        factor: 0.5,
+                        max_volume_factor: 0.01,
+                    },
+                    fee::FeePolicy::PriceImprovement {
+                        factor: 0.5,
+                        max_volume_factor: 0.01,
+                        quote: fee::Quote {
+                            sell_amount: 1_000,
+                            buy_amount: 2_000,
+                            fee: 0,
+                            solver: Pubkey([0x22; 32]),
+                        },
+                    },
+                    fee::FeePolicy::Volume { factor: 0.001 },
+                ],
+                ..order()
+            })],
+            ..received
+        };
+        let json = serde_json::to_value(&charged).unwrap();
+        assert_eq!(
+            json["orders"][0]["protocolFees"],
+            serde_json::json!([
+                {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}},
+                {"priceImprovement": {
+                    "factor": 0.5,
+                    "maxVolumeFactor": 0.01,
+                    "quote": {
+                        "sellAmount": "1000",
+                        "buyAmount": "2000",
+                        "fee": "0",
+                        "solver": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+                    },
+                }},
+                {"volume": {"factor": 0.001}},
+            ])
+        );
+        assert_eq!(
+            serde_json::from_value::<SolveRequest>(json).unwrap(),
+            charged
+        );
 
         let solve = SolveResponse {
             solutions: vec![Solution {

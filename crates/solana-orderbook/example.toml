@@ -26,6 +26,13 @@ autopilot = "http://localhost:12088"
 # best of them. Defaults to 2.
 # fast-results-required = 2
 
+# The volume protocol fee netted out of quotes, the factor the autopilot's
+# volume policy charges. Omit the section to quote without a protocol fee.
+# [volume-fee]
+# factor = 0.001
+# From when the factor applies. Omit it to apply the factor at once.
+# effective-from-timestamp = "2026-12-01T00:00:00Z"
+
 [logging]
 filter = "info,solana_orderbook=debug"
 # stderr-threshold = "warn"

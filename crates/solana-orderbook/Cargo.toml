@@ -39,6 +39,7 @@ moka = { workspace = true, features = ["sync"] }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+protocol-fees = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde-ext = { workspace = true, features = ["solana"] }

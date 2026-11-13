@@ -5,11 +5,11 @@
 //! The funder countersigns as fee payer, so only the whitelisted
 //! preparation steps may precede the mandatory trailing `CreateOrder`: wrap
 //! SOL and delegate the sell account. The bundle must not create the buy
-//! token account; placement looks it up instead: the settlement creates a
-//! missing one only at the owner's associated token address, so a custom
-//! receiver's account must already exist and receive the buy mint. A native
-//! SOL buy has no buy token account: its payout goes to the wallet and
-//! creates it when missing, so placement looks the wallet up instead.
+//! token account, placement looks it up instead: the settlement creates a
+//! missing one only at the associated token address of the owner, or of
+//! the `receiver` the placement names. A native SOL buy has no buy token
+//! account: its payout goes to the wallet and creates it when missing, so
+//! placement looks the wallet up instead.
 
 use {
     super::mint::{ensure_settleable, is_token_program, token_mints},
@@ -35,7 +35,7 @@ use {
     cow_solana_rpc::SolanaRPC,
     database::{byte_array::ByteArray, solana::OrderKind},
     serde::Deserialize,
-    serde_with::{base64::Base64, serde_as},
+    serde_with::{DisplayFromStr, base64::Base64, serde_as},
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
         hash::Hash,
@@ -45,6 +45,7 @@ use {
     },
     solana_system_interface::instruction::SystemInstruction,
     solana_token::receivable_or_creatable,
+    spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::instruction::TokenInstruction,
     std::time::{Duration, Instant},
 };
@@ -60,6 +61,14 @@ pub struct Params {
     // TODO: the alias is deprecated and should be dropped in the future
     #[serde(alias = "transaction")]
     pub partially_signed_tx: Vec<u8>,
+    /// The wallet the buy token account belongs to, when that is not the
+    /// owner: the wallet `buyTokenAccount` is the associated token account
+    /// of, or the wallet itself for a native SOL buy. The settlement creates
+    /// a missing account at that address for this wallet. Naming the owner
+    /// is the same as leaving it out.
+    #[serde(default)]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub receiver: Option<Pubkey>,
     /// The id the quote endpoint answered for this order, if any.
     #[serde(default)]
     pub quote_id: Option<i64>,
@@ -87,6 +96,7 @@ enum PlacementError {
     SameBuyAndSellToken,
     ZeroAmount,
     InvalidNativeBuy(&'static str),
+    InvalidBuyTokenAccount,
     InsufficientValidTo,
     ExcessiveValidTo,
     InvalidSignature,
@@ -122,6 +132,10 @@ impl From<PlacementError> for error::Reply {
             }
             PlacementError::ZeroAmount => ("ZeroAmount", "order amounts must not be zero"),
             PlacementError::InvalidNativeBuy(description) => ("InvalidNativeBuy", description),
+            PlacementError::InvalidBuyTokenAccount => (
+                "InvalidBuyTokenAccount",
+                "the receiver is not the wallet the buy token account belongs to",
+            ),
             PlacementError::InsufficientValidTo => (
                 "InsufficientValidTo",
                 "validTo lies closer than the minimum validity",
@@ -212,6 +226,11 @@ async fn place(
         })?;
     let (mut order, token_programs) = validate(sponsoring, &transaction, state.validation())?;
     order.presigned_transaction = params.partially_signed_tx;
+    // Naming the owner is the same as naming nobody.
+    order.receiver = params
+        .receiver
+        .filter(|receiver| receiver.to_bytes() != order.owner.0)
+        .map(|receiver| ByteArray(receiver.to_bytes()));
     // The intent signed the hash, so whatever the request names must agree
     // with it, and the hash alone needs its document registered already.
     let intent = AppDataHash(order.app_data.0);
@@ -495,10 +514,12 @@ fn validate(
 /// Reject an order on a mint the settlement program cannot move, a
 /// preparation step naming a token program that does not own its mint, a
 /// native SOL buy paying an account the System Program does not own or
-/// leaving its wallet under the rent-exempt minimum, and a token buy whose
-/// buy token account the settlement can neither pay out to nor create.
-/// Lamports paid to a program or a sysvar revert the settlement, and a
-/// program-owned account strands them. The payout creates a missing wallet.
+/// leaving its wallet under the rent-exempt minimum, a receiver the buy
+/// token account does not belong to, and a token buy whose buy token
+/// account the settlement can neither pay out to nor create for the wallet
+/// it belongs to. Lamports paid to a program or a sysvar revert the
+/// settlement, and a program-owned account strands them. The payout creates
+/// a missing wallet.
 async fn check_accounts(
     sponsoring: &Sponsoring,
     order: &db::SponsoredOrder,
@@ -511,6 +532,9 @@ async fn check_accounts(
         order.owner,
     ]
     .map(|key| Pubkey::new_from_array(key.0));
+    let receiver = order
+        .receiver
+        .map(|receiver| Pubkey::new_from_array(receiver.0));
     let wallet = (buy == ENCODED_NATIVE_SOL_TRANSFER).then_some(buy_account);
     let token_account = wallet.is_none().then_some(buy_account);
     let mints: Vec<Pubkey> = token_mints(sell, buy).collect();
@@ -522,6 +546,26 @@ async fn check_accounts(
         .map_err(|err| Failure::internal(err, "order account lookup"))?;
     let verdicts = lookup.resolve(&accounts);
     ensure_settleable(&verdicts, mints).map_err(Failure::Replied)?;
+    // The receiver only names whose account the payout lands in: the wallet
+    // itself for a native SOL buy, the wallet the buy token account is the
+    // associated token account of otherwise.
+    if let Some(receiver) = receiver {
+        let names_buy_account = match (wallet, verdicts.get(&buy).copied().and_then(Result::ok)) {
+            (Some(wallet), _) => receiver == wallet,
+            (None, Some(program)) => {
+                buy_account
+                    == get_associated_token_address_with_program_id(
+                        &receiver,
+                        &buy,
+                        &program.address(),
+                    )
+            }
+            (None, None) => false,
+        };
+        if !names_buy_account {
+            return Err(PlacementError::InvalidBuyTokenAccount.into());
+        }
+    }
     if let Some(wallet) = wallet
         && accounts
             .get(&wallet)
@@ -549,7 +593,7 @@ async fn check_accounts(
             accounts.get(&account),
             &account,
             &buy,
-            &owner,
+            &receiver.unwrap_or(owner),
             verdicts.get(&buy).copied().and_then(Result::ok),
         )
     {
@@ -996,6 +1040,7 @@ fn build_order(
     db::SponsoredOrder {
         uid: ByteArray(uid.to_bytes()),
         owner: ByteArray(intent.owner.to_bytes()),
+        receiver: None,
         sell_token: ByteArray(intent.sell.mint.to_bytes()),
         buy_token: ByteArray(buy_mint.to_bytes()),
         sell_token_account: ByteArray(intent.sell.token_account.to_bytes()),

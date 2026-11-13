@@ -332,6 +332,7 @@ impl Solution {
                     .ok_or(error::Scoring::InvalidClearingPrices)?,
             };
             trades.push(scoring::Trade::new(
+                trade.uid(),
                 sell,
                 buy,
                 trade.side(),
@@ -849,6 +850,16 @@ pub mod error {
             match err {
                 number::MathError::DivisionByZero => Self::DivisionByZero,
                 number::MathError::Overflow => Self::Overflow,
+            }
+        }
+    }
+
+    impl From<chain_types::MathError> for Math {
+        fn from(err: chain_types::MathError) -> Self {
+            match err {
+                chain_types::MathError::Overflow => Self::Overflow,
+                chain_types::MathError::DivisionByZero => Self::DivisionByZero,
+                chain_types::MathError::Negative => Self::Negative,
             }
         }
     }

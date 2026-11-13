@@ -16,7 +16,7 @@
         },
         "ghcr.io/devcontainers/features/rust:1": {},
 		"ghcr.io/devcontainers/features/git:1": {},
-		"ghcr.io/nlordell/features/foundry": { "version": "v1.7.1" },
+		"ghcr.io/nlordell/features/foundry": { "version": "v1.9.0" },
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {
             "dockerDashComposeVersion": "v2"
         },

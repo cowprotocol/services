@@ -42,6 +42,7 @@ pub(crate) fn order(
     Ok(Order {
         uid: OrderUid(uid.to_bytes()),
         owner,
+        receiver: None,
         sell_token: quoted.sell_token,
         buy_token: quoted.buy_token,
         sell_token_account: quote.sell_token_account(),
@@ -75,6 +76,7 @@ mod tests {
         let quoted = Order {
             uid: OrderUid([0; 32]),
             owner: Pubkey::default(),
+            receiver: None,
             sell_token: pubkey(0x33),
             buy_token: pubkey(0x44),
             sell_token_account: Pubkey::default(),
@@ -94,6 +96,7 @@ mod tests {
             executed_sell: 1_000,
             executed_buy: 2_000,
             solver_fee: 0,
+            protocol_fee: 0,
         };
         let order = order(
             &program_id,

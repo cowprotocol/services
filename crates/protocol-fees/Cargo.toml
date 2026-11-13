@@ -1,0 +1,15 @@
+[package]
+name = "protocol-fees"
+version = "0.1.0"
+edition = "2024"
+description = "Protocol fee policies and the chain-generic fee math over a fill"
+
+[dependencies]
+chain-types = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+
+[lints]
+workspace = true

@@ -16,6 +16,9 @@ pub struct SolverEngine {
     pub merge_solutions: bool,
     /// Solver fee in basis points (0-10000) for conservative bidding.
     pub solver_fee_bps: u32,
+    /// Absolute cap, in wei, on the AMM slippage the driver may add. `None`
+    /// leaves it unset (relative slippage only).
+    pub absolute_slippage: Option<u128>,
     /// Additional EOAs that can submit settlement txs on behalf of the solver
     /// via EIP-7702 delegation. When non-empty, enables parallel submission.
     pub submission_keys: Vec<TestAccount>,
@@ -70,6 +73,7 @@ uni-v3-node-url = "http://localhost:8545"
         base_tokens,
         merge_solutions,
         solver_fee_bps,
+        absolute_slippage: None,
         submission_keys: vec![],
     }
 }
@@ -132,6 +136,8 @@ pub fn start_driver(
     start_driver_with_config_override(contracts, solvers, liquidity, None)
 }
 
+// TODO: build the driver config by serializing a typed struct to TOML instead
+// of templating these strings by hand.
 pub fn start_driver_with_config_override(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
@@ -155,6 +161,10 @@ pub fn start_driver_with_config_override(
                 ..
             } = solver;
             let account = account.signer.to_bytes();
+            let absolute_slippage_line = solver
+                .absolute_slippage
+                .map(|wei| format!("absolute-slippage = \"{wei}\"\n"))
+                .unwrap_or_default();
             let submission_accounts_line = if solver.submission_keys.is_empty() {
                 String::new()
             } else {
@@ -171,7 +181,7 @@ pub fn start_driver_with_config_override(
 name = "{name}"
 endpoint = "{endpoint}"
 relative-slippage = "0.1"
-account = "{account}"
+{absolute_slippage_line}account = "{account}"
 merge-solutions = {merge_solutions}
 fast-path-enabled = true
 enable-metrics-bad-order-detection = true

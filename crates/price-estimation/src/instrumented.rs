@@ -152,6 +152,7 @@ mod tests {
             kind: OrderKind::Sell,
             block_dependent: false,
             fast_path: false,
+            price_quality: model::quote::PriceQuality::Verified,
             timeout: HEALTHY_PRICE_ESTIMATION_TIME,
         });
 

@@ -2,7 +2,10 @@
 //! vocabulary and their assembly from database rows.
 
 use {
-    crate::run_loop::AuctionInfo,
+    crate::{
+        domain::fee::{FeePolicy, Quote},
+        run_loop::AuctionInfo,
+    },
     chain_types::solana::{AppData, IntentHash, NATIVE_SOL, Pubkey},
     std::collections::HashMap,
 };
@@ -19,13 +22,16 @@ pub enum OrderKind {
 pub struct Order {
     pub uid: IntentHash,
     pub owner: Pubkey,
+    /// The wallet `buy_token_account` is the associated token account of,
+    /// when that is not the owner. A missing account at that address is
+    /// created for this wallet, like the owner's own.
+    pub receiver: Option<Pubkey>,
     pub sell_token: Pubkey,
     pub buy_token: Pubkey,
     pub sell_token_account: Pubkey,
     /// Where the buy tokens are paid out. Any SPL token account: it names its
-    /// own owner and mint, so it doubles as the receiver and there is no
-    /// separate receiver field like on EVM. For a native SOL buy it is the
-    /// wallet receiving the lamports.
+    /// own owner and mint, so the payout never depends on `receiver`. For a
+    /// native SOL buy it is the wallet receiving the lamports.
     pub buy_token_account: Pubkey,
     pub sell_amount: u64,
     pub buy_amount: u64,
@@ -48,12 +54,24 @@ pub struct Order {
     /// capped by the delegated one. `None` for a pending sponsored order,
     /// whose creation funds it.
     pub sell_balance: Option<u64>,
+    /// The quote the orderbook linked the order to at placement, if any. It
+    /// decides the order's class for the fee policies.
+    pub quote: Option<Quote>,
+    /// The protocol fee policies the driver applies to the order's fills, in
+    /// order.
+    pub protocol_fees: Vec<FeePolicy>,
 }
 
 impl Order {
     /// Whether the order buys native SOL instead of an SPL token.
     pub fn buys_native_sol(&self) -> bool {
         self.buy_token == NATIVE_SOL
+    }
+
+    /// The wallet `buy_token_account` belongs to: the receiver when the order
+    /// names one, the owner otherwise.
+    pub fn buy_account_owner(&self) -> Pubkey {
+        self.receiver.unwrap_or(self.owner)
     }
 
     /// The amounts still open to fill: the order-side target less `executed`,
@@ -177,6 +195,7 @@ mod tests {
         Order {
             uid: chain_types::solana::IntentHash([1; 32]),
             owner: chain_types::solana::Pubkey([2; 32]),
+            receiver: None,
             sell_token: chain_types::solana::Pubkey([3; 32]),
             buy_token: chain_types::solana::Pubkey([4; 32]),
             sell_token_account: chain_types::solana::Pubkey([5; 32]),
@@ -192,6 +211,8 @@ mod tests {
             executed: 0,
             creation: None,
             sell_balance: None,
+            quote: None,
+            protocol_fees: Vec::new(),
         }
     }
 

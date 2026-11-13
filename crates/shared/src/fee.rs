@@ -1,9 +1,16 @@
 use {
-    crate::{arguments::TokenBucketFeeOverride, order_validation::is_same_buy_and_sell_token},
+    crate::{
+        arguments::TokenBucketFeeOverride,
+        order_quoting::Quote,
+        order_validation::is_same_buy_and_sell_token,
+    },
     alloy::primitives::{Address, U256, U512, ruint::UintTryFrom},
-    configs::fee_factor::FeeFactor,
-    model::order::{BUY_ETH_ADDRESS, OrderKind},
+    app_data::ValidatedAppData,
+    chrono::Utc,
+    configs::{fee_factor::FeeFactor, orderbook::VolumeFeeConfig},
+    model::order::{BUY_ETH_ADDRESS, Order, OrderKind},
     rust_decimal::Decimal,
+    std::sync::Arc,
 };
 
 /// Number of basis points that make up 100%. Used across bps ↔ decimal
@@ -247,53 +254,155 @@ pub fn check_fast_path_limit_fits(
     }
 }
 
-/// Applies the partner-fee compounding cap to a single requested fee
-/// factor and updates the running accumulator. Both the autopilot's
-/// `ProtocolFees::apply` and the orderbook's fast-path limit-price check
-/// route their per-fee cap decisions through this helper — the tricky
-/// multiplicative-cap math lives here in exactly one place.
-///
-/// Fees compound as `(1 + f_1)(1 + f_2)…` so the accumulator tracks the
-/// combined "extra" already committed and the remaining headroom is
-/// `(1 + cap)/(1 + accumulated) - 1`. Returns the effective factor for
-/// this fee (already clamped into `[0, remaining_factor]`) and advances
-/// the accumulator by the additive portion that was allowed through.
-pub fn capped_fee_factor(value: Decimal, cap: Decimal, accumulated: &mut Decimal) -> FeeFactor {
-    let remaining_factor = (Decimal::ONE + cap) / (Decimal::ONE + *accumulated) - Decimal::ONE;
-    *accumulated += value.min(cap - *accumulated);
-    FeeFactor::new(f64::try_from(value.max(Decimal::ZERO).min(remaining_factor)).unwrap())
-}
-
 /// Extracts the volume-type partner fee factors from parsed app-data,
-/// enforcing the compounding cap via [`capped_fee_factor`]. Non-volume
-/// partner policies are skipped — they don't eat into the user-facing
-/// volume budget — so this yields exactly the subset of factors the
-/// orderbook needs to size the fast-path limit-price check against.
+/// enforcing the compounding cap via [`fee_engine::PartnerFeeBudget`].
+/// Non-volume partner policies are skipped — they don't eat into the
+/// user-facing volume budget — so this yields exactly the subset of factors the
+/// orderbook needs to size the fast-path limit-price check against. `None`
+/// when `max_partner_fee` is not in [0, 1), which only `FeeFactor::new` makes.
 pub fn capped_partner_volume_factors(
     parsed_app_data: &app_data::ProtocolAppData,
     max_partner_fee: FeeFactor,
-) -> Vec<FeeFactor> {
-    let cap = Decimal::try_from(max_partner_fee.get())
-        .expect("FeeFactor is always [0, 1] which means this conversion can't fail");
-
-    let mut accumulated = Decimal::ZERO;
+) -> Option<Vec<FeeFactor>> {
+    let cap = fee_engine::FeeFactor::try_from(max_partner_fee.get()).ok()?;
+    let mut budget = fee_engine::PartnerFeeBudget::new(cap);
     let mut factors = Vec::new();
     for partner_fee in parsed_app_data.partner_fee.iter() {
         let app_data::FeePolicy::Volume { bps } = partner_fee.policy else {
             continue;
         };
         let requested = Decimal::from(bps) / Decimal::from(MAX_BPS);
-        let factor = capped_fee_factor(requested, cap, &mut accumulated);
+        let factor = FeeFactor::new(budget.capped_fee_factor(requested).to_f64());
         if factor.get() > 0.0 {
             factors.push(factor);
         }
     }
-    factors
+    Some(factors)
+}
+
+/// Where the orderbook's volume fees come from. Only here while the legacy
+/// source and the fee engine both exist; goes away with the legacy source.
+pub trait OrderbookFees: Send + Sync {
+    /// The volume fee a quote gets; `order` is the one `quote` describes,
+    /// before the fee. `app_code` is the one the caller read from `app_data`.
+    fn quote_volume_fee(
+        &self,
+        order: &Order,
+        quote: &Quote,
+        app_data: &ValidatedAppData,
+        app_code: Option<&str>,
+    ) -> Option<FeeFactor>;
+
+    /// The protocol, then the capped partner, volume factors a fast-path
+    /// order must leave room for, in the order the autopilot compounds them.
+    fn fast_path_volume_fees(
+        &self,
+        order: &Order,
+        quote: &Quote,
+        app_data: &ValidatedAppData,
+    ) -> Vec<FeeFactor>;
+}
+
+/// The volume fees of `[volume-fee]`, the bucket overrides and the partner fee
+/// cap. The default charges nothing.
+#[derive(Default)]
+pub struct LegacyVolumeFees {
+    /// Quotes get no volume fee without it, or before its effective timestamp.
+    pub config: Option<VolumeFeeConfig>,
+    pub policy: Option<Arc<VolumeFeePolicy>>,
+    /// Should mirror the autopilot's `fee_policies.max_partner_fee`; `None`
+    /// counts no partner fee.
+    pub max_partner_fee: Option<FeeFactor>,
+}
+
+impl OrderbookFees for LegacyVolumeFees {
+    fn quote_volume_fee(
+        &self,
+        order: &Order,
+        _: &Quote,
+        _: &ValidatedAppData,
+        _: Option<&str>,
+    ) -> Option<FeeFactor> {
+        // Only apply volume fee if effective timestamp has come
+        self.config.as_ref().filter(|config| {
+            config
+                .effective_from_timestamp
+                .is_none_or(|ts| ts <= Utc::now())
+        })?;
+        // Determine applicable fee factor considering same-token config and
+        // overrides
+        self.policy.as_ref()?.get_applicable_volume_fee_factor(
+            order.data.buy_token,
+            order.data.sell_token,
+            None,
+        )
+    }
+
+    fn fast_path_volume_fees(
+        &self,
+        order: &Order,
+        _: &Quote,
+        app_data: &ValidatedAppData,
+    ) -> Vec<FeeFactor> {
+        let data = &order.data;
+        let protocol_factor = self.policy.as_ref().and_then(|policy| {
+            policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
+        });
+        let partner_factors = self
+            .max_partner_fee
+            .and_then(|cap| capped_partner_volume_factors(&app_data.protocol, cap))
+            .unwrap_or_default();
+        protocol_factor.into_iter().chain(partner_factors).collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_quote_fee_waits_for_the_effective_timestamp() {
+        let factor = FeeFactor::try_from(0.0002).unwrap();
+        let get = |config: Option<VolumeFeeConfig>| {
+            let fees = LegacyVolumeFees {
+                config,
+                policy: Some(Arc::new(VolumeFeePolicy::new(
+                    vec![],
+                    Some(factor),
+                    false,
+                    Default::default(),
+                ))),
+                max_partner_fee: None,
+            };
+            let order = Order {
+                data: model::order::OrderData {
+                    sell_token: Address::repeat_byte(1),
+                    buy_token: Address::repeat_byte(2),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let app_data = app_data::Validator::new(8192).validate(b"{}").unwrap();
+            fees.quote_volume_fee(&order, &Quote::default(), &app_data, None)
+        };
+        let config = |effective_from_timestamp| {
+            Some(VolumeFeeConfig {
+                factor: Some(factor),
+                effective_from_timestamp,
+            })
+        };
+
+        assert_eq!(get(None), None);
+        assert_eq!(
+            get(config(Some(Utc::now() + chrono::Duration::hours(1)))),
+            None
+        );
+        assert_eq!(
+            get(config(Some(Utc::now() - chrono::Duration::hours(1)))),
+            Some(factor)
+        );
+        assert_eq!(get(config(None)), Some(factor));
+    }
 
     #[test]
     fn test_volume_fee_bucket_override() {
@@ -591,7 +700,7 @@ mod tests {
             }
         }"#;
         let parsed = app_data::parse(json).unwrap();
-        let factors = capped_partner_volume_factors(&parsed, factor(0.03)); // 3% cap
+        let factors = capped_partner_volume_factors(&parsed, factor(0.03)).unwrap(); // 3% cap
         assert_eq!(factors.len(), 2);
         // First fee: 100 bps = 1% (fits inside 3% cap).
         assert!((factors[0].get() - 0.01).abs() < 1e-9);
@@ -599,5 +708,7 @@ mod tests {
         // and the cap applies to the compounded overhead. With 1% already
         // accumulated the remaining headroom is (1.03/1.01) - 1 ≈ 1.9802%.
         assert!((factors[1].get() - (1.03_f64 / 1.01 - 1.0)).abs() < 1e-9);
+
+        assert!(capped_partner_volume_factors(&parsed, FeeFactor::new(1.5)).is_none());
     }
 }

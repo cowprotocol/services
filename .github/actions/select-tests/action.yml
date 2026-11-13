@@ -1,0 +1,72 @@
+name: Select tests
+description: >-
+  Selects the tests that the changes between a base revision and HEAD can
+  affect, from the dependencies between the packages of a Cargo workspace.
+  For each changed file, the first of these cases that applies gives the
+  affected packages. (1) A path rule or an ignored prefix matches the file:
+  the packages of the rule with the longest prefix, without the packages that
+  depend on them. (2) The file is the root `Cargo.lock`: the workspace
+  packages whose entry changed or that depend, directly or not, on a crate
+  whose entry changed, and all the workspace packages that depend on them.
+  (3) A workspace package contains the file: that package and all the
+  workspace packages that depend on it, through all the dependency kinds
+  (also dev-dependencies and optional dependencies). (4) In all other cases,
+  for example the root `Cargo.toml`: all the packages. An empty diff also
+  affects all the packages. The action needs cargo, python3 3.11 or
+  later and a checkout that contains the base revision.
+inputs:
+  base:
+    description: The revision to compare with HEAD.
+    required: true
+  groups:
+    description: >-
+      One `<group>=<packages>` line for each test group. `<packages>` is a
+      list of workspace packages, with a space between the names. `*` is all
+      the workspace packages. Give the packages whose tests the job runs. A
+      group is selected when one of its packages is affected.
+    required: false
+    default: ""
+  paths:
+    description: >-
+      One `<prefix>=<packages>` line for each path rule. `<packages>` has the
+      same form as in `groups`. A changed file that starts with `<prefix>`
+      affects only the tests of the listed packages: not the packages that
+      depend on them, and not the package that contains the file, unless the
+      rule lists it. A prefix is plain text, thus end the prefix of a
+      directory with `/`. Without a rule, a file in no workspace package
+      affects all the packages. Use a rule for files that tests read when they
+      run, for example database migrations, and not for files that a package
+      compiles.
+    required: false
+    default: ""
+  ignore:
+    description: >-
+      One path prefix on each line. A changed file with one of these prefixes
+      affects no packages. Use it for files that no test reads. When prefixes
+      of `paths` and `ignore` match the same file, the longest prefix wins.
+    required: false
+    default: ""
+outputs:
+  groups:
+    description: >-
+      A JSON object with "true" or "false" for each group, for example
+      {"driver":"false","e2e":"true"}. A group is "false" only when no changed
+      file can affect it.
+    value: ${{ steps.select.outputs.groups }}
+  nextest-filter:
+    description: >-
+      A nextest filterset that selects the tests of the affected packages:
+      `all()`, `none()` or `package(=<name>) | ...`.
+    value: ${{ steps.select.outputs.nextest-filter }}
+runs:
+  using: composite
+  steps:
+    - name: Select the tests
+      id: select
+      shell: bash
+      env:
+        BASE: ${{ inputs.base }}
+        GROUP_LINES: ${{ inputs.groups }}
+        PATH_LINES: ${{ inputs.paths }}
+        IGNORE_LINES: ${{ inputs.ignore }}
+      run: python3 "$GITHUB_ACTION_PATH/select_tests.py"

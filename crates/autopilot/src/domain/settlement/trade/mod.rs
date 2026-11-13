@@ -65,8 +65,13 @@ impl Trade {
     /// All fees broke down into protocol fees per policy and total fee.
     pub fn fee_breakdown(&self, auction: &super::Auction) -> Result<FeeBreakdown, math::Error> {
         let trade = math::Trade::from(self);
-        let total = trade.fee_in_sell_token()?;
         let protocol = trade.protocol_fees(&auction.orders)?;
+        // Protocol fees only use custom prices, so whenever the uniform-price
+        // total fails (e.g. a solver paid an order more than the uniform
+        // price), fall back to them (no network fee).
+        let total = trade
+            .fee_in_sell_token()
+            .or_else(|_| trade.protocol_fee_in_sell_token(&protocol))?;
         Ok(FeeBreakdown {
             total: eth::Asset {
                 token: self.sell_token(),
@@ -199,7 +204,8 @@ pub struct Jit {
 /// trade.
 #[derive(Debug, Clone)]
 pub struct FeeBreakdown {
-    /// Total fee the trade was charged (network fee + protocol fee)
+    /// Total fee the trade was charged (network fee + protocol fee), or just
+    /// the protocol fees when the uniform-price total can't be computed.
     // TODO surplus token
     pub total: eth::Asset,
     /// Breakdown of protocol fees.
@@ -212,4 +218,82 @@ pub struct ExecutedProtocolFee {
     pub policy: fee::Policy,
     /// Fee that was taken for the trade, in surplus token.
     pub fee: eth::Asset,
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::domain::settlement::Auction,
+        configs::fee_factor::FeeFactor,
+        std::collections::HashMap,
+        transaction::ClearingPrices,
+    };
+
+    /// The trade from prod mainnet settlement
+    /// 0xe730d6c5ffe17e6ebfbdbb5b073f730510ce774c49ee5846937398d64d10ebcc
+    /// (auction 14123387). The solver paid the order its limit price while the
+    /// uniform price sat below that limit, so the uniform-price total fails.
+    #[test]
+    fn fee_breakdown_falls_back_to_protocol_fees() {
+        let u = |amount: u128| eth::U256::from(amount);
+        let uid = domain::OrderUid([0; 56]);
+        let trade = Trade::Fulfillment(Fulfillment {
+            uid,
+            sell: eth::Asset {
+                amount: u(3000000000).into(),
+                token: eth::Address::default().into(),
+            },
+            buy: eth::Asset {
+                amount: u(170454545454545454545454).into(),
+                token: eth::Address::default().into(),
+            },
+            side: order::Side::Sell,
+            executed: order::TargetAmount(u(2885193698)),
+            prices: Prices {
+                uniform: ClearingPrices {
+                    sell: u(440391362314230861497954714),
+                    buy: u(7835823451623),
+                },
+                custom: ClearingPrices {
+                    sell: u(163931542146642908821950),
+                    buy: u(2885193698),
+                },
+            },
+        });
+        let auction = Auction {
+            id: 14123387,
+            block: eth::BlockNo(0),
+            orders: HashMap::from([(
+                uid,
+                vec![
+                    fee::Policy::Surplus {
+                        factor: FeeFactor::try_from(0.5).unwrap(),
+                        max_volume_factor: FeeFactor::try_from(0.0098).unwrap(),
+                    },
+                    fee::Policy::Volume {
+                        factor: FeeFactor::try_from(0.0002).unwrap(),
+                    },
+                ],
+            )]),
+            prices: Default::default(),
+            surplus_capturing_jit_order_owners: Default::default(),
+        };
+        assert!(matches!(
+            math::Trade::from(&trade).fee_in_sell_token(),
+            Err(math::Error::Math(math::error::Math::Negative))
+        ));
+
+        let breakdown = trade.fee_breakdown(&auction).unwrap();
+
+        assert_eq!(breakdown.total.amount.0, u(1155752));
+        assert_eq!(
+            breakdown
+                .protocol
+                .iter()
+                .map(|fee| fee.fee.amount.0)
+                .collect::<Vec<_>>(),
+            [u(32874900009274260707), u(32792867002729075121)]
+        );
+    }
 }

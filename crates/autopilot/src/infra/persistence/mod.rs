@@ -399,9 +399,9 @@ impl Persistence {
         )
         .await?;
 
-        // Inserting into `competition_auctions` grows the pending list of its
-        // GIN index, which periodically causes DB latency spikes. Clean
-        // it right where the need originates, without blocking auction
+        // Inserting into `competition_auctions` grows the pending lists of its
+        // GIN indexes, which periodically causes DB latency spikes. Clean
+        // them right where the need originates, without blocking auction
         // post-processing.
         let postgres = self.postgres.clone();
         tokio::spawn(async move {

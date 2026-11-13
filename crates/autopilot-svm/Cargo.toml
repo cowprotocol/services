@@ -34,6 +34,7 @@ moka = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+protocol-fees = { workspace = true }
 request-sharing = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
@@ -50,6 +51,7 @@ sqlx = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tokio-util = { workspace = true }
 toml = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["trace"] }

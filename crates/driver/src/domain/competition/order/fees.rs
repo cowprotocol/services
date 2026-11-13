@@ -64,3 +64,43 @@ impl FeePolicy {
         }
     }
 }
+
+/// The policy as the generic fee math sees it. The score flag of a volume
+/// fee is read by the driver's scoring, not by the fee math.
+impl From<&FeePolicy> for protocol_fees::FeePolicy {
+    fn from(policy: &FeePolicy) -> Self {
+        match policy {
+            FeePolicy::Surplus {
+                factor,
+                max_volume_factor,
+            } => Self::Surplus {
+                factor: *factor,
+                max_volume_factor: *max_volume_factor,
+            },
+            FeePolicy::PriceImprovement {
+                factor,
+                max_volume_factor,
+                quote,
+            } => Self::PriceImprovement {
+                factor: *factor,
+                max_volume_factor: *max_volume_factor,
+                quote: protocol_fees::Quote {
+                    sell_amount: quote.sell.amount.0,
+                    buy_amount: quote.buy.amount.0,
+                    fee: quote.fee.amount.0,
+                    solver: quote.solver,
+                },
+            },
+            FeePolicy::Volume { factor, .. } => Self::Volume { factor: *factor },
+        }
+    }
+}
+
+impl From<order::Side> for protocol_fees::Side {
+    fn from(side: order::Side) -> Self {
+        match side {
+            order::Side::Sell => Self::Sell,
+            order::Side::Buy => Self::Buy,
+        }
+    }
+}

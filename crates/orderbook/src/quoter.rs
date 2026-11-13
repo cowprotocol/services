@@ -1,9 +1,10 @@
 use {
     crate::app_data,
-    alloy::primitives::{Address, U256},
+    ::app_data::{ExecutionMode, ValidatedAppData},
+    alloy::primitives::U256,
     bigdecimal::{BigDecimal, FromPrimitive},
     chrono::{TimeZone, Utc},
-    configs::orderbook::VolumeFeeConfig,
+    configs::fee_factor::FeeFactor,
     event_bus_dto::{
         query::{OrderKind as DtoOrderKind, QueryFields},
         quote_computed::QuoteComputedEvent,
@@ -11,12 +12,13 @@ use {
     },
     futures::stream::{BoxStream, StreamExt},
     model::{
-        order::{OrderCreationAppData, OrderKind},
+        order::{Order, OrderCreationAppData, OrderData, OrderKind, OrderMetadata},
         quote::{OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality},
+        signature::Signature,
     },
     price_estimation::{PriceEstimationError, Verification},
     shared::{
-        fee::VolumeFeePolicy,
+        fee::OrderbookFees,
         order_quoting::{
             CalculateQuoteError,
             EstimatorKind,
@@ -66,8 +68,7 @@ pub struct QuoteHandler {
     verified_quoter: Arc<dyn OrderQuoting>,
     fast_quoter: Arc<dyn OrderQuoting>,
     app_data: Arc<app_data::Registry>,
-    volume_fee: Option<VolumeFeeConfig>,
-    volume_fee_policy: Arc<VolumeFeePolicy>,
+    volume_fees: Arc<dyn OrderbookFees>,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     streaming_quoters: Option<StreamingQuoters>,
 }
@@ -92,8 +93,7 @@ impl QuoteHandler {
         order_validator: Arc<dyn OrderValidating>,
         quoter: Arc<dyn OrderQuoting>,
         app_data: Arc<app_data::Registry>,
-        volume_fee: Option<VolumeFeeConfig>,
-        volume_fee_policy: Arc<VolumeFeePolicy>,
+        volume_fees: Arc<dyn OrderbookFees>,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         Self {
@@ -102,8 +102,7 @@ impl QuoteHandler {
             verified_quoter: quoter.clone(),
             fast_quoter: quoter,
             app_data,
-            volume_fee,
-            volume_fee_policy,
+            volume_fees,
             token_info_fetcher,
             streaming_quoters: None,
         }
@@ -135,7 +134,7 @@ impl QuoteHandler {
         &self,
         request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
-        let (params, valid_to) = self.build_quote_params(request).await?;
+        let (params, valid_to, app_data) = self.build_quote_params(request).await?;
         // Captured before `params` is consumed below; the document isn't
         // available on the response.
         let app_code = ::app_data::app_code(params.verification.app_data.as_bytes());
@@ -164,15 +163,14 @@ impl QuoteHandler {
             }
         };
 
-        let adjusted = get_vol_fee_adjusted_quote_data(
+        let volume_fee = self.volume_fees.quote_volume_fee(
+            &quote_order(request, &quote, valid_to, &app_data),
             &quote,
-            &request.side,
-            self.volume_fee.as_ref(),
-            &self.volume_fee_policy,
-            request.buy_token,
-            request.sell_token,
-        )
-        .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
+            &app_data,
+            app_code.as_deref(),
+        );
+        let adjusted = get_vol_fee_adjusted_quote_data(&quote, &request.side, volume_fee)
+            .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))?;
 
         let response = build_order_quote_response(request, &quote, &adjusted, quote.id, valid_to)?;
         tracing::debug!(?response, "finished computing quote");
@@ -206,7 +204,7 @@ impl QuoteHandler {
             ))?
             .clone();
 
-        let (params, valid_to) = self.build_quote_params(request).await?;
+        let (params, valid_to, app_data) = self.build_quote_params(request).await?;
         // Captured before `params` is consumed below; the document isn't
         // available on the response.
         let app_code = ::app_data::app_code(params.verification.app_data.as_bytes());
@@ -214,8 +212,7 @@ impl QuoteHandler {
         let inner = streaming.calculate_quote_stream(params).await?;
 
         let request = request.clone();
-        let volume_fee = self.volume_fee.clone();
-        let volume_fee_policy = self.volume_fee_policy.clone();
+        let volume_fees = self.volume_fees.clone();
 
         let stream = async_stream::stream! {
             futures::pin_mut!(inner);
@@ -229,18 +226,17 @@ impl QuoteHandler {
                         return;
                     }
                 };
-                let response = get_vol_fee_adjusted_quote_data(
+                let volume_fee = volume_fees.quote_volume_fee(
+                    &quote_order(&request, &quote, valid_to, &app_data),
                     &quote,
-                    &request.side,
-                    volume_fee.as_ref(),
-                    &volume_fee_policy,
-                    request.buy_token,
-                    request.sell_token,
-                )
-                .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))
-                .and_then(|adjusted| {
-                    build_order_quote_response(&request, &quote, &adjusted, quote.id, valid_to)
-                });
+                    &app_data,
+                    app_code.as_deref(),
+                );
+                let response = get_vol_fee_adjusted_quote_data(&quote, &request.side, volume_fee)
+                    .map_err(|err| OrderQuoteError::CalculateQuote(err.into()))
+                    .and_then(|adjusted| {
+                        build_order_quote_response(&request, &quote, &adjusted, quote.id, valid_to)
+                    });
                 match response {
                     Ok(response) => {
                         any_ok = true;
@@ -273,7 +269,7 @@ impl QuoteHandler {
     async fn build_quote_params(
         &self,
         request: &OrderQuoteRequest,
-    ) -> Result<(QuoteParameters, u32), OrderQuoteError> {
+    ) -> Result<(QuoteParameters, u32, ::app_data::ValidatedAppData), OrderQuoteError> {
         let (sell_token_info, buy_token_info) = join!(
             self.token_info_fetcher.get_token_info(request.sell_token),
             self.token_info_fetcher.get_token_info(request.buy_token),
@@ -331,9 +327,11 @@ impl QuoteHandler {
                     app_data.inner.protocol.execution_mode,
                     ::app_data::ExecutionMode::FastPath
                 ),
+                price_quality: request.price_quality,
                 timeout: request.timeout,
             },
             valid_to,
+            app_data.inner,
         ))
     }
 }
@@ -428,33 +426,52 @@ fn build_order_quote_response(
     })
 }
 
-/// Calculates the protocol fee based on volume fee and adjusts quote
-/// amounts.
+/// The order the quote describes, as the user signs it: the network fee in the
+/// sell amount, before slippage and the volume fee.
+fn quote_order(
+    request: &OrderQuoteRequest,
+    quote: &Quote,
+    valid_to: u32,
+    app_data: &ValidatedAppData,
+) -> Order {
+    let execution_mode = &app_data.protocol.execution_mode;
+    Order {
+        metadata: OrderMetadata {
+            creation_date: Utc::now(),
+            owner: request.from,
+            fast_path: matches!(execution_mode, ExecutionMode::FastPath),
+            valid_from: match execution_mode {
+                ExecutionMode::ValidFrom(valid_from) => Some(*valid_from),
+                ExecutionMode::RegularAuction | ExecutionMode::FastPath => None,
+            },
+            ..Default::default()
+        },
+        data: OrderData {
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
+            receiver: request.receiver,
+            sell_amount: quote.sell_amount.saturating_add(quote.fee_amount),
+            buy_amount: quote.buy_amount,
+            valid_to,
+            app_data: app_data.hash,
+            fee_amount: U256::ZERO,
+            kind: quote.data.kind,
+            partially_fillable: false,
+            sell_token_balance: request.sell_token_balance,
+            buy_token_balance: request.buy_token_balance,
+        },
+        signature: Signature::default_with(request.signing_scheme.into()),
+        interactions: Default::default(),
+    }
+}
+
+/// Takes the volume fee out of the quote's amounts.
 fn get_vol_fee_adjusted_quote_data(
     quote: &Quote,
     side: &OrderQuoteSide,
-    volume_fee: Option<&VolumeFeeConfig>,
-    volume_fee_policy: &VolumeFeePolicy,
-    buy_token: Address,
-    sell_token: Address,
+    volume_fee: Option<FeeFactor>,
 ) -> anyhow::Result<AdjustedQuoteData> {
-    let Some(_) = volume_fee
-        .as_ref()
-        // Only apply volume fee if effective timestamp has come
-        .filter(|config| {
-            config
-                .effective_from_timestamp
-                .is_none_or(|ts| ts <= Utc::now())
-        })
-    else {
-        return Ok(AdjustedQuoteData::unchanged(quote));
-    };
-
-    // Determine applicable fee factor considering same-token config and
-    // overrides
-    let factor = volume_fee_policy.get_applicable_volume_fee_factor(buy_token, sell_token, None);
-
-    let Some(factor) = factor else {
+    let Some(factor) = volume_fee else {
         return Ok(AdjustedQuoteData::unchanged(quote));
     };
     let (adjusted_sell_amount, adjusted_buy_amount) = match side {
@@ -526,10 +543,7 @@ mod tests {
         configs::fee_factor::FeeFactor,
         model::quote::OrderQuoteSide,
         number::units::EthUnit,
-        shared::{
-            fee::VolumeFeePolicy,
-            order_quoting::{Quote, QuoteData},
-        },
+        shared::order_quoting::{Quote, QuoteData},
     };
 
     const TEST_SELL_TOKEN: alloy::primitives::Address =
@@ -562,13 +576,6 @@ mod tests {
     #[test]
     fn test_volume_fee_sell_order() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
-        let volume_fee_config = VolumeFeeConfig {
-            factor: Some(volume_fee),
-            effective_from_timestamp: None,
-        };
-        let volume_fee_policy =
-            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
-
         // Selling 100 tokens, expecting to buy 100 tokens
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
         let side = OrderQuoteSide::Sell {
@@ -577,15 +584,7 @@ mod tests {
             },
         };
 
-        let result = get_vol_fee_adjusted_quote_data(
-            &quote,
-            &side,
-            Some(&volume_fee_config),
-            &volume_fee_policy,
-            TEST_BUY_TOKEN,
-            TEST_SELL_TOKEN,
-        )
-        .unwrap();
+        let result = get_vol_fee_adjusted_quote_data(&quote, &side, Some(volume_fee)).unwrap();
 
         // For SELL orders:
         // - sell_amount stays the same
@@ -603,30 +602,13 @@ mod tests {
     #[test]
     fn test_volume_fee_buy_order() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
-        let past_timestamp = Utc::now() - chrono::Duration::minutes(1);
-        let volume_fee_config = VolumeFeeConfig {
-            factor: Some(volume_fee),
-            // Effective date in the past to ensure fee is applied
-            effective_from_timestamp: Some(past_timestamp),
-        };
-        let volume_fee_policy =
-            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
-
         // Buying 100 tokens, expecting to sell 100 tokens, with no network fee
         let quote = create_test_quote(100u64.eth(), 100u64.eth());
         let side = OrderQuoteSide::Buy {
             buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
         };
 
-        let result = get_vol_fee_adjusted_quote_data(
-            &quote,
-            &side,
-            Some(&volume_fee_config),
-            &volume_fee_policy,
-            TEST_BUY_TOKEN,
-            TEST_SELL_TOKEN,
-        )
-        .unwrap();
+        let result = get_vol_fee_adjusted_quote_data(&quote, &side, Some(volume_fee)).unwrap();
 
         // For BUY orders with no network fee:
         // - buy_amount stays the same
@@ -644,13 +626,6 @@ mod tests {
     #[test]
     fn test_volume_fee_buy_order_with_network_fee() {
         let volume_fee = FeeFactor::try_from(0.0002).unwrap(); // 0.02% = 2 bps
-        let volume_fee_config = VolumeFeeConfig {
-            factor: Some(volume_fee),
-            effective_from_timestamp: None,
-        };
-        let volume_fee_policy =
-            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
-
         // Buying 100 tokens, expecting to sell 100 tokens, with 5 token network
         // fee
         let mut quote = create_test_quote(100u64.eth(), 100u64.eth());
@@ -659,15 +634,7 @@ mod tests {
             buy_amount_after_fee: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
         };
 
-        let result = get_vol_fee_adjusted_quote_data(
-            &quote,
-            &side,
-            Some(&volume_fee_config),
-            &volume_fee_policy,
-            TEST_BUY_TOKEN,
-            TEST_SELL_TOKEN,
-        )
-        .unwrap();
+        let result = get_vol_fee_adjusted_quote_data(&quote, &side, Some(volume_fee)).unwrap();
 
         // For BUY orders with network fee:
         // - buy_amount stays the same
@@ -689,13 +656,6 @@ mod tests {
     #[test]
     fn test_volume_fee_different_prices() {
         let volume_fee = FeeFactor::try_from(0.001).unwrap(); // 0.1% = 10 bps
-        let volume_fee_config = VolumeFeeConfig {
-            factor: Some(volume_fee),
-            effective_from_timestamp: None,
-        };
-        let volume_fee_policy =
-            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
-
         // Selling 100 tokens, expecting to buy 200 tokens (2:1 price ratio)
         let quote = create_test_quote(100u64.eth(), 200u64.eth());
         let side = OrderQuoteSide::Sell {
@@ -704,15 +664,7 @@ mod tests {
             },
         };
 
-        let result = get_vol_fee_adjusted_quote_data(
-            &quote,
-            &side,
-            Some(&volume_fee_config),
-            &volume_fee_policy,
-            TEST_BUY_TOKEN,
-            TEST_SELL_TOKEN,
-        )
-        .unwrap();
+        let result = get_vol_fee_adjusted_quote_data(&quote, &side, Some(volume_fee)).unwrap();
 
         assert_eq!(result.protocol_fee_bps, Some("10".to_string()));
         assert_eq!(result.sell_amount, 100u64.eth());
@@ -734,13 +686,6 @@ mod tests {
 
         for (factor, expected_bps) in test_cases {
             let volume_fee = FeeFactor::try_from(factor).unwrap();
-            let volume_fee_config = VolumeFeeConfig {
-                factor: Some(volume_fee),
-                effective_from_timestamp: None,
-            };
-            let volume_fee_policy =
-                VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
-
             let quote = create_test_quote(100u64.eth(), 100u64.eth());
             let side = OrderQuoteSide::Sell {
                 sell_amount: model::quote::SellAmount::BeforeFee {
@@ -748,67 +693,16 @@ mod tests {
                 },
             };
 
-            let result = get_vol_fee_adjusted_quote_data(
-                &quote,
-                &side,
-                Some(&volume_fee_config),
-                &volume_fee_policy,
-                TEST_BUY_TOKEN,
-                TEST_SELL_TOKEN,
-            )
-            .unwrap();
+            let result = get_vol_fee_adjusted_quote_data(&quote, &side, Some(volume_fee)).unwrap();
 
             assert_eq!(result.protocol_fee_bps, Some(expected_bps.to_string()));
         }
     }
 
     #[test]
-    fn test_ignore_volume_fees_before_effective_date() {
-        let volume_fee = FeeFactor::try_from(0.001).unwrap(); // 0.1% = 10 bps
-        let future_timestamp = Utc::now() + chrono::Duration::days(1);
-        let volume_fee_config = VolumeFeeConfig {
-            factor: Some(volume_fee),
-            effective_from_timestamp: Some(future_timestamp),
-        };
-        let volume_fee_policy =
-            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
-
-        // Selling 100 tokens, expecting to buy 100 tokens
-        let quote = create_test_quote(100u64.eth(), 100u64.eth());
-        let side = OrderQuoteSide::Sell {
-            sell_amount: model::quote::SellAmount::BeforeFee {
-                value: number::nonzero::NonZeroU256::try_from(100u64.eth()).unwrap(),
-            },
-        };
-
-        let result = get_vol_fee_adjusted_quote_data(
-            &quote,
-            &side,
-            Some(&volume_fee_config),
-            &volume_fee_policy,
-            TEST_BUY_TOKEN,
-            TEST_SELL_TOKEN,
-        )
-        .unwrap();
-
-        // Since the effective date is in the future, no volume fee should be
-        // applied
-        assert_eq!(result.sell_amount, 100u64.eth());
-        assert_eq!(result.buy_amount, 100u64.eth());
-        assert_eq!(result.protocol_fee_bps, None);
-    }
-
-    #[test]
     fn test_volume_fee_sub_basis_point_precision() {
         // Test sub-BPS precision: 0.00003 = 0.3 BPS
         let volume_fee = FeeFactor::try_from(0.00003).unwrap();
-        let volume_fee_config = VolumeFeeConfig {
-            factor: Some(volume_fee),
-            effective_from_timestamp: None,
-        };
-        let volume_fee_policy =
-            VolumeFeePolicy::new(vec![], Some(volume_fee), false, Default::default());
-
         // Large amount to make the sub-BPS fee visible
         let sell_amount = 1_000_000u64.eth();
         let buy_amount = 1_000_000u64.eth();
@@ -819,15 +713,7 @@ mod tests {
             },
         };
 
-        let result = get_vol_fee_adjusted_quote_data(
-            &quote,
-            &side,
-            Some(&volume_fee_config),
-            &volume_fee_policy,
-            TEST_BUY_TOKEN,
-            TEST_SELL_TOKEN,
-        )
-        .unwrap();
+        let result = get_vol_fee_adjusted_quote_data(&quote, &side, Some(volume_fee)).unwrap();
 
         // Protocol fee = 0.3 BPS
         assert_eq!(result.protocol_fee_bps, Some("0.3".to_string()));
@@ -838,5 +724,40 @@ mod tests {
         let expected_fee = 30u64.eth();
         let expected_buy = buy_amount - expected_fee;
         assert_eq!(result.buy_amount, expected_buy);
+    }
+
+    #[test]
+    fn test_no_volume_fee_leaves_the_quote_unchanged() {
+        let quote = create_test_quote(100u64.eth(), 100u64.eth());
+        let side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: 100u64.eth().try_into().unwrap(),
+            },
+        };
+        let result = get_vol_fee_adjusted_quote_data(&quote, &side, None).unwrap();
+        assert_eq!(
+            (
+                result.sell_amount,
+                result.buy_amount,
+                result.protocol_fee_bps
+            ),
+            (quote.sell_amount, quote.buy_amount, None)
+        );
+    }
+
+    #[test]
+    fn quote_order_puts_the_network_fee_in_the_sell_amount() {
+        let mut quote = create_test_quote(100u64.eth(), 200u64.eth());
+        quote.fee_amount = 5u64.eth();
+        let app_data = ::app_data::Validator::new(8192).validate(b"{}").unwrap();
+        let order = quote_order(&OrderQuoteRequest::default(), &quote, 0, &app_data);
+        assert_eq!(
+            (
+                order.data.sell_amount,
+                order.data.buy_amount,
+                order.data.fee_amount
+            ),
+            (105u64.eth(), 200u64.eth(), U256::ZERO)
+        );
     }
 }
