@@ -470,3 +470,85 @@ fn jit_liquidity_orders_do_not_block_other_winners() {
         vec![2]
     );
 }
+
+/// The reference score re-runs the auction without the solver. `ranked` lists
+/// winners before non-winners, so the counterfactual has to visit the
+/// remaining solutions in score order again: a non-winner that only lost its
+/// token pair to the removed solver outranks a lower-scoring winner and takes
+/// the pair from it.
+#[test]
+fn reference_score_reruns_counterfactual_in_score_order() {
+    let (uid_ab, uid_cd, uid_ef) = (evm_uid(1, 0x11), evm_uid(2, 0x22), evm_uid(3, 0x33));
+    let (token_a, token_b, token_c, token_d, token_e, token_f) = (
+        Address::repeat_byte(1),
+        Address::repeat_byte(2),
+        Address::repeat_byte(3),
+        Address::repeat_byte(4),
+        Address::repeat_byte(5),
+        Address::repeat_byte(6),
+    );
+    let (solver_x, solver_y, solver_z) = (
+        Address::repeat_byte(7),
+        Address::repeat_byte(8),
+        Address::repeat_byte(9),
+    );
+    let context = AuctionContext::<Evm> {
+        fee_policies: HashMap::from([(uid_ab, vec![]), (uid_cd, vec![]), (uid_ef, vec![])]),
+        native_prices: HashMap::from([
+            (token_b, U256::from(EVM_UNIT_PRICE)),
+            (token_d, U256::from(EVM_UNIT_PRICE)),
+            (token_f, U256::from(EVM_UNIT_PRICE)),
+        ]),
+        ..Default::default()
+    };
+    let solutions = vec![
+        // Batches (A -> B) and (C -> D) with surplus 50 each, score 100.
+        Solution::new(
+            1,
+            solver_x,
+            vec![
+                sell_order::<Evm>(uid_ab, token_a, token_b, 140, U256::from),
+                sell_order::<Evm>(uid_cd, token_c, token_d, 140, U256::from),
+            ],
+        ),
+        // Batches (A -> B) with surplus 30 and (E -> F) with surplus 61,
+        // score 91. Fair, because (E -> F) beats the baseline of solution 3
+        // and (A -> B) has no baseline, but loses (A -> B) to solution 1.
+        Solution::new(
+            2,
+            solver_y,
+            vec![
+                sell_order::<Evm>(uid_ab, token_a, token_b, 120, U256::from),
+                sell_order::<Evm>(uid_ef, token_e, token_f, 151, U256::from),
+            ],
+        ),
+        // Settles only (E -> F) with surplus 60.
+        Solution::new(
+            3,
+            solver_z,
+            vec![sell_order::<Evm>(uid_ef, token_e, token_f, 150, U256::from)],
+        ),
+    ];
+    let arbitrator = Arbitrator::<Evm> {
+        max_winners: 5,
+        wrapped_native: Address::repeat_byte(0xff),
+    };
+
+    let ranking = arbitrator.arbitrate(solutions, &context);
+    assert!(ranking.filtered_out.is_empty());
+    assert_eq!(
+        ranking.winners().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![1, 3]
+    );
+    assert_eq!(
+        ranking.non_winners().map(|s| s.id()).collect::<Vec<_>>(),
+        vec![2]
+    );
+
+    let reference = arbitrator.compute_reference_scores(&ranking, &context);
+    // Without solver X, solution 2 (score 91) is picked before solution 3
+    // (score 60) and takes (E -> F) from it.
+    assert_eq!(reference[&solver_x], U256::from(91u64));
+    // Without solver Z, solution 1 still blocks solution 2 on (A -> B).
+    assert_eq!(reference[&solver_z], U256::from(100u64));
+}
