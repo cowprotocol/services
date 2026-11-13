@@ -390,8 +390,6 @@ fn validate(
     if keys.first() != Some(&sponsoring.funder) {
         return Err(PlacementError::WrongFeePayer);
     }
-    // The funder pays the 5,000 lamport base fee per required signature, and
-    // the header is client-controlled.
     if message.header().num_required_signatures != 2 {
         return Err(PlacementError::InvalidTransaction(
             "a creation transaction must have exactly two required signers",
