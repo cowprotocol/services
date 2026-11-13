@@ -9,9 +9,14 @@
 //! fees within the order's signed limit is dropped whole, like one that
 //! cannot absorb the solver fee.
 //!
-//! Only a volume policy moves the limit leg sent to the engine, see
-//! [`protocol_fees::tighten_limit`]: a surplus kind takes a share of the
-//! surplus and cannot cross the limit.
+//! A volume policy and a sponsored creation policy move the limit leg sent
+//! to the engine, see [`protocol_fees::tighten_limit`]: a surplus kind takes
+//! a share of the surplus and cannot cross the limit.
+//!
+//! A sponsored creation policy repays the funder the fee of the order's
+//! creation transaction. The autopilot attaches it until the order's first
+//! fill, already converted into the surplus token, so every driver takes the
+//! same atoms.
 
 use {
     super::{

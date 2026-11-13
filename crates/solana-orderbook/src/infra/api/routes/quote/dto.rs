@@ -36,6 +36,10 @@ pub struct Request {
     /// How much of the quote competition to wait for, `verified` when absent.
     #[serde(default)]
     pub price_quality: PriceQuality,
+    /// Whether the order would be placed as a sponsored creation, whose fee
+    /// the quote then nets with the network fee.
+    #[serde(default)]
+    pub sponsored: bool,
 }
 
 /// How good the quote should be, the EVM `priceQuality`.

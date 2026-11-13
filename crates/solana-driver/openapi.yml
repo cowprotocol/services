@@ -315,6 +315,7 @@ components:
         - $ref: "#/components/schemas/SurplusFee"
         - $ref: "#/components/schemas/PriceImprovement"
         - $ref: "#/components/schemas/VolumeFee"
+        - $ref: "#/components/schemas/SponsoredCreationFee"
     SurplusFee:
       type: object
       properties:
@@ -372,6 +373,25 @@ components:
             - factor
       required:
         - volume
+    SponsoredCreationFee:
+      type: object
+      properties:
+        sponsoredCreation:
+          type: object
+          properties:
+            amount:
+              description: |-
+                What the funder paid for the creation transaction of a
+                sponsored order, in atoms of the order's surplus token: the
+                buy token of a sell order, the sell token of a buy order. The
+                autopilot sends it until the order's first fill, and the
+                driver takes it whole from that fill.
+              allOf:
+                - $ref: "#/components/schemas/TokenAmount"
+          required:
+            - amount
+      required:
+        - sponsoredCreation
     Quote:
       description: The quote a price improvement policy measures the fill against.
       type: object

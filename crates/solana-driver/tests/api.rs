@@ -1235,6 +1235,61 @@ async fn solve_takes_the_protocol_fee_from_a_self_pricing_engines_fill() {
     assert_eq!(request["orders"][0]["buyAmount"], "2000");
 }
 
+/// A sponsored order's creation fee is taken whoever handles the costs. An
+/// engine pricing them itself is asked for the 2000 limit moved by the 100
+/// atom fee, and its route paying 3000 is reported at 2900. A driver cutting
+/// the costs is asked for 2316: the limit moved by the fee and the 100 atom
+/// cut, tightened by the 500 bps solver fee. Its fill is 2650: 3000 less the
+/// 150 solver fee, the cut and the creation fee.
+#[tokio::test]
+async fn solve_takes_the_creation_fee_whoever_handles_the_costs() {
+    let policies = serde_json::json!([{"sponsoredCreation": {"amount": "100"}}]);
+
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let addr = spawn_server(vec![solver]).await;
+    let request = solve_request_with_policies(solve_request(), policies.clone());
+    let body = call_solve_with(addr, request).await;
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2900");
+    let sent = requests.lock().unwrap().take().unwrap();
+    assert_eq!(sent["orders"][0]["buyAmount"], "2100");
+
+    let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
+    let (solver, _) = solver_with_fee(engine, 500).await;
+    let addr = spawn_server(vec![solver]).await;
+    let request = solve_request_with_policies(solve_request_priced_for_a_cut_of(100), policies);
+    let body = call_solve_with(addr, request).await;
+    assert_eq!(body["solutions"][0]["orders"][uid()]["executedBuy"], "2650");
+    let sent = requests.lock().unwrap().take().unwrap();
+    assert_eq!(sent["orders"][0]["buyAmount"], "2316");
+}
+
+/// The policies are taken from every trade, so a creation fee is taken once
+/// only because no solution trades an order twice: the same response with
+/// one trade is reported. If the two trades start to report a solution, the
+/// fee needs a once-per-order rule before that ships.
+#[tokio::test]
+async fn solve_refuses_two_trades_of_an_order_that_owes_a_creation_fee() {
+    let trade = serde_json::json!({ "orderUid": uid(), "executedAmount": "500" });
+    let mut request = solve_request_with_policies(
+        solve_request(),
+        serde_json::json!([{"sponsoredCreation": {"amount": "100"}}]),
+    );
+    request["orders"][0]["partiallyFillable"] = serde_json::json!(true);
+
+    for (trades, status) in [
+        (vec![trade.clone()], reqwest::StatusCode::OK),
+        (vec![trade.clone(), trade], reqwest::StatusCode::BAD_REQUEST),
+    ] {
+        let mut response = engine_response(&[(1, "3000")]);
+        response["solutions"][0]["trades"] = serde_json::json!(trades);
+        let engine = spawn_mock_solver_engine(response).await;
+        let (solver, _) = solver_with_keypair(engine).await;
+        let addr = spawn_server(vec![solver]).await;
+        assert_eq!(post_solve(addr, &request).await.status(), status);
+    }
+}
+
 #[tokio::test]
 async fn solve_rejects_a_fee_policy_factor_outside_the_unit_interval() {
     let engine = spawn_mock_solver_engine(engine_response(&[(1, "3000")])).await;

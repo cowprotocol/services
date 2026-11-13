@@ -471,6 +471,46 @@ async fn quote_nets_the_volume_fee_once_effective() {
     }
 }
 
+/// The funder pays 10000 lamports for a sponsored creation, so a sponsored
+/// quote reports that much more cost.
+#[tokio::test]
+async fn quote_charges_a_sponsored_order_its_creation_fee() {
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+        "networkFee": "6400",
+    }))
+    .await;
+    let addr = spawn_server_with(Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    ))
+    .await;
+    for (sponsored, network_fees, total, buy_amount) in [
+        (None, "6400", "2226640", "1234567"),
+        (Some(false), "6400", "2226640", "1234567"),
+        (Some(true), "16400", "2236640", "1224567"),
+    ] {
+        let mut body = quote_body(serde_json::json!({"validFor": 1800}));
+        if let Some(sponsored) = sponsored {
+            body["sponsored"] = serde_json::json!(sponsored);
+        }
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/quote"))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let json: serde_json::Value = response.json().await.unwrap();
+        let quote = &json["quote"];
+        assert_eq!(quote["costs"]["networkFees"], network_fees, "{sponsored:?}");
+        assert_eq!(quote["costs"]["total"], total, "{sponsored:?}");
+        assert_eq!(quote["buyAmount"], buy_amount, "{sponsored:?}");
+    }
+}
+
 /// The full happy path: the driver's amounts come back in the EVM response
 /// shape with the request's own fields echoed, net of the buy token account
 /// rent and the driver's network fee at the mock price of a lamport an atom.
