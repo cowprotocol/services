@@ -80,6 +80,7 @@ humantime-serde = "1.1.1"
 indexmap = "2.2.6"
 itertools = "0.14"
 jemalloc_pprof = { version = "0.8", features = ["symbolize"] }
+leader-lock = { path = "crates/leader-lock" }
 liquidity-sources = { path = "crates/liquidity-sources" }
 maplit = "1.0.2"
 mockall = "0.12.1"

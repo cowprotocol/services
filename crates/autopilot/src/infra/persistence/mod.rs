@@ -16,7 +16,6 @@ use {
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
-        leader_pg_lock::LeaderLock,
         order_events::{OrderEventLabel, OrderFilterReason},
         order_execution::Asset,
         orders::{
@@ -36,6 +35,7 @@ use {
     },
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
+    leader_lock::LeaderLock,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
     std::{

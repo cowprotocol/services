@@ -30,6 +30,7 @@ cow-solana-signer = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
+leader-lock = { workspace = true }
 moka = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }

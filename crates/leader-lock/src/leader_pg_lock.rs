@@ -16,9 +16,7 @@ impl PgLockGuard {
     }
 
     async fn unlock(mut self) {
-        const QUERY: &str = r#"
-SELECT pg_advisory_unlock(hashtextextended($1, 0));
-        "#;
+        const QUERY: &str = r#"SELECT pg_advisory_unlock(hashtextextended($1, 0));"#;
 
         let _ = sqlx::query(QUERY)
             .bind(self.key)
@@ -51,9 +49,7 @@ impl LeaderLock {
 
     /// Tries to acquire the leader lock and handles the liveness status.
     pub async fn try_acquire(&mut self) -> Result<bool, sqlx::Error> {
-        const QUERY: &str = r#"
-SELECT pg_try_advisory_lock(hashtextextended($1, 0));
-        "#;
+        const QUERY: &str = r#"SELECT pg_try_advisory_lock(hashtextextended($1, 0));"#;
 
         // if we think we're leader, verify the session is alive
         if let Some(lock) = self.lock_guard.as_mut()
