@@ -173,6 +173,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             considered = ?considered.iter().map(ToString::to_string).collect::<Vec<_>>(),
             "orders matched"
         );
+        metrics().matched_unsettled.inc_by(considered.len() as u64);
         self.store_events(executing.into_iter().collect(), OrderEventLabel::Executing);
         self.store_events(
             considered.into_iter().collect(),
@@ -187,4 +188,16 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
             "competition ended"
         );
     }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "runloop")]
+struct Metrics {
+    /// Tracks the number of orders that were part of some but not the winning
+    /// solutions.
+    matched_unsettled: prometheus::IntCounter,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
 }
