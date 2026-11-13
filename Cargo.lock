@@ -2208,8 +2208,6 @@ dependencies = [
  "alloy-transport",
  "anyhow",
  "async-trait",
- "clap",
- "configs",
  "const-hex",
  "contracts",
  "ethrpc",
@@ -2896,7 +2894,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "toml",
  "tracing",
@@ -3180,7 +3177,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3202,7 +3198,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3213,7 +3208,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3224,7 +3218,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3235,7 +3228,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3301,7 +3293,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3334,7 +3325,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3367,7 +3357,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3466,7 +3455,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3499,7 +3487,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3521,7 +3508,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3532,7 +3518,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3543,7 +3528,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3565,7 +3549,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3576,7 +3559,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3587,7 +3569,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3598,7 +3579,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3609,7 +3589,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3664,7 +3643,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3675,7 +3653,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3686,7 +3663,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3697,7 +3673,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3708,7 +3683,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3752,7 +3726,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3763,7 +3736,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3774,7 +3746,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3807,7 +3778,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3829,7 +3799,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3840,7 +3809,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3851,7 +3819,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3873,7 +3840,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -3928,7 +3894,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
- "anyhow",
 ]
 
 [[package]]
@@ -5587,7 +5552,6 @@ dependencies = [
 name = "http-client"
 version = "0.1.0"
 dependencies = [
- "clap",
  "configs",
  "humantime",
  "reqwest 0.13.4",
@@ -7414,10 +7378,8 @@ dependencies = [
  "balance-overrides",
  "bigdecimal",
  "bytes-hex",
- "cached",
  "chain",
  "chrono",
- "clap",
  "configs",
  "const-hex",
  "contracts",
@@ -9050,7 +9012,6 @@ dependencies = [
  "balance-overrides",
  "bigdecimal",
  "bytes-hex",
- "cached",
  "chain",
  "chrono",
  "clap",
@@ -9069,7 +9030,6 @@ dependencies = [
  "humantime",
  "indexmap 2.14.0",
  "itertools 0.14.0",
- "liquidity-sources",
  "maplit",
  "mockall",
  "model",
@@ -9189,7 +9149,6 @@ dependencies = [
  "app-data",
  "async-trait",
  "balance-overrides",
- "cached",
  "chain",
  "configs",
  "const-hex",
@@ -9201,7 +9160,6 @@ dependencies = [
  "gas-price-estimation",
  "hex-literal",
  "http-client",
- "mockall",
  "model",
  "number",
  "observe",
@@ -9841,8 +9799,6 @@ dependencies = [
  "serde_json",
  "solana-sdk",
  "solana-transaction-status-client-types",
- "spl-token-2022-interface 2.1.0",
- "spl-token-interface 2.0.0",
  "sqlx",
  "thiserror 1.0.69",
  "tikv-jemallocator",
@@ -11057,7 +11013,6 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "shared",
- "solver",
  "solvers-dto",
  "tempfile",
  "testlib",

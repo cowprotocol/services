@@ -19,7 +19,6 @@ async-trait = { workspace = true }
 balance-overrides = { workspace = true }
 bigdecimal = { workspace = true }
 bytes-hex = { workspace = true }
-cached = { workspace = true }
 chain = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
@@ -38,7 +37,6 @@ hex-literal = { workspace = true }
 humantime = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
-liquidity-sources = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { workspace = true }
 moka = { workspace = true, features = ["sync"] }
@@ -78,7 +76,6 @@ mockall = { workspace = true }
 price-estimation = { workspace = true, features = ["test-util"] }
 regex = { workspace = true }
 signature-validator = { workspace = true, features = ["test-util"] }
-simulator = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 toml = { workspace = true }

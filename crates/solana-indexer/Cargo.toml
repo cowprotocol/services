@@ -36,8 +36,6 @@ serde = { workspace = true }
 serde-ext = { workspace = true, features = ["solana"] }
 solana-sdk = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }
-spl-token-2022-interface = { workspace = true }
-spl-token-interface = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tikv-jemallocator = { workspace = true }
