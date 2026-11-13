@@ -621,6 +621,7 @@ RETURNING id
 /// A stored quote, as read back to link an order against it.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct StoredQuote {
+    pub id: i64,
     pub sell_token: ByteArray<32>,
     pub buy_token: ByteArray<32>,
     pub sell_amount: BigDecimal,
@@ -630,11 +631,22 @@ pub struct StoredQuote {
     pub expiration: DateTime<Utc>,
 }
 
+impl From<StoredQuote> for OrderQuote {
+    fn from(quote: StoredQuote) -> Self {
+        Self {
+            quote_id: quote.id,
+            sell_amount: quote.sell_amount,
+            buy_amount: quote.buy_amount,
+            solver: quote.solver,
+        }
+    }
+}
+
 /// Read one stored quote. `None` when the id is unknown.
 pub async fn read_quote(ex: impl PgExecutor<'_>, id: i64) -> Result<Option<StoredQuote>> {
     let _timer = query_timer("read_quote");
     const QUERY: &str = r#"
-SELECT sell_token, buy_token, sell_amount, buy_amount, kind, solver,
+SELECT id, sell_token, buy_token, sell_amount, buy_amount, kind, solver,
        expiration_timestamp AS expiration
 FROM solana.quotes
 WHERE id = $1
@@ -644,6 +656,49 @@ WHERE id = $1
         .fetch_optional(ex)
         .await
         .context("read solana.quotes")
+}
+
+/// What a stored quote shares with the order it can stand for: the pair, the
+/// side, and the amount that side fixes.
+#[derive(Clone, Copy, Debug)]
+pub struct QuoteSearch {
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+    pub kind: OrderKind,
+    /// The sell amount of a sell order, the buy amount of a buy order.
+    pub amount: u64,
+}
+
+/// The best stored quote matching `search` and unexpired at `now`, by buy
+/// amount per sell amount like the EVM orderbook's search. `None` without
+/// one.
+pub async fn find_quote(
+    ex: impl PgExecutor<'_>,
+    search: &QuoteSearch,
+    now: DateTime<Utc>,
+) -> Result<Option<StoredQuote>> {
+    let _timer = query_timer("find_quote");
+    const QUERY: &str = r#"
+SELECT id, sell_token, buy_token, sell_amount, buy_amount, kind, solver,
+       expiration_timestamp AS expiration
+FROM solana.quotes
+WHERE sell_token = $1
+  AND buy_token = $2
+  AND kind = $3
+  AND ((kind = 'sell' AND sell_amount = $4) OR (kind = 'buy' AND buy_amount = $4))
+  AND expiration_timestamp > $5
+ORDER BY buy_amount / NULLIF(sell_amount, 0) DESC NULLS LAST
+LIMIT 1
+    "#;
+    sqlx::query_as(QUERY)
+        .bind(search.sell_token)
+        .bind(search.buy_token)
+        .bind(search.kind)
+        .bind(BigDecimal::from(search.amount))
+        .bind(now)
+        .fetch_optional(ex)
+        .await
+        .context("search solana.quotes")
 }
 
 /// Check that the pool gives a connection and that the database answers on
