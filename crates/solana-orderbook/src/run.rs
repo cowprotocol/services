@@ -100,6 +100,10 @@ pub async fn run(args: Args) {
             .rpc
             .as_ref()
             .expect("the [sponsoring] section requires the [rpc] section");
+        assert!(
+            sponsoring.min_compute_unit_limit <= sponsoring.max_compute_unit_limit,
+            "sponsoring.min-compute-unit-limit must not exceed sponsoring.max-compute-unit-limit"
+        );
         Sponsoring {
             funder: sponsoring.funder,
             settlement_program: sponsoring.settlement_program,
