@@ -120,7 +120,7 @@ pub struct SolvableOrdersCache {
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
-    protocol_fees: Arc<domain::ProtocolFees>,
+    protocol_fees: Arc<dyn domain::fee::AutopilotFees>,
     penalty_cap_calculator: Option<Arc<domain::penalty_cap::PenaltyCapCalculator>>,
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
     native_price_timeout: Duration,
@@ -146,7 +146,7 @@ impl SolvableOrdersCache {
         deny_listed_tokens: DenyListedTokens,
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
-        protocol_fees: Arc<domain::ProtocolFees>,
+        protocol_fees: Arc<dyn domain::fee::AutopilotFees>,
         penalty_cap_calculator: Option<Arc<domain::penalty_cap::PenaltyCapCalculator>>,
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
         native_price_timeout: Duration,
@@ -307,9 +307,14 @@ impl SolvableOrdersCache {
             .filter(|owner| !in_flight_owners.contains(*owner))
             .copied()
             .collect();
+        // One time for the whole auction, so time-dependent fees are
+        // consistent.
+        let now = chrono::Utc::now();
         let auction = domain::RawAuctionData {
             block,
             orders: tracing::info_span!("assemble_orders").in_scope(|| {
+                // TODO: evaluate the fees of the orders in parallel; the fee
+                // engine takes about 4 µs per order on one thread.
                 orders
                     .into_iter()
                     .map(|order| {
@@ -321,10 +326,11 @@ impl SolvableOrdersCache {
                             .penalty_cap_calculator
                             .as_ref()
                             .map(|calculator| calculator.calculate(order, &prices));
-                        let protocol_fees = self.protocol_fees.apply(
+                        let protocol_fees = self.protocol_fees.auction_fees(
                             order,
                             quote.as_ref(),
                             &surplus_capturing_jit_order_owners,
+                            now,
                         );
                         boundary::order::to_domain(order, protocol_fees, quote, penalty_cap_native)
                     })

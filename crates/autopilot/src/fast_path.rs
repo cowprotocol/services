@@ -62,7 +62,7 @@ pub struct FastPathHandler {
     eth: infra::Ethereum,
     persistence: infra::Persistence,
     drivers: Vec<Arc<infra::Driver>>,
-    protocol_fees: Arc<domain::ProtocolFees>,
+    protocol_fees: Arc<dyn domain::fee::AutopilotFees>,
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
     settle_coordinator: Arc<SettleCall>,
     /// Number of blocks a fast-path order stays exclusive to the winning
@@ -83,7 +83,7 @@ impl FastPathHandler {
         eth: infra::Ethereum,
         persistence: infra::Persistence,
         drivers: Vec<Arc<infra::Driver>>,
-        protocol_fees: Arc<domain::ProtocolFees>,
+        protocol_fees: Arc<dyn domain::fee::AutopilotFees>,
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
         settle_coordinator: Arc<SettleCall>,
         exclusivity_period_blocks: Option<u64>,
@@ -219,10 +219,11 @@ impl FastPathHandler {
         // policy that requires a surplus baseline doesn't apply.
         let volume_fee_policies: Vec<_> = self
             .protocol_fees
-            .apply(
+            .auction_fees(
                 &pending.model_order,
                 None,
                 &self.surplus_capturing_jit_order_owners,
+                Utc::now(),
             )
             .into_iter()
             .filter(|fee| matches!(fee.policy, domain::fee::Policy::Volume { .. }))

@@ -3,14 +3,14 @@
 
 use {
     alloy::primitives::Address,
-    anyhow::Context,
     app_data::ValidatedAppData,
     chrono::Utc,
-    configs::{fee_factor::FeeFactor, orderbook::FeeEngineConfig},
-    fee_engine::{Evaluation, Fee, Outcome, PartnerFee, RuleSet, RulesToml},
+    configs::{fee_engine::FeeEngineConfig, fee_factor::FeeFactor},
+    fee_engine::{Evaluation, Fee, Outcome, PartnerFee, RuleSet},
     model::order::{Order, OrderUid},
     shared::{
         fee::{LegacyVolumeFees, OrderbookFees},
+        fee_engine::load_host_rules,
         order_quoting::Quote,
         order_validation::{Amounts, is_order_outside_market_price},
     },
@@ -31,9 +31,6 @@ pub fn volume_fees(
     Ok(Arc::new(ComparedVolumeFees::new(legacy, engine)))
 }
 
-/// The list the orderbook sets to the chain's wrapped native token.
-const WRAPPED_NATIVE: &str = "wrapped_native";
-
 /// The volume fees among the fees the rules charge. The orderbook needs no
 /// other: surplus and price improvement fees take nothing at the quoted price.
 pub struct FeeEngineVolumeFees {
@@ -44,29 +41,7 @@ impl FeeEngineVolumeFees {
     /// Loads the rules of `[fee-engine]`, with the chain's wrapped native
     /// token added as the list `wrapped_native`, which the section may not set.
     pub fn new(config: &FeeEngineConfig, native_token: Address) -> anyhow::Result<Self> {
-        let mut lists = config
-            .lists
-            .clone()
-            .unwrap_or_else(|| toml::Table::new().into());
-        // Lists that are not a table are left for the loader to refuse.
-        if let Some(lists) = lists.as_table_mut() {
-            anyhow::ensure!(
-                !lists.contains_key(WRAPPED_NATIVE),
-                "[fee-engine] may not set the list `{WRAPPED_NATIVE}`"
-            );
-            lists.insert(
-                WRAPPED_NATIVE.to_owned(),
-                vec![native_token.to_string()].into(),
-            );
-        }
-        let rules = fee_engine::load_rules_toml(RulesToml {
-            lists: Some(lists),
-            rules: config.rules.clone(),
-            partner_fees: config.partner_fees.clone(),
-        })
-        .context("loading the fee engine rules")?;
-        let names: Vec<_> = rules.rules().iter().map(|rule| rule.name()).collect();
-        tracing::info!(rules = ?names, "fee engine rules loaded");
+        let rules = load_host_rules(config, native_token, &[])?;
         Ok(Self { rules })
     }
 
@@ -402,7 +377,7 @@ mod tests {
     fn engine_with(mut definition: RuleSetDefinition) -> FeeEngineVolumeFees {
         definition
             .lists
-            .insert(WRAPPED_NATIVE.to_owned(), list(&[WETH]));
+            .insert(shared::fee_engine::WRAPPED_NATIVE.to_owned(), list(&[WETH]));
         let rules = RuleSet::new(definition).unwrap();
         rules.validate_on_sample_order().unwrap();
         FeeEngineVolumeFees { rules }

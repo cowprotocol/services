@@ -1,10 +1,38 @@
-//! An order's app data as the input of the fee engine, for the services that
-//! host it.
+//! The rules of `[fee-engine]` and an order's app data as the input of the fee
+//! engine, for the services that host it.
 
 use {
+    alloy::primitives::Address,
+    anyhow::Context,
     app_data::{FeePolicy, ProtocolAppData},
-    fee_engine::PartnerFee,
+    configs::fee_engine::FeeEngineConfig,
+    fee_engine::{PartnerFee, RuleSet, RulesToml},
 };
+
+/// The list every host sets to the chain's wrapped native token.
+pub const WRAPPED_NATIVE: &str = "wrapped_native";
+
+/// Loads the rules of `[fee-engine]`, with the list `wrapped_native` and the
+/// `host_lists` added, which the section may not set.
+pub fn load_host_rules(
+    config: &FeeEngineConfig,
+    native_token: Address,
+    host_lists: &[(&str, &[Address])],
+) -> anyhow::Result<RuleSet> {
+    let mut tables = RulesToml {
+        lists: config.lists.clone(),
+        rules: config.rules.clone(),
+        partner_fees: config.partner_fees.clone(),
+    };
+    tables.add_host_list(WRAPPED_NATIVE, [native_token])?;
+    for (name, values) in host_lists {
+        tables.add_host_list(name, *values)?;
+    }
+    let rules = fee_engine::load_rules_toml(tables).context("loading the fee engine rules")?;
+    let names: Vec<_> = rules.rules().iter().map(|rule| rule.name()).collect();
+    tracing::info!(rules = ?names, "fee engine rules loaded");
+    Ok(rules)
+}
 
 /// The app data of an order as the rules see it.
 pub fn app_data(protocol: &ProtocolAppData, app_code: Option<String>) -> fee_engine::AppData {
