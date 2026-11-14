@@ -37,6 +37,29 @@ pub struct RulesToml {
     pub partner_fees: Option<toml::Value>,
 }
 
+impl RulesToml {
+    /// Adds a list whose values the host knows, such as the chain's wrapped
+    /// native token. The tables may not define it.
+    pub fn add_host_list(
+        &mut self,
+        name: &str,
+        values: impl IntoIterator<Item: ToString>,
+    ) -> Result<(), LoadError> {
+        let lists = self.lists.get_or_insert_with(|| toml::Table::new().into());
+        // Lists that are not a table are left for `load_rules_toml` to refuse.
+        if let Some(lists) = lists.as_table_mut() {
+            let values: Vec<_> = values.into_iter().map(|value| value.to_string()).collect();
+            if lists.insert(name.to_owned(), values.into()).is_some() {
+                return Err(CompileError::ReservedList {
+                    name: name.to_owned(),
+                }
+                .into());
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Parses a whole rules file, then loads it as [`load_rules_toml`] does.
 pub fn load_rules_from_str(source: &str) -> Result<RuleSet, LoadError> {
     load_rule_set_definition(toml::from_str(source)?)
