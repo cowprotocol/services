@@ -181,6 +181,19 @@ impl Solana {
         })
     }
 
+    /// See [`SolanaRPC::simulate_unsigned_transaction`].
+    pub async fn simulate_unsigned_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<TransactionSimulation, Error> {
+        let response = self.rpc.simulate_unsigned_transaction(transaction).await?;
+        Ok(TransactionSimulation {
+            slot: Slot(response.context.slot),
+            err: response.value.err,
+            logs: response.value.logs,
+        })
+    }
+
     /// See [`SolanaRPC::simulate_bundle`].
     pub async fn simulate_bundle(
         &self,
