@@ -49,7 +49,9 @@ pub async fn serve(listener: TcpListener, prices: NativePrices) -> std::io::Resu
                 .map_request(record_trace_id),
         );
     tracing::info!(addr = ?listener.local_addr()?, "serving HTTP API");
-    axum::serve(listener, app).await
+    // Build the routes once: serving the `Router` itself deep-clones every
+    // route, middleware included, per accepted connection.
+    axum::serve(listener, app.into_make_service()).await
 }
 
 async fn native_price(

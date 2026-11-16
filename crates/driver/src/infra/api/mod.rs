@@ -157,7 +157,9 @@ impl Api {
         if let Some(addr_sender) = self.addr_sender {
             addr_sender.send(local_addr).unwrap();
         }
-        axum::serve(listener, app)
+        // Build the routes once: serving the `Router` itself deep-clones every
+        // route, middleware included, per accepted connection.
+        axum::serve(listener, app.into_make_service())
             .with_graceful_shutdown(shutdown)
             .await
     }

@@ -63,7 +63,9 @@ pub async fn serve(
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(?addr, "serving HTTP API");
 
-    axum::serve(listener, app)
+    // Build the routes once: serving the `Router` itself deep-clones every
+    // route, middleware included, per accepted connection.
+    axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(async {
             shutdown.await.ok();
         })
