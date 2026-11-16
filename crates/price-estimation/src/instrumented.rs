@@ -50,6 +50,7 @@ impl<T> InstrumentedPriceEstimator<T> {
             Err(PriceEstimationError::UnsupportedToken { .. }) => "unsupported_token",
             Err(PriceEstimationError::UnsupportedOrderType(_)) => "unsupported_order_type",
             Err(PriceEstimationError::RateLimited) => "rate_limited",
+            Err(PriceEstimationError::StalePrice) => "stale_price",
             Err(PriceEstimationError::TradingOutsideAllowedWindow { .. }) => {
                 "trading_outside_allowed_window"
             }
@@ -166,6 +167,7 @@ mod tests {
             }),
             Err(PriceEstimationError::UnsupportedOrderType("".to_string())),
             Err(PriceEstimationError::RateLimited),
+            Err(PriceEstimationError::StalePrice),
             Err(PriceEstimationError::TradingOutsideAllowedWindow {
                 message: "window".to_string(),
             }),
@@ -206,6 +208,7 @@ mod tests {
             "unsupported_token",
             "unsupported_order_type",
             "rate_limited",
+            "stale_price",
             "trading_outside_allowed_window",
             "token_temporarily_suspended",
             "insufficient_liquidity",
@@ -231,6 +234,6 @@ mod tests {
             .price_estimation_times
             .with_label_values(&["foo"])
             .get_sample_count();
-        assert_eq!(observed_count, 11);
+        assert_eq!(observed_count, 12);
     }
 }

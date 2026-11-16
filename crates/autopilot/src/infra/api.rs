@@ -103,6 +103,7 @@ async fn get_native_price(
 fn error_to_response(err: PriceEstimationError) -> Response {
     match err {
         PriceEstimationError::NoLiquidity
+        | PriceEstimationError::StalePrice
         | PriceEstimationError::EstimatorInternal(_)
         | PriceEstimationError::CustomSolverError { .. } => {
             (StatusCode::NOT_FOUND, "No liquidity").into_response()
