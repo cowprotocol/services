@@ -478,6 +478,7 @@ impl IntoResponse for PriceEstimationErrorWrapper {
             )
                 .into_response(),
             PriceEstimationError::NoLiquidity
+            | PriceEstimationError::StalePrice
             | PriceEstimationError::RateLimited
             | PriceEstimationError::EstimatorInternal(_)
             | PriceEstimationError::CustomSolverError { .. } => (
