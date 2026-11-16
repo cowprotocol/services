@@ -2,6 +2,7 @@
 pub mod macros;
 
 pub mod arguments;
+pub mod canonical_batch;
 pub mod current_block;
 pub mod db_order_conversions;
 pub mod event_storing_helpers;
