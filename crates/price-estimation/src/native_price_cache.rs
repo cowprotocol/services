@@ -147,6 +147,7 @@ fn should_cache(result: &Result<f64, PriceEstimationError>) -> bool {
     match result {
         Ok(_)
         | Err(PriceEstimationError::NoLiquidity)
+        | Err(PriceEstimationError::StalePrice)
         | Err(PriceEstimationError::UnsupportedToken { .. })
         | Err(PriceEstimationError::EstimatorInternal(_))
         | Err(PriceEstimationError::RateLimited) => true,

@@ -283,6 +283,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                     self.components.http_factory.create(),
                     coin_gecko_config.url.clone(),
                     Some(coin_gecko_config.api_key.clone()),
+                    coin_gecko_config.max_price_age,
                     &self.network.chain,
                     *weth.address(),
                     self.components.tokens.clone(),

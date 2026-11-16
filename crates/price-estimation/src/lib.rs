@@ -50,6 +50,10 @@ pub enum PriceEstimationError {
     #[error("Rate limited")]
     RateLimited,
 
+    /// The estimator only has a price that is too old to use.
+    #[error("Stale price")]
+    StalePrice,
+
     /// Token can only be traded during specific time windows (e.g. xStocks/Ondo
     /// RWA tokens).
     #[error("{message}")]
@@ -97,6 +101,7 @@ impl Clone for PriceEstimationError {
                 Self::UnsupportedOrderType(order_type.clone())
             }
             Self::RateLimited => Self::RateLimited,
+            Self::StalePrice => Self::StalePrice,
             Self::TradingOutsideAllowedWindow { message } => Self::TradingOutsideAllowedWindow {
                 message: message.clone(),
             },

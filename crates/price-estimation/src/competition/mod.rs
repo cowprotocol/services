@@ -215,7 +215,7 @@ fn compare_error(a: &PriceEstimationError, b: &PriceEstimationError) -> Ordering
             PriceEstimationError::ProtocolInternal(_) => 4,
             PriceEstimationError::EstimatorInternal(_) => 3,
             PriceEstimationError::UnsupportedToken { .. } => 2,
-            PriceEstimationError::NoLiquidity => 1,
+            PriceEstimationError::NoLiquidity | PriceEstimationError::StalePrice => 1,
             PriceEstimationError::UnsupportedOrderType(_) => 0,
             // lowest priority
         }
