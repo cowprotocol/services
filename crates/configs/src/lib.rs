@@ -1,6 +1,7 @@
 pub mod autopilot;
 pub mod balance_cache;
 pub mod banned_users;
+pub mod canonical_batch;
 pub mod database;
 pub mod deserialize_env;
 pub mod fee_engine;
