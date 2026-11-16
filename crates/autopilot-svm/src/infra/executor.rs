@@ -60,7 +60,12 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 continue;
             };
             let driver = Arc::clone(driver);
-            tracing::info!(driver = %driver.name, solution = winner.id(), "executing solution");
+            tracing::info!(
+                driver = %driver.name,
+                solver = %winner.solver(),
+                solution = winner.id(),
+                "executing solution"
+            );
             // Countersign the winner's pending sponsored creations. A winner
             // whose creations cannot land any more cannot settle, so it is
             // skipped rather than dispatched to fail, and its orders return
@@ -74,6 +79,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         Ok(creations) => creations,
                         Err(err) => {
                             tracing::warn!(
+                                driver = %driver.name,
+                                solver = %winner.solver(),
                                 solution = winner.id(),
                                 ?err,
                                 "skipping winner, sponsored creations unavailable"
@@ -118,6 +125,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 match driver.settle(&request).await {
                     Ok(response) => tracing::info!(
                         driver = %driver.name,
+                        %solver,
                         auction_id,
                         deadline,
                         tx_signature = %response.tx_signature,
@@ -129,6 +137,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     Err(err) if err.settlement_provably_unsent() => {
                         tracing::warn!(
                             driver = %driver.name,
+                            %solver,
                             auction_id,
                             ?err,
                             "settlement rejected before submission"
@@ -147,6 +156,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     Err(err) if err.settlement_reverted() => {
                         tracing::error!(
                             driver = %driver.name,
+                            %solver,
                             auction_id,
                             ?err,
                             "settlement reverted"
@@ -162,6 +172,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     }
                     Err(err) => tracing::error!(
                         driver = %driver.name,
+                        %solver,
                         auction_id,
                         ?err,
                         "settlement failed"
