@@ -43,7 +43,8 @@ pub fn protocol_fees(
 /// The list the autopilot sets to the configured surplus capturing JIT order
 /// owners.
 const JIT_OWNERS: &str = "jit_owners";
-/// The label of the comparison on the fee policies of an order in an auction.
+/// The label of the comparison on the fee policies of an order, in an auction
+/// or on the fast path.
 const CHECK: &str = "auction";
 
 /// The fees of the first rule that matches an order, then the order's capped
