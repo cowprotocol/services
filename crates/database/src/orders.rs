@@ -94,7 +94,8 @@ pub struct Order {
     /// `true`; `false` orders never go through that pipeline.
     pub fast_path: bool,
     /// Set from the order's `enableWaitForCow` app-data flag at placement.
-    /// Mutually exclusive with `fast_path` and `valid_from`.
+    /// The autopilot owns `valid_from` once this is `true`: it sets it to the
+    /// canonical batch the order joins.
     pub wait_for_cow: bool,
 }
 
@@ -277,6 +278,26 @@ pub async fn flush_pending_fast_path_backlog(
 ) -> Result<u64, sqlx::Error> {
     const QUERY: &str = "UPDATE orders SET valid_from = $1 WHERE fast_path AND valid_from IS NULL";
     let result = sqlx::query(QUERY).bind(now as i64).execute(ex).await?;
+    Ok(result.rows_affected())
+}
+
+/// Sets `valid_from` of every wait-for-CoW order that doesn't have one yet,
+/// which is when the order may first enter an auction. Each order's
+/// `valid_from` is written only once. The partial index
+/// `orders_wait_for_cow_pending` covers exactly the rows this updates.
+///
+/// Returns the number of rows that were updated.
+#[instrument(skip_all)]
+pub async fn set_valid_from_of_pending_wait_for_cow_orders(
+    ex: &mut PgConnection,
+    valid_from: u32,
+) -> Result<u64, sqlx::Error> {
+    const QUERY: &str =
+        "UPDATE orders SET valid_from = $1 WHERE wait_for_cow AND valid_from IS NULL";
+    let result = sqlx::query(QUERY)
+        .bind(i64::from(valid_from))
+        .execute(ex)
+        .await?;
     Ok(result.rows_affected())
 }
 
@@ -837,6 +858,9 @@ pub fn solvable_orders(
             -- narrow the row set enough that the `orders_fast_path`
             -- index isn't the planner's pick here.
             AND NOT (o.fast_path AND o.valid_from IS NULL)
+            -- Wait-for-CoW orders wait for the autopilot to set `valid_from`
+            -- to the canonical batch they join.
+            AND NOT (o.wait_for_cow AND o.valid_from IS NULL)
             AND NOT EXISTS (SELECT 1 FROM invalidations i WHERE i.order_uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_order_invalidations oi WHERE oi.uid = o.uid)
             AND NOT EXISTS (SELECT 1 FROM onchain_placed_orders op WHERE op.uid = o.uid AND op.placement_error IS NOT NULL)
@@ -969,8 +993,10 @@ WITH selected_orders AS (
             -- Pending fast-path orders (autopilot handler hasn't written
             -- `valid_from` yet) must not enter a regular auction; the
             -- crossing branch below already excludes them because it
-            -- requires `valid_from IS NOT NULL`.
+            -- requires `valid_from IS NOT NULL`. The same holds for
+            -- wait-for-CoW orders without their canonical batch.
             AND NOT (o.fast_path AND o.valid_from IS NULL)
+            AND NOT (o.wait_for_cow AND o.valid_from IS NULL)
           )
        OR (o.valid_from IS NOT NULL
             AND o.valid_from >  EXTRACT(EPOCH FROM $1)::bigint
@@ -2263,6 +2289,7 @@ mod tests {
             buy_amount: 100.into(),
             valid_to: 10_000,
             wait_for_cow: true,
+            valid_from: Some(0),
             ..Default::default()
         };
         insert_order(&mut db, &order).await.unwrap();
@@ -2289,6 +2316,69 @@ mod tests {
                 .unwrap();
         assert_eq!(open.len(), 1);
         assert!(open[0].wait_for_cow);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_wait_for_cow_orders_wait_for_their_valid_from() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        async fn solvable_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
+            solvable_orders(ex, 0, now)
+                .map_ok(|o| o.uid)
+                .try_collect()
+                .await
+                .unwrap()
+        }
+        async fn incremental_uids(ex: &mut PgConnection, now: i64) -> HashSet<OrderUid> {
+            open_orders_by_time_or_uids(ex, &[ByteArray([1u8; 56])], DateTime::<Utc>::MAX_UTC, now)
+                .map_ok(|o| o.uid)
+                .try_collect()
+                .await
+                .unwrap()
+        }
+
+        let waiting = Order {
+            uid: ByteArray([1u8; 56]),
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 100.into(),
+            valid_to: 10_000,
+            wait_for_cow: true,
+            ..Default::default()
+        };
+        insert_order(&mut db, &waiting).await.unwrap();
+
+        // Without `valid_from`, the order is never solvable.
+        assert!(solvable_uids(&mut db, 5_000).await.is_empty());
+        assert!(incremental_uids(&mut db, 5_000).await.is_empty());
+
+        // `valid_from` is written once.
+        assert_eq!(
+            set_valid_from_of_pending_wait_for_cow_orders(&mut db, 1_000)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            set_valid_from_of_pending_wait_for_cow_orders(&mut db, 2_000)
+                .await
+                .unwrap(),
+            0
+        );
+        let order = read_order(&mut db, &waiting.uid).await.unwrap().unwrap();
+        assert_eq!(order.valid_from, Some(1_000));
+
+        // From `valid_from` on, it is solvable like any other order.
+        assert!(solvable_uids(&mut db, 999).await.is_empty());
+        assert!(incremental_uids(&mut db, 999).await.is_empty());
+        assert_eq!(solvable_uids(&mut db, 1_000).await, hashset![waiting.uid]);
+        assert_eq!(
+            incremental_uids(&mut db, 1_000).await,
+            hashset![waiting.uid]
+        );
     }
 
     #[tokio::test]

@@ -726,7 +726,8 @@ fn extract_order_data_from_onchain_order_placement_event(
 /// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
 /// owns that field and will set it either to `now()` (feature disabled
 /// or limit-price check failed) or to `now + exclusivity` when it
-/// initiates the fast-path settle.
+/// initiates the fast-path settle. The same goes for wait-for-CoW orders:
+/// the run loop sets their `valid_from` to the canonical batch they join.
 async fn handle_app_data(
     db: &mut PgConnection,
     orders: &mut [Order],

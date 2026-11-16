@@ -1422,7 +1422,9 @@ components:
             auction, taken from the order's `appData`. Omitted when the order
             has no lower bound (eligible immediately). Mutually exclusive with
             `enableFastPath` and `enableWaitForCow`: an order that sets more
-            than one of them is rejected.
+            than one of them is rejected. For orders with `enableWaitForCow`,
+            the backend sets it to the canonical batch the order joins, shortly
+            after the order is placed.
           type: integer
           nullable: true
         waitForCow:
