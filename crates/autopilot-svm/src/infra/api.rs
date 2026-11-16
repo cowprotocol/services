@@ -165,7 +165,7 @@ mod tests {
                     url: format!("http://{coingecko}/simple/token_price")
                         .parse()
                         .unwrap(),
-                    api_key: String::new(),
+                    ..Default::default()
                 },
             },
             rpc,
