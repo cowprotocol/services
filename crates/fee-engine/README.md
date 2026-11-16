@@ -238,6 +238,7 @@ lowercase. An order with every field set looks like this (hashes shortened):
     }
   },
   "fastPath": false,
+  "waitForCow": false,
   "inMarket": true,
   "ethflowData": {
     "userValidTo": 1793284991
@@ -247,6 +248,13 @@ lowercase. An order with every field set looks like this (hashes shortened):
 
 `inMarket` is `OrderView::in_market` as the host passes it. The engine does not
 check it: the host must pass false when the order has no quote.
+
+`waitForCow` is `OrderView::wait_for_cow` as the host passes it: the order's
+`enableWaitForCow` flag while the host has canonical batches on, and false
+while they are off, as the order then trades like a regular order. So a rule
+that lowers the fee of wait-for-CoW orders reads `order.waitForCow` and needs
+no other check. The full sample order has it true and the bare one false, so
+the load-time pass reaches both branches of `order.waitForCow ? … : …`.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
@@ -271,6 +279,7 @@ when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmou
 when: timestamp(int(order.validTo)) - now > duration("1h")
 when: order.?ethflowData.hasValue()
 fee:  order.inMarket ? price_improvement(50, 100) : surplus(50, 100)
+fee:  volume(order.waitForCow ? math.least(2.0, 0.5) : 2.0)
 ```
 
 A hex literal compares equal to the view only in lowercase: write it so, or
@@ -293,8 +302,9 @@ order has no document or the protocol cannot parse it. `appData` and
 `appData.metadata` are always present; every field under them is optional,
 so reach it with `.?` or guard it with `has`.
 
-`metadata.enableFastPath` and `metadata.validFrom` are not here: read
-`order.fastPath` and `order.validFrom`, which hold the values in effect.
+`metadata.enableFastPath`, `metadata.validFrom` and
+`metadata.enableWaitForCow` are not here: read `order.fastPath`,
+`order.validFrom` and `order.waitForCow`, which hold the values in effect.
 
 `appCode` is free text in the case the wallet chose, and the same wallet
 does not always choose the same. Compare it through `lowerAscii()` against

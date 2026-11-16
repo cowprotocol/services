@@ -27,6 +27,7 @@ const RULES: &str = include_str!("mainnet.toml");
 const USDC: Address = address!("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
 const USDT: Address = address!("0xdAC17F958D2ee523a2206206994597C13D831ec7");
 const WETH: Address = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+const WSTETH: Address = address!("0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0");
 
 fn order(sell: Address, buy: Address) -> Order {
     Order {
@@ -72,6 +73,7 @@ fn mainnet_sample_lists_reach_the_rules() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        wait_for_cow: false,
     });
     assert!(evaluation.skipped.is_empty());
     let Match { rule, fees } = evaluation.matched.first().unwrap();
@@ -88,6 +90,7 @@ fn mainnet_sample_lists_reach_the_rules() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: true,
+        wait_for_cow: false,
     });
     let Match { fees, .. } = evaluation.matched.first().unwrap();
     assert!(matches!(
@@ -100,9 +103,60 @@ fn mainnet_sample_lists_reach_the_rules() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        wait_for_cow: false,
     });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
+}
+
+/// Wait-for-CoW orders pay the smaller of the regular volume fee and the
+/// wait-for-CoW one, which the sample waives, in every bucket.
+#[test]
+fn mainnet_sample_caps_the_volume_fee_of_wait_for_cow_orders() {
+    let rules = load_rules_from_str(RULES).unwrap();
+    let evaluator = rules.evaluator(Utc::now());
+    let volume_factor = |sell, buy, wait_for_cow| {
+        let evaluation = evaluator.evaluate(OrderView {
+            order: &order(sell, buy),
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market: false,
+            wait_for_cow,
+        });
+        assert!(evaluation.skipped.is_empty());
+        let Match { fees, .. } = evaluation.matched.first().unwrap();
+        fees.iter()
+            .find_map(|fee| match fee {
+                Fee::Volume { factor } => Some(*factor),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let factor = |value: f64| FeeFactor::try_from(value).unwrap();
+
+    for (sell, buy, regular) in [
+        (USDC, USDT, 0.00003),
+        (WSTETH, WETH, 0.00003),
+        (WETH, USDC, 0.0002),
+    ] {
+        assert_eq!(volume_factor(sell, buy, false), factor(regular));
+        // A zero volume fee, not none: the legacy fees charge one too.
+        assert_eq!(volume_factor(sell, buy, true), factor(0.0));
+    }
+}
+
+/// A rule added to the sample with a volume fee caps it too.
+#[test]
+fn every_mainnet_volume_fee_is_capped_for_wait_for_cow_orders() {
+    let file: toml::Table = RULES.parse().unwrap();
+    for rule in file["rule"].as_array().unwrap() {
+        let fee = rule["fee"].as_str().unwrap();
+        assert!(
+            !fee.contains("volume(") || fee.contains("volume(order.waitForCow ? math.least("),
+            "rule {} charges a volume fee without the wait-for-CoW cap",
+            rule["name"]
+        );
+    }
 }
 
 /// The partner fees of an order asking for one 2% volume fee, under `source`.
@@ -115,6 +169,7 @@ fn partner_fee_under(source: &str) -> Vec<Fee> {
             app_data: &AppData::default(),
             partner_fees: &[PartnerFee::Volume { bps: 200 }],
             in_market: false,
+            wait_for_cow: false,
         })
         .partner_fees
 }

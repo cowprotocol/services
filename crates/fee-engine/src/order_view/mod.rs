@@ -36,6 +36,11 @@ pub struct OrderView<'a> {
     /// Whether the limit price is inside the market price of the order's quote;
     /// false when the order has no quote. The engine trusts it as given.
     pub in_market: bool,
+    /// Whether the order waits for canonical batches: its `enableWaitForCow`
+    /// flag while the host has canonical batches on, and false otherwise, as
+    /// such an order then trades like a regular order. The engine trusts it as
+    /// given.
+    pub wait_for_cow: bool,
 }
 
 /// The order as rules see it: every field a rule can read, with amounts as
@@ -47,6 +52,7 @@ pub(crate) fn order_view(
         order,
         app_data,
         in_market,
+        wait_for_cow,
         ..
     }: OrderView,
 ) -> Box<dyn Val> {
@@ -66,6 +72,7 @@ pub(crate) fn order_view(
         ("validFrom", serialized(meta.valid_from)),
         ("appData", Some(app_data_view(app_data))),
         ("fastPath", serialized(meta.fast_path)),
+        ("waitForCow", serialized(wait_for_cow)),
         ("inMarket", serialized(in_market)),
         (
             "ethflowData",
@@ -214,6 +221,7 @@ mod tests {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
+            wait_for_cow: false,
         });
 
         assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
@@ -223,6 +231,7 @@ mod tests {
         assert!(view.get("class").is_none());
         assert_eq!(view["signingScheme"], "eip712");
         assert_eq!(view["fastPath"], false);
+        assert_eq!(view["waitForCow"], false);
         assert!(view.get("quote").is_none());
     }
 
@@ -254,6 +263,7 @@ mod tests {
                 onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
                 valid_from: Some(4),
                 fast_path: true,
+                wait_for_cow: true,
                 ..Default::default()
             },
             data: OrderData {
@@ -296,6 +306,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            wait_for_cow: order.metadata.wait_for_cow,
         });
         let fields = view.as_object_mut().unwrap();
         fields.remove("inMarket");
@@ -329,6 +340,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            wait_for_cow: false,
         });
 
         let fields: BTreeSet<&str> = view
@@ -354,12 +366,33 @@ mod tests {
                 "validFrom",
                 "appData",
                 "fastPath",
+                "waitForCow",
                 "inMarket",
                 "ethflowData",
             ])
         );
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
         assert_eq!(view["validFrom"], 4);
+    }
+
+    /// `waitForCow` is the host's value, not the order's flag: an order with
+    /// the flag trades like a regular order while the host has canonical
+    /// batches off.
+    #[test]
+    fn wait_for_cow_is_the_value_the_host_passes() {
+        let order = fully_set_order();
+        assert!(order.metadata.wait_for_cow);
+        let view = |wait_for_cow| {
+            order_view(OrderView {
+                order: &order,
+                app_data: &AppData::default(),
+                partner_fees: &[],
+                in_market: false,
+                wait_for_cow,
+            })
+        };
+        assert_eq!(view(true)["waitForCow"], true);
+        assert_eq!(view(false)["waitForCow"], false);
     }
 
     /// The full sample order that validates rules reaches every field, nested
@@ -372,6 +405,7 @@ mod tests {
                 app_data: &crate::rules::sample_app_data(),
                 partner_fees: &[],
                 in_market: false,
+                wait_for_cow: false,
             })
         };
         assert_eq!(
@@ -394,6 +428,7 @@ mod tests {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
+            wait_for_cow: false,
         });
 
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
@@ -406,6 +441,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            wait_for_cow: false,
         });
         // An array and a negative number, which the view has none of.
         let view = json!({ "order": view, "others": [-1, null] });
@@ -427,6 +463,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            wait_for_cow: false,
         });
         assert_eq!(field_paths(&sample), field_paths(&view));
     }
