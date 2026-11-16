@@ -47,8 +47,9 @@ const JIT_OWNERS: &str = "jit_owners";
 /// or on the fast path.
 const CHECK: &str = "auction";
 
-/// The fees of the first rule that matches an order, then the order's capped
-/// partner fees.
+/// The rules of `[fee-engine]` as a source of fee policies. It evaluates them
+/// for each order it is given: the fees of the first rule that matches, then
+/// the order's capped partner fees.
 struct FeeEngineFees {
     rules: RuleSet,
 }
