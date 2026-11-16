@@ -44,7 +44,9 @@ impl Api {
             let _ = bind.send(listener.local_addr()?);
         }
 
-        axum::serve(listener, app)
+        // Build the routes once: serving the `Router` itself deep-clones every
+        // route, middleware included, per accepted connection.
+        axum::serve(listener, app.into_make_service())
             .with_graceful_shutdown(shutdown)
             .await
     }

@@ -119,7 +119,9 @@ pub fn serve_metrics(
         let listener = tokio::net::TcpListener::bind(address)
             .await
             .expect("failed to bind metrics server");
-        axum::serve(listener, app)
+        // Build the routes once: serving the `Router` itself deep-clones every
+        // route, middleware included, per accepted connection.
+        axum::serve(listener, app.into_make_service())
             .await
             .expect("failed to serve metrics")
     })
