@@ -655,17 +655,29 @@ impl Persistence {
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            // Fetch quotes only for newly created and also on-chain placed
-            // orders due to the following case: if a block
-            // containing an on-chain order (e.g., ethflow) gets
-            // reorganized, the same order with the same
-            // UID might be created in the new block, and the temporary quote
-            // associated with it may have changed in the meantime.
+            // Fetch quotes only for newly created, newly valid and on-chain
+            // placed orders.
+            //
+            // An order whose `valid_from` passed since the checkpoint enters
+            // the cache only now, however long ago it was created, so its
+            // quote was never loaded.
+            //
+            // On-chain orders are always refetched due to the following case:
+            // if a block containing an on-chain order (e.g., ethflow) gets
+            // reorganized, the same order with the same UID might be created
+            // in the new block, and the temporary quote associated with it may
+            // have changed in the meantime.
+            let after_epoch = after_timestamp.timestamp();
             let order_uids = current_orders
                 .values()
                 .filter_map(|order| {
+                    let became_valid = order
+                        .metadata
+                        .valid_from
+                        .is_some_and(|valid_from| i64::from(valid_from) > after_epoch);
                     (order.metadata.onchain_user.is_some()
-                        || order.metadata.creation_date > after_timestamp)
+                        || order.metadata.creation_date > after_timestamp
+                        || became_valid)
                         .then_some(ByteArray(order.metadata.uid.0))
                 })
                 .collect::<Vec<_>>();
@@ -1299,7 +1311,12 @@ pub mod error {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, crate::database::Config, std::num::NonZeroU32};
+    use {
+        super::*,
+        crate::database::Config,
+        database::orders::{Order as DbOrder, Quote as DbQuote},
+        std::num::NonZeroU32,
+    };
 
     #[tokio::test]
     #[ignore]
@@ -1344,5 +1361,65 @@ mod tests {
             .await
             .expect("all_solvable_orders waits for a second connection")
             .unwrap();
+    }
+
+    /// The incremental query re-selects an order once its `valid_from`
+    /// passes, which can be long after the order was created. Its quote has
+    /// to be loaded with it.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_solvable_orders_after_loads_quote_of_newly_valid_order() {
+        let postgres = Arc::new(Postgres::with_defaults().await.unwrap());
+        let now = Utc::now();
+        let uid = ByteArray([1; 56]);
+
+        let mut ex = postgres.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+        database::orders::insert_order(
+            &mut ex,
+            &DbOrder {
+                uid,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                valid_to: now.timestamp() + 3600,
+                signing_scheme: DbSigningScheme::Eip1271,
+                creation_timestamp: now - chrono::Duration::hours(1),
+                valid_from: Some(now.timestamp() - 10),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        database::orders::insert_quote(
+            &mut ex,
+            &DbQuote {
+                order_uid: uid,
+                gas_amount: 1.,
+                gas_price: 1.,
+                sell_token_price: 1.,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ex.commit().await.unwrap();
+
+        let persistence = Persistence::new(None, postgres).await;
+        let solvable = persistence
+            .solvable_orders_after(
+                HashMap::new(),
+                HashMap::new(),
+                now - chrono::Duration::minutes(1),
+                0,
+                0,
+            )
+            .await
+            .unwrap();
+
+        let uid = domain::OrderUid(uid.0);
+        assert!(solvable.orders.contains_key(&uid));
+        assert!(solvable.quotes.contains_key(&uid));
     }
 }
