@@ -68,6 +68,11 @@ const MAX_CACHE_SIZE: u64 = 20_000;
 /// evicted.
 const MINT_TTL: Duration = Duration::from_secs(60);
 
+/// Age past which a CoinGecko price counts as unpriced: CoinGecko keeps
+/// answering with the last price of a token whose market data stopped
+/// updating.
+const MAX_PRICE_AGE: Duration = Duration::from_hours(1);
+
 /// A cache capped at [`MAX_CACHE_SIZE`] entries.
 fn bounded<V: Clone + Send + Sync + 'static>() -> Cache<Pubkey, V> {
     Cache::builder().max_capacity(MAX_CACHE_SIZE).build()
@@ -143,6 +148,18 @@ enum Source {
 #[derive(Debug, Deserialize)]
 struct Entry {
     sol: Option<f64>,
+    /// Unix time the price last changed.
+    last_updated_at: Option<i64>,
+}
+
+impl Entry {
+    /// Whether the price changed within [`MAX_PRICE_AGE`] of `now`. A price
+    /// without an update time cannot be shown fresh.
+    fn is_fresh(&self, now: i64) -> bool {
+        self.last_updated_at.is_some_and(|updated| {
+            now.saturating_sub(updated) <= MAX_PRICE_AGE.as_secs().cast_signed()
+        })
+    }
 }
 
 /// The driver `/quote` request: sell the probe amount of wSOL for the token.
@@ -640,7 +657,8 @@ async fn coingecko(
         url.query_pairs_mut()
             .append_pair("contract_addresses", &addresses)
             .append_pair("vs_currencies", "sol")
-            .append_pair("precision", "full");
+            .append_pair("precision", "full")
+            .append_pair("include_last_updated_at", "true");
         let mut request = client.get(url);
         if let Some(key) = api_key {
             request = request.header(API_KEY_HEADER, key);
@@ -681,10 +699,17 @@ async fn coingecko(
             let multiplier = mint
                 .scaled_ui_amount
                 .map_or(1.0, |config| current_multiplier(&config, now));
-            let price = quoted
-                .get(&token.to_string())
-                .and_then(|entry| entry.sol)
-                .and_then(|sol| scale(sol * multiplier, mint.decimals))?;
+            let entry = quoted.get(&token.to_string())?;
+            let sol = entry.sol?;
+            if !entry.is_fresh(now) {
+                tracing::debug!(
+                    %token,
+                    last_updated_at = ?entry.last_updated_at,
+                    "stale CoinGecko price, token unpriced by it"
+                );
+                return None;
+            }
+            let price = scale(sol * multiplier, mint.decimals)?;
             Some((*token, price))
         })
         .collect())
@@ -938,12 +963,19 @@ mod tests {
     }
 
     /// Serve a fixed CoinGecko response at the given path after `delay`,
-    /// counting requests.
+    /// counting requests. An entry without an update time is served as
+    /// updated now.
     async fn coingecko_server_at(
         path: &str,
-        response: serde_json::Value,
+        mut response: serde_json::Value,
         delay: Duration,
     ) -> (Url, Arc<AtomicUsize>) {
+        let now = chrono::Utc::now().timestamp();
+        for entry in response.as_object_mut().into_iter().flatten() {
+            if let Some(entry) = entry.1.as_object_mut() {
+                entry.entry("last_updated_at").or_insert(now.into());
+            }
+        }
         let requests = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&requests);
         let app = axum::Router::new().route(
@@ -1312,6 +1344,42 @@ mod tests {
         let result = prices.prices(HashSet::from([token])).await.unwrap();
         // 10^8 lamports per 2*10^7 atoms, scaled by 10^9.
         assert_eq!(result.get(&token), Some(&5_000_000_000));
+    }
+
+    /// A CoinGecko price last updated before [`MAX_PRICE_AGE`], or without
+    /// an update time, does not count: the driver prices the token instead.
+    #[tokio::test]
+    async fn stale_coingecko_prices_fall_back_to_the_driver_source() {
+        let stale = Pubkey::new_unique();
+        let undated = Pubkey::new_unique();
+        let fresh = Pubkey::new_unique();
+        let now = chrono::Utc::now().timestamp();
+        let expired = now - MAX_PRICE_AGE.as_secs().cast_signed() - 60;
+        let (coingecko_url, _) = coingecko_server(serde_json::json!({
+            stale.to_string(): { "sol": 0.02, "last_updated_at": expired },
+            undated.to_string(): { "sol": 0.02, "last_updated_at": null },
+            fresh.to_string(): { "sol": 0.02, "last_updated_at": now },
+        }))
+        .await;
+        // The 0.1 SOL probe sells into 20 whole 6-decimals tokens, so one
+        // token is worth 0.005 SOL.
+        let baseline = driver_server(20_000_000).await;
+        let prices = NativePrices::new(
+            &native_prices(
+                Some(coingecko_url),
+                vec![vec![COINGECKO], vec![driver("baseline", baseline)]],
+                1,
+            ),
+            SolanaRPC::new_mock_with_mocks(mint_mocks(3)),
+            Pubkey::new_unique(),
+        );
+        let result = prices
+            .prices(HashSet::from([stale, undated, fresh]))
+            .await
+            .unwrap();
+        assert_eq!(result.get(&stale), Some(&5_000_000_000));
+        assert_eq!(result.get(&undated), Some(&5_000_000_000));
+        assert_eq!(result.get(&fresh), Some(&20_000_000_000));
     }
 
     /// A stage's sources are asked together, so a lookup takes one probe's
