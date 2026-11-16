@@ -655,12 +655,15 @@ impl Persistence {
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            // Fetch quotes only for newly created, newly valid and on-chain
-            // placed orders.
-            //
-            // An order whose `valid_from` passed since the checkpoint enters
-            // the cache only now, however long ago it was created, so its
-            // quote was never loaded.
+            // Fetch quotes for:
+            // * orders that were placed on-chain
+            // * orders that were recently placed in the DB, but not read since
+            //   the passed checkpoint (`after_timestamp`)
+            // * orders which their `valid_from` became "valid"; these must be
+            //   considered here because they were most likely read since the
+            //   last checkpoint, at which time they were not "valid" yet, as
+            //   such they are present in the cache *without* a quote and thus
+            //   need their quote loaded
             //
             // On-chain orders are always refetched due to the following case:
             // if a block containing an on-chain order (e.g., ethflow) gets
@@ -671,13 +674,13 @@ impl Persistence {
             let order_uids = current_orders
                 .values()
                 .filter_map(|order| {
-                    let became_valid = order
+                    let valid_from_is_active = order
                         .metadata
                         .valid_from
                         .is_some_and(|valid_from| i64::from(valid_from) > after_epoch);
                     (order.metadata.onchain_user.is_some()
                         || order.metadata.creation_date > after_timestamp
-                        || became_valid)
+                        || valid_from_is_active)
                         .then_some(ByteArray(order.metadata.uid.0))
                 })
                 .collect::<Vec<_>>();
