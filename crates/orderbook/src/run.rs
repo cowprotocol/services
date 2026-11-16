@@ -450,6 +450,7 @@ pub async fn run(config: Configuration) {
             max_partner_fee: config.order_quoting.max_partner_fee,
         },
         *native_token.address(),
+        config.order_validation.canonical_batch_interval.is_some(),
     )
     .expect("fee engine rules must load");
 

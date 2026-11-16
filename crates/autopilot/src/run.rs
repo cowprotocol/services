@@ -525,6 +525,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         protocol_fees,
         *eth.contracts().weth().address(),
         &config.surplus_capturing_jit_order_owners,
+        config.run_loop.canonical_batch_interval.is_some(),
     )
     .expect("fee engine rules must load");
     let surplus_capturing_jit_order_owners =
