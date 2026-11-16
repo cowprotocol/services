@@ -53,6 +53,10 @@ const HTTP_TIME_BUFFER: chrono::Duration = chrono::Duration::milliseconds(500);
 /// the solution simulations get the rest. The EVM driver's
 /// `solving-share-of-deadline` default.
 const SOLVING_SHARE_OF_DEADLINE_PERCENT: i32 = 80;
+/// Simulating a failed bundle leg alone to name its error stops this long
+/// before the simulation deadline, so the deadline's timeout can't turn the
+/// proven failure into no verdict.
+const NAMING_MARGIN: Duration = Duration::from_millis(100);
 
 /// Cache key for a proposed solution.
 ///
@@ -165,6 +169,7 @@ impl Competition {
             .signed_duration_since(chrono::Utc::now())
             .to_std()
             .unwrap_or_default();
+        let deadline = tokio::time::Instant::now() + window;
         let simulations = futures::future::join_all(solutions.iter().map(|solution| {
             let auction = &auction;
             async move {
@@ -174,9 +179,9 @@ impl Competition {
                 let ((verdict, elapsed), fees) = tokio::join!(
                     async {
                         let started = Instant::now();
-                        let verdict = tokio::time::timeout(
-                            window,
-                            self.simulate_solution(auction_id, auction, solution),
+                        let verdict = tokio::time::timeout_at(
+                            deadline,
+                            self.simulate_solution(auction_id, auction, solution, deadline),
                         )
                         .await;
                         (verdict, started.elapsed())
@@ -373,6 +378,7 @@ impl Competition {
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
+        deadline: tokio::time::Instant,
     ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
@@ -443,7 +449,13 @@ impl Competition {
                     .as_deref()
                     .and_then(|logs| ProgramError::from_logs(program_id, logs));
                 if program_error.is_none() {
-                    program_error = program_error_alone(&self.blockchain, transaction, err).await;
+                    program_error = tokio::time::timeout_at(
+                        deadline - NAMING_MARGIN,
+                        program_error_alone(&self.blockchain, transaction, err),
+                    )
+                    .await
+                    .ok()
+                    .flatten();
                 }
                 return Err(Error::SimulationFailed {
                     program_error,
