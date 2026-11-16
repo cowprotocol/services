@@ -714,13 +714,18 @@ fn extract_order_data_from_onchain_order_placement_event(
 }
 
 /// Populates all app-data-derived order fields before the orders are
-/// persisted: sets `fast_path` from the `enableFastPath` app-data flag,
-/// sets `wait_for_cow` from the `enableWaitForCow` app-data flag, backfills
-/// `valid_from` for non-fast-path orders that requested one,
-/// and indexes pre/post hook interactions. Must run before the orders
+/// persisted. Must run before the orders
 /// are inserted (it mutates them). Orders whose app-data is unknown are
 /// left unchanged. Orders whose app-data is unparseable or names a wrapper
 /// that can't be trusted to settle the order are marked invalid.
+///
+/// In more detail:
+///
+/// * `enableFastPath` sets `fast_path`
+/// * `enableWaitForCow` sets `wait_for_cow`
+/// * `validFrom` sets `valid_from` only when both above are false, as validated
+///   in orderbook
+/// * indexes pre/post hook interactions
 ///
 /// For fast-path orders `valid_from` is intentionally left `NULL`: the
 /// autopilot's fast-path handler (`crates/autopilot/src/fast_path.rs`)
