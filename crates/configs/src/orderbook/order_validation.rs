@@ -67,7 +67,8 @@ pub struct OrderValidationConfig {
 
     /// Time between two canonical batches. Orders with `enableWaitForCow`
     /// wait for the next canonical batch before they trade. When unset, such
-    /// orders are rejected. Must match the autopilot's
+    /// orders are rejected, and their quotes don't get the volume fee of
+    /// `shared.wait-for-cow-volume-fee-factor`. Must match the autopilot's
     /// `run-loop.canonical-batch-interval`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canonical_batch_interval: Option<CanonicalBatchInterval>,

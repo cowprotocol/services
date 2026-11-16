@@ -75,11 +75,7 @@ impl Volume {
         volume_fee_policy: &VolumeFeePolicy,
     ) -> Option<domain::fee::Policy> {
         // Use shared function to determine applicable volume fee factor
-        let factor = volume_fee_policy.get_applicable_volume_fee_factor(
-            order.data.buy_token,
-            order.data.sell_token,
-            Some(self.factor),
-        )?;
+        let factor = volume_fee_policy.order_volume_fee_factor(order, Some(self.factor))?;
         Some(domain::fee::Policy::Volume { factor })
     }
 }

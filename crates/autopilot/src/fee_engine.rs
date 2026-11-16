@@ -371,7 +371,7 @@ fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]
     }
 
     fn legacy(volume: f64) -> ProtocolFees {
-        ProtocolFees::new(&legacy_config(volume), prod_buckets(), false, WETH)
+        ProtocolFees::new(&legacy_config(volume), prod_buckets(), false, WETH, None)
     }
 
     fn config() -> FeeEngineConfig {

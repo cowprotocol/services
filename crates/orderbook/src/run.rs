@@ -431,12 +431,22 @@ pub async fn run(config: Configuration) {
         config.fee_engine.as_ref(),
         shared::fee::LegacyVolumeFees {
             config: config.volume_fee.clone(),
-            policy: Some(Arc::new(shared::fee::VolumeFeePolicy::new(
-                volume_fee_bucket_overrides,
-                config.volume_fee.as_ref().and_then(|c| c.factor),
-                config.shared.enable_sell_equals_buy_volume_fee,
-                *native_token.address(),
-            ))),
+            policy: Some(Arc::new(
+                shared::fee::VolumeFeePolicy::new(
+                    volume_fee_bucket_overrides,
+                    config.volume_fee.as_ref().and_then(|c| c.factor),
+                    config.shared.enable_sell_equals_buy_volume_fee,
+                    *native_token.address(),
+                )
+                // Wait-for-CoW orders are rejected without canonical batches,
+                // so their quotes show the regular fee.
+                .with_wait_for_cow_factor(
+                    config
+                        .shared
+                        .wait_for_cow_volume_fee_factor
+                        .filter(|_| config.order_validation.canonical_batch_interval.is_some()),
+                ),
+            )),
             max_partner_fee: config.order_quoting.max_partner_fee,
         },
         *native_token.address(),

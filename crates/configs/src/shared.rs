@@ -102,6 +102,14 @@ pub struct SharedConfig {
     #[serde(default)]
     pub enable_sell_equals_buy_volume_fee: bool,
 
+    /// Upper bound on the volume fee factor of wait-for-CoW orders
+    /// (`enableWaitForCow`): they pay the smaller of their regular volume
+    /// fee factor and this one. Applies only while the service has canonical
+    /// batches on (`canonical-batch-interval`). When unset, wait-for-CoW
+    /// orders pay the regular volume fee. `0` waives it.
+    #[serde(default)]
+    pub wait_for_cow_volume_fee_factor: Option<FeeFactor>,
+
     /// Enables publishing events to a global events bus.
     pub event_bus: Option<EventBusConfig>,
 }
@@ -131,6 +139,7 @@ impl Default for SharedConfig {
             contracts: Default::default(),
             volume_fee_bucket_overrides: Vec::new(),
             enable_sell_equals_buy_volume_fee: false,
+            wait_for_cow_volume_fee_factor: None,
             event_bus: None,
         }
     }
@@ -413,6 +422,7 @@ mod tests {
         assert!(matches!(config.gas_estimators[0], GasEstimatorType::Web3));
         assert!(config.volume_fee_bucket_overrides.is_empty());
         assert!(!config.enable_sell_equals_buy_volume_fee);
+        assert_eq!(config.wait_for_cow_volume_fee_factor, None);
     }
 
     #[test]
@@ -421,6 +431,7 @@ mod tests {
         node-url = "http://mainnet.example.com:8545"
         chain-id = 1
         enable-sell-equals-buy-volume-fee = true
+        wait-for-cow-volume-fee-factor = 0.0
 
         [contracts]
         settlement = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
@@ -490,6 +501,10 @@ mod tests {
         assert!(config.enable_sell_equals_buy_volume_fee);
         assert_eq!(config.volume_fee_bucket_overrides.len(), 1);
         assert_eq!(config.volume_fee_bucket_overrides[0].tokens.len(), 2);
+        assert_eq!(
+            config.wait_for_cow_volume_fee_factor,
+            Some(FeeFactor::new(0.0))
+        );
         assert_eq!(
             config.event_bus.as_ref().unwrap().url,
             "localhost:4222".parse().unwrap()
