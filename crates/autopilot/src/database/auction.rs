@@ -96,8 +96,7 @@ impl Postgres {
             .await?
             .to_u64()
             .context("latest_settlement_block is not u64")?;
-        let quotes = self
-            .read_quotes(orders.keys())
+        let quotes = Self::read_quotes(&mut ex, orders.keys())
             .await?
             .into_iter()
             .map(|(uid, quote)| (uid, Arc::new(quote)))
