@@ -1435,7 +1435,9 @@ components:
             chance to be matched with a counterparty (a CoW). Omitted when `false`.
             Mutually exclusive with `enableFastPath` and `validFrom`. Rejected
             with `WaitForCowDisabled` when canonical batches are not enabled; see
-            `GET /api/v1/canonical_batch_schedule`.
+            `GET /api/v1/canonical_batch_schedule`. Such orders may pay a lower
+            volume fee than regular orders, for their whole life, including
+            auctions after their canonical batch.
           type: boolean
           default: false
         settlementContract:
@@ -2204,6 +2206,8 @@ components:
           description: >
             Protocol fee in basis points (e.g., "2" for 0.02%). This represents
             the volume-based fee policy. Only present when a volume fee is configured.
+            For quotes whose `appData` sets `enableWaitForCow`, it is at most the
+            network's wait-for-CoW volume fee, and "0" when that fee is waived.
           type: string
           example: "2"
       required:

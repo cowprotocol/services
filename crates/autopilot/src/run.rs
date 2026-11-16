@@ -514,6 +514,13 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             .collect(),
         config.shared.enable_sell_equals_buy_volume_fee,
         *eth.contracts().weth().address(),
+        // Without canonical batches, wait-for-CoW orders don't wait, so they
+        // pay the regular fee. The orderbook rejects such orders then, but
+        // on-chain ones can't be rejected.
+        config
+            .shared
+            .wait_for_cow_volume_fee_factor
+            .filter(|_| config.run_loop.canonical_batch_interval.is_some()),
     ));
     let surplus_capturing_jit_order_owners =
         Arc::new(config.surplus_capturing_jit_order_owners.clone());

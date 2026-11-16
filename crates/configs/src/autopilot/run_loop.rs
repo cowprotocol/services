@@ -99,7 +99,8 @@ pub struct RunLoopConfig {
     /// Time between two canonical batches. Orders with `enableWaitForCow`
     /// stay out of auctions until the next canonical batch after the
     /// autopilot first sees them. When unset, such orders trade like regular
-    /// orders. Must match the orderbook's
+    /// orders, and they don't get the volume fee of
+    /// `shared.wait-for-cow-volume-fee-factor`. Must match the orderbook's
     /// `order-validation.canonical-batch-interval`.
     #[serde(default)]
     pub canonical_batch_interval: Option<CanonicalBatchInterval>,

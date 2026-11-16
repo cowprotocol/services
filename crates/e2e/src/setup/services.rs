@@ -184,6 +184,7 @@ impl<'a> Services<'a> {
             shared: configs::shared::SharedConfig {
                 volume_fee_bucket_overrides: config.shared.volume_fee_bucket_overrides.clone(),
                 enable_sell_equals_buy_volume_fee: config.shared.enable_sell_equals_buy_volume_fee,
+                wait_for_cow_volume_fee_factor: config.shared.wait_for_cow_volume_fee_factor,
                 ..self.shared_config()
             },
             ethflow: EthflowConfig {
@@ -223,6 +224,7 @@ impl<'a> Services<'a> {
             shared: configs::shared::SharedConfig {
                 volume_fee_bucket_overrides: config.shared.volume_fee_bucket_overrides.clone(),
                 enable_sell_equals_buy_volume_fee: config.shared.enable_sell_equals_buy_volume_fee,
+                wait_for_cow_volume_fee_factor: config.shared.wait_for_cow_volume_fee_factor,
                 ..self.shared_config()
             },
             ..config

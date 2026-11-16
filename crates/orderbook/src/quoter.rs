@@ -763,4 +763,52 @@ mod tests {
             (105u64.eth(), 200u64.eth(), U256::ZERO)
         );
     }
+
+    #[test]
+    fn wait_for_cow_quotes_show_the_capped_volume_fee() {
+        let factor = |value| FeeFactor::try_from(value).unwrap();
+        let fees = shared::fee::LegacyVolumeFees {
+            config: Some(configs::orderbook::VolumeFeeConfig {
+                factor: Some(factor(0.0002)),
+                effective_from_timestamp: None,
+            }),
+            policy: Some(Arc::new(
+                shared::fee::VolumeFeePolicy::new(
+                    vec![],
+                    Some(factor(0.0002)),
+                    false,
+                    alloy::primitives::Address::repeat_byte(0xee),
+                )
+                .with_wait_for_cow_factor(Some(factor(0.0))),
+            )),
+            max_partner_fee: None,
+        };
+        let request = OrderQuoteRequest {
+            sell_token: TEST_SELL_TOKEN,
+            buy_token: TEST_BUY_TOKEN,
+            ..Default::default()
+        };
+        let quote = create_test_quote(100u64.eth(), 100u64.eth());
+        let side = OrderQuoteSide::Sell {
+            sell_amount: model::quote::SellAmount::BeforeFee {
+                value: 100u64.eth().try_into().unwrap(),
+            },
+        };
+        let adjusted = |document: &str| {
+            let app_data = ::app_data::Validator::new(8192)
+                .validate(document.as_bytes())
+                .unwrap();
+            let order = quote_order(&request, &quote, 0, &app_data);
+            let volume_fee = fees.quote_volume_fee(&order, &quote, &app_data, None);
+            get_vol_fee_adjusted_quote_data(&quote, &side, volume_fee).unwrap()
+        };
+
+        let waived = adjusted(r#"{"metadata":{"enableWaitForCow":true}}"#);
+        assert_eq!(
+            (waived.buy_amount, waived.protocol_fee_bps),
+            (quote.buy_amount, Some("0".to_string()))
+        );
+        let regular = adjusted("{}");
+        assert_eq!(regular.protocol_fee_bps, Some("2".to_string()));
+    }
 }
