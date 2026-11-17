@@ -435,15 +435,6 @@ fn build_module() -> Module {
         ]))
         .add_contract(Contract::new("Solver7702Delegate"))
         .add_contract(Contract::new("ICowWrapper"))
-        .add_contract(Contract::new("ChainalysisOracle").with_networks(networks![
-            MAINNET => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
-            ARBITRUM_ONE => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
-            BASE => "0x3A91A31cB3dC49b4db9Ce721F50a9D076c8D739B",
-            AVALANCHE => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
-            BNB => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
-            OPTIMISM => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
-            POLYGON => "0x40C57923924B5c5c5455c48D93317139ADDaC8fb",
-        ]))
         .add_contract(Contract::new("Permit2").with_networks(networks![
             MAINNET => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 15986406),
             GNOSIS => ("0x000000000022D473030F116dDEE9F6B43aC78BA3", 27338672),
