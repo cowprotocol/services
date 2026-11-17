@@ -476,6 +476,10 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
+            order_validation::banned::CacheExpiry {
+                not_banned: config.banned_users.cache_expiry,
+                banned: config.banned_users.banned_cache_expiry,
+            },
         ));
 
     // New-order notifications from the DB fan out to two subscribers: the run

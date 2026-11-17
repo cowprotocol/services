@@ -15,8 +15,16 @@ use {
     },
     alloy_primitives::Address,
     contracts::ChainalysisOracle,
-    std::{collections::HashSet, sync::Arc},
+    std::{collections::HashSet, sync::Arc, time::Duration},
 };
+
+/// How long cached verdicts from the remote backends stay valid.
+#[derive(Debug, Clone, Copy)]
+pub struct CacheExpiry {
+    pub not_banned: Duration,
+    /// Bans are rarely lifted, so these can be kept much longer.
+    pub banned: Duration,
+}
 
 /// A list of banned users and optional registries that can be checked.
 pub struct Users {
@@ -31,6 +39,7 @@ impl Users {
         hermod: Option<HermodConfig>,
         banned_users: Vec<Address>,
         cache_max_size: u64,
+        cache_expiry: CacheExpiry,
     ) -> Self {
         let mut backends: Vec<Box<dyn Backend>> = Vec::new();
         if let Some(contract) = contract {
@@ -41,7 +50,7 @@ impl Users {
         }
         Self {
             list: HashSet::from_iter(banned_users),
-            remote: Cached::new(backends, cache_max_size),
+            remote: Cached::new(backends, cache_max_size, cache_expiry),
         }
     }
 

@@ -3,7 +3,7 @@
 //! "banned by anyone?"; backends stay as pure fetchers.
 
 use {
-    super::metrics::Metrics,
+    super::{CacheExpiry, metrics::Metrics},
     alloy_primitives::Address,
     async_trait::async_trait,
     futures::{StreamExt, future::join_all, stream},
@@ -17,7 +17,6 @@ use {
 
 /// Caps in-flight fetches so a large miss batch can't burst the backends.
 const MAX_CONCURRENT_LOOKUPS: usize = 10;
-const CACHE_EXPIRY: Duration = Duration::from_secs(60 * 60);
 const MAINTENANCE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, PartialEq)]
@@ -67,17 +66,28 @@ pub(super) trait Backend: Send + Sync + 'static {
 pub(super) struct Cached {
     backends: Vec<Box<dyn Backend>>,
     cache: Cache<Address, Entry>,
+    /// Entry ages at which the maintenance task refreshes them, one tick
+    /// before the configured expiry. Zero refreshes every tick.
+    refresh_after: CacheExpiry,
 }
 
 impl Cached {
     /// Returns `None` when no backends are configured.
-    pub(super) fn new(backends: Vec<Box<dyn Backend>>, max_capacity: u64) -> Option<Arc<Self>> {
+    pub(super) fn new(
+        backends: Vec<Box<dyn Backend>>,
+        max_capacity: u64,
+        expiry: CacheExpiry,
+    ) -> Option<Arc<Self>> {
         if backends.is_empty() {
             return None;
         }
         let cached = Arc::new(Self {
             backends,
             cache: Cache::builder().max_capacity(max_capacity).build(),
+            refresh_after: CacheExpiry {
+                not_banned: expiry.not_banned.saturating_sub(MAINTENANCE_TIMEOUT),
+                banned: expiry.banned.saturating_sub(MAINTENANCE_TIMEOUT),
+            },
         });
         Metrics::currently_banned(0);
         cached.spawn_maintenance_task();
@@ -160,12 +170,15 @@ impl Cached {
             if entry.verdict == Verdict::Banned {
                 banned += 1;
             }
-            let refresh = entry.verdict == Verdict::Unknown
-                || now
-                    .checked_duration_since(entry.last_updated)
-                    .unwrap_or_default()
-                    >= CACHE_EXPIRY - MAINTENANCE_TIMEOUT;
-            if refresh {
+            let refresh_after = match entry.verdict {
+                Verdict::Banned => self.refresh_after.banned,
+                Verdict::NotBanned => self.refresh_after.not_banned,
+                Verdict::Unknown => Duration::ZERO,
+            };
+            let age = now
+                .checked_duration_since(entry.last_updated)
+                .unwrap_or_default();
+            if age >= refresh_after {
                 due.push(address);
             }
         }
@@ -243,6 +256,11 @@ mod tests {
         std::sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     };
 
+    const EXPIRY: CacheExpiry = CacheExpiry {
+        not_banned: Duration::from_mins(5),
+        banned: Duration::from_hours(24),
+    };
+
     struct FlakyBackend {
         calls: Arc<AtomicUsize>,
         fail: Arc<AtomicBool>,
@@ -275,7 +293,7 @@ mod tests {
             calls: calls.clone(),
             fail: failing.clone(),
         };
-        let cached = Cached::new(vec![Box::new(backend)], 100).unwrap();
+        let cached = Cached::new(vec![Box::new(backend)], 100, EXPIRY).unwrap();
         (cached, calls, failing)
     }
 
@@ -299,5 +317,35 @@ mod tests {
         let (address, verdict) = cached.refresh(address).await.unwrap();
         cached.store(address, verdict);
         assert!(cached.scan(Instant::now()).0.is_empty());
+    }
+
+    /// Bans everything in its set.
+    struct FixedBackend(HashSet<Address>);
+
+    #[async_trait]
+    impl Backend for FixedBackend {
+        async fn fetch(&self, address: Address) -> Result<bool, BackendError> {
+            Ok(self.0.contains(&address))
+        }
+
+        fn name(&self) -> &'static str {
+            "fixed"
+        }
+    }
+
+    #[tokio::test]
+    async fn banned_verdicts_are_kept_longer() {
+        let banned = Address::repeat_byte(1);
+        let clean = Address::repeat_byte(2);
+        let backend = FixedBackend(HashSet::from([banned]));
+        let cached = Cached::new(vec![Box::new(backend)], 100, EXPIRY).unwrap();
+        cached.check(&HashSet::from([banned, clean])).await;
+        let start = Instant::now();
+
+        let (due, _) = cached.scan(start + EXPIRY.not_banned);
+        assert_eq!(due, vec![Arc::new(clean)]);
+
+        let (due, _) = cached.scan(start + EXPIRY.banned);
+        assert_eq!(due.len(), 2);
     }
 }

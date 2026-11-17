@@ -460,6 +460,10 @@ pub async fn run(config: Configuration) {
             }),
             config.banned_users.addresses,
             config.banned_users.max_cache_size.get().to_u64().unwrap(),
+            order_validation::banned::CacheExpiry {
+                not_banned: config.banned_users.cache_expiry,
+                banned: config.banned_users.banned_cache_expiry,
+            },
         )),
         validity_configuration,
         config.eip1271_skip_creation_validation,

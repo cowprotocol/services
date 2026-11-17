@@ -2,7 +2,7 @@ use {
     crate::deserialize_env::{deserialize_optional_string_from_env, deserialize_string_from_env},
     alloy_primitives::Address,
     serde::Deserialize,
-    std::{fmt::Debug, num::NonZeroUsize},
+    std::{fmt::Debug, num::NonZeroUsize, time::Duration},
     url::Url,
 };
 
@@ -10,6 +10,14 @@ fn default_max_cache_size() -> NonZeroUsize {
     // Note that this default value does not apply to both the orderbook and
     // autopilot! Remember to explicitly change it in the infra repo.
     NonZeroUsize::new(10000).unwrap()
+}
+
+fn default_cache_expiry() -> Duration {
+    Duration::from_mins(5)
+}
+
+fn default_banned_cache_expiry() -> Duration {
+    Duration::from_hours(24)
 }
 
 /// Addresses banned from creating orders, with a local cache.
@@ -25,6 +33,16 @@ pub struct BannedUsersConfig {
     #[serde(default = "default_max_cache_size")]
     pub max_cache_size: NonZeroUsize,
 
+    /// How long a cached "not banned" verdict stays valid, so how long a newly
+    /// flagged address can keep trading on it.
+    #[serde(with = "humantime_serde", default = "default_cache_expiry")]
+    pub cache_expiry: Duration,
+
+    /// How long a cached "banned" verdict stays valid. Bans are rarely lifted,
+    /// so this can be much longer than `cache_expiry`.
+    #[serde(with = "humantime_serde", default = "default_banned_cache_expiry")]
+    pub banned_cache_expiry: Duration,
+
     /// Optional Hermod (zeroShadow) sanctioned address checker.
     #[serde(default)]
     pub hermod: Option<HermodConfig>,
@@ -35,6 +53,8 @@ impl Default for BannedUsersConfig {
         Self {
             addresses: Vec::new(),
             max_cache_size: default_max_cache_size(),
+            cache_expiry: default_cache_expiry(),
+            banned_cache_expiry: default_banned_cache_expiry(),
             hermod: None,
         }
     }
@@ -80,6 +100,8 @@ mod tests {
         let config: BannedUsersConfig = toml::from_str(toml).unwrap();
         assert!(config.addresses.is_empty());
         assert_eq!(config.max_cache_size.get(), 10000);
+        assert_eq!(config.cache_expiry, Duration::from_mins(5));
+        assert_eq!(config.banned_cache_expiry, Duration::from_hours(24));
         assert!(config.hermod.is_none());
     }
 
@@ -88,6 +110,8 @@ mod tests {
         let toml = r#"
         addresses = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         max-cache-size = 5000
+        cache-expiry = "2m"
+        banned-cache-expiry = "7d"
         "#;
         let config: BannedUsersConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.addresses.len(), 1);
@@ -96,6 +120,8 @@ mod tests {
             address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
         );
         assert_eq!(config.max_cache_size.get(), 5000);
+        assert_eq!(config.cache_expiry, Duration::from_mins(2));
+        assert_eq!(config.banned_cache_expiry, Duration::from_hours(7 * 24));
     }
 
     #[test]
