@@ -122,6 +122,27 @@ async fn spawn_mock_driver_after(delay: Duration, response: serde_json::Value) -
     addr
 }
 
+/// A driver stand-in with no route: every `/quote` answers the driver's
+/// `QuotingFailed` error.
+async fn spawn_routeless_driver() -> SocketAddr {
+    let app = axum::Router::new().route(
+        "/quote",
+        axum::routing::post(|| async {
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({
+                    "kind": "QuotingFailed",
+                    "description": "No valid quote found",
+                })),
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    addr
+}
+
 #[tokio::test]
 async fn healthz_returns_200() {
     let addr = spawn_server().await;
@@ -1723,14 +1744,20 @@ fn sponsored_mocks(blockhash_valid: bool, accounts: serde_json::Value) -> Mocks 
     ])
 }
 
-/// A sponsored-placement server whose mock RPC answers from `mocks`, with
-/// no driver to quote an order afresh.
+/// A sponsored-placement server whose mock RPC answers from `mocks` and
+/// whose only driver has no route, so an order quoted afresh lands without a
+/// quote.
 async fn spawn_sponsored_server_with(
     pool: PgPool,
     funder: solana_sdk::pubkey::Pubkey,
     mocks: Mocks,
 ) -> SocketAddr {
-    spawn_sponsored_quoting_server(pool, funder, mocks, dead_quoter()).await
+    let driver = spawn_routeless_driver().await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    spawn_sponsored_quoting_server(pool, funder, mocks, quoter).await
 }
 
 /// A sponsored-placement server whose mock RPC answers from `mocks` and
@@ -3016,8 +3043,8 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
 /// side and fixed amount: the highest buy amount for its sell amount,
 /// unexpired. A quote that is expired, of another amount or of the other
 /// side is no match, however good. An order naming a quote the link drops
-/// is quoted afresh instead, like the EVM `find_quote`: with no driver to
-/// answer it lands unlinked, the matching stored quote notwithstanding.
+/// is quoted afresh instead, like the EVM `find_quote`: with no driver
+/// routing it, it lands unlinked, the matching stored quote notwithstanding.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_create_order_takes_the_best_stored_quote_when_it_names_none() {
@@ -3058,7 +3085,7 @@ async fn solana_db_create_order_takes_the_best_stored_quote_when_it_names_none()
         .unwrap();
 
     // A named quote the link drops is quoted afresh, not swapped for the
-    // matching stored one, and the dead quoter leaves the order unlinked.
+    // matching stored one, and the routeless driver leaves the order unlinked.
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let transaction = creation_tx(funder, &owner, &intent, vec![], true);
     let response = reqwest::Client::new()
@@ -3163,12 +3190,11 @@ async fn solana_db_create_order_quotes_an_order_no_stored_quote_matches() {
     );
 }
 
-/// A fresh quote whose costs swallow the order's amount rejects the order,
-/// like every quote failure but a missing route: such an order could never
-/// fill.
+/// A fresh quote whose costs swallow the order's amount places the order
+/// without a quote: it is out of market, like an order no driver routes.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
-async fn solana_db_create_order_rejects_an_order_its_fresh_quote_cannot_net() {
+async fn solana_db_create_order_places_an_order_its_fresh_quote_cannot_net() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
     sqlx::query(
         "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
@@ -3198,21 +3224,110 @@ async fn solana_db_create_order_rejects_an_order_its_fresh_quote_cannot_net() {
     )
     .await;
 
-    let (status, kind) = post_order(addr, sponsored_creation_tx(funder, &owner, true)).await;
-    assert_eq!(
-        (status, kind.as_str()),
-        (
-            reqwest::StatusCode::BAD_REQUEST,
-            "SellAmountDoesNotCoverFee"
-        )
-    );
-    let stored: (i64, i64) = sqlx::query_as(
-        "SELECT (SELECT count(*) FROM solana.orders), (SELECT count(*) FROM solana.quotes)",
+    let (status, _) = post_order(addr, sponsored_creation_tx(funder, &owner, true)).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let stored: (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM solana.orders), (SELECT count(*) FROM solana.quotes), \
+         (SELECT count(*) FROM solana.order_quotes)",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(stored, (0, 0));
+    assert_eq!(stored, (1, 0, 0));
+}
+
+/// A driver failing for any reason but a missing route rejects the order
+/// with the quote's `NoLiquidity`, even when the other driver has no route.
+/// The EVM orderbook rejects on an estimator error the same way.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_rejects_an_order_a_driver_failed_to_quote() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let routeless = spawn_routeless_driver().await;
+    let quoter = Quoter::new(
+        vec![
+            format!("http://{routeless}/").parse().unwrap(),
+            // Nothing listens here.
+            "http://127.0.0.1:1/".parse().unwrap(),
+        ],
+        Duration::from_secs(1),
+    );
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr = spawn_sponsored_quoting_server(
+        pool.clone(),
+        funder,
+        sponsored_mocks(true, classic_mints()),
+        quoter,
+    )
+    .await;
+
+    let (status, kind) = post_order(addr, sponsored_creation_tx(funder, &owner, true)).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
+    );
+    let orders: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(orders, 0);
+}
+
+/// A native SOL buy is placed on a fresh quote paying less than an empty
+/// wallet can take: placement checked the payout of the order's own limit,
+/// and the quote only tells how far out of market that limit is.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_links_a_native_buy_quoted_under_the_payout_floor() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "1000",
+        "buyAmount": "500000",
+        "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+    }))
+    .await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    // The limit is the rent-exempt minimum of an empty wallet.
+    let intent = native_buy_intent(owner.pubkey(), 890_880);
+    let addr = spawn_sponsored_quoting_server(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, None]),
+        ),
+        quoter,
+    )
+    .await;
+
+    let (status, _) = post_order(addr, creation_tx(funder, &owner, &intent, vec![], true)).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let linked: (String, String) =
+        sqlx::query_as("SELECT sell_amount::text, buy_amount::text FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked, ("1000".to_owned(), "500000".to_owned()));
 }
 
 /// The buy account may belong to a wallet other than the owner: the

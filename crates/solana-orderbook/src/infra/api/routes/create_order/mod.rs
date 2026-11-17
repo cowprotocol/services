@@ -14,7 +14,7 @@
 use {
     super::{
         mint::{ensure_settleable, is_token_program, token_mints},
-        quote::dto,
+        quote::{self, dto},
     },
     crate::infra::{
         api::{Sponsoring, State, ValidationParameters, error},
@@ -620,9 +620,10 @@ async fn check_accounts(
 /// for an order naming none the best stored quote with its pair, side and
 /// fixed amount, else a fresh one from the quote competition, stored. A
 /// named quote that fails is quoted afresh, not swapped for another stored
-/// one. `None` when the fresh quote finds no liquidity, the one quote
-/// failure an order is placed through. Any other failure of it rejects the
-/// order with the quote's reply.
+/// one. `None` when the fresh quote has no route or no native price, or its
+/// costs swallow the order's amount: the EVM orderbook places such an order
+/// as out of market. Any other failure of the fresh quote rejects the order
+/// with the quote's reply.
 async fn find_or_create_quote(
     state: &State,
     order: &db::SponsoredOrder,
@@ -658,13 +659,13 @@ async fn find_or_create_quote(
         return Ok(Some(quote));
     }
     let request = quote_request(order);
-    let quoted = match super::quote::compute(state, &request, now).await {
+    let quoted = match quote::compute(state, &request, now).await {
         Ok(quoted) => quoted,
-        Err(reply) if reply.1.error_type == super::quote::NO_LIQUIDITY => {
-            tracing::debug!(%order_uid, "placing order without quote");
+        Err(err @ (quote::Error::NoLiquidity(_) | quote::Error::SellAmountDoesNotCoverFee)) => {
+            tracing::debug!(%order_uid, ?err, "placing order without quote");
             return Ok(None);
         }
-        Err(reply) => return Err(Failure::Replied(reply)),
+        Err(err) => return Err(Failure::Replied(err.into())),
     };
     let quote = quoted.row(&request);
     let id = db::save_quote(pool, &quote)
@@ -686,10 +687,10 @@ async fn find_or_create_quote(
 }
 
 /// The request for a fresh quote of `order`: what its owner is quoted now for
-/// the amount the order fixes, by every driver, unverified. A sell order
-/// sells its amount whole, so that is a `sellAmountBeforeFee`. The buy token
-/// account stands as the receiver, so a missing one is priced as created at
-/// settlement.
+/// the amount the order fixes, by every driver, verified like the EVM
+/// orderbook's. A sell order sells its amount whole, so that is a
+/// `sellAmountBeforeFee`. The buy token account stands as the receiver, so a
+/// missing one is priced as created at settlement.
 fn quote_request(order: &db::SponsoredOrder) -> dto::Request {
     let key = |bytes: ByteArray<32>| Pubkey::new_from_array(bytes.0);
     dto::Request {
@@ -711,7 +712,7 @@ fn quote_request(order: &db::SponsoredOrder) -> dto::Request {
         app_data: OrderCreationAppData::Hash {
             hash: AppDataHash(order.app_data.0),
         },
-        price_quality: dto::PriceQuality::Optimal,
+        price_quality: dto::PriceQuality::Verified,
     }
 }
 
@@ -1298,7 +1299,7 @@ mod tests {
                 sell_amount: dto::SellAmount::BeforeFee { value: 1_000 }
             }
         ));
-        assert_eq!(request.price_quality, dto::PriceQuality::Optimal);
+        assert_eq!(request.price_quality, dto::PriceQuality::Verified);
         let buy = quote_request(&db::SponsoredOrder {
             kind: OrderKind::Buy,
             ..order
