@@ -259,6 +259,7 @@ Column                    | Type                         | Nullable | Details
  buy\_token\_balance      | [enum](#buytokendestination) | not null | defined how buy\_tokens need to be transferred back to the user
  true_valid_to | bigint                       | not null | UNIX timestamp at which order is no longer executable. For regular orders it is the same value as valid_to. Some orders may have multiple valid_to values, such as ethflow: which is initially signed with u32::MAX. Their true validity comes from the Settlement contract's events which is used for liveness checks.
  valid\_from               | bigint                       | nullable | earliest UNIX timestamp (in seconds) at which the order may enter a batch auction. Taken from the order's app-data (`validFrom`). NULL means no lower bound, i.e. the order is eligible immediately (the default for all existing orders).
+ wait\_for\_cow             | bool                         | not null | whether the order asked for the wait-for-CoW execution mode. Taken from the order's app-data (`enableWaitForCow`), which is mutually exclusive with `enableFastPath` and `validFrom`. The autopilot sets `valid_from` of these orders to the canonical batch they join, and they don't enter auctions until it does. Defaults to false.
 
 Indexes:
 - PRIMARY KEY: btree(`uid`)
@@ -270,6 +271,7 @@ Indexes:
 - version_idx: btree(`settlement_contract`)
 - orders\_true\_valid\_to: btree(`true_valid_to`)
 - orders\_valid\_from: btree(`valid_from`) WHERE valid_from IS NOT NULL
+- orders\_wait\_for\_cow\_pending: btree(`uid`) WHERE wait_for_cow AND valid_from IS NULL
 - orders_owner_covering: btree(`owner`) INCLUDE (`uid`, `kind`, `buy_amount`, `sell_amount`, `fee_amount`, `buy_token`, `sell_token`)
 - orders_owner_valid_composite: btree(`owner`, `true_valid_to` DESC) WHERE cancellation_timestamp IS NULL
 

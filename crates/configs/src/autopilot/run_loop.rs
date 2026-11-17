@@ -1,4 +1,5 @@
 use {
+    crate::canonical_batch::CanonicalBatchInterval,
     serde::Deserialize,
     std::{num::NonZeroUsize, time::Duration},
 };
@@ -94,6 +95,14 @@ pub struct RunLoopConfig {
     /// production rates (including test chains).
     #[serde(default)]
     pub sync_solve_deadline_to_blockchain: Option<SlotConfig>,
+
+    /// Time between two canonical batches. Orders with `enableWaitForCow`
+    /// stay out of auctions until the next canonical batch after the
+    /// autopilot first sees them. When unset, such orders trade like regular
+    /// orders. Must match the orderbook's
+    /// `order-validation.canonical-batch-interval`.
+    #[serde(default)]
+    pub canonical_batch_interval: Option<CanonicalBatchInterval>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -122,6 +131,7 @@ impl Default for RunLoopConfig {
             max_settlement_transaction_wait: default_max_settlement_transaction_wait(),
             min_solve_time: default_min_solve_time(),
             sync_solve_deadline_to_blockchain: None,
+            canonical_batch_interval: None,
         }
     }
 }
@@ -148,6 +158,7 @@ mod tests {
             config.auction_delta_checkpoint_interval,
             Duration::from_mins(2)
         );
+        assert_eq!(config.canonical_batch_interval, None);
     }
 
     #[test]
@@ -155,6 +166,7 @@ mod tests {
         let toml = r#"
         max-delay = "5s"
         auction-delta-checkpoint-interval = "30s"
+        canonical-batch-interval = "5m"
         [sync-solve-deadline-to-blockchain]
             slot-length = "12s"
             tx-propagation-latency = "2s"
@@ -164,6 +176,12 @@ mod tests {
         assert_eq!(
             config.auction_delta_checkpoint_interval,
             Duration::from_secs(30)
+        );
+        assert_eq!(
+            config
+                .canonical_batch_interval
+                .map(|interval| interval.seconds().get()),
+            Some(300)
         );
         assert_eq!(
             config

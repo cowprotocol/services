@@ -620,6 +620,29 @@ paths:
           description: Version
           content:
             text/plain: {}
+  /api/v1/canonical_batch_schedule:
+    get:
+      operationId: getCanonicalBatchSchedule
+      summary: Get when the next canonical batch starts.
+      description: >
+        **UNSTABLE**: exists for the CoW Swap frontend; its path, response and
+        semantics can change without notice.
+
+
+        Orders with `enableWaitForCow` in their `appData` stay out of auctions
+        until the next canonical batch. Canonical batches start at the Unix
+        times that are a multiple of `intervalSeconds`. An order placed now is
+        expected to join `nextBatch`, but one the backend first sees after
+        `nextBatch` started joins the batch after it.
+      responses:
+        "200":
+          description: The canonical batch schedule.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CanonicalBatchSchedule"
+        "404":
+          description: Canonical batches are not enabled.
   "/api/v1/app_data/{app_data_hash}":
     get:
       operationId: getAppDataByHash
@@ -1398,9 +1421,23 @@ components:
             Earliest time (unix seconds) at which the order may enter a batch
             auction, taken from the order's `appData`. Omitted when the order
             has no lower bound (eligible immediately). Mutually exclusive with
-            `enableFastPath`: an order that sets both is rejected.
+            `enableFastPath` and `enableWaitForCow`: an order that sets more
+            than one of them is rejected. For orders with `enableWaitForCow`,
+            the backend sets it to the canonical batch the order joins, shortly
+            after the order is placed.
           type: integer
           nullable: true
+        waitForCow:
+          description: >
+            Whether the order requested the wait-for-CoW execution mode via the
+            `enableWaitForCow` flag in its `appData`. Such orders are held back
+            until the next canonical batch auction starts to give them a higher
+            chance to be matched with a counterparty (a CoW). Omitted when `false`.
+            Mutually exclusive with `enableFastPath` and `validFrom`. Rejected
+            with `WaitForCowDisabled` when canonical batches are not enabled; see
+            `GET /api/v1/canonical_batch_schedule`.
+          type: boolean
+          default: false
         settlementContract:
           description: >
             The address of the CoW Protocol settlement contract that this order
@@ -1880,11 +1917,34 @@ components:
             - AppdataFromMismatch
             - MetadataSerializationFailed
             - OldOrderActivelyBidOn
+            - WaitForCowDisabled
+            - InsufficientValidToForCanonicalBatch
         description:
           type: string
       required:
         - errorType
         - description
+    CanonicalBatchSchedule:
+      description: When the next canonical batch starts.
+      type: object
+      properties:
+        intervalSeconds:
+          description: Seconds between two canonical batch times.
+          type: integer
+        nextBatch:
+          description: >
+            The next canonical batch time, in Unix seconds. Equal to the current
+            time when a batch starts right now.
+          type: integer
+        secondsUntilNextBatch:
+          description: >
+            Seconds until `nextBatch` by the server's clock, so a countdown
+            doesn't depend on the client's clock.
+          type: integer
+      required:
+        - intervalSeconds
+        - nextBatch
+        - secondsUntilNextBatch
     OrderCancellationError:
       type: object
       properties:

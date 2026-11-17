@@ -1,4 +1,5 @@
 use {
+    crate::canonical_batch::CanonicalBatchInterval,
     serde::{Deserialize, Serialize},
     std::time::Duration,
 };
@@ -63,6 +64,13 @@ pub struct OrderValidationConfig {
     /// Policy for orders where the buy and sell tokens are equal.
     #[serde(default)]
     pub same_tokens_policy: SameTokensPolicy,
+
+    /// Time between two canonical batches. Orders with `enableWaitForCow`
+    /// wait for the next canonical batch before they trade. When unset, such
+    /// orders are rejected. Must match the autopilot's
+    /// `run-loop.canonical-batch-interval`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_batch_interval: Option<CanonicalBatchInterval>,
 }
 
 impl Default for OrderValidationConfig {
@@ -73,6 +81,7 @@ impl Default for OrderValidationConfig {
             max_limit_orders_per_user: default_max_limit_orders_per_user(),
             max_gas_per_order: default_max_gas_per_order(),
             same_tokens_policy: Default::default(),
+            canonical_batch_interval: None,
         }
     }
 }
@@ -89,6 +98,7 @@ mod tests {
             config.max_order_validity_period,
             Duration::from_secs(31_536_000)
         );
+        assert_eq!(config.canonical_batch_interval, None);
     }
 
     #[test]
@@ -99,6 +109,7 @@ mod tests {
         max-limit-orders-per-user = 10
         max-gas-per-order = 5000000
         same-tokens-policy = "allow-sell"
+        canonical-batch-interval = "5m"
         "#;
         let config: OrderValidationConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.min_order_validity_period, Duration::from_secs(120));
@@ -109,6 +120,12 @@ mod tests {
         assert_eq!(config.max_limit_orders_per_user, 10);
         assert_eq!(config.max_gas_per_order, 5_000_000);
         assert_eq!(config.same_tokens_policy, SameTokensPolicy::AllowSell);
+        assert_eq!(
+            config
+                .canonical_batch_interval
+                .map(|interval| interval.seconds().get()),
+            Some(300)
+        );
     }
 
     #[test]
@@ -119,6 +136,7 @@ mod tests {
             max_limit_orders_per_user: 5,
             max_gas_per_order: 5_000_000,
             same_tokens_policy: SameTokensPolicy::AllowSell,
+            canonical_batch_interval: Some(Duration::from_secs(300).try_into().unwrap()),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -138,5 +156,9 @@ mod tests {
         );
         assert_eq!(config.max_gas_per_order, deserialized.max_gas_per_order);
         assert_eq!(config.same_tokens_policy, deserialized.same_tokens_policy);
+        assert_eq!(
+            config.canonical_batch_interval,
+            deserialized.canonical_batch_interval
+        );
     }
 }
