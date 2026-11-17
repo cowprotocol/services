@@ -12,6 +12,7 @@ use {
     buffering::BatchCallLayer,
     instrumentation::{InstrumentationLayer, LabelingLayer},
     rpc_headers::{RpcHeadersLayer, TracingRequestIdLayer},
+    std::time::Duration,
 };
 pub use {evm_ext::EvmProviderExt, instrumentation::ProviderLabelingExt, wallet::MutWallet};
 
@@ -25,6 +26,7 @@ pub use {evm_ext::EvmProviderExt, instrumentation::ProviderLabelingExt, wallet::
 /// it must observe the packet after [`BatchCallLayer`] has coalesced calls into
 /// a batch.
 fn rpc(url: &str, config: Config, label: Option<&str>) -> RpcClient {
+    let http = http_client(config.ethrpc_timeout);
     ClientBuilder::default()
         .layer(LabelingLayer {
             label: label.unwrap_or("main").into(),
@@ -33,7 +35,17 @@ fn rpc(url: &str, config: Config, label: Option<&str>) -> RpcClient {
         .layer(TracingRequestIdLayer)
         .layer(BatchCallLayer::new(config))
         .layer(RpcHeadersLayer)
-        .http(url.parse().unwrap())
+        .http_with_client(http, url.parse().unwrap())
+}
+
+/// Builds the HTTP client for the node. The default `reqwest::Client` that
+/// alloy uses has no request timeout, so a hung node would block a call
+/// forever.
+fn http_client(timeout: Duration) -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .expect("build RPC HTTP client")
 }
 
 /// Creates an unbuffered [`RpcClient`] from the given URL with
@@ -42,7 +54,7 @@ fn rpc(url: &str, config: Config, label: Option<&str>) -> RpcClient {
 ///
 /// This is useful for components that need to avoid batching (e.g., block
 /// stream polling on high-frequency chains).
-fn unbuffered_rpc(url: &str, label: Option<&str>) -> RpcClient {
+fn unbuffered_rpc(url: &str, timeout: Duration, label: Option<&str>) -> RpcClient {
     ClientBuilder::default()
         .layer(LabelingLayer {
             label: label.unwrap_or("main_unbuffered").into(),
@@ -50,7 +62,7 @@ fn unbuffered_rpc(url: &str, label: Option<&str>) -> RpcClient {
         .layer(InstrumentationLayer)
         .layer(TracingRequestIdLayer)
         .layer(RpcHeadersLayer)
-        .http(url.parse().unwrap())
+        .http_with_client(http_client(timeout), url.parse().unwrap())
 }
 
 /// Creates an unbuffered provider for the given URL and label.
@@ -59,8 +71,12 @@ fn unbuffered_rpc(url: &str, label: Option<&str>) -> RpcClient {
 /// Useful for read-only operations like block polling.
 ///
 /// Returns a copy of the [`MutWallet`] so the caller can modify it later.
-pub fn unbuffered_provider(url: &str, label: Option<&str>) -> (AlloyProvider, MutWallet) {
-    let rpc = unbuffered_rpc(url, label);
+pub fn unbuffered_provider(
+    url: &str,
+    timeout: Duration,
+    label: Option<&str>,
+) -> (AlloyProvider, MutWallet) {
+    let rpc = unbuffered_rpc(url, timeout, label);
     let wallet = MutWallet::default();
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())

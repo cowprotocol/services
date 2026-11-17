@@ -95,13 +95,14 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::bloc
 }
 
 /// Creates unbuffered Web3 transport.
-async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
+async fn unbuffered_ethrpc(url: &Url, timeout: Duration) -> infra::blockchain::Rpc {
     ethrpc(
         url,
         &shared::web3::Arguments {
             ethrpc_max_batch_size: 0,
             ethrpc_max_concurrent_requests: 0,
             ethrpc_batch_delay: Default::default(),
+            ethrpc_timeout: timeout,
         },
     )
     .await
@@ -227,7 +228,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         );
     }
 
-    let unbuffered_ethrpc = unbuffered_ethrpc(&config.shared.node_url).await;
+    let unbuffered_ethrpc =
+        unbuffered_ethrpc(&config.shared.node_url, ethrpc_args.ethrpc_timeout).await;
     let ethrpc = ethrpc(&config.shared.node_url, &ethrpc_args).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
