@@ -532,6 +532,8 @@ pub struct ProposedTrade {
     pub order_uid: ByteArray<32>,
     pub executed_sell: BigDecimal,
     pub executed_buy: BigDecimal,
+    /// What the driver took from the fill, in the order's surplus token.
+    pub fee: Option<BigDecimal>,
 }
 
 /// One proposed solution of a competition, with its executions.
@@ -620,14 +622,15 @@ pub async fn persist_competition(pool: &sqlx::PgPool, competition: &Competition)
     if !trades.is_empty() {
         let mut insert = QueryBuilder::<Postgres>::new(
             "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, order_uid, \
-             executed_sell, executed_buy) ",
+             executed_sell, executed_buy, fee) ",
         );
         insert.push_values(trades, |mut row, (solution_uid, trade)| {
             row.push_bind(competition.auction_id)
                 .push_bind(solution_uid)
                 .push_bind(trade.order_uid)
                 .push_bind(&trade.executed_sell)
-                .push_bind(&trade.executed_buy);
+                .push_bind(&trade.executed_buy)
+                .push_bind(&trade.fee);
         });
         insert
             .build()

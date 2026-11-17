@@ -188,9 +188,15 @@ fn convert(
     if !missing.is_empty() {
         return Err(missing);
     }
+    let fees = dto_solution
+        .orders
+        .iter()
+        .filter_map(|(uid, amounts)| Some((*uid, amounts.fee?)))
+        .collect();
     Ok(Solution {
         driver_index,
         inner: solution::Solution::new(dto_solution.solution_id, dto_solution.solver, orders),
+        fees,
     })
 }
 

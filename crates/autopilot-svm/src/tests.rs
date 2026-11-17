@@ -240,6 +240,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             dto::TradedAmounts {
                 executed_sell: 1000,
                 executed_buy: 600,
+                fee: Some(25),
             },
         )]),
     };
@@ -372,16 +373,20 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         (reference_solver.as_slice(), reference_score.as_str()),
         (&[0xCC; 32][..], "0")
     );
-    let (executed_sell, executed_buy): (String, String) = sqlx::query_as(
-        "SELECT executed_sell::text, executed_buy::text FROM solana.proposed_trade_executions \
-         WHERE solution_uid = 0",
+    let (executed_sell, executed_buy, fee): (String, String, Option<String>) = sqlx::query_as(
+        "SELECT executed_sell::text, executed_buy::text, fee::text FROM \
+         solana.proposed_trade_executions WHERE solution_uid = 0",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(
-        (executed_sell.as_str(), executed_buy.as_str()),
-        ("1000", "600")
+        (
+            executed_sell.as_str(),
+            executed_buy.as_str(),
+            fee.as_deref()
+        ),
+        ("1000", "600", Some("25"))
     );
     // The traded order's policy is stored in the EVM columns.
     let (kind, factor, cap): (String, f64, f64) = sqlx::query_as(

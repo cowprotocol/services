@@ -672,7 +672,10 @@ components:
         - orderPda
         - creationDate
         - executedSellAmount
+        - executedSellAmountBeforeFees
         - executedBuyAmount
+        - executedFee
+        - executedFeeToken
         - status
       properties:
         uid:
@@ -736,10 +739,24 @@ components:
           description: Sell tokens pulled from the order so far.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        executedSellAmountBeforeFees:
+          description: Equal to `executedSellAmount`, Solana orders sign no fee.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
         executedBuyAmount:
           description: Buy tokens paid to the order so far.
           allOf:
             - $ref: "#/components/schemas/TokenAmount"
+        executedFee:
+          description: |
+            Total fee charged for the order's execution so far, execution
+            costs and protocol fees, in `executedFeeToken`.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
+        executedFeeToken:
+          description: The token `executedFee` is in, the sell token.
+          allOf:
+            - $ref: "#/components/schemas/Pubkey"
         status:
           $ref: "#/components/schemas/OrderStatus"
         lastValidBlockHeight:

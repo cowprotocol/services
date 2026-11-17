@@ -219,6 +219,12 @@ pub struct TradedAmounts {
     pub executed_sell: u64,
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy: u64,
+    /// Units the driver took from the fill, in the buy token of a sell order
+    /// and the sell token of a buy order. Absent when the driver reports
+    /// none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub fee: Option<u64>,
 }
 
 /// Asks the driver to submit a previously proposed solution.
@@ -409,14 +415,43 @@ mod tests {
                     TradedAmounts {
                         executed_sell: 100,
                         executed_buy: 200,
+                        fee: Some(6),
                     },
                 )]),
             }],
         };
         let json = serde_json::to_value(&solve).unwrap();
         assert_eq!(
+            json,
+            serde_json::json!({
+                "solutions": [{
+                    "solutionId": 3,
+                    "solver": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+                    "orders": {
+                        "0x1111111111111111111111111111111111111111111111111111111111111111": {
+                            "executedSell": "100",
+                            "executedBuy": "200",
+                            "fee": "6"
+                        }
+                    }
+                }]
+            })
+        );
+        assert_eq!(
             serde_json::from_value::<SolveResponse>(json).unwrap(),
             solve
+        );
+        // A driver that reports no fee.
+        let mut feeless = serde_json::to_value(&solve).unwrap();
+        feeless["solutions"][0]["orders"]
+            ["0x1111111111111111111111111111111111111111111111111111111111111111"]
+            .as_object_mut()
+            .unwrap()
+            .remove("fee");
+        let feeless = serde_json::from_value::<SolveResponse>(feeless).unwrap();
+        assert_eq!(
+            feeless.solutions[0].orders[&IntentHash([0x11; 32])].fee,
+            None
         );
 
         let settle = SettleResponse {

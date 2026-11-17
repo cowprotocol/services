@@ -97,6 +97,7 @@ mod tests {
             executed_buy: 2_000,
             solver_fee: 0,
             protocol_fee: 0,
+            execution_cost: 0,
         };
         let order = order(
             &program_id,

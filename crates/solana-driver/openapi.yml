@@ -466,9 +466,17 @@ components:
           $ref: "#/components/schemas/TokenAmount"
         executedBuy:
           $ref: "#/components/schemas/TokenAmount"
+        fee:
+          description: |
+            Units the driver took from the fill, in the buy token of a sell
+            order and the sell token of a buy order: the execution cost, the
+            solver fee and the protocol fee.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
       required:
         - executedSell
         - executedBuy
+        - fee
     SettleRequest:
       description: Request to the `/settle` endpoint.
       type: object
