@@ -5,7 +5,6 @@ pub mod run_loop;
 
 mod domain;
 mod infra;
-mod leader_lock_tracker;
 
 #[cfg(test)]
 mod test_db;

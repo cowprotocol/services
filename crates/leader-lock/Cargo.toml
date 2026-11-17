@@ -1,0 +1,16 @@
+[package]
+name = "leader-lock"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+sqlx = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

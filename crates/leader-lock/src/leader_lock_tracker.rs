@@ -1,4 +1,4 @@
-use {database::leader_pg_lock::LeaderLock, observe::metrics};
+use {crate::leader_pg_lock::LeaderLock, observe::metrics};
 
 /// Tracks the autopilot leader lock status.
 /// Leader lock status is tracked based on calls to try_acquire()
@@ -79,7 +79,7 @@ impl LeaderLockTracker {
 
     /// Returns true if the last try_acquire call resulted in acquiring the
     /// leader lock If the feature is disabled, always returns false
-    pub fn just_stepped_up(&self) -> bool {
+    fn just_stepped_up(&self) -> bool {
         matches!(
             self,
             Self::Enabled {
