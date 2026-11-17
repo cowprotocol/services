@@ -17,9 +17,9 @@
 //! others only sync to the tip so one can take over at once.
 
 use {
-    crate::{leader_lock_tracker::LeaderLockTracker, run::Liveness},
+    crate::run::Liveness,
     async_trait::async_trait,
-    database::leader_pg_lock::LeaderLock,
+    leader_lock::{LeaderLock, LeaderLockTracker},
     std::{
         collections::HashSet,
         fmt::Debug,

@@ -48,6 +48,7 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
+leader-lock = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }
