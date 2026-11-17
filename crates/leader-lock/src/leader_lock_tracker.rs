@@ -1,10 +1,4 @@
-#[cfg(feature = "test-util")]
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
-
-use {crate::leader_pg_lock::LeaderLock, observe::metrics};
+use {crate::LeaderLock, observe::metrics};
 
 /// Tracks the autopilot leader lock status.
 pub enum LeaderLockTracker {
@@ -20,22 +14,19 @@ pub enum LeaderLockTracker {
         /// Whether the instance was the leader at the last call to
         /// `update()`
         was_leader: bool,
-        leader_lock: LeaderLock,
+        leader_lock: Box<dyn LeaderLock>,
     },
-    /// Leadership the test flips.
-    #[cfg(feature = "test-util")]
-    Scripted(Arc<AtomicBool>),
 }
 
 impl LeaderLockTracker {
-    pub fn new(leader_lock: Option<LeaderLock>) -> Self {
+    pub fn new(leader_lock: Option<impl LeaderLock + 'static>) -> Self {
         match leader_lock {
             Some(leader_lock) => {
                 // followers export 0, so a missing leader shows up
                 Metrics::leader_step_down();
                 Self::Enabled {
                     was_leader: false,
-                    leader_lock,
+                    leader_lock: Box::new(leader_lock),
                 }
             }
             None => Self::Disabled,
@@ -51,7 +42,7 @@ impl LeaderLockTracker {
             leader_lock,
         } = self
         else {
-            return self.is_leader();
+            return true;
         };
 
         Metrics::leader_lock_errors(leader_lock.take_errors());
@@ -91,8 +82,6 @@ impl LeaderLockTracker {
         match self {
             Self::Enabled { leader_lock, .. } => leader_lock.is_leader(),
             Self::Disabled => true,
-            #[cfg(feature = "test-util")]
-            Self::Scripted(leading) => leading.load(Ordering::Acquire),
         }
     }
 }
