@@ -1,22 +1,31 @@
 use {
     ::alloy::primitives::{Address, U256},
+    autopilot::infra::persistence::dto::order::FeePolicy as AuctionFeePolicy,
     configs::{
-        autopilot::{Configuration as AutopilotConfiguration, run_loop::RunLoopConfig},
+        autopilot::{
+            Configuration as AutopilotConfiguration,
+            fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind, FeePolicyOrderClass},
+            run_loop::RunLoopConfig,
+        },
         canonical_batch::CanonicalBatchInterval,
+        fee_factor::FeeFactor,
         orderbook::{
             Configuration as OrderbookConfiguration,
+            VolumeFeeConfig,
             order_validation::OrderValidationConfig,
         },
+        shared::SharedConfig,
         test_util::TestDefault,
     },
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
         time::now_in_epoch_seconds,
     },
-    number::units::EthUnit,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     orderbook::dto::order::Status,
     reqwest::StatusCode,
     std::time::Duration,
@@ -27,6 +36,9 @@ use {
 const INTERVAL: u32 = 20;
 
 const WAIT_FOR_COW: &str = r#"{"metadata":{"enableWaitForCow":true}}"#;
+
+/// The regular volume fee; wait-for-CoW orders have it waived.
+const VOLUME_FEE: f64 = 0.0002;
 
 #[tokio::test]
 #[ignore]
@@ -57,10 +69,24 @@ async fn wait_for_cow_test(web3: Web3) {
     }
 
     let interval = CanonicalBatchInterval::try_from(Duration::from_secs(INTERVAL.into())).unwrap();
+    let shared = || SharedConfig {
+        wait_for_cow_volume_fee_factor: Some(FeeFactor::new(0.0)),
+        ..Default::default()
+    };
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             AutopilotConfiguration {
+                shared: shared(),
+                fee_policies: FeePoliciesConfig {
+                    policies: vec![FeePolicy {
+                        kind: FeePolicyKind::Volume {
+                            factor: FeeFactor::new(VOLUME_FEE),
+                        },
+                        order_class: FeePolicyOrderClass::Any,
+                    }],
+                    ..Default::default()
+                },
                 run_loop: RunLoopConfig {
                     canonical_batch_interval: Some(interval),
                     ..RunLoopConfig::test_default()
@@ -68,6 +94,11 @@ async fn wait_for_cow_test(web3: Web3) {
                 ..AutopilotConfiguration::test("test_solver", solver.address())
             },
             OrderbookConfiguration {
+                shared: shared(),
+                volume_fee: Some(VolumeFeeConfig {
+                    factor: Some(FeeFactor::new(VOLUME_FEE)),
+                    effective_from_timestamp: None,
+                }),
                 order_validation: OrderValidationConfig {
                     canonical_batch_interval: Some(interval),
                     ..Default::default()
@@ -112,6 +143,34 @@ async fn wait_for_cow_test(web3: Web3) {
         )
     };
     let (token_a, token_b) = (*token_a.address(), *token_b.address());
+
+    tracing::info!("Wait-for-CoW quotes have the volume fee waived.");
+    let protocol_fee_bps = |app_data: &str| {
+        let request = OrderQuoteRequest {
+            from: trader_a.address(),
+            sell_token: token_a,
+            buy_token: token_b,
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(2u64.eth()).unwrap(),
+                },
+            },
+            app_data: OrderCreationAppData::Full {
+                full: app_data.to_string(),
+            },
+            ..Default::default()
+        };
+        let services = &services;
+        async move {
+            services
+                .submit_quote(&request)
+                .await
+                .unwrap()
+                .protocol_fee_bps
+        }
+    };
+    assert_eq!(protocol_fee_bps(WAIT_FOR_COW).await.as_deref(), Some("0"));
+    assert_eq!(protocol_fee_bps("{}").await.as_deref(), Some("2"));
 
     tracing::info!("Waiting until right after a batch time.");
     while now_in_epoch_seconds() % INTERVAL != 1 {
@@ -279,6 +338,38 @@ async fn wait_for_cow_test(web3: Web3) {
         );
     }
 
+    tracing::info!("The wait-for-CoW trades paid no volume fee, the regular one did.");
+    let volume_factors = |uid: OrderUid| {
+        let services = &services;
+        async move {
+            services
+                .get_trades(&uid)
+                .await
+                .unwrap()
+                .into_iter()
+                .flat_map(|trade| trade.executed_protocol_fees)
+                .filter_map(|fee| match fee.policy {
+                    model::fee_policy::FeePolicy::Volume { factor } => Some(factor),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    // The protocol fees are stored a moment after the trade is indexed.
+    wait_for_condition(TIMEOUT, || async {
+        for uid in [cow_a, cow_b, regular] {
+            if volume_factors(uid).await.is_empty() {
+                return false;
+            }
+        }
+        true
+    })
+    .await
+    .unwrap();
+    assert_eq!(volume_factors(cow_a).await, [0.0]);
+    assert_eq!(volume_factors(cow_b).await, [0.0]);
+    assert_eq!(volume_factors(regular).await, [VOLUME_FEE]);
+
     tracing::info!("The order that wasn't filled in its batch is a regular order afterwards.");
     let next_batch = batch + INTERVAL;
     wait_for_condition(TIMEOUT, || async {
@@ -288,12 +379,27 @@ async fn wait_for_cow_test(web3: Web3) {
             "the unfilled order didn't enter an auction before the next batch"
         );
         let auction = services.get_auction().await;
-        auction.id > competition.auction_id
-            && auction
-                .auction
-                .orders
-                .iter()
-                .any(|order| order.uid == unfillable)
+        if auction.id <= competition.auction_id {
+            return false;
+        }
+        let Some(order) = auction
+            .auction
+            .orders
+            .iter()
+            .find(|order| order.uid == unfillable)
+        else {
+            return false;
+        };
+        // The waiver lasts for the order's whole life, not only its batch.
+        assert!(
+            matches!(
+                order.protocol_fees.as_slice(),
+                [AuctionFeePolicy::Volume { factor }] if *factor == 0.0
+            ),
+            "{:?}",
+            order.protocol_fees
+        );
+        true
     })
     .await
     .unwrap();

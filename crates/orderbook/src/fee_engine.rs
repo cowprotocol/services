@@ -18,16 +18,18 @@ use {
 };
 
 /// The legacy volume fees without `[fee-engine]`; with it, the compared ones.
-/// The rules must load.
+/// The rules must load. `canonical_batches` is whether the orderbook has
+/// canonical batches on.
 pub fn volume_fees(
     config: Option<&FeeEngineConfig>,
     legacy: LegacyVolumeFees,
     native_token: Address,
+    canonical_batches: bool,
 ) -> anyhow::Result<Arc<dyn OrderbookFees>> {
     let Some(config) = config else {
         return Ok(Arc::new(legacy));
     };
-    let engine = FeeEngineVolumeFees::new(config, native_token)?;
+    let engine = FeeEngineVolumeFees::new(config, native_token, canonical_batches)?;
     Ok(Arc::new(ComparedVolumeFees::new(legacy, engine)))
 }
 
@@ -38,12 +40,19 @@ const WRAPPED_NATIVE: &str = "wrapped_native";
 /// other: surplus and price improvement fees take nothing at the quoted price.
 pub struct FeeEngineVolumeFees {
     rules: RuleSet,
+    /// Without canonical batches wait-for-CoW orders are rejected, so their
+    /// quotes must show the regular fee: rules then see `waitForCow` false.
+    canonical_batches: bool,
 }
 
 impl FeeEngineVolumeFees {
     /// Loads the rules of `[fee-engine]`, with the chain's wrapped native
     /// token added as the list `wrapped_native`, which the section may not set.
-    pub fn new(config: &FeeEngineConfig, native_token: Address) -> anyhow::Result<Self> {
+    pub fn new(
+        config: &FeeEngineConfig,
+        native_token: Address,
+        canonical_batches: bool,
+    ) -> anyhow::Result<Self> {
         let mut lists = config
             .lists
             .clone()
@@ -67,7 +76,10 @@ impl FeeEngineVolumeFees {
         .context("loading the fee engine rules")?;
         let names: Vec<_> = rules.rules().iter().map(|rule| rule.name()).collect();
         tracing::info!(rules = ?names, "fee engine rules loaded");
-        Ok(Self { rules })
+        Ok(Self {
+            rules,
+            canonical_batches,
+        })
     }
 
     fn evaluate(
@@ -86,6 +98,7 @@ impl FeeEngineVolumeFees {
                 app_data: &shared::fee_engine::app_data(&app_data.protocol, app_code),
                 partner_fees,
                 in_market,
+                wait_for_cow: order.metadata.wait_for_cow && self.canonical_batches,
             });
         evaluation.warn_skipped();
         evaluation
@@ -405,7 +418,10 @@ mod tests {
             .insert(WRAPPED_NATIVE.to_owned(), list(&[WETH]));
         let rules = RuleSet::new(definition).unwrap();
         rules.validate_on_sample_order().unwrap();
-        FeeEngineVolumeFees { rules }
+        FeeEngineVolumeFees {
+            rules,
+            canonical_batches: true,
+        }
     }
 
     fn engine(max_partner_fee: Option<f64>) -> FeeEngineVolumeFees {
@@ -573,7 +589,7 @@ mod tests {
         let legacy = |default| legacy(prod_buckets(), default, false, None);
         // 2 bps on the grid, so a match; the factor served is the engine's.
         let noisy = 0.000_200_000_1;
-        let without_rules = volume_fees(None, legacy(noisy), WETH).unwrap();
+        let without_rules = volume_fees(None, legacy(noisy), WETH, true).unwrap();
         assert_eq!(serve(&*without_rules), Some(factor(noisy)));
         let compared = |default| ComparedVolumeFees::new(legacy(default), engine(None));
         assert_eq!(serve(&compared(noisy)), Some(factor(0.0002)));
@@ -584,9 +600,9 @@ mod tests {
     fn rules_must_load() {
         let broken =
             toml::from_str("[[rule]]\nname = 'x'\nwhen = 'true'\nfee = 'volume('\n").unwrap();
-        assert!(volume_fees(Some(&broken), LegacyVolumeFees::default(), WETH).is_err());
+        assert!(volume_fees(Some(&broken), LegacyVolumeFees::default(), WETH, true).is_err());
         let missing_fee = toml::from_str("[[rule]]\nname = 'x'\nwhen = 'true'\n").unwrap();
-        let error = volume_fees(Some(&missing_fee), LegacyVolumeFees::default(), WETH)
+        let error = volume_fees(Some(&missing_fee), LegacyVolumeFees::default(), WETH, true)
             .err()
             .unwrap();
         assert!(
@@ -602,9 +618,9 @@ mod tests {
             "[[rule]]\nname = 'x'\nwhen = 'order.sellToken in wrapped_native'\nfee = 'volume(1)'\n",
         )
         .unwrap();
-        assert!(FeeEngineVolumeFees::new(&config, WETH).is_ok());
+        assert!(FeeEngineVolumeFees::new(&config, WETH, true).is_ok());
         config.lists = Some(toml::from_str("wrapped_native = []").unwrap());
-        assert!(FeeEngineVolumeFees::new(&config, WETH).is_err());
+        assert!(FeeEngineVolumeFees::new(&config, WETH, true).is_err());
     }
 
     #[test]
@@ -664,5 +680,115 @@ mod tests {
             {"recipient": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "volumeBps": 50}
         ]}}"#;
         assert_eq!(compare_fast_path(Some(0.01), surplus_first), Outcome::Match);
+    }
+
+    /// The legacy fees of `prod_buckets` and a 2 bps default, with the volume
+    /// fee of wait-for-CoW orders capped at `cap`.
+    fn legacy_with_wait_for_cow_cap(cap: Option<f64>) -> LegacyVolumeFees {
+        LegacyVolumeFees {
+            policy: Some(Arc::new(
+                VolumeFeePolicy::new(prod_buckets(), Some(factor(0.0002)), false, WETH)
+                    .with_wait_for_cow_factor(cap.map(factor)),
+            )),
+            ..legacy(prod_buckets(), 0.0002, false, None)
+        }
+    }
+
+    /// `prod_rules` with every volume fee of wait-for-CoW orders capped at
+    /// `cap_bps`, as the rules mirror the legacy cap.
+    fn prod_rules_with_wait_for_cow_cap(cap_bps: f64) -> RuleSetDefinition {
+        let mut definition = prod_rules(None);
+        for rule in &mut definition.rules {
+            let Some(bps) = rule
+                .fee
+                .strip_prefix("volume(")
+                .and_then(|rest| rest.strip_suffix(')'))
+            else {
+                continue;
+            };
+            let bps: f64 = bps.parse().unwrap();
+            rule.fee =
+                format!("volume(order.waitForCow ? math.least({bps:?}, {cap_bps:?}) : {bps:?})");
+        }
+        definition
+    }
+
+    fn wait_for_cow_order(sell_token: Address, buy_token: Address) -> Order {
+        let mut order = order(sell_token, buy_token);
+        order.metadata.wait_for_cow = true;
+        order
+    }
+
+    /// The served quote fee and the outcome for `order`.
+    fn quote_outcome(compared: &ComparedVolumeFees, order: &Order) -> (Option<FeeFactor>, Outcome) {
+        compared.quote_outcome(order, &quote(), &app_data("{}"), None)
+    }
+
+    #[test]
+    fn agrees_with_the_legacy_wait_for_cow_cap() {
+        for (cap, cap_bps) in [(0.0, 0.0), (0.0001, 1.0)] {
+            let compared = ComparedVolumeFees::new(
+                legacy_with_wait_for_cow_cap(Some(cap)),
+                engine_with(prod_rules_with_wait_for_cow_cap(cap_bps)),
+            );
+            for (sell, buy) in PAIRS {
+                for order in [order(sell, buy), wait_for_cow_order(sell, buy)] {
+                    assert_eq!(
+                        quote_outcome(&compared, &order).1,
+                        Outcome::Match,
+                        "cap {cap}: {sell:?} -> {buy:?}, wait for CoW: {}",
+                        order.metadata.wait_for_cow,
+                    );
+                }
+            }
+        }
+        // The smaller factor: 0.3 bps stays under a 1 bps cap, 2 bps drops.
+        let compared = ComparedVolumeFees::new(
+            legacy_with_wait_for_cow_cap(Some(0.0001)),
+            engine_with(prod_rules_with_wait_for_cow_cap(1.0)),
+        );
+        let served = |sell, buy| quote_outcome(&compared, &wait_for_cow_order(sell, buy)).0;
+        assert_eq!(served(USDC, USDT), Some(factor(0.00003)));
+        assert_eq!(served(USDC, WETH), Some(factor(0.0001)));
+    }
+
+    #[test]
+    fn a_waived_fee_is_a_zero_volume_fee() {
+        // `protocolFeeBps: "0"` from the legacy fees; `no_fee()` shows none.
+        let no_fee = ComparedVolumeFees::new(
+            legacy_with_wait_for_cow_cap(Some(0.0)),
+            engine_with_rules(vec![
+                rule("Wait for CoW", "order.waitForCow", "no_fee()"),
+                rule("Default", "true", "volume(2)"),
+            ]),
+        );
+        assert_eq!(
+            quote_outcome(&no_fee, &wait_for_cow_order(USDC, WETH)),
+            (Some(factor(0.)), Outcome::Mismatch)
+        );
+        // Rules without the cap charge the regular fee.
+        let uncapped =
+            ComparedVolumeFees::new(legacy_with_wait_for_cow_cap(Some(0.0)), engine(None));
+        assert_eq!(
+            quote_outcome(&uncapped, &wait_for_cow_order(USDC, WETH)),
+            (Some(factor(0.)), Outcome::Mismatch)
+        );
+    }
+
+    #[test]
+    fn wait_for_cow_quotes_pay_the_regular_fee_without_canonical_batches() {
+        // `run` gives the legacy fees no cap then, and the engine sees
+        // `waitForCow` false.
+        let compared = ComparedVolumeFees::new(
+            legacy_with_wait_for_cow_cap(None),
+            FeeEngineVolumeFees {
+                canonical_batches: false,
+                ..engine_with(prod_rules_with_wait_for_cow_cap(0.0))
+            },
+        );
+        assert_eq!(
+            quote_outcome(&compared, &wait_for_cow_order(USDC, WETH)),
+            (Some(factor(0.0002)), Outcome::Match)
+        );
     }
 }

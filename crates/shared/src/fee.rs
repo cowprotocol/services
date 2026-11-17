@@ -67,6 +67,7 @@ pub struct VolumeFeePolicy {
     default_factor: Option<FeeFactor>,
     enable_sell_equals_buy_volume_fee: bool,
     native_token: Address,
+    wait_for_cow_factor: Option<FeeFactor>,
 }
 
 impl VolumeFeePolicy {
@@ -91,7 +92,44 @@ impl VolumeFeePolicy {
             default_factor,
             enable_sell_equals_buy_volume_fee,
             native_token,
+            wait_for_cow_factor: None,
         }
+    }
+
+    /// Caps the volume fee factor of wait-for-CoW orders at `factor`. With
+    /// `None` they pay the regular factor, so pass `None` while canonical
+    /// batches are off: such orders then trade like regular orders, and must
+    /// not skip the fee.
+    pub fn with_wait_for_cow_factor(mut self, factor: Option<FeeFactor>) -> Self {
+        self.wait_for_cow_factor = factor;
+        self
+    }
+
+    /// The volume fee factor of `order`: the one of its token pair (see
+    /// [`Self::get_applicable_volume_fee_factor`]), or, for a wait-for-CoW
+    /// order, the smaller of that and the wait-for-CoW factor. `None` when
+    /// the order pays no volume fee; the wait-for-CoW factor never adds one.
+    pub fn order_volume_fee_factor(
+        &self,
+        order: &Order,
+        fee_factor: Option<FeeFactor>,
+    ) -> Option<FeeFactor> {
+        let factor = self.get_applicable_volume_fee_factor(
+            order.data.buy_token,
+            order.data.sell_token,
+            fee_factor,
+        )?;
+        let Some(cap) = self
+            .wait_for_cow_factor
+            .filter(|_| order.metadata.wait_for_cow)
+        else {
+            return Some(factor);
+        };
+        Some(if cap.get() < factor.get() {
+            cap
+        } else {
+            factor
+        })
     }
 
     /// Determines the applicable volume fee factor for a token pair,
@@ -329,13 +367,9 @@ impl OrderbookFees for LegacyVolumeFees {
                 .effective_from_timestamp
                 .is_none_or(|ts| ts <= Utc::now())
         })?;
-        // Determine applicable fee factor considering same-token config and
-        // overrides
-        self.policy.as_ref()?.get_applicable_volume_fee_factor(
-            order.data.buy_token,
-            order.data.sell_token,
-            None,
-        )
+        // Determine applicable fee factor considering same-token config,
+        // overrides and the wait-for-CoW cap
+        self.policy.as_ref()?.order_volume_fee_factor(order, None)
     }
 
     fn fast_path_volume_fees(
@@ -344,10 +378,10 @@ impl OrderbookFees for LegacyVolumeFees {
         _: &Quote,
         app_data: &ValidatedAppData,
     ) -> Vec<FeeFactor> {
-        let data = &order.data;
-        let protocol_factor = self.policy.as_ref().and_then(|policy| {
-            policy.get_applicable_volume_fee_factor(data.buy_token, data.sell_token, None)
-        });
+        let protocol_factor = self
+            .policy
+            .as_ref()
+            .and_then(|policy| policy.order_volume_fee_factor(order, None));
         let partner_factors = self
             .max_partner_fee
             .and_then(|cap| capped_partner_volume_factors(&app_data.protocol, cap))
@@ -528,6 +562,116 @@ mod tests {
 
     fn factor(v: f64) -> FeeFactor {
         FeeFactor::try_from(v).unwrap()
+    }
+
+    fn order(sell_token: Address, buy_token: Address, wait_for_cow: bool) -> Order {
+        Order {
+            data: model::order::OrderData {
+                sell_token,
+                buy_token,
+                ..Default::default()
+            },
+            metadata: model::order::OrderMetadata {
+                wait_for_cow,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn wait_for_cow_orders_pay_the_smaller_factor() {
+        let (usdc, dai, weth) = (
+            testlib::tokens::USDC,
+            testlib::tokens::DAI,
+            testlib::tokens::WETH,
+        );
+        let stablecoins = TokenBucketFeeOverride {
+            tokens: [usdc, dai].into_iter().collect(),
+            factor: factor(0.00003),
+        };
+        let policy = |wait_for_cow_factor| {
+            VolumeFeePolicy::new(vec![stablecoins.clone()], Some(factor(0.0002)), false, weth)
+                .with_wait_for_cow_factor(wait_for_cow_factor)
+        };
+
+        let capped = policy(Some(factor(0.0001)));
+        // The cap is above the bucket factor, so the bucket factor stays.
+        assert_eq!(
+            capped.order_volume_fee_factor(&order(usdc, dai, true), None),
+            Some(factor(0.00003))
+        );
+        // The cap is below the default factor, so the cap applies.
+        assert_eq!(
+            capped.order_volume_fee_factor(&order(weth, dai, true), None),
+            Some(factor(0.0001))
+        );
+        // Regular orders are not capped.
+        assert_eq!(
+            capped.order_volume_fee_factor(&order(weth, dai, false), None),
+            Some(factor(0.0002))
+        );
+        // Same-token trades still pay no volume fee.
+        assert_eq!(
+            capped.order_volume_fee_factor(&order(weth, weth, true), None),
+            None
+        );
+
+        // A zero cap waives the fee with a zero factor, not with no fee.
+        let waived = policy(Some(factor(0.0)));
+        for (sell, buy) in [(usdc, dai), (weth, dai)] {
+            assert_eq!(
+                waived.order_volume_fee_factor(&order(sell, buy, true), None),
+                Some(factor(0.0))
+            );
+        }
+
+        // Without a cap, wait-for-CoW orders pay the regular factor.
+        assert_eq!(
+            policy(None).order_volume_fee_factor(&order(weth, dai, true), None),
+            Some(factor(0.0002))
+        );
+    }
+
+    #[test]
+    fn wait_for_cow_cap_never_adds_a_volume_fee() {
+        let weth = testlib::tokens::WETH;
+        let policy = VolumeFeePolicy::new(vec![], None, false, weth)
+            .with_wait_for_cow_factor(Some(factor(0.0)));
+        let order = order(weth, testlib::tokens::DAI, true);
+
+        assert_eq!(policy.order_volume_fee_factor(&order, None), None);
+        // The caller's default factor is capped like a configured one.
+        assert_eq!(
+            policy.order_volume_fee_factor(&order, Some(factor(0.0002))),
+            Some(factor(0.0))
+        );
+    }
+
+    #[test]
+    fn legacy_quote_fee_of_a_wait_for_cow_order() {
+        let weth = testlib::tokens::WETH;
+        let fees = |config: Option<VolumeFeeConfig>| LegacyVolumeFees {
+            config,
+            policy: Some(Arc::new(
+                VolumeFeePolicy::new(vec![], Some(factor(0.0002)), false, weth)
+                    .with_wait_for_cow_factor(Some(factor(0.0))),
+            )),
+            max_partner_fee: None,
+        };
+        let app_data = app_data::Validator::new(8192).validate(b"{}").unwrap();
+        let order = order(weth, testlib::tokens::DAI, true);
+        let quote_fee = |fees: LegacyVolumeFees| {
+            fees.quote_volume_fee(&order, &Quote::default(), &app_data, None)
+        };
+
+        let config = VolumeFeeConfig {
+            factor: Some(factor(0.0002)),
+            effective_from_timestamp: None,
+        };
+        assert_eq!(quote_fee(fees(Some(config))), Some(factor(0.0)));
+        // Without `[volume-fee]` quotes get no volume fee, waived or not.
+        assert_eq!(quote_fee(fees(None)), None);
     }
 
     #[test]

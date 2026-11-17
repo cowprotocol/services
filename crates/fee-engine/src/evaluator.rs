@@ -240,13 +240,15 @@ mod tests {
         }
     }
 
-    /// `order` evaluated with no app data and no partner fees.
+    /// `order` evaluated with no app data and no partner fees, and with
+    /// canonical batches on.
     fn evaluate<'r>(evaluator: &Evaluator<'r>, order: &Order, in_market: bool) -> Evaluation<'r> {
         evaluator.evaluate(OrderView {
             order,
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market,
+            wait_for_cow: order.metadata.wait_for_cow,
         })
     }
 
@@ -480,6 +482,7 @@ mod tests {
             app_data: &app_data,
             partner_fees: &[],
             in_market: false,
+            wait_for_cow: false,
         });
         assert!(evaluation.skipped.is_empty());
         assert_eq!(names(&evaluation), ["CoW Swap"]);
@@ -500,6 +503,7 @@ mod tests {
                 app_data: &AppData::default(),
                 partner_fees: &[PartnerFee::Volume { bps: 60 }],
                 in_market: false,
+                wait_for_cow: false,
             });
             assert!(evaluation.matched.is_empty());
             evaluation.partner_fees

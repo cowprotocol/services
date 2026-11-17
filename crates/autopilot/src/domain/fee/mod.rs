@@ -80,13 +80,15 @@ impl ProtocolFees {
         volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
         enable_sell_equals_buy_volume_fee: bool,
         native_token: Address,
+        wait_for_cow_volume_fee_factor: Option<FeeFactor>,
     ) -> Self {
         let volume_fee_policy = VolumeFeePolicy::new(
             volume_fee_bucket_overrides,
             None, // contained within FeePoliciesConfig; vol fee is passed in at callsite
             enable_sell_equals_buy_volume_fee,
             native_token,
-        );
+        )
+        .with_wait_for_cow_factor(wait_for_cow_volume_fee_factor);
         Self {
             fee_policies: config
                 .policies
@@ -351,7 +353,7 @@ impl Quote {
 
 #[cfg(test)]
 mod test {
-    use {super::*, model::order::OrderMetadata};
+    use {super::*, configs::autopilot::fee_policy::FeePolicyKind, model::order::OrderMetadata};
 
     /// `policy` as requested by a partner.
     fn partner(policy: Policy) -> PolicyWithOrigin {
@@ -359,6 +361,82 @@ mod test {
             policy,
             origin: Origin::Partner,
         }
+    }
+
+    /// `policy` as charged by the protocol.
+    fn protocol(policy: Policy) -> PolicyWithOrigin {
+        PolicyWithOrigin {
+            policy,
+            origin: Origin::Protocol,
+        }
+    }
+
+    #[test]
+    fn wait_for_cow_orders_get_the_capped_volume_fee() {
+        let surplus = Policy::Surplus {
+            factor: FeeFactor::new(0.5),
+            max_volume_factor: FeeFactor::new(0.0098),
+        };
+        let config = FeePoliciesConfig {
+            policies: vec![
+                FeePolicy {
+                    kind: FeePolicyKind::Surplus {
+                        factor: FeeFactor::new(0.5),
+                        max_volume_factor: FeeFactor::new(0.0098),
+                    },
+                    order_class: FeePolicyOrderClass::Limit,
+                },
+                FeePolicy {
+                    kind: FeePolicyKind::Volume {
+                        factor: FeeFactor::new(0.0002),
+                    },
+                    order_class: FeePolicyOrderClass::Any,
+                },
+            ],
+            ..Default::default()
+        };
+        let fees = |cap| ProtocolFees::new(&config, vec![], false, Address::repeat_byte(0xee), cap);
+        let order = |wait_for_cow| {
+            boundary::Order {
+            data: model::order::OrderData {
+                sell_token: Address::repeat_byte(1),
+                buy_token: Address::repeat_byte(2),
+                sell_amount: U256::from(100),
+                buy_amount: U256::from(100),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                wait_for_cow,
+                full_app_data: Some(
+                    r#"{"metadata":{"partnerFee":[{"bps":10,"recipient":"0x0202020202020202020202020202020202020202"}]}}"#
+                        .to_string(),
+                ),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        };
+        // Without a quote the order counts as a limit order, so it also gets
+        // the surplus policy; the partner fee comes last.
+        let expected = |volume: f64| {
+            vec![
+                protocol(surplus),
+                protocol(Policy::Volume {
+                    factor: FeeFactor::new(volume),
+                }),
+                partner(Policy::Volume {
+                    factor: FeeFactor::new(0.001),
+                }),
+            ]
+        };
+        let apply = |cap, wait_for_cow| fees(cap).apply(&order(wait_for_cow), None, &[]);
+
+        let waived = Some(FeeFactor::new(0.0));
+        assert_eq!(apply(waived, true), expected(0.0));
+        assert_eq!(apply(Some(FeeFactor::new(0.0001)), true), expected(0.0001));
+        // No cap: canonical batches are off, so the regular fee applies.
+        assert_eq!(apply(None, true), expected(0.0002));
+        assert_eq!(apply(waived, false), expected(0.0002));
     }
 
     #[test]
