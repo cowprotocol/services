@@ -47,9 +47,6 @@ impl Entry {
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum BackendError {
-    #[error("chainalysis lookup failed")]
-    Chainalysis(#[from] alloy_contract::Error),
-
     #[error("hermod lookup failed")]
     Hermod(#[from] super::hermod::Error),
 }

@@ -3049,7 +3049,6 @@ dependencies = [
  "cow-contract-balancerv3batchrouter",
  "cow-contract-balances",
  "cow-contract-baoswaprouter",
- "cow-contract-chainalysisoracle",
  "cow-contract-counter",
  "cow-contract-cowprotocoltoken",
  "cow-contract-cowswapethflow",
@@ -3429,17 +3428,6 @@ dependencies = [
 
 [[package]]
 name = "cow-contract-baoswaprouter"
-version = "0.1.0"
-dependencies = [
- "alloy-contract",
- "alloy-primitives",
- "alloy-provider",
- "alloy-sol-types",
- "anyhow",
-]
-
-[[package]]
-name = "cow-contract-chainalysisoracle"
 version = "0.1.0"
 dependencies = [
  "alloy-contract",

@@ -2,7 +2,6 @@ use {
     alloy::primitives::Address,
     chain::Chain,
     contracts::{
-        ChainalysisOracle,
         FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
@@ -20,7 +19,6 @@ pub struct Contracts {
     signatures: contracts::support::Signatures::Instance,
     weth: WETH9::Instance,
     balances: Balances::Instance,
-    chainalysis_oracle: Option<ChainalysisOracle::Instance>,
     trampoline: HooksTrampoline::Instance,
     flashloan_router: Address,
 
@@ -88,10 +86,6 @@ impl Contracts {
             .or_else(|| FlashLoanRouter::deployment_address(&chain.id()))
             .unwrap();
 
-        let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
-            .await
-            .ok();
-
         let settlement_domain_separator = eth::DomainSeparator(
             settlement
                 .domainSeparator()
@@ -115,7 +109,6 @@ impl Contracts {
             signatures,
             weth,
             balances,
-            chainalysis_oracle,
             settlement_domain_separator,
             authenticator,
             trampoline,
@@ -141,10 +134,6 @@ impl Contracts {
 
     pub fn settlement_domain_separator(&self) -> &eth::DomainSeparator {
         &self.settlement_domain_separator
-    }
-
-    pub fn chainalysis_oracle(&self) -> &Option<ChainalysisOracle::Instance> {
-        &self.chainalysis_oracle
     }
 
     pub fn weth(&self) -> &WETH9::Instance {
