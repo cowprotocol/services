@@ -14,6 +14,7 @@ use {
         balance_cache::BalanceCacheConfig,
         banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
+        fee_engine::FeeEngineConfig,
         http_client::HttpClient,
         order_quoting::OrderQuoting,
         price_estimation::PriceEstimation,
@@ -73,6 +74,10 @@ pub struct Configuration {
 
     /// Describes how the protocol fees should be calculated.
     pub fee_policies: FeePoliciesConfig,
+
+    /// Protocol fee rules, compared with `fee_policies`. Absent, the autopilot
+    /// uses `fee_policies` alone.
+    pub fee_engine: Option<FeeEngineConfig>,
 
     /// Describes how per-order penalty caps should be calculated (CIP-87).
     /// If absent, orders don't get a penalty cap assigned.
@@ -235,6 +240,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![],
             fee_policies: Default::default(),
+            fee_engine: Default::default(),
             penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
@@ -270,6 +276,7 @@ impl Configuration {
             shared: Default::default(),
             drivers: vec![Solver::test(name, solver_address)],
             fee_policies: Default::default(),
+            fee_engine: Default::default(),
             penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
             order_events_cleanup: Default::default(),
@@ -404,9 +411,20 @@ mod tests {
         [balance-cache]
         eviction-time = "10s"
         refresh-cooldown = "1.2s"
+
+        [fee-engine.partner-fees]
+        max-volume-bps = 500
+
+        [[fee-engine.rule]]
+        name = "Default"
+        when = "true"
+        fee = "volume(2)"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
+
+        let fee_engine = config.fee_engine.unwrap();
+        assert!(fee_engine.rules.is_some() && fee_engine.partner_fees.is_some());
 
         assert_eq!(config.drivers.len(), 2);
         assert_eq!(config.drivers[0].name, "solver1");
