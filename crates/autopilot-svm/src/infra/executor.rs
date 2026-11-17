@@ -11,6 +11,7 @@ use {
         run_loop::{RankingInfo, SettlementExecutor},
     },
     async_trait::async_trait,
+    chain_types::solana::Pubkey,
     std::sync::Arc,
     tracing::Instrument,
     winner_selection::state::RankedItem,
@@ -43,6 +44,12 @@ impl DriverExecutor {
     }
 }
 
+/// Span shared by every log of one winner's settlement, so each carries both
+/// the driver name and the solver address.
+fn settlement_span(driver: &Driver, solver: Pubkey, solution: u64) -> tracing::Span {
+    tracing::info_span!("settlement", driver = %driver.name, %solver, solution)
+}
+
 #[async_trait]
 impl SettlementExecutor<SolanaCycle> for DriverExecutor {
     async fn execute(&self, auction_id: i64, ranking: &Ranking, tip: &u64, deadline: u64) {
@@ -56,16 +63,16 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 .get(&key)
                 .and_then(|&index| self.drivers.get(index))
             else {
-                tracing::error!(solution_id = winner.id(), "winner without a driver");
+                tracing::error!(
+                    solver = %winner.solver(),
+                    solution = winner.id(),
+                    "winner without a driver"
+                );
                 continue;
             };
             let driver = Arc::clone(driver);
-            tracing::info!(
-                driver = %driver.name,
-                solver = %winner.solver(),
-                solution = winner.id(),
-                "executing solution"
-            );
+            let span = settlement_span(&driver, winner.solver(), winner.id());
+            tracing::info!(parent: &span, "executing solution");
             // Countersign the winner's pending sponsored creations. A winner
             // whose creations cannot land any more cannot settle, so it is
             // skipped rather than dispatched to fail, and its orders return
@@ -79,9 +86,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                         Ok(creations) => creations,
                         Err(err) => {
                             tracing::warn!(
-                                driver = %driver.name,
-                                solver = %winner.solver(),
-                                solution = winner.id(),
+                                parent: &span,
                                 ?err,
                                 "skipping winner, sponsored creations unavailable"
                             );
@@ -91,7 +96,7 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                                 .await
                             {
                                 tracing::warn!(
-                                    auction_id,
+                                    parent: &span,
                                     ?err,
                                     "failed to record the skipped settlement"
                                 );
@@ -117,16 +122,13 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 .open_dispatched(auction_id, winner.solver(), uid, *tip, deadline)
                 .await
             {
-                tracing::error!(auction_id, ?err, "failed to open the settlement window");
+                tracing::error!(parent: &span, ?err, "failed to open the settlement window");
             }
             let windows = self.windows.clone();
             let solver = winner.solver();
-            tokio::spawn(async move {
+            let settle = async move {
                 match driver.settle(&request).await {
                     Ok(response) => tracing::info!(
-                        driver = %driver.name,
-                        %solver,
-                        auction_id,
                         deadline,
                         tx_signature = %response.tx_signature,
                         "settlement submitted"
@@ -135,48 +137,22 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                     // rejected: the orders re-enter the next cut and nothing
                     // is left to observe.
                     Err(err) if err.settlement_provably_unsent() => {
-                        tracing::warn!(
-                            driver = %driver.name,
-                            %solver,
-                            auction_id,
-                            ?err,
-                            "settlement rejected before submission"
-                        );
+                        tracing::warn!(?err, "settlement rejected before submission");
                         if let Err(err) = windows.close_rejected(auction_id, solver, uid).await {
-                            tracing::error!(
-                                auction_id,
-                                ?err,
-                                "failed to close the settlement window"
-                            );
+                            tracing::error!(?err, "failed to close the settlement window");
                         }
                         return;
                     }
                     // The transaction failed on chain and cannot land again,
                     // so its orders re-enter the next cut.
                     Err(err) if err.settlement_reverted() => {
-                        tracing::error!(
-                            driver = %driver.name,
-                            %solver,
-                            auction_id,
-                            ?err,
-                            "settlement reverted"
-                        );
+                        tracing::error!(?err, "settlement reverted");
                         if let Err(err) = windows.close_reverted(auction_id, solver, uid).await {
-                            tracing::error!(
-                                auction_id,
-                                ?err,
-                                "failed to close the settlement window"
-                            );
+                            tracing::error!(?err, "failed to close the settlement window");
                         }
                         return;
                     }
-                    Err(err) => tracing::error!(
-                        driver = %driver.name,
-                        %solver,
-                        auction_id,
-                        ?err,
-                        "settlement failed"
-                    ),
+                    Err(err) => tracing::error!(?err, "settlement failed"),
                 }
                 // The window stays with this task until it resolves: the
                 // indexer closes it as landed, or the deadline passes and it
@@ -184,7 +160,8 @@ impl SettlementExecutor<SolanaCycle> for DriverExecutor {
                 windows
                     .expire_when_due(auction_id, solver, uid, deadline)
                     .await;
-            });
+            };
+            tokio::spawn(settle.instrument(span));
         }
 
         // TODO: a workaround, not a final solution. The arbitrator picks one
