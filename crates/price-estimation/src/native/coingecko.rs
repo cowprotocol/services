@@ -24,6 +24,18 @@ struct Response(HashMap<Address, Price>);
 #[derive(Debug, Deserialize)]
 struct Price {
     eth: Option<f64>,
+    /// Unix time the price last changed.
+    last_updated_at: Option<i64>,
+}
+
+impl Price {
+    /// Whether the price changed within `max_age` of `now`. A price without
+    /// an update time cannot be shown fresh.
+    fn is_fresh(&self, now: i64, max_age: Duration) -> bool {
+        let max_age = i64::try_from(max_age.as_secs()).unwrap_or(i64::MAX);
+        self.last_updated_at
+            .is_some_and(|updated| now.saturating_sub(updated) <= max_age)
+    }
 }
 
 type Token = Address;
@@ -32,6 +44,9 @@ pub struct CoinGecko {
     client: Client,
     base_url: Url,
     api_key: Option<String>,
+    /// Age past which a price is stale: CoinGecko keeps answering with the
+    /// last price of a token whose market data stopped updating.
+    max_price_age: Duration,
     chain: String,
     denominator: Denominator,
     infos: Arc<dyn TokenInfoFetching>,
@@ -54,6 +69,7 @@ impl CoinGecko {
         client: Client,
         base_url: Url,
         api_key: Option<String>,
+        max_price_age: Duration,
         chain: &Chain,
         native_token: Address,
         token_infos: Arc<dyn TokenInfoFetching>,
@@ -90,17 +106,21 @@ impl CoinGecko {
             client,
             base_url,
             api_key,
+            max_price_age,
             chain,
             denominator,
             infos: token_infos,
         })
     }
 
+    /// The prices of the given tokens in ETH. A token CoinGecko does not
+    /// price is absent, one whose price is older than `max_price_age` is a
+    /// [`PriceEstimationError::StalePrice`].
     async fn bulk_fetch_denominated_in_eth(
         &self,
         tokens: &HashSet<Token>,
         timeout: Duration,
-    ) -> Result<HashMap<Token, f64>, PriceEstimationError> {
+    ) -> Result<HashMap<Token, NativePriceEstimateResult>, PriceEstimationError> {
         let mut url = crate::utils::join_url(&self.base_url, &self.chain);
         metrics::batch_size(tokens.len());
         // Sort to make the token order deterministic for better caching on
@@ -111,7 +131,8 @@ impl CoinGecko {
         url.query_pairs_mut()
             .append_pair("contract_addresses", &sorted_tokens.join(","))
             .append_pair("vs_currencies", "eth")
-            .append_pair("precision", "full");
+            .append_pair("precision", "full")
+            .append_pair("include_last_updated_at", "true");
 
         let mut builder = self.client.get(url.clone()).timeout(timeout);
         if let Some(ref api_key) = self.api_key {
@@ -134,11 +155,23 @@ impl CoinGecko {
         observe::coingecko_response(&url, response.as_deref());
         let response = response.context("failed to fetch response body")?;
 
+        let now = chrono::Utc::now().timestamp();
         let parsed_response = serde_json::from_str::<Response>(&response)
             .with_context(|| format!("failed to parse response: {response:?}"))?
             .0
             .into_iter()
-            .filter_map(|(token, price)| Some((token, price.eth?)))
+            .filter_map(|(token, price)| {
+                let eth = price.eth?;
+                if !price.is_fresh(now, self.max_price_age) {
+                    tracing::debug!(
+                        ?token,
+                        last_updated_at = ?price.last_updated_at,
+                        "stale CoinGecko price"
+                    );
+                    return Some((token, Err(PriceEstimationError::StalePrice)));
+                }
+                Some((token, Ok(eth)))
+            })
             .collect();
 
         Ok(parsed_response)
@@ -163,7 +196,7 @@ impl CoinGecko {
         let denominator_price: Decimal = prices_in_eth
             .get(&self.denominator.address)
             .cloned()
-            .ok_or(PriceEstimationError::NoLiquidity)?
+            .ok_or(PriceEstimationError::NoLiquidity)??
             .try_into()
             .map_err(|e| anyhow::anyhow!("failed to convert price to decimal: {:?}", e))?;
 
@@ -190,7 +223,7 @@ impl CoinGecko {
     fn denominate_price(
         token: &Token,
         denominator_price_eth: Decimal,
-        prices: &HashMap<Token, f64>,
+        prices: &HashMap<Token, NativePriceEstimateResult>,
         infos: &HashMap<Token, TokenInfo>,
         denominator: &Denominator,
     ) -> NativePriceEstimateResult {
@@ -202,7 +235,7 @@ impl CoinGecko {
         let token_price_eth: Decimal = prices
             .get(token)
             .cloned()
-            .ok_or(PriceEstimationError::NoLiquidity)?
+            .ok_or(PriceEstimationError::NoLiquidity)??
             .try_into()
             .map_err(|e| anyhow::anyhow!("failed to convert price to decimal: {:?}", e))?;
 
@@ -361,6 +394,7 @@ mod tests {
                 client,
                 base_url,
                 api_key,
+                max_price_age: Duration::from_hours(1),
                 chain,
                 denominator,
                 infos: token_infos,
@@ -395,6 +429,89 @@ mod tests {
         });
 
         Arc::new(mock)
+    }
+
+    const WETH: Address = address!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+
+    /// Serve a fixed CoinGecko response for mainnet.
+    async fn coingecko_server(response: serde_json::Value) -> Url {
+        let app = axum::Router::new().route(
+            "/ethereum",
+            axum::routing::get(move || {
+                let response = response.clone();
+                async move { axum::Json(response) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}/").parse().unwrap()
+    }
+
+    /// A mainnet instance on `url` that counts a price older than
+    /// `max_price_age` as stale.
+    fn instance_with_max_price_age(url: Url, max_price_age: Duration) -> CoinGecko {
+        let mut instance = CoinGecko::new_for_test(
+            Client::default(),
+            url,
+            None,
+            &Chain::Mainnet,
+            default_token_info_fetcher(),
+        )
+        .unwrap();
+        instance.max_price_age = max_price_age;
+        instance
+    }
+
+    /// A price older than the maximum age, or without an update time, is
+    /// stale. A fresh price and an unlisted token are not.
+    #[tokio::test]
+    async fn stale_prices_are_not_estimates() {
+        let [stale, undated, fresh, unlisted] = [1, 2, 3, 4].map(Address::repeat_byte);
+        let max_price_age = Duration::from_mins(10);
+        let now = chrono::Utc::now().timestamp();
+        let expired = now - max_price_age.as_secs().cast_signed() - 60;
+        let url = coingecko_server(serde_json::json!({
+            format!("{WETH:#x}"): { "eth": 1.0, "last_updated_at": now },
+            format!("{stale:#x}"): { "eth": 0.5, "last_updated_at": expired },
+            format!("{undated:#x}"): { "eth": 0.5 },
+            format!("{fresh:#x}"): { "eth": 0.5, "last_updated_at": now },
+        }))
+        .await;
+        let instance = instance_with_max_price_age(url, max_price_age);
+
+        let prices = instance
+            .fetch_native_prices(
+                HashSet::from([stale, undated, fresh, unlisted]),
+                HEALTHY_PRICE_ESTIMATION_TIME,
+            )
+            .await
+            .unwrap();
+        assert_eq!(prices[&stale], Err(PriceEstimationError::StalePrice));
+        assert_eq!(prices[&undated], Err(PriceEstimationError::StalePrice));
+        assert_eq!(prices[&fresh], Ok(0.5));
+        assert_eq!(prices[&unlisted], Err(PriceEstimationError::NoLiquidity));
+    }
+
+    /// Every price is a ratio to the denominator's, so a stale denominator
+    /// fails the batch.
+    #[tokio::test]
+    async fn stale_denominator_fails_the_batch() {
+        let token = Address::repeat_byte(1);
+        let max_price_age = Duration::from_mins(10);
+        let now = chrono::Utc::now().timestamp();
+        let expired = now - max_price_age.as_secs().cast_signed() - 60;
+        let url = coingecko_server(serde_json::json!({
+            format!("{WETH:#x}"): { "eth": 1.0, "last_updated_at": expired },
+            format!("{token:#x}"): { "eth": 0.5, "last_updated_at": now },
+        }))
+        .await;
+        let instance = instance_with_max_price_age(url, max_price_age);
+
+        let result = instance
+            .fetch_native_prices(HashSet::from([token]), HEALTHY_PRICE_ESTIMATION_TIME)
+            .await;
+        assert_eq!(result.unwrap_err(), PriceEstimationError::StalePrice);
     }
 
     #[tokio::test]

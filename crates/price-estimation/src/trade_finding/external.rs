@@ -110,6 +110,7 @@ impl ExternalTradeFinder {
                         kind: query.kind,
                         deadline: chrono::Utc::now() + query.timeout,
                         enable_fast_path: query.fast_path,
+                        price_quality: query.price_quality,
                         quote_id,
                     };
 
@@ -393,6 +394,7 @@ mod tests {
             verification: Default::default(),
             block_dependent: false,
             fast_path,
+            price_quality: model::quote::PriceQuality::Verified,
             timeout: std::time::Duration::from_secs(5),
         }
     }
@@ -510,6 +512,7 @@ pub mod dto {
         eth_domain_types::Receiver,
         model::{
             order::{BuyTokenDestination, OrderKind, SellTokenSource},
+            quote::PriceQuality,
             signature::SigningScheme,
         },
         number::serialization::HexOrDecimalU256,
@@ -530,6 +533,7 @@ pub mod dto {
         pub deadline: chrono::DateTime<chrono::Utc>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         pub enable_fast_path: bool,
+        pub price_quality: PriceQuality,
         pub quote_id: i64,
     }
 

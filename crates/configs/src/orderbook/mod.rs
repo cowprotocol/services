@@ -2,6 +2,7 @@ use {
     crate::{
         banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
+        fee_engine::FeeEngineConfig,
         fee_factor::FeeFactor,
         http_client::HttpClient,
         order_quoting::OrderQuoting,
@@ -87,6 +88,10 @@ pub struct Configuration {
 
     /// Configuration for the volume fee.
     pub volume_fee: Option<VolumeFeeConfig>,
+
+    /// Protocol fee rules, compared with `volume_fee`. Absent, the orderbook
+    /// uses `volume_fee` alone.
+    pub fee_engine: Option<FeeEngineConfig>,
 
     /// Maximum allowed size (in bytes) for order app-data.
     #[serde(default = "default_app_data_size_limit")]
@@ -219,6 +224,7 @@ pub mod test_util {
                 banned_users: Default::default(),
                 ipfs: Default::default(),
                 volume_fee: Default::default(),
+                fee_engine: Default::default(),
                 app_data_size_limit: default_app_data_size_limit(),
                 app_data_cache_max_bytes: default_app_data_cache_max_bytes(),
                 active_order_competition_threshold: default_active_order_competition_threshold(),
@@ -287,9 +293,24 @@ mod tests {
 
         [order-quoting]
         price-estimation-drivers = []
+
+        [fee-engine.partner-fees]
+        max-volume-bps = 500
+
+        [[fee-engine.rule]]
+        name = "Default"
+        when = "true"
+        fee = "volume(2)"
         "#;
 
         let config: Configuration = toml::from_str(toml).unwrap();
+
+        let fee_engine = config.fee_engine.unwrap();
+        assert_eq!(fee_engine.rules.unwrap().as_array().unwrap().len(), 1);
+        assert_eq!(
+            fee_engine.partner_fees.unwrap()["max-volume-bps"].as_integer(),
+            Some(500)
+        );
 
         assert_eq!(config.app_data_size_limit, 4096);
         assert_eq!(config.app_data_cache_max_bytes, 1_048_576);
@@ -388,6 +409,7 @@ mod tests {
                 factor: Some(0.0002.try_into().unwrap()),
                 effective_from_timestamp: None,
             }),
+            fee_engine: None,
             unsupported_tokens: vec![
                 "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     .parse()

@@ -40,6 +40,7 @@ use {
 };
 
 pub mod auction;
+pub mod native_price_cache;
 pub mod order;
 mod pre_processing;
 pub mod quote_cache;
@@ -54,6 +55,7 @@ use {
 };
 pub use {
     auction::Auction,
+    native_price_cache::NativePriceCache,
     order::Order,
     pre_processing::DataAggregator,
     quote_cache::{CachedQuoteSolution, FastPathQuoteCache},
@@ -277,6 +279,10 @@ pub struct Competition {
     /// Fast-path quote solutions cached at quote time, keyed per solver
     /// account.
     quote_cache: FastPathQuoteCache,
+    /// Native token prices observed in regular auctions. A fast-path solution
+    /// is re-encoded outside any auction and has no prices of its own, so it
+    /// reuses these to apply the solver's absolute slippage limit.
+    native_price_cache: NativePriceCache,
     /// bad token and orders detector
     pub risk_detector: Arc<risk_detector::Detector>,
     fetcher: Arc<pre_processing::DataAggregator>,
@@ -301,6 +307,7 @@ impl Competition {
         fetcher: Arc<DataAggregator>,
         order_sorting_strategies: Vec<Arc<dyn sorting::SortingStrategy>>,
         quote_cache: FastPathQuoteCache,
+        native_price_cache: NativePriceCache,
     ) -> Arc<Self> {
         let submission_accounts = solver.submission_accounts().to_vec();
         if !submission_accounts.is_empty() {
@@ -322,6 +329,7 @@ impl Competition {
             submitter,
             settlements: Default::default(),
             quote_cache,
+            native_price_cache,
             risk_detector,
             fetcher,
             order_sorting_strategies,
@@ -553,11 +561,6 @@ impl Competition {
     /// against the real signed `order`, and promote it into the regular settle
     /// queue. Returns the id of the queued solution, which
     /// [`Competition::settle`] settles by.
-    ///
-    /// TODO: The slippage of AMM interactions will only be capped at a
-    /// fraction of the traded tokens but not at a total ETH value which means
-    /// very large trades can still incur big amounts of slippage. This should
-    /// be fixed.
     #[instrument(skip_all)]
     pub async fn reencode_quote_solution(
         &self,
@@ -582,9 +585,20 @@ impl Competition {
             })?;
         // The quote was solved outside of any auction; its settlement runs
         // under the auction the autopilot allocated for it.
+        // Mapping over `&Token` instead would make this future non-`Send`,
+        // so the clone clippy flags is required.
+        #[expect(clippy::redundant_iter_cloned)]
+        let tokens = cached
+            .auction
+            .tokens
+            .iter()
+            .cloned()
+            .map(|token| token.address);
+        let prices = self.native_price_cache.get_many(tokens).await;
         let auction = Auction {
             id: auction::Kind::Competition(auction_id),
             orders: vec![order],
+            tokens: Arc::new(cached.auction.tokens.with_native_prices(&prices)),
             ..cached.auction
         };
         let settlement = solution

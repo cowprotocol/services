@@ -522,7 +522,9 @@ fn merge_words(target: &mut Option<B256Map<B256>>, update: Option<B256Map<B256>>
 
 fn publish(venues: &Venues, block_number: u64, sender: &watch::Sender<Snapshot>) {
     let (overrides, stamp) = venues.fold();
-    Metrics::get().venue_count.set(overrides.len() as i64);
+    Metrics::get()
+        .venue_count
+        .set(i64::try_from(overrides.len()).unwrap_or(i64::MAX));
     let snapshot = Snapshot {
         overrides,
         block_number,

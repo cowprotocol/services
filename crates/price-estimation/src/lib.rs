@@ -8,7 +8,7 @@ use {
     anyhow::Result,
     eth_domain_types::Receiver,
     futures::{future::BoxFuture, stream::BoxStream},
-    model::order::OrderKind,
+    model::{order::OrderKind, quote::PriceQuality},
     number::nonzero::NonZeroU256,
     rate_limit::RateLimiter,
     serde::{Deserialize, Serialize},
@@ -49,6 +49,10 @@ pub enum PriceEstimationError {
 
     #[error("Rate limited")]
     RateLimited,
+
+    /// The estimator only has a price that is too old to use.
+    #[error("Stale price")]
+    StalePrice,
 
     /// Token can only be traded during specific time windows (e.g. xStocks/Ondo
     /// RWA tokens).
@@ -97,6 +101,7 @@ impl Clone for PriceEstimationError {
                 Self::UnsupportedOrderType(order_type.clone())
             }
             Self::RateLimited => Self::RateLimited,
+            Self::StalePrice => Self::StalePrice,
             Self::TradingOutsideAllowedWindow { message } => Self::TradingOutsideAllowedWindow {
                 message: message.clone(),
             },
@@ -164,6 +169,9 @@ pub struct Query {
     /// execution; propagated to the driver.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fast_path: bool,
+    /// The price quality the quote was requested with; propagated to the
+    /// driver. Native price queries are `Fast`.
+    pub price_quality: PriceQuality,
     pub timeout: Duration,
 }
 

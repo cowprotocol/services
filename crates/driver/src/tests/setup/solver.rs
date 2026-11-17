@@ -421,6 +421,7 @@ impl Solver {
             url,
             max_batch_size: 20,
             max_concurrent_requests: 10,
+            timeout: ethrpc::DEFAULT_TIMEOUT,
         })
         .await
         .unwrap();
@@ -473,6 +474,7 @@ impl Solver {
                     if config.quote {
                         expected["quoteId"] =
                             config.quote_id.expect("quotes carry a quote id").to_string().into();
+                        expected["priceQuality"] = super::QUOTE_PRICE_QUALITY.into();
                     }
                     if config.fast_path {
                         expected["fastPath"] = true.into();

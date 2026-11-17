@@ -7,7 +7,6 @@ pub mod fast_path;
 pub mod fee_policies;
 pub mod jit_orders;
 pub mod last_indexed_blocks;
-pub mod leader_pg_lock;
 pub mod onchain_broadcasted_orders;
 pub mod onchain_invalidations;
 pub mod order_events;

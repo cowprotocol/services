@@ -202,10 +202,6 @@ pub fn run(artifacts_dir: &Path) -> Result<()> {
             "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/build/IDXswapPair.json",
         )?
         .manual(
-            "ChainalysisOracle",
-            "Chainalysis does not publish its code",
-        )
-        .manual(
             "Multicall3",
             "mds1/multicall does not commit build artifacts; ABI and creation bytecode were \
              taken from the verified mainnet deployment at \

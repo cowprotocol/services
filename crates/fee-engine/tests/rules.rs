@@ -3,11 +3,11 @@
 use {
     alloy_primitives::{Address, U256, address},
     chrono::{TimeZone, Utc},
-    configs::fee_factor::FeeFactor,
     fee_engine::{
         AppData,
         Evaluation,
         Fee,
+        FeeFactor,
         Match,
         OrderView,
         RuleDefinition,
@@ -44,7 +44,7 @@ fn rules() -> RuleSet {
             "order.sellToken in stablecoins && order.buyToken in stablecoins",
             "volume(10)",
         ),
-        rule("Default", "true", "surplus(50, 1)"),
+        rule("Default", "true", "surplus(50, 100)"),
     ];
     let lists = BTreeMap::from([
         (
@@ -56,6 +56,7 @@ fn rules() -> RuleSet {
     RuleSet::new(RuleSetDefinition {
         lists,
         rules: definitions,
+        ..Default::default()
     })
     .unwrap()
 }
@@ -101,6 +102,7 @@ fn reports_the_matching_rules_per_order() {
     let (rule, fees) = matched(before_launch.evaluate(OrderView {
         order: &order(user, USDC, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(
@@ -110,7 +112,7 @@ fn reports_the_matching_rules_per_order() {
     assert_eq!(
         fees,
         vec![Fee::Volume {
-            factor: FeeFactor::new(0.0001)
+            factor: FeeFactor::try_from(0.0001).unwrap()
         }]
     );
 
@@ -118,33 +120,36 @@ fn reports_the_matching_rules_per_order() {
     let (rule, fees) = matched(after_launch.evaluate(OrderView {
         order: &order(user, USDC, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(rule, ["Stablecoin swaps", "Default"]);
     assert_eq!(
         fees,
         vec![Fee::Volume {
-            factor: FeeFactor::new(0.001)
+            factor: FeeFactor::try_from(0.001).unwrap()
         }]
     );
 
     let (rule, fees) = matched(after_launch.evaluate(OrderView {
         order: &order(user, WETH, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(rule, ["Default"]);
     assert_eq!(
         fees,
         vec![Fee::Surplus {
-            factor: FeeFactor::new(0.5),
-            max_volume_factor: FeeFactor::new(0.01),
+            factor: FeeFactor::try_from(0.5).unwrap(),
+            max_volume_factor: FeeFactor::try_from(0.01).unwrap(),
         }]
     );
 
     let (rule, fees) = matched(after_launch.evaluate(OrderView {
         order: &order(MAKER, USDC, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     }));
     assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
@@ -164,6 +169,7 @@ fn no_matching_rule_means_no_fee() {
             .evaluate(OrderView {
                 order: &Order::default(),
                 app_data: &AppData::default(),
+                partner_fees: &[],
                 in_market: false
             })
             .matched

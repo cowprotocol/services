@@ -42,6 +42,7 @@ pub fn unbuffered_web3(ethrpc: &Url) -> Web3 {
             ethrpc_max_batch_size: 0,
             ethrpc_max_concurrent_requests: 0,
             ethrpc_batch_delay: Default::default(),
+            ethrpc_timeout: ethrpc::DEFAULT_TIMEOUT,
         },
         ethrpc,
         "base",

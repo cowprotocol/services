@@ -46,7 +46,9 @@ impl Api {
             .layer(RequestBodyLimitLayer::new(REQUEST_BODY_LIMIT))
             .layer(axum::extract::DefaultBodyLimit::disable());
 
-        axum::serve(listener, app)
+        // Build the routes once: serving the `Router` itself deep-clones every
+        // route, middleware included, per accepted connection.
+        axum::serve(listener, app.into_make_service())
             .with_graceful_shutdown(shutdown)
             .await
     }

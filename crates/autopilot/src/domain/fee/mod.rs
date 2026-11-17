@@ -67,6 +67,34 @@ impl UpcomingProtocolFees {
 
 pub type ProtocolFeeExemptAddresses = HashSet<Address>;
 
+/// Where the autopilot's fee policies come from. Only here while the legacy
+/// source and the fee engine both exist; goes away with the legacy source.
+pub trait AutopilotFees: Send + Sync {
+    /// The fee policies of an order in an auction, protocol then partner.
+    fn auction_fees(
+        &self,
+        order: &boundary::Order,
+        quote: Option<&domain::Quote>,
+        surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
+    ) -> Vec<PolicyWithOrigin>;
+}
+
+/// In case there is no quote, we assume 0 buy amount so that the order
+/// ends up being considered out of market price.
+pub(crate) fn reference_quote(
+    order: &boundary::Order,
+    quote: Option<&domain::Quote>,
+) -> domain::Quote {
+    quote.cloned().unwrap_or(domain::Quote {
+        order_uid: order.metadata.uid.into(),
+        sell_amount: order.data.sell_amount.into(),
+        buy_amount: U256::ZERO.into(),
+        fee: order.data.fee_amount.into(),
+        solver: Address::ZERO,
+    })
+}
+
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
@@ -118,7 +146,7 @@ impl ProtocolFees {
             FeeFactor::try_from(factor).expect("value was clamped to the required range")
         }
 
-        let Ok(max_partner_fee) = Decimal::try_from(max_partner_fee) else {
+        let Ok(max_partner_fee) = fee_engine::FeeFactor::try_from(max_partner_fee) else {
             return vec![];
         };
         let Some(full_app_data) = order.metadata.full_app_data.as_ref() else {
@@ -128,7 +156,7 @@ impl ProtocolFees {
             return vec![];
         };
 
-        let mut accumulated = Decimal::ZERO;
+        let mut budget = fee_engine::PartnerFeeBudget::new(max_partner_fee);
 
         parsed_app_data
             .partner_fee
@@ -139,11 +167,7 @@ impl ProtocolFees {
                         // Convert bps to decimal percentage
                         let fee_decimal = Decimal::from(bps) / Decimal::from(MAX_BPS);
                         // Create policy and update accumulator
-                        let factor = shared::fee::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
-                        );
+                        let factor = FeeFactor::new(budget.capped_fee_factor(fee_decimal).to_f64());
                         Policy::Volume { factor }
                     }
                     app_data::FeePolicy::Surplus {
@@ -155,11 +179,8 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = shared::fee::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
-                        );
+                        let max_volume_factor =
+                            FeeFactor::new(budget.capped_fee_factor(fee_decimal).to_f64());
 
                         let factor = fee_factor_from_bps(bps);
 
@@ -177,11 +198,8 @@ impl ProtocolFees {
 
                         // Compute max_volume_factor limited by the global
                         // volume cap.
-                        let max_volume_factor = shared::fee::capped_fee_factor(
-                            fee_decimal,
-                            max_partner_fee,
-                            &mut accumulated,
-                        );
+                        let max_volume_factor =
+                            FeeFactor::new(budget.capped_fee_factor(fee_decimal).to_f64());
 
                         let factor = fee_factor_from_bps(bps);
 
@@ -211,16 +229,9 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: Option<&domain::Quote>,
         surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
     ) -> Vec<PolicyWithOrigin> {
-        // In case there is no quote, we assume 0 buy amount so that the order
-        // ends up being considered out of market price.
-        let reference_quote = quote.cloned().unwrap_or(domain::Quote {
-            order_uid: order.metadata.uid.into(),
-            sell_amount: order.data.sell_amount.into(),
-            buy_amount: U256::ZERO.into(),
-            fee: order.data.fee_amount.into(),
-            solver: Address::ZERO,
-        });
+        let reference_quote = reference_quote(order, quote);
 
         let partner_fee =
             Self::get_partner_fee(order, &reference_quote, self.max_partner_fee.get());
@@ -229,7 +240,7 @@ impl ProtocolFees {
             return partner_fee;
         }
 
-        self.apply_policies(order, &reference_quote, partner_fee)
+        self.apply_policies(order, &reference_quote, partner_fee, now)
     }
 
     fn apply_policies(
@@ -237,8 +248,8 @@ impl ProtocolFees {
         order: &boundary::Order,
         quote: &domain::Quote,
         partner_fees: Vec<PolicyWithOrigin>,
+        now: DateTime<Utc>,
     ) -> Vec<PolicyWithOrigin> {
-        let now = Utc::now();
         let fee_policies = self
             .upcoming_fee_policies
             .as_ref()
@@ -284,6 +295,18 @@ impl ProtocolFees {
             (false, FeePolicyOrderClass::Market) => Some(&protocol_fee.policy),
             _ => None,
         }
+    }
+}
+
+impl AutopilotFees for ProtocolFees {
+    fn auction_fees(
+        &self,
+        order: &boundary::Order,
+        quote: Option<&domain::Quote>,
+        surplus_capturing_jit_order_owners: &[eth::Address],
+        now: DateTime<Utc>,
+    ) -> Vec<PolicyWithOrigin> {
+        self.apply(order, quote, surplus_capturing_jit_order_owners, now)
     }
 }
 
@@ -349,7 +372,7 @@ pub struct Quote {
 }
 
 impl Quote {
-    fn from_domain(value: &domain::Quote) -> Self {
+    pub(crate) fn from_domain(value: &domain::Quote) -> Self {
         Self {
             sell_amount: value.sell_amount.0,
             buy_amount: value.buy_amount.0,
