@@ -29,7 +29,7 @@ pub struct Arguments {
     pub ethrpc_batch_delay: Duration,
 
     /// Maximum time for one HTTP request to the node. A batch is one request.
-    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "30s")]
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "10s")]
     pub ethrpc_timeout: Duration,
 }
 

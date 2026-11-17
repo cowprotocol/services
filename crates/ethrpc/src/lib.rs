@@ -57,7 +57,7 @@ pub struct Config {
 }
 
 /// Default for [`Config::ethrpc_timeout`].
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl Default for Config {
     fn default() -> Self {

@@ -28,7 +28,7 @@ const fn default_ethrpc_max_concurrent_requests() -> usize {
 }
 
 const fn default_ethrpc_timeout() -> Duration {
-    Duration::from_secs(30)
+    Duration::from_secs(10)
 }
 
 fn default_log_filter() -> String {

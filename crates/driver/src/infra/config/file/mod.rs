@@ -1213,7 +1213,7 @@ mod tests {
             EthRpcConfig::default(),
             toml::from_str::<EthRpcConfig>("").unwrap(),
         ] {
-            assert_eq!(config.timeout, Duration::from_secs(30));
+            assert_eq!(config.timeout, Duration::from_secs(10));
         }
 
         let config: EthRpcConfig = toml::from_str(r#"timeout = "5s""#).unwrap();
