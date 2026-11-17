@@ -1739,6 +1739,104 @@ async fn trades_rejects_an_invalid_limit() {
     }
 }
 
+/// A settled trade lists the protocol fees its auction recorded, each with
+/// the policy that took it, in application order.
+#[tokio::test]
+#[ignore = "needs a local database"]
+async fn solana_db_trades_return_the_executed_protocol_fees() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.orders, solana.trades, solana.settlements, solana.fee_policies, \
+         solana.order_execution, solana.order_quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let uid = [0x11; 32];
+    sqlx::query(
+        "INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account, \
+         buy_token_account, sell_amount, buy_amount, valid_to, kind, partially_fillable, \
+         app_data, creation_timestamp, order_pda) VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, \
+         4294967295, 'sell', false, $2, now(), $1)",
+    )
+    .bind(ByteArray(uid))
+    .bind(ByteArray([0xAA; 32]))
+    .bind(ByteArray([0x22; 32]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
+         buy_amount, fee_amount, slot) VALUES ($1, 0, $2, 1000, 600, 0, 42)",
+    )
+    .bind(ByteArray([9; 64]))
+    .bind(ByteArray(uid))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+         auction_id) VALUES (42, $1, 0, $2, 7)",
+    )
+    .bind(ByteArray([9; 64]))
+    .bind(ByteArray([0xCC; 32]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.fee_policies (auction_id, order_uid, kind, surplus_factor, \
+         surplus_max_volume_factor, volume_factor) VALUES (7, $1, 'surplus', 0.5, 0.9, NULL), (7, \
+         $1, 'volume', NULL, NULL, 0.002)",
+    )
+    .bind(ByteArray(uid))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.order_execution (order_uid, auction_id, protocol_fee_tokens, \
+         protocol_fee_amounts) VALUES ($1, 7, ARRAY[$2, $2], '{40, 1}')",
+    )
+    .bind(ByteArray(uid))
+    .bind(ByteArray([0x22; 32]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let api = Api {
+        pool,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    tokio::spawn(async move { api.serve(listener, CancellationToken::new()).await.unwrap() });
+
+    let json: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://{addr}/api/v2/trades?orderUid=0x{}",
+            "11".repeat(32)
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3";
+    assert_eq!(
+        json[0]["executedProtocolFees"],
+        serde_json::json!([
+            {
+                "policy": { "surplus": { "factor": 0.5, "maxVolumeFactor": 0.9 } },
+                "amount": "40",
+                "token": token,
+            },
+            {
+                "policy": { "volume": { "factor": 0.002 } },
+                "amount": "1",
+                "token": token,
+            },
+        ])
+    );
+}
+
 /// Parameter validation of the account orders endpoint short-circuits before
 /// any database access.
 #[tokio::test]

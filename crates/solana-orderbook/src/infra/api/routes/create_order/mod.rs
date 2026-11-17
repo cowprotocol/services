@@ -838,25 +838,19 @@ impl MarketPosition {
         buy_amount: u64,
         quote: Option<&db::OrderQuote>,
     ) -> Self {
-        let in_market = quote.is_some_and(|quote| {
-            let (Some(quote_sell), Some(quote_buy)) =
-                (quote.sell_amount.to_u64(), quote.buy_amount.to_u64())
-            else {
-                return false;
-            };
-            let netted = match kind {
-                OrderKind::Sell => quote_buy
-                    .checked_sub(quote.execution_cost)
-                    .map(|quote_buy| (quote_sell, quote_buy)),
-                OrderKind::Buy => quote_sell
-                    .checked_add(quote.execution_cost)
-                    .map(|quote_sell| (quote_sell, quote_buy)),
-            };
-            netted.is_some_and(|(quote_sell, quote_buy)| {
+        let in_market = quote
+            .and_then(|quote| {
+                db::net_quote(
+                    kind,
+                    &quote.sell_amount,
+                    &quote.buy_amount,
+                    quote.execution_cost,
+                )
+            })
+            .is_some_and(|(quote_sell, quote_buy)| {
                 u128::from(sell_amount) * u128::from(quote_buy)
                     >= u128::from(quote_sell) * u128::from(buy_amount)
-            })
-        });
+            });
         if in_market {
             Self::InMarket
         } else {

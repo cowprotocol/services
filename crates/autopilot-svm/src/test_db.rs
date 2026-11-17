@@ -13,7 +13,8 @@ pub(crate) async fn wipe(pool: &PgPool) {
         "TRUNCATE solana.trades, solana.settlements, solana.settlement_executions, \
          solana.order_pda, solana.orders, solana.indexer_state, solana.order_events, \
          solana.auctions, solana.competition_auctions, solana.proposed_solutions, \
-         solana.proposed_trade_executions, solana.reference_scores, solana.fee_policies",
+         solana.proposed_trade_executions, solana.reference_scores, solana.fee_policies, \
+         solana.order_execution",
     )
     .execute(pool)
     .await

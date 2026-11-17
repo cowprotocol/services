@@ -14,6 +14,7 @@ use {
             listen::ListenSession,
             observation::SettlementWindows,
             observer::CompetitionObserver,
+            order_execution,
             prices::NativePrices,
             provider::DbAuctionProvider,
             sponsor::Sponsor,
@@ -99,6 +100,7 @@ async fn run(config: Config) {
         .expect("database connection");
     db::spawn_table_rows_metric(pool.clone());
     cleanup::spawn(pool.clone(), config.db_cleanup);
+    order_execution::spawn(pool.clone());
 
     let rpc = SolanaRPC::new_with_timeout_and_commitment(
         &config.rpc.endpoint,
