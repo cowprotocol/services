@@ -224,6 +224,7 @@ impl Configuration {
         );
         self.shared.validate()?;
         self.balance_cache.validate()?;
+        self.run_loop.validate()?;
         Ok(self)
     }
 }

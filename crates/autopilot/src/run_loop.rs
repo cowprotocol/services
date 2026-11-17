@@ -274,7 +274,7 @@ impl RunLoop {
         });
     }
 
-    fn pick_solve_deadline(&self) -> DateTime<Utc> {
+    fn pick_solve_deadline(&self) -> Result<DateTime<Utc>, DeadlineMissed> {
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
         pick_solve_deadline_impl(
@@ -395,7 +395,23 @@ impl RunLoop {
         start_block: BlockInfo,
         leader: &LeaderLockTracker,
     ) {
-        tracing::info!(auction_id = ?auction.id, "solving");
+        let solve_deadline = match self.pick_solve_deadline() {
+            Ok(deadline) => deadline,
+            Err(DeadlineMissed {
+                deadline,
+                missed_by,
+            }) => {
+                tracing::info!(
+                    auction_id = ?auction.id,
+                    %deadline,
+                    ?missed_by,
+                    "skipping auction, not enough time to solve before next block"
+                );
+                Metrics::get().skipped_auctions.inc();
+                return;
+            }
+        };
+        tracing::info!(auction_id = ?auction.id, deadline = %solve_deadline, "solving");
 
         // Mark all auction orders as `Ready` for competition
         self.persistence
@@ -403,7 +419,7 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
-        let solutions = self.fetch_solutions(auction).await;
+        let solutions = self.fetch_solutions(auction, solve_deadline).await;
         observe::bids(&solutions);
         if solutions.is_empty() {
             return;
@@ -591,8 +607,8 @@ impl RunLoop {
     async fn build_auction_requests(
         &self,
         auction: &Arc<domain::Auction>,
+        deadline: DateTime<Utc>,
     ) -> (solve::EncodedRequests, solve::EncodedRequests) {
-        let deadline = self.pick_solve_deadline();
         let trusted_tokens = self.trusted_tokens.all();
 
         let (request, delta_request) = tokio::join!(
@@ -621,8 +637,9 @@ impl RunLoop {
     async fn fetch_solutions(
         &self,
         auction: &Arc<domain::Auction>,
+        deadline: DateTime<Utc>,
     ) -> Vec<competition::Bid<Unscored>> {
-        let (request, delta_request) = self.build_auction_requests(auction).await;
+        let (request, delta_request) = self.build_auction_requests(auction, deadline).await;
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
             let requests = if driver.extensions.auction_deltas {
@@ -777,10 +794,12 @@ impl RunLoop {
     }
 }
 
-/// Picks a `/solve` deadline that ends shortly before a block gets
+/// Picks a `/solve` deadline that ends shortly before the next block gets
 /// mined to maximize the chance that solutions get mined instantly.
-/// If the auction needs to cross block boundaries solvers just get
-/// a lot more time for proposing a solution.
+///
+/// Returns an error when the auction started too late to give solvers
+/// `min_solve_time` before the next block; the auction should then be skipped
+/// instead of delayed to a later block.
 ///
 /// This function panics if any of the time computations over- or
 /// underflow. This should not happen as we deal with times within
@@ -790,7 +809,7 @@ fn pick_solve_deadline_impl(
     min_solve_time: Duration,
     slot_config: Option<&SlotConfig>,
     current_block: BlockInfo,
-) -> chrono::DateTime<chrono::Utc> {
+) -> Result<chrono::DateTime<chrono::Utc>, DeadlineMissed> {
     let minimum_deadline = now + min_solve_time;
 
     let Some(SlotConfig {
@@ -798,37 +817,31 @@ fn pick_solve_deadline_impl(
         tx_propagation_latency,
     }) = slot_config
     else {
-        return minimum_deadline;
+        return Ok(minimum_deadline);
     };
 
     let current_block_time =
         DateTime::from_timestamp_secs(current_block.timestamp.try_into().unwrap()).unwrap();
+    let deadline = current_block_time + *slot_length - *tx_propagation_latency;
 
-    for delay_in_blocks in 1..10 {
-        let target = current_block_time + slot_length.saturating_mul(delay_in_blocks)
-            - *tx_propagation_latency;
-        if target >= minimum_deadline {
-            if delay_in_blocks == 1 {
-                tracing::debug!(
-                    deadline = target.to_string(),
-                    current_block = current_block.number,
-                    "optimal solve deadline is before next block"
-                );
-            } else {
-                tracing::debug!(
-                    delay_in_blocks,
-                    deadline = target.to_string(),
-                    current_block = current_block.number,
-                    "delay auction for optimal deadline"
-                );
-            }
-            // first timestamp that gives at least the required amount of time
-            // and is aligned with the chain's block production
-            return target;
-        }
+    if deadline < minimum_deadline {
+        return Err(DeadlineMissed {
+            deadline,
+            missed_by: (minimum_deadline - deadline).to_std().unwrap_or_default(),
+        });
     }
+    Ok(deadline)
+}
 
-    minimum_deadline
+/// The auction started too late to give solvers the minimum solve time before
+/// the next block.
+#[derive(Debug, PartialEq)]
+struct DeadlineMissed {
+    /// Latest deadline that still allows solutions to land in the next block.
+    deadline: chrono::DateTime<chrono::Utc>,
+    /// How much later the auction would have had to end to give solvers the
+    /// minimum solve time.
+    missed_by: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -848,6 +861,11 @@ enum SolveError {
 struct Metrics {
     /// Tracks the last executed auction.
     auction: prometheus::IntGauge,
+
+    /// Tracks the number of auctions that were skipped because they started
+    /// too late to give solvers the minimum solve time before the targeted
+    /// block.
+    skipped_auctions: prometheus::IntCounter,
 
     /// Tracks the number of winners per auction.
     #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10))]
@@ -1279,7 +1297,7 @@ mod tests {
         // syncing to blockchain is not configured -> deadline = now +
         // min_solve_time
         let deadline = pick_solve_deadline_impl(now, min_solve_time, None, last_block);
-        assert_eq!(deadline, standard_deadline);
+        assert_eq!(deadline, Ok(standard_deadline));
 
         // both sync parameters provided -> deadline gets synced to expected
         // block production
@@ -1293,35 +1311,35 @@ mod tests {
         // before we are supposed to submit a solution, 9s minimum solve
         // time => synced deadline is equal to standard deadline (2s
         // before block n+1)
-        assert_eq!(deadline, standard_deadline);
+        assert_eq!(deadline, Ok(standard_deadline));
 
         // now is 2s after the last block (n), 10s left before the slot ends, 8s
         // before we are supposed to submit a solution for this slot, 9s
         // minimum solve time => we barely missed the deadline of the
-        // current slot so now solvers get until 2s before the block n+2
+        // current slot so the auction gets skipped
         let deadline = pick_solve_deadline_impl(
             now + Duration::from_secs(1),
             min_solve_time,
             slot_config.as_ref(),
             last_block,
         );
-        assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
+        assert_eq!(
+            deadline,
+            Err(DeadlineMissed {
+                deadline: standard_deadline,
+                missed_by: Duration::from_secs(1),
+            })
+        );
 
-        // let's move to gnosis chain where 1 block is 5s (1 block is not enough
-        // for the solve deadline)
-        let slot_config = Some(SlotConfig {
-            slot_length: Duration::from_secs(5),
-            tx_propagation_latency: Duration::from_secs(2),
-        });
-        let last_block_time = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
-        let last_block = block_with_timestamp(last_block_time);
-        let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
-        // now is 1s after the last block n, 4s left in the block, we need to
-        // submit 2s before a block, min_solve_time 9s => deadline is 2s
-        // before block n+3
-        let deadline =
-            pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
-        assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
+        // now is 500ms after the last block (n), 9s minimum solve time ends
+        // 500ms before the deadline for block n+1 => solvers get the extra time
+        let deadline = pick_solve_deadline_impl(
+            now - Duration::from_millis(500),
+            min_solve_time,
+            slot_config.as_ref(),
+            last_block,
+        );
+        assert_eq!(deadline, Ok(standard_deadline));
     }
 
     #[test]
