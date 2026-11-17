@@ -9,6 +9,7 @@ use {
         solver,
     },
     eth_domain_types as eth,
+    std::time::Duration,
 };
 
 pub mod file;
@@ -31,6 +32,7 @@ pub struct Config {
     pub tx_gas_limit: eth::U256,
     pub http: configs::http_client::HttpClient,
     pub balance_cache: configs::balance_cache::BalanceCacheConfig,
+    pub ethrpc_timeout: Duration,
 }
 
 /// Where settlements get submitted to.
