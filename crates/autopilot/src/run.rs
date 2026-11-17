@@ -18,6 +18,7 @@ use {
         domain,
         event_updater::EventUpdater,
         fast_path::FastPathHandler,
+        fee_engine,
         infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
@@ -504,7 +505,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         None => None,
     };
 
-    let protocol_fees = Arc::new(domain::ProtocolFees::new(
+    let protocol_fees = domain::ProtocolFees::new(
         &config.fee_policies,
         config
             .shared
@@ -514,7 +515,14 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             .collect(),
         config.shared.enable_sell_equals_buy_volume_fee,
         *eth.contracts().weth().address(),
-    ));
+    );
+    let protocol_fees = fee_engine::protocol_fees(
+        config.fee_engine.as_ref(),
+        protocol_fees,
+        *eth.contracts().weth().address(),
+        &config.surplus_capturing_jit_order_owners,
+    )
+    .expect("fee engine rules must load");
     let surplus_capturing_jit_order_owners =
         Arc::new(config.surplus_capturing_jit_order_owners.clone());
 

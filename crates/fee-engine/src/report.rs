@@ -17,6 +17,15 @@ struct Metrics {
     /// (and its fees were served) or not (and the legacy ones were).
     #[metric(labels("check", "result"))]
     comparison: prometheus::IntCounterVec,
+
+    /// Time a fee source took to decide the fees of one order.
+    #[metric(
+        labels("source"),
+        buckets(
+            0.0000005, 0.000001, 0.000002, 0.000005, 0.00001, 0.00002, 0.00005, 0.0001, 0.001
+        )
+    )]
+    evaluation_time: prometheus::HistogramVec,
 }
 
 impl Metrics {
@@ -63,7 +72,7 @@ impl Pending {
                 count,
                 group,
                 example,
-                "fee engine disagreed with the legacy volume fees; served the legacy ones"
+                "fee engine disagreed with the legacy fees; served the legacy ones"
             );
         }
         for (skipped, count) in self.skipped {
@@ -158,6 +167,32 @@ pub fn report_comparison(
     outcome
 }
 
+/// A source of fee decisions whose time is measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeeSource {
+    Legacy,
+    Engine,
+}
+
+impl FeeSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Engine => "engine",
+        }
+    }
+}
+
+/// Runs `evaluate`, the decision of `source` on one order, and records the
+/// time it took.
+pub fn time_evaluation<T>(source: FeeSource, evaluate: impl FnOnce() -> T) -> T {
+    let _timer = Metrics::get()
+        .evaluation_time
+        .with_label_values(&[source.as_str()])
+        .start_timer();
+    evaluate()
+}
+
 impl Evaluation<'_> {
     /// Logs the rules the evaluation skipped, grouped with the same skips
     /// once a second.
@@ -197,6 +232,21 @@ mod tests {
         }
         assert_eq!(count(check, Outcome::Match), 1);
         assert_eq!(count(check, Outcome::Mismatch), 3);
+    }
+
+    #[test]
+    fn times_every_evaluation_of_a_source() {
+        let samples = |source: FeeSource| {
+            Metrics::get()
+                .evaluation_time
+                .with_label_values(&[source.as_str()])
+                .get_sample_count()
+        };
+        assert_eq!(time_evaluation(FeeSource::Engine, || "fees"), "fees");
+        time_evaluation(FeeSource::Engine, || ());
+        time_evaluation(FeeSource::Legacy, || ());
+        assert_eq!(samples(FeeSource::Engine), 2);
+        assert_eq!(samples(FeeSource::Legacy), 1);
     }
 
     fn mismatch(group: &str, example: &str) -> Mismatch {
