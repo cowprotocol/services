@@ -469,7 +469,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let banned_users =
         Arc::new(order_validation::banned::Users::new(
-            eth.contracts().chainalysis_oracle().clone(),
             config.banned_users.hermod.clone().map(|hermod| {
                 order_validation::banned::HermodConfig {
                     url: hermod.url,
