@@ -27,6 +27,10 @@ const fn default_ethrpc_max_concurrent_requests() -> usize {
     10
 }
 
+const fn default_ethrpc_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
 fn default_log_filter() -> String {
     String::from(
         "info,autopilot=debug,driver=debug,observe=info,observe::http_body=debug,orderbook=debug,\
@@ -149,6 +153,10 @@ pub struct EthRpcConfig {
     /// grouped together.
     #[serde(with = "humantime_serde", default)]
     pub batch_delay: Duration,
+
+    /// Maximum time for one HTTP request to the node. A batch is one request.
+    #[serde(with = "humantime_serde", default = "default_ethrpc_timeout")]
+    pub timeout: Duration,
 }
 
 impl Default for EthRpcConfig {
@@ -157,6 +165,7 @@ impl Default for EthRpcConfig {
             max_batch_size: default_ethrpc_max_batch_size(),
             max_concurrent_requests: default_ethrpc_max_concurrent_requests(),
             batch_delay: Duration::ZERO,
+            timeout: default_ethrpc_timeout(),
         }
     }
 }
@@ -420,6 +429,7 @@ mod tests {
         max-batch-size = 200
         max-concurrent-requests = 20
         batch-delay = "1s"
+        timeout = "5s"
 
         [current-block]
         poll-interval = "2s"
@@ -460,6 +470,7 @@ mod tests {
         assert_eq!(config.ethrpc.max_batch_size, 200);
         assert_eq!(config.ethrpc.max_concurrent_requests, 20);
         assert_eq!(config.ethrpc.batch_delay, Duration::from_secs(1));
+        assert_eq!(config.ethrpc.timeout, Duration::from_secs(5));
         assert_eq!(
             config.current_block.poll_interval,
             Some(Duration::from_secs(2))

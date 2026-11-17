@@ -91,6 +91,30 @@ struct Config {
     /// Settings for the on-chain balance cache.
     #[serde(default)]
     balance_cache: configs::balance_cache::BalanceCacheConfig,
+
+    /// Settings for the Ethereum RPC client.
+    #[serde(default)]
+    ethrpc: EthRpcConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct EthRpcConfig {
+    /// Maximum time for one HTTP request to the node. A batch is one request.
+    #[serde(with = "humantime_serde", default = "default_ethrpc_timeout")]
+    timeout: Duration,
+}
+
+impl Default for EthRpcConfig {
+    fn default() -> Self {
+        Self {
+            timeout: default_ethrpc_timeout(),
+        }
+    }
+}
+
+fn default_ethrpc_timeout() -> Duration {
+    ethrpc::DEFAULT_TIMEOUT
 }
 
 #[serde_as]
@@ -1181,6 +1205,19 @@ mod tests {
         assert_eq!(config.refresh_cooldown, Duration::from_millis(500));
         assert_eq!(config.max_recent_block_age, 10);
         assert_eq!(config.max_auto_updated_pairs.get(), 2000);
+    }
+
+    #[test]
+    fn ethrpc_config() {
+        for config in [
+            EthRpcConfig::default(),
+            toml::from_str::<EthRpcConfig>("").unwrap(),
+        ] {
+            assert_eq!(config.timeout, Duration::from_secs(30));
+        }
+
+        let config: EthRpcConfig = toml::from_str(r#"timeout = "5s""#).unwrap();
+        assert_eq!(config.timeout, Duration::from_secs(5));
     }
 
     #[test]

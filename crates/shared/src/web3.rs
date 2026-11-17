@@ -27,6 +27,10 @@ pub struct Arguments {
     /// out an incomplete batch.
     #[clap(long, env, value_parser = humantime::parse_duration, default_value = "0s")]
     pub ethrpc_batch_delay: Duration,
+
+    /// Maximum time for one HTTP request to the node. A batch is one request.
+    #[clap(long, env, value_parser = humantime::parse_duration, default_value = "30s")]
+    pub ethrpc_timeout: Duration,
 }
 
 impl Display for Arguments {
@@ -35,6 +39,7 @@ impl Display for Arguments {
             ethrpc_max_batch_size,
             ethrpc_max_concurrent_requests,
             ethrpc_batch_delay,
+            ethrpc_timeout,
         } = self;
 
         writeln!(f, "ethrpc_max_batch_size: {ethrpc_max_batch_size}")?;
@@ -43,6 +48,7 @@ impl Display for Arguments {
             "ethrpc_max_concurrent_requests: {ethrpc_max_concurrent_requests}"
         )?;
         writeln!(f, "ethrpc_batch_delay: {ethrpc_batch_delay:?}")?;
+        writeln!(f, "ethrpc_timeout: {ethrpc_timeout:?}")?;
 
         Ok(())
     }
@@ -54,6 +60,7 @@ impl Arguments {
             ethrpc_max_batch_size: self.ethrpc_max_batch_size,
             ethrpc_max_concurrent_requests: self.ethrpc_max_concurrent_requests,
             ethrpc_batch_delay: self.ethrpc_batch_delay,
+            ethrpc_timeout: self.ethrpc_timeout,
         }
     }
 }
@@ -64,6 +71,7 @@ impl From<&configs::shared::EthRpcConfig> for Arguments {
             ethrpc_max_batch_size: config.max_batch_size,
             ethrpc_max_concurrent_requests: config.max_concurrent_requests,
             ethrpc_batch_delay: config.batch_delay,
+            ethrpc_timeout: config.timeout,
         }
     }
 }

@@ -51,17 +51,23 @@ async fn run_with(args: cli::Args, addr_sender: Option<oneshot::Sender<SocketAdd
     // use dedicated function instead of reading this from `ethrpc` to make
     // sure we fully initialize the metrics registry before calling any code
     // that populates those metrics
-    let chain_name = get_chain_name(args.ethrpc.clone()).await;
+    let chain = get_chain(args.ethrpc.clone()).await;
 
     infra::observe::init(observe::Config::new(
         &args.log,
         args.stderr_threshold,
         args.use_json_logs,
-        tracing_config(&args.tracing, format!("driver-{chain_name}")),
+        tracing_config(
+            &args.tracing,
+            format!("driver-{}", chain.map_or("unknown", |chain| chain.name())),
+        ),
     ));
 
-    let ethrpc = ethrpc(&args).await;
-    let config = config::file::load(ethrpc.chain(), &args.config).await;
+    // The config file needs the chain, and the RPC client needs the config
+    // file.
+    let chain = chain.expect("connect ethereum RPC and read a supported chain ID");
+    let config = config::file::load(chain, &args.config).await;
+    let ethrpc = ethrpc(&args, config.ethrpc_timeout).await;
 
     let version = observe::version::git_version();
 
@@ -171,11 +177,12 @@ fn simulator(
     simulator
 }
 
-async fn ethrpc(args: &cli::Args) -> blockchain::Rpc {
+async fn ethrpc(args: &cli::Args, timeout: Duration) -> blockchain::Rpc {
     let args = blockchain::RpcArgs {
         url: args.ethrpc.clone(),
         max_batch_size: args.ethrpc_max_batch_size,
         max_concurrent_requests: args.ethrpc_max_concurrent_requests,
+        timeout,
     };
     blockchain::Rpc::try_new(args)
         .await
@@ -213,15 +220,13 @@ fn liquidity_sources_notifier(
         .expect("initialize notify sources notifier")
 }
 
-async fn get_chain_name(rpc: Url) -> &'static str {
+async fn get_chain(rpc: Url) -> Option<Chain> {
     let provider = alloy::providers::builder::<alloy::network::Ethereum>().connect_http(rpc);
     provider
         .get_chain_id()
         .await
         .ok()
         .and_then(|id| Chain::try_from(id).ok())
-        .map(|chain| chain.name())
-        .unwrap_or("unknown")
 }
 
 fn submitter(

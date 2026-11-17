@@ -195,8 +195,11 @@ pub async fn current_block_stream(
     // Build an alloy transport specifically for the current block stream to
     // avoid batching requests together on chains with a very high block
     // frequency.
-    let (provider, _) =
-        crate::alloy::unbuffered_provider(url.as_str(), Some("base_currentBlockStream"));
+    let (provider, _) = crate::alloy::unbuffered_provider(
+        url.as_str(),
+        crate::DEFAULT_TIMEOUT,
+        Some("base_currentBlockStream"),
+    );
 
     let first_block = get_block_at_id(&provider, BlockId::latest()).await?;
     tracing::debug!(number=%first_block.number, hash=?first_block.hash, "polled block");
