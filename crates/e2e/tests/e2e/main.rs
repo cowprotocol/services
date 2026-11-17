@@ -8,7 +8,6 @@ mod api_version;
 mod app_data;
 mod app_data_signer;
 mod autopilot_leader;
-mod banned_users;
 mod buffers;
 mod contract_revert;
 mod cors;
