@@ -177,6 +177,9 @@ pub struct AuctionLoop<C: Cycle> {
     prev_auction: Option<C::Auction>,
     prev_tip: Option<C::Tip>,
     probes: Probes,
+    /// Set from the lock in [`Self::run_forever`]. Disabled before that, so
+    /// a bare [`Self::run_cycle`] leads.
+    leader: LeaderLockTracker,
 }
 
 impl<C: Cycle> AuctionLoop<C> {
@@ -202,32 +205,32 @@ impl<C: Cycle> AuctionLoop<C> {
             prev_auction: None,
             prev_tip: None,
             probes,
+            leader: LeaderLockTracker::Disabled,
         }
     }
 
     /// Runs cycles until `shutdown` is cancelled, then releases the leader
     /// lock. The cycle in flight when the signal arrives runs to its end.
-    /// With a lock, a cycle on an instance that does not hold it only syncs.
     pub async fn run_forever(
         mut self,
         leader_lock: Option<LeaderLock>,
         shutdown: CancellationToken,
     ) {
-        let mut leader_lock_tracker = LeaderLockTracker::new(leader_lock);
+        self.leader = LeaderLockTracker::new(leader_lock);
         while !shutdown.is_cancelled() {
-            leader_lock_tracker.try_acquire().await;
-            if leader_lock_tracker.is_leader() {
-                self.run_cycle().await;
-            } else {
-                self.sync().await;
-            }
+            self.run_cycle().await;
         }
-        leader_lock_tracker.release().await;
+        self.leader.release().await;
     }
 
-    /// One iteration of the outer loop.
+    /// One iteration of the outer loop. With a lock, an instance that does
+    /// not hold it only syncs.
     pub async fn run_cycle(&mut self) {
         let tip = self.sync().await;
+        // the lock can be lost during the wait for the tip, so decide after it
+        if !self.leader.update() {
+            return;
+        }
         let Some(auction) = self.next_auction(&tip).await else {
             return;
         };
@@ -297,6 +300,13 @@ impl<C: Cycle> AuctionLoop<C> {
         let ranking_tip = self.trigger.current_tip();
         let deadline = C::submission_deadline(&ranking_tip, self.submission_deadline_allowance);
 
+        // Solving takes seconds, long enough to lose the lock and for another
+        // instance to take over, so only a current leader records the result.
+        if !self.leader.is_leader() {
+            tracing::warn!("lost the leader lock while solving, dropping the auction");
+            return;
+        }
+
         // storing the outcome must finish before any settlement starts
         if let Err(err) = self
             .observer
@@ -317,6 +327,10 @@ impl<C: Cycle> AuctionLoop<C> {
             .collect();
         self.observer.on_orders_matched(executing, considered);
 
+        if !self.leader.is_leader() {
+            tracing::warn!("lost the leader lock, not settling");
+            return;
+        }
         self.executor
             .execute(auction.id(), &ranking, &ranking_tip, deadline)
             .await;
@@ -469,6 +483,24 @@ mod tests {
         }
     }
 
+    /// Returns one solution and ranks it, and the lock is lost while the
+    /// solvers work.
+    struct LockLostWhileSolving(Arc<AtomicBool>);
+
+    #[async_trait]
+    impl SolverCompetition<TestCycle> for LockLostWhileSolving {
+        async fn solve(&self, _auction: &TestAuction) -> Vec<()> {
+            self.0.store(false, Ordering::Release);
+            vec![()]
+        }
+    }
+
+    impl WinnerSelection<TestCycle> for LockLostWhileSolving {
+        fn arbitrate(&self, _solutions: Vec<()>, _auction: &TestAuction) -> NoRanking {
+            NoRanking
+        }
+    }
+
     /// A loop that runs the scripted cycles. Its liveness probe fails until
     /// the loop records an auction, and its startup probe fails until the
     /// first successful sync.
@@ -516,6 +548,30 @@ mod tests {
             scripted_loop([(true, NextAuction::Auction(TestAuction(vec![1])))]);
         auction_loop.run_cycle().await;
         assert!(liveness.is_alive().await);
+    }
+
+    /// A leader that loses the lock while the solvers work stores and settles
+    /// nothing, which [`Stub`] asserts.
+    #[tokio::test]
+    async fn a_leader_that_loses_the_lock_while_solving_stores_and_settles_nothing() {
+        let leading = Arc::new(AtomicBool::new(true));
+        let mut auction_loop = AuctionLoop::new(
+            Box::new(Stub),
+            Box::new(ScriptedProvider(Mutex::new(
+                [(true, NextAuction::Auction(TestAuction(vec![1])))].into(),
+            ))),
+            Box::new(LockLostWhileSolving(leading.clone())),
+            Box::new(LockLostWhileSolving(leading.clone())),
+            Box::new(Stub),
+            Box::new(Stub),
+            0,
+            Probes {
+                liveness: Arc::new(Liveness::new(Duration::from_secs(60))),
+                startup: Arc::new(None),
+            },
+        );
+        auction_loop.leader = LeaderLockTracker::Scripted(leading);
+        auction_loop.run_cycle().await;
     }
 
     #[tokio::test]
@@ -584,15 +640,24 @@ mod tests {
     async fn solana_db_a_standby_syncs_without_cutting() {
         let pool = crate::test_db::pool().await;
         let key = "solana_db_a_standby_syncs_without_cutting".to_string();
-        let mut leader = LeaderLock::new(pool.clone(), key.clone(), Duration::ZERO);
-        assert!(leader.try_acquire().await.unwrap());
+        let leader = LeaderLock::spawn(&pool, key.clone());
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !leader.is_leader() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the first instance takes the lock");
 
         let shutdown = CancellationToken::new();
         let (auction_loop, liveness, startup) = scripted_loop_with(
             Box::new(ShutdownMidCycle(shutdown.clone())),
             [(true, NextAuction::Auction(TestAuction(vec![1])))],
         );
-        let standby = LeaderLock::new(pool, key, Duration::ZERO);
+        let standby = LeaderLock::spawn(&pool, key);
+        // the standby's first heartbeat must find the lock taken before the
+        // cycle runs
+        tokio::time::sleep(Duration::from_millis(500)).await;
         auction_loop.run_forever(Some(standby), shutdown).await;
 
         assert!(startup.as_ref().as_ref().unwrap().load(Ordering::Acquire));

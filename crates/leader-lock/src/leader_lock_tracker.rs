@@ -1,7 +1,12 @@
+#[cfg(feature = "test-util")]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use {crate::leader_pg_lock::LeaderLock, observe::metrics};
 
 /// Tracks the autopilot leader lock status.
-/// Leader lock status is tracked based on calls to try_acquire()
 pub enum LeaderLockTracker {
     /// Leader lock mechanism is disabled.
     /// Only one autopilot instance should be running at all times.
@@ -12,90 +17,82 @@ pub enum LeaderLockTracker {
     /// The autopilot followers (not holding the lock) will keep their caches
     /// warm. It facilitates zero downtime deployments.
     Enabled {
-        /// Whether the current instance is the leader since the last call to
-        /// try_acquire()
-        is_leader: bool,
-        /// Whether the instance was the leader since the last call to
-        /// try_acquire()
+        /// Whether the instance was the leader at the last call to
+        /// `update()`
         was_leader: bool,
         leader_lock: LeaderLock,
     },
+    /// Leadership the test flips.
+    #[cfg(feature = "test-util")]
+    Scripted(Arc<AtomicBool>),
 }
 
 impl LeaderLockTracker {
     pub fn new(leader_lock: Option<LeaderLock>) -> Self {
         match leader_lock {
-            Some(leader_lock) => Self::Enabled {
-                is_leader: false,
-                was_leader: false,
-                leader_lock,
-            },
+            Some(leader_lock) => {
+                // followers export 0, so a missing leader shows up
+                Metrics::leader_step_down();
+                Self::Enabled {
+                    was_leader: false,
+                    leader_lock,
+                }
+            }
             None => Self::Disabled,
         }
     }
 
-    /// Tries to acquire the leader lock if it's enabled
-    /// If not, does nothing
-    /// Should be called at the beginning of every run loop iteration
-    pub async fn try_acquire(&mut self) {
+    /// Logs and records leadership changes since the last call, and returns
+    /// whether this instance leads. Called once per iteration, right before
+    /// the leader-only work.
+    pub fn update(&mut self) -> bool {
         let Self::Enabled {
-            is_leader,
             was_leader,
             leader_lock,
         } = self
         else {
-            return;
+            return self.is_leader();
         };
 
-        *was_leader = *is_leader;
-
-        *is_leader = leader_lock.try_acquire().await.unwrap_or_else(|err| {
-            tracing::error!(?err, "failed to become leader");
-            Metrics::leader_lock_error();
-            false
-        });
-
-        if self.just_stepped_up() {
-            tracing::info!("Stepped up as a leader");
-            Metrics::leader_step_up();
+        Metrics::leader_lock_errors(leader_lock.take_errors());
+        let is_leader = leader_lock.is_leader();
+        match (*was_leader, is_leader) {
+            (false, true) => {
+                tracing::info!("Stepped up as a leader");
+                Metrics::leader_step_up();
+            }
+            (true, false) => {
+                tracing::warn!("Lost the leader lock, stepping down");
+                Metrics::leader_step_down();
+            }
+            _ => {}
         }
+        *was_leader = is_leader;
+        is_leader
     }
 
-    /// Releases the leader lock if it was held
+    /// Releases the leader lock
     /// Should be called after breaking out of run loop (for example: due to
     /// shutdown)
     pub async fn release(self) {
-        if let Self::Enabled {
-            mut leader_lock,
-            is_leader: true,
-            ..
-        } = self
-        {
-            tracing::info!("Shutdown received, stepping down as the leader");
+        if let Self::Enabled { leader_lock, .. } = self {
+            if leader_lock.is_leader() {
+                tracing::info!("Shutdown received, stepping down as the leader");
+                Metrics::leader_step_down();
+            }
             leader_lock.release().await;
-            Metrics::leader_step_down();
         }
     }
 
-    /// Returns true if the last try_acquire call resulted in acquiring the
-    /// leader lock If the feature is disabled, always returns false
-    fn just_stepped_up(&self) -> bool {
-        matches!(
-            self,
-            Self::Enabled {
-                is_leader: true,
-                was_leader: false,
-                ..
-            }
-        )
-    }
-
-    /// Returns true if the leader lock is being held
+    /// Returns true while the leader lock is held. Check it right before
+    /// every leader-only action, the lock can be lost at any time
     /// If the feature is disabled, always returns true
     pub fn is_leader(&self) -> bool {
         match self {
-            Self::Enabled { is_leader, .. } => *is_leader,
-            _ => true,
+            Self::Enabled { leader_lock, .. } => leader_lock.is_leader(),
+            Self::Disabled => true,
+            #[cfg(feature = "test-util")]
+            Self::Scripted(leading) => leading.load(Ordering::Acquire),
         }
     }
 }
@@ -107,7 +104,7 @@ struct Metrics {
     /// 0 - is currently autopilot follower
     is_leader: prometheus::IntGauge,
 
-    /// Trackes the count of errors acquiring leader lock (should never happen)
+    /// Tracks the count of errors taking or keeping the leader lock
     leader_lock_error: prometheus::IntCounter,
 }
 
@@ -124,7 +121,7 @@ impl Metrics {
         Self::get().is_leader.set(0)
     }
 
-    fn leader_lock_error() {
-        Self::get().leader_lock_error.inc()
+    fn leader_lock_errors(count: u64) {
+        Self::get().leader_lock_error.inc_by(count)
     }
 }

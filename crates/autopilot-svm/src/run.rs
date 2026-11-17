@@ -172,13 +172,9 @@ async fn run(config: Config) {
             .expect("bind the HTTP API"),
         prices.clone(),
     );
-    let leader_lock = config.enable_leader_lock.then(|| {
-        LeaderLock::new(
-            pool.clone(),
-            "solana_autopilot".to_string(),
-            Duration::from_millis(200),
-        )
-    });
+    let leader_lock = config
+        .enable_leader_lock
+        .then(|| LeaderLock::spawn(&pool, "solana_autopilot".to_string()));
     let liveness = Arc::new(Liveness::new(config.max_auction_age));
     let startup = Arc::new(Some(AtomicBool::new(false)));
     let auction_loop = AuctionLoop::new(
