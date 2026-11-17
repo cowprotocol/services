@@ -183,7 +183,7 @@ pub async fn quote(
         from: request.from,
         expiration: quoted.expiration,
         id,
-        verified: quoted.verified,
+        verified: quoted.route.verified,
         funder: state.sponsoring().map(|sponsoring| sponsoring.funder),
     };
     quoted.log(id);
@@ -194,32 +194,47 @@ pub async fn quote(
 /// to log once the quote is stored.
 pub(super) struct Quoted {
     kind: dto::Kind,
+    /// The winner as its driver quoted it.
+    route: quoter::Quote,
     amounts: Amounts,
     costs: Costs,
     /// The token the costs come out of.
     cost_token: Pubkey,
-    solver: Pubkey,
-    verified: bool,
     expiration: DateTime<Utc>,
     competition: Competition,
 }
 
 impl Quoted {
-    /// The quote as stored: the amount an order placed on it signs for, the
-    /// amount it buys, and the solver.
+    /// The quote as stored, like the EVM orderbook's: the route at the
+    /// amount `request` fixes, with its network fee and the native prices
+    /// apart. The buy token account rent and the protocol fee depend on the
+    /// order placed on the quote and stay out.
     pub(super) fn row(&self, request: &dto::Request) -> db::Quote {
+        let (kind, amount) = request.side.kind_and_amount();
+        let (sell_amount, buy_amount, kind) = match kind {
+            dto::Kind::Sell => (amount, self.route.buy_amount, OrderKind::Sell),
+            dto::Kind::Buy => (self.route.sell_amount, amount, OrderKind::Buy),
+        };
         db::Quote {
             sell_token: ByteArray(request.sell_token.to_bytes()),
             buy_token: ByteArray(request.buy_token.to_bytes()),
-            sell_amount: self.amounts.signed_sell_amount,
-            buy_amount: self.amounts.buy_amount,
-            kind: match self.kind {
-                dto::Kind::Sell => OrderKind::Sell,
-                dto::Kind::Buy => OrderKind::Buy,
-            },
-            solver: ByteArray(self.solver.to_bytes()),
+            sell_amount,
+            buy_amount,
+            network_fee: self.route.network_fee,
+            sell_token_price: self.competition.metadata.sell_token_price,
+            buy_token_price: self.competition.metadata.buy_token_price,
+            kind,
+            solver: ByteArray(self.route.solver.to_bytes()),
+            verified: self.route.verified,
             expiration: self.expiration,
         }
+    }
+
+    /// The quoted order's execution cost in the token it does not fix: the
+    /// network fee and the buy token account rent.
+    pub(super) fn execution_cost(&self) -> u64 {
+        // `costs.total` holds the sum, so it fits.
+        self.costs.network_fees + self.costs.buy_token_ata_costs
     }
 
     /// Log the competition under the id the store gave the quote, `None` for
@@ -369,17 +384,32 @@ pub(super) async fn compute(
         log_competition(&competition);
         return Err(Error::SellAmountDoesNotCoverFee);
     };
-    quoted.count_win(order.kind);
+    route.count_win(order.kind);
     Ok(Quoted {
         kind,
+        route,
         amounts,
         costs,
         cost_token: token,
-        solver: quoted.solver,
-        verified: quoted.verified,
         expiration,
         competition,
     })
+}
+
+/// The execution cost of the order `request` describes when placed on a
+/// stored quote with `network_fee`: that fee and the rent of the order's buy
+/// token account, as a fresh quote of the order would cost them at `price`,
+/// the native price of the token the order does not fix. `None` when the cost
+/// does not fit.
+pub(super) async fn order_cost(
+    sponsoring: Option<&Sponsoring>,
+    request: &dto::Request,
+    network_fee: u64,
+    price: NonZero<u64>,
+) -> Result<Option<u64>, error::Reply> {
+    let buy_program = check_mints(sponsoring, request).await?;
+    let rent = buy_account_rent(sponsoring, request, buy_program).await?;
+    Ok(execution_costs(network_fee, rent, price).map(|costs| costs.total))
 }
 
 /// Every quote paired with its [`net`] self, best first. With
@@ -547,14 +577,12 @@ struct Costs {
 
 /// The amounts of the answer in the EVM shape: `fee_amount` is the cut as the
 /// sell token, `sell_amount` and `buy_amount` what the trader trades net of
-/// it, `signed_sell_amount` the sell amount plus the fee, what an order placed
-/// on the quote sells.
+/// it. An order placed on the quote sells the sell amount plus the fee.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Amounts {
     sell_amount: u64,
     buy_amount: u64,
     fee_amount: u64,
-    signed_sell_amount: u64,
 }
 
 /// The amounts for `side`, from `route` as the driver quoted it, `quoted` net
@@ -565,8 +593,8 @@ struct Amounts {
 /// `sellAmountBeforeFee` amount pays the fee from itself and buys the cut
 /// amount. A `sellAmountAfterFee` amount pays the fee on top and buys the
 /// route's full amount, so its protocol fee is the one on that amount grossed
-/// up, see [`fee_on_top`]. `None` when the fee swallows the amount or the sum
-/// does not fit.
+/// up, see [`fee_on_top`]. `None` when the fee swallows the amount or the
+/// amount with the fee on top does not fit.
 fn amounts(
     side: &dto::Side,
     route: &quoter::Quote,
@@ -582,7 +610,6 @@ fn amounts(
                 sell_amount: route.sell_amount,
                 buy_amount: quoted.buy_amount,
                 fee_amount: costs.total,
-                signed_sell_amount: route.sell_amount.checked_add(costs.total)?,
             },
             costs,
         )),
@@ -601,7 +628,6 @@ fn amounts(
                             sell_amount: value.checked_sub(fee_amount).filter(|net| *net > 0)?,
                             buy_amount: quoted.buy_amount,
                             fee_amount,
-                            signed_sell_amount: *value,
                         },
                         costs,
                     ))
@@ -609,12 +635,14 @@ fn amounts(
                 dto::SellAmount::AfterFee { value } => {
                     let costs = fee_on_top(costs, route.buy_amount, volume_fee)?;
                     let fee_amount = in_sell_token(costs.total)?;
+                    // An order placed on the quote signs the sum, so it has
+                    // to fit.
+                    value.checked_add(fee_amount)?;
                     Some((
                         Amounts {
                             sell_amount: *value,
                             buy_amount: route.buy_amount,
                             fee_amount,
-                            signed_sell_amount: value.checked_add(fee_amount)?,
                         },
                         costs,
                     ))
@@ -671,9 +699,8 @@ fn net(
     price: NonZero<u64>,
     factor: Option<FeeFactor>,
 ) -> Option<(quoter::Quote, Costs)> {
-    let network_fees = in_token(quote.network_fee, price)?;
-    let buy_token_ata_costs = in_token(rent, price)?;
-    let costs = network_fees.checked_add(buy_token_ata_costs)?;
+    let execution = execution_costs(quote.network_fee, rent, price)?;
+    let costs = execution.total;
     let fee = |leg: u64| match factor {
         Some(factor) => leg.try_mul_f64(factor.get()).ok(),
         None => Some(0),
@@ -708,12 +735,25 @@ fn net(
     Some((
         quote,
         Costs {
-            network_fees,
-            buy_token_ata_costs,
             protocol_fee,
             total: costs.checked_add(protocol_fee)?,
+            ..execution
         },
     ))
+}
+
+/// The execution cost of a route in the token priced at `price`, without a
+/// protocol fee: `network_fee` and `rent`, each converted on its own. `None`
+/// when the sum does not fit.
+fn execution_costs(network_fee: u64, rent: u64, price: NonZero<u64>) -> Option<Costs> {
+    let network_fees = in_token(network_fee, price)?;
+    let buy_token_ata_costs = in_token(rent, price)?;
+    Some(Costs {
+        network_fees,
+        buy_token_ata_costs,
+        protocol_fee: 0,
+        total: network_fees.checked_add(buy_token_ata_costs)?,
+    })
 }
 
 /// What `lamports` are worth in the token priced at `price`, rounded up.
@@ -1118,7 +1158,6 @@ mod tests {
                     sell_amount: 96,
                     buy_amount: 995,
                     fee_amount: 4,
-                    signed_sell_amount: 100,
                 },
                 costs(5)
             ))
@@ -1144,7 +1183,6 @@ mod tests {
                     sell_amount: 100,
                     buy_amount: 1_000,
                     fee_amount: 4,
-                    signed_sell_amount: 104,
                 },
                 costs(5)
             ))
@@ -1171,7 +1209,6 @@ mod tests {
                     sell_amount: 1_000,
                     buy_amount: 1_000,
                     fee_amount: 50,
-                    signed_sell_amount: 1_050,
                 },
                 costs(50)
             ))
@@ -1236,13 +1273,15 @@ mod tests {
                 // The fill after the driver's cut: the route's amount plus what
                 // the fee on top bought, less the rent.
                 let executed_buy = buy_amount + costs.total - rent;
+                // The order sells the amount with the fee on top.
+                let signed_sell_amount = amounts.sell_amount + amounts.fee_amount;
                 let mut fill = protocol_fees::Order::<Solana> {
                     uid: IntentHash([0; 32]),
                     sell_token: ChainPubkey([1; 32]),
                     buy_token: ChainPubkey([2; 32]),
-                    sell_amount: amounts.signed_sell_amount,
+                    sell_amount: signed_sell_amount,
                     buy_amount,
-                    executed_sell: amounts.signed_sell_amount,
+                    executed_sell: signed_sell_amount,
                     executed_buy,
                     side: protocol_fees::Side::Sell,
                 };
