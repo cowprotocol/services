@@ -326,7 +326,7 @@ mod tests {
         super::*,
         crate::{
             autopilot::{
-                fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass, UpcomingFeePolicies},
+                fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass},
                 solver::Account,
             },
             native_price_estimators::{ExternalSolver, NativePriceEstimator},
@@ -435,11 +435,10 @@ mod tests {
             FeePolicyOrderClass::Any
         ));
 
-        assert_eq!(config.fee_policies.upcoming_policies.policies.len(), 1);
+        assert_eq!(config.fee_policies.upcoming_policies.len(), 1);
+        assert_eq!(config.fee_policies.upcoming_policies[0].policies.len(), 1);
         assert!(
-            config
-                .fee_policies
-                .upcoming_policies
+            config.fee_policies.upcoming_policies[0]
                 .effective_from_timestamp
                 .is_some()
         );
@@ -533,14 +532,7 @@ mod tests {
         );
         assert!(config.fee_policies.policies.is_empty());
         assert_eq!(config.fee_policies.max_partner_fee.get(), 0.01);
-        assert!(config.fee_policies.upcoming_policies.policies.is_empty());
-        assert!(
-            config
-                .fee_policies
-                .upcoming_policies
-                .effective_from_timestamp
-                .is_none()
-        );
+        assert!(config.fee_policies.upcoming_policies.is_empty());
 
         assert!(config.trusted_tokens.url.is_none());
         assert!(config.trusted_tokens.tokens.is_empty());
@@ -588,7 +580,7 @@ mod tests {
                     order_class: FeePolicyOrderClass::Limit,
                 }],
                 max_partner_fee: 0.02.try_into().unwrap(),
-                upcoming_policies: UpcomingFeePolicies::default(),
+                upcoming_policies: vec![],
             },
             ..Configuration::test_no_drivers()
         };

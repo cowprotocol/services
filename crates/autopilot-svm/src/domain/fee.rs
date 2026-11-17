@@ -73,16 +73,21 @@ impl ProtocolFees {
             .collect()
     }
 
-    /// The upcoming policies once their timestamp has passed, the current
-    /// ones until then. An empty upcoming list never takes over, like on EVM.
+    /// The policies of the latest upcoming entry whose timestamp has passed,
+    /// the current ones until then. An entry with no policies never takes
+    /// over.
     fn policies_at(&self, now: DateTime<Utc>) -> &[PolicyConfig] {
-        let upcoming = &self.config.upcoming_policies;
-        match upcoming.effective_from_timestamp {
-            Some(effective) if effective <= now && !upcoming.policies.is_empty() => {
-                &upcoming.policies
-            }
-            _ => &self.config.policies,
-        }
+        self.config
+            .upcoming_policies
+            .iter()
+            .filter(|upcoming| !upcoming.policies.is_empty())
+            .filter(|upcoming| {
+                upcoming
+                    .effective_from_timestamp
+                    .is_some_and(|effective| effective <= now)
+            })
+            .max_by_key(|upcoming| upcoming.effective_from_timestamp)
+            .map_or(&self.config.policies, |upcoming| &upcoming.policies)
     }
 }
 
