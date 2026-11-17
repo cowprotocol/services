@@ -6,6 +6,7 @@ pub mod database;
 pub mod domain;
 pub mod event_updater;
 mod fast_path;
+mod fee_engine;
 pub mod infra;
 mod leader_lock_tracker;
 mod maintenance;
