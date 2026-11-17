@@ -163,6 +163,11 @@ pub struct CoinGecko {
     /// the config file, and fails the load when the variable is unset.
     #[serde(deserialize_with = "deserialize_string_from_env")]
     pub api_key: String,
+    /// Age past which a price is stale and its token counts as unpriced by
+    /// CoinGecko, which keeps answering with the last price of a token whose
+    /// market data stopped updating.
+    #[serde(with = "humantime_serde")]
+    pub max_price_age: Duration,
 }
 
 impl Default for CoinGecko {
@@ -171,6 +176,7 @@ impl Default for CoinGecko {
             url: url::Url::parse("https://api.coingecko.com/api/v3/simple/token_price")
                 .expect("valid URL"),
             api_key: String::new(),
+            max_price_age: Duration::from_hours(1),
         }
     }
 }
@@ -375,6 +381,10 @@ mod tests {
             "https://api.coingecko.com/api/v3/simple/token_price"
         );
         assert!(config.native_prices.coin_gecko.api_key.is_empty());
+        assert_eq!(
+            config.native_prices.coin_gecko.max_price_age,
+            Duration::from_hours(1)
+        );
         let stages: Vec<&[NativePriceEstimator]> = config
             .native_prices
             .estimators
@@ -403,11 +413,13 @@ mod tests {
             estimators = [[{{ type = "CoinGecko" }}]]
             [coin-gecko]
             api-key = "%{var}"
+            max-price-age = "10m"
             "#
         ))
         .unwrap();
         unsafe { std::env::remove_var(var) };
         assert_eq!(prices.coin_gecko.api_key, "secret");
+        assert_eq!(prices.coin_gecko.max_price_age, Duration::from_mins(10));
         assert!(matches!(
             &prices.estimators[0][..],
             [NativePriceEstimator::CoinGecko]

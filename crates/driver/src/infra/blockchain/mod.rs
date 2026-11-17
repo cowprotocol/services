@@ -18,7 +18,7 @@ use {
     ethrpc::{Web3, alloy::ProviderLabelingExt, block_stream::CurrentBlockWatcher},
     gas_price_estimation::{Eip1559EstimationExt, GasPriceEstimating},
     shared::web3,
-    std::{fmt, sync::Arc},
+    std::{fmt, sync::Arc, time::Duration},
     thiserror::Error,
     tracing::{Level, instrument},
     url::Url,
@@ -42,6 +42,7 @@ pub struct RpcArgs {
     pub url: Url,
     pub max_batch_size: usize,
     pub max_concurrent_requests: usize,
+    pub timeout: Duration,
 }
 
 impl Rpc {
@@ -53,6 +54,7 @@ impl Rpc {
                 ethrpc_max_batch_size: args.max_batch_size,
                 ethrpc_max_concurrent_requests: args.max_concurrent_requests,
                 ethrpc_batch_delay: Default::default(),
+                ethrpc_timeout: args.timeout,
             },
             &args.url,
             "base",

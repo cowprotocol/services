@@ -53,7 +53,6 @@ cow-contract-balancerv2weightedpoolfactoryv4 = { path = "../contracts-generated/
 cow-contract-balancerv3batchrouter = { path = "../contracts-generated/balancerv3batchrouter" }
 cow-contract-balances = { path = "../contracts-generated/balances" }
 cow-contract-baoswaprouter = { path = "../contracts-generated/baoswaprouter" }
-cow-contract-chainalysisoracle = { path = "../contracts-generated/chainalysisoracle" }
 cow-contract-counter = { path = "../contracts-generated/counter" }
 cow-contract-cowprotocoltoken = { path = "../contracts-generated/cowprotocoltoken" }
 cow-contract-cowswapethflow = { path = "../contracts-generated/cowswapethflow" }

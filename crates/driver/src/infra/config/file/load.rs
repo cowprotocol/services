@@ -360,6 +360,7 @@ pub async fn load(chain: Chain, path: &Path) -> infra::Config {
         tx_gas_limit: config.tx_gas_limit,
         http: config.http,
         balance_cache: config.balance_cache,
+        ethrpc_timeout: config.ethrpc.timeout,
     }
 }
 

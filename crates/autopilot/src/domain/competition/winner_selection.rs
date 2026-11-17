@@ -1259,6 +1259,7 @@ mod tests {
                 auction_deltas: false,
                 compression: false,
             },
+            true,
         )
         .await
         .unwrap();

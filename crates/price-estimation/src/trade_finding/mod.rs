@@ -312,7 +312,9 @@ pub enum TradeError {
 impl From<PriceEstimationError> for TradeError {
     fn from(err: PriceEstimationError) -> Self {
         match err {
-            PriceEstimationError::NoLiquidity => Self::NoLiquidity,
+            PriceEstimationError::NoLiquidity | PriceEstimationError::StalePrice => {
+                Self::NoLiquidity
+            }
             PriceEstimationError::UnsupportedOrderType(order_type) => {
                 Self::UnsupportedOrderType(order_type)
             }

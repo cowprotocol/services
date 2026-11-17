@@ -100,7 +100,7 @@ impl Chain {
             Self::Gnosis => Duration::from_millis(5_000),
             Self::Sepolia => Duration::from_millis(12_000),
             Self::ArbitrumOne => Duration::from_millis(250),
-            Self::Base => Duration::from_millis(2_000),
+            Self::Base => Duration::from_millis(200),
             Self::Hardhat => Duration::from_millis(12_000), // Arbitrary reasonable value
             Self::Bnb => Duration::from_millis(3_000),
             Self::Avalanche => Duration::from_millis(2_000),
@@ -215,7 +215,7 @@ mod test {
         assert_eq!(Chain::Mainnet.blocks_in(TARGET_AGE).round(), 1800.0);
         assert_eq!(Chain::Sepolia.blocks_in(TARGET_AGE).round(), 1800.0);
         assert_eq!(Chain::Gnosis.blocks_in(TARGET_AGE).round(), 4320.0);
-        assert_eq!(Chain::Base.blocks_in(TARGET_AGE).round(), 10800.0);
+        assert_eq!(Chain::Base.blocks_in(TARGET_AGE).round(), 108000.0);
         assert_eq!(Chain::ArbitrumOne.blocks_in(TARGET_AGE).round(), 86400.0);
         assert_eq!(Chain::Robinhood.blocks_in(TARGET_AGE).round(), 216000.0);
     }

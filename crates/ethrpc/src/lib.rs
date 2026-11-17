@@ -50,7 +50,14 @@ pub struct Config {
     /// Buffering "nagle" delay to wait for additional requests before sending
     /// out an incomplete batch.
     pub ethrpc_batch_delay: Duration,
+
+    /// Maximum time for one HTTP request to the node, from connect to the
+    /// end of the response body. A batch is one HTTP request.
+    pub ethrpc_timeout: Duration,
 }
+
+/// Default for [`Config::ethrpc_timeout`].
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
 impl Default for Config {
     fn default() -> Self {
@@ -58,6 +65,7 @@ impl Default for Config {
             ethrpc_max_batch_size: 20,
             ethrpc_max_concurrent_requests: 10,
             ethrpc_batch_delay: Duration::ZERO,
+            ethrpc_timeout: DEFAULT_TIMEOUT,
         }
     }
 }
@@ -68,7 +76,7 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
         args.ethrpc_max_batch_size,
         args.ethrpc_max_concurrent_requests,
     ) {
-        (0 | 1, 0) => alloy::unbuffered_provider(url.as_str(), label),
+        (0 | 1, 0) => alloy::unbuffered_provider(url.as_str(), args.ethrpc_timeout, label),
         _ => alloy::provider(url.as_str(), args, label),
     };
 
@@ -80,7 +88,49 @@ pub fn web3(args: Config, url: &Url, label: Option<&str>) -> Web3 {
 
 #[cfg(test)]
 mod test {
-    use {crate::Web3, alloy_eips::BlockId, alloy_provider::Provider};
+    use {
+        crate::{Config, Web3},
+        alloy_eips::BlockId,
+        alloy_provider::Provider,
+        std::time::{Duration, Instant},
+    };
+
+    /// A node that accepts the connection but never responds must not block
+    /// the call forever, with and without batching.
+    #[tokio::test]
+    async fn request_times_out_on_silent_node() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url: reqwest::Url = format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        tokio::spawn(async move {
+            let mut connections = Vec::new();
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                connections.push(socket);
+            }
+        });
+
+        let timeout = Duration::from_millis(200);
+        for (max_batch_size, max_concurrent_requests) in [(20, 10), (0, 0)] {
+            let config = Config {
+                ethrpc_max_batch_size: max_batch_size,
+                ethrpc_max_concurrent_requests: max_concurrent_requests,
+                ethrpc_batch_delay: Duration::ZERO,
+                ethrpc_timeout: timeout,
+            };
+            let web3 = crate::web3(config, &url, None);
+
+            let start = Instant::now();
+            let result =
+                tokio::time::timeout(Duration::from_secs(5), web3.provider.get_block_number())
+                    .await
+                    .expect("the RPC timeout did not fire");
+
+            assert!(result.is_err());
+            assert!(start.elapsed() >= timeout);
+        }
+    }
 
     #[tokio::test]
     async fn test_https() {

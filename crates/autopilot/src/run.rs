@@ -18,6 +18,7 @@ use {
         domain,
         event_updater::EventUpdater,
         fast_path::FastPathHandler,
+        fee_engine,
         infra,
         maintenance::Maintenance,
         run_loop::{self, RunLoop},
@@ -94,13 +95,14 @@ async fn ethrpc(url: &Url, ethrpc_args: &shared::web3::Arguments) -> infra::bloc
 }
 
 /// Creates unbuffered Web3 transport.
-async fn unbuffered_ethrpc(url: &Url) -> infra::blockchain::Rpc {
+async fn unbuffered_ethrpc(url: &Url, timeout: Duration) -> infra::blockchain::Rpc {
     ethrpc(
         url,
         &shared::web3::Arguments {
             ethrpc_max_batch_size: 0,
             ethrpc_max_concurrent_requests: 0,
             ethrpc_batch_delay: Default::default(),
+            ethrpc_timeout: timeout,
         },
     )
     .await
@@ -202,8 +204,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     .await
     .unwrap();
 
-    // If the DB is in read-only mode, running ANALYZE is not possible and will
-    // trigger and error https://www.postgresql.org/docs/current/hot-standby.html
     crate::database::run_database_metrics_work(db_write.clone());
 
     let http_factory = HttpClientFactory::from(config.http_client);
@@ -228,7 +228,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         );
     }
 
-    let unbuffered_ethrpc = unbuffered_ethrpc(&config.shared.node_url).await;
+    let unbuffered_ethrpc =
+        unbuffered_ethrpc(&config.shared.node_url, ethrpc_args.ethrpc_timeout).await;
     let ethrpc = ethrpc(&config.shared.node_url, &ethrpc_args).await;
     let chain = ethrpc.chain();
     let web3 = ethrpc.web3().clone();
@@ -468,7 +469,6 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let banned_users =
         Arc::new(order_validation::banned::Users::new(
-            eth.contracts().chainalysis_oracle().clone(),
             config.banned_users.hermod.clone().map(|hermod| {
                 order_validation::banned::HermodConfig {
                     url: hermod.url,
@@ -506,7 +506,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         None => None,
     };
 
-    let protocol_fees = Arc::new(domain::ProtocolFees::new(
+    let protocol_fees = domain::ProtocolFees::new(
         &config.fee_policies,
         config
             .shared
@@ -516,7 +516,14 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             .collect(),
         config.shared.enable_sell_equals_buy_volume_fee,
         *eth.contracts().weth().address(),
-    ));
+    );
+    let protocol_fees = fee_engine::protocol_fees(
+        config.fee_engine.as_ref(),
+        protocol_fees,
+        *eth.contracts().weth().address(),
+        &config.surplus_capturing_jit_order_owners,
+    )
+    .expect("fee engine rules must load");
     let surplus_capturing_jit_order_owners =
         Arc::new(config.surplus_capturing_jit_order_owners.clone());
 
@@ -644,16 +651,20 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
 
     let run_loop_config = run_loop::Config::from(config.run_loop);
 
+    let shared_origins =
+        &infra::solvers::shared_origins(config.drivers.iter().map(|driver| &driver.url));
     let drivers_futures = config
         .drivers
         .into_iter()
         .map(|driver| async move {
             let extensions = infra::SupportedExtensions::from(&driver);
+            let measure_upload = !shared_origins.contains(&driver.url.origin());
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
                 driver.submission_account,
                 extensions,
+                measure_upload,
             )
             .await
             .map(Arc::new)
@@ -724,6 +735,8 @@ async fn shadow_mode(config: Configuration) -> ! {
         config.shadow.expect("missing shadow mode configuration"),
     );
 
+    let shared_origins =
+        &infra::solvers::shared_origins(config.drivers.iter().map(|driver| &driver.url));
     let drivers_futures = config
         .drivers
         .into_iter()
@@ -733,6 +746,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 auction_deltas: false,
                 ..infra::SupportedExtensions::from(&driver)
             };
+            let measure_upload = !shared_origins.contains(&driver.url.origin());
             infra::Driver::try_new(
                 driver.url,
                 driver.name.clone(),
@@ -746,6 +760,7 @@ async fn shadow_mode(config: Configuration) -> ! {
                 // can simply generate random addresses here.
                 Account::Address(Address::random()),
                 extensions,
+                measure_upload,
             )
             .await
             .map(Arc::new)

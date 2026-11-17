@@ -5,12 +5,13 @@ use {
     anyhow::{Context, Result, anyhow},
     configs::autopilot::solver::{Account, Solver},
     eth_domain_types as eth,
+    itertools::Itertools,
     observe::tracing::{distributed::headers::tracing_headers, lazy::Lazy},
     reqwest::{Client, RequestBuilder, StatusCode},
-    std::{borrow::Cow, time::Duration},
+    std::{borrow::Cow, collections::HashSet, time::Duration},
     thiserror::Error,
     tracing::instrument,
-    url::Url,
+    url::{Origin, Url},
 };
 
 pub mod dto;
@@ -23,7 +24,17 @@ pub struct Driver {
     pub url: Url,
     pub submission_address: eth::Address,
     pub extensions: SupportedExtensions,
+    /// Whether to log how long `/solve` bodies take to upload. Off when another
+    /// driver has the same origin: the server behind it reads only the first
+    /// `/solve` body per auction, so the other uploads end with the response,
+    /// not when the body is sent.
+    measure_upload: bool,
     client: Client,
+}
+
+/// Origins that more than one of the URLs point at.
+pub fn shared_origins<'a>(urls: impl IntoIterator<Item = &'a Url>) -> HashSet<Origin> {
+    urls.into_iter().map(Url::origin).duplicates().collect()
 }
 
 /// Optional `/solve` request features a driver opted into.
@@ -60,6 +71,7 @@ impl Driver {
         name: String,
         submission_account: Account,
         extensions: SupportedExtensions,
+        measure_upload: bool,
     ) -> Result<Self, Error> {
         let submission_address = match submission_account {
             Account::Kms(key_id) => {
@@ -93,10 +105,12 @@ impl Driver {
                 .map_err(Error::FailedToBuildClient)?,
             submission_address,
             extensions,
+            measure_upload,
         })
     }
 
     pub async fn solve(&self, request: solve::Request) -> Result<solve::Response> {
+        let request = request.measure_upload(self.measure_upload);
         self.request_response("solve", request).await
     }
 
@@ -263,6 +277,19 @@ mod tests {
         assert!(extensions.compression);
     }
 
+    #[test]
+    fn finds_origins_shared_by_several_urls() {
+        let urls = [
+            "http://driver/baseline",
+            "http://driver/solver",
+            "http://driver:8080/solver",
+            "https://user:password@solver.example.com/",
+        ]
+        .map(|url| Url::parse(url).unwrap());
+
+        assert_eq!(shared_origins(&urls), HashSet::from([urls[0].origin()]));
+    }
+
     /// The `content-encoding` header and raw body of a `/solve` request.
     type Received = Arc<Mutex<Option<(Option<String>, Bytes)>>>;
 
@@ -314,6 +341,7 @@ mod tests {
                 auction_deltas: false,
                 compression,
             },
+            true,
         )
         .await
         .unwrap();

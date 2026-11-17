@@ -7,10 +7,12 @@ use {
         AppData,
         CompileError,
         Fee,
+        FeeFactor,
         Field,
         LoadError,
         Match,
         OrderView,
+        PartnerFee,
         RuleSet,
         RulesToml,
         load_rules_from_str,
@@ -68,6 +70,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     let evaluation = evaluator.evaluate(OrderView {
         order: &order(USDC, USDT),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     });
     assert!(evaluation.skipped.is_empty());
@@ -75,7 +78,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     assert_eq!(rule.name(), "Stablecoin bucket: 0.3 bps");
     assert!(matches!(
         fees[..],
-        [Fee::Surplus { .. }, Fee::Volume { factor }] if factor.to_high_precision() == 30
+        [Fee::Surplus { .. }, Fee::Volume { factor }] if factor == FeeFactor::try_from(0.00003).unwrap()
     ));
 
     let mut quoted = order(USDC, USDT);
@@ -83,6 +86,7 @@ fn mainnet_sample_lists_reach_the_rules() {
     let evaluation = evaluator.evaluate(OrderView {
         order: &quoted,
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: true,
     });
     let Match { fees, .. } = evaluation.matched.first().unwrap();
@@ -94,10 +98,37 @@ fn mainnet_sample_lists_reach_the_rules() {
     let evaluation = evaluator.evaluate(OrderView {
         order: &order(WETH, USDC),
         app_data: &AppData::default(),
+        partner_fees: &[],
         in_market: false,
     });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
+}
+
+/// The partner fees of an order asking for one 2% volume fee, under `source`.
+fn partner_fee_under(source: &str) -> Vec<Fee> {
+    load_rules_from_str(source)
+        .unwrap()
+        .evaluator(Utc::now())
+        .evaluate(OrderView {
+            order: &order(WETH, USDC),
+            app_data: &AppData::default(),
+            partner_fees: &[PartnerFee::Volume { bps: 200 }],
+            in_market: false,
+        })
+        .partner_fees
+}
+
+#[test]
+fn partner_fee_cap_is_in_bps_and_none_without_the_table() {
+    let volume = |bps: f64| Fee::Volume {
+        factor: (bps / 10_000.).try_into().unwrap(),
+    };
+    assert_eq!(partner_fee_under(""), []);
+    assert_eq!(
+        partner_fee_under("[partner-fees]\nmax-volume-bps = 50"),
+        [volume(50.)]
+    );
 }
 
 #[test]
@@ -111,6 +142,7 @@ fn loads_the_tables_of_a_host_config() {
     let tables = RulesToml {
         lists: config.remove("lists"),
         rules: config.remove("rule"),
+        partner_fees: config.remove("partner-fees"),
     };
     let names = |rules: RuleSet| -> Vec<String> {
         rules
@@ -119,10 +151,12 @@ fn loads_the_tables_of_a_host_config() {
             .map(|rule| rule.name().to_owned())
             .collect()
     };
+    let rules = load_rules_toml(tables.clone()).unwrap();
     assert_eq!(
-        names(load_rules_toml(tables.clone()).unwrap()),
-        names(load_rules_from_str(RULES).unwrap())
+        rules.max_partner_fee(),
+        Some(FeeFactor::try_from(0.05).unwrap())
     );
+    assert_eq!(names(rules), names(load_rules_from_str(RULES).unwrap()));
 
     assert!(
         load_rules_toml(RulesToml::default())
@@ -138,12 +172,36 @@ fn loads_the_tables_of_a_host_config() {
 }
 
 #[test]
+fn a_host_list_reaches_the_rules_and_may_not_be_defined() {
+    let rule = "[[rule]]\nname = 'x'\nwhen = 'order.sellToken in host_tokens'\nfee = 'volume(1)'";
+    let mut tables = RulesToml {
+        rules: toml::from_str::<toml::Table>(rule).unwrap().remove("rule"),
+        ..Default::default()
+    };
+    assert!(load_rules_toml(tables.clone()).is_err());
+    tables.add_host_list("host_tokens", [USDC]).unwrap();
+    let rules = load_rules_toml(tables.clone()).unwrap();
+    let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+        order: &order(USDC, USDT),
+        app_data: &AppData::default(),
+        partner_fees: &[],
+        in_market: false,
+    });
+    assert_eq!(evaluation.matched.len(), 1);
+    assert!(matches!(
+        tables.add_host_list("host_tokens", [USDC]),
+        Err(LoadError::Rules(CompileError::ReservedList { name })) if name == "host_tokens"
+    ));
+}
+
+#[test]
 fn refuses_bad_host_config_tables() {
     let error = |source: &str| {
         let mut config: toml::Table = toml::from_str(source).unwrap();
         load_rules_toml(RulesToml {
             lists: config.remove("lists"),
             rules: config.remove("rule"),
+            partner_fees: config.remove("partner-fees"),
         })
         .unwrap_err()
     };
@@ -151,6 +209,10 @@ fn refuses_bad_host_config_tables() {
 
     assert!(matches!(error("lists = []"), LoadError::Toml(_)));
     assert!(matches!(error("rule = 1"), LoadError::Toml(_)));
+    assert!(matches!(
+        error("[partner-fees]\nmax-volume-bps = 10000"),
+        LoadError::Toml(_)
+    ));
     assert!(matches!(
         error(&(fine.clone() + "[[rule]]\nname = 'y'\nwhen = 'true'\n")),
         LoadError::MalformedRule { number: 2, .. }
@@ -200,6 +262,18 @@ fn refuses_bad_files() {
 
     assert!(matches!(error("[lists"), LoadError::Toml(_)));
     assert!(matches!(error("[caps]\nvolume = 1"), LoadError::Toml(_)));
+    for partner_fees in [
+        "[partner-fees]",
+        "[partner-fees]\nmax = 1",
+        "[partner-fees]\nmax-volume-bps = 10000",
+        "[partner-fees]\nmax-volume-bps = -1",
+        "[partner-fees]\nmax-volume-bps = 0.001",
+    ] {
+        assert!(
+            matches!(error(partner_fees), LoadError::Toml(_)),
+            "{partner_fees}"
+        );
+    }
     assert!(matches!(
         error(&(rule("x", "true", "no_fee()") + "extra = 1\n")),
         LoadError::Toml(_)

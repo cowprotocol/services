@@ -4,19 +4,29 @@ use {
     crate::{
         AppData,
         Evaluator,
-        Flashloan,
+        Fee,
+        FeeFactor,
         OrderView,
         evaluator::{RuleError, Skipped},
         fee,
         order_view,
     },
-    alloy_primitives::{Address, U256},
-    cel::{Context, Env, Program, Value},
+    alloy_primitives::U256,
+    cel::{
+        Context,
+        Env,
+        Program,
+        common::{
+            types::{CelBool, CelMap, CelMapKey},
+            value::Val,
+        },
+    },
     chrono::{DateTime, Utc},
-    model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata, OrderQuote},
+    model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata},
+    rust_decimal::{Decimal, prelude::FromPrimitive},
     serde::{Deserialize, Deserializer, de},
     std::{
-        collections::{BTreeMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         fmt,
         sync::Arc,
     },
@@ -46,15 +56,49 @@ fn non_empty<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Er
     Ok(value)
 }
 
-/// A rule set as written: named lists and the rules in the order they are
-/// tried. In TOML, `[lists]` and one `[[rule]]` table per rule.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// A rule set as written: named lists, the rules in the order they are
+/// tried and the cap on partner fees.
+///
+/// ```toml
+/// [partner-fees]
+/// max-volume-bps = 100
+///
+/// [lists]
+/// stablecoins = ["0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"]
+///
+/// [[rule]]
+/// name = "Stable swaps"
+/// when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
+/// fee = "volume(0.3)"
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RuleSetDefinition {
     #[serde(default)]
     pub lists: BTreeMap<String, Vec<String>>,
     #[serde(default, rename = "rule")]
     pub rules: Vec<RuleDefinition>,
+    /// Without the table the engine returns no partner fee.
+    pub partner_fees: Option<PartnerFees>,
+}
+
+/// How the engine caps an order's partner fees.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PartnerFees {
+    /// Basis points of the volume all partner fees may take together.
+    #[serde(rename = "max-volume-bps", deserialize_with = "bps_of_volume")]
+    pub max_volume: FeeFactor,
+}
+
+/// Basis points of the volume as a fee factor. Finer than 0.01 bps is refused,
+/// not rounded, as for a `volume` argument.
+fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor, D::Error> {
+    let bps = f64::deserialize(deserializer)?;
+    Decimal::from_f64(bps)
+        .ok_or(fee::FactorError::OutOfRange)
+        .and_then(|number| fee::factor_on_grid(number, fee::BPS))
+        .map_err(|error| de::Error::custom(format!("max-volume-bps = {bps} {error}")))
 }
 
 /// Names the evaluator binds itself; a list under one of them would be
@@ -91,8 +135,7 @@ pub struct SampleOrderError {
 /// The sample order an expression failed on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sample {
-    /// Every optional field present, every timestamp `now`, amounts and
-    /// prices 1.
+    /// Every optional field present, every timestamp `now`, amounts 1.
     Full,
     /// No optional field present; otherwise the same.
     Bare,
@@ -128,6 +171,9 @@ pub struct Rule {
     name: String,
     pub(crate) when: Program,
     pub(crate) fee: Program,
+    /// The fees of a `fee` that names no variable, e.g. `volume(2)`: the same
+    /// for every order, so evaluated once.
+    pub(crate) constant_fees: Option<Vec<Fee>>,
 }
 
 impl fmt::Debug for Rule {
@@ -155,7 +201,24 @@ impl Rule {
         };
         let when = compile(Field::When, &when)?;
         let fee = compile(Field::Fee, &fee)?;
-        Ok(Self { name, when, fee })
+        Ok(Self {
+            name,
+            when,
+            fee,
+            constant_fees: None,
+        })
+    }
+
+    /// Evaluates the `fee` now if it names no variable. One that fails stays
+    /// unevaluated, so that it is reported like any other.
+    fn evaluate_constant_fee(&mut self, context: &Context) {
+        if self.fee.references().variables().is_empty() {
+            self.constant_fees = self
+                .fee
+                .execute(context)
+                .ok()
+                .and_then(|value| fee::fees_from_value(&value).ok());
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -175,15 +238,17 @@ impl Rule {
 
 /// A checked, immutable set of rules.
 pub struct RuleSet {
-    pub(crate) env: Arc<Env>,
     rules: Vec<Rule>,
-    pub(crate) lists: Vec<(String, Value)>,
+    /// The fee functions and the lists, bound once for every evaluation.
+    pub(crate) context: Context<'static, 'static>,
+    max_partner_fee: Option<FeeFactor>,
 }
 
 impl fmt::Debug for RuleSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RuleSet")
             .field("rules", &self.rules)
+            .field("max_partner_fee", &self.max_partner_fee)
             .finish_non_exhaustive()
     }
 }
@@ -191,11 +256,13 @@ impl fmt::Debug for RuleSet {
 impl RuleSet {
     /// Compiles the rules in the order they are tried against the CEL
     /// stdlib plus its math and strings extensions. Each list becomes a CEL
-    /// list under its name. Any failure refuses the whole set.
+    /// list under its name. `partner_fees` caps an order's partner fees
+    /// together; without it there are none. Any failure refuses the whole set.
     pub fn new(
         RuleSetDefinition {
             lists,
             rules: definitions,
+            partner_fees,
         }: RuleSetDefinition,
     ) -> Result<Self, CompileError> {
         let mut env = Env::stdlib();
@@ -221,10 +288,18 @@ impl RuleSet {
             }
             rules.push(Rule::compile(&env, definition)?);
         }
+        let mut context = Context::with_env(env);
+        fee::register_fee_functions(&mut context);
+        for (name, list) in list_values(&lists) {
+            context.add_variable_as_val(name, list);
+        }
+        for rule in &mut rules {
+            rule.evaluate_constant_fee(&context);
+        }
         Ok(Self {
-            env,
             rules,
-            lists: list_values(&lists),
+            context,
+            max_partner_fee: partner_fees.map(|fees| fees.max_volume),
         })
     }
 
@@ -246,6 +321,7 @@ impl RuleSet {
             .evaluate_all_expressions(OrderView {
                 order: &full_sample_order(now),
                 app_data: &sample_app_data(),
+                partner_fees: &[],
                 in_market: false,
             })
             .into_iter()
@@ -255,6 +331,7 @@ impl RuleSet {
             .evaluate(OrderView {
                 order: &bare_sample_order(now),
                 app_data: &AppData::default(),
+                partner_fees: &[],
                 in_market: false,
             })
             .skipped
@@ -278,16 +355,16 @@ impl RuleSet {
         &self.rules
     }
 
-    /// Binds lists, functions and `now` once; each order evaluated through
-    /// the result gets a cheap child scope on top.
+    /// The cap on an order's partner fees together, as a share of the volume.
+    /// `None` counts no partner fee.
+    pub fn max_partner_fee(&self) -> Option<FeeFactor> {
+        self.max_partner_fee
+    }
+
+    /// Evaluates orders at `now`. Cheap: lists and functions are bound
+    /// once, in [`RuleSet::new`].
     pub fn evaluator(&self, now: DateTime<Utc>) -> Evaluator<'_> {
-        let mut context = Context::with_env(self.env.clone());
-        fee::register_fee_functions(&mut context);
-        for (name, list) in &self.lists {
-            context.add_variable_from_value(name.clone(), list.clone());
-        }
-        context.add_variable_from_value("now", now.fixed_offset());
-        Evaluator::new(self, context)
+        Evaluator::new(self, now)
     }
 }
 
@@ -311,7 +388,7 @@ pub(crate) fn bare_sample_order(now: DateTime<Utc>) -> Order {
 }
 
 /// The bare sample with every optional field present, so that a rule can
-/// reach any name the view may hold. Prices are 1, like the amounts.
+/// reach any name the view may hold.
 pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
     let mut order = bare_sample_order(now);
     order.metadata = OrderMetadata {
@@ -322,15 +399,6 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
         onchain_order_data: Some(OnchainOrderData::default()),
         onchain_user: Some(Default::default()),
         valid_from: Some(now.timestamp() as u32),
-        quote: Some(OrderQuote {
-            sell_amount: U256::ONE,
-            buy_amount: U256::ONE,
-            fee_amount: U256::ONE,
-            gas_amount: 1.into(),
-            gas_price: 1.into(),
-            sell_token_price: 1.into(),
-            ..Default::default()
-        }),
         fast_path: true,
         ..order.metadata
     };
@@ -341,31 +409,26 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
 pub(crate) fn sample_app_data() -> AppData {
     AppData {
         app_code: Some("sample".to_owned()),
-        signer: Some(Address::ZERO),
-        replaced_order: Some(Default::default()),
-        flashloan: Some(Flashloan {
-            liquidity_provider: Address::ZERO,
-            protocol_adapter: Address::ZERO,
-            receiver: Address::ZERO,
-            token: Address::ZERO,
-            amount: U256::ONE,
-        }),
+        flashloan: true,
     }
 }
 
-/// Each list as the CEL list rules test with `in`, e.g.
-/// `order.sellToken in stablecoins`, hex members lowercased like the order
-/// view's. `in` scans a list; a member-to-`true` map would make it a key
-/// lookup if lists ever grow large.
-fn list_values(lists: &BTreeMap<String, Vec<String>>) -> Vec<(String, Value)> {
+/// Each list as a CEL map of its members to `true`, hex members lowercased
+/// like the order view's. `in`, e.g. `order.sellToken in stablecoins`, is
+/// then a key lookup; it would scan a CEL list.
+fn list_values(lists: &BTreeMap<String, Vec<String>>) -> Vec<(String, Box<dyn Val>)> {
     lists
         .iter()
         .map(|(name, members)| {
-            let members: Vec<String> = members
+            let members: HashMap<_, _> = members
                 .iter()
-                .map(|member| order_view::normalize(member))
+                .map(|member| {
+                    let present: Box<dyn Val> = Box::new(CelBool::from(true));
+                    (CelMapKey::from(order_view::normalize(member)), present)
+                })
                 .collect();
-            (name.clone(), Value::from(members))
+            let members: Box<dyn Val> = Box::new(CelMap::from(members));
+            (name.clone(), members)
         })
         .collect()
 }
@@ -399,6 +462,12 @@ mod tests {
     }
 
     #[test]
+    fn rule_set_is_shared_across_threads() {
+        fn shared<T: Send + Sync>() {}
+        shared::<RuleSet>();
+    }
+
+    #[test]
     fn lowercases_hex_list_members() {
         let lists = BTreeMap::from([(
             "tokens".to_owned(),
@@ -406,17 +475,60 @@ mod tests {
         )]);
         let rules = RuleSet::new(RuleSetDefinition {
             lists,
+            rules: vec![rule(
+                "Lowercase",
+                "'0xabc' in tokens && 'Acme' in tokens && size(tokens) == 2",
+                "no_fee()",
+            )],
             ..Default::default()
         })
         .unwrap();
-        let [(name, members)] = &rules.lists[..] else {
-            panic!("expected one list");
-        };
-        assert_eq!(name, "tokens");
-        assert_eq!(
-            *members,
-            Value::from(vec!["0xabc".to_owned(), "Acme".to_owned()])
-        );
+        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+            order: &Order::default(),
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market: false,
+        });
+        assert_eq!(evaluation.matched.len(), 1);
+    }
+
+    #[test]
+    fn evaluates_once_only_a_fee_that_names_no_variable() {
+        let rules = RuleSet::new(RuleSetDefinition {
+            rules: vec![
+                rule("constant", "true", "[surplus(50, 98), volume(2)]"),
+                rule("reads the order", "true", "volume(order.inMarket ? 1 : 2)"),
+                rule("reads the time", "true", "volume(now > now ? 1 : 2)"),
+                rule("fails", "true", "volume(-1)"),
+            ],
+            ..Default::default()
+        })
+        .unwrap();
+        let constant: Vec<_> = rules
+            .rules()
+            .iter()
+            .map(|rule| rule.constant_fees.clone())
+            .collect();
+        let fees = vec![
+            Fee::Surplus {
+                factor: FeeFactor::try_from(0.5).unwrap(),
+                max_volume_factor: FeeFactor::try_from(0.0098).unwrap(),
+            },
+            Fee::Volume {
+                factor: FeeFactor::try_from(0.0002).unwrap(),
+            },
+        ];
+        assert_eq!(constant, [Some(fees.clone()), None, None, None]);
+
+        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+            order: &Order::default(),
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market: false,
+        });
+        assert_eq!(evaluation.matched[0].fees, fees);
+        assert_eq!(evaluation.skipped.len(), 1);
+        assert_eq!(evaluation.skipped[0].rule.name(), "fails");
     }
 
     #[test]
@@ -493,11 +605,6 @@ mod tests {
     fn validates_every_expression_on_a_sample_order() {
         validate(vec![
             rule(
-                "Quoted",
-                "order.?quote.sellAmount.orValue(0.0) > 0.0",
-                "volume(1)",
-            ),
-            rule(
                 "Ethflow",
                 "order.?ethflowData.userValidTo.orValue(0u) > 0u",
                 "no_fee()",
@@ -510,7 +617,7 @@ mod tests {
             ),
             rule(
                 "Ratio",
-                "order.?quote.optMap(q, q.buyAmount / q.sellAmount).orValue(0.0) > 0.0",
+                "order.?ethflowData.optMap(e, e.userValidTo + 1u).orValue(0u) > 0u",
                 "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
             ),
             rule(
@@ -524,7 +631,7 @@ mod tests {
                 "order.?validFrom.orValue(0u) + 1u > 0u",
                 "no_fee()",
             ),
-            rule("Default", "true", "[surplus(50, 1), volume(0.3)]"),
+            rule("Default", "true", "[surplus(50, 100), volume(0.3)]"),
         ])
         .unwrap();
 
@@ -566,13 +673,13 @@ mod tests {
         validate(vec![
             rule(
                 "Guarded",
-                "order.?quote.sellAmount.orValue(0.0) > 0.0",
+                "order.?ethflowData.userValidTo.orValue(0u) != 0u",
                 "volume(1)",
             ),
             rule(
                 "Fee behind its guard",
-                "order.?quote.hasValue()",
-                "volume(order.quote.feeAmount)",
+                "order.?validFrom.hasValue()",
+                "volume(order.validFrom > 0u ? 1 : 2)",
             ),
             rule(
                 "Nested",
@@ -583,7 +690,11 @@ mod tests {
         .unwrap();
 
         let errors = validate(vec![
-            rule("Unguarded", "order.quote.sellAmount > 0", "volume(1)"),
+            rule(
+                "Unguarded",
+                "order.ethflowData.userValidTo != 0u",
+                "volume(1)",
+            ),
             rule(
                 "Last field only",
                 "has(order.ethflowData.userValidTo)",
@@ -611,7 +722,7 @@ mod tests {
             RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
         )));
         let message = errors[1].to_string();
-        assert!(message.contains("No such key: quote"), "{message}");
+        assert!(message.contains("No such key: ethflowData"), "{message}");
         assert!(message.ends_with("on a sample order with no optional field"));
     }
 
