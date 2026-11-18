@@ -55,7 +55,8 @@ filter = "info,solana_orderbook=debug"
 # Quotes for orders created on chain: each gets the quote a sponsored order
 # gets at placement. Omit the section to leave such orders without a quote.
 # Set it only next to an autopilot whose quote-link-grace holds these orders
-# until their quote is decided.
+# until their quote is decided. Of the orderbooks sharing a database, one
+# quotes and the others stand by.
 # [on-chain-quotes]
 # How often to look for orders waiting for their quote. Defaults to 500ms.
 # poll-interval = "500ms"
