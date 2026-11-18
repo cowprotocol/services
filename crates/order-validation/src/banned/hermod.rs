@@ -17,7 +17,7 @@ use {
     url::Url,
 };
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 /// Hermod rejects batches with more unique signatures than this.
 const MAX_BATCH_SIZE: usize = 1000;
 /// How long a reported threat stays banned while Hermod cannot be reached.
@@ -54,8 +54,10 @@ pub(super) struct Client {
     endpoint: Url,
     hmac_key: Vec<u8>,
     api_key: Option<String>,
+    /// HMAC signature of each recently checked address, so repeated checks
+    /// do not compute it again.
     signatures: Cache<Address, B256>,
-    /// Recent threats, used only for addresses whose batch request failed.
+    /// Recent threats, used only when a batch request fails.
     recently_banned: Cache<Address, ()>,
 }
 
