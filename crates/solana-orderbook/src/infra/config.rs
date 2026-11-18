@@ -163,7 +163,8 @@ pub struct Sponsoring {
 }
 
 /// Configuration of the task that decides the quote of each order created
-/// on chain, as placement decides a sponsored order's.
+/// on chain, as placement decides a sponsored order's. Of the orderbooks
+/// sharing a database, one runs the task and the others stand by.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct OnChainQuotes {

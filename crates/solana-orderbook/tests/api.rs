@@ -4692,6 +4692,53 @@ async fn solana_db_on_chain_order_is_quoted_once_while_its_quote_is_slow() {
     assert_eq!(quotes, 1);
 }
 
+/// Several orderbooks on one database quote an order created on chain once:
+/// the one holding the leader lock quotes, the others stand by.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_is_quoted_by_one_of_several_orderbooks() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let driver = spawn_mock_driver_after(
+        Duration::from_millis(300),
+        serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": "3461207",
+            "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+            "networkFee": "6400",
+        }),
+    )
+    .await;
+    let quoter = || {
+        Quoter::new(
+            vec![format!("http://{driver}/").parse().unwrap()],
+            Duration::from_secs(1),
+        )
+    };
+    let uid = [0x11; 32];
+    insert_on_chain_order(
+        &pool,
+        uid,
+        10_000_000,
+        1_000_000,
+        u32::MAX,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    spawn_on_chain_quoting_server(pool.clone(), quoter()).await;
+    spawn_on_chain_quoting_server(pool.clone(), quoter()).await;
+
+    assert!(quote_decision(&pool, uid).await.is_some());
+    // Long enough for the quote of a second orderbook to be stored too.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let quotes: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(quotes, 1);
+}
+
 /// An expired order created on chain is not quoted: it stays as it is while
 /// a live one stored after it is decided.
 #[tokio::test]
