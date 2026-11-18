@@ -129,13 +129,14 @@ ON CONFLICT (order_uid) DO UPDATE SET is_reorged = false
         .execute(&mut **tx)
         .await?;
         // creation_timestamp is the indexing time, the stream carries no
-        // block time.
+        // block time. An order the orderbook stored first keeps its row. The
+        // row inserted here has no quote decision and waits for one.
         let inserted = sqlx::query(
             r#"
 INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
     buy_token_account, sell_amount, buy_amount, valid_to, kind,
-    partially_fillable, app_data, creation_timestamp, order_pda)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13)
+    partially_fillable, app_data, creation_timestamp, order_pda, quote_pending)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now(), $13, true)
 ON CONFLICT (uid) DO NOTHING
             "#,
         )
@@ -1039,6 +1040,38 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
                 (fresh_uid.to_vec(), "created".to_string()),
                 (uid.to_vec(), "traded".to_string()),
             ]
+        );
+    }
+
+    /// An order the indexer inserts waits for its quote decision. A row the
+    /// orderbook stored first keeps its own.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_an_indexed_order_awaits_its_quote() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+
+        let sponsored = [1_u8; 32];
+        SeedOrder::new(sponsored).insert(&pool).await;
+        let on_chain = [2_u8; 32];
+        let events = [sponsored, on_chain]
+            .map(|uid| {
+                DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(created_order(
+                    uid,
+                ))))
+            })
+            .to_vec();
+        postgres.persist_events(events, Slot(20)).await.unwrap();
+
+        let pending: Vec<(Vec<u8>, bool)> =
+            sqlx::query_as("SELECT uid, quote_pending FROM solana.orders ORDER BY uid")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            pending,
+            vec![(sponsored.to_vec(), false), (on_chain.to_vec(), true)]
         );
     }
 
