@@ -101,9 +101,13 @@ pub async fn quote_on_chain_orders(
 /// Decide one order's quote and store the decision. An order whose quote
 /// fails is decided without one: it exists on chain and cannot be refused.
 async fn decide(state: &State, pending: db::PendingOrder) {
-    let db::PendingOrder { order, created } = pending;
+    let db::PendingOrder {
+        order,
+        created,
+        quote_id,
+    } = pending;
     let uid = const_hex::encode_prefixed(order.uid.0);
-    let (quote, failed) = match find_or_create_quote(state, &order, None, created).await {
+    let (quote, failed) = match find_or_create_quote(state, &order, quote_id, created).await {
         Ok(quote) => (quote, false),
         Err(failure) => {
             tracing::warn!(%uid, ?failure, "quote failed, deciding the order without one");

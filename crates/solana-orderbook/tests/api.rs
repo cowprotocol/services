@@ -4445,6 +4445,20 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'sell'::solana.OrderKind, false, $10
     .unwrap();
 }
 
+/// Record that the creation transaction of the order named `quote_id` in its
+/// memo.
+async fn name_quote_in_memo(pool: &PgPool, uid: [u8; 32], quote_id: i64) {
+    sqlx::query(
+        "INSERT INTO solana.order_pda (order_uid, created_by, quote_id) VALUES ($1, $2, $3)",
+    )
+    .bind(ByteArray(uid))
+    .bind(ByteArray([0xAA; 32]))
+    .bind(quote_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 /// A stored quote selling `sell_amount` of the on-chain orders' pair, valid
 /// for `seconds` from now, already expired when negative.
 fn on_chain_pair_quote(sell_amount: u64, buy_amount: u64, seconds: i64) -> db::Quote {
@@ -4694,4 +4708,68 @@ async fn solana_db_expired_on_chain_order_is_not_quoted() {
             .await
             .unwrap();
     assert!(pending);
+}
+
+/// An order created on chain is linked to the quote its creation memo names,
+/// whatever better stored quote matches it.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_links_the_quote_its_memo_names() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let named = db::save_quote(&pool, &on_chain_pair_quote(1_000, 2_100, 60))
+        .await
+        .unwrap();
+    db::save_quote(&pool, &on_chain_pair_quote(1_000, 2_500, 60))
+        .await
+        .unwrap();
+    let uid = [0x11; 32];
+    insert_on_chain_order(&pool, uid, 1_000, 2_000, u32::MAX, Duration::from_secs(1)).await;
+    name_quote_in_memo(&pool, uid, named).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), routeless_quoter().await).await;
+
+    assert_eq!(quote_decision(&pool, uid).await, Some(named));
+}
+
+/// An order created on chain whose memo names a quote of another amount is
+/// quoted afresh. The stored quote matching it is not taken in its place.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_naming_a_mismatched_quote_is_quoted_afresh() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let mismatched = db::save_quote(&pool, &on_chain_pair_quote(999, 9_000, 60))
+        .await
+        .unwrap();
+    db::save_quote(&pool, &on_chain_pair_quote(1_000, 2_500, 60))
+        .await
+        .unwrap();
+    let uid = [0x11; 32];
+    insert_on_chain_order(&pool, uid, 1_000, 2_000, u32::MAX, Duration::from_secs(1)).await;
+    name_quote_in_memo(&pool, uid, mismatched).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), routeless_quoter().await).await;
+
+    assert_eq!(quote_decision(&pool, uid).await, None);
+}
+
+/// The quote a creation memo names counts when it was live as the indexer
+/// stored the order, like a stored quote the search finds.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_takes_its_memo_quote_as_of_its_creation() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    // Expired 5 s ago: live for the order stored 30 s ago.
+    let named = db::save_quote(&pool, &on_chain_pair_quote(1_000, 2_500, -5))
+        .await
+        .unwrap();
+    let uid = [0x11; 32];
+    insert_on_chain_order(&pool, uid, 1_000, 2_000, u32::MAX, Duration::from_secs(30)).await;
+    name_quote_in_memo(&pool, uid, named).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), routeless_quoter().await).await;
+
+    assert_eq!(quote_decision(&pool, uid).await, Some(named));
 }
