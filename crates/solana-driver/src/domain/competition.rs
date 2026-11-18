@@ -41,6 +41,8 @@ use {
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
+/// The pause before a co-sign the engine failed transiently is retried.
+const COSIGN_RETRY_PAUSE: Duration = Duration::from_millis(500);
 /// The runtime's per-transaction account lock limit, counting static keys and
 /// lookup-table loaded addresses. The SDK's `MAX_TX_ACCOUNT_LOCKS` (128)
 /// applies only under the `increase_tx_account_lock_limit` feature, inactive
@@ -789,11 +791,11 @@ impl Competition {
             return Err(Error::DeadlineExceeded);
         }
 
-        // Other signers sign the final message, so only now. A failure leaves
-        // the solution cached for a retry.
+        // Other signers sign the final message, so only now. Nothing has been
+        // sent when this fails, so the autopilot can re-auction the orders.
         let transaction = if transaction.message.header().num_required_signatures > 1 {
             self.blockchain
-                .until_slot(submission_deadline_slot, self.solver.cosign(&transaction))
+                .until_slot(submission_deadline_slot, self.cosign(&transaction))
                 .await
                 .ok_or(Error::DeadlineExceeded)??
         } else {
@@ -850,6 +852,26 @@ impl Competition {
         }
 
         Ok(signature)
+    }
+
+    /// Co-sign `transaction` through the engine, retrying while it fails
+    /// transiently: rate limited, or an upstream failure. The caller bounds
+    /// the retries by the deadline.
+    async fn cosign(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<VersionedTransaction, Error> {
+        loop {
+            match self.solver.cosign(transaction).await {
+                Err(crate::infra::solver::Error::HttpStatus { status, .. })
+                    if matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504) =>
+                {
+                    tracing::warn!(%status, "co-sign failed transiently, retrying");
+                    tokio::time::sleep(COSIGN_RETRY_PAUSE).await;
+                }
+                result => return result.map_err(Error::Cosign),
+            }
+        }
     }
 
     /// Land the sponsored creation transactions before the node reaches
@@ -1047,6 +1069,9 @@ fn orders_with_trades(orders: Vec<Order>, solution: &Solution) -> Vec<Order> {
 pub(crate) enum Error {
     #[error("solver engine failed: {0}")]
     Solver(#[from] crate::infra::solver::Error),
+    /// The engine failed to co-sign the settlement; nothing was sent.
+    #[error("co-signing failed: {0}")]
+    Cosign(#[source] crate::infra::solver::Error),
     /// Never solved, or already settled.
     #[error("solution not available")]
     SolutionNotAvailable,
@@ -1244,6 +1269,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
 fn error_label(error: &Error) -> &'static str {
     match error {
         Error::Solver(_) => "solver_failed",
+        Error::Cosign(_) => "cosign_failed",
         Error::SolutionNotAvailable => "solution_unavailable",
         Error::DeadlineExceeded => "deadline_exceeded",
         Error::TooManyPendingSettlements => "throttled",

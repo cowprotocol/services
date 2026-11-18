@@ -1,6 +1,7 @@
 //! Integration tests for the HTTP API server.
 
 use {
+    axum::{http::StatusCode, response::IntoResponse},
     base64::Engine,
     cow_settlement_interface::{
         data::intent::{
@@ -41,7 +42,7 @@ use {
         sync::{
             Arc,
             Mutex,
-            atomic::{AtomicU64, Ordering},
+            atomic::{AtomicBool, AtomicU64, Ordering},
         },
     },
     tokio_util::sync::CancellationToken,
@@ -257,16 +258,20 @@ async fn solver_with(
     (solver, account)
 }
 
-/// A mock solver engine answering `/solve` with `response` and `/cosign` with
-/// `cosign` applied to the posted transaction, or never when it returns
-/// `None`. Records the last transaction posted to `/cosign`.
+/// What the stand-in engine answers a `/cosign` request with.
+enum Cosign {
+    Answer(VersionedTransaction),
+    Fail(StatusCode),
+    /// Never answers, like an engine stuck on its upstream.
+    Hang,
+}
+
+/// A mock solver engine answering `/solve` with `response` and `/cosign` as
+/// `cosign` decides for the posted transaction. Records the last transaction
+/// posted to `/cosign`.
 async fn spawn_cosigning_engine(
     response: serde_json::Value,
-    cosign: impl Fn(VersionedTransaction) -> Option<VersionedTransaction>
-    + Clone
-    + Send
-    + Sync
-    + 'static,
+    cosign: impl Fn(VersionedTransaction) -> Cosign + Clone + Send + Sync + 'static,
 ) -> (SocketAddr, Arc<Mutex<Option<VersionedTransaction>>>) {
     let posted = Arc::new(Mutex::new(None));
     let recorded = Arc::clone(&posted);
@@ -286,10 +291,12 @@ async fn spawn_cosigning_engine(
                 let cosigned = cosign(transaction);
                 async move {
                     match cosigned {
-                        Some(cosigned) => axum::Json(
+                        Cosign::Answer(cosigned) => axum::Json(
                             serde_json::json!({ "transaction": encode_transaction(&cosigned) }),
-                        ),
-                        None => std::future::pending().await,
+                        )
+                        .into_response(),
+                        Cosign::Fail(status) => status.into_response(),
+                        Cosign::Hang => std::future::pending().await,
                     }
                 }
             }),
@@ -322,9 +329,9 @@ fn engine_response_needing_a_cosigner(cosigner: &Pubkey) -> serde_json::Value {
     response
 }
 
-/// Settle the solution against `deadline` and return the error kind.
-async fn settle_error_kind(addr: SocketAddr, solution_id: u64, deadline: u64) -> serde_json::Value {
-    let response = reqwest::Client::new()
+/// Settle the solution against `deadline`.
+async fn settle(addr: SocketAddr, solution_id: u64, deadline: u64) -> reqwest::Response {
+    reqwest::Client::new()
         .post(format!("http://{addr}/mock/settle"))
         .json(&serde_json::json!({
             "auctionId": 7,
@@ -333,9 +340,48 @@ async fn settle_error_kind(addr: SocketAddr, solution_id: u64, deadline: u64) ->
         }))
         .send()
         .await
-        .unwrap();
+        .unwrap()
+}
+
+/// Settle the solution against `deadline` and return the error kind.
+async fn settle_error_kind(addr: SocketAddr, solution_id: u64, deadline: u64) -> serde_json::Value {
+    let response = settle(addr, solution_id, deadline).await;
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
     response.json::<serde_json::Value>().await.unwrap()["kind"].clone()
+}
+
+/// `transaction` with `cosigner`'s slot signed.
+fn signed_by(cosigner: &Keypair, mut transaction: VersionedTransaction) -> VersionedTransaction {
+    let index = transaction
+        .message
+        .static_account_keys()
+        .iter()
+        .position(|key| *key == cosigner.pubkey())
+        .unwrap();
+    transaction.signatures[index] = cosigner.sign_message(&transaction.message.serialize());
+    transaction
+}
+
+/// A server with a co-signing solver over `engine`, whose node records every
+/// sent transaction.
+async fn spawn_recording_server(
+    engine: SocketAddr,
+) -> (SocketAddr, Arc<Mutex<Vec<VersionedTransaction>>>) {
+    let mut sent = None;
+    let blockchain = blockchain_with_rpc(Mocks::new(), |mocks| {
+        let (rpc, recorded) = SolanaRPC::new_mock_recording_sends(mocks);
+        sent = Some(recorded);
+        rpc
+    })
+    .await;
+    let addr = spawn_api(Api {
+        addr: "0.0.0.0:0".parse().unwrap(),
+        blockchain,
+        solvers: vec![cosigning_solver(engine).await],
+        priority_fee: priority_fee(),
+    })
+    .await;
+    (addr, sent.unwrap())
 }
 
 /// A solver client pointing at a dead endpoint (no listener).
@@ -826,12 +872,12 @@ async fn solve_offers_a_solution_needing_another_signer_only_when_cosigning() {
     assert_eq!(response_ids(&call_solve(cosigning).await), [42]);
 }
 
-/// A co-sign answer still missing the signature fails the settle and keeps
-/// the solution for a retry.
+/// A co-sign answer still missing the signature fails the settle as
+/// `CosignFailed`, which reports nothing sent, and keeps the solution.
 #[tokio::test]
 async fn settle_keeps_the_solution_when_cosigning_fails() {
     let response = engine_response_needing_a_cosigner(&Pubkey::new_unique());
-    let (engine, posted) = spawn_cosigning_engine(response, Some).await;
+    let (engine, posted) = spawn_cosigning_engine(response, Cosign::Answer).await;
     let addr = spawn_server(vec![cosigning_solver(engine).await]).await;
     let solution_id = call_solve(addr).await["solutions"][0]["solutionId"]
         .as_u64()
@@ -839,11 +885,11 @@ async fn settle_keeps_the_solution_when_cosigning_fails() {
 
     assert_eq!(
         settle_error_kind(addr, solution_id, 1_000_000).await,
-        "SolverFailed"
+        "CosignFailed"
     );
     assert_eq!(
         settle_error_kind(addr, solution_id, 1_000_000).await,
-        "SolverFailed"
+        "CosignFailed"
     );
 
     // The driver's slot is signed, the co-signer's left empty.
@@ -861,7 +907,7 @@ async fn settle_gives_up_on_a_cosign_outliving_the_deadline() {
     let reached = Arc::clone(&slot);
     let (engine, posted) = spawn_cosigning_engine(response, move |_| {
         reached.store(1000, Ordering::SeqCst);
-        None
+        Cosign::Hang
     })
     .await;
     let blockchain = blockchain_with_rpc(Mocks::new(), |mocks| {
@@ -887,55 +933,52 @@ async fn settle_gives_up_on_a_cosign_outliving_the_deadline() {
     assert!(posted.lock().unwrap().is_some());
 }
 
+/// A co-sign the engine fails transiently is retried before the deadline: a
+/// 503 once, then the signature, and the settlement goes out.
+#[tokio::test]
+async fn settle_retries_a_cosign_the_engine_fails_transiently() {
+    let cosigner = Arc::new(Keypair::new());
+    let response = engine_response_needing_a_cosigner(&cosigner.pubkey());
+    let failed = Arc::new(AtomicBool::new(false));
+    let (engine, _) = spawn_cosigning_engine(response, move |transaction| {
+        if failed.swap(true, Ordering::SeqCst) {
+            Cosign::Answer(signed_by(&cosigner, transaction))
+        } else {
+            Cosign::Fail(StatusCode::SERVICE_UNAVAILABLE)
+        }
+    })
+    .await;
+    let (addr, sent) = spawn_recording_server(engine).await;
+    let solution_id = call_solve(addr).await["solutions"][0]["solutionId"]
+        .as_u64()
+        .unwrap();
+
+    let response = settle(addr, solution_id, 1_000_000).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let sent = sent.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].verify_with_results(), [true, true]);
+}
+
 /// A valid co-signature passes verification, and the node receives the
 /// settlement with both signatures over the message the engine co-signed.
 #[tokio::test]
 async fn settle_submits_the_cosigned_transaction() {
     let cosigner = Arc::new(Keypair::new());
     let response = engine_response_needing_a_cosigner(&cosigner.pubkey());
-    let (engine, posted) = spawn_cosigning_engine(response, move |mut transaction| {
-        let index = transaction
-            .message
-            .static_account_keys()
-            .iter()
-            .position(|key| *key == cosigner.pubkey())
-            .unwrap();
-        transaction.signatures[index] = cosigner.sign_message(&transaction.message.serialize());
-        Some(transaction)
+    let (engine, posted) = spawn_cosigning_engine(response, move |transaction| {
+        Cosign::Answer(signed_by(&cosigner, transaction))
     })
     .await;
-    let mut sent = None;
-    let blockchain = blockchain_with_rpc(Mocks::new(), |mocks| {
-        let (rpc, recorded) = SolanaRPC::new_mock_recording_sends(mocks);
-        sent = Some(recorded);
-        rpc
-    })
-    .await;
-    let api = Api {
-        addr: "0.0.0.0:0".parse().unwrap(),
-        blockchain,
-        solvers: vec![cosigning_solver(engine).await],
-        priority_fee: priority_fee(),
-    };
-    let (listener, addr) = api.bind().await.unwrap();
-    tokio::spawn(async move { api.serve(listener, CancellationToken::new()).await.unwrap() });
+    let (addr, sent) = spawn_recording_server(engine).await;
     let solution_id = call_solve(addr).await["solutions"][0]["solutionId"]
         .as_u64()
         .unwrap();
 
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/mock/settle"))
-        .json(&serde_json::json!({
-            "auctionId": 7,
-            "solutionId": solution_id,
-            "submissionDeadlineSlot": 1_000_000,
-        }))
-        .send()
-        .await
-        .unwrap();
+    let response = settle(addr, solution_id, 1_000_000).await;
     assert_eq!(response.status(), reqwest::StatusCode::OK);
 
-    let sent = sent.unwrap().lock().unwrap().clone();
+    let sent = sent.lock().unwrap().clone();
     let [transaction] = sent.as_slice() else {
         panic!("expected one sent transaction, got {}", sent.len());
     };
