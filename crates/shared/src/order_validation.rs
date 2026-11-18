@@ -1,5 +1,6 @@
 use {
     crate::{
+        canonical_batch::Schedule,
         fee::OrderbookFees,
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
@@ -331,6 +332,12 @@ pub enum ValidationError {
     /// `valid_from` leaves too small a window before `valid_to` for the order
     /// to be settled.
     InvalidValidFrom,
+    /// The order asks to wait for a canonical batch, but canonical batches
+    /// aren't configured.
+    WaitForCowDisabled,
+    /// The order waits for the next canonical batch but expires less than the
+    /// minimum validity period after that batch starts.
+    InsufficientValidToForCanonicalBatch,
     /// The order opts into the fast path but the signed limit price doesn't
     /// leave room for the configured protocol and partner volume fees.
     /// Applying those fees would push the effective execution price past
@@ -452,6 +459,8 @@ pub struct OrderValidator {
     /// The volume fees the fast-path limit-price check leaves room for.
     volume_fees: Arc<dyn OrderbookFees>,
     wrapper_validator: order_validation::wrappers::Validator,
+    /// `None` when canonical batches are off.
+    canonical_batch_schedule: Option<Schedule>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -533,7 +542,13 @@ impl OrderValidator {
             same_tokens_policy,
             volume_fees,
             wrapper_validator,
+            canonical_batch_schedule: None,
         }
+    }
+
+    pub fn with_canonical_batch_schedule(mut self, schedule: Option<Schedule>) -> Self {
+        self.canonical_batch_schedule = schedule;
+        self
     }
 
     /// Validates that a fast-path order's signed sell/buy amounts leave
@@ -755,6 +770,15 @@ impl OrderValidator {
             // order after placement.
             return Ok(None);
         }
+        if matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::WaitForCow
+        ) {
+            // The autopilot sets `valid_from` to the canonical batch the
+            // order joins when it first sees the order.
+            self.check_valid_through_next_canonical_batch(order, time::now_in_epoch_seconds())?;
+            return Ok(None);
+        }
 
         // Non-fast-path orders may still declare `valid_from` explicitly
         // in app-data.
@@ -769,6 +793,27 @@ impl OrderValidator {
             }
         }
         Ok(valid_from)
+    }
+
+    /// Rejects a wait-for-CoW order placed at `now` when canonical batches
+    /// are off, or when the order expires less than the minimum validity
+    /// period after the next batch starts. The autopilot leaves out orders
+    /// that are about to expire, so such an order couldn't trade in its
+    /// batch.
+    fn check_valid_through_next_canonical_batch(
+        &self,
+        order: &OrderData,
+        now: u32,
+    ) -> Result<(), ValidationError> {
+        let schedule = self
+            .canonical_batch_schedule
+            .ok_or(ValidationError::WaitForCowDisabled)?;
+        let next_batch = schedule.next_batch(now);
+        let min = self.validity_configuration.min.as_secs();
+        if u64::from(order.valid_to) < u64::from(next_batch) + min {
+            return Err(ValidationError::InsufficientValidToForCanonicalBatch);
+        }
+        Ok(())
     }
 }
 
@@ -1114,6 +1159,10 @@ impl OrderValidating for OrderValidator {
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
         );
+        let wait_for_cow = matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::WaitForCow
+        );
 
         let order = Order {
             metadata: OrderMetadata {
@@ -1133,6 +1182,7 @@ impl OrderValidating for OrderValidator {
                     .map_err(ValidationError::Other)?,
                 valid_from,
                 fast_path,
+                wait_for_cow,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1375,6 +1425,7 @@ mod tests {
         number::nonzero::NonZeroU256,
         serde_json::json,
         signature_validator::MockSignatureValidating,
+        std::num::NonZeroU32,
     };
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
@@ -1868,7 +1919,8 @@ mod tests {
             SameTokensPolicy::Disallow,
             Arc::new(LegacyVolumeFees::default()),
             wrapper_validator(),
-        );
+        )
+        .with_canonical_batch_schedule(Some(Schedule::new(NonZeroU32::new(60).unwrap())));
 
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
@@ -1932,6 +1984,7 @@ mod tests {
         let (order, _) = validate(fast_path).await.unwrap();
         assert!(order.metadata.valid_from.is_none());
         assert!(order.metadata.fast_path);
+        assert!(!order.metadata.wait_for_cow);
 
         let both = OrderCreation {
             app_data: OrderCreationAppData::Full {
@@ -1943,6 +1996,67 @@ mod tests {
         std::assert_matches!(
             validate(both).await,
             Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+        );
+
+        // Wait-for-CoW orders are flagged as such, with no `valid_from` and
+        // not fast-path. The next batch starts within 60s, so a `valid_to`
+        // 150s from now leaves the 60s minimum validity after it.
+        let with_metadata = |metadata: serde_json::Value| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": metadata }).to_string(),
+            },
+            ..plain(now + 150)
+        };
+        let (order, _) = validate(with_metadata(json!({ "enableWaitForCow": true })))
+            .await
+            .unwrap();
+        assert!(order.metadata.valid_from.is_none());
+        assert!(!order.metadata.fast_path);
+        assert!(order.metadata.wait_for_cow);
+
+        // The order must stay valid for the minimum validity period after the
+        // next batch starts.
+        let valid_until = |valid_to: u32| OrderData {
+            valid_to,
+            ..Default::default()
+        };
+        let between_batches = 6_010;
+        std::assert_matches!(
+            validator
+                .check_valid_through_next_canonical_batch(&valid_until(6_119), between_batches),
+            Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+        validator
+            .check_valid_through_next_canonical_batch(&valid_until(6_120), between_batches)
+            .unwrap();
+        // Placed exactly at a batch time, the order can join that batch.
+        validator
+            .check_valid_through_next_canonical_batch(&valid_until(6_120), 6_060)
+            .unwrap();
+
+        // ...and are mutually exclusive with the other execution modes.
+        for conflicting in [
+            json!({ "enableWaitForCow": true, "enableFastPath": true }),
+            json!({ "enableWaitForCow": true, "validFrom": now + 50 }),
+        ] {
+            std::assert_matches!(
+                validate(with_metadata(conflicting)).await,
+                Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+            );
+        }
+
+        // Without canonical batches, wait-for-CoW orders are rejected.
+        let without_batches = validator.with_canonical_batch_schedule(None);
+        std::assert_matches!(
+            without_batches
+                .validate_and_construct_order(
+                    with_metadata(json!({ "enableWaitForCow": true })),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await,
+            Err(ValidationError::WaitForCowDisabled)
         );
     }
 

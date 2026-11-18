@@ -41,7 +41,8 @@ pub struct ProtocolAppData {
 }
 
 /// How an order becomes solvable. The variants are mutually exclusive by
-/// construction, so `enableFastPath` and `validFrom` can never both be set.
+/// construction, so at most one of `enableFastPath`, `validFrom` and
+/// `enableWaitForCow` can be set.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum ExecutionMode {
     /// Join the regular batch auction, solvable immediately.
@@ -51,6 +52,10 @@ pub enum ExecutionMode {
     ValidFrom(u32),
     /// Out-of-competition ("fast path") execution.
     FastPath,
+    /// Hold the order back to give it a chance to be matched with a
+    /// counterparty (a CoW) instead of being settled against on-chain
+    /// liquidity right away.
+    WaitForCow,
 }
 
 /// Contains information to hint at how a solver could make
@@ -315,11 +320,11 @@ pub fn parse(full_app_data: &[u8]) -> Result<ProtocolAppData, serde_json::Error>
 }
 
 /// The wire form of [`ProtocolAppData`], mirroring the flat JSON `metadata`
-/// object one-to-one. It exists because `enableFastPath` and `validFrom` arrive
-/// as two independent JSON fields but are modelled as one [`ExecutionMode`]:
-/// serde deserializes into this struct, then [`ProtocolAppData::try_from`]
-/// collapses the two fields into the enum and rejects any orders try to set
-/// both fields simultaneously.
+/// object one-to-one. It exists because `enableFastPath`, `validFrom` and
+/// `enableWaitForCow` arrive as independent JSON fields but are modelled as one
+/// [`ExecutionMode`]: serde deserializes into this struct, then
+/// [`ProtocolAppData::try_from`] collapses the fields into the enum and rejects
+/// any order that tries to set more than one of them.
 #[derive(Default, Deserialize)]
 #[cfg_attr(any(test, feature = "test_helpers"), derive(Clone, Serialize))]
 #[serde(rename_all = "camelCase")]
@@ -336,19 +341,28 @@ struct RawProtocolAppData {
     #[serde(default)]
     enable_fast_path: bool,
     valid_from: Option<u32>,
+    #[serde(default)]
+    enable_wait_for_cow: bool,
 }
 
 impl TryFrom<RawProtocolAppData> for ProtocolAppData {
     type Error = &'static str;
 
     fn try_from(raw: RawProtocolAppData) -> Result<Self, Self::Error> {
-        let execution_mode = match (raw.enable_fast_path, raw.valid_from) {
-            (true, Some(_)) => {
-                return Err("`enableFastPath` and `validFrom` are mutually exclusive");
+        let execution_mode = match (
+            raw.enable_fast_path,
+            raw.valid_from,
+            raw.enable_wait_for_cow,
+        ) {
+            (false, None, false) => ExecutionMode::RegularAuction,
+            (true, None, false) => ExecutionMode::FastPath,
+            (false, Some(valid_from), false) => ExecutionMode::ValidFrom(valid_from),
+            (false, None, true) => ExecutionMode::WaitForCow,
+            _ => {
+                return Err(
+                    "`enableFastPath`, `validFrom` and `enableWaitForCow` are mutually exclusive",
+                );
             }
-            (true, None) => ExecutionMode::FastPath,
-            (false, Some(valid_from)) => ExecutionMode::ValidFrom(valid_from),
-            (false, None) => ExecutionMode::RegularAuction,
         };
         Ok(Self {
             hooks: raw.hooks,
@@ -364,10 +378,11 @@ impl TryFrom<RawProtocolAppData> for ProtocolAppData {
 
 impl From<ProtocolAppData> for RawProtocolAppData {
     fn from(protocol: ProtocolAppData) -> Self {
-        let (enable_fast_path, valid_from) = match protocol.execution_mode {
-            ExecutionMode::RegularAuction => (false, None),
-            ExecutionMode::FastPath => (true, None),
-            ExecutionMode::ValidFrom(valid_from) => (false, Some(valid_from)),
+        let (enable_fast_path, valid_from, enable_wait_for_cow) = match protocol.execution_mode {
+            ExecutionMode::RegularAuction => (false, None, false),
+            ExecutionMode::FastPath => (true, None, false),
+            ExecutionMode::ValidFrom(valid_from) => (false, Some(valid_from), false),
+            ExecutionMode::WaitForCow => (false, None, true),
         };
         Self {
             hooks: protocol.hooks,
@@ -378,6 +393,7 @@ impl From<ProtocolAppData> for RawProtocolAppData {
             wrappers: protocol.wrappers,
             enable_fast_path,
             valid_from,
+            enable_wait_for_cow,
         }
     }
 }
@@ -670,6 +686,43 @@ mod tests {
                 ..Default::default()
             },
         );
+    }
+
+    #[test]
+    fn wait_for_cow() {
+        assert_app_data!(
+            r#"{ "metadata": { "enableWaitForCow": true } }"#,
+            ProtocolAppData {
+                execution_mode: ExecutionMode::WaitForCow,
+                ..Default::default()
+            },
+        );
+    }
+
+    #[test]
+    fn explicitly_disabled_flags_are_regular_auction() {
+        assert_app_data!(
+            r#"{ "metadata": { "enableFastPath": false, "enableWaitForCow": false } }"#,
+            ProtocolAppData::default(),
+        );
+    }
+
+    #[test]
+    fn execution_mode_round_trips_through_serialization() {
+        for execution_mode in [
+            ExecutionMode::RegularAuction,
+            ExecutionMode::FastPath,
+            ExecutionMode::ValidFrom(1_700_000_000),
+            ExecutionMode::WaitForCow,
+        ] {
+            let protocol = ProtocolAppData {
+                execution_mode,
+                ..Default::default()
+            };
+            let json = serde_json::to_string(&protocol).unwrap();
+            let parsed: ProtocolAppData = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, protocol);
+        }
     }
 
     #[test]
@@ -1034,5 +1087,26 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn validate_rejects_wait_for_cow_with_other_execution_modes() {
+        let validator = Validator::default();
+
+        validator
+            .validate(r#"{ "metadata": { "enableWaitForCow": true } }"#.as_bytes())
+            .unwrap();
+
+        for conflicting in [
+            r#"{ "metadata": { "enableWaitForCow": true, "enableFastPath": true } }"#,
+            r#"{ "metadata": { "enableWaitForCow": true, "validFrom": 1700000000 } }"#,
+            r#"{ "metadata": { "enableWaitForCow": true, "enableFastPath": true, "validFrom": 1700000000 } }"#,
+        ] {
+            let err = validator.validate(conflicting.as_bytes()).unwrap_err();
+            assert!(
+                err.to_string().contains("mutually exclusive"),
+                "{conflicting}: {err}",
+            );
+        }
     }
 }
