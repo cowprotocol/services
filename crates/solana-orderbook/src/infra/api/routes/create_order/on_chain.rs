@@ -8,6 +8,7 @@ use {
     crate::infra::{api::State, db},
     database::byte_array::ByteArray,
     futures::{StreamExt, stream::FuturesUnordered},
+    leader_lock::{LeaderLockTracker, LeaderPgLock},
     std::time::Duration,
     tokio::time::MissedTickBehavior,
     tokio_util::sync::CancellationToken,
@@ -16,6 +17,10 @@ use {
 /// How many orders are quoted at once, the number the EVM autopilot quotes
 /// of its on-chain orders.
 const MAX_CONCURRENT_QUOTES: usize = 10;
+
+/// Name of the Postgres advisory lock that picks the one orderbook quoting
+/// among those sharing a database.
+const LEADER_LOCK_KEY: &str = "solana_on_chain_quotes";
 
 /// How an order's quote decision ended.
 #[derive(Clone, Copy, Debug)]
@@ -47,21 +52,29 @@ impl Outcome {
 /// Decide the quote of every order created on chain until `shutdown`: each
 /// `poll_interval` take the oldest waiting orders, up to
 /// [`MAX_CONCURRENT_QUOTES`] quoted at once. An order being quoted is not
-/// taken again.
+/// taken again. Of the orderbooks sharing a database only the holder of the
+/// leader lock takes orders, so each order is quoted once.
 pub async fn quote_on_chain_orders(
     state: State,
     poll_interval: Duration,
     shutdown: CancellationToken,
 ) {
+    let mut leader = LeaderLockTracker::new(Some(LeaderPgLock::spawn(
+        state.pool(),
+        LEADER_LOCK_KEY.to_string(),
+    )));
     let mut quoting = FuturesUnordered::new();
     let mut in_flight: Vec<ByteArray<32>> = Vec::new();
     let mut polls = tokio::time::interval(poll_interval);
     polls.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
         tokio::select! {
-            _ = shutdown.cancelled() => return,
+            _ = shutdown.cancelled() => break,
             Some(uid) = quoting.next() => in_flight.retain(|quoted| *quoted != uid),
             _ = polls.tick() => {
+                if !leader.update() {
+                    continue;
+                }
                 let free = MAX_CONCURRENT_QUOTES - in_flight.len();
                 if free == 0 {
                     continue;
@@ -96,6 +109,9 @@ pub async fn quote_on_chain_orders(
             }
         }
     }
+    // Frees the lock at once, so a standby takes over while this orderbook
+    // drains its requests.
+    leader.release().await;
 }
 
 /// Decide one order's quote and store the decision. An order whose quote
