@@ -21,6 +21,7 @@ use {
     cow_solana_rpc::SolanaRPC,
     futures::future::join_all,
     moka::sync::Cache,
+    observe::tracing::lazy::Lazy,
     solana_sdk::{
         account::Account,
         instruction::Instruction,
@@ -388,7 +389,7 @@ impl Verifier {
             // bundle elsewhere recovers them.
             tracing::trace!(
                 driver,
-                bundle = ?bundle.iter().map(encoded).collect::<Vec<_>>(),
+                bundle = ?Lazy(|| bundle.iter().map(encoded).collect::<Vec<_>>()),
                 "failed quote bundle"
             );
             return Verdict::Unverified;
