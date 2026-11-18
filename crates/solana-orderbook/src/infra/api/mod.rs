@@ -64,6 +64,9 @@ pub struct Api {
     pub verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     pub app_data_size_limit: usize,
+    /// How often the orderbook looks for orders created on chain that wait
+    /// for their quote decision. Absent, it decides none.
+    pub on_chain_quote_interval: Option<Duration>,
 }
 
 /// Bounds on an order's `validTo`, for quotes and sponsored placement
@@ -126,6 +129,13 @@ impl Api {
             self.verifier,
             self.app_data_size_limit,
         );
+        if let Some(poll_interval) = self.on_chain_quote_interval {
+            tokio::spawn(routes::quote_on_chain_orders(
+                state.clone(),
+                poll_interval,
+                shutdown.clone(),
+            ));
+        }
 
         // Browsers call this API directly, so it answers cross-origin
         // requests like the EVM orderbook does.

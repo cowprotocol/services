@@ -41,6 +41,7 @@ async fn mock_api() -> Api {
         sponsoring: None,
         verifier: None,
         app_data_size_limit: 8192,
+        on_chain_quote_interval: None,
     }
 }
 
@@ -4369,4 +4370,328 @@ async fn solana_db_app_data_round_trips() {
     .await;
     assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
     assert_eq!(json["errorType"], "AppDataMismatch");
+}
+
+/// A server that decides the quotes of orders created on chain, asking
+/// `quoter` for the fresh ones. It has no sponsoring.
+async fn spawn_on_chain_quoting_server(pool: PgPool, quoter: Quoter) {
+    let api = Api {
+        pool,
+        quoter,
+        on_chain_quote_interval: Some(Duration::from_millis(20)),
+        ..mock_api().await
+    };
+    let (listener, _) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+}
+
+/// A quoter whose only driver has no route.
+async fn routeless_quoter() -> Quoter {
+    let driver = spawn_routeless_driver().await;
+    Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    )
+}
+
+/// Empty the order and quote tables.
+async fn wipe_orders_and_quotes(pool: &PgPool) {
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// The mints of the orders [`insert_on_chain_order`] stores.
+const ON_CHAIN_SELL_TOKEN: [u8; 32] = [0x66; 32];
+const ON_CHAIN_BUY_TOKEN: [u8; 32] = [0x55; 32];
+
+/// Store a sell order as the indexer stores one created on chain: `age` old
+/// and waiting for its quote decision.
+async fn insert_on_chain_order(
+    pool: &PgPool,
+    uid: [u8; 32],
+    sell_amount: u64,
+    buy_amount: u64,
+    valid_to: u32,
+    age: Duration,
+) {
+    sqlx::query(
+        r#"
+INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
+    partially_fillable, app_data, creation_timestamp, order_pda, quote_pending)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'sell'::solana.OrderKind, false, $10,
+        now() - make_interval(secs => $11), $1, true)
+        "#,
+    )
+    .bind(ByteArray(uid))
+    .bind(ByteArray([0xAA; 32]))
+    .bind(ByteArray(ON_CHAIN_SELL_TOKEN))
+    .bind(ByteArray(ON_CHAIN_BUY_TOKEN))
+    .bind(ByteArray([0x33; 32]))
+    .bind(ByteArray([0x22; 32]))
+    .bind(sqlx::types::BigDecimal::from(sell_amount))
+    .bind(sqlx::types::BigDecimal::from(buy_amount))
+    .bind(i64::from(valid_to))
+    .bind(ByteArray([0; 32]))
+    .bind(age.as_secs_f64())
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// A stored quote selling `sell_amount` of the on-chain orders' pair, valid
+/// for `seconds` from now, already expired when negative.
+fn on_chain_pair_quote(sell_amount: u64, buy_amount: u64, seconds: i64) -> db::Quote {
+    db::Quote {
+        sell_token: ByteArray(ON_CHAIN_SELL_TOKEN),
+        buy_token: ByteArray(ON_CHAIN_BUY_TOKEN),
+        sell_amount,
+        buy_amount,
+        network_fee: 0,
+        sell_token_price: 1_000_000_000_000_000,
+        buy_token_price: 1_000_000_000_000_000,
+        kind: OrderKind::Sell,
+        solver: ByteArray([0xDD; 32]),
+        verified: false,
+        expiration: chrono::Utc::now() + chrono::Duration::seconds(seconds),
+    }
+}
+
+/// Wait for the order's quote decision and answer the id of the quote it
+/// was linked to, `None` when it was decided without one.
+async fn quote_decision(pool: &PgPool, uid: [u8; 32]) -> Option<i64> {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let pending: bool =
+                sqlx::query_scalar("SELECT quote_pending FROM solana.orders WHERE uid = $1")
+                    .bind(ByteArray(uid))
+                    .fetch_one(pool)
+                    .await
+                    .unwrap();
+            if !pending {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("quote decided before the timeout");
+    sqlx::query_scalar("SELECT quote_id FROM solana.order_quotes WHERE order_uid = $1")
+        .bind(ByteArray(uid))
+        .fetch_optional(pool)
+        .await
+        .unwrap()
+        .map(|id: Option<i64>| id.expect("a linked quote keeps its id"))
+}
+
+/// An order created on chain is linked to the best stored quote of its pair,
+/// side and amount, by an orderbook without sponsoring too.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_links_the_best_stored_quote() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    db::save_quote(&pool, &on_chain_pair_quote(1_000, 2_100, 60))
+        .await
+        .unwrap();
+    let best = db::save_quote(&pool, &on_chain_pair_quote(1_000, 2_500, 60))
+        .await
+        .unwrap();
+    db::save_quote(&pool, &on_chain_pair_quote(999, 9_000, 60))
+        .await
+        .unwrap();
+    let uid = [0x11; 32];
+    insert_on_chain_order(&pool, uid, 1_000, 2_000, u32::MAX, Duration::from_secs(1)).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), routeless_quoter().await).await;
+
+    assert_eq!(quote_decision(&pool, uid).await, Some(best));
+    let (buy_amount, verified): (String, bool) =
+        sqlx::query_as("SELECT buy_amount::text, verified FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((buy_amount.as_str(), verified), ("2500", false));
+}
+
+/// A stored quote counts for an order created on chain when it was live as
+/// the indexer stored the order, however late the orderbook gets to it. One
+/// that had expired by then does not.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_takes_stored_quotes_as_of_its_creation() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    // Expired 5 s ago: live for the order stored 30 s ago.
+    let live_then = db::save_quote(&pool, &on_chain_pair_quote(1_000, 2_500, -5))
+        .await
+        .unwrap();
+    let early = [0x11; 32];
+    insert_on_chain_order(
+        &pool,
+        early,
+        1_000,
+        2_000,
+        u32::MAX,
+        Duration::from_secs(30),
+    )
+    .await;
+    // Expired 10 s ago: dead for the order stored 5 s ago.
+    db::save_quote(&pool, &on_chain_pair_quote(2_000, 5_000, -10))
+        .await
+        .unwrap();
+    let late = [0x12; 32];
+    insert_on_chain_order(&pool, late, 2_000, 4_000, u32::MAX, Duration::from_secs(5)).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), routeless_quoter().await).await;
+
+    assert_eq!(quote_decision(&pool, early).await, Some(live_then));
+    assert_eq!(quote_decision(&pool, late).await, None);
+}
+
+/// An order created on chain that no stored quote matches is quoted afresh,
+/// and the fresh quote is stored and linked.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_links_a_fresh_quote() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": solver.to_string(),
+        "networkFee": "6400",
+    }))
+    .await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    let uid = [0x11; 32];
+    insert_on_chain_order(
+        &pool,
+        uid,
+        10_000_000,
+        1_000_000,
+        u32::MAX,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    spawn_on_chain_quoting_server(pool.clone(), quoter).await;
+
+    let linked = quote_decision(&pool, uid).await;
+    let stored: (i64, String, Vec<u8>) =
+        sqlx::query_as("SELECT id, buy_amount::text, solver FROM solana.quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked, Some(stored.0));
+    assert_eq!(stored.1, "3461207");
+    assert_eq!(stored.2, solver.to_bytes().to_vec());
+}
+
+/// An order created on chain that no driver routes is decided without a
+/// quote.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_without_a_route_is_decided_unquoted() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let uid = [0x11; 32];
+    insert_on_chain_order(&pool, uid, 1_000, 2_000, u32::MAX, Duration::from_secs(1)).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), routeless_quoter().await).await;
+
+    assert_eq!(quote_decision(&pool, uid).await, None);
+}
+
+/// An order created on chain whose quote fails is decided without a quote
+/// all the same: it exists and cannot be refused.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_is_decided_when_its_quote_fails() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let uid = [0x11; 32];
+    insert_on_chain_order(&pool, uid, 1_000, 2_000, u32::MAX, Duration::from_secs(1)).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), dead_quoter()).await;
+
+    assert_eq!(quote_decision(&pool, uid).await, None);
+}
+
+/// An order created on chain is quoted once, however many polls pass while
+/// its quote is on the way.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_on_chain_order_is_quoted_once_while_its_quote_is_slow() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let driver = spawn_mock_driver_after(
+        Duration::from_millis(300),
+        serde_json::json!({
+            "sellAmount": "10000000",
+            "buyAmount": "3461207",
+            "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+            "networkFee": "6400",
+        }),
+    )
+    .await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    let uid = [0x11; 32];
+    insert_on_chain_order(
+        &pool,
+        uid,
+        10_000_000,
+        1_000_000,
+        u32::MAX,
+        Duration::from_secs(1),
+    )
+    .await;
+
+    spawn_on_chain_quoting_server(pool.clone(), quoter).await;
+
+    assert!(quote_decision(&pool, uid).await.is_some());
+    // Long enough for a quote started by a later poll to be stored too.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let quotes: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(quotes, 1);
+}
+
+/// An expired order created on chain is not quoted: it stays as it is while
+/// a live one stored after it is decided.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_expired_on_chain_order_is_not_quoted() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    wipe_orders_and_quotes(&pool).await;
+    let expired = [0x11; 32];
+    insert_on_chain_order(&pool, expired, 1_000, 2_000, 500, Duration::from_secs(2)).await;
+    let live = [0x12; 32];
+    insert_on_chain_order(&pool, live, 1_000, 2_000, u32::MAX, Duration::from_secs(1)).await;
+
+    spawn_on_chain_quoting_server(pool.clone(), routeless_quoter().await).await;
+
+    assert_eq!(quote_decision(&pool, live).await, None);
+    let pending: bool =
+        sqlx::query_scalar("SELECT quote_pending FROM solana.orders WHERE uid = $1")
+            .bind(ByteArray(expired))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(pending);
 }
