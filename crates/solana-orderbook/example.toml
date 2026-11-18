@@ -52,6 +52,14 @@ filter = "info,solana_orderbook=debug"
 # Defaults to 100000.
 # max-priority-fee-lamports = 100000
 
+# Quotes for orders created on chain: each gets the quote a sponsored order
+# gets at placement. Omit the section to leave such orders without a quote.
+# Set it only next to an autopilot whose quote-link-grace holds these orders
+# until their quote is decided.
+# [on-chain-quotes]
+# How often to look for orders waiting for their quote. Defaults to 500ms.
+# poll-interval = "500ms"
+
 # Quote verification: each driver's quoted settlement is simulated behind the
 # quoted order's creation. Omit the section to leave every quote unverified.
 # Requires the [rpc] section.

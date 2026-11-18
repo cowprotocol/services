@@ -60,6 +60,10 @@ pub struct Config {
     pub sponsoring: Option<Sponsoring>,
     /// Quote verification. Absent, every quote is unverified.
     pub quote_verification: Option<QuoteVerification>,
+    /// Quotes for orders created on chain. Absent, such an order gets none.
+    /// To be set only next to an autopilot whose `quote-link-grace` holds
+    /// these orders: an order the autopilot cuts first gets no quote.
+    pub on_chain_quotes: Option<OnChainQuotes>,
     /// Most bytes an app data document may have.
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
@@ -156,6 +160,24 @@ pub struct Sponsoring {
     /// product this bounds, so it caps what a placement can spend.
     #[serde(default = "default_max_priority_fee_lamports")]
     pub max_priority_fee_lamports: u64,
+}
+
+/// Configuration of the task that decides the quote of each order created
+/// on chain, as placement decides a sponsored order's.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OnChainQuotes {
+    /// How often the task looks for orders waiting for their decision. Must
+    /// be above zero.
+    #[serde(
+        with = "humantime_serde",
+        default = "default_on_chain_quote_poll_interval"
+    )]
+    pub poll_interval: Duration,
+}
+
+fn default_on_chain_quote_poll_interval() -> Duration {
+    Duration::from_millis(500)
 }
 
 /// Quote verification configuration: each driver's quoted settlement is
@@ -294,6 +316,15 @@ mod tests {
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
         assert_eq!(config.quoting.fast_results_required.get(), 2);
         assert_eq!(config.app_data_size_limit, 8192);
+        assert!(config.on_chain_quotes.is_none());
+    }
+
+    #[test]
+    fn on_chain_quotes_poll_twice_a_second_by_default() {
+        let section: OnChainQuotes = toml::from_str("").unwrap();
+        assert_eq!(section.poll_interval, Duration::from_millis(500));
+        let section: OnChainQuotes = toml::from_str(r#"poll-interval = "2s""#).unwrap();
+        assert_eq!(section.poll_interval, Duration::from_secs(2));
     }
 
     #[test]

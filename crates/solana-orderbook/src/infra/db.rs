@@ -297,6 +297,44 @@ pub struct OrderQuote {
     pub verified: bool,
 }
 
+/// The fields of an order its quote is computed from.
+#[derive(Clone, Debug)]
+pub struct UnquotedOrder {
+    pub uid: ByteArray<32>,
+    pub owner: ByteArray<32>,
+    pub sell_token: ByteArray<32>,
+    pub buy_token: ByteArray<32>,
+    pub buy_token_account: ByteArray<32>,
+    pub sell_amount: u64,
+    pub buy_amount: u64,
+    pub kind: OrderKind,
+    pub app_data: ByteArray<32>,
+}
+
+impl From<&SponsoredOrder> for UnquotedOrder {
+    fn from(order: &SponsoredOrder) -> Self {
+        Self {
+            uid: order.uid,
+            owner: order.owner,
+            sell_token: order.sell_token,
+            buy_token: order.buy_token,
+            buy_token_account: order.buy_token_account,
+            sell_amount: order.sell_amount,
+            buy_amount: order.buy_amount,
+            kind: order.kind,
+            app_data: order.app_data,
+        }
+    }
+}
+
+/// An order created on chain that waits for its quote decision.
+#[derive(Clone, Debug)]
+pub struct PendingOrder {
+    pub order: UnquotedOrder,
+    /// When the indexer stored the order.
+    pub created: DateTime<Utc>,
+}
+
 /// Whether an order with this uid is already stored.
 pub async fn order_exists(pool: &PgPool, uid: &[u8; 32]) -> Result<bool> {
     let _timer = query_timer("order_exists");
@@ -346,20 +384,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14, $15,
         .await
         .context("insert sponsored order")?;
     if let Some(quote) = quote {
-        sqlx::query(
-            "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
-             execution_cost, solver, verified) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        )
-        .bind(order.uid)
-        .bind(quote.quote_id)
-        .bind(&quote.sell_amount)
-        .bind(&quote.buy_amount)
-        .bind(BigDecimal::from(quote.execution_cost))
-        .bind(quote.solver)
-        .bind(quote.verified)
-        .execute(&mut *tx)
-        .await
-        .context("insert order quote")?;
+        insert_order_quote(&mut *tx, order.uid, quote).await?;
     }
     let existing = insert_app_data(&mut *tx, order.app_data.0, document).await?;
     // The hash is the document's keccak256, so another document under it is
@@ -376,6 +401,127 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now(), $14, $15,
     .await
     .context("insert created event")?;
     tx.commit().await.context("commit sponsored order insert")
+}
+
+/// Store `quote` as the copy the order `uid` was placed against.
+async fn insert_order_quote(
+    ex: impl PgExecutor<'_>,
+    uid: ByteArray<32>,
+    quote: &OrderQuote,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
+         execution_cost, solver, verified) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(uid)
+    .bind(quote.quote_id)
+    .bind(&quote.sell_amount)
+    .bind(&quote.buy_amount)
+    .bind(BigDecimal::from(quote.execution_cost))
+    .bind(quote.solver)
+    .bind(quote.verified)
+    .execute(ex)
+    .await
+    .context("insert order quote")?;
+    Ok(())
+}
+
+/// Up to `limit` orders waiting for their quote decision, oldest first,
+/// leaving out the uids in `skip`. Expired, cancelled and reorged orders are
+/// left out, no auction takes them. An order whose amounts exceed `u64` is
+/// left out too.
+pub async fn quote_pending_orders(
+    ex: impl PgExecutor<'_>,
+    now_unix: i64,
+    skip: &[ByteArray<32>],
+    limit: usize,
+) -> Result<Vec<PendingOrder>> {
+    let _timer = query_timer("quote_pending_orders");
+    const QUERY: &str = r#"
+SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.buy_token_account, o.sell_amount,
+       o.buy_amount, o.kind, o.app_data, o.creation_timestamp
+FROM solana.orders o
+LEFT JOIN solana.order_pda pda ON pda.order_uid = o.uid
+WHERE o.quote_pending AND o.valid_to >= $1 AND o.uid <> ALL($2)
+  AND pda.cancellation_timestamp IS NULL
+  AND NOT COALESCE(pda.is_reorged, false)
+ORDER BY o.creation_timestamp
+LIMIT $3
+    "#;
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        uid: ByteArray<32>,
+        owner: ByteArray<32>,
+        sell_token: ByteArray<32>,
+        buy_token: ByteArray<32>,
+        buy_token_account: ByteArray<32>,
+        sell_amount: BigDecimal,
+        buy_amount: BigDecimal,
+        kind: OrderKind,
+        app_data: ByteArray<32>,
+        creation_timestamp: DateTime<Utc>,
+    }
+    let rows: Vec<Row> = sqlx::query_as(QUERY)
+        .bind(now_unix)
+        .bind(skip)
+        .bind(i64::try_from(limit).unwrap_or(i64::MAX))
+        .fetch_all(ex)
+        .await
+        .context("read solana.orders awaiting a quote")?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let (Some(sell_amount), Some(buy_amount)) =
+                (row.sell_amount.to_u64(), row.buy_amount.to_u64())
+            else {
+                tracing::warn!(uid = ?row.uid, "order amounts exceed u64, not quoting it");
+                return None;
+            };
+            Some(PendingOrder {
+                order: UnquotedOrder {
+                    uid: row.uid,
+                    owner: row.owner,
+                    sell_token: row.sell_token,
+                    buy_token: row.buy_token,
+                    buy_token_account: row.buy_token_account,
+                    sell_amount,
+                    buy_amount,
+                    kind: row.kind,
+                    app_data: row.app_data,
+                },
+                created: row.creation_timestamp,
+            })
+        })
+        .collect())
+}
+
+/// Settle the quote decision of the waiting order `uid`: clear its flag and
+/// store `quote` as its link, in one transaction. `false` when the order was
+/// not waiting, and then nothing is written.
+pub async fn decide_quote(
+    pool: &PgPool,
+    uid: ByteArray<32>,
+    quote: Option<&OrderQuote>,
+) -> Result<bool> {
+    let _timer = query_timer("decide_quote");
+    let mut tx = pool.begin().await.context("begin quote decision")?;
+    let waiting = sqlx::query(
+        "UPDATE solana.orders SET quote_pending = false WHERE uid = $1 AND quote_pending",
+    )
+    .bind(uid)
+    .execute(&mut *tx)
+    .await
+    .context("clear the quote_pending flag")?
+    .rows_affected()
+        > 0;
+    if !waiting {
+        return Ok(false);
+    }
+    if let Some(quote) = quote {
+        insert_order_quote(&mut *tx, uid, quote).await?;
+    }
+    tx.commit().await.context("commit quote decision")?;
+    Ok(true)
 }
 
 /// Store `document` under `hash`. `None` once stored, otherwise the document
@@ -1635,5 +1781,188 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// Empty the order tables and store one order per `(uid, quote_pending,
+    /// valid_to, age)`, as the indexer stores an order created on chain.
+    async fn seed_on_chain_orders(pool: &PgPool, orders: &[([u8; 32], bool, i64, &str)]) {
+        sqlx::query(
+            "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
+             CASCADE",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+        for (uid, quote_pending, valid_to, age) in orders {
+            sqlx::query(
+                r#"
+INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account,
+    buy_token_account, sell_amount, buy_amount, valid_to, kind,
+    partially_fillable, app_data, creation_timestamp, order_pda, quote_pending)
+VALUES ($1, $2, $3, $4, $2, $5, 1000, 500, $6, 'sell'::solana.OrderKind,
+        false, $7, now() - $8::interval, $1, $9)
+                "#,
+            )
+            .bind(ByteArray(*uid))
+            .bind(ByteArray([0xAA; 32]))
+            .bind(ByteArray([0x66; 32]))
+            .bind(ByteArray([0x55; 32]))
+            .bind(ByteArray([0x22; 32]))
+            .bind(valid_to)
+            .bind(ByteArray([0x44; 32]))
+            .bind(age)
+            .bind(quote_pending)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+
+    fn order_quote(quote_id: i64) -> OrderQuote {
+        OrderQuote {
+            quote_id,
+            sell_amount: BigDecimal::from(1_000u64),
+            buy_amount: BigDecimal::from(2_100u64),
+            execution_cost: 150,
+            solver: ByteArray([0xDD; 32]),
+            verified: true,
+        }
+    }
+
+    /// The orders waiting for a quote decision come oldest first with the
+    /// fields a quote is computed from. Expired, decided, cancelled and
+    /// reorged orders and the uids to skip stay out.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_lists_the_orders_awaiting_a_quote_oldest_first() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let live = i64::from(u32::MAX);
+        seed_on_chain_orders(
+            &pool,
+            &[
+                ([0x11; 32], true, live, "1 minute"),
+                ([0x12; 32], true, live, "2 minutes"),
+                ([0x13; 32], true, 500, "3 minutes"),
+                ([0x14; 32], false, live, "4 minutes"),
+                ([0x15; 32], true, live, "5 minutes"),
+                ([0x16; 32], true, live, "6 minutes"),
+                ([0x17; 32], true, live, "7 minutes"),
+            ],
+        )
+        .await;
+        sqlx::query(
+            "INSERT INTO solana.order_pda (order_uid, created_by, cancellation_timestamp,              is_reorged) VALUES ($1, $3, now(), false), ($2, $3, NULL, true)",
+        )
+        .bind(ByteArray([0x16; 32]))
+        .bind(ByteArray([0x17; 32]))
+        .bind(ByteArray([0xBB; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let skip = [ByteArray([0x15; 32])];
+        let pending = quote_pending_orders(&pool, 1_000, &skip, 10).await.unwrap();
+        let uids: Vec<_> = pending
+            .iter()
+            .map(|pending| pending.order.uid.0[0])
+            .collect();
+        assert_eq!(uids, vec![0x12, 0x11]);
+        let order = &pending[0].order;
+        assert_eq!(order.owner, ByteArray([0xAA; 32]));
+        assert_eq!(order.sell_token, ByteArray([0x66; 32]));
+        assert_eq!(order.buy_token, ByteArray([0x55; 32]));
+        assert_eq!(order.buy_token_account, ByteArray([0x22; 32]));
+        assert_eq!((order.sell_amount, order.buy_amount), (1_000, 500));
+        assert_eq!(order.kind, OrderKind::Sell);
+        assert_eq!(order.app_data, ByteArray([0x44; 32]));
+        assert!(pending[0].created < pending[1].created);
+
+        let pending = quote_pending_orders(&pool, 1_000, &[], 2).await.unwrap();
+        let uids: Vec<_> = pending
+            .iter()
+            .map(|pending| pending.order.uid.0[0])
+            .collect();
+        assert_eq!(uids, vec![0x15, 0x12]);
+    }
+
+    /// Deciding a waiting order's quote clears its flag, with the link when
+    /// a quote was found and without one otherwise.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_decide_quote_settles_a_waiting_order() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let live = i64::from(u32::MAX);
+        seed_on_chain_orders(
+            &pool,
+            &[
+                ([0x11; 32], true, live, "1 minute"),
+                ([0x12; 32], true, live, "1 minute"),
+            ],
+        )
+        .await;
+
+        let linked = decide_quote(&pool, ByteArray([0x11; 32]), Some(&order_quote(7))).await;
+        assert!(linked.unwrap());
+        let unquoted = decide_quote(&pool, ByteArray([0x12; 32]), None).await;
+        assert!(unquoted.unwrap());
+
+        let waiting: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM solana.orders WHERE quote_pending")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(waiting, 0);
+        let links: Vec<(Vec<u8>, Option<i64>, String)> = sqlx::query_as(
+            "SELECT order_uid, quote_id, execution_cost::text FROM solana.order_quotes",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(links, vec![(vec![0x11; 32], Some(7), "150".to_owned())]);
+    }
+
+    /// An order whose flag is already cleared takes no link: whoever cleared
+    /// it settled the decision.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_decide_quote_writes_nothing_once_the_flag_is_cleared() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        seed_on_chain_orders(
+            &pool,
+            &[([0x11; 32], false, i64::from(u32::MAX), "1 minute")],
+        )
+        .await;
+
+        let decided = decide_quote(&pool, ByteArray([0x11; 32]), Some(&order_quote(7))).await;
+        assert!(!decided.unwrap());
+        let links: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(links, 0);
+    }
+
+    /// A decision whose link cannot be stored leaves the order waiting: the
+    /// flag is cleared with the link or not at all.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_decide_quote_keeps_the_order_waiting_when_its_link_fails() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = ByteArray([0x11; 32]);
+        seed_on_chain_orders(&pool, &[(uid.0, true, i64::from(u32::MAX), "1 minute")]).await;
+        // A link already stored under the order fails the insert.
+        insert_order_quote(&pool, uid, &order_quote(6))
+            .await
+            .unwrap();
+
+        let decided = decide_quote(&pool, uid, Some(&order_quote(7))).await;
+        assert!(decided.is_err());
+        let waiting: bool =
+            sqlx::query_scalar("SELECT quote_pending FROM solana.orders WHERE uid = $1")
+                .bind(uid)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(waiting);
     }
 }

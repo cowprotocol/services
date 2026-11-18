@@ -56,6 +56,10 @@ use {
     },
 };
 
+mod on_chain;
+
+pub use on_chain::quote_on_chain_orders;
+
 /// Request body: the user's partially signed creation transaction,
 /// base64-encoded on the wire. Signed by the owner, with the configured
 /// funder as its unsigned fee payer.
@@ -166,6 +170,7 @@ impl From<PlacementError> for error::Reply {
 
 /// Why a placement failed: a refusal the client can act on, or an internal
 /// error with the step that failed.
+#[derive(Debug)]
 enum Failure {
     Refused(PlacementError),
     /// A refusal a check shared with quoting already shaped into its reply.
@@ -295,7 +300,13 @@ async fn place(
         return Err(PlacementError::DuplicatedOrder.into());
     }
 
-    let quote = find_or_create_quote(&state, &order, params.quote_id).await?;
+    let quote = find_or_create_quote(
+        &state,
+        &(&order).into(),
+        params.quote_id,
+        chrono::Utc::now(),
+    )
+    .await?;
 
     let uid = const_hex::encode_prefixed(order.uid.0);
     if let Err(err) =
@@ -633,17 +644,21 @@ async fn check_accounts(
 /// has no route or no native price, or its costs swallow the order's amount:
 /// the EVM orderbook places such an order as out of market. Any other
 /// failure of the fresh quote rejects the order with the quote's reply.
+///
+/// A stored quote counts as unexpired when it was at `seen`, the moment the
+/// backend first saw the order. The fresh quote is computed at the current
+/// time.
 async fn find_or_create_quote(
     state: &State,
-    order: &db::SponsoredOrder,
+    order: &db::UnquotedOrder,
     quote_id: Option<i64>,
+    seen: chrono::DateTime<chrono::Utc>,
 ) -> Result<Option<db::OrderQuote>, Failure> {
     let pool = state.pool();
     let order_uid = const_hex::encode_prefixed(order.uid.0);
-    let now = chrono::Utc::now();
     let request = quote_request(order);
     let found = match quote_id {
-        Some(id) => link_quote(pool, id, order).await,
+        Some(id) => link_quote(pool, id, order, seen).await,
         None => {
             let search = db::QuoteSearch {
                 sell_token: order.sell_token,
@@ -654,7 +669,7 @@ async fn find_or_create_quote(
                     OrderKind::Buy => order.buy_amount,
                 },
             };
-            match db::find_quote(pool, &search, now).await {
+            match db::find_quote(pool, &search, seen).await {
                 Ok(quote) => quote,
                 // A fresh quote stands in, as on the EVM orderbook.
                 Err(err) => {
@@ -672,7 +687,7 @@ async fn find_or_create_quote(
         }
         tracing::debug!(quote_id = id, %order_uid, "quote link dropped, the quote cannot be costed");
     }
-    let quoted = match quote::compute(state, &request, now).await {
+    let quoted = match quote::compute(state, &request, chrono::Utc::now()).await {
         Ok(quoted) => quoted,
         Err(err @ (quote::Error::NoLiquidity(_) | quote::Error::SellAmountDoesNotCoverFee)) => {
             tracing::debug!(%order_uid, ?err, "placing order without quote");
@@ -741,7 +756,7 @@ async fn order_quote(
 /// orderbook's. A sell order sells its amount whole, so that is a
 /// `sellAmountBeforeFee`. The buy token account stands as the receiver, so a
 /// missing one is priced as created at settlement.
-fn quote_request(order: &db::SponsoredOrder) -> dto::Request {
+fn quote_request(order: &db::UnquotedOrder) -> dto::Request {
     let key = |bytes: ByteArray<32>| Pubkey::new_from_array(bytes.0);
     dto::Request {
         from: key(order.owner),
@@ -767,14 +782,15 @@ fn quote_request(order: &db::SponsoredOrder) -> dto::Request {
 }
 
 /// The stored quote `id` names when it matches the order (same pair and
-/// side, same fixed amount, unexpired), `None` otherwise. The unfixed side
-/// carries the user's slippage and stays unchecked, like the EVM
-/// `find_quote` match, so the linked quote's promised price is not a
+/// side, same fixed amount, unexpired at `seen`), `None` otherwise. The
+/// unfixed side carries the user's slippage and stays unchecked, like the
+/// EVM `find_quote` match, so the linked quote's promised price is not a
 /// trustworthy value.
 async fn link_quote(
     pool: &sqlx::PgPool,
     id: i64,
-    order: &db::SponsoredOrder,
+    order: &db::UnquotedOrder,
+    seen: chrono::DateTime<chrono::Utc>,
 ) -> Option<db::StoredQuote> {
     let order_uid = const_hex::encode_prefixed(order.uid.0);
     let quote = match db::read_quote(pool, id).await {
@@ -797,7 +813,7 @@ async fn link_quote(
     let sell_token_matches = quote.sell_token == order.sell_token;
     let buy_token_matches = quote.buy_token == order.buy_token;
     let kind_matches = quote.kind == order.kind;
-    let unexpired = quote.expiration > chrono::Utc::now();
+    let unexpired = quote.expiration > seen;
     let matches = sell_token_matches
         && buy_token_matches
         && kind_matches
@@ -872,6 +888,10 @@ struct Metrics {
     /// Placed orders by market position, `market` or `limit`, and operation.
     #[metric(name = "orderbook_orders", labels("kind", "operation"))]
     orders: prometheus::IntCounterVec,
+    /// Quote decisions for orders created on chain, by outcome: `linked`,
+    /// `no_quote`, `failed` or `too_late`.
+    #[metric(name = "orderbook_on_chain_order_quotes", labels("outcome"))]
+    on_chain_order_quotes: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {
@@ -886,6 +906,12 @@ pub fn initialize_metrics() {
         metrics
             .orders
             .with_label_values(&[position.as_str(), "created"])
+            .reset();
+    }
+    for outcome in on_chain::Outcome::ALL {
+        metrics
+            .on_chain_order_quotes
+            .with_label_values(&[outcome.as_str()])
             .reset();
     }
 }
@@ -1352,7 +1378,7 @@ mod tests {
             presigned_transaction: vec![],
             last_valid_block_height: 0,
         };
-        let request = quote_request(&order);
+        let request = quote_request(&(&order).into());
         assert_eq!(request.from, Pubkey::new_from_array([2; 32]));
         assert_eq!(request.receiver, Some(Pubkey::new_from_array([6; 32])));
         assert!(matches!(
@@ -1362,9 +1388,9 @@ mod tests {
             }
         ));
         assert_eq!(request.price_quality, dto::PriceQuality::Verified);
-        let buy = quote_request(&db::SponsoredOrder {
+        let buy = quote_request(&db::UnquotedOrder {
             kind: OrderKind::Buy,
-            ..order
+            ..(&order).into()
         });
         assert!(matches!(
             buy.side,
