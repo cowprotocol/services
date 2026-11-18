@@ -583,7 +583,7 @@ impl Verifier {
 
 /// `transaction` in wire format, base64.
 fn encoded(transaction: &VersionedTransaction) -> String {
-    BASE64_STANDARD.encode(bincode::serialize(transaction).unwrap_or_default())
+    BASE64_STANDARD.encode(wincode::serialize(transaction).unwrap_or_default())
 }
 
 /// The accounts a transaction requires signatures from.
