@@ -56,8 +56,8 @@ pub struct Order {
     /// Buy tokens pushed to the order so far.
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigDecimal,
-    /// The fee the order paid across its settlements, execution costs and
-    /// protocol fees, in `executed_fee_token`.
+    /// The fee the order paid across its settlements, execution costs,
+    /// solver fees and protocol fees, in `executed_fee_token`.
     #[serde_as(as = "DisplayFromStr")]
     pub executed_fee: BigDecimal,
     /// The token `executed_fee` is in: the sell token.

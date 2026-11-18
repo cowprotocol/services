@@ -3,7 +3,7 @@
 -- reported none.
 ALTER TABLE solana.proposed_trade_executions ADD COLUMN fee numeric(20,0);
 
--- What the order paid in the settlement, execution costs and protocol fees, in
--- the sell token. NULL when the winning proposal that settled the trade
--- reported no fee.
+-- What the order paid in the settlement, the execution cost, the solver fee and
+-- the protocol fee, in the sell token. NULL when the winning proposal that
+-- settled the trade reported no fee.
 ALTER TABLE solana.order_execution ADD COLUMN executed_fee numeric(20,0);
