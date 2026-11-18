@@ -116,8 +116,8 @@ impl Postgres {
     ) -> Result<(), PersistenceError> {
         sqlx::query(
             r#"
-INSERT INTO solana.order_pda (order_uid, created_by, created_by_tx, created_in_slot)
-VALUES ($1, $2, $3, $4)
+INSERT INTO solana.order_pda (order_uid, created_by, created_by_tx, created_in_slot, quote_id)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (order_uid) DO UPDATE SET is_reorged = false
     WHERE order_pda.is_reorged
             "#,
@@ -126,6 +126,7 @@ ON CONFLICT (order_uid) DO UPDATE SET is_reorged = false
         .bind(order.created_by.to_bytes())
         .bind(order.signature.as_ref())
         .bind(to_db_slot(slot))
+        .bind(order.quote_id)
         .execute(&mut **tx)
         .await?;
         // creation_timestamp is the indexing time, the stream carries no
@@ -893,6 +894,7 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
             kind: crate::types::events::OrderKind::Sell,
             partially_fillable: false,
             app_data: [0; 32],
+            quote_id: None,
         }
     }
 
@@ -1073,6 +1075,34 @@ VALUES ($1, $2, $2, $2, $2, $2, $3, $4, $5, $6, false, $2, now(), $7)
             pending,
             vec![(sponsored.to_vec(), false), (on_chain.to_vec(), true)]
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_an_indexed_order_keeps_the_quote_id_of_its_memo() {
+        let pool = pool().await;
+        wipe(&pool).await;
+        let postgres = Postgres::new(pool.clone());
+
+        let events = [([1_u8; 32], Some(42)), ([2_u8; 32], None)]
+            .map(|(uid, quote_id)| {
+                DecodedEvent::Settlement(SettlementEvent::OrderCreated(Box::new(
+                    crate::types::events::CreatedOrder {
+                        order_pda: Pubkey::new_from_array(uid),
+                        quote_id,
+                        ..created_order(uid)
+                    },
+                )))
+            })
+            .to_vec();
+        postgres.persist_events(events, Slot(20)).await.unwrap();
+
+        let quote_ids: Vec<Option<i64>> =
+            sqlx::query_scalar("SELECT quote_id FROM solana.order_pda ORDER BY order_uid")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(quote_ids, [Some(42), None]);
     }
 
     #[tokio::test]
