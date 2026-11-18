@@ -10,3 +10,9 @@ CREATE TABLE solana.order_execution (
     protocol_fee_amounts numeric(20,0)[] NOT NULL DEFAULT '{}',
     PRIMARY KEY (order_uid, auction_id)
 );
+
+-- Set once the autopilot has recorded the trade in solana.order_execution.
+ALTER TABLE solana.trades ADD COLUMN fees_recorded boolean NOT NULL DEFAULT false;
+
+-- The trades left to record, in the order the autopilot reads them.
+CREATE INDEX solana_trades_fees_unrecorded ON solana.trades (slot) WHERE NOT fees_recorded;
