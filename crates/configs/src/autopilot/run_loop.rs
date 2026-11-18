@@ -92,8 +92,9 @@ pub struct RunLoopConfig {
     /// If this is configured the `/solve` deadline will be picked
     /// to end shortly before the next block gets mined. Auctions that start
     /// too late to give solvers `solve-deadline` before that block get
-    /// skipped. Requires `solve-deadline` and `tx-propagation-latency` to fit
-    /// into a single slot.
+    /// skipped (at most `max-consecutive-skips` in a row). Requires
+    /// `solve-deadline` and `tx-propagation-latency` to fit into a single
+    /// slot.
     /// This should not be configured on chains with variable block
     /// production rates (including test chains).
     #[serde(default)]
@@ -129,6 +130,17 @@ pub struct SlotConfig {
     /// to still have it included in the next block.
     #[serde(with = "humantime_serde")]
     pub tx_propagation_latency: Duration,
+
+    /// How many consecutive auctions may be skipped for starting too late.
+    /// Once reached, the next late auction is not skipped but solved with a
+    /// deadline targeting the block after the next one. This guarantees
+    /// progress even if the run loop is consistently too slow.
+    #[serde(default = "default_max_consecutive_skips")]
+    pub max_consecutive_skips: u32,
+}
+
+const fn default_max_consecutive_skips() -> u32 {
+    1
 }
 
 impl Default for RunLoopConfig {
@@ -202,6 +214,14 @@ mod tests {
                 .tx_propagation_latency,
             Duration::from_secs(2)
         );
+        assert_eq!(
+            config
+                .sync_solve_deadline_to_blockchain
+                .as_ref()
+                .unwrap()
+                .max_consecutive_skips,
+            1
+        );
     }
 
     #[test]
@@ -211,6 +231,7 @@ mod tests {
             sync_solve_deadline_to_blockchain: Some(SlotConfig {
                 slot_length: Duration::from_secs(12),
                 tx_propagation_latency: Duration::from_secs(2),
+                max_consecutive_skips: 1,
             }),
             ..Default::default()
         };
