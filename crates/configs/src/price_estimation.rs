@@ -165,6 +165,10 @@ fn default_coin_gecko_url() -> Url {
         .expect("url should be valid")
 }
 
+const fn default_coin_gecko_max_price_age() -> Duration {
+    Duration::from_hours(1)
+}
+
 #[derive(Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -180,6 +184,12 @@ pub struct CoinGeckoConfig {
     #[serde(default = "default_coin_gecko_url")]
     pub url: Url,
 
+    /// Age past which a price is stale and its token counts as unpriced by
+    /// CoinGecko, which keeps answering with the last price of a token whose
+    /// market data stopped updating.
+    #[serde(with = "humantime_serde", default = "default_coin_gecko_max_price_age")]
+    pub max_price_age: Duration,
+
     pub buffered: Option<CoinGeckoBufferedConfig>,
 }
 
@@ -188,6 +198,7 @@ impl std::fmt::Debug for CoinGeckoConfig {
         f.debug_struct("CoinGeckoConfig")
             .field("api_key", &"<REDACTED>")
             .field("url", &self.url)
+            .field("max_price_age", &self.max_price_age)
             .field("buffered", &self.buffered)
             .finish()
     }
@@ -199,6 +210,7 @@ impl crate::test_util::TestDefault for CoinGeckoConfig {
         Self {
             api_key: "test-api-key".to_string(),
             url: default_coin_gecko_url(),
+            max_price_age: default_coin_gecko_max_price_age(),
             buffered: None,
         }
     }
@@ -358,6 +370,7 @@ mod tests {
         [coin-gecko]
         api-key = "my-cg-key"
         url = "https://pro-api.coingecko.com/api/v3/simple/token_price"
+        max-price-age = "30m"
 
         [coin-gecko.buffered]
         debouncing-time = "500ms"
@@ -387,6 +400,7 @@ mod tests {
             coin_gecko.url.as_str(),
             "https://pro-api.coingecko.com/api/v3/simple/token_price"
         );
+        assert_eq!(coin_gecko.max_price_age, Duration::from_mins(30));
         let buffered = coin_gecko.buffered.as_ref().unwrap();
         assert_eq!(buffered.debouncing_time, Duration::from_millis(500));
         assert_eq!(buffered.broadcast_channel_capacity, 100);

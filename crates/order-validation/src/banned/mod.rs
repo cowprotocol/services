@@ -1,20 +1,17 @@
-//! Banned user detection: hardcoded list + optional Chainalysis Oracle
-//! and/or Hermod (zeroShadow). Remote sources share one cache layer.
+//! Banned user detection: hardcoded list + optional Hermod (zeroShadow)
+//! behind a cache layer.
 
 mod cached;
 mod hermod;
 mod metrics;
-mod onchain;
 
 pub use hermod::Config as HermodConfig;
 use {
     self::{
         cached::{Backend, Cached},
         hermod::Client as Hermod,
-        onchain::Onchain,
     },
     alloy_primitives::Address,
-    contracts::ChainalysisOracle,
     std::{collections::HashSet, sync::Arc},
 };
 
@@ -25,17 +22,14 @@ pub struct Users {
 }
 
 impl Users {
-    /// Builds the validator from a hardcoded list and optional remote backends.
+    /// Builds the validator from a hardcoded list and an optional Hermod
+    /// backend.
     pub fn new(
-        contract: Option<ChainalysisOracle::Instance>,
         hermod: Option<HermodConfig>,
         banned_users: Vec<Address>,
         cache_max_size: u64,
     ) -> Self {
         let mut backends: Vec<Box<dyn Backend>> = Vec::new();
-        if let Some(contract) = contract {
-            backends.push(Box::new(Onchain::new(contract)));
-        }
         if let Some(config) = hermod {
             backends.push(Box::new(Hermod::new(config)));
         }

@@ -172,6 +172,29 @@ fn loads_the_tables_of_a_host_config() {
 }
 
 #[test]
+fn a_host_list_reaches_the_rules_and_may_not_be_defined() {
+    let rule = "[[rule]]\nname = 'x'\nwhen = 'order.sellToken in host_tokens'\nfee = 'volume(1)'";
+    let mut tables = RulesToml {
+        rules: toml::from_str::<toml::Table>(rule).unwrap().remove("rule"),
+        ..Default::default()
+    };
+    assert!(load_rules_toml(tables.clone()).is_err());
+    tables.add_host_list("host_tokens", [USDC]).unwrap();
+    let rules = load_rules_toml(tables.clone()).unwrap();
+    let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+        order: &order(USDC, USDT),
+        app_data: &AppData::default(),
+        partner_fees: &[],
+        in_market: false,
+    });
+    assert_eq!(evaluation.matched.len(), 1);
+    assert!(matches!(
+        tables.add_host_list("host_tokens", [USDC]),
+        Err(LoadError::Rules(CompileError::ReservedList { name })) if name == "host_tokens"
+    ));
+}
+
+#[test]
 fn refuses_bad_host_config_tables() {
     let error = |source: &str| {
         let mut config: toml::Table = toml::from_str(source).unwrap();

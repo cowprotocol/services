@@ -79,6 +79,9 @@ estimators = [
 [native-prices.coin-gecko]
 url = "https://api.coingecko.com/api/v3/simple/token_price"
 # api-key = "%COIN_GECKO_API_KEY"
+# A price last updated longer ago is stale: the token counts as unpriced by
+# CoinGecko and the next stage prices it.
+max-price-age = "1h"
 
 [logging]
 filter = "info,autopilot_svm=debug"

@@ -23,7 +23,7 @@ use {
         solver::Solver,
     },
     base64::{Engine, prelude::BASE64_STANDARD},
-    cow_solana_rpc::RpcPrioritizationFee,
+    cow_solana_rpc::{RpcPrioritizationFee, UiTransactionError},
     itertools::Itertools,
     moka::sync::Cache,
     solana_sdk::{
@@ -55,6 +55,10 @@ const HTTP_TIME_BUFFER: chrono::Duration = chrono::Duration::milliseconds(500);
 /// the solution simulations get the rest. The EVM driver's
 /// `solving-share-of-deadline` default.
 const SOLVING_SHARE_OF_DEADLINE_PERCENT: i32 = 80;
+/// Simulating a failed bundle leg alone to name its error stops this long
+/// before the simulation deadline, so the deadline's timeout can't turn the
+/// proven failure into no verdict.
+const NAMING_MARGIN: Duration = Duration::from_millis(100);
 
 /// Cache key for a proposed solution.
 ///
@@ -167,6 +171,7 @@ impl Competition {
             .signed_duration_since(chrono::Utc::now())
             .to_std()
             .unwrap_or_default();
+        let deadline = tokio::time::Instant::now() + window;
         let simulations = futures::future::join_all(solutions.iter().map(|solution| {
             let auction = &auction;
             async move {
@@ -176,9 +181,9 @@ impl Competition {
                 let ((verdict, elapsed), fees) = tokio::join!(
                     async {
                         let started = Instant::now();
-                        let verdict = tokio::time::timeout(
-                            window,
-                            self.simulate_solution(auction_id, auction, solution),
+                        let verdict = tokio::time::timeout_at(
+                            deadline,
+                            self.simulate_solution(auction_id, auction, solution, deadline),
                         )
                         .await;
                         (verdict, started.elapsed())
@@ -375,6 +380,7 @@ impl Competition {
         auction_id: Id,
         auction: &Auction,
         solution: &Solution,
+        deadline: tokio::time::Instant,
     ) -> Result<(Slot, Option<u64>), Error> {
         let program_id = self.blockchain.program_id();
         let orders = orders_with_trades(auction.orders.clone(), solution);
@@ -445,11 +451,21 @@ impl Competition {
                     slot = %slot,
                     "bundle simulation failed"
                 );
+                let mut program_error = result
+                    .logs
+                    .as_deref()
+                    .and_then(|logs| ProgramError::from_logs(program_id, logs));
+                if program_error.is_none() {
+                    program_error = tokio::time::timeout_at(
+                        deadline - NAMING_MARGIN,
+                        program_error_alone(&self.blockchain, transaction, err),
+                    )
+                    .await
+                    .ok()
+                    .flatten();
+                }
                 return Err(Error::SimulationFailed {
-                    program_error: result
-                        .logs
-                        .as_deref()
-                        .and_then(|logs| ProgramError::from_logs(program_id, logs)),
+                    program_error,
                     err: err.clone(),
                 });
             }
@@ -1010,6 +1026,25 @@ fn failing_program(transaction: &VersionedTransaction, err: &TransactionError) -
         .copied()
 }
 
+/// The program error of a failed bundle leg, from simulating the leg alone:
+/// the bundle endpoint answers a failed leg without logs. Without the legs
+/// before it the leg can fail differently, so only the same error counts. A
+/// failed simulation names nothing.
+async fn program_error_alone(
+    blockchain: &Solana,
+    transaction: &VersionedTransaction,
+    err: &UiTransactionError,
+) -> Option<ProgramError> {
+    let simulation = blockchain
+        .simulate_unsigned_transaction(transaction)
+        .await
+        .ok()?;
+    if simulation.err.as_ref() != Some(err) {
+        return None;
+    }
+    ProgramError::from_logs(blockchain.program_id(), simulation.logs.as_deref()?)
+}
+
 struct VolumeFee {
     order_uid: OrderUid,
     mint: Pubkey,
@@ -1395,5 +1430,50 @@ mod tests {
             confirm(Signature::from([2; 64])).await,
             Error::FailedToSubmit { .. }
         ));
+    }
+
+    /// A bundle leg takes the program error of its simulation alone only when
+    /// it fails alone with the same error.
+    #[tokio::test]
+    async fn names_a_bundle_leg_from_its_simulation_alone() {
+        let program_id = Pubkey::new_unique();
+        let custom = |index, code| {
+            TransactionError::InstructionError(
+                index,
+                solana_sdk::instruction::InstructionError::Custom(code),
+            )
+        };
+        let unauthorized = custom(2, 37);
+        let alone = async |err: TransactionError| {
+            let simulation = json!({
+                "context": { "slot": 1 },
+                "value": {
+                    "err": err,
+                    "logs": [format!("Program {program_id} failed: custom program error: 0x25")],
+                },
+            });
+            let solana = Solana::new(
+                SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([(
+                    RpcRequest::SimulateTransaction,
+                    simulation,
+                )])),
+                program_id,
+            );
+            program_error_alone(
+                &solana,
+                &VersionedTransaction::default(),
+                &unauthorized.clone().into(),
+            )
+            .await
+        };
+        assert_eq!(
+            alone(unauthorized.clone()).await,
+            Some(ProgramError {
+                program: program_id,
+                code: 37,
+                name: Some("UnauthorizedSolver".to_owned()),
+            })
+        );
+        assert_eq!(alone(custom(2, 6001)).await, None);
     }
 }

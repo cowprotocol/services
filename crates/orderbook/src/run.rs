@@ -17,7 +17,6 @@ use {
     clap::Parser,
     configs::orderbook::Configuration,
     contracts::{
-        ChainalysisOracle,
         FlashLoanRouter,
         GPv2AllowListAuthentication,
         GPv2Settlement,
@@ -396,10 +395,6 @@ pub async fn run(config: Configuration) {
     let fast_quoter = Arc::new(create_quoter(fast_price_estimator));
 
     let app_data_validator = Validator::new(config.app_data_size_limit);
-    let chainalysis_oracle = ChainalysisOracle::Instance::deployed(&web3.provider)
-        .await
-        .ok();
-
     let order_simulator = price_estimator_factory.settlement_simulator().cloned();
 
     let validator_simulator = order_simulator.clone().map(|settlement_simulator| {
@@ -450,7 +445,6 @@ pub async fn run(config: Configuration) {
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
-            chainalysis_oracle,
             config.banned_users.hermod.clone().map(|hermod| {
                 order_validation::banned::HermodConfig {
                     url: hermod.url,
@@ -600,7 +594,9 @@ fn serve_api(
                 return;
             }
         };
-        if let Err(err) = axum::serve(listener, app)
+        // Build the routes once: serving the `Router` itself deep-clones every
+        // route, middleware included, per accepted connection.
+        if let Err(err) = axum::serve(listener, app.into_make_service())
             .with_graceful_shutdown(shutdown_receiver)
             .await
         {

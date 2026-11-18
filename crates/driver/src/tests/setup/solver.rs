@@ -421,6 +421,7 @@ impl Solver {
             url,
             max_batch_size: 20,
             max_concurrent_requests: 10,
+            timeout: ethrpc::DEFAULT_TIMEOUT,
         })
         .await
         .unwrap();

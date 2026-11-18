@@ -311,5 +311,9 @@ async fn serve(router: axum::Router, addr: std::net::SocketAddr) {
         .await
         .expect("failed to bind TCP listener");
     tracing::info!(%addr, "serving pool-indexer API");
-    axum::serve(listener, router).await.expect("server error");
+    // Build the routes once: serving the `Router` itself deep-clones every
+    // route, middleware included, per accepted connection.
+    axum::serve(listener, router.into_make_service())
+        .await
+        .expect("server error");
 }

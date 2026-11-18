@@ -16,7 +16,6 @@ use {
     chrono::{DateTime, Utc},
     database::{
         events::EventIndex,
-        leader_pg_lock::LeaderLock,
         order_events::{OrderEventLabel, OrderFilterReason},
         order_execution::Asset,
         orders::{
@@ -36,13 +35,14 @@ use {
     },
     eth_domain_types as eth,
     futures::{StreamExt, TryStreamExt},
+    leader_lock::LeaderPgLock,
     number::conversions::{big_decimal_to_u256, u256_to_big_decimal, u256_to_big_uint},
     shared::db_order_conversions::{fast_path_order_into_model, full_order_into_model_order},
+    sqlx::PgConnection,
     std::{
         collections::{HashMap, HashSet},
         ops::DerefMut,
         sync::Arc,
-        time::Duration,
     },
     tokio::sync::mpsc,
     tracing::{Instrument, instrument},
@@ -98,8 +98,8 @@ impl Persistence {
         sender
     }
 
-    pub async fn leader(&self, key: String) -> LeaderLock {
-        LeaderLock::new(self.postgres.pool.clone(), key, Duration::from_millis(200))
+    pub fn leader(&self, key: String) -> LeaderPgLock {
+        LeaderPgLock::spawn(&self.postgres.pool, key)
     }
 
     /// Fetches the ID that should be used for the next auction.
@@ -496,9 +496,9 @@ impl Persistence {
             .collect::<HashMap<_, _>>();
 
             // get quotes for all orders with PriceImprovement fee policy
-            let quotes = self
-                .postgres
-                .read_quotes(fee_policies.iter().filter_map(|(order_uid, policies)| {
+            let quotes = Postgres::read_quotes(
+                &mut ex,
+                fee_policies.iter().filter_map(|(order_uid, policies)| {
                     policies
                         .iter()
                         .any(|policy| {
@@ -508,9 +508,10 @@ impl Persistence {
                             )
                         })
                         .then_some(order_uid)
-                }))
-                .await
-                .map_err(error::Auction::DatabaseError)?;
+                }),
+            )
+            .await
+            .map_err(error::Auction::DatabaseError)?;
 
             // compile order data
             let mut orders = HashMap::new();
@@ -653,17 +654,32 @@ impl Persistence {
                 .with_label_values(&["read_quotes"])
                 .start_timer();
 
-            // Fetch quotes only for newly created and also on-chain placed
-            // orders due to the following case: if a block
-            // containing an on-chain order (e.g., ethflow) gets
-            // reorganized, the same order with the same
-            // UID might be created in the new block, and the temporary quote
-            // associated with it may have changed in the meantime.
+            // Fetch quotes for:
+            // * orders that were placed on-chain
+            // * orders that were recently placed in the DB, but not read since
+            //   the passed checkpoint (`after_timestamp`)
+            // * orders which their `valid_from` became "valid"; these must be
+            //   considered here because they were most likely read since the
+            //   last checkpoint, at which time they were not "valid" yet, as
+            //   such they are present in the cache *without* a quote and thus
+            //   need their quote loaded
+            //
+            // On-chain orders are always refetched due to the following case:
+            // if a block containing an on-chain order (e.g., ethflow) gets
+            // reorganized, the same order with the same UID might be created
+            // in the new block, and the temporary quote associated with it may
+            // have changed in the meantime.
+            let after_epoch = after_timestamp.timestamp();
             let order_uids = current_orders
                 .values()
                 .filter_map(|order| {
+                    let valid_from_is_active = order
+                        .metadata
+                        .valid_from
+                        .is_some_and(|valid_from| i64::from(valid_from) > after_epoch);
                     (order.metadata.onchain_user.is_some()
-                        || order.metadata.creation_date > after_timestamp)
+                        || order.metadata.creation_date > after_timestamp
+                        || valid_from_is_active)
                         .then_some(ByteArray(order.metadata.uid.0))
                 })
                 .collect::<Vec<_>>();
@@ -717,7 +733,7 @@ impl Persistence {
 
     /// Returns the trade events that are associated with the settlement event
     pub async fn get_trades_for_settlement(
-        &self,
+        ex: &mut PgConnection,
         settlement: &SettlementEvent,
     ) -> Result<Vec<TradeEvent>, DatabaseError> {
         let _timer = Metrics::get()
@@ -725,9 +741,8 @@ impl Persistence {
             .with_label_values(&["get_trades_for_settlement"])
             .start_timer();
 
-        let mut ex = self.postgres.pool.acquire().await?;
         database::trades::get_trades_for_settlement(
-            &mut ex,
+            ex,
             EventIndex {
                 block_number: i64::try_from(settlement.block.0).context("block overflow")?,
                 log_index: i64::try_from(settlement.log_index).context("log index overflow")?,
@@ -861,8 +876,7 @@ impl Persistence {
             if !jit_orders.is_empty() {
                 // each jit order should have a corresponding trade event, try
                 // to find them
-                let trade_events = self
-                    .get_trades_for_settlement(&event)
+                let trade_events = Self::get_trades_for_settlement(&mut ex, &event)
                     .await?
                     .into_iter()
                     .map(|event| (event.order_uid, (event.block, event.log_index)))
@@ -1294,5 +1308,120 @@ pub mod error {
         InvalidFeePolicy(dto::fee_policy::Error, domain::OrderUid),
         #[error("invalid price fetched from database for token: {0:?}")]
         InvalidPrice(eth::TokenAddress),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use {
+        super::*,
+        crate::database::Config,
+        database::orders::{Order as DbOrder, Quote as DbQuote},
+        std::{num::NonZeroU32, time::Duration},
+    };
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_reads_finish_on_a_single_connection_pool() {
+        let postgres = Postgres::new(
+            "postgresql://",
+            Config {
+                max_pool_size: NonZeroU32::new(1).unwrap(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        database::clear_DANGER(&postgres.pool).await.unwrap();
+        database::auction::save(
+            &mut postgres.pool.acquire().await.unwrap(),
+            database::auction::Auction {
+                id: 1,
+                block: 1,
+                deadline: 2,
+                order_uids: vec![],
+                price_tokens: vec![],
+                price_values: vec![],
+                surplus_capturing_jit_order_owners: vec![],
+                penalty_caps_native: None,
+                fast_path_quote_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        let persistence = Persistence::new(None, Arc::new(postgres)).await;
+
+        // A read that holds the only connection and asks the pool for another
+        // one waits until the acquire timeout.
+        let timeout = Duration::from_secs(5);
+        let auction = tokio::time::timeout(timeout, persistence.get_auction(1, &[]))
+            .await
+            .expect("get_auction waits for a second connection")
+            .unwrap();
+        assert_eq!(auction.id, 1);
+        tokio::time::timeout(timeout, persistence.all_solvable_orders(0))
+            .await
+            .expect("all_solvable_orders waits for a second connection")
+            .unwrap();
+    }
+
+    /// The incremental query re-selects an order once its `valid_from`
+    /// passes, which can be long after the order was created. Its quote has
+    /// to be loaded with it.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_solvable_orders_after_loads_quote_of_newly_valid_order() {
+        let postgres = Arc::new(Postgres::with_defaults().await.unwrap());
+        let now = Utc::now();
+        let uid = ByteArray([1; 56]);
+
+        let mut ex = postgres.pool.begin().await.unwrap();
+        database::clear_DANGER_(&mut ex).await.unwrap();
+        database::orders::insert_order(
+            &mut ex,
+            &DbOrder {
+                uid,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                valid_to: now.timestamp() + 3600,
+                signing_scheme: DbSigningScheme::Eip1271,
+                creation_timestamp: now - chrono::Duration::hours(1),
+                valid_from: Some(now.timestamp() - 10),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        database::orders::insert_quote(
+            &mut ex,
+            &DbQuote {
+                order_uid: uid,
+                gas_amount: 1.,
+                gas_price: 1.,
+                sell_token_price: 1.,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ex.commit().await.unwrap();
+
+        let persistence = Persistence::new(None, postgres).await;
+        let solvable = persistence
+            .solvable_orders_after(
+                HashMap::new(),
+                HashMap::new(),
+                now - chrono::Duration::minutes(1),
+                0,
+                0,
+            )
+            .await
+            .unwrap();
+
+        let uid = domain::OrderUid(uid.0);
+        assert!(solvable.orders.contains_key(&uid));
+        assert!(solvable.quotes.contains_key(&uid));
     }
 }

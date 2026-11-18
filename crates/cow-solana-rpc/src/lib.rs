@@ -15,7 +15,7 @@ use {
         rpc_sender::{RpcSender, RpcTransportStats},
     },
     solana_rpc_client_api::{
-        config::{RpcBlockConfig, RpcSendTransactionConfig},
+        config::{RpcBlockConfig, RpcSendTransactionConfig, RpcSimulateTransactionConfig},
         request::{MAX_MULTIPLE_ACCOUNTS, RpcError},
         response::RpcBlockhash,
     },
@@ -337,6 +337,26 @@ impl SolanaRPC {
         transaction: &VersionedTransaction,
     ) -> Result<Response<RpcSimulateTransactionResult>, Error> {
         self.inner.simulate_transaction(transaction).await
+    }
+
+    /// Simulate a transaction on the confirmed bank with its signatures
+    /// unverified and its blockhash replaced by the node's latest, so an
+    /// unsigned transaction still simulates.
+    pub async fn simulate_unsigned_transaction(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<Response<RpcSimulateTransactionResult>, Error> {
+        self.inner
+            .simulate_transaction_with_config(
+                transaction,
+                RpcSimulateTransactionConfig {
+                    sig_verify: false,
+                    replace_recent_blockhash: true,
+                    commitment: Some(CommitmentConfig::confirmed()),
+                    ..Default::default()
+                },
+            )
+            .await
     }
 
     /// The prioritization fee, in micro-lamports per compute unit, that

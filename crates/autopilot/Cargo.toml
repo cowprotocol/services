@@ -17,7 +17,7 @@ test = false
 
 [dependencies]
 account-balances = { workspace = true }
-alloy = { workspace = true, features = ["provider-debug-api", "provider-trace-api", "rand", "signer-aws"] }
+alloy = { workspace = true, features = ["contract", "provider-debug-api", "provider-trace-api", "rand", "signer-aws"] }
 anyhow = { workspace = true }
 app-data = { workspace = true }
 async-trait = { workspace = true }
@@ -48,6 +48,7 @@ humantime = { workspace = true }
 humantime-serde = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
+leader-lock = { workspace = true }
 model = { workspace = true }
 num = { workspace = true }
 number = { workspace = true }

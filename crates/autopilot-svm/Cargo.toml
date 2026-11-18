@@ -30,6 +30,7 @@ cow-solana-signer = { workspace = true }
 database = { workspace = true }
 futures = { workspace = true }
 humantime-serde = { workspace = true }
+leader-lock = { workspace = true }
 moka = { workspace = true }
 observe = { workspace = true }
 prometheus = { workspace = true }
@@ -61,6 +62,7 @@ winner-selection = { workspace = true }
 
 [dev-dependencies]
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
+leader-lock = { workspace = true, features = ["test-util"] }
 solana-testlib = { workspace = true }
 
 [lints]

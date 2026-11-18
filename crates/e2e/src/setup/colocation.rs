@@ -2,10 +2,10 @@ use {
     crate::{nodes::NODE_WS_HOST, setup::*},
     ::alloy::primitives::Address,
     reqwest::Url,
-    std::collections::HashSet,
     tokio::task::JoinHandle,
 };
 
+mod driver_config;
 pub mod utils;
 
 pub struct SolverEngine {
@@ -101,33 +101,6 @@ pub enum LiquidityProvider {
     ZeroEx { api_port: u16 },
 }
 
-impl LiquidityProvider {
-    pub fn to_string(&self, contracts: &Contracts) -> String {
-        match self {
-            Self::UniswapV2 => format!(
-                r#"
-[[liquidity.uniswap-v2]]
-router = "{:?}"
-pool-code = "{:?}"
-missing-pool-cache-time = "0s"
-"#,
-                contracts.uniswap_v2_router.address(),
-                contracts.default_pool_code()
-            ),
-            Self::ZeroEx { api_port } => format!(
-                r#"
-[liquidity.zeroex]
-base-url = {:?}
-api-key = {:?}
-http-timeout = "10s"
-"#,
-                format!("http://0.0.0.0:{}", api_port),
-                "no-api-key".to_string()
-            ),
-        }
-    }
-}
-
 pub fn start_driver(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
@@ -136,113 +109,13 @@ pub fn start_driver(
     start_driver_with_config_override(contracts, solvers, liquidity, None)
 }
 
-// TODO: build the driver config by serializing a typed struct to TOML instead
-// of templating these strings by hand.
 pub fn start_driver_with_config_override(
     contracts: &Contracts,
     solvers: Vec<SolverEngine>,
     liquidity: LiquidityProvider,
     config_override: Option<&str>,
 ) -> JoinHandle<()> {
-    let base_tokens: HashSet<_> = solvers
-        .iter()
-        .flat_map(|solver| solver.base_tokens.iter())
-        .cloned()
-        .collect();
-    let solvers = solvers
-        .iter()
-        .map(|solver| {
-            let SolverEngine {
-                name,
-                account,
-                endpoint,
-                merge_solutions,
-                solver_fee_bps,
-                ..
-            } = solver;
-            let account = account.signer.to_bytes();
-            let absolute_slippage_line = solver
-                .absolute_slippage
-                .map(|wei| format!("absolute-slippage = \"{wei}\"\n"))
-                .unwrap_or_default();
-            let submission_accounts_line = if solver.submission_keys.is_empty() {
-                String::new()
-            } else {
-                let keys: Vec<String> = solver
-                    .submission_keys
-                    .iter()
-                    .map(|k| format!("\"{}\"", k.signer.to_bytes()))
-                    .collect();
-                format!("submission-accounts = [{}]\n", keys.join(", "))
-            };
-            format!(
-                r#"
-[[solver]]
-name = "{name}"
-endpoint = "{endpoint}"
-relative-slippage = "0.1"
-{absolute_slippage_line}account = "{account}"
-merge-solutions = {merge_solutions}
-fast-path-enabled = true
-enable-metrics-bad-order-detection = true
-http-time-buffer = "25ms"
-solving-share-of-deadline = 1.0
-solver-fee-bps = {solver_fee_bps}
-{submission_accounts_line}"#
-            )
-        })
-        .collect::<Vec<String>>()
-        .join("\n");
-    let liquidity = liquidity.to_string(contracts);
-
-    let encoded_base_tokens = encode_base_tokens(base_tokens.clone());
-    let flashloan_router_config = contracts
-        .flashloan_router
-        .as_ref()
-        .map(|contract| format!("flashloan-router = \"{:?}\"", contract.address()))
-        .unwrap_or_default();
-
-    let base_config = format!(
-        r#"
-app-data-fetching-enabled = true
-orderbook-url = "http://localhost:8080"
-flashloans-enabled = true
-tx-gas-limit = "45000000"
-
-[gas-estimator]
-estimator = "web3"
-
-[contracts]
-gp-v2-settlement = "{:?}"
-weth = "{:?}"
-balances = "{:?}"
-signatures = "{:?}"
-deadline-check = "{:?}"
-{flashloan_router_config}
-
-{solvers}
-
-[liquidity]
-base-tokens = [{encoded_base_tokens}]
-refresh-cooldown = "0s"
-
-{liquidity}
-
-[submission]
-gas-price-cap = "1000000000000"
-
-[submission.public-mempool]
-urls = ["{NODE_HOST}"]
-
-[balance-cache]
-refresh-cooldown = "0s"
-"#,
-        contracts.gp_settlement.address(),
-        contracts.weth.address(),
-        contracts.balances.address(),
-        contracts.signatures.address(),
-        contracts.deadline_check.address(),
-    );
+    let base_config = driver_config::render(contracts, &solvers, &liquidity);
 
     let final_config = if let Some(override_str) = config_override {
         utils::toml::merge_raw(&base_config, override_str).expect("Failed to merge driver config")
