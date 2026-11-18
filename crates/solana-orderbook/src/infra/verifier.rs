@@ -389,6 +389,7 @@ impl Verifier {
             // bundle elsewhere recovers them.
             tracing::trace!(
                 driver,
+                slot = response.context.slot,
                 bundle = ?Lazy(|| bundle.iter().map(encoded).collect::<Vec<_>>()),
                 "failed quote bundle"
             );
