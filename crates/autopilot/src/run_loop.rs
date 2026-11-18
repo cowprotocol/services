@@ -278,6 +278,17 @@ impl RunLoop {
                         );
                         Metrics::get().skipped_auctions.inc();
                         consecutive_skips += 1;
+                        // A skip gives up the rest of the slot. Without this a
+                        // new order could wake the loop while the same block is
+                        // still current and force a late auction right away.
+                        // Comparing timestamps (not numbers or hashes) resumes
+                        // on the next slot even if a reorg replaced the block.
+                        let _ = self_arc
+                            .eth
+                            .current_block()
+                            .clone()
+                            .wait_for(|block| block.timestamp > start_block.timestamp)
+                            .await;
                         continue;
                     }
                 };
