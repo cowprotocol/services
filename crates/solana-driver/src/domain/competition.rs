@@ -854,8 +854,8 @@ impl Competition {
         Ok(signature)
     }
 
-    /// Co-sign `transaction` through the engine, retrying while it fails
-    /// transiently: rate limited, or an upstream failure. The caller bounds
+    /// Co-sign `transaction` through the engine, retrying while it answers
+    /// 429 or 502: its upstream rate limited it or failed. The caller bounds
     /// the retries by the deadline.
     async fn cosign(
         &self,
@@ -864,7 +864,7 @@ impl Competition {
         loop {
             match self.solver.cosign(transaction).await {
                 Err(crate::infra::solver::Error::HttpStatus { status, .. })
-                    if matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504) =>
+                    if matches!(status.as_u16(), 429 | 502) =>
                 {
                     tracing::warn!(%status, "co-sign failed transiently, retrying");
                     tokio::time::sleep(COSIGN_RETRY_PAUSE).await;

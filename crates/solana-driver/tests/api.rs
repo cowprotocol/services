@@ -934,7 +934,7 @@ async fn settle_gives_up_on_a_cosign_outliving_the_deadline() {
 }
 
 /// A co-sign the engine fails transiently is retried before the deadline: a
-/// 503 once, then the signature, and the settlement goes out.
+/// 502 once, then the signature, and the settlement goes out.
 #[tokio::test]
 async fn settle_retries_a_cosign_the_engine_fails_transiently() {
     let cosigner = Arc::new(Keypair::new());
@@ -944,7 +944,7 @@ async fn settle_retries_a_cosign_the_engine_fails_transiently() {
         if failed.swap(true, Ordering::SeqCst) {
             Cosign::Answer(signed_by(&cosigner, transaction))
         } else {
-            Cosign::Fail(StatusCode::SERVICE_UNAVAILABLE)
+            Cosign::Fail(StatusCode::BAD_GATEWAY)
         }
     })
     .await;

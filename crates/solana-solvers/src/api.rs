@@ -88,9 +88,14 @@ async fn cosign(
         .map_err(|err| (StatusCode::BAD_REQUEST, err))?;
     let cosigned = solver.cosign(&transaction).await.map_err(|err| {
         tracing::warn!(%err, "co-signing failed");
+        // The driver retries 429 and 502 until its deadline, so only a
+        // failure a retry can clear gets one of those.
         let status = match err {
             dex::Error::CosignNotSupported => StatusCode::NOT_IMPLEMENTED,
-            _ => StatusCode::BAD_GATEWAY,
+            dex::Error::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            dex::Error::Http(_) => StatusCode::BAD_GATEWAY,
+            dex::Error::Api { status, .. } if status >= 500 => StatusCode::BAD_GATEWAY,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, err.to_string())
     })?;
@@ -119,6 +124,13 @@ mod tests {
         std::{num::NonZeroUsize, time::Duration},
     };
 
+    async fn serve_stand_in(app: Router) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        addr
+    }
+
     /// Stands in for Bitget's `/signBgwSolTx`: decodes the base64
     /// transaction, signs `authority`'s slot, and answers in Bitget's
     /// envelope.
@@ -143,21 +155,13 @@ mod tests {
                 Json(json!({"status": 0, "error_code": 0, "data": {"transaction": encoded}}))
             }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        addr
+        serve_stand_in(app).await
     }
 
-    /// `/cosign` hands the driver-signed transaction to Bitget and returns it
-    /// with Bitget's signature added and nothing else changed.
-    #[tokio::test]
-    async fn cosigns_through_bitget() {
-        let authority = Arc::new(Keypair::new());
+    /// The engine API in exempt mode over the Bitget stand-in at `bitget`.
+    async fn spawn_api_over(bitget: SocketAddr) -> SocketAddr {
         let bitget = Bitget::new(&BitgetConfig {
-            endpoint: format!("http://{}/", spawn_bitget(Arc::clone(&authority)).await)
-                .parse()
-                .unwrap(),
+            endpoint: format!("http://{bitget}/").parse().unwrap(),
             api_key: "key".into(),
             api_secret: "secret".into(),
             partner_code: "cowswap".into(),
@@ -179,6 +183,15 @@ mod tests {
         };
         let (listener, addr) = api.bind().await.unwrap();
         tokio::spawn(api.serve(listener, std::future::pending()));
+        addr
+    }
+
+    /// `/cosign` hands the driver-signed transaction to Bitget and returns it
+    /// with Bitget's signature added and nothing else changed.
+    #[tokio::test]
+    async fn cosigns_through_bitget() {
+        let authority = Arc::new(Keypair::new());
+        let addr = spawn_api_over(spawn_bitget(Arc::clone(&authority)).await).await;
 
         let taker = Keypair::new();
         let route = Instruction::new_with_bytes(
@@ -212,5 +225,32 @@ mod tests {
         let cosigned: VersionedTransaction = wincode::deserialize(&bytes).unwrap();
         assert_eq!(cosigned.message, transaction.message);
         assert_eq!(cosigned.verify_with_results(), [true, true]);
+    }
+
+    /// Bitget refusing the transaction is final: `/cosign` answers 500, which
+    /// the driver does not retry, rather than a retryable 502.
+    #[tokio::test]
+    async fn a_bitget_rejection_is_not_retryable() {
+        let bitget = serve_stand_in(Router::new().route(
+            "/signBgwSolTx",
+            post(|| async {
+                Json(json!({"status": 1, "error_code": 80006, "msg": "invalid field: transaction"}))
+            }),
+        ))
+        .await;
+        let addr = spawn_api_over(bitget).await;
+
+        let encoded =
+            BASE64_STANDARD.encode(wincode::serialize(&VersionedTransaction::default()).unwrap());
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/cosign"))
+            .json(&json!({ "transaction": encoded }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }
