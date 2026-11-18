@@ -3,6 +3,7 @@
 
 use {
     super::quoter::{Kind, Order, Quote},
+    base64::{Engine, prelude::BASE64_STANDARD},
     configs::price_estimation::QuoteVerificationMode,
     cow_settlement_client::instruction::CreateOrder,
     cow_settlement_interface::{
@@ -383,6 +384,13 @@ impl Verifier {
                 logs = ?settled.logs,
                 "quote unverified, its settlement fails in simulation"
             );
+            // `simulateBundle` drops a failed leg's logs. A replay of the
+            // bundle elsewhere recovers them.
+            tracing::trace!(
+                driver,
+                bundle = ?bundle.iter().map(encoded).collect::<Vec<_>>(),
+                "failed quote bundle"
+            );
             return Verdict::Unverified;
         }
         let balances = |accounts: &[Account]| -> Option<[u64; 3]> {
@@ -569,6 +577,11 @@ impl Verifier {
             })
             .collect())
     }
+}
+
+/// `transaction` in wire format, base64.
+fn encoded(transaction: &VersionedTransaction) -> String {
+    BASE64_STANDARD.encode(bincode::serialize(transaction).unwrap_or_default())
 }
 
 /// The accounts a transaction requires signatures from.
