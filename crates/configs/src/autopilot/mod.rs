@@ -577,7 +577,7 @@ mod tests {
         );
 
         assert!(config.banned_users.addresses.is_empty());
-        assert_eq!(config.banned_users.max_cache_size.get(), 10000);
+        assert_eq!(config.banned_users.max_cache_size.get(), 500);
 
         assert!(config.s3.is_none());
 

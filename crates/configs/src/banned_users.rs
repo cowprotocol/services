@@ -9,7 +9,7 @@ use {
 fn default_max_cache_size() -> NonZeroUsize {
     // Note that this default value does not apply to both the orderbook and
     // autopilot! Remember to explicitly change it in the infra repo.
-    NonZeroUsize::new(10000).unwrap()
+    NonZeroUsize::new(500).unwrap()
 }
 
 /// Addresses banned from creating orders, with a local cache.
@@ -21,7 +21,7 @@ pub struct BannedUsersConfig {
     #[serde(default)]
     pub addresses: Vec<Address>,
 
-    /// Maximum number of entries to keep in the banned users cache.
+    /// Maximum number of address signatures (HMACs) to cache for Hermod.
     #[serde(default = "default_max_cache_size")]
     pub max_cache_size: NonZeroUsize,
 
@@ -79,7 +79,7 @@ mod tests {
         let toml = "";
         let config: BannedUsersConfig = toml::from_str(toml).unwrap();
         assert!(config.addresses.is_empty());
-        assert_eq!(config.max_cache_size.get(), 10000);
+        assert_eq!(config.max_cache_size.get(), 500);
         assert!(config.hermod.is_none());
     }
 
