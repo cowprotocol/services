@@ -26,10 +26,11 @@ const SWEEP_INTERVAL: Duration = Duration::from_secs(10);
 /// bind parameter limit.
 const SWEEP_LIMIT: i64 = 1_000;
 
-/// A final trade without an `order_execution` row, with its order's limit
-/// and linked quote.
+/// An unrecorded final trade, with its order's limit and linked quote.
 #[derive(Debug, sqlx::FromRow)]
 struct TradeRow {
+    tx_signature: ByteArray<64>,
+    instruction_index: i32,
     order_uid: ByteArray<32>,
     /// The auction the settlement instruction claims.
     auction_id: i64,
@@ -79,14 +80,16 @@ pub fn spawn(pool: PgPool) {
     });
 }
 
-/// Record the fees of up to [`SWEEP_LIMIT`] final trades without a row,
-/// oldest first. Only final trades, so no reorg can take back a trade with
-/// a recorded fee. A trade whose fees do not compute is recorded without
-/// fees, so every trade is swept once.
+/// Record the fees of up to [`SWEEP_LIMIT`] unrecorded final trades, oldest
+/// first, and flag them recorded so later sweeps skip them. Only final
+/// trades, so no reorg can take back a trade with a recorded fee. A trade
+/// whose fees do not compute is recorded without fees, so every trade is
+/// swept once.
 async fn record(pool: &PgPool) -> Result<()> {
     let _timer = db::query_timer("record_order_executions");
     const TRADES: &str = r#"
-SELECT t.order_uid, s.auction_id, o.kind, o.sell_token, o.buy_token,
+SELECT t.tx_signature, t.instruction_index, t.order_uid, s.auction_id,
+       o.kind, o.sell_token, o.buy_token,
        o.sell_amount AS limit_sell, o.buy_amount AS limit_buy,
        t.sell_amount AS executed_sell, t.buy_amount AS executed_buy,
        q.sell_amount AS quote_sell_amount, q.buy_amount AS quote_buy_amount,
@@ -104,11 +107,8 @@ JOIN solana.settlements s
   ON s.tx_signature = t.tx_signature AND s.instruction_index = t.instruction_index
 JOIN solana.orders o ON o.uid = t.order_uid
 LEFT JOIN solana.order_quotes q ON q.order_uid = t.order_uid
-WHERE t.slot <= (SELECT finalized_slot FROM solana.indexer_state)
-  AND NOT EXISTS (
-      SELECT 1 FROM solana.order_execution e
-      WHERE e.order_uid = t.order_uid AND e.auction_id = s.auction_id
-  )
+WHERE NOT t.fees_recorded
+  AND t.slot <= (SELECT finalized_slot FROM solana.indexer_state)
 ORDER BY t.slot
 LIMIT $1
     "#;
@@ -189,12 +189,35 @@ ORDER BY application_order
     );
     // A concurrent sweep may have recorded the same trade already.
     insert.push(" ON CONFLICT DO NOTHING");
+    // One transaction, so a trade is flagged only with its row written.
+    let mut tx = pool.begin().await.context("begin the transaction")?;
     insert
         .build()
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .context("insert the order executions")?;
-    Ok(())
+    const FLAG: &str = r#"
+UPDATE solana.trades SET fees_recorded = true
+WHERE (tx_signature, instruction_index, order_uid)
+    IN (SELECT * FROM UNNEST($1::bytea[], $2::integer[], $3::bytea[]))
+    "#;
+    let ((signatures, indexes), uids): ((Vec<_>, Vec<_>), Vec<_>) = trades
+        .iter()
+        .map(|trade| {
+            (
+                (trade.tx_signature, trade.instruction_index),
+                trade.order_uid,
+            )
+        })
+        .unzip();
+    sqlx::query(FLAG)
+        .bind(signatures)
+        .bind(indexes)
+        .bind(uids)
+        .execute(&mut *tx)
+        .await
+        .context("flag the recorded trades")?;
+    tx.commit().await.context("commit the transaction")
 }
 
 /// The fee each policy took from the trade, in its order's surplus token,
@@ -311,6 +334,8 @@ mod tests {
     /// fees, linked to a route quote `(sell, buy, execution cost)`.
     fn trade(quote: Option<(u64, u64, u64)>) -> TradeRow {
         TradeRow {
+            tx_signature: ByteArray([9; 64]),
+            instruction_index: 0,
             order_uid: ByteArray([1; 32]),
             auction_id: 1,
             kind: OrderKind::Sell,
@@ -696,16 +721,27 @@ mod tests {
         );
     }
 
+    /// The orders of the trades left to record.
+    async fn unrecorded(pool: &PgPool) -> Vec<Vec<u8>> {
+        sqlx::query_scalar(
+            "SELECT order_uid FROM solana.trades WHERE NOT fees_recorded ORDER BY order_uid",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
     /// A trade past the finalized slot waits for finality, and a trade
     /// indexed into an already recorded settlement is picked up by the next
-    /// sweep. Recorded rows stay as they are.
+    /// sweep. Recorded rows stay as they are. The sweep flags the trades it
+    /// recorded and skips a flagged one.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
     async fn solana_db_the_sweep_records_each_final_trade_once() {
         let pool = crate::test_db::pool().await;
         crate::test_db::wipe(&pool).await;
 
-        for order in [1, 2, 3] {
+        for order in [1, 2, 3, 4] {
             insert_order(&pool, order, "sell").await;
         }
         insert_volume_policy(&pool, 1, 1, 0.5).await;
@@ -724,8 +760,15 @@ mod tests {
             vec![BigDecimal::from(20)],
         );
         assert_eq!(executions(&pool).await, vec![first.clone()]);
+        assert_eq!(unrecorded(&pool).await, vec![vec![2; 32]]);
 
         insert_trade(&pool, 9, 10, 3).await;
+        insert_trade(&pool, 9, 10, 4).await;
+        sqlx::query("UPDATE solana.trades SET fees_recorded = true WHERE order_uid = $1")
+            .bind([4u8; 32])
+            .execute(&pool)
+            .await
+            .unwrap();
         set_finalized_slot(&pool, 11).await;
         record(&pool).await.unwrap();
         assert_eq!(
@@ -741,5 +784,6 @@ mod tests {
                 (vec![3; 32], 1, vec![], vec![]),
             ]
         );
+        assert!(unrecorded(&pool).await.is_empty());
     }
 }
