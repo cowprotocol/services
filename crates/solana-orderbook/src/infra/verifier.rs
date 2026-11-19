@@ -379,19 +379,14 @@ impl Verifier {
             return Verdict::Unverified;
         };
         if let Some(err) = &settled.err {
+            // `simulateBundle` drops a failed leg's logs. A replay of the
+            // bundle elsewhere recovers them.
             tracing::debug!(
                 driver,
                 ?err,
-                logs = ?settled.logs,
-                "quote unverified, its settlement fails in simulation"
-            );
-            // `simulateBundle` drops a failed leg's logs. A replay of the
-            // bundle elsewhere recovers them.
-            tracing::trace!(
-                driver,
                 slot = response.context.slot,
                 bundle = ?Lazy(|| bundle.iter().map(encoded).collect::<Vec<_>>()),
-                "failed quote bundle"
+                "quote unverified, its settlement fails in simulation"
             );
             return Verdict::Unverified;
         }
