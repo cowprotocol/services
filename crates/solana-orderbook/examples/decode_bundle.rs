@@ -1,11 +1,6 @@
-//! Decodes base64 wire transactions, such as the `bundle` field of a `failed
-//! quote bundle` trace, into each instruction's program, kind, accounts and
-//! amounts.
-//!
-//! To capture bundles, add `solana_orderbook::infra::verifier=trace` to the
-//! orderbook's log filter through its log filter socket (see "Changing Log
-//! Filters" in the README), then pass the `bundle` field of a `failed quote
-//! bundle` log:
+//! Decodes base64 wire transactions, such as the `bundle` field of a `quote
+//! unverified, its settlement fails in simulation` log, into each
+//! instruction's program, kind, accounts and amounts:
 //!
 //! ```sh
 //! cargo run -p solana-orderbook --example decode_bundle -- '["AQ...", "AQ..."]'
