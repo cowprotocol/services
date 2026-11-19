@@ -1392,9 +1392,9 @@ mod tests {
         assert_eq!(schedule(late, 2), forced);
         assert_eq!(schedule(late, 3), forced);
 
-        // now is 13s after the last block (n), block n+1 is overdue => the
+        // now is 14s after the last block (n), block n+1 is overdue => the
         // forced deadline gives solvers at least the minimum solve time
-        let very_late = now + Duration::from_secs(12);
+        let very_late = now + Duration::from_secs(13);
         assert_eq!(
             schedule(very_late, 2),
             Schedule::Forced(very_late + min_solve_time)
