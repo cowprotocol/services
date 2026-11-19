@@ -486,12 +486,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
     // staged competition and settle out-of-band.
     let wake_runloop = Arc::new(tokio::sync::Notify::new());
     let (fast_path_sender, fast_path_receiver) = mpsc::unbounded();
-    infra::order_notify::Notifier::new(
-        banned_users.clone(),
-        wake_runloop.clone(),
-        fast_path_sender,
-    )
-    .spawn(db_write.pool.clone());
+    infra::order_notify::Notifier::new(wake_runloop.clone(), fast_path_sender)
+        .spawn(db_write.pool.clone());
 
     let penalty_cap_calculator = match &config.penalty_cap {
         Some(penalty_cap_config) => Some(Arc::new(
