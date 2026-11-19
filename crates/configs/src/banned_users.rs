@@ -9,7 +9,7 @@ use {
 fn default_max_cache_size() -> NonZeroUsize {
     // Note that this default value does not apply to both the orderbook and
     // autopilot! Remember to explicitly change it in the infra repo.
-    NonZeroUsize::new(500).unwrap()
+    NonZeroUsize::new(10000).unwrap()
 }
 
 /// Addresses banned from creating orders, with a local cache.
@@ -79,7 +79,7 @@ mod tests {
         let toml = "";
         let config: BannedUsersConfig = toml::from_str(toml).unwrap();
         assert!(config.addresses.is_empty());
-        assert_eq!(config.max_cache_size.get(), 500);
+        assert_eq!(config.max_cache_size.get(), 10000);
         assert!(config.hermod.is_none());
     }
 

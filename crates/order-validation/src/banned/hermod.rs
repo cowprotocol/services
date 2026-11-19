@@ -141,6 +141,8 @@ impl Client {
     fn map_hits_to_addresses(&self, hits: Vec<Hit>, batch: &[(B256, Address)]) -> Vec<Address> {
         hits.into_iter()
             .filter_map(|Hit { hashed_address }| {
+                // Linear scan: hits are rare (~10 per mainnet update), and
+                // below ~50 hits per 1000 addresses it beats a HashMap.
                 let Some((_, address)) = batch
                     .iter()
                     .find(|(signature, _)| *signature == hashed_address)
