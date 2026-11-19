@@ -120,8 +120,10 @@ impl Client {
         .collect()
     }
 
-    /// Checks at most [`MAX_BATCH_SIZE`] addresses with one request.
+    /// Checks `batch` with one request. Requires `batch` to have at most
+    /// [`MAX_BATCH_SIZE`] items; extra items are not checked.
     async fn banned_in_batch(&self, batch: &[(B256, Address)]) -> Vec<Address> {
+        let batch = &batch[..batch.len().min(MAX_BATCH_SIZE)];
         let start = Instant::now();
         let result = self.request_batch(batch).await;
         Metrics::batch(
