@@ -889,7 +889,7 @@ struct Metrics {
     #[metric(name = "orderbook_orders", labels("kind", "operation"))]
     orders: prometheus::IntCounterVec,
     /// Quote decisions for orders created on chain, by outcome: `linked`,
-    /// `no_quote`, `failed` or `too_late`.
+    /// `no_quote`, `failed`, `write_failed` or `too_late`.
     #[metric(name = "orderbook_on_chain_order_quotes", labels("outcome"))]
     on_chain_order_quotes: prometheus::IntCounterVec,
 }
