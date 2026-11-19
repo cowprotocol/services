@@ -92,7 +92,7 @@ pub struct RunLoopConfig {
     /// If this is configured the `/solve` deadline will be picked
     /// to end shortly before the next block gets mined. Auctions that start
     /// too late to give solvers `solve-deadline` before that block get
-    /// skipped (at most `max-consecutive-skips` in a row). Requires
+    /// skipped, until `consecutive-skips-before-forcing` is reached. Requires
     /// `solve-deadline` and `tx-propagation-latency` to fit into a single
     /// slot.
     /// This should not be configured on chains with variable block
@@ -131,16 +131,20 @@ pub struct SlotConfig {
     #[serde(with = "humantime_serde")]
     pub tx_propagation_latency: Duration,
 
-    /// How many consecutive auctions may be skipped for starting too late.
-    /// Once reached, the next late auction is not skipped but solved with a
-    /// deadline targeting the block after the next one. This guarantees
-    /// progress even if the run loop is consistently too slow.
-    #[serde(default = "default_max_consecutive_skips")]
-    pub max_consecutive_skips: u32,
+    /// How many auctions may be skipped for starting too late before the run
+    /// loop starts forcing auctions. While forcing, late auctions are not
+    /// skipped but solved with a deadline targeting the block after the next
+    /// one. Forcing ends once an auction starts early enough to be solved
+    /// before the next block again. This guarantees progress even if the run
+    /// loop is consistently too slow. At most one auction is skipped per
+    /// block, so the default of 5 forces auctions after about a minute of
+    /// skipping on mainnet.
+    #[serde(default = "default_consecutive_skips_before_forcing")]
+    pub consecutive_skips_before_forcing: u32,
 }
 
-const fn default_max_consecutive_skips() -> u32 {
-    1
+const fn default_consecutive_skips_before_forcing() -> u32 {
+    5
 }
 
 impl Default for RunLoopConfig {
@@ -219,8 +223,8 @@ mod tests {
                 .sync_solve_deadline_to_blockchain
                 .as_ref()
                 .unwrap()
-                .max_consecutive_skips,
-            1
+                .consecutive_skips_before_forcing,
+            5
         );
     }
 
@@ -231,7 +235,7 @@ mod tests {
             sync_solve_deadline_to_blockchain: Some(SlotConfig {
                 slot_length: Duration::from_secs(12),
                 tx_propagation_latency: Duration::from_secs(2),
-                max_consecutive_skips: 1,
+                consecutive_skips_before_forcing: 5,
             }),
             ..Default::default()
         };

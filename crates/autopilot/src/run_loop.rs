@@ -76,7 +76,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
                 SlotConfig {
                     slot_length: cfg.slot_length,
                     tx_propagation_latency: cfg.tx_propagation_latency,
-                    max_consecutive_skips: cfg.max_consecutive_skips,
+                    consecutive_skips_before_forcing: cfg.consecutive_skips_before_forcing,
                 }
             }),
         }
@@ -88,9 +88,10 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
 pub struct SlotConfig {
     pub slot_length: Duration,
     pub tx_propagation_latency: Duration,
-    /// How many auctions in a row may be skipped for starting too late before
-    /// a late auction gets solved anyway.
-    pub max_consecutive_skips: u32,
+    /// How many auctions may be skipped for starting too late before late
+    /// auctions get forced (solved anyway) until the run loop is back on
+    /// schedule.
+    pub consecutive_skips_before_forcing: u32,
 }
 
 pub struct Probes {
@@ -213,8 +214,10 @@ impl RunLoop {
     pub async fn run_forever(self, mut control: ShutdownController) {
         let mut last_auction = None;
         let mut last_block = None;
-        // Auctions skipped in a row because they started too late.
-        let mut consecutive_skips = 0;
+        // Auctions skipped for starting too late since the last auction that
+        // was solved on schedule. Once it reaches the maximum, late auctions
+        // get forced until an auction is on schedule again.
+        let mut skips_since_on_schedule = 0;
 
         let self_arc = Arc::new(self);
         let leader = self_arc
@@ -246,7 +249,7 @@ impl RunLoop {
                 // the drivers received; ensure we start from a checkpoint when
                 // leadership is (re)gained.
                 self_arc.delta_state.lock().unwrap().reset();
-                consecutive_skips = 0;
+                skips_since_on_schedule = 0;
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -257,15 +260,20 @@ impl RunLoop {
                 .await
             {
                 let auction_id = auction.id;
-                let solve_deadline = match self_arc.schedule_auction(consecutive_skips) {
-                    Schedule::Solve(deadline) => deadline,
+                let solve_deadline = match self_arc.schedule_auction(skips_since_on_schedule) {
+                    Schedule::OnTime(deadline) => {
+                        skips_since_on_schedule = 0;
+                        deadline
+                    }
                     Schedule::Forced(deadline) => {
+                        // Not resetting the counter: late auctions keep getting
+                        // forced until one is on schedule again.
                         tracing::info!(
                             auction_id,
-                            consecutive_skips,
+                            skips_since_on_schedule,
                             %deadline,
                             "not enough time to solve before next block but too many auctions \
-                             were skipped in a row, targeting the block after"
+                             were skipped, forcing auction targeting the block after"
                         );
                         Metrics::get().forced_auctions.inc();
                         deadline
@@ -277,7 +285,7 @@ impl RunLoop {
                             "skipping auction, not enough time to solve before next block"
                         );
                         Metrics::get().skipped_auctions.inc();
-                        consecutive_skips += 1;
+                        skips_since_on_schedule += 1;
                         // A skip gives up the rest of the slot. Without this a
                         // new order could wake the loop while the same block is
                         // still current and force a late auction right away.
@@ -292,7 +300,6 @@ impl RunLoop {
                         continue;
                     }
                 };
-                consecutive_skips = 0;
                 self_arc
                     .single_run(&auction, start_block, solve_deadline, &leader_lock_tracker)
                     .instrument(tracing::info_span!("auction", auction_id))
@@ -317,7 +324,7 @@ impl RunLoop {
         });
     }
 
-    fn schedule_auction(&self, consecutive_skips: u32) -> Schedule {
+    fn schedule_auction(&self, skips_since_on_schedule: u32) -> Schedule {
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
         schedule_auction(
@@ -325,7 +332,7 @@ impl RunLoop {
             last_block,
             self.config.min_solve_time,
             self.config.sync_solve_deadline_to_blockchain.as_ref(),
-            consecutive_skips,
+            skips_since_on_schedule,
         )
     }
 
@@ -828,10 +835,11 @@ impl RunLoop {
 enum Schedule {
     /// Solve with this `/solve` deadline; solutions can land in the next
     /// block (or block timing is not synced at all).
-    Solve(DateTime<Utc>),
+    OnTime(DateTime<Utc>),
     /// Too late for the next block, but the maximum number of auctions were
-    /// skipped in a row already: solve with a deadline targeting the block
-    /// after the next one, never shorter than the minimum solve time.
+    /// skipped since the last on-schedule auction: solve with a deadline
+    /// targeting the block after the next one, never shorter than the minimum
+    /// solve time.
     Forced(DateTime<Utc>),
     /// Too late for the next block: skip this auction.
     Skip {
@@ -847,7 +855,8 @@ enum Schedule {
 /// shortly before the next block gets mined to maximize the chance that
 /// solutions get mined instantly. Auctions that start too late to give solvers
 /// `min_solve_time` before the next block get skipped instead of delayed,
-/// unless `consecutive_skips` already reached the configured maximum.
+/// unless `skips_since_on_schedule` already reached the configured maximum, in
+/// which case they get forced.
 ///
 /// This function panics if any of the time computations over- or
 /// underflow. This should not happen as we deal with times within
@@ -857,17 +866,17 @@ fn schedule_auction(
     current_block: BlockInfo,
     min_solve_time: Duration,
     slot_config: Option<&SlotConfig>,
-    consecutive_skips: u32,
+    skips_since_on_schedule: u32,
 ) -> Schedule {
     let minimum_deadline = now + min_solve_time;
 
     let Some(SlotConfig {
         slot_length,
         tx_propagation_latency,
-        max_consecutive_skips,
+        consecutive_skips_before_forcing,
     }) = slot_config
     else {
-        return Schedule::Solve(minimum_deadline);
+        return Schedule::OnTime(minimum_deadline);
     };
 
     let current_block_time =
@@ -875,9 +884,9 @@ fn schedule_auction(
     let deadline = current_block_time + *slot_length - *tx_propagation_latency;
 
     if deadline >= minimum_deadline {
-        return Schedule::Solve(deadline);
+        return Schedule::OnTime(deadline);
     }
-    if consecutive_skips >= *max_consecutive_skips {
+    if skips_since_on_schedule >= *consecutive_skips_before_forcing {
         return Schedule::Forced((deadline + *slot_length).max(minimum_deadline));
     }
     Schedule::Skip {
@@ -910,7 +919,8 @@ struct Metrics {
 
     /// Tracks the number of auctions that started too late for the next block
     /// but were solved anyway (targeting the block after) because the
-    /// maximum number of consecutive auctions had been skipped already.
+    /// maximum number of auctions had been skipped since the last on-schedule
+    /// auction.
     forced_auctions: prometheus::IntCounter,
 
     /// Tracks the number of winners per auction.
@@ -1343,22 +1353,22 @@ mod tests {
         // syncing to blockchain is not configured -> deadline = now +
         // min_solve_time, even after skips (nothing gets skipped)
         let schedule = schedule_auction(now, last_block, min_solve_time, None, 0);
-        assert_eq!(schedule, Schedule::Solve(standard_deadline));
+        assert_eq!(schedule, Schedule::OnTime(standard_deadline));
 
         // both sync parameters provided -> deadline gets synced to expected
         // block production
         let slot_config = SlotConfig {
             slot_length: Duration::from_secs(12),
             tx_propagation_latency: Duration::from_secs(2),
-            max_consecutive_skips: 2,
+            consecutive_skips_before_forcing: 2,
         };
-        let schedule = |now, consecutive_skips| {
+        let schedule = |now, skips_since_on_schedule| {
             schedule_auction(
                 now,
                 last_block,
                 min_solve_time,
                 Some(&slot_config),
-                consecutive_skips,
+                skips_since_on_schedule,
             )
         };
 
@@ -1366,28 +1376,29 @@ mod tests {
         // before we are supposed to submit a solution, 9s minimum solve
         // time => synced deadline is equal to standard deadline (2s
         // before block n+1)
-        assert_eq!(schedule(now, 0), Schedule::Solve(standard_deadline));
+        assert_eq!(schedule(now, 0), Schedule::OnTime(standard_deadline));
 
         // now is 500ms after the last block (n), 9s minimum solve time ends
         // 500ms before the deadline for block n+1 => solvers get the extra time
         assert_eq!(
             schedule(now - Duration::from_millis(500), 0),
-            Schedule::Solve(standard_deadline)
+            Schedule::OnTime(standard_deadline)
         );
 
         // now is 2s after the last block (n), 10s left before the slot ends, 8s
         // before we are supposed to submit a solution for this slot, 9s
         // minimum solve time => we barely missed the deadline of the
         // current slot so the auction gets skipped while fewer than
-        // `max_consecutive_skips` auctions were skipped in a row
+        // `consecutive_skips_before_forcing` auctions were skipped since the
+        // last on-schedule auction
         let late = now + Duration::from_secs(1);
         let skip = Schedule::Skip {
             missed_by: Duration::from_secs(1),
         };
         assert_eq!(schedule(late, 0), skip);
         assert_eq!(schedule(late, 1), skip);
-        // ... and once the maximum is reached it targets block n+2 instead (2s
-        // before block n+2)
+        // ... and once the maximum is reached late auctions get forced to
+        // target block n+2 instead (2s before block n+2)
         let forced = Schedule::Forced("2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
         assert_eq!(schedule(late, 2), forced);
         assert_eq!(schedule(late, 3), forced);
@@ -1402,7 +1413,7 @@ mod tests {
 
         // never skipping is allowed
         let never_skip = SlotConfig {
-            max_consecutive_skips: 0,
+            consecutive_skips_before_forcing: 0,
             ..slot_config
         };
         assert_eq!(
