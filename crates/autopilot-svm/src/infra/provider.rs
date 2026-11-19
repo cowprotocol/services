@@ -3,7 +3,7 @@
 use {
     crate::{
         domain::{auction::Order, cycle::SolanaCycle, fee::ProtocolFees},
-        infra::{db, order_events, prices::NativePrices},
+        infra::{db, order_events, prices::NativePrices, sponsor::Sponsor},
         run_loop::{AuctionProvider, NextAuction},
     },
     async_trait::async_trait,
@@ -20,7 +20,7 @@ use {
     sqlx::PgPool,
     std::{
         collections::{HashMap, HashSet},
-        sync::Mutex,
+        sync::{Arc, Mutex},
         time::{SystemTime, UNIX_EPOCH},
     },
 };
@@ -41,6 +41,9 @@ pub struct DbAuctionProvider {
     mints: MintVerdicts,
     /// Block height of the last successful lookup.
     last_block_height: Mutex<Option<i64>>,
+    /// Knows the creation fees the funder spent. Absent, no pending
+    /// sponsored order is kept out for the budget.
+    sponsor: Option<Arc<Sponsor>>,
 }
 
 impl DbAuctionProvider {
@@ -51,6 +54,7 @@ impl DbAuctionProvider {
         prices: NativePrices,
         state_pda: Pubkey,
         protocol_fees: ProtocolFees,
+        sponsor: Option<Arc<Sponsor>>,
     ) -> Self {
         Self {
             pool,
@@ -61,7 +65,26 @@ impl DbAuctionProvider {
             protocol_fees,
             mints: MintVerdicts::default(),
             last_block_height: Mutex::default(),
+            sponsor,
         }
+    }
+
+    /// Drop the pending sponsored orders whose creation fee the funder's
+    /// budget cannot pay for. Returns the kept orders and the uids of the
+    /// dropped ones.
+    fn affordable_orders(&self, orders: Vec<Order>) -> (Vec<Order>, Vec<IntentHash>) {
+        let Some(sponsor) = &self.sponsor else {
+            return (orders, Vec::new());
+        };
+        let over_budget = sponsor.over_budget(
+            orders
+                .iter()
+                .filter_map(|order| Some((order.uid, order.creation.as_deref()?))),
+        );
+        let (orders, dropped): (Vec<_>, Vec<_>) = orders
+            .into_iter()
+            .partition(|order| !over_budget.contains(&order.uid));
+        (orders, dropped.into_iter().map(|order| order.uid).collect())
     }
 
     /// The chain's block height, falling back to the last one read when the
@@ -342,6 +365,9 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         };
         let (orders, unpriced) = priced_orders(orders, &prices);
         self.track_filtered_orders(OrderFilterReason::MissingNativePrice, unpriced);
+        // Last, so the budget goes only to orders the auction would hold.
+        let (orders, over_budget) = self.affordable_orders(orders);
+        self.track_filtered_orders(OrderFilterReason::CreationFeeBudgetSpent, over_budget);
         if orders.is_empty() {
             return NextAuction::Empty;
         }
@@ -416,6 +442,8 @@ enum OrderFilterReason {
     UnfundedSellTokenAccount,
     /// No estimator prices the sell or buy token.
     MissingNativePrice,
+    /// The funder's creation fee budget cannot pay for the order's creation.
+    CreationFeeBudgetSpent,
 }
 
 impl OrderFilterReason {
@@ -428,6 +456,7 @@ impl OrderFilterReason {
             Self::UnreceivableBuyTokenAccount => "unreceivable_buy_token_account",
             Self::UnfundedSellTokenAccount => "unfunded_sell_token_account",
             Self::MissingNativePrice => "missing_native_price",
+            Self::CreationFeeBudgetSpent => "creation_fee_budget_spent",
         }
     }
 }
@@ -639,6 +668,7 @@ mod tests {
             NativePrices::seeded([]),
             Pubkey::new_from_array(crate::tests::STATE_PDA),
             ProtocolFees::default(),
+            None,
         )
     }
 
