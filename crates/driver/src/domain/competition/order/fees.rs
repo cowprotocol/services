@@ -65,6 +65,22 @@ impl FeePolicy {
     }
 }
 
+/// Who a protocol fee benefits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Beneficiary {
+    Protocol,
+    Partner,
+    /// The solver's own fee, injected by the driver. It is never received
+    /// over the API.
+    Solver,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProtocolFee {
+    pub beneficiary: Beneficiary,
+    pub policy: FeePolicy,
+}
+
 /// The policy as the generic fee math sees it. The score flag of a volume
 /// fee is read by the driver's scoring, not by the fee math.
 impl From<&FeePolicy> for protocol_fees::FeePolicy {

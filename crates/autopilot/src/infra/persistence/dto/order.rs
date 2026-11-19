@@ -23,7 +23,7 @@ pub struct Order {
     pub sell_amount: U256,
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
-    pub protocol_fees: Vec<FeePolicy>,
+    pub protocol_fees: Vec<ProtocolFee>,
     pub created: u32,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
@@ -66,7 +66,10 @@ pub fn from_domain(order: &domain::Order) -> Order {
         protocol_fees: order
             .protocol_fees
             .iter()
-            .map(|fee| FeePolicy::from_domain(fee.policy))
+            .map(|fee| ProtocolFee {
+                beneficiary: fee.origin.into(),
+                policy: FeePolicy::from_domain(fee.policy),
+            })
             .collect(),
         created: order.created,
         valid_to: order.valid_to,
@@ -112,10 +115,8 @@ pub fn to_domain(order: Order) -> domain::Order {
             .protocol_fees
             .into_iter()
             .map(|fee| domain::fee::PolicyWithOrigin {
-                policy: fee.into_domain(),
-                // The wire format doesn't distinguish protocol from partner
-                // fees, so the origin can't be recovered here.
-                origin: domain::fee::Origin::Protocol,
+                policy: fee.policy.into_domain(),
+                origin: fee.beneficiary.into(),
             })
             .collect(),
         created: order.created,
@@ -284,6 +285,40 @@ impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ProtocolFee {
+    pub beneficiary: Beneficiary,
+    pub policy: FeePolicy,
+}
+
+/// Who a protocol fee benefits. Solver fees are added by the driver and
+/// never appear here.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Beneficiary {
+    Protocol,
+    Partner,
+}
+
+impl From<domain::fee::Origin> for Beneficiary {
+    fn from(origin: domain::fee::Origin) -> Self {
+        match origin {
+            domain::fee::Origin::Protocol => Self::Protocol,
+            domain::fee::Origin::Partner => Self::Partner,
+        }
+    }
+}
+
+impl From<Beneficiary> for domain::fee::Origin {
+    fn from(beneficiary: Beneficiary) -> Self {
+        match beneficiary {
+            Beneficiary::Protocol => Self::Protocol,
+            Beneficiary::Partner => Self::Partner,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
@@ -396,6 +431,31 @@ impl From<domain::auction::order::Side> for database::orders::OrderKind {
         match side {
             domain::auction::order::Side::Buy => Self::Buy,
             domain::auction::order::Side::Sell => Self::Sell,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protocol_fee_beneficiary_round_trips_through_the_wire() {
+        for origin in [domain::fee::Origin::Protocol, domain::fee::Origin::Partner] {
+            let fee = ProtocolFee {
+                beneficiary: origin.into(),
+                policy: FeePolicy::Volume { factor: 0.1 },
+            };
+            let json = serde_json::to_value(&fee).unwrap();
+            assert_eq!(
+                json["beneficiary"],
+                match origin {
+                    domain::fee::Origin::Protocol => "protocol",
+                    domain::fee::Origin::Partner => "partner",
+                }
+            );
+            let parsed: ProtocolFee = serde_json::from_value(json).unwrap();
+            assert_eq!(domain::fee::Origin::from(parsed.beneficiary), origin);
         }
     }
 }

@@ -379,7 +379,7 @@ components:
             their solution.
           type: array
           items:
-            $ref: "#/components/schemas/FeePolicy"
+            $ref: "#/components/schemas/ProtocolFee"
         quote:
           allOf:
             - description: A winning quote.
@@ -715,6 +715,29 @@ components:
       properties:
         calldata:
           $ref: "#/components/schemas/Calldata"
+    ProtocolFee:
+      description: >
+        A protocol fee policy and who it benefits.
+
+        The solver should make sure the fee policy is applied when computing
+        their solution.
+      type: object
+      required:
+        - beneficiary
+        - policy
+      properties:
+        beneficiary:
+          $ref: "#/components/schemas/FeeBeneficiary"
+        policy:
+          $ref: "#/components/schemas/FeePolicy"
+    FeeBeneficiary:
+      description: >
+        Who a protocol fee benefits. The solver's own fee is not part of this
+        list.
+      type: string
+      enum:
+        - protocol
+        - partner
     FeePolicy:
       description: >
         A fee policy that applies to an order.

@@ -41,7 +41,8 @@ impl Fulfillment {
     pub fn with_protocol_fees(&self, prices: ClearingPrices) -> Result<Self, Error> {
         let mut current_fulfillment = self.clone();
         for protocol_fee in &self.order().protocol_fees {
-            current_fulfillment = current_fulfillment.with_protocol_fee(prices, protocol_fee)?;
+            current_fulfillment =
+                current_fulfillment.with_protocol_fee(prices, &protocol_fee.policy)?;
         }
         Ok(current_fulfillment)
     }
@@ -376,7 +377,7 @@ mod tests {
             let mut current_fulfillment = fulfillment.clone();
             for protocol_fee in &fulfillment.order().protocol_fees {
                 current_fulfillment =
-                    with_protocol_fee(&current_fulfillment, prices, protocol_fee)?;
+                    with_protocol_fee(&current_fulfillment, prices, &protocol_fee.policy)?;
             }
             Ok(current_fulfillment)
         }
@@ -608,7 +609,13 @@ mod tests {
                     data: Default::default(),
                     signer: Default::default(),
                 },
-                protocol_fees,
+                protocol_fees: protocol_fees
+                    .into_iter()
+                    .map(|policy| order::ProtocolFee {
+                        beneficiary: order::Beneficiary::Protocol,
+                        policy,
+                    })
+                    .collect(),
                 quote: Default::default(),
                 penalty_cap_native: Default::default(),
             }),
@@ -722,7 +729,7 @@ mod tests {
             .order()
             .protocol_fees
             .iter()
-            .any(|policy| matches!(policy, FeePolicy::Surplus { .. }))
+            .any(|fee| matches!(fee.policy, FeePolicy::Surplus { .. }))
     }
 
     /// Whether the settlement contract rejects the fill at these prices.

@@ -86,10 +86,35 @@ pub struct Order {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub sell_balance: Option<u64>,
-    /// The protocol fee policies the driver takes from the order's fills,
-    /// in order. An empty list is omitted.
+    /// The protocol fees the driver takes from the order's fills, in order.
+    /// An empty list is omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub protocol_fees: Vec<FeePolicy>,
+    pub protocol_fees: Vec<ProtocolFee>,
+}
+
+/// A protocol fee and who it benefits. This service only charges protocol
+/// fees, so the beneficiary is always `protocol`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtocolFee {
+    pub beneficiary: Beneficiary,
+    pub policy: FeePolicy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Beneficiary {
+    Protocol,
+    Partner,
+}
+
+impl From<&fee::FeePolicy> for ProtocolFee {
+    fn from(policy: &fee::FeePolicy) -> Self {
+        Self {
+            beneficiary: Beneficiary::Protocol,
+            policy: FeePolicy::from(policy),
+        }
+    }
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
@@ -183,7 +208,7 @@ impl From<&auction::Order> for Order {
             executed: order.executed,
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
-            protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
+            protocol_fees: order.protocol_fees.iter().map(ProtocolFee::from).collect(),
         }
     }
 }
@@ -381,8 +406,8 @@ mod tests {
         assert_eq!(
             json["orders"][0]["protocolFees"],
             serde_json::json!([
-                {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}},
-                {"priceImprovement": {
+                {"beneficiary": "protocol", "policy": {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}}},
+                {"beneficiary": "protocol", "policy": {"priceImprovement": {
                     "factor": 0.5,
                     "maxVolumeFactor": 0.01,
                     "quote": {
@@ -391,8 +416,8 @@ mod tests {
                         "fee": "0",
                         "solver": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
                     },
-                }},
-                {"volume": {"factor": 0.001}},
+                }}},
+                {"beneficiary": "protocol", "policy": {"volume": {"factor": 0.001}}},
             ])
         );
         assert_eq!(

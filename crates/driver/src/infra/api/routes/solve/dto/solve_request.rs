@@ -151,7 +151,7 @@ pub(crate) struct Order {
     sell_amount: eth::U256,
     #[serde_as(as = "serde_ext::U256")]
     buy_amount: eth::U256,
-    protocol_fees: Vec<FeePolicy>,
+    protocol_fees: Vec<ProtocolFee>,
     created: u32,
     valid_to: u32,
     kind: Kind,
@@ -256,26 +256,32 @@ impl Order {
                 protocol_fees: self
                     .protocol_fees
                     .into_iter()
-                    .map(|policy| match policy {
-                        FeePolicy::Surplus {
-                            factor,
-                            max_volume_factor,
-                        } => competition::order::FeePolicy::Surplus {
-                            factor,
-                            max_volume_factor,
+                    .map(|fee| competition::order::ProtocolFee {
+                        beneficiary: match fee.beneficiary {
+                            Beneficiary::Protocol => competition::order::Beneficiary::Protocol,
+                            Beneficiary::Partner => competition::order::Beneficiary::Partner,
                         },
-                        FeePolicy::PriceImprovement {
-                            factor,
-                            max_volume_factor,
-                            quote,
-                        } => competition::order::FeePolicy::PriceImprovement {
-                            factor,
-                            max_volume_factor,
-                            quote: quote.into_domain(self.sell_token, self.buy_token),
-                        },
-                        FeePolicy::Volume { factor } => competition::order::FeePolicy::Volume {
-                            factor,
-                            contributes_to_score: true,
+                        policy: match fee.policy {
+                            FeePolicy::Surplus {
+                                factor,
+                                max_volume_factor,
+                            } => competition::order::FeePolicy::Surplus {
+                                factor,
+                                max_volume_factor,
+                            },
+                            FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                                quote,
+                            } => competition::order::FeePolicy::PriceImprovement {
+                                factor,
+                                max_volume_factor,
+                                quote: quote.into_domain(self.sell_token, self.buy_token),
+                            },
+                            FeePolicy::Volume { factor } => competition::order::FeePolicy::Volume {
+                                factor,
+                                contributes_to_score: true,
+                            },
                         },
                     })
                     .collect(),
@@ -356,6 +362,21 @@ enum Class {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ProtocolFee {
+    beneficiary: Beneficiary,
+    policy: FeePolicy,
+}
+
+/// Who a protocol fee benefits. The solver's own fee is not part of the API.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum Beneficiary {
+    Protocol,
+    Partner,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 enum FeePolicy {
     #[serde(rename_all = "camelCase")]
     Surplus { factor: f64, max_volume_factor: f64 },
@@ -403,5 +424,34 @@ impl Quote {
             },
             solver: self.solver,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protocol_fee_beneficiary_is_protocol_or_partner() {
+        for (beneficiary, expected) in [("protocol", "Protocol"), ("partner", "Partner")] {
+            let fee: ProtocolFee = serde_json::from_value(serde_json::json!({
+                "beneficiary": beneficiary,
+                "policy": {"volume": {"factor": 0.1}},
+            }))
+            .unwrap();
+            assert_eq!(format!("{:?}", fee.beneficiary), expected);
+        }
+    }
+
+    #[test]
+    fn protocol_fee_rejects_solver_and_missing_beneficiary() {
+        let solver = serde_json::json!({
+            "beneficiary": "solver",
+            "policy": {"volume": {"factor": 0.1}},
+        });
+        assert!(serde_json::from_value::<ProtocolFee>(solver).is_err());
+
+        let missing = serde_json::json!({"policy": {"volume": {"factor": 0.1}}});
+        assert!(serde_json::from_value::<ProtocolFee>(missing).is_err());
     }
 }

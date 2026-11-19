@@ -278,9 +278,12 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         let solve = solved.recv().await.unwrap();
         assert_eq!(
             solve.orders[0].protocol_fees,
-            vec![dto::FeePolicy::Surplus {
-                factor: 0.5,
-                max_volume_factor: 0.9,
+            vec![dto::ProtocolFee {
+                beneficiary: dto::Beneficiary::Protocol,
+                policy: dto::FeePolicy::Surplus {
+                    factor: 0.5,
+                    max_volume_factor: 0.9,
+                },
             }],
             "policy forwarded to the driver"
         );
