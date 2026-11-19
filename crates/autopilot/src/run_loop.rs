@@ -327,7 +327,7 @@ impl RunLoop {
     fn schedule_auction(&self, skips_since_on_schedule: u32) -> Schedule {
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
-        schedule_auction(
+        schedule_auction_impl(
             now,
             last_block,
             self.config.min_solve_time,
@@ -861,7 +861,7 @@ enum Schedule {
 /// This function panics if any of the time computations over- or
 /// underflow. This should not happen as we deal with times within
 /// seconds of the current time.
-fn schedule_auction(
+fn schedule_auction_impl(
     now: DateTime<Utc>,
     current_block: BlockInfo,
     min_solve_time: Duration,
@@ -1352,7 +1352,7 @@ mod tests {
 
         // syncing to blockchain is not configured -> deadline = now +
         // min_solve_time, even after skips (nothing gets skipped)
-        let schedule = schedule_auction(now, last_block, min_solve_time, None, 0);
+        let schedule = schedule_auction_impl(now, last_block, min_solve_time, None, 0);
         assert_eq!(schedule, Schedule::OnTime(standard_deadline));
 
         // both sync parameters provided -> deadline gets synced to expected
@@ -1363,7 +1363,7 @@ mod tests {
             consecutive_skips_before_forcing: 2,
         };
         let schedule = |now, skips_since_on_schedule| {
-            schedule_auction(
+            schedule_auction_impl(
                 now,
                 last_block,
                 min_solve_time,
@@ -1417,7 +1417,7 @@ mod tests {
             ..slot_config
         };
         assert_eq!(
-            schedule_auction(late, last_block, min_solve_time, Some(&never_skip), 0),
+            schedule_auction_impl(late, last_block, min_solve_time, Some(&never_skip), 0),
             forced
         );
     }
