@@ -246,6 +246,13 @@ fn refuses_bad_host_config_tables() {
     ));
     assert!(matches!(
         error(&rule("x", "false", "volume(0.001)")),
+        LoadError::Rules(CompileError::Expression {
+            field: Field::Fee,
+            ..
+        })
+    ));
+    assert!(matches!(
+        error(&rule("x", "false", "volume(order.sellAmount / 3.0)")),
         LoadError::SampleOrder(_)
     ));
     assert_eq!(
@@ -306,13 +313,19 @@ fn refuses_bad_files() {
         error("[lists]\norder = []"),
         LoadError::Rules(CompileError::ReservedList { .. })
     ));
-    let sample_order_error =
-        error(&(rule("x", "false", "volume(0.001)") + &rule("y", "order.sellAmount", "no_fee()")));
+    assert_eq!(
+        error(&rule("x", "order.sellAmount", "no_fee()")).to_string(),
+        "rule `x`: `when` does not compile: expected a bool, found a number"
+    );
+    let sample_order_error = error(
+        &(rule("x", "false", "volume(order.sellAmount / 3.0)")
+            + &rule("y", "order.sellAmount - 2 > 0", "no_fee()")),
+    );
     assert_eq!(
         sample_order_error.to_string(),
-        "rule `x`: `fee` `volume` argument `bps` = 0.001 is finer than the fee precision (1e-6 of \
-         the volume) on a sample order; rule `y`: `when` returned float, not a bool on a sample \
-         order"
+        "rule `x`: `fee` `volume` argument `bps` = 0.3333333333333333333333333333 is finer than \
+         the fee precision (1e-6 of the volume) on a sample order; rule `y`: `when` arithmetic \
+         overflowed or divided by zero on a sample order"
     );
     let LoadError::SampleOrder(errors) = sample_order_error else {
         panic!("expected a sample order error");

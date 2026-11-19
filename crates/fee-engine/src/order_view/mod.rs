@@ -1,26 +1,13 @@
-//! The order as a rule sees it.
+//! The order as a rule sees it: the fields a rule can read, resolved to
+//! Rust accessors when the rules compile.
 
 mod app_data;
 
 pub use app_data::AppData;
 use {
-    self::app_data::app_data_view,
-    cel::common::{
-        types::{
-            CelBool,
-            CelDouble,
-            CelInt,
-            CelList,
-            CelMap,
-            CelMapKey,
-            CelNull,
-            CelString,
-            CelUInt,
-        },
-        value::Val,
-    },
-    serde_json::Value,
-    std::collections::HashMap,
+    alloy_primitives::{Address, I256, U256},
+    chrono::{DateTime, Utc},
+    model::{order::OrderKind, signature::SigningScheme},
 };
 
 /// An order as the host hands it to the engine: the API order plus the facts
@@ -38,404 +25,156 @@ pub struct OrderView<'a> {
     pub in_market: bool,
 }
 
-/// The order as rules see it: every field a rule can read, with amounts as
-/// doubles and hex in lowercase. Unset optional fields are absent, not `null`.
-/// Execution state, settlement and legacy fields are left out, and so is the
-/// quote: a quote request has none, so its fee could not match.
-pub(crate) fn order_view(
-    OrderView {
-        order,
-        app_data,
-        in_market,
-        ..
-    }: OrderView,
-) -> Box<dyn Val> {
-    let (data, meta) = (&order.data, &order.metadata);
-    map([
-        ("owner", text(hex(meta.owner.as_slice()))),
-        ("creationDate", serialized(meta.creation_date)),
-        ("sellToken", text(hex(data.sell_token.as_slice()))),
-        ("buyToken", text(hex(data.buy_token.as_slice()))),
-        ("receiver", text(hex(data.receiver.raw_bytes()))),
-        ("sellAmount", number(data.sell_amount)),
-        ("buyAmount", number(data.buy_amount)),
-        ("kind", serialized(data.kind)),
-        ("partiallyFillable", serialized(data.partially_fillable)),
-        ("signingScheme", serialized(order.signature.scheme())),
-        ("validTo", serialized(data.valid_to)),
-        ("validFrom", serialized(meta.valid_from)),
-        ("appData", Some(app_data_view(app_data))),
-        ("fastPath", serialized(meta.fast_path)),
-        ("inMarket", serialized(in_market)),
-        (
-            "ethflowData",
-            meta.ethflow_data
-                .as_ref()
-                .map(|ethflow| map([("userValidTo", serialized(ethflow.user_valid_to))])),
+/// What one evaluation reads: the order and the evaluator's `now`.
+pub(crate) struct Input<'a> {
+    pub(crate) order: OrderView<'a>,
+    pub(crate) now: DateTime<Utc>,
+}
+
+/// A nested object of the view, such as `order` or `order.appData`.
+pub(crate) struct Object {
+    pub(crate) name: &'static str,
+    /// Whether the object is in this order's view.
+    pub(crate) present: fn(&Input<'_>) -> bool,
+    pub(crate) fields: &'static [Field],
+}
+
+impl Object {
+    pub(crate) fn field(&self, name: &str) -> Option<&'static Field> {
+        self.fields.iter().find(|field| field.name == name)
+    }
+}
+
+pub(crate) struct Field {
+    pub(crate) name: &'static str,
+    pub(crate) kind: FieldKind,
+}
+
+pub(crate) enum FieldKind {
+    Object(&'static Object),
+    Value(Getter),
+}
+
+/// Reads a field; `None` when the order does not have it.
+#[derive(Clone, Copy)]
+pub(crate) enum Getter {
+    Address(fn(&Input<'_>) -> Option<Address>),
+    UInt(fn(&Input<'_>) -> Option<U256>),
+    Int(fn(&Input<'_>) -> Option<I256>),
+    Bool(fn(&Input<'_>) -> Option<bool>),
+    Text(for<'a> fn(&Input<'a>) -> Option<&'a str>),
+    Timestamp(fn(&Input<'_>) -> Option<DateTime<Utc>>),
+}
+
+impl Getter {
+    pub(crate) fn present(self, input: &Input<'_>) -> bool {
+        match self {
+            Getter::Address(get) => get(input).is_some(),
+            Getter::UInt(get) => get(input).is_some(),
+            Getter::Int(get) => get(input).is_some(),
+            Getter::Bool(get) => get(input).is_some(),
+            Getter::Text(get) => get(input).is_some(),
+            Getter::Timestamp(get) => get(input).is_some(),
+        }
+    }
+}
+
+const fn value(name: &'static str, getter: Getter) -> Field {
+    Field {
+        name,
+        kind: FieldKind::Value(getter),
+    }
+}
+
+const fn object(name: &'static str, object: &'static Object) -> Field {
+    Field {
+        name,
+        kind: FieldKind::Object(object),
+    }
+}
+
+fn kind<'a>(input: &Input<'a>) -> Option<&'a str> {
+    Some(match input.order.order.data.kind {
+        OrderKind::Buy => "buy",
+        OrderKind::Sell => "sell",
+    })
+}
+
+fn signing_scheme<'a>(input: &Input<'a>) -> Option<&'a str> {
+    Some(match input.order.order.signature.scheme() {
+        SigningScheme::Eip712 => "eip712",
+        SigningScheme::EthSign => "ethsign",
+        SigningScheme::Eip1271 => "eip1271",
+        SigningScheme::PreSign => "presign",
+    })
+}
+
+pub(crate) static ORDER: Object = Object {
+    name: "order",
+    present: |_| true,
+    fields: &[
+        value(
+            "owner",
+            Getter::Address(|i| Some(i.order.order.metadata.owner)),
         ),
-    ])
-}
+        value(
+            "creationDate",
+            Getter::Timestamp(|i| Some(i.order.order.metadata.creation_date)),
+        ),
+        value(
+            "sellToken",
+            Getter::Address(|i| Some(i.order.order.data.sell_token)),
+        ),
+        value(
+            "buyToken",
+            Getter::Address(|i| Some(i.order.order.data.buy_token)),
+        ),
+        value(
+            "receiver",
+            Getter::Address(|i| Some(Address::from(*i.order.order.data.receiver.raw_bytes()))),
+        ),
+        value(
+            "sellAmount",
+            Getter::UInt(|i| Some(i.order.order.data.sell_amount)),
+        ),
+        value(
+            "buyAmount",
+            Getter::UInt(|i| Some(i.order.order.data.buy_amount)),
+        ),
+        value("kind", Getter::Text(kind)),
+        value(
+            "partiallyFillable",
+            Getter::Bool(|i| Some(i.order.order.data.partially_fillable)),
+        ),
+        value("signingScheme", Getter::Text(signing_scheme)),
+        value(
+            "validTo",
+            Getter::UInt(|i| Some(U256::from(i.order.order.data.valid_to))),
+        ),
+        value(
+            "validFrom",
+            Getter::UInt(|i| i.order.order.metadata.valid_from.map(U256::from)),
+        ),
+        object("appData", &app_data::APP_DATA),
+        value(
+            "fastPath",
+            Getter::Bool(|i| Some(i.order.order.metadata.fast_path)),
+        ),
+        value("inMarket", Getter::Bool(|i| Some(i.order.in_market))),
+        object("ethflowData", &ETHFLOW_DATA),
+    ],
+};
 
-/// A CEL map of the fields that are set: an unset option is absent, not
-/// `null`, so `.?` and `has` both read it as missing.
-fn map<const N: usize>(fields: [(&'static str, Option<Box<dyn Val>>); N]) -> Box<dyn Val> {
-    let mut map = HashMap::with_capacity(N);
-    for (name, value) in fields {
-        if let Some(value) = value {
-            map.insert(CelMapKey::from(name), value);
-        }
-    }
-    Box::new(CelMap::from(map))
-}
-
-fn text(value: String) -> Option<Box<dyn Val>> {
-    Some(Box::new(CelString::from(value)))
-}
-
-/// A field typed as its API JSON, e.g. an enum as its name; absent if `null`.
-fn serialized(value: impl serde::Serialize) -> Option<Box<dyn Val>> {
-    let value = serde_json::to_value(value).expect("order fields serialize");
-    (!value.is_null()).then(|| cel_value(value))
-}
-
-/// JSON as the value CEL evaluates, typed as `Context::add_variable` types it.
-/// Recursive: a field is as deep as its type.
-fn cel_value(value: Value) -> Box<dyn Val> {
-    match value {
-        Value::Null => Box::new(CelNull),
-        Value::Bool(value) => Box::new(CelBool::from(value)),
-        Value::Number(number) => match (number.as_u64(), number.as_i64()) {
-            (Some(value), _) => Box::new(CelUInt::from(value)),
-            (None, Some(value)) => Box::new(CelInt::from(value)),
-            (None, None) => Box::new(CelDouble::from(
-                number.as_f64().expect("a JSON number is a double"),
-            )),
-        },
-        Value::String(value) => Box::new(CelString::from(value)),
-        Value::Array(values) => Box::new(CelList::from(
-            values.into_iter().map(cel_value).collect::<Vec<_>>(),
-        )),
-        Value::Object(fields) => Box::new(CelMap::from(
-            fields
-                .into_iter()
-                .map(|(name, value)| (CelMapKey::from(name), cel_value(value)))
-                .collect::<HashMap<_, _>>(),
-        )),
-    }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    const_hex::encode_prefixed(bytes)
-}
-
-/// A decimal amount as a double, rounded once from its plain text.
-fn number(decimal: impl ToString) -> Option<Box<dyn Val>> {
-    let number: f64 = decimal
-        .to_string()
-        .parse()
-        .expect("decimals parse as doubles");
-    Some(Box::new(CelDouble::from(number)))
-}
-
-fn is_hex(text: &str) -> bool {
-    text.strip_prefix("0x").is_some_and(const_hex::check_raw)
-}
-
-/// Lowercases hex strings so they compare equal to the lowercased order view.
-pub(crate) fn normalize(text: &str) -> String {
-    if is_hex(text) {
-        text.to_ascii_lowercase()
-    } else {
-        text.to_owned()
-    }
-}
-
-/// A CEL value as JSON, for tests to compare the view with.
-#[cfg(test)]
-pub(crate) fn json(value: &dyn Val) -> Value {
-    fn json(value: &cel::Value) -> Value {
-        match value {
-            cel::Value::Map(map) => map
-                .map
-                .iter()
-                .map(|(name, value)| (name.to_string(), json(value)))
-                .collect::<serde_json::Map<_, _>>()
-                .into(),
-            cel::Value::List(values) => values.iter().map(json).collect::<Vec<_>>().into(),
-            cel::Value::String(value) => value.as_str().into(),
-            cel::Value::Float(value) => (*value).into(),
-            cel::Value::UInt(value) => (*value).into(),
-            cel::Value::Int(value) => (*value).into(),
-            cel::Value::Bool(value) => (*value).into(),
-            cel::Value::Null => Value::Null,
-            other => panic!("{other:?} is not in the view"),
-        }
-    }
-    json(&cel::Value::try_from(value).unwrap())
-}
-
-#[cfg(test)]
-mod tests {
-    use {
-        super::*,
-        alloy_primitives::{B256, U256, address},
-        model::order::{
-            EthflowData,
-            OnchainOrderData,
-            OnchainOrderPlacementError,
-            OrderData,
-            OrderMetadata,
-            OrderQuote,
-        },
-        serde_json::json,
-        std::collections::BTreeSet,
+static ETHFLOW_DATA: Object =
+    Object {
+        name: "ethflowData",
+        present: |i| i.order.order.metadata.ethflow_data.is_some(),
+        fields: &[value(
+            "userValidTo",
+            Getter::Int(|i| {
+                i.order.order.metadata.ethflow_data.as_ref().map(|ethflow| {
+                    I256::try_from(ethflow.user_valid_to).expect("an i64 fits 256 bits")
+                })
+            }),
+        )],
     };
-
-    /// The view as JSON.
-    fn order_view(order: OrderView) -> Value {
-        json(super::order_view(order).as_ref())
-    }
-
-    #[test]
-    fn order_view_uses_api_names_numbers_and_lowercase_hex() {
-        let order = model::order::Order {
-            metadata: OrderMetadata {
-                owner: address!("0xAbCdEf0000000000000000000000000000000001"),
-                ..Default::default()
-            },
-            data: OrderData {
-                sell_amount: "1000000000000000000000".parse().unwrap(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let view = order_view(OrderView {
-            order: &order,
-            app_data: &AppData::default(),
-            partner_fees: &[],
-            in_market: false,
-        });
-
-        assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
-        assert_eq!(view["sellAmount"], 1e21);
-        assert_eq!(view["kind"], "buy");
-        assert_eq!(view["inMarket"], false);
-        assert!(view.get("class").is_none());
-        assert_eq!(view["signingScheme"], "eip712");
-        assert_eq!(view["fastPath"], false);
-        assert!(view.get("quote").is_none());
-    }
-
-    /// An order with every option set, the view's fields at their fullest.
-    fn fully_set_order() -> model::order::Order {
-        model::order::Order {
-            metadata: OrderMetadata {
-                owner: address!("0xAbCdEf0000000000000000000000000000000001"),
-                quote: Some(OrderQuote {
-                    sell_amount: U256::from(10).pow(U256::from(21)),
-                    gas_amount: "21000".parse().unwrap(),
-                    gas_price: "1234.5".parse().unwrap(),
-                    sell_token_price: "0.0000001".parse().unwrap(),
-                    solver: address!("0x00000000000000000000000000000000000000aB"),
-                    verified: true,
-                    ..Default::default()
-                }),
-                available_balance: Some(U256::from(7)),
-                gas_cost: Some(U256::from(8)),
-                executed_sell_amount: 9u64.into(),
-                ethflow_data: Some(EthflowData {
-                    user_valid_to: 5,
-                    refund_tx_hash: Some(B256::repeat_byte(0xab)),
-                }),
-                onchain_order_data: Some(OnchainOrderData {
-                    sender: address!("0x00000000000000000000000000000000000000Cd"),
-                    placement_error: Some(OnchainOrderPlacementError::ValidToTooFarInTheFuture),
-                }),
-                onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
-                valid_from: Some(4),
-                fast_path: true,
-                ..Default::default()
-            },
-            data: OrderData {
-                sell_token: address!("0x00000000000000000000000000000000000000aA"),
-                receiver: address!("0x00000000000000000000000000000000000000bB").into(),
-                sell_amount: U256::from(10).pow(U256::from(21)),
-                buy_amount: U256::from(123_456_789),
-                partially_fillable: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-
-    /// Fails unless `view` equals `api` up to the view's two conversions:
-    /// decimal strings become doubles and hex strings become lowercase.
-    fn assert_matches_api(view: &Value, api: &Value, path: &str) {
-        match (view, api) {
-            (Value::Object(fields), _) => {
-                for (name, field) in fields {
-                    assert_matches_api(field, &api[name], &format!("{path}.{name}"));
-                }
-            }
-            (Value::Number(number), Value::String(text)) => {
-                assert_eq!(number.as_f64(), text.parse().ok(), "{path}");
-            }
-            (_, Value::String(text)) => assert_eq!(*view, normalize(text), "{path}"),
-            _ => assert_eq!(view, api, "{path}"),
-        }
-    }
-
-    /// Every view field is the API field of the same name, so a rule author
-    /// can read the API docs. The API lacks `inMarket`, and its `appData` is
-    /// the hash, not the document.
-    #[test]
-    fn view_matches_the_api_json() {
-        let order = fully_set_order();
-        let mut view = order_view(OrderView {
-            order: &order,
-            app_data: &crate::rules::sample_app_data(),
-            partner_fees: &[],
-            in_market: true,
-        });
-        let fields = view.as_object_mut().unwrap();
-        fields.remove("inMarket");
-        fields.remove("appData");
-        assert_matches_api(&view, &serde_json::to_value(&order).unwrap(), "");
-    }
-
-    /// Every field of `view` as a dotted path, nested objects included, e.g.
-    /// `ethflowData.userValidTo`.
-    fn field_paths(view: &Value) -> BTreeSet<String> {
-        let mut paths = BTreeSet::new();
-        if let Value::Object(fields) = view {
-            for (name, field) in fields {
-                paths.insert(name.clone());
-                paths.extend(
-                    field_paths(field)
-                        .into_iter()
-                        .map(|path| format!("{name}.{path}")),
-                );
-            }
-        }
-        paths
-    }
-
-    /// The view holds the rule fields and nothing else: no execution state,
-    /// settlement or legacy field, and unset options are absent.
-    #[test]
-    fn view_holds_only_rule_fields() {
-        let view = order_view(OrderView {
-            order: &fully_set_order(),
-            app_data: &crate::rules::sample_app_data(),
-            partner_fees: &[],
-            in_market: true,
-        });
-
-        let fields: BTreeSet<&str> = view
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect();
-        assert_eq!(
-            fields,
-            BTreeSet::from([
-                "owner",
-                "creationDate",
-                "sellToken",
-                "buyToken",
-                "receiver",
-                "sellAmount",
-                "buyAmount",
-                "kind",
-                "partiallyFillable",
-                "signingScheme",
-                "validTo",
-                "validFrom",
-                "appData",
-                "fastPath",
-                "inMarket",
-                "ethflowData",
-            ])
-        );
-        assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
-        assert_eq!(view["validFrom"], 4);
-    }
-
-    /// The full sample order that validates rules reaches every field, nested
-    /// ones included, so that no valid rule fails on a missing key.
-    #[test]
-    fn sample_order_view_has_every_field() {
-        let view = |order| {
-            order_view(OrderView {
-                order,
-                app_data: &crate::rules::sample_app_data(),
-                partner_fees: &[],
-                in_market: false,
-            })
-        };
-        assert_eq!(
-            field_paths(&view(&crate::rules::full_sample_order(chrono::Utc::now()))),
-            field_paths(&view(&fully_set_order())),
-        );
-    }
-
-    #[test]
-    fn unset_nested_options_are_absent() {
-        let order = model::order::Order {
-            metadata: OrderMetadata {
-                ethflow_data: Some(EthflowData::default()),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let view = order_view(OrderView {
-            order: &order,
-            app_data: &AppData::default(),
-            partner_fees: &[],
-            in_market: false,
-        });
-
-        assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
-    }
-
-    #[test]
-    fn cel_value_is_typed_like_the_serialized_view() {
-        let view = order_view(OrderView {
-            order: &crate::rules::full_sample_order(chrono::Utc::now()),
-            app_data: &crate::rules::sample_app_data(),
-            partner_fees: &[],
-            in_market: true,
-        });
-        // An array and a negative number, which the view has none of.
-        let view = json!({ "order": view, "others": [-1, null] });
-        assert_eq!(
-            cel::Value::try_from(cel_value(view.clone()).as_ref()).unwrap(),
-            cel::to_value(&view).unwrap()
-        );
-    }
-
-    /// The README's sample order has every field of the view, no more.
-    #[test]
-    fn readme_sample_has_every_field() {
-        let readme = include_str!("../../README.md");
-        let section = &readme[readme.find("### `order`").unwrap()..];
-        let sample = section.split("```json\n").nth(1).unwrap();
-        let sample: Value = serde_json::from_str(sample.split("```").next().unwrap()).unwrap();
-        let view = order_view(OrderView {
-            order: &fully_set_order(),
-            app_data: &crate::rules::sample_app_data(),
-            partner_fees: &[],
-            in_market: true,
-        });
-        assert_eq!(field_paths(&sample), field_paths(&view));
-    }
-
-    #[test]
-    fn normalizes_only_hex() {
-        assert_eq!(normalize("0xAB"), "0xab");
-        assert_eq!(normalize("Acme"), "Acme");
-        assert_eq!(normalize("0x"), "0x");
-        assert_eq!(normalize("0xzz"), "0xzz");
-    }
-}

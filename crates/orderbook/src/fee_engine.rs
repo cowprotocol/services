@@ -524,7 +524,7 @@ mod tests {
         let rules = vec![
             rule(
                 "x",
-                "order.sellAmount == 1000.0 ? order.missing == 1 : false",
+                "order.sellAmount == 1000 ? order.ethflowData.userValidTo == 1 : false",
                 "volume(1)",
             ),
             rule("y", "true", "volume(2)"),
