@@ -93,17 +93,17 @@ pub struct Order {
 }
 
 /// A protocol fee and who it benefits. This service only charges protocol
-/// fees, so the beneficiary is always `protocol`.
+/// fees, so the origin is always `protocol`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolFee {
-    pub beneficiary: Beneficiary,
+    pub origin: Origin,
     pub policy: FeePolicy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum Beneficiary {
+pub enum Origin {
     Protocol,
     Partner,
 }
@@ -111,7 +111,7 @@ pub enum Beneficiary {
 impl From<&fee::FeePolicy> for ProtocolFee {
     fn from(policy: &fee::FeePolicy) -> Self {
         Self {
-            beneficiary: Beneficiary::Protocol,
+            origin: Origin::Protocol,
             policy: FeePolicy::from(policy),
         }
     }
@@ -406,8 +406,8 @@ mod tests {
         assert_eq!(
             json["orders"][0]["protocolFees"],
             serde_json::json!([
-                {"beneficiary": "protocol", "policy": {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}}},
-                {"beneficiary": "protocol", "policy": {"priceImprovement": {
+                {"origin": "protocol", "policy": {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}}},
+                {"origin": "protocol", "policy": {"priceImprovement": {
                     "factor": 0.5,
                     "maxVolumeFactor": 0.01,
                     "quote": {
@@ -417,7 +417,7 @@ mod tests {
                         "solver": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
                     },
                 }}},
-                {"beneficiary": "protocol", "policy": {"volume": {"factor": 0.001}}},
+                {"origin": "protocol", "policy": {"volume": {"factor": 0.001}}},
             ])
         );
         assert_eq!(

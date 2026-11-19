@@ -279,7 +279,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         assert_eq!(
             solve.orders[0].protocol_fees,
             vec![dto::ProtocolFee {
-                beneficiary: dto::Beneficiary::Protocol,
+                origin: dto::Origin::Protocol,
                 policy: dto::FeePolicy::Surplus {
                     factor: 0.5,
                     max_volume_factor: 0.9,

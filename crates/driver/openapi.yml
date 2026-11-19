@@ -723,14 +723,14 @@ components:
         their solution.
       type: object
       required:
-        - beneficiary
+        - origin
         - policy
       properties:
-        beneficiary:
-          $ref: "#/components/schemas/FeeBeneficiary"
+        origin:
+          $ref: "#/components/schemas/FeeOrigin"
         policy:
           $ref: "#/components/schemas/FeePolicy"
-    FeeBeneficiary:
+    FeeOrigin:
       description: >
         Who a protocol fee benefits. The solver's own fee is not part of this
         list.

@@ -67,7 +67,7 @@ impl FeePolicy {
 
 /// Who a protocol fee benefits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Beneficiary {
+pub enum Origin {
     Protocol,
     Partner,
     /// The solver's own fee, injected by the driver. It is never received
@@ -77,7 +77,7 @@ pub enum Beneficiary {
 
 #[derive(Clone, Debug)]
 pub struct ProtocolFee {
-    pub beneficiary: Beneficiary,
+    pub origin: Origin,
     pub policy: FeePolicy,
 }
 

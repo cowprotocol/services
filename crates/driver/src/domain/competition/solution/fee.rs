@@ -612,7 +612,7 @@ mod tests {
                 protocol_fees: protocol_fees
                     .into_iter()
                     .map(|policy| order::ProtocolFee {
-                        beneficiary: order::Beneficiary::Protocol,
+                        origin: order::Origin::Protocol,
                         policy,
                     })
                     .collect(),

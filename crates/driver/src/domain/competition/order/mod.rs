@@ -12,7 +12,7 @@ use {
     std::sync::Arc,
 };
 pub use {
-    fees::{Beneficiary, FeePolicy, ProtocolFee},
+    fees::{FeePolicy, Origin, ProtocolFee},
     signature::Signature,
 };
 

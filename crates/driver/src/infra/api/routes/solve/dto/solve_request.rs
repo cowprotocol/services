@@ -257,9 +257,9 @@ impl Order {
                     .protocol_fees
                     .into_iter()
                     .map(|fee| competition::order::ProtocolFee {
-                        beneficiary: match fee.beneficiary {
-                            Beneficiary::Protocol => competition::order::Beneficiary::Protocol,
-                            Beneficiary::Partner => competition::order::Beneficiary::Partner,
+                        origin: match fee.origin {
+                            Origin::Protocol => competition::order::Origin::Protocol,
+                            Origin::Partner => competition::order::Origin::Partner,
                         },
                         policy: match fee.policy {
                             FeePolicy::Surplus {
@@ -363,14 +363,14 @@ enum Class {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProtocolFee {
-    beneficiary: Beneficiary,
+    origin: Origin,
     policy: FeePolicy,
 }
 
 /// Who a protocol fee benefits. The solver's own fee is not part of the API.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-enum Beneficiary {
+enum Origin {
     Protocol,
     Partner,
 }
@@ -432,21 +432,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn protocol_fee_beneficiary_is_protocol_or_partner() {
-        for (beneficiary, expected) in [("protocol", "Protocol"), ("partner", "Partner")] {
+    fn protocol_fee_origin_is_protocol_or_partner() {
+        for (origin, expected) in [("protocol", "Protocol"), ("partner", "Partner")] {
             let fee: ProtocolFee = serde_json::from_value(serde_json::json!({
-                "beneficiary": beneficiary,
+                "origin": origin,
                 "policy": {"volume": {"factor": 0.1}},
             }))
             .unwrap();
-            assert_eq!(format!("{:?}", fee.beneficiary), expected);
+            assert_eq!(format!("{:?}", fee.origin), expected);
         }
     }
 
     #[test]
-    fn protocol_fee_rejects_solver_and_missing_beneficiary() {
+    fn protocol_fee_rejects_solver_and_missing_origin() {
         let solver = serde_json::json!({
-            "beneficiary": "solver",
+            "origin": "solver",
             "policy": {"volume": {"factor": 0.1}},
         });
         assert!(serde_json::from_value::<ProtocolFee>(solver).is_err());
