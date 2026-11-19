@@ -6,6 +6,7 @@ use {
         fee_engine,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
+        order_event_stream::OrderEventStream,
         orderbook::Orderbook,
         quoter::QuoteHandler,
     },
@@ -510,6 +511,10 @@ pub async fn run(config: Configuration) {
     .with_fast_quoter(fast_quoter)
     .with_streaming_quoters(optimal_quoter, verified_quoter);
 
+    let order_event_stream = config
+        .enable_order_event_stream
+        .then(|| OrderEventStream::spawn(postgres_write.pool.clone(), postgres_read.clone()));
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         postgres_write,
@@ -525,6 +530,7 @@ pub async fn run(config: Configuration) {
         config.price_estimation.quote_timeout,
         current_block_stream,
         config.hide_competition_before_deadline,
+        order_event_stream.clone(),
     );
 
     let mut metrics_address = config.bind_address;
@@ -543,6 +549,11 @@ pub async fn run(config: Configuration) {
         result = metrics_task => panic!("metrics task exited {result:?}"),
         _ = observe::shutdown::shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
+            // An open stream would keep its connection, and with it the
+            // shutdown, waiting until the timeout.
+            if let Some(order_event_stream) = &order_event_stream {
+                order_event_stream.close();
+            }
             shutdown_sender.send(()).expect("failed to send shutdown signal");
             match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
                 Ok(inner) => inner.expect("API failed during shutdown"),
@@ -572,6 +583,7 @@ fn serve_api(
     quote_timeout: Duration,
     current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
+    order_event_stream: Option<Arc<OrderEventStream>>,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -583,6 +595,7 @@ fn serve_api(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
+        order_event_stream,
     );
     tracing::info!(%address, "serving order book");
 

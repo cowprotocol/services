@@ -146,6 +146,11 @@ pub struct Configuration {
     /// auction's submission deadline block has been reached.
     #[serde(default)]
     pub hide_competition_before_deadline: bool,
+
+    /// Whether to serve the stream of an order's life cycle events. It holds
+    /// one connection of the write database pool.
+    #[serde(default)]
+    pub enable_order_event_stream: bool,
 }
 
 impl Configuration {
@@ -240,6 +245,7 @@ pub mod test_util {
                 order_simulation_timeout: Duration::from_secs(2),
                 order_simulation_ignore_legacy_checks_for_lenders: Default::default(),
                 hide_competition_before_deadline: false,
+                enable_order_event_stream: true,
             }
         }
     }
@@ -267,6 +273,7 @@ mod tests {
         unsupported-tokens = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         eip1271-skip-creation-validation = true
         hide-competition-before-deadline = true
+        enable-order-event-stream = true
         order-simulation-timeout = "3s"
         order-simulation-ignore-legacy-checks-for-lenders = ["0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"]
 
@@ -319,6 +326,7 @@ mod tests {
         assert_eq!(config.banned_users.addresses.len(), 1);
         assert!(config.eip1271_skip_creation_validation);
         assert!(config.hide_competition_before_deadline);
+        assert!(config.enable_order_event_stream);
         assert_eq!(config.order_simulation_timeout, Duration::from_secs(3));
         assert_eq!(
             config.order_simulation_ignore_legacy_checks_for_lenders,
@@ -379,6 +387,7 @@ mod tests {
         assert!(config.banned_users.addresses.is_empty());
         assert!(!config.eip1271_skip_creation_validation);
         assert!(!config.hide_competition_before_deadline);
+        assert!(!config.enable_order_event_stream);
         assert!(
             config
                 .order_simulation_ignore_legacy_checks_for_lenders
@@ -431,6 +440,7 @@ mod tests {
             order_simulation_ignore_legacy_checks_for_lenders: HashSet::from([address!(
                 "87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
             )]),
+            enable_order_event_stream: true,
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
@@ -464,6 +474,10 @@ mod tests {
         assert_eq!(
             config.hide_competition_before_deadline,
             deserialized.hide_competition_before_deadline
+        );
+        assert_eq!(
+            config.enable_order_event_stream,
+            deserialized.enable_order_event_stream
         );
         assert_eq!(
             config.order_simulation_ignore_legacy_checks_for_lenders,

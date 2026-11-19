@@ -2,6 +2,7 @@ use {
     crate::{
         app_data,
         database::Postgres,
+        order_event_stream::OrderEventStream,
         orderbook::Orderbook,
         quoter::QuoteHandler,
         solver_competition::LoadSolverCompetitionError,
@@ -36,6 +37,7 @@ mod get_app_data;
 mod get_auction;
 mod get_native_price;
 mod get_order_by_uid;
+mod get_order_events_stream;
 mod get_order_status;
 mod get_orders_by_tx;
 mod get_orders_by_uid;
@@ -72,6 +74,7 @@ pub struct AppState {
     pub quote_timeout: Duration,
     pub current_block_stream: CurrentBlockWatcher,
     pub hide_competition_before_deadline: bool,
+    pub order_event_stream: Option<Arc<OrderEventStream>>,
 }
 
 impl AppState {
@@ -167,6 +170,7 @@ pub fn handle_all_routes(
     quote_timeout: Duration,
     current_block_stream: CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
+    order_event_stream: Option<Arc<OrderEventStream>>,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -180,6 +184,7 @@ pub fn handle_all_routes(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
+        order_event_stream,
     });
 
     let routes = [
@@ -235,6 +240,11 @@ pub fn handle_all_routes(
             "DELETE",
             "/api/v1/orders/{uid}",
             delete(cancel_order::cancel_order_handler),
+        ),
+        (
+            "GET",
+            "/api/v1/orders/{uid}/events",
+            get(get_order_events_stream::get_order_events_stream_handler),
         ),
         (
             "GET",

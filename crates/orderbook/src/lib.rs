@@ -6,6 +6,7 @@ pub mod dto;
 mod fee_engine;
 mod ipfs;
 mod ipfs_app_data;
+pub mod order_event_stream;
 pub mod orderbook;
 mod quoter;
 pub mod run;

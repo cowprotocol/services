@@ -264,6 +264,52 @@ paths:
                 $ref: "#/components/schemas/CompetitionOrderStatus"
         "400":
           description: Invalid order UID.
+  "/api/v1/orders/{UID}/events":
+    get:
+      operationId: getOrderEventsStream
+      summary: Stream the life cycle events of an order.
+      description: |
+        Opens a Server-Sent Events stream of the life cycle events of one
+        order. The `data` of each event is an `OrderEvent`.
+
+        The stream only sends events that happen after it was opened. Load
+        the current state of the order from the REST API each time the stream
+        opens, also after a reconnect. Open the stream first, so that no event
+        is lost between the two requests.
+
+        The server closes the stream after the event that finishes the order:
+        `cancelled`, or `traded` for an order that is not partially fillable.
+        It also closes the stream a short time after the order expires, for
+        which there is no event. A request for a finished order gets `204`,
+        which tells an `EventSource` client not to reconnect. A partially
+        fillable order that is completely filled only counts as finished when
+        it expires.
+
+        The server also closes the stream if the client reads too slowly, and
+        before a restart.
+      parameters:
+        - in: path
+          name: UID
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: true
+      responses:
+        "200":
+          description: >-
+            A Server-Sent Events stream. The `data` field of each event is a
+            JSON object matching `OrderEvent`.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/OrderEvent"
+        "204":
+          description: The order is finished and gets no more events.
+        "400":
+          description: Invalid order UID.
+        "404":
+          description: The order event stream is not enabled.
+        "503":
+          description: Too many open streams, or the server is shutting down.
   "/api/v1/transactions/{txHash}/orders":
     get:
       operationId: getOrdersByTxHash
@@ -1640,6 +1686,54 @@ components:
       required:
         - sell
         - buy
+    OrderEvent:
+      description: A step in the life cycle of an order.
+      type: object
+      properties:
+        uid:
+          $ref: "#/components/schemas/UID"
+        timestamp:
+          description: When the event was registered.
+          type: string
+          format: date-time
+        label:
+          description: |
+            - `created`: the order was added to the orderbook.
+            - `ready`: the order was sent to the solvers in an auction.
+            - `filtered`: the order was left out of an auction.
+            - `invalid`: the order cannot be settled at the moment.
+            - `considered`: the order is part of a valid solution.
+            - `executing`: the order is part of a winning solution that is
+              being submitted on-chain.
+            - `traded`: the order was settled on-chain.
+            - `cancelled`: the user cancelled the order.
+          type: string
+          enum:
+            - created
+            - ready
+            - filtered
+            - invalid
+            - executing
+            - considered
+            - traded
+            - cancelled
+        reason:
+          description: Why the order is `filtered` or `invalid`.
+          type: string
+          nullable: true
+          enum:
+            - in_flight
+            - banned_user
+            - invalid_signature
+            - unsupported_token
+            - insufficient_balance
+            - dust_order
+            - missing_native_price
+      required:
+        - uid
+        - timestamp
+        - label
+        - reason
     CompetitionOrderStatus:
       type: object
       properties:

@@ -431,6 +431,19 @@ impl OrderStoring for Postgres {
 }
 
 impl Postgres {
+    /// The progress of a user order, or `None` if there is no such order.
+    pub async fn order_progress(&self, uid: &OrderUid) -> Result<Option<orders::Progress>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["order_progress"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        orders::read_progress(&mut ex, &ByteArray(uid.0))
+            .await
+            .context("orders::read_progress")
+    }
+
     /// Retrieve all user posted orders for a given transaction.
     pub async fn user_order_for_tx(&self, tx_hash: &B256) -> Result<Vec<Order>> {
         let _timer = super::Metrics::get()

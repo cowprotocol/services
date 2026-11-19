@@ -234,6 +234,29 @@ WHERE uid = $1
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
+/// What decides whether a user order can still make progress.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, sqlx::FromRow)]
+pub struct Progress {
+    pub partially_fillable: bool,
+    pub cancelled: bool,
+    pub traded: bool,
+}
+
+/// The progress of a user order, or `None` if there is no such order.
+pub async fn read_progress(
+    ex: &mut PgConnection,
+    uid: &OrderUid,
+) -> Result<Option<Progress>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT partially_fillable,
+    cancellation_timestamp IS NOT NULL AS cancelled,
+    EXISTS (SELECT 1 FROM trades WHERE order_uid = $1) AS traded
+FROM orders
+WHERE uid = $1
+    "#;
+    sqlx::query_as(QUERY).bind(uid).fetch_optional(ex).await
+}
+
 /// Sets `valid_from` on the given order. The autopilot's fast-path
 /// handler is the sole writer once `orders.fast_path = true`: either
 /// `now()` (feature disabled or limit-price check failed) or
@@ -1222,6 +1245,48 @@ mod tests {
             .bind(execution)
             .fetch_all(ex)
             .await
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_read_progress() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        assert_eq!(read_progress(&mut db, &order.uid).await.unwrap(), None);
+
+        insert_order(&mut db, &order).await.unwrap();
+        let mut progress = Progress {
+            partially_fillable: false,
+            cancelled: false,
+            traded: false,
+        };
+        assert_eq!(
+            read_progress(&mut db, &order.uid).await.unwrap(),
+            Some(progress)
+        );
+
+        let trade = Trade {
+            order_uid: order.uid,
+            ..Default::default()
+        };
+        crate::events::insert_trade(&mut db, &Default::default(), &trade)
+            .await
+            .unwrap();
+        progress.traded = true;
+        assert_eq!(
+            read_progress(&mut db, &order.uid).await.unwrap(),
+            Some(progress)
+        );
+
+        cancel_order(&mut db, &order.uid, Utc::now()).await.unwrap();
+        progress.cancelled = true;
+        assert_eq!(
+            read_progress(&mut db, &order.uid).await.unwrap(),
+            Some(progress)
+        );
     }
 
     #[tokio::test]

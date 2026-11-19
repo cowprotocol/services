@@ -1,5 +1,6 @@
 pub mod auction;
 pub mod order;
+pub mod order_event;
 
 use {
     alloy::primitives::U256,

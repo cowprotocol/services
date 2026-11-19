@@ -6975,6 +6975,7 @@ dependencies = [
  "price-estimation",
  "prometheus",
  "prometheus-metric-storage",
+ "rand 0.9.4",
  "reqwest 0.13.4",
  "serde",
  "serde-ext",

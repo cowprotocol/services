@@ -53,6 +53,7 @@ order-validation = { workspace = true }
 price-estimation = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde-ext = { workspace = true }

@@ -184,6 +184,9 @@ Stores timestamped events throughout an order's life cycle. This information is 
 Indexes:
 - order\_events\_by\_uid: btree(`order_uid`, `timestamp`)
 
+Triggers:
+- order\_event\_insert\_notify: sends every inserted row as JSON on the `order_event` channel (`NOTIFY`).
+
 ### order\_execution
 
 Contains metainformation for trades, required for reward computations that cannot be recovered from the blockchain and are not stored in a persistent manner somewhere else.
