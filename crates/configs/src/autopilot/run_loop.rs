@@ -1,4 +1,5 @@
 use {
+    anyhow::ensure,
     serde::Deserialize,
     std::{num::NonZeroUsize, time::Duration},
 };
@@ -89,11 +90,32 @@ pub struct RunLoopConfig {
     pub min_solve_time: Duration,
 
     /// If this is configured the `/solve` deadline will be picked
-    /// to end shortly before a new block gets mined.
+    /// to end shortly before the next block gets mined. Auctions that start
+    /// too late to give solvers `solve-deadline` before that block get
+    /// skipped, until `consecutive-skips-before-forcing` is reached. Requires
+    /// `solve-deadline` and `tx-propagation-latency` to fit into a single
+    /// slot.
     /// This should not be configured on chains with variable block
     /// production rates (including test chains).
     #[serde(default)]
     pub sync_solve_deadline_to_blockchain: Option<SlotConfig>,
+}
+
+impl RunLoopConfig {
+    /// Cross-field invariants that cannot be expressed in the serde schema.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(slot) = &self.sync_solve_deadline_to_blockchain {
+            ensure!(
+                self.min_solve_time + slot.tx_propagation_latency <= slot.slot_length,
+                "`solve-deadline` ({:?}) plus `tx-propagation-latency` ({:?}) must fit into \
+                 `slot-length` ({:?}) when syncing the solve deadline to the blockchain",
+                self.min_solve_time,
+                slot.tx_propagation_latency,
+                slot.slot_length,
+            );
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,6 +130,21 @@ pub struct SlotConfig {
     /// to still have it included in the next block.
     #[serde(with = "humantime_serde")]
     pub tx_propagation_latency: Duration,
+
+    /// How many auctions may be skipped for starting too late before the run
+    /// loop starts forcing auctions. While forcing, late auctions are not
+    /// skipped but solved with a deadline targeting the block after the next
+    /// one. Forcing ends once an auction starts early enough to be solved
+    /// before the next block again. This guarantees progress even if the run
+    /// loop is consistently too slow. At most one auction is skipped per
+    /// block, so the default of 5 forces auctions after about a minute of
+    /// skipping on mainnet.
+    #[serde(default = "default_consecutive_skips_before_forcing")]
+    pub consecutive_skips_before_forcing: u32,
+}
+
+const fn default_consecutive_skips_before_forcing() -> u32 {
+    5
 }
 
 impl Default for RunLoopConfig {
@@ -181,5 +218,29 @@ mod tests {
                 .tx_propagation_latency,
             Duration::from_secs(2)
         );
+        assert_eq!(
+            config
+                .sync_solve_deadline_to_blockchain
+                .as_ref()
+                .unwrap()
+                .consecutive_skips_before_forcing,
+            5
+        );
+    }
+
+    #[test]
+    fn validate_requires_solve_time_to_fit_into_slot() {
+        let config = |min_solve_time| RunLoopConfig {
+            min_solve_time,
+            sync_solve_deadline_to_blockchain: Some(SlotConfig {
+                slot_length: Duration::from_secs(12),
+                tx_propagation_latency: Duration::from_secs(2),
+                consecutive_skips_before_forcing: 5,
+            }),
+            ..Default::default()
+        };
+        assert!(RunLoopConfig::default().validate().is_ok());
+        assert!(config(Duration::from_secs(10)).validate().is_ok());
+        assert!(config(Duration::from_millis(10_001)).validate().is_err());
     }
 }
