@@ -493,7 +493,7 @@ fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]
             r#"
 [[rule]]
 name = "x"
-when = "order.sellAmount == 1000.0 ? order.missing == 1 : false"
+when = "order.sellAmount == 1000 ? order.ethflowData.userValidTo == 1 : false"
 fee = "volume(1)"
 
 [[rule]]

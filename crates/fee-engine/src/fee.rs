@@ -1,14 +1,16 @@
-//! Fees a rule returns and the CEL functions that build them.
+//! Fees a rule returns and the functions that build them.
 
 use {
-    crate::FeeFactor,
-    cel::{
-        Context,
-        Value,
-        objects::{KeyRef, Map, ValueType},
+    crate::{
+        FeeFactor,
+        RuleError,
+        compile::{
+            node::{Val, map2},
+            number::Num,
+        },
     },
-    rust_decimal::{Decimal, prelude::FromPrimitive},
-    std::{collections::HashMap, fmt, str::FromStr},
+    rust_decimal::Decimal,
+    std::fmt,
 };
 
 /// A protocol fee a rule returns.
@@ -30,7 +32,7 @@ pub enum Fee {
     },
 }
 
-/// The kinds of [`Fee`], by the CEL function that builds each.
+/// The kinds of [`Fee`], by the function that builds each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeeKind {
     Volume,
@@ -39,9 +41,7 @@ pub enum FeeKind {
 }
 
 impl FeeKind {
-    const ALL: [FeeKind; 3] = [FeeKind::Volume, FeeKind::Surplus, FeeKind::PriceImprovement];
-
-    /// The name the function is bound to in CEL.
+    /// The name of the function that builds it.
     pub fn name(self) -> &'static str {
         match self {
             FeeKind::Volume => "volume",
@@ -54,18 +54,6 @@ impl FeeKind {
 impl fmt::Display for FeeKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())
-    }
-}
-
-/// Parses the CEL function name; the error is the unknown name.
-impl FromStr for FeeKind {
-    type Err = String;
-
-    fn from_str(name: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|kind| kind.name() == name)
-            .ok_or_else(|| name.to_owned())
     }
 }
 
@@ -101,223 +89,101 @@ pub enum FactorError {
     OutOfRange,
 }
 
-/// An argument of a fee function: its name and the unit the rule writes it
-/// in.
-#[derive(Debug, Clone, Copy)]
-struct Argument {
-    name: &'static str,
-    grid_units: u64,
-}
-
-impl Argument {
-    const BPS: Self = Self {
-        name: "bps",
-        grid_units: BPS,
+/// Compiles a call to a fee function, or `None` if `name` is not one.
+pub(crate) fn call(name: &str, args: Vec<Num>) -> Result<Option<Val<Fee>>, String> {
+    let kind = match name {
+        "volume" => FeeKind::Volume,
+        "surplus" => FeeKind::Surplus,
+        "price_improvement" => FeeKind::PriceImprovement,
+        _ => return Ok(None),
     };
-    const MAX_VOLUME_BPS: Self = Self {
-        name: "max_volume_bps",
-        grid_units: BPS,
+    let arity = if kind == FeeKind::Volume { 1 } else { 2 };
+    if args.len() != arity {
+        return Err(format!(
+            "`{name}` takes {arity} arguments, not {}",
+            args.len()
+        ));
+    }
+    let mut args = args
+        .into_iter()
+        .map(Num::into_decimal)
+        .collect::<Result<Vec<_>, _>>()?;
+    let fee = if kind == FeeKind::Volume {
+        args.pop().unwrap().map(|bps| {
+            Ok(Fee::Volume {
+                factor: factor(FeeKind::Volume, "bps", bps, BPS)?,
+            })
+        })?
+    } else {
+        let max = args.pop().unwrap();
+        let share = args.pop().unwrap();
+        map2(share, max, move |share, max| {
+            let share = factor(kind, "share", share, PERCENT)?;
+            let max_volume_factor = factor(kind, "max_volume_bps", max, BPS)?;
+            Ok(if kind == FeeKind::Surplus {
+                Fee::Surplus {
+                    factor: share,
+                    max_volume_factor,
+                }
+            } else {
+                Fee::PriceImprovement {
+                    factor: share,
+                    max_volume_factor,
+                }
+            })
+        })?
     };
-    const SHARE: Self = Self {
-        name: "share",
-        grid_units: PERCENT,
-    };
+    Ok(Some(fee))
 }
 
-/// The map key a fee function tags its return value with.
-const KIND: &str = "kind";
-
-/// Binds the fee functions. Each returns a tagged map that
-/// [`fees_from_value`] turns into a [`Fee`] after the rule has run.
-pub(crate) fn register_fee_functions(context: &mut Context) {
-    context
-        .add_function(FeeKind::Volume.name(), |bps: Value| {
-            fee_value(FeeKind::Volume, [(Argument::BPS, bps)])
-        })
-        .expect("fee function names are free");
-    context
-        .add_function(
-            FeeKind::Surplus.name(),
-            |share: Value, max_volume_bps: Value| {
-                fee_value(
-                    FeeKind::Surplus,
-                    [
-                        (Argument::SHARE, share),
-                        (Argument::MAX_VOLUME_BPS, max_volume_bps),
-                    ],
-                )
-            },
-        )
-        .expect("fee function names are free");
-    context
-        .add_function(
-            FeeKind::PriceImprovement.name(),
-            |share: Value, max_volume_bps: Value| {
-                fee_value(
-                    FeeKind::PriceImprovement,
-                    [
-                        (Argument::SHARE, share),
-                        (Argument::MAX_VOLUME_BPS, max_volume_bps),
-                    ],
-                )
-            },
-        )
-        .expect("fee function names are free");
-    context
-        .add_function("no_fee", || Value::List(Default::default()))
-        .expect("fee function names are free");
-}
-
-/// The CEL value a fee function returns: a map tagged with the fee `kind`
-/// plus one entry per argument. Fee functions return plain CEL data; typing
-/// and range checks happen in [`Arguments::factor`] once the rule has run.
-fn fee_value<const N: usize>(kind: FeeKind, args: [(Argument, Value); N]) -> Value {
-    let mut map: HashMap<String, Value> = HashMap::with_capacity(N + 1);
-    map.insert(KIND.to_owned(), Value::from(kind.name()));
-    for (argument, value) in args {
-        map.insert(argument.name.to_owned(), value);
-    }
-    Value::from(map)
-}
-
-/// The fees a `fee` expression evaluated to: one, or a list to stack.
-pub(crate) fn fees_from_value(value: &Value) -> Result<Vec<Fee>, FeeError> {
-    match value {
-        Value::List(items) => items.iter().map(fee_from_value).collect(),
-        single => Ok(vec![fee_from_value(single)?]),
-    }
-}
-
-/// Turns the tagged map a fee function returned (see [`fee_value`]) into a
-/// [`Fee`]: reads `kind`, then each argument as a decimal scaled by its unit
-/// (bps or percent) onto the high precision grid.
-fn fee_from_value(value: &Value) -> Result<Fee, FeeError> {
-    let Value::Map(map) = value else {
-        return Err(FeeError::NotAFee(value.type_of()));
-    };
-    let Some(Value::String(kind)) = map.get(&KeyRef::String(KIND)) else {
-        return Err(FeeError::NotAFee(ValueType::Map));
-    };
-    let kind = kind.parse().map_err(FeeError::UnknownKind)?;
-    let args = Arguments { kind, map };
-    match kind {
-        FeeKind::Volume => Fee::volume(args),
-        FeeKind::Surplus => Fee::surplus(args),
-        FeeKind::PriceImprovement => Fee::price_improvement(args),
-    }
-}
-
-impl Fee {
-    fn volume(args: Arguments<'_>) -> Result<Self, FeeError> {
-        Ok(Fee::Volume {
-            factor: args.factor(Argument::BPS)?,
-        })
-    }
-
-    fn surplus(args: Arguments<'_>) -> Result<Self, FeeError> {
-        Ok(Fee::Surplus {
-            factor: args.factor(Argument::SHARE)?,
-            max_volume_factor: args.factor(Argument::MAX_VOLUME_BPS)?,
-        })
-    }
-
-    fn price_improvement(args: Arguments<'_>) -> Result<Self, FeeError> {
-        Ok(Fee::PriceImprovement {
-            factor: args.factor(Argument::SHARE)?,
-            max_volume_factor: args.factor(Argument::MAX_VOLUME_BPS)?,
-        })
-    }
-}
-
-/// The arguments of one fee function, read off the map it returned.
-struct Arguments<'a> {
+/// A fee argument as a factor on the grid; the error names the argument.
+fn factor(
     kind: FeeKind,
-    map: &'a Map,
-}
-
-impl Arguments<'_> {
-    /// Reads `argument` as a fee factor.
-    fn factor(&self, argument: Argument) -> Result<FeeFactor, FeeError> {
-        let kind = self.kind;
-        let Argument {
-            name: argument,
-            grid_units,
-        } = argument;
-        let value = self
-            .map
-            .get(&KeyRef::String(argument))
-            .ok_or(FeeError::MissingArgument { kind, argument })?;
-        // `from_f64` recovers the decimal the rule spelled out (0.3, not the
-        // nearest binary fraction), so the grid check below is exact.
-        let number = match value {
-            Value::Int(int) => Decimal::from(*int),
-            Value::UInt(uint) => Decimal::from(*uint),
-            Value::Float(float) => Decimal::from_f64(*float).ok_or(FeeError::NotRepresentable {
-                kind,
-                argument,
-                value: *float,
-            })?,
-            other => {
-                return Err(FeeError::NotANumber {
-                    kind,
-                    argument,
-                    found: other.type_of(),
-                });
-            }
-        };
-        factor_on_grid(number, grid_units).map_err(|error| FeeError::Factor {
-            kind,
-            argument,
-            value: number,
-            error,
-        })
-    }
-}
-
-/// Why the value a `fee` expression returned is not a fee.
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum FeeError {
-    #[error("returned {0} instead of a fee such as volume(10)")]
-    NotAFee(ValueType),
-    #[error("unknown fee kind `{0}`")]
-    UnknownKind(String),
-    #[error("`{kind}` is missing `{argument}`")]
-    MissingArgument {
-        kind: FeeKind,
-        argument: &'static str,
-    },
-    #[error("`{kind}` argument `{argument}` is {found} instead of a number")]
-    NotANumber {
-        kind: FeeKind,
-        argument: &'static str,
-        found: ValueType,
-    },
-    /// NaN, infinite, or too large for a [`Decimal`].
-    #[error("`{kind}` argument `{argument}` = {value} is out of range")]
-    NotRepresentable {
-        kind: FeeKind,
-        argument: &'static str,
-        value: f64,
-    },
-    #[error("`{kind}` argument `{argument}` = {value} {error}")]
-    Factor {
-        kind: FeeKind,
-        argument: &'static str,
-        value: Decimal,
-        error: FactorError,
-    },
+    argument: &'static str,
+    value: Decimal,
+    grid_units: u64,
+) -> Result<FeeFactor, RuleError> {
+    factor_on_grid(value, grid_units).map_err(|error| RuleError::Fee {
+        kind,
+        argument,
+        value,
+        error,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use {super::*, cel::Env, std::sync::Arc};
+    use {
+        super::*,
+        crate::{AppData, OrderView, RuleDefinition, RuleSet, RuleSetDefinition},
+        chrono::Utc,
+        model::order::Order,
+    };
 
-    fn evaluate(source: &str) -> Result<Vec<Fee>, FeeError> {
-        let env = Arc::new(Env::stdlib());
-        let program = env.compile(source).unwrap();
-        let mut context = Context::with_env(env);
-        register_fee_functions(&mut context);
-        fees_from_value(&program.execute(&context).unwrap())
+    /// The fees `source` gives a default order, out of market. A constant
+    /// fee fails when the rules compile, one that reads the order when it
+    /// runs; the error is the message either way.
+    fn evaluate(source: &str) -> Result<Vec<Fee>, String> {
+        let rules = RuleSet::new(RuleSetDefinition {
+            rules: vec![RuleDefinition {
+                name: "x".to_owned(),
+                when: "true".to_owned(),
+                fee: source.to_owned(),
+            }],
+            ..Default::default()
+        })
+        .map_err(|err| err.to_string())?;
+        let order = Order::default();
+        let mut evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+            order: &order,
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market: false,
+        });
+        match evaluation.skipped.pop() {
+            Some(skipped) => Err(skipped.error.to_string()),
+            None => Ok(evaluation.matched.remove(0).fees),
+        }
     }
 
     fn factor(value: f64) -> FeeFactor {
@@ -354,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn stacks_a_list_and_accepts_cel_arguments() {
+    fn stacks_a_list_and_computes_arguments() {
         assert_eq!(
             evaluate("[surplus(30, 100), volume(1 + 1)]").unwrap(),
             vec![
@@ -413,63 +279,42 @@ mod tests {
             "surplus(50.00001, 100)",
             "surplus(50, 98.765)",
             "price_improvement(0.00005, 100)",
+            "volume(order.inMarket ? 1 : 0.333)",
         ] {
+            let error = evaluate(source).unwrap_err();
             assert!(
-                matches!(
-                    evaluate(source).unwrap_err(),
-                    FeeError::Factor {
-                        error: FactorError::OffGrid,
-                        ..
-                    }
-                ),
-                "{source}"
+                error.ends_with("is finer than the fee precision (1e-6 of the volume)"),
+                "{source}: {error}"
             );
         }
     }
 
     #[test]
     fn rejects_values_that_are_not_fees() {
-        assert!(matches!(
-            evaluate("volume('ten')").unwrap_err(),
-            FeeError::NotANumber {
-                kind: FeeKind::Volume,
-                argument: "bps",
-                found: ValueType::String,
-            }
-        ));
-        for source in ["volume(-1)", "volume(10000)"] {
-            assert!(
-                matches!(
-                    evaluate(source).unwrap_err(),
-                    FeeError::Factor {
-                        error: FactorError::OutOfRange,
-                        ..
-                    }
-                ),
-                "{source}"
-            );
+        for (source, message) in [
+            ("volume('ten')", "expected a number, found a string"),
+            ("volume(-1)", "is out of range"),
+            ("volume(10000)", "is out of range"),
+            ("volume(1e30)", "decimal"),
+            ("42", "expected fees, found a number"),
+            (
+                "{'kind': 'volume'}",
+                "map and struct literals are not supported",
+            ),
+            ("tip(1)", "unknown function `tip`"),
+        ] {
+            let error = evaluate(source).unwrap_err();
+            assert!(error.contains(message), "{source}: {error}");
         }
-        assert!(matches!(
-            evaluate("volume(1e30)").unwrap_err(),
-            FeeError::NotRepresentable { value, .. } if value == 1e30
-        ));
-        assert!(matches!(
-            evaluate("42").unwrap_err(),
-            FeeError::NotAFee(ValueType::Int)
-        ));
-        assert!(matches!(
-            evaluate("{'kind': 'volume'}").unwrap_err(),
-            FeeError::MissingArgument {
-                kind: FeeKind::Volume,
-                argument: "bps",
-            }
-        ));
-        assert!(matches!(
-            evaluate("{'kind': 'tip'}").unwrap_err(),
-            FeeError::UnknownKind(kind) if kind == "tip"
-        ));
+        // A constant fee fails when the rules compile.
         assert_eq!(
-            evaluate("volume(0.333)").unwrap_err().to_string(),
+            evaluate("volume(0.333)").unwrap_err(),
+            "rule `x`: `fee` does not compile: `volume` argument `bps` = 0.333 is finer than the \
+             fee precision (1e-6 of the volume)"
+        );
+        // One that reads the order fails on the order.
+        assert_eq!(
+            evaluate("volume(order.inMarket ? 1 : 0.333)").unwrap_err(),
             "`volume` argument `bps` = 0.333 is finer than the fee precision (1e-6 of the volume)"
         );
     }

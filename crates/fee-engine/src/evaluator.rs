@@ -2,13 +2,13 @@
 
 use {
     crate::{
-        fee::{self, Fee, FeeError},
-        order_view::{self, OrderView},
+        fee::{FactorError, Fee, FeeKind},
+        order_view::{Input, OrderView},
         partner_fee,
         rules::{Field, Rule, RuleSet},
     },
-    cel::{Context, Value, objects::ValueType},
     chrono::{DateTime, Utc},
+    rust_decimal::Decimal,
     std::fmt,
 };
 
@@ -55,35 +55,41 @@ impl fmt::Display for Skipped<'_> {
     }
 }
 
-/// Why an expression yielded no usable value for an order.
-#[derive(Debug, thiserror::Error)]
+/// Why an expression yielded no value for an order; the rule is skipped.
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum RuleError {
-    #[error("failed: {0}")]
-    Execution(#[from] cel::ExecutionError),
-    #[error("returned {0}, not a bool")]
-    NotABool(ValueType),
-    #[error("{0}")]
-    NotAFee(#[from] FeeError),
+    #[error("the order has no `{0}`")]
+    Missing(&'static str),
+    #[error("time arithmetic overflowed")]
+    Overflow,
+    #[error("arithmetic overflowed or divided by zero")]
+    Arithmetic,
+    #[error("the number does not fit a {0}")]
+    Range(&'static str),
+    #[error("`{kind}` argument `{argument}` = {value} {error}")]
+    Fee {
+        kind: FeeKind,
+        argument: &'static str,
+        value: Decimal,
+        error: FactorError,
+    },
 }
 
 /// A [`RuleSet`] at a fixed `now`, ready to evaluate orders.
 pub struct Evaluator<'r> {
     rules: &'r RuleSet,
-    /// The rule set's context with `now` bound.
-    context: Context<'r, 'static>,
+    now: DateTime<Utc>,
 }
 
 impl<'r> Evaluator<'r> {
     pub(crate) fn new(rules: &'r RuleSet, now: DateTime<Utc>) -> Self {
-        let mut context = rules.context.new_inner_scope();
-        context.add_variable_from_value("now", now.fixed_offset());
-        Self { rules, context }
+        Self { rules, now }
     }
 
     /// Runs every rule against `order`. A rule that fails to evaluate is
     /// skipped and reported; it never blocks the others.
     pub fn evaluate(&self, order: OrderView) -> Evaluation<'r> {
-        let context = self.scope(order);
+        let input = self.input(order);
         let mut evaluation = Evaluation {
             matched: Vec::new(),
             skipped: Vec::new(),
@@ -94,10 +100,21 @@ impl<'r> Evaluator<'r> {
                 .unwrap_or_default(),
         };
         for rule in self.rules.rules() {
-            match Self::evaluate_rule(rule, &context) {
-                Ok(Some(fees)) => evaluation.matched.push(Match { rule, fees }),
-                Ok(None) => {}
-                Err((field, error)) => evaluation.skipped.push(Skipped { rule, field, error }),
+            match rule.when.eval(&input) {
+                Ok(false) => {}
+                Ok(true) => match rule.fee.eval(&input) {
+                    Ok(fees) => evaluation.matched.push(Match { rule, fees }),
+                    Err(error) => evaluation.skipped.push(Skipped {
+                        rule,
+                        field: Field::Fee,
+                        error,
+                    }),
+                },
+                Err(error) => evaluation.skipped.push(Skipped {
+                    rule,
+                    field: Field::When,
+                    error,
+                }),
             }
         }
         evaluation
@@ -106,54 +123,32 @@ impl<'r> Evaluator<'r> {
     /// Runs both expressions of every rule against `order`, whatever `when`
     /// says, and reports every one that fails, in rule order.
     pub(crate) fn evaluate_all_expressions(&self, order: OrderView) -> Vec<Skipped<'r>> {
-        let context = self.scope(order);
+        let input = self.input(order);
         let mut skipped = Vec::new();
         for rule in self.rules.rules() {
-            let errors = [
-                Self::matched(rule, &context).err(),
-                Self::fees(rule, &context).err(),
-            ];
-            for (field, error) in errors.into_iter().flatten() {
-                skipped.push(Skipped { rule, field, error });
+            if let Err(error) = rule.when.eval(&input) {
+                skipped.push(Skipped {
+                    rule,
+                    field: Field::When,
+                    error,
+                });
+            }
+            if let Err(error) = rule.fee.eval(&input) {
+                skipped.push(Skipped {
+                    rule,
+                    field: Field::Fee,
+                    error,
+                });
             }
         }
         skipped
     }
 
-    fn scope(&self, order: OrderView) -> Context<'_, 'static> {
-        let mut context = self.context.new_inner_scope();
-        context.add_variable_as_val("order", order_view::order_view(order));
-        context
-    }
-
-    /// `Ok(None)` when `when` is false, `Ok(Some(fees))` when it is true.
-    fn evaluate_rule(
-        rule: &Rule,
-        context: &Context<'_, '_>,
-    ) -> Result<Option<Vec<Fee>>, (Field, RuleError)> {
-        if !Self::matched(rule, context)? {
-            return Ok(None);
+    fn input<'a>(&self, order: OrderView<'a>) -> Input<'a> {
+        Input {
+            order,
+            now: self.now,
         }
-        Self::fees(rule, context).map(Some)
-    }
-
-    fn matched(rule: &Rule, context: &Context<'_, '_>) -> Result<bool, (Field, RuleError)> {
-        match rule.when.execute(context) {
-            Ok(Value::Bool(matched)) => Ok(matched),
-            Ok(other) => Err((Field::When, RuleError::NotABool(other.type_of()))),
-            Err(err) => Err((Field::When, err.into())),
-        }
-    }
-
-    fn fees(rule: &Rule, context: &Context<'_, '_>) -> Result<Vec<Fee>, (Field, RuleError)> {
-        if let Some(fees) = &rule.constant_fees {
-            return Ok(fees.clone());
-        }
-        let value = rule
-            .fee
-            .execute(context)
-            .map_err(|err| (Field::Fee, err.into()))?;
-        fee::fees_from_value(&value).map_err(|error| (Field::Fee, error.into()))
     }
 }
 
@@ -374,10 +369,14 @@ mod tests {
                 "order.ethflowData.userValidTo == 1",
                 "volume(1)",
             ),
-            rule("Not a bool", "order.sellAmount", "volume(1)"),
-            rule("Broken fee", "true", r#"volume("ten")"#),
+            rule(
+                "Underflow",
+                "order.sellAmount - 2u * order.buyAmount > 0u",
+                "volume(1)",
+            ),
+            rule("Broken fee", "true", "volume(order.inMarket ? 1 : 0.001)"),
             rule("Default", "true", "volume(2)"),
-            rule("Broken below", "true", "volume(0.001)"),
+            rule("Broken below", "true", "volume(order.sellAmount)"),
         ]);
         let evaluator = rules.evaluator(after_launch());
         let evaluation = evaluate(&evaluator, &order(WETH, USDT), false);
@@ -394,22 +393,20 @@ mod tests {
             skipped[..],
             [
                 ("Broken when", Field::When, _),
-                ("Not a bool", Field::When, _),
+                ("Underflow", Field::When, _),
                 ("Broken fee", Field::Fee, _),
                 ("Broken below", Field::Fee, _),
             ]
         ));
         assert!(matches!(
             evaluation.skipped[0].error,
-            RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
+            RuleError::Missing("userValidTo")
         ));
-        assert!(matches!(
-            evaluation.skipped[1].error,
-            RuleError::NotABool(ValueType::Float)
-        ));
+        assert!(matches!(evaluation.skipped[1].error, RuleError::Arithmetic));
         assert_eq!(
             skipped[2].2,
-            "rule `Broken fee`: `fee` `volume` argument `bps` is string instead of a number"
+            "rule `Broken fee`: `fee` `volume` argument `bps` = 0.001 is finer than the fee \
+             precision (1e-6 of the volume)"
         );
     }
 
