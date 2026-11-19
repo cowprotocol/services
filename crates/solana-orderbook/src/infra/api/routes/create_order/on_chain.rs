@@ -30,20 +30,29 @@ pub(super) enum Outcome {
     /// The order has no quote: no route, no native price, or costs above
     /// its amount.
     NoQuote,
-    /// The quote or the write of the decision failed.
+    /// The quote failed, so the order was decided without one.
     Failed,
+    /// Writing the decision failed, so the order still waits for one.
+    WriteFailed,
     /// The autopilot stopped waiting first, so nothing was written.
     TooLate,
 }
 
 impl Outcome {
-    pub(super) const ALL: [Self; 4] = [Self::Linked, Self::NoQuote, Self::Failed, Self::TooLate];
+    pub(super) const ALL: [Self; 5] = [
+        Self::Linked,
+        Self::NoQuote,
+        Self::Failed,
+        Self::WriteFailed,
+        Self::TooLate,
+    ];
 
     pub(super) fn as_str(self) -> &'static str {
         match self {
             Self::Linked => "linked",
             Self::NoQuote => "no_quote",
             Self::Failed => "failed",
+            Self::WriteFailed => "write_failed",
             Self::TooLate => "too_late",
         }
     }
@@ -139,7 +148,7 @@ async fn decide(state: &State, pending: db::PendingOrder) {
         Ok(false) => Outcome::TooLate,
         Err(err) => {
             tracing::warn!(%uid, ?err, "quote decision write failed");
-            Outcome::Failed
+            Outcome::WriteFailed
         }
     };
     tracing::debug!(
