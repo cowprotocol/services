@@ -324,7 +324,7 @@ impl RunLoop {
         });
     }
 
-    fn schedule_auction(&self, skips_since_on_schedule: u32) -> Schedule {
+    fn schedule_auction(&self, auction_skips_since_on_schedule: u32) -> Schedule {
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
         schedule_auction_impl(
@@ -332,7 +332,7 @@ impl RunLoop {
             last_block,
             self.config.min_solve_time,
             self.config.sync_solve_deadline_to_blockchain.as_ref(),
-            skips_since_on_schedule,
+            auction_skips_since_on_schedule,
         )
     }
 
