@@ -126,6 +126,9 @@ impl Competition {
         auction_id: Id,
         mut auction: Auction,
     ) -> Result<Vec<Solution>, Error> {
+        // SECURITY: an order with invalid hooks could execute instructions
+        // signed by the solver and drain their funds.
+        auction.drop_invalid_hooks(&self.solver.pubkey());
         let now = chrono::Utc::now();
         let driver_deadline = auction.deadline - HTTP_TIME_BUFFER;
         auction.deadline = now + (driver_deadline - now) * SOLVING_SHARE_OF_DEADLINE_PERCENT / 100;

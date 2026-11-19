@@ -72,6 +72,8 @@ pub struct Order {
     pub order_pda: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     pub app_data: AppData,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_app_data: Option<String>,
     /// The cumulative fill on the order's own side.
     #[serde_as(as = "DisplayFromStr")]
     pub executed: u64,
@@ -180,6 +182,7 @@ impl From<&auction::Order> for Order {
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
             app_data: order.app_data,
+            full_app_data: order.full_app_data.clone(),
             executed: order.executed,
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
@@ -267,6 +270,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey([0x77; 32]),
             app_data: AppData([0; 32]),
+            full_app_data: None,
             created_on_chain: true,
             executed: 400,
             creation: None,
@@ -348,6 +352,18 @@ mod tests {
         );
         // An order without policies sends none.
         assert!(json["orders"][0].get("protocolFees").is_none());
+        // An order without a registered document sends no `fullAppData`, one
+        // with it sends the document verbatim for the driver's hooks.
+        assert!(json["orders"][0].get("fullAppData").is_none());
+        let document = r#"{"metadata":{"hooks":{}}}"#;
+        let with_document = Order::from(&auction::Order {
+            full_app_data: Some(document.to_owned()),
+            ..order()
+        });
+        assert_eq!(
+            serde_json::to_value(&with_document).unwrap()["fullAppData"],
+            document
+        );
         assert_eq!(
             serde_json::from_value::<SolveRequest>(json).unwrap(),
             received
