@@ -11,6 +11,7 @@ mod status;
 mod trades;
 mod version;
 
+pub(crate) use create_order::MAX_COMPUTE_UNIT_LIMIT;
 use solana_sdk::{account::Account, rent::Rent};
 pub use {
     account::account_orders,

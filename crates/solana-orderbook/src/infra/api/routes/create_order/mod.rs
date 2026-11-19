@@ -415,6 +415,22 @@ fn validate(
             "the priority fee is above the sponsored ceiling",
         ));
     }
+    if compute_budget
+        .limit
+        .is_some_and(|limit| limit < sponsoring.min_compute_unit_limit)
+    {
+        return Err(PlacementError::InvalidTransaction(
+            "the compute unit limit is below the sponsored minimum",
+        ));
+    }
+    if compute_budget
+        .limit
+        .is_some_and(|limit| limit > sponsoring.max_compute_unit_limit)
+    {
+        return Err(PlacementError::InvalidTransaction(
+            "the compute unit limit is above the sponsored maximum",
+        ));
+    }
     let Some((instruction, preparations)) = bundle.split_last() else {
         return Err(PlacementError::InvalidTransaction(
             "the transaction carries no instructions",
@@ -770,7 +786,7 @@ const APPROVE: u8 = 4;
 /// A transaction that names no limit is priced against this, since the units
 /// the runtime would otherwise grant depend on which programs each
 /// instruction calls.
-const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+pub(crate) const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 /// Lighthouse, the guard program wallets wrap a transaction in to assert the
 /// state it leaves behind.
