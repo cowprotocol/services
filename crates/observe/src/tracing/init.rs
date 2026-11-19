@@ -178,9 +178,15 @@ fn set_tracing_subscriber(config: &Config) {
 /// but uses tracing:error instead of stderr.
 ///
 /// Useful when we want panic messages to have the proper log format for Kibana.
+///
+/// Exits the process after logging if [`crate::panic_hook::install`] ran,
+/// since setting this hook replaces the one `install` set.
 fn tracing_panic_hook(panic: &PanicHookInfo) {
     let thread = std::thread::current();
     let name = thread.name().unwrap_or("<unnamed>");
     let backtrace = std::backtrace::Backtrace::force_capture();
     tracing::error!("thread '{name}' {panic}\nstack backtrace:\n{backtrace}");
+    if crate::panic_hook::exits_process() {
+        std::process::exit(1);
+    }
 }
