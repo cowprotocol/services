@@ -171,7 +171,7 @@ pub struct OnChainQuotes {
     /// How often the task looks for orders waiting for their decision. Must
     /// be above zero.
     #[serde(
-        with = "humantime_serde",
+        deserialize_with = "deserialize_nonzero_duration",
         default = "default_on_chain_quote_poll_interval"
     )]
     pub poll_interval: Duration,
@@ -179,6 +179,18 @@ pub struct OnChainQuotes {
 
 fn default_on_chain_quote_poll_interval() -> Duration {
     Duration::from_millis(500)
+}
+
+/// Parses a human-readable duration and rejects zero.
+fn deserialize_nonzero_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let duration: Duration = humantime_serde::deserialize(deserializer)?;
+    if duration.is_zero() {
+        return Err(serde::de::Error::custom("the duration must be above zero"));
+    }
+    Ok(duration)
 }
 
 /// Quote verification configuration: each driver's quoted settlement is
@@ -326,6 +338,11 @@ mod tests {
         assert_eq!(section.poll_interval, Duration::from_millis(500));
         let section: OnChainQuotes = toml::from_str(r#"poll-interval = "2s""#).unwrap();
         assert_eq!(section.poll_interval, Duration::from_secs(2));
+    }
+
+    #[test]
+    fn on_chain_quotes_reject_a_zero_poll_interval() {
+        assert!(toml::from_str::<OnChainQuotes>(r#"poll-interval = "0s""#).is_err());
     }
 
     #[test]
