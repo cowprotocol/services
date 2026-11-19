@@ -42,8 +42,8 @@ pub enum Side {
 }
 
 /// A priced swap that cannot execute yet: the amounts, plus what the backend
-/// needs to build the swap. Requoting takes one request, building the swap a
-/// second one, so a caller that may requote builds only the swap it keeps.
+/// needs to build the swap. A caller that may requote builds only the swap it
+/// keeps.
 #[derive(Debug, Clone)]
 pub struct Quote {
     pub in_amount: u64,
@@ -142,7 +142,7 @@ impl Dex {
     /// swap.
     pub async fn quote(&self, order: &Order, user: &Pubkey) -> Result<Quote, Error> {
         match self {
-            Dex::Jupiter(jupiter) => jupiter.quote(order).await,
+            Dex::Jupiter(jupiter) => jupiter.quote(order, user).await,
             Dex::Bitget(bitget) => bitget.quote(order, user).await,
         }
     }

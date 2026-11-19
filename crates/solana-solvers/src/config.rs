@@ -77,24 +77,18 @@ fn default_max_batch_size() -> NonZeroUsize {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct JupiterConfig {
-    /// Base URL of the Jupiter swap API: `api.jup.ag`, or a Triton-hosted
-    /// endpoint.
+    /// Base URL of the Jupiter swap API (v2), e.g. `https://api.jup.ag`.
     pub endpoint: Url,
 
-    /// API key from the Jupiter developer portal (or Triton). Requests work
-    /// without one but are heavily rate-limited, so set it for production.
+    /// API key from the Jupiter developer portal. Requests work without one
+    /// but are heavily rate-limited, so set it for production.
     #[serde(default)]
     pub api_key: Option<String>,
 
     /// Slippage tolerance in basis points, sent to Jupiter as `slippageBps`.
     /// We bid Jupiter's `otherAmountThreshold`, so this is how far below its
-    /// expected output (sells) or above its expected input (buys) the bids
-    /// land. 50 = 0.5%.
+    /// expected output the bids land. 50 = 0.5%.
     pub slippage_bps: u16,
-
-    /// Serve buy orders via ExactOut swaps. Off by default.
-    #[serde(default)]
-    pub enable_buy_orders: bool,
 }
 
 /// The `[dex]` table for the Bitget backend. No `Debug`: it holds the secret.
@@ -154,7 +148,6 @@ mod tests {
         assert_eq!(config.dex.endpoint.as_str(), "https://api.jup.ag/");
         assert_eq!(config.dex.slippage_bps, 50);
         assert!(config.dex.api_key.is_some());
-        assert!(!config.dex.enable_buy_orders);
         assert_eq!(config.concurrent_requests.get(), 8);
         assert_eq!(config.max_batch_size.get(), 4);
         let strategy = config.rate_limiting();
