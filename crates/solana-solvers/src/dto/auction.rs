@@ -29,6 +29,13 @@ pub struct Auction {
     /// solutions with. A mint without a price is absent.
     #[serde_as(as = "HashMap<serde_with::DisplayFromStr, _>")]
     pub tokens: HashMap<Pubkey, Token>,
+    /// The token balance of each buy-mint buffer an order's swap pays into,
+    /// by buffer address. The settlement can pay a sell out of it on top of
+    /// what the swap delivers. Empty for a quote, absent from a driver that
+    /// predates it.
+    #[serde(default)]
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DisplayFromStr>")]
+    pub buffer_balances: HashMap<Pubkey, u64>,
 }
 
 /// What the auction knows about one mint.
@@ -157,6 +164,9 @@ mod tests {
             "tokens": {
                 (pubkey(1).to_string()): {"referencePrice": "1500000000"},
             },
+            "bufferBalances": {
+                (pubkey(4).to_string()): "5000",
+            },
         });
 
         let auction: Auction = serde_json::from_value(json).unwrap();
@@ -177,6 +187,7 @@ mod tests {
         assert!(!order.partially_fillable);
         assert_eq!(auction.tokens.len(), 1);
         assert_eq!(auction.native_price(&pubkey(1)), Some(1_500_000_000));
+        assert_eq!(auction.buffer_balances, HashMap::from([(pubkey(4), 5_000)]));
     }
 
     /// A mint absent from `tokens`, or priced at zero, is unpriced.

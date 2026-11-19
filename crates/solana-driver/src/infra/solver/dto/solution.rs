@@ -284,6 +284,7 @@ mod tests {
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
             tokens: HashMap::new(),
+            buffer_balances: HashMap::new(),
         }
     }
 
@@ -438,6 +439,7 @@ mod tests {
             }],
             deadline: chrono::Utc::now() + chrono::Duration::seconds(60),
             tokens: HashMap::new(),
+            buffer_balances: HashMap::new(),
         };
         let solutions = Solutions {
             solutions: vec![Solution {
