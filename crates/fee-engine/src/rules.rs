@@ -3,24 +3,18 @@
 use {
     crate::{
         AppData,
-        Evaluator,
         Fee,
         FeeFactor,
         OrderView,
+        compile::{
+            self,
+            node::{Set, Val},
+        },
         evaluator::{RuleError, Skipped},
         fee,
-        order_view,
     },
     alloy_primitives::U256,
-    cel::{
-        Context,
-        Env,
-        Program,
-        common::{
-            types::{CelBool, CelMap, CelMapKey},
-            value::Val,
-        },
-    },
+    cel::Env,
     chrono::{DateTime, Utc},
     model::order::{EthflowData, OnchainOrderData, Order, OrderData, OrderMetadata},
     rust_decimal::{Decimal, prelude::FromPrimitive},
@@ -32,7 +26,7 @@ use {
     },
 };
 
-/// A rule as written: a name and two CEL expressions.
+/// A rule as written: a name and two expressions in CEL syntax.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuleDefinition {
@@ -101,9 +95,9 @@ fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor
         .map_err(|error| de::Error::custom(format!("max-volume-bps = {bps} {error}")))
 }
 
-/// Names the evaluator binds itself; a list under one of them would be
-/// shadowed or overwritten without any error.
-const RESERVED_NAMES: [&str; 3] = ["order", "now", "math"];
+/// Names the engine binds itself; a list under one of them would be
+/// shadowed without any error.
+const RESERVED_NAMES: [&str; 1] = ["order"];
 
 /// Why a set of rule definitions was refused.
 #[derive(Debug, thiserror::Error)]
@@ -169,11 +163,10 @@ impl fmt::Display for Field {
 /// One compiled rule.
 pub struct Rule {
     name: String,
-    pub(crate) when: Program,
-    pub(crate) fee: Program,
-    /// The fees of a `fee` that names no variable, e.g. `volume(2)`: the same
-    /// for every order, so evaluated once.
-    pub(crate) constant_fees: Option<Vec<Fee>>,
+    when_source: String,
+    fee_source: String,
+    pub(crate) when: Val<bool>,
+    pub(crate) fee: Val<Vec<Fee>>,
 }
 
 impl fmt::Debug for Rule {
@@ -190,35 +183,30 @@ impl Rule {
     /// Compiles both expressions of a definition.
     fn compile(
         env: &Env,
+        lists: &HashMap<String, Arc<Set>>,
         RuleDefinition { name, when, fee }: RuleDefinition,
     ) -> Result<Self, CompileError> {
-        let compile = |field, source: &str| {
-            env.compile(source).map_err(|err| CompileError::Expression {
-                rule: name.clone(),
+        let error = |field| {
+            let rule = name.clone();
+            move |message| CompileError::Expression {
+                rule,
                 field,
-                message: err.to_string(),
-            })
+                message,
+            }
         };
-        let when = compile(Field::When, &when)?;
-        let fee = compile(Field::Fee, &fee)?;
+        let when_compiled = compile::expression(env, &when, lists)
+            .and_then(compile::node::Node::into_bool)
+            .map_err(error(Field::When))?;
+        let fee_compiled = compile::expression(env, &fee, lists)
+            .and_then(compile::node::Node::into_fees)
+            .map_err(error(Field::Fee))?;
         Ok(Self {
             name,
-            when,
-            fee,
-            constant_fees: None,
+            when_source: when,
+            fee_source: fee,
+            when: when_compiled,
+            fee: fee_compiled,
         })
-    }
-
-    /// Evaluates the `fee` now if it names no variable. One that fails stays
-    /// unevaluated, so that it is reported like any other.
-    fn evaluate_constant_fee(&mut self, context: &Context) {
-        if self.fee.references().variables().is_empty() {
-            self.constant_fees = self
-                .fee
-                .execute(context)
-                .ok()
-                .and_then(|value| fee::fees_from_value(&value).ok());
-        }
     }
 
     pub fn name(&self) -> &str {
@@ -227,36 +215,25 @@ impl Rule {
 
     /// The condition as written.
     pub fn when(&self) -> &str {
-        &self.when.source_info().source
+        &self.when_source
     }
 
     /// The fee expression as written.
     pub fn fee(&self) -> &str {
-        &self.fee.source_info().source
+        &self.fee_source
     }
 }
 
 /// A checked, immutable set of rules.
+#[derive(Debug)]
 pub struct RuleSet {
     rules: Vec<Rule>,
-    /// The fee functions and the lists, bound once for every evaluation.
-    pub(crate) context: Context<'static, 'static>,
     max_partner_fee: Option<FeeFactor>,
 }
 
-impl fmt::Debug for RuleSet {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RuleSet")
-            .field("rules", &self.rules)
-            .field("max_partner_fee", &self.max_partner_fee)
-            .finish_non_exhaustive()
-    }
-}
-
 impl RuleSet {
-    /// Compiles the rules in the order they are tried against the CEL
-    /// stdlib plus its math and strings extensions. Each list becomes a CEL
-    /// list under its name. `partner_fees` caps an order's partner fees
+    /// Compiles the rules in the order they are tried. Each list becomes a
+    /// set under its name. `partner_fees` caps an order's partner fees
     /// together; without it there are none. Any failure refuses the whole set.
     pub fn new(
         RuleSetDefinition {
@@ -265,17 +242,21 @@ impl RuleSet {
             partner_fees,
         }: RuleSetDefinition,
     ) -> Result<Self, CompileError> {
-        let mut env = Env::stdlib();
-        cel::extensions::math(&mut env).expect("math names are free in the stdlib");
-        cel::extensions::strings(&mut env).expect("strings names are free in the stdlib");
-        let env = Arc::new(env);
-        let mut rules = Vec::with_capacity(definitions.len());
         if let Some(name) = lists
             .keys()
             .find(|name| RESERVED_NAMES.contains(&name.as_str()))
         {
             return Err(CompileError::ReservedList { name: name.clone() });
         }
+        let lists: HashMap<String, Arc<Set>> = lists
+            .iter()
+            .map(|(name, members)| {
+                let set = Set::new(members.iter().map(String::as_str));
+                (name.clone(), Arc::new(set))
+            })
+            .collect();
+        let env = Env::stdlib();
+        let mut rules = Vec::with_capacity(definitions.len());
         let mut names = HashSet::new();
         for (index, definition) in definitions.into_iter().enumerate() {
             if definition.name.trim().is_empty() {
@@ -286,29 +267,19 @@ impl RuleSet {
                     name: definition.name,
                 });
             }
-            rules.push(Rule::compile(&env, definition)?);
-        }
-        let mut context = Context::with_env(env);
-        fee::register_fee_functions(&mut context);
-        for (name, list) in list_values(&lists) {
-            context.add_variable_as_val(name, list);
-        }
-        for rule in &mut rules {
-            rule.evaluate_constant_fee(&context);
+            rules.push(Rule::compile(&env, &lists, definition)?);
         }
         Ok(Self {
             rules,
-            context,
             max_partner_fee: partner_fees.map(|fees| fees.max_volume),
         })
     }
 
     /// Runs every rule against two sample orders and reports each expression
-    /// that yields no bool or no fee: every expression on the full sample,
-    /// then the rules a real order would skip on the bare one. See the README.
+    /// that fails: every expression on the full sample, then the rules a real
+    /// order would skip on the bare one. See the README.
     pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
         let now = Utc::now();
-        let evaluator = self.evaluator(now);
         let error = |sample| {
             move |skipped: Skipped<'_>| SampleOrderError {
                 rule: skipped.rule.name().to_owned(),
@@ -317,7 +288,7 @@ impl RuleSet {
                 sample,
             }
         };
-        let mut errors: Vec<_> = evaluator
+        let mut errors: Vec<_> = self
             .evaluate_all_expressions(OrderView {
                 order: &full_sample_order(now),
                 app_data: &sample_app_data(),
@@ -327,7 +298,7 @@ impl RuleSet {
             .into_iter()
             .map(error(Sample::Full))
             .collect();
-        let on_bare: Vec<_> = evaluator
+        let on_bare: Vec<_> = self
             .evaluate(OrderView {
                 order: &bare_sample_order(now),
                 app_data: &AppData::default(),
@@ -359,12 +330,6 @@ impl RuleSet {
     /// `None` counts no partner fee.
     pub fn max_partner_fee(&self) -> Option<FeeFactor> {
         self.max_partner_fee
-    }
-
-    /// Evaluates orders at `now`. Cheap: lists and functions are bound
-    /// once, in [`RuleSet::new`].
-    pub fn evaluator(&self, now: DateTime<Utc>) -> Evaluator<'_> {
-        Evaluator::new(self, now)
     }
 }
 
@@ -413,29 +378,9 @@ pub(crate) fn sample_app_data() -> AppData {
     }
 }
 
-/// Each list as a CEL map of its members to `true`, hex members lowercased
-/// like the order view's. `in`, e.g. `order.sellToken in stablecoins`, is
-/// then a key lookup; it would scan a CEL list.
-fn list_values(lists: &BTreeMap<String, Vec<String>>) -> Vec<(String, Box<dyn Val>)> {
-    lists
-        .iter()
-        .map(|(name, members)| {
-            let members: HashMap<_, _> = members
-                .iter()
-                .map(|member| {
-                    let present: Box<dyn Val> = Box::new(CelBool::from(true));
-                    (CelMapKey::from(order_view::normalize(member)), present)
-                })
-                .collect();
-            let members: Box<dyn Val> = Box::new(CelMap::from(members));
-            (name.clone(), members)
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, alloy_primitives::Address};
 
     fn rule(name: &str, when: &str, fee: &str) -> RuleDefinition {
         RuleDefinition {
@@ -468,23 +413,30 @@ mod tests {
     }
 
     #[test]
-    fn lowercases_hex_list_members() {
+    fn list_members_are_addresses_in_any_case_or_texts() {
         let lists = BTreeMap::from([(
-            "tokens".to_owned(),
-            vec!["0xAbC".to_owned(), "Acme".to_owned()],
+            "members".to_owned(),
+            vec![
+                "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".to_owned(),
+                "Acme".to_owned(),
+            ],
         )]);
         let rules = RuleSet::new(RuleSetDefinition {
             lists,
             rules: vec![rule(
-                "Lowercase",
-                "'0xabc' in tokens && 'Acme' in tokens && size(tokens) == 2",
+                "Members",
+                "order.sellToken in members && 'Acme' in members && !('acme' in members)",
                 "no_fee()",
             )],
             ..Default::default()
         })
         .unwrap();
-        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
-            order: &Order::default(),
+        let mut order = Order::default();
+        order.data.sell_token = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+            .parse()
+            .unwrap();
+        let evaluation = rules.evaluate(OrderView {
+            order: &order,
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
@@ -492,14 +444,42 @@ mod tests {
         assert_eq!(evaluation.matched.len(), 1);
     }
 
+    /// A short list is scanned and a longer one hashed.
     #[test]
-    fn evaluates_once_only_a_fee_that_names_no_variable() {
+    fn lists_of_any_size_find_their_members() {
+        for size in [1u8, 4, 5, 40] {
+            let members: Vec<_> = (1..=size).map(Address::with_last_byte).collect();
+            let rules = RuleSet::new(RuleSetDefinition {
+                lists: BTreeMap::from([(
+                    "members".to_owned(),
+                    members.iter().map(Address::to_string).collect(),
+                )]),
+                rules: vec![rule("Members", "order.sellToken in members", "no_fee()")],
+                ..Default::default()
+            })
+            .unwrap();
+            let matches = |sell_token| {
+                let mut order = Order::default();
+                order.data.sell_token = sell_token;
+                let evaluation = rules.evaluate(OrderView {
+                    order: &order,
+                    app_data: &AppData::default(),
+                    partner_fees: &[],
+                    in_market: false,
+                });
+                !evaluation.matched.is_empty()
+            };
+            assert!(members.iter().all(|member| matches(*member)), "{size}");
+            assert!(!matches(Address::with_last_byte(size + 1)), "{size}");
+        }
+    }
+
+    #[test]
+    fn folds_a_fee_that_reads_nothing_from_the_order() {
         let rules = RuleSet::new(RuleSetDefinition {
             rules: vec![
                 rule("constant", "true", "[surplus(50, 98), volume(2)]"),
                 rule("reads the order", "true", "volume(order.inMarket ? 1 : 2)"),
-                rule("reads the time", "true", "volume(now > now ? 1 : 2)"),
-                rule("fails", "true", "volume(-1)"),
             ],
             ..Default::default()
         })
@@ -507,28 +487,29 @@ mod tests {
         let constant: Vec<_> = rules
             .rules()
             .iter()
-            .map(|rule| rule.constant_fees.clone())
+            .map(|rule| matches!(rule.fee, Val::Const(_)))
             .collect();
-        let fees = vec![
-            Fee::Surplus {
-                factor: FeeFactor::try_from(0.5).unwrap(),
-                max_volume_factor: FeeFactor::try_from(0.0098).unwrap(),
-            },
-            Fee::Volume {
-                factor: FeeFactor::try_from(0.0002).unwrap(),
-            },
-        ];
-        assert_eq!(constant, [Some(fees.clone()), None, None, None]);
+        assert_eq!(constant, [true, false]);
 
-        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+        let evaluation = rules.evaluate(OrderView {
             order: &Order::default(),
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
         });
-        assert_eq!(evaluation.matched[0].fees, fees);
-        assert_eq!(evaluation.skipped.len(), 1);
-        assert_eq!(evaluation.skipped[0].rule.name(), "fails");
+        assert_eq!(
+            evaluation.matched[0].fees,
+            [
+                Fee::Surplus {
+                    factor: FeeFactor::try_from(0.5).unwrap(),
+                    max_volume_factor: FeeFactor::try_from(0.0098).unwrap(),
+                },
+                Fee::Volume {
+                    factor: FeeFactor::try_from(0.0002).unwrap(),
+                },
+            ]
+        );
+        assert!(evaluation.skipped.is_empty());
     }
 
     #[test]
@@ -577,6 +558,96 @@ mod tests {
         }
     }
 
+    /// Type errors and unknown names refuse the set; no order reaches them.
+    #[test]
+    fn refuses_type_errors_and_unknown_names() {
+        let message = |when: &str, fee: &str| {
+            RuleSet::new(RuleSetDefinition {
+                rules: vec![rule("x", when, fee)],
+                ..Default::default()
+            })
+            .unwrap_err()
+            .to_string()
+        };
+        for (when, fee, expected) in [
+            (
+                "order.sellAmount",
+                "volume(1)",
+                "expected a bool, found a number",
+            ),
+            (
+                "order.sellAmout > 0",
+                "volume(1)",
+                "`order` has no field `sellAmout`",
+            ),
+            (
+                "unknown_list == 1",
+                "volume(1)",
+                "unknown name `unknown_list`",
+            ),
+            (
+                "order.sellAmount == 'x'",
+                "volume(1)",
+                "cannot compare a number with a string",
+            ),
+            ("true", "volume('ten')", "expected a number, found a string"),
+            ("false", "volume(0.001)", "is finer than the fee precision"),
+            (
+                "true",
+                "order.inMarket ? volume(0.001) : volume(1)",
+                "is finer than the fee precision",
+            ),
+            (
+                "wrapped_native.exists(t, t in tokens)",
+                "volume(1)",
+                "macros",
+            ),
+            (
+                "size(order.kind) > 0",
+                "volume(1)",
+                "unknown function `size`",
+            ),
+            (
+                "order.kind.startsWith('s')",
+                "volume(1)",
+                "unknown function `startsWith`",
+            ),
+            (
+                "true",
+                "volume(math.greatest(1, 2))",
+                "unknown function `greatest`",
+            ),
+            (
+                "order.?validFrom.orValue(0) > 0",
+                "volume(1)",
+                "unknown function `orValue`",
+            ),
+            (
+                "has(order.?ethflowData.userValidTo)",
+                "volume(1)",
+                "`.?` is not supported",
+            ),
+            (
+                "now > timestamp('2026-12-01T00:00:00Z')",
+                "volume(1)",
+                "unknown name `now`",
+            ),
+            (
+                "order.validTo > timestamp('2026-12-01T00:00:00Z')",
+                "volume(1)",
+                "unknown function `timestamp`",
+            ),
+            (
+                "true",
+                "[volume(1), 'x']",
+                "only fees or only string literals",
+            ),
+        ] {
+            let error = message(when, fee);
+            assert!(error.contains(expected), "{when} / {fee}: {error}");
+        }
+    }
+
     #[test]
     fn refuses_reserved_list_names() {
         for name in RESERVED_NAMES {
@@ -606,29 +677,28 @@ mod tests {
         validate(vec![
             rule(
                 "Ethflow",
-                "order.?ethflowData.userValidTo.orValue(0u) > 0u",
+                "has(order.ethflowData) && order.ethflowData.userValidTo > 0",
                 "no_fee()",
             ),
             rule("Fast path", "order.fastPath", "no_fee()"),
             rule(
                 "App code",
-                "order.appData.?appCode.orValue('') == 'sample'",
+                "has(order.appData.appCode) && order.appData.appCode == 'sample'",
                 "no_fee()",
             ),
             rule(
                 "Ratio",
-                "order.?ethflowData.optMap(e, e.userValidTo + 1u).orValue(0u) > 0u",
-                "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
+                "order.sellAmount > 0",
+                "volume(order.buyAmount / order.sellAmount)",
             ),
             rule(
                 "Expiry",
-                "order.validTo - 3600u > 0u && now - timestamp(int(order.validTo)) < \
-                 duration('1h')",
+                "order.validTo - 3600 > 0 && order.validTo - order.creationDate < 3600",
                 "no_fee()",
             ),
             rule(
                 "Valid from",
-                "order.?validFrom.orValue(0u) + 1u > 0u",
+                "has(order.validFrom) && order.validFrom + 1 > 0",
                 "no_fee()",
             ),
             rule("Default", "true", "[surplus(50, 100), volume(0.3)]"),
@@ -637,34 +707,22 @@ mod tests {
 
         let errors = |definitions| validate(definitions).unwrap_err();
         assert!(matches!(
-            errors(vec![rule("Not a bool", "order.sellAmount", "volume(1)")])[..],
+            errors(vec![rule(
+                "Underflow",
+                "order.sellAmount - 2 > 0",
+                "volume(1)"
+            )])[..],
             [SampleOrderError {
                 ref rule,
                 field: Field::When,
-                error: RuleError::NotABool(_),
+                error: RuleError::Arithmetic,
                 sample: Sample::Full,
-            }] if rule == "Not a bool"
-        ));
-        assert!(matches!(
-            errors(vec![rule("Misspelt", "order.sellAmout > 0", "volume(1)")])[..],
-            [SampleOrderError {
-                field: Field::When,
-                error: RuleError::Execution(_),
-                ..
-            }]
-        ));
-        assert!(matches!(
-            errors(vec![rule("Never matches", "false", "volume(0.001)")])[..],
-            [SampleOrderError {
-                field: Field::Fee,
-                error: RuleError::NotAFee(_),
-                ..
-            }]
+            }] if rule == "Underflow"
         ));
         assert_eq!(
-            errors(vec![rule("x", "true", "volume('ten')")])[0].to_string(),
-            "rule `x`: `fee` `volume` argument `bps` is string instead of a number on a sample \
-             order"
+            errors(vec![rule("x", "false", "volume(order.sellAmount / 3.0)")])[0].to_string(),
+            "rule `x`: `fee` `volume` argument `bps` = 0.3333333333333333333333333333 is finer \
+             than the fee precision (1e-6 of the volume) on a sample order"
         );
     }
 
@@ -673,17 +731,17 @@ mod tests {
         validate(vec![
             rule(
                 "Guarded",
-                "order.?ethflowData.userValidTo.orValue(0u) != 0u",
+                "has(order.ethflowData) && order.ethflowData.userValidTo != 0",
                 "volume(1)",
             ),
             rule(
                 "Fee behind its guard",
-                "order.?validFrom.hasValue()",
-                "volume(order.validFrom > 0u ? 1 : 2)",
+                "has(order.validFrom)",
+                "volume(order.validFrom > 0 ? 1 : 2)",
             ),
             rule(
-                "Nested",
-                "order.?ethflowData.userValidTo.hasValue()",
+                "Last field only",
+                "has(order.ethflowData.userValidTo)",
                 "no_fee()",
             ),
         ])
@@ -692,15 +750,9 @@ mod tests {
         let errors = validate(vec![
             rule(
                 "Unguarded",
-                "order.ethflowData.userValidTo != 0u",
+                "order.ethflowData.userValidTo != 0",
                 "volume(1)",
             ),
-            rule(
-                "Last field only",
-                "has(order.ethflowData.userValidTo)",
-                "no_fee()",
-            ),
-            rule("Misspelt", "order.sellAmout > 0", "volume(1)"),
             rule("App code", "order.appData.appCode == 'sample'", "no_fee()"),
         ])
         .unwrap_err();
@@ -711,28 +763,33 @@ mod tests {
         assert_eq!(
             reported,
             [
-                ("Misspelt", Field::When, Sample::Full),
                 ("Unguarded", Field::When, Sample::Bare),
-                ("Last field only", Field::When, Sample::Bare),
                 ("App code", Field::When, Sample::Bare),
             ]
         );
-        assert!(errors.iter().all(|error| matches!(
-            error.error,
-            RuleError::Execution(cel::ExecutionError::NoSuchKey(_))
-        )));
-        let message = errors[1].to_string();
-        assert!(message.contains("No such key: ethflowData"), "{message}");
-        assert!(message.ends_with("on a sample order with no optional field"));
+        assert!(
+            errors
+                .iter()
+                .all(|error| matches!(error.error, RuleError::Missing(_)))
+        );
+        assert_eq!(
+            errors[0].to_string(),
+            "rule `Unguarded`: `when` the order has no `userValidTo` on a sample order with no \
+             optional field"
+        );
     }
 
     #[test]
     fn sample_order_validation_reports_every_failure() {
         let rules = RuleSet::new(RuleSetDefinition {
             rules: vec![
-                rule("Both", "order.sellAmount", "volume(0.001)"),
+                rule(
+                    "Both",
+                    "order.sellAmount - 2 > 0",
+                    "volume(order.sellAmount / 3.0)",
+                ),
                 rule("Fine", "true", "volume(1)"),
-                rule("Fee", "true", "volume('ten')"),
+                rule("Fee", "true", "volume(order.sellAmount / 3.0)"),
             ],
             ..Default::default()
         })

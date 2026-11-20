@@ -1,0 +1,310 @@
+//! Exact numbers: `uint` is a `U256`, `int` an `I256`, a number with a
+//! fraction a `Decimal`. Mixed operands are promoted, never rounded.
+//!
+//! [`Num`] is a number while it compiles: its type is known, so operators
+//! on one type run natively. [`Number`] is a value of any of the types, for
+//! the conversions and for comparisons across types.
+
+use {
+    crate::{
+        RuleError,
+        compile::node::{Val, Value, map2},
+    },
+    alloy_primitives::{I256, U256, U512},
+    rust_decimal::{
+        Decimal,
+        prelude::{FromPrimitive, ToPrimitive},
+    },
+    std::cmp::Ordering,
+};
+
+/// A number of any of the three types, for the exact mixed-type paths.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Number {
+    UInt(U256),
+    Int(I256),
+    Decimal(Decimal),
+}
+
+impl Number {
+    /// `(negative, magnitude, scale)`: the value is `±magnitude / 10^scale`.
+    /// Zero is never negative.
+    fn parts(self) -> (bool, U512, u32) {
+        match self {
+            Number::UInt(u) => (false, U512::from(u), 0),
+            Number::Int(i) => (i.is_negative(), U512::from(i.unsigned_abs()), 0),
+            Number::Decimal(d) => (
+                d.is_sign_negative() && !d.is_zero(),
+                U512::from(d.mantissa().unsigned_abs()),
+                d.scale(),
+            ),
+        }
+    }
+
+    /// Exact order of any two numbers. Magnitudes are at most 2^256 and a
+    /// decimal scale at most 28, so the scaled values fit 512 bits.
+    pub(crate) fn cmp_exact(self, other: Number) -> Ordering {
+        let (a_negative, a, a_scale) = self.parts();
+        let (b_negative, b, b_scale) = other.parts();
+        if a_negative != b_negative {
+            return b_negative.cmp(&a_negative);
+        }
+        let ten = U512::from(10);
+        let a = a * ten.pow(U512::from(b_scale));
+        let b = b * ten.pow(U512::from(a_scale));
+        if a_negative { b.cmp(&a) } else { a.cmp(&b) }
+    }
+
+    /// Drops the fraction of a decimal; a negative number is out of range.
+    pub(crate) fn to_uint(self) -> Result<U256, RuleError> {
+        match self {
+            Number::UInt(u) => Ok(u),
+            Number::Int(i) => U256::try_from(i).map_err(|_| RuleError::Range("uint")),
+            Number::Decimal(d) => d
+                .trunc()
+                .to_u128()
+                .map(U256::from)
+                .ok_or(RuleError::Range("uint")),
+        }
+    }
+
+    /// Drops the fraction of a decimal.
+    pub(crate) fn to_int(self) -> Result<I256, RuleError> {
+        match self {
+            Number::UInt(u) => I256::try_from(u).map_err(|_| RuleError::Range("int")),
+            Number::Int(i) => Ok(i),
+            Number::Decimal(d) => Ok(I256::try_from(
+                d.trunc().to_i128().expect("a decimal is below 2^96"),
+            )
+            .expect("an i128 fits 256 bits")),
+        }
+    }
+
+    /// An integer past 96 bits is out of range.
+    pub(crate) fn to_decimal(self) -> Result<Decimal, RuleError> {
+        let range = || RuleError::Range("decimal");
+        match self {
+            Number::UInt(u) => u128::try_from(u)
+                .ok()
+                .and_then(Decimal::from_u128)
+                .ok_or_else(range),
+            Number::Int(i) => i128::try_from(i)
+                .ok()
+                .and_then(Decimal::from_i128)
+                .ok_or_else(range),
+            Number::Decimal(d) => Ok(d),
+        }
+    }
+
+    /// Whether the value stays the same as a `kind`.
+    fn converts_exactly(self, kind: Kind) -> bool {
+        let converted = match kind {
+            Kind::UInt => self.to_uint().map(Number::UInt),
+            Kind::Int => self.to_int().map(Number::Int),
+            Kind::Decimal => self.to_decimal().map(Number::Decimal),
+        };
+        converted.is_ok_and(|converted| converted.cmp_exact(self) == Ordering::Equal)
+    }
+}
+
+/// The type of a number.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kind {
+    UInt,
+    Int,
+    Decimal,
+}
+
+impl std::fmt::Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Kind::UInt => "uint",
+            Kind::Int => "int",
+            Kind::Decimal => "decimal",
+        })
+    }
+}
+
+impl std::fmt::Display for Number {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Number::UInt(value) => value.fmt(f),
+            Number::Int(value) => value.fmt(f),
+            Number::Decimal(value) => value.fmt(f),
+        }
+    }
+}
+
+/// A compiled number of one of the three types.
+pub(crate) enum Num {
+    UInt(Val<U256>),
+    Int(Val<I256>),
+    Decimal(Val<Decimal>),
+}
+
+/// Two numbers brought to the same type.
+pub(crate) enum Pair {
+    UInt(Val<U256>, Val<U256>),
+    Int(Val<I256>, Val<I256>),
+    Decimal(Val<Decimal>, Val<Decimal>),
+}
+
+impl Num {
+    pub(crate) fn kind(&self) -> Kind {
+        match self {
+            Num::UInt(_) => Kind::UInt,
+            Num::Int(_) => Kind::Int,
+            Num::Decimal(_) => Kind::Decimal,
+        }
+    }
+
+    fn constant(&self) -> Option<Number> {
+        match self {
+            Num::UInt(Val::Const(u)) => Some(Number::UInt(*u)),
+            Num::Int(Val::Const(i)) => Some(Number::Int(*i)),
+            Num::Decimal(Val::Const(d)) => Some(Number::Decimal(*d)),
+            _ => None,
+        }
+    }
+
+    /// The number as a [`Number`], for the mixed-type paths.
+    pub(crate) fn into_number(self) -> Result<Val<Number>, String> {
+        match self {
+            Num::UInt(v) => v.map(|u| Ok(Number::UInt(u))),
+            Num::Int(v) => v.map(|i| Ok(Number::Int(i))),
+            Num::Decimal(v) => v.map(|d| Ok(Number::Decimal(d))),
+        }
+    }
+
+    /// The number as a `uint`; see [`Num::convert`].
+    pub(crate) fn into_uint(self) -> Result<Val<U256>, String> {
+        match self {
+            Num::UInt(value) => Ok(value),
+            other => other.convert(Kind::UInt, Number::to_uint),
+        }
+    }
+
+    /// The number as an `int`; see [`Num::convert`].
+    pub(crate) fn into_int(self) -> Result<Val<I256>, String> {
+        match self {
+            Num::Int(value) => Ok(value),
+            other => other.convert(Kind::Int, Number::to_int),
+        }
+    }
+
+    /// The number as a decimal; see [`Num::convert`].
+    pub(crate) fn into_decimal(self) -> Result<Val<Decimal>, String> {
+        match self {
+            Num::Decimal(value) => Ok(value),
+            other => other.convert(Kind::Decimal, Number::to_decimal),
+        }
+    }
+
+    /// Converts with `to`, which gives a `kind`. A constant must convert
+    /// exactly, else it is a compile error; any other value is checked per
+    /// order.
+    fn convert<T: Value>(
+        self,
+        kind: Kind,
+        to: fn(Number) -> Result<T, RuleError>,
+    ) -> Result<Val<T>, String> {
+        if let Some(number) = self.constant()
+            && !number.converts_exactly(kind)
+        {
+            return Err(format!("{number} is not exactly a {kind}"));
+        }
+        self.into_number()?.map(to)
+    }
+
+    /// The type both operands share without changing a value. A constant
+    /// takes the other side's type if it converts exactly; a decimal constant
+    /// only if `decimal_to_integer` (so `sellAmount / 1e20` stays decimal).
+    pub(crate) fn shared_kind(a: &Num, b: &Num, decimal_to_integer: bool) -> Option<Kind> {
+        let (ka, kb) = (a.kind(), b.kind());
+        let adopts = |constant: Option<Number>, from: Kind, to: Kind| {
+            (decimal_to_integer || from != Kind::Decimal)
+                && constant.is_some_and(|number| number.converts_exactly(to))
+        };
+        if ka == kb || adopts(b.constant(), kb, ka) {
+            Some(ka)
+        } else if adopts(a.constant(), ka, kb) {
+            Some(kb)
+        } else {
+            None
+        }
+    }
+
+    /// Brings both operands to one type: the shared one, else the wider of
+    /// the two (uint < int < decimal), converted and checked per order.
+    pub(crate) fn unify(a: Num, b: Num) -> Result<Pair, String> {
+        let kind = Num::shared_kind(&a, &b, false).unwrap_or(
+            if a.kind() == Kind::Decimal || b.kind() == Kind::Decimal {
+                Kind::Decimal
+            } else {
+                Kind::Int
+            },
+        );
+        Num::pair(a, b, kind)
+    }
+
+    /// Both operands converted to `kind`.
+    pub(crate) fn pair(a: Num, b: Num, kind: Kind) -> Result<Pair, String> {
+        Ok(match kind {
+            Kind::UInt => Pair::UInt(a.into_uint()?, b.into_uint()?),
+            Kind::Int => Pair::Int(a.into_int()?, b.into_int()?),
+            Kind::Decimal => Pair::Decimal(a.into_decimal()?, b.into_decimal()?),
+        })
+    }
+}
+
+/// Integer and decimal arithmetic, all checked.
+pub(crate) trait Arith: Copy + Ord + Send + Sync + 'static {
+    fn add(self, other: Self) -> Option<Self>;
+    fn sub(self, other: Self) -> Option<Self>;
+    fn mul(self, other: Self) -> Option<Self>;
+    fn div(self, other: Self) -> Option<Self>;
+    fn rem(self, other: Self) -> Option<Self>;
+}
+
+macro_rules! arith {
+    ($t:ty) => {
+        impl Arith for $t {
+            fn add(self, other: Self) -> Option<Self> {
+                self.checked_add(other)
+            }
+
+            fn sub(self, other: Self) -> Option<Self> {
+                self.checked_sub(other)
+            }
+
+            fn mul(self, other: Self) -> Option<Self> {
+                self.checked_mul(other)
+            }
+
+            fn div(self, other: Self) -> Option<Self> {
+                self.checked_div(other)
+            }
+
+            fn rem(self, other: Self) -> Option<Self> {
+                self.checked_rem(other)
+            }
+        }
+    };
+}
+
+arith!(U256);
+arith!(I256);
+arith!(Decimal);
+
+/// `a <op> b` on one type; overflow, underflow and division by zero are
+/// errors, so the rule is skipped.
+pub(crate) fn arithmetic<T: Arith>(op: &str, a: Val<T>, b: Val<T>) -> Result<Val<T>, String> {
+    let f: fn(T, T) -> Option<T> = match op {
+        "_+_" => T::add,
+        "_-_" => T::sub,
+        "_*_" => T::mul,
+        "_/_" => T::div,
+        _ => T::rem,
+    };
+    map2(a, b, move |a, b| f(a, b).ok_or(RuleError::Arithmetic))
+}

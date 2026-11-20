@@ -4,7 +4,6 @@
 use {
     alloy::primitives::Address,
     app_data::ValidatedAppData,
-    chrono::Utc,
     configs::{fee_engine::FeeEngineConfig, fee_factor::FeeFactor},
     fee_engine::{Evaluation, Fee, Outcome, PartnerFee, RuleSet},
     model::order::{Order, OrderUid},
@@ -53,15 +52,12 @@ impl FeeEngineVolumeFees {
         partner_fees: &[PartnerFee],
         in_market: bool,
     ) -> Evaluation<'_> {
-        let evaluation = self
-            .rules
-            .evaluator(Utc::now())
-            .evaluate(fee_engine::OrderView {
-                order,
-                app_data: &shared::fee_engine::app_data(&app_data.protocol, app_code),
-                partner_fees,
-                in_market,
-            });
+        let evaluation = self.rules.evaluate(fee_engine::OrderView {
+            order,
+            app_data: &shared::fee_engine::app_data(&app_data.protocol, app_code),
+            partner_fees,
+            in_market,
+        });
         evaluation.warn_skipped();
         evaluation
     }
@@ -524,7 +520,7 @@ mod tests {
         let rules = vec![
             rule(
                 "x",
-                "order.sellAmount == 1000.0 ? order.missing == 1 : false",
+                "order.sellAmount == 1000 ? order.ethflowData.userValidTo == 1 : false",
                 "volume(1)",
             ),
             rule("y", "true", "volume(2)"),
