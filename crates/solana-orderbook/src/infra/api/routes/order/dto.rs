@@ -64,9 +64,19 @@ pub struct Order {
     /// Sell tokens pulled from the order so far.
     #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigDecimal,
+    /// Equal to `executed_sell_amount`: Solana orders sign no fee.
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed_sell_amount_before_fees: BigDecimal,
     /// Buy tokens pushed to the order so far.
     #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigDecimal,
+    /// The fee the order paid across its settlements, execution costs,
+    /// solver fees and protocol fees, in `executed_fee_token`.
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed_fee: BigDecimal,
+    /// The token `executed_fee` is in: the sell token.
+    #[serde_as(as = "DisplayFromStr")]
+    pub executed_fee_token: Pubkey,
     pub status: Status,
     /// The block height a pending sponsored creation dies at. Present only
     /// while the order awaits its on-chain creation: past this height the
@@ -136,8 +146,11 @@ impl Order {
                 .cancelled_by_tx
                 .filter(|_| cancelled)
                 .map(|signature| Signature::from(signature.0)),
+            executed_sell_amount_before_fees: row.amount_withdrawn.clone(),
             executed_sell_amount: row.amount_withdrawn,
             executed_buy_amount: row.amount_received,
+            executed_fee: row.executed_fee,
+            executed_fee_token: Pubkey::new_from_array(row.sell_token.0),
             status,
             last_valid_block_height: row
                 .last_valid_block_height
@@ -199,6 +212,7 @@ mod tests {
             order_pda: ByteArray([0x88; 32]),
             amount_withdrawn: 0.into(),
             amount_received: 0.into(),
+            executed_fee: 0.into(),
             cancellation_timestamp: None,
             created_by_tx: None,
             cancelled_by_tx: None,
@@ -349,5 +363,20 @@ mod tests {
         assert_eq!(json["status"], "fulfilled");
         assert!(json.get("cancellationDate").is_none());
         assert!(json.get("cancellationTxSignature").is_none());
+    }
+
+    /// The fee is in the sell token, and with no signed fee the sell amount
+    /// before fees is the executed sell amount.
+    #[test]
+    fn the_executed_fee_is_in_the_sell_token() {
+        let filled = OrderRow {
+            amount_withdrawn: 400.into(),
+            executed_fee: 5.into(),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(filled, 1_500, None)).unwrap();
+        assert_eq!(json["executedFee"], "5");
+        assert_eq!(json["executedFeeToken"], json["sellToken"]);
+        assert_eq!(json["executedSellAmountBeforeFees"], "400");
     }
 }

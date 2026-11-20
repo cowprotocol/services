@@ -1,5 +1,6 @@
-//! The protocol fees each order paid in a settlement, recorded in
-//! `solana.order_execution` by a sweep over the final trades.
+//! The fees each order paid in a settlement, per protocol fee policy and in
+//! total, recorded in `solana.order_execution` by a sweep over the final
+//! trades.
 
 use {
     crate::{
@@ -46,6 +47,9 @@ struct TradeRow {
     quote_buy_amount: Option<BigDecimal>,
     quote_execution_cost: Option<BigDecimal>,
     quote_solver: Option<ByteArray<32>>,
+    /// What the winning proposal with the trade's amounts took from the fill,
+    /// in the surplus token.
+    proposed_fee: Option<BigDecimal>,
 }
 
 /// A `solana.fee_policies` row.
@@ -89,7 +93,15 @@ SELECT t.tx_signature, t.instruction_index, t.order_uid, s.auction_id,
        o.sell_amount AS limit_sell, o.buy_amount AS limit_buy,
        t.sell_amount AS executed_sell, t.buy_amount AS executed_buy,
        q.sell_amount AS quote_sell_amount, q.buy_amount AS quote_buy_amount,
-       q.execution_cost AS quote_execution_cost, q.solver AS quote_solver
+       q.execution_cost AS quote_execution_cost, q.solver AS quote_solver,
+       (SELECT pte.fee
+        FROM solana.proposed_solutions ps
+        JOIN solana.proposed_trade_executions pte
+          ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid
+        WHERE ps.auction_id = s.auction_id AND ps.solver = s.solver AND ps.is_winner
+          AND pte.order_uid = t.order_uid
+          AND pte.executed_sell = t.sell_amount AND pte.executed_buy = t.buy_amount
+        LIMIT 1) AS proposed_fee
 FROM solana.trades t
 JOIN solana.settlements s
   ON s.tx_signature = t.tx_signature AND s.instruction_index = t.instruction_index
@@ -140,7 +152,8 @@ ORDER BY application_order
             let policies = policies
                 .get(&(trade.auction_id, trade.order_uid))
                 .map_or(&[][..], Vec::as_slice);
-            let fees = fees(trade, policies).unwrap_or_else(|err| {
+            let breakdown = fees(trade, policies).and_then(|fees| Ok((fees, executed_fee(trade)?)));
+            let (fees, executed_fee) = breakdown.unwrap_or_else(|err| {
                 tracing::warn!(
                     ?err,
                     auction_id = trade.auction_id,
@@ -151,25 +164,29 @@ ORDER BY application_order
                     .settlement_math_errors
                     .with_label_values(&["fee_breakdown"])
                     .inc();
-                Vec::new()
+                (Vec::new(), None)
             });
             let (tokens, amounts): (Vec<_>, Vec<_>) = fees
                 .into_iter()
                 .map(|(token, amount)| (token.0.to_vec(), BigDecimal::from(amount)))
                 .unzip();
-            (trade, tokens, amounts)
+            (trade, tokens, amounts, executed_fee.map(BigDecimal::from))
         })
         .collect();
     let mut insert = QueryBuilder::<Postgres>::new(
         "INSERT INTO solana.order_execution (order_uid, auction_id, protocol_fee_tokens, \
-         protocol_fee_amounts) ",
+         protocol_fee_amounts, executed_fee) ",
     );
-    insert.push_values(executions, |mut row, (trade, tokens, amounts)| {
-        row.push_bind(trade.order_uid)
-            .push_bind(trade.auction_id)
-            .push_bind(tokens)
-            .push_bind(amounts);
-    });
+    insert.push_values(
+        executions,
+        |mut row, (trade, tokens, amounts, executed_fee)| {
+            row.push_bind(trade.order_uid)
+                .push_bind(trade.auction_id)
+                .push_bind(tokens)
+                .push_bind(amounts)
+                .push_bind(executed_fee);
+        },
+    );
     // A concurrent sweep may have recorded the same trade already.
     insert.push(" ON CONFLICT DO NOTHING");
     // One transaction, so a trade is flagged only with its row written.
@@ -243,6 +260,24 @@ fn fees(trade: &TradeRow, policies: &[PolicyRow]) -> Result<Vec<(Pubkey, u64)>> 
         .collect())
 }
 
+/// The fee the winning proposal took, in the sell token. A sell order's
+/// converts at the rate before the fee, rounded down. A buy order's is in the
+/// sell token already.
+fn executed_fee(trade: &TradeRow) -> Result<Option<u64>> {
+    let Some(fee) = &trade.proposed_fee else {
+        return Ok(None);
+    };
+    let fee = db::to_amount(fee).context("proposed_fee")?;
+    if trade.kind == OrderKind::Buy {
+        return Ok(Some(fee));
+    }
+    let sell = u128::from(db::to_amount(&trade.executed_sell).context("executed_sell")?);
+    let buy = u128::from(db::to_amount(&trade.executed_buy).context("executed_buy")?);
+    let fee = u128::from(fee);
+    let fee = (fee * sell).checked_div(buy + fee).unwrap_or(0);
+    Ok(Some(u64::try_from(fee).context("executed fee")?))
+}
+
 impl PolicyRow {
     /// The policy as the auction attached it. A price improvement policy
     /// measures against `quote`.
@@ -314,7 +349,53 @@ mod tests {
             quote_buy_amount: quote.map(|(_, buy, _)| buy.into()),
             quote_execution_cost: quote.map(|(_, _, cost)| cost.into()),
             quote_solver: quote.map(|_| ByteArray([9; 32])),
+            proposed_fee: None,
         }
+    }
+
+    /// A sell order's fee, taken in the buy token, converts at the rate
+    /// before it and rounds down. A buy order's fee is in the sell token
+    /// already, and a trade without a reported fee has none.
+    #[test]
+    fn the_executed_fee_is_in_the_sell_token() {
+        // 100 sold for 190 after a fee of 10, so for 200 before it: the fee
+        // is worth 5 sold.
+        let sell = TradeRow {
+            executed_sell: 100.into(),
+            executed_buy: 190.into(),
+            proposed_fee: Some(10.into()),
+            ..trade(None)
+        };
+        assert_eq!(executed_fee(&sell).unwrap(), Some(5));
+        // 1 of the 300 bought before the fee is a third of a sold atom.
+        let dust = TradeRow {
+            executed_sell: 100.into(),
+            executed_buy: 299.into(),
+            proposed_fee: Some(1.into()),
+            ..trade(None)
+        };
+        assert_eq!(executed_fee(&dust).unwrap(), Some(0));
+        // A fee of everything bought is everything sold, at the u64 ceiling.
+        let all = TradeRow {
+            executed_sell: u64::MAX.into(),
+            executed_buy: 0.into(),
+            proposed_fee: Some(u64::MAX.into()),
+            ..trade(None)
+        };
+        assert_eq!(executed_fee(&all).unwrap(), Some(u64::MAX));
+        let nothing = TradeRow {
+            executed_buy: 0.into(),
+            proposed_fee: Some(0.into()),
+            ..trade(None)
+        };
+        assert_eq!(executed_fee(&nothing).unwrap(), Some(0));
+        let buy = TradeRow {
+            kind: OrderKind::Buy,
+            proposed_fee: Some(7.into()),
+            ..trade(None)
+        };
+        assert_eq!(executed_fee(&buy).unwrap(), Some(7));
+        assert_eq!(executed_fee(&trade(None)).unwrap(), None);
     }
 
     /// The driver takes a surplus and then a volume fee from a sell fill of
@@ -554,6 +635,88 @@ mod tests {
                 ),
                 (vec![3; 32], 1, vec![], vec![]),
                 (vec![4; 32], 1, vec![], vec![]),
+            ]
+        );
+    }
+
+    /// Solution `uid` of auction 1, proposed by the settling solver.
+    async fn insert_proposal(pool: &PgPool, uid: i64, is_winner: bool) {
+        sqlx::query(
+            "INSERT INTO solana.proposed_solutions (auction_id, uid, id, solver, is_winner, \
+             filtered_out, score) VALUES (1, $1, $1, $2, $3, false, 0)",
+        )
+        .bind(uid)
+        .bind([7u8; 32])
+        .bind(is_winner)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Order `[order; 32]` in solution `uid` of auction 1, selling 10 for
+    /// `buy` after the reported `fee`.
+    async fn insert_proposed_trade(pool: &PgPool, uid: i64, order: u8, buy: u64, fee: Option<u64>) {
+        sqlx::query(
+            "INSERT INTO solana.proposed_trade_executions (auction_id, solution_uid, order_uid, \
+             executed_sell, executed_buy, fee) VALUES (1, $1, $2, 10, $3, $4)",
+        )
+        .bind(uid)
+        .bind([order; 32])
+        .bind(BigDecimal::from(buy))
+        .bind(fee.map(BigDecimal::from))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    /// Each trade sells 10 for 20. A trade takes the fee of the settling
+    /// solver's winning solution with the same amounts, in the sell token:
+    /// a sell order's 20 bought are worth 5 sold at the rate before the fee.
+    /// A trade with no such solution, or one reporting no fee, has none.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied locally, run with --test-threads 1"]
+    async fn solana_db_a_final_trade_records_its_winning_proposals_fee() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+
+        for (order, kind) in [
+            (1, "sell"),
+            (2, "buy"),
+            (3, "sell"),
+            (4, "sell"),
+            (5, "sell"),
+        ] {
+            insert_order(&pool, order, kind).await;
+        }
+        insert_proposal(&pool, 0, true).await;
+        insert_proposed_trade(&pool, 0, 1, 20, Some(20)).await;
+        insert_proposed_trade(&pool, 0, 2, 20, Some(3)).await;
+        insert_proposed_trade(&pool, 0, 3, 21, Some(4)).await;
+        insert_proposed_trade(&pool, 0, 4, 20, None).await;
+        insert_proposal(&pool, 1, false).await;
+        insert_proposed_trade(&pool, 1, 5, 20, Some(6)).await;
+        insert_settlement(&pool, 9, 10, 1).await;
+        for order in [1, 2, 3, 4, 5] {
+            insert_trade(&pool, 9, 10, order).await;
+        }
+        set_finalized_slot(&pool, 10).await;
+
+        record(&pool).await.unwrap();
+
+        let fees: Vec<(Vec<u8>, Option<String>)> = sqlx::query_as(
+            "SELECT order_uid, executed_fee::text FROM solana.order_execution ORDER BY order_uid",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            fees,
+            vec![
+                (vec![1; 32], Some("5".to_string())),
+                (vec![2; 32], Some("3".to_string())),
+                (vec![3; 32], None),
+                (vec![4; 32], None),
+                (vec![5; 32], None),
             ]
         );
     }

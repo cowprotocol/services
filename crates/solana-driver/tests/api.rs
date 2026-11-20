@@ -477,6 +477,7 @@ async fn solve_returns_converted_solutions() {
                 (uid()): {
                     "executedSell": "1000",
                     "executedBuy": "2000",
+                    "fee": "0",
                 }
             }
         }]
@@ -911,6 +912,7 @@ async fn solve_keeps_the_first_of_duplicate_solution_ids() {
                 (uid()): {
                     "executedSell": "1000",
                     "executedBuy": "2000",
+                    "fee": "0",
                 }
             }
         }]
@@ -1037,7 +1039,8 @@ fn solve_request_priced_for_a_cut_of(atoms: u64) -> serde_json::Value {
 /// The auction order sells 1000 for at least 2000. The cut is 100 atoms and
 /// the fee 500 bps, so the engine is asked for 2211, the 2100 moved limit
 /// tightened by the fee, with no account flagged, and its route paying 3000
-/// is reported at 2750: 3000 less the 150 fee and the cut.
+/// is reported at 2750: 3000 less the 150 fee and the cut, which add up to
+/// the reported fee.
 #[tokio::test]
 async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
@@ -1048,6 +1051,7 @@ async fn solve_cuts_the_execution_cost_and_the_fee_from_the_fill() {
     let amounts = &body["solutions"][0]["orders"][uid()];
     assert_eq!(amounts["executedSell"], "1000");
     assert_eq!(amounts["executedBuy"], "2750");
+    assert_eq!(amounts["fee"], "250");
 
     let request = requests.lock().unwrap().take().unwrap();
     assert_eq!(request["orders"][0]["buyAmount"], "2211");
@@ -1195,7 +1199,8 @@ fn solve_request_with_policies(
 /// is asked for 2213: 2002 is the least leg the protocol fee leaves at 2000,
 /// the cut moves it to 2102 and the solver fee tightens that. Its route
 /// paying 3000 is reported at 2748: 3000 less the 150 solver fee, the cut,
-/// and the 2 protocol fee of what is left. The engine sees no policy.
+/// and the 2 protocol fee of what is left, which add up to the reported fee.
+/// The engine sees no policy.
 #[tokio::test]
 async fn solve_takes_the_protocol_fee_after_the_cut_and_the_solver_fee() {
     let (engine, requests) = spawn_recording_solver_engine(engine_response(&[(1, "3000")])).await;
@@ -1210,6 +1215,7 @@ async fn solve_takes_the_protocol_fee_after_the_cut_and_the_solver_fee() {
     let amounts = &body["solutions"][0]["orders"][uid()];
     assert_eq!(amounts["executedSell"], "1000");
     assert_eq!(amounts["executedBuy"], "2748");
+    assert_eq!(amounts["fee"], "252");
 
     let request = requests.lock().unwrap().take().unwrap();
     assert_eq!(request["orders"][0]["buyAmount"], "2213");

@@ -1140,6 +1140,7 @@ mod tests {
             executed_buy,
             solver_fee: 0,
             protocol_fee,
+            execution_cost: 0,
         }
     }
 

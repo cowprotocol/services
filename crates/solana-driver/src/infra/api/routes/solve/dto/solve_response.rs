@@ -44,6 +44,11 @@ pub struct TradedAmounts {
     executed_sell: u64,
     #[serde_as(as = "DisplayFromStr")]
     executed_buy: u64,
+    /// Units the driver took from the fill, in the buy token of a sell order
+    /// and the sell token of a buy order: the execution cost, the solver fee
+    /// and the protocol fee.
+    #[serde_as(as = "DisplayFromStr")]
+    fee: u64,
 }
 
 impl SolveResponse {
@@ -68,6 +73,7 @@ impl Solution {
                     TradedAmounts {
                         executed_sell: trade.executed_sell,
                         executed_buy: trade.executed_buy,
+                        fee: trade.fee(),
                     },
                 )
             })
@@ -97,6 +103,7 @@ mod tests {
                     TradedAmounts {
                         executed_sell: 100,
                         executed_buy: 200,
+                        fee: 6,
                     },
                 )]),
             }],
@@ -108,11 +115,34 @@ mod tests {
                 "orders": {
                     "0x1111111111111111111111111111111111111111111111111111111111111111": {
                         "executedSell": "100",
-                        "executedBuy": "200"
+                        "executedBuy": "200",
+                        "fee": "6"
                     }
                 }
             }]
         });
         assert_eq!(serde_json::to_value(&solve).unwrap(), expected);
+    }
+
+    /// A trade's fee is everything the driver took from its fill: the
+    /// execution cost, the solver fee and the protocol fee.
+    #[test]
+    fn a_trades_fee_adds_up_what_the_driver_took() {
+        let solution = Solution::new(domain::Solution {
+            id: 3,
+            solver: Pubkey::new_from_array([0x22; 32]),
+            prices: HashMap::new(),
+            trades: vec![domain::Trade {
+                order_uid: OrderUid([0x11; 32]),
+                executed_sell: 100,
+                executed_buy: 200,
+                solver_fee: 2,
+                protocol_fee: 1,
+                execution_cost: 3,
+            }],
+            interactions: vec![],
+            cu_estimate: None,
+        });
+        assert_eq!(solution.orders[&OrderUid([0x11; 32])].fee, 6);
     }
 }
