@@ -108,6 +108,17 @@ impl AccountsSnapshot {
         }
     }
 
+    /// The tokens held by the token account at `address`, zero unless it is
+    /// an initialized, unfrozen account of either token program.
+    pub fn token_balance(&self, address: &Pubkey) -> u64 {
+        self.accounts
+            .get(address)
+            .filter(|account| TokenProgram::try_from(&account.owner).is_ok())
+            .and_then(|account| StateWithExtensions::<TokenAccount>::unpack(&account.data).ok())
+            .filter(|state| state.base.state == AccountState::Initialized)
+            .map_or(0, |state| state.base.amount)
+    }
+
     /// Whether the token account at `address` must be created before it can
     /// hold tokens, see [`Self::token_account_state`].
     pub fn token_account_needs_creation(&self, address: Pubkey) -> bool {
@@ -186,12 +197,14 @@ mod tests {
         assert!(matches!(state, TokenAccountState::NeedsCreation));
     }
 
-    /// A 165-byte SPL token account with the given state.
+    /// A 165-byte SPL token account holding 1000 tokens, with the given
+    /// state.
     fn token_account(state: AccountState) -> Account {
         let mut data = [0u8; TokenAccount::LEN];
         TokenAccount {
             mint: pubkey(0x22),
             owner: pubkey(0x33),
+            amount: 1_000,
             state,
             ..TokenAccount::default()
         }
@@ -209,6 +222,26 @@ mod tests {
         let account = token_account(AccountState::Initialized);
         let state = snapshot([(address, account)]).token_account_state(&address);
         assert!(matches!(state, TokenAccountState::Initialized));
+    }
+
+    #[test]
+    fn only_an_initialized_token_account_has_a_balance() {
+        let (initialized, frozen, foreign) = (pubkey(0x11), pubkey(0x12), pubkey(0x13));
+        let snapshot = snapshot([
+            (initialized, token_account(AccountState::Initialized)),
+            (frozen, token_account(AccountState::Frozen)),
+            (
+                foreign,
+                Account {
+                    owner: pubkey(0xff),
+                    ..token_account(AccountState::Initialized)
+                },
+            ),
+        ]);
+        assert_eq!(snapshot.token_balance(&initialized), 1_000);
+        assert_eq!(snapshot.token_balance(&frozen), 0);
+        assert_eq!(snapshot.token_balance(&foreign), 0);
+        assert_eq!(snapshot.token_balance(&pubkey(0x14)), 0);
     }
 
     #[test]

@@ -153,11 +153,12 @@ impl Jupiter {
 }
 
 /// Jupiter's `inAmount` and `outAmount` are what it expects the route to
-/// move; its swap instruction enforces only `otherAmountThreshold`, that
+/// move. Its swap instruction enforces only `otherAmountThreshold`, that
 /// expectation moved by `slippageBps`. The settlement program pays the
-/// promised amount out of what the swap delivered, so a promise above the
-/// enforced bound reverts the payout whenever the pool moves between the
-/// quote and the landing.
+/// promised amount out of the buffer the swap delivers into, so a promise
+/// above the enforced bound reverts the payout whenever the pool moves
+/// between the quote and the landing and the buffer held less than the gap.
+/// The quote promises the bound and keeps `outAmount` as the expected output.
 ///
 /// The program recomputes that bound on chain from the quoted amount and
 /// `slippageBps`; its rounding is not published and may differ from the API's
@@ -179,6 +180,7 @@ fn parse_quote(raw: serde_json::Value, destination: Pubkey) -> Result<Quote, Err
     Ok(Quote {
         in_amount,
         out_amount,
+        expected_out_amount: amounts.out_amount,
         destination,
         raw,
     })
@@ -237,6 +239,7 @@ mod tests {
             (quote.in_amount, quote.out_amount),
             (5_000_000, 480_696_438)
         );
+        assert_eq!(quote.expected_out_amount, 483_111_998);
     }
 
     #[test]
@@ -249,6 +252,7 @@ mod tests {
         });
         let quote = parse_quote(raw, Pubkey::from_str(WSOL).unwrap()).unwrap();
         assert_eq!((quote.in_amount, quote.out_amount), (1_006, 1_000_000));
+        assert_eq!(quote.expected_out_amount, 1_000_000);
     }
 
     /// Live Jupiter API. Needs network. Keyless works, set `JUPITER_API_KEY`

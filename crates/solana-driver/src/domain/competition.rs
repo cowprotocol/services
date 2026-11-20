@@ -512,7 +512,12 @@ impl Competition {
         };
         let solutions = self
             .solver
-            .solve(auction, self.blockchain.program_id(), &charge)
+            .solve(
+                auction,
+                self.blockchain.program_id(),
+                &charge,
+                buy_token_accounts.map(|accounts| &accounts.buffer_balances),
+            )
             .await?;
 
         // Discard solutions with duplicate ids. The first occurrence wins, and

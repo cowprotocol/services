@@ -41,6 +41,11 @@ pub struct Auction {
     pub deadline: chrono::DateTime<chrono::Utc>,
     #[serde_as(as = "HashMap<DisplayFromStr, _>")]
     pub tokens: HashMap<Pubkey, Token>,
+    /// The token balance of each buy-mint buffer an order's swap pays into,
+    /// by buffer address. The settlement can pay a sell out of it on top of
+    /// what the swap delivers. Empty for a quote.
+    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
+    pub buffer_balances: HashMap<Pubkey, u64>,
 }
 
 #[serde_as]
@@ -206,6 +211,7 @@ impl Auction {
         taker: Pubkey,
         program_id: Pubkey,
         charge: &Charge,
+        buffer_balances: Option<&HashMap<Pubkey, u64>>,
     ) -> Self {
         Self {
             id: auction.id.map(|id| id.get()),
@@ -237,6 +243,7 @@ impl Auction {
                 .collect(),
             deadline: auction.deadline,
             tokens: tokens(&auction.native_prices),
+            buffer_balances: buffer_balances.cloned().unwrap_or_default(),
         }
     }
 }
@@ -293,6 +300,9 @@ mod tests {
             "tokens": {
                 (pubkey(1).to_string()): {"referencePrice": "1500000000"},
             },
+            "bufferBalances": {
+                (find_buffer_pda(&program_id, &buy_mint).0.to_string()): "5000",
+            },
         });
 
         let expected = Auction {
@@ -321,6 +331,7 @@ mod tests {
                     reference_price: 1_500_000_000,
                 },
             )]),
+            buffer_balances: HashMap::from([(find_buffer_pda(&program_id, &buy_mint).0, 5_000)]),
         };
 
         let actual = serde_json::to_value(&expected).unwrap();
@@ -538,7 +549,7 @@ mod tests {
             fee_policies: HashMap::from([(order.uid, vec![FeePolicy::Volume { factor: 0.001 }])]),
             ..domain_auction(vec![order])
         };
-        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &Charge::default());
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &Charge::default(), None);
         assert_eq!(sent.orders[0].buy_amount, 1_001);
     }
 
@@ -569,7 +580,7 @@ mod tests {
         let engine = Charge::Engine {
             missing_buy_token_accounts: [order.uid].into(),
         };
-        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine);
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &engine, None);
         assert_eq!(sent.orders.len(), 2);
         assert_eq!(sent.orders[0].buy_amount, 1_000);
         assert!(sent.orders[0].missing_buy_token_account);
@@ -579,7 +590,7 @@ mod tests {
             cuts: [(order.uid, 50)].into(),
             fee: Some(SolverFee::try_from(500).unwrap()),
         };
-        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &driver);
+        let sent = Auction::new(&auction, pubkey(3), pubkey(0xaa), &driver, None);
         assert_eq!(sent.orders.len(), 1);
         assert_eq!(sent.orders[0].uid, order.uid);
         assert_eq!(sent.orders[0].buy_amount, 1_106);
