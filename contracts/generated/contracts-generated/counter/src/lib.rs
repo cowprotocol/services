@@ -115,8 +115,7 @@ pub mod Counter {
     #[derive(Clone)]
     pub struct countersCall(pub alloy_sol_types::private::String);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`counters(string)`](countersCall) function.
+    ///Container type for the return parameters of the [`counters(string)`](countersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct countersReturn {
@@ -260,8 +259,7 @@ pub mod Counter {
         #[allow(missing_docs)]
         pub key: alloy_sol_types::private::String,
     }
-    ///Container type for the return parameters of the
-    /// [`incrementCounter(string)`](incrementCounterCall) function.
+    ///Container type for the return parameters of the [`incrementCounter(string)`](incrementCounterCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct incrementCounterReturn {}
@@ -402,9 +400,7 @@ pub mod Counter {
         #[allow(missing_docs)]
         pub owner: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`setCounterToBalance(string,address,address)`](setCounterToBalanceCall)
-    /// function.
+    ///Container type for the return parameters of the [`setCounterToBalance(string,address,address)`](setCounterToBalanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setCounterToBalanceReturn {}

@@ -303,9 +303,7 @@ pub mod BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory {
         pub swapEnabledOnStart: bool,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`create(string,string,address[],uint256[],uint256,address,
-    /// bool)`](createCall) function.
+    ///Container type for the return parameters of the [`create(string,string,address[],uint256[],uint256,address,bool)`](createCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createReturn {
@@ -493,9 +491,7 @@ pub mod BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory {
             }
         }
     };
-    ///Container for all the
-    /// [`BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory`](self)
-    /// function calls.
+    ///Container for all the [`BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory`](self) function calls.
     #[derive(Clone)]
     pub enum BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryCalls {
         #[allow(missing_docs)]
@@ -635,9 +631,7 @@ pub mod BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory {
             }
         }
     }
-    ///Container for all the
-    /// [`BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory`](self)
-    /// events.
+    ///Container for all the [`BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory`](self) events.
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     pub enum BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactoryEvents {
         #[allow(missing_docs)]

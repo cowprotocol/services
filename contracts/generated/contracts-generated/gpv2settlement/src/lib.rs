@@ -2677,8 +2677,7 @@ pub mod GPv2Settlement {
     #[derive(Clone)]
     pub struct authenticatorCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`authenticator()`](authenticatorCall) function.
+    ///Container type for the return parameters of the [`authenticator()`](authenticatorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct authenticatorReturn {
@@ -2812,8 +2811,7 @@ pub mod GPv2Settlement {
     #[derive(Clone)]
     pub struct domainSeparatorCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`domainSeparator()`](domainSeparatorCall) function.
+    ///Container type for the return parameters of the [`domainSeparator()`](domainSeparatorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct domainSeparatorReturn {
@@ -2951,8 +2949,7 @@ pub mod GPv2Settlement {
     #[derive(Clone)]
     pub struct filledAmountCall(pub alloy_sol_types::private::Bytes);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`filledAmount(bytes)`](filledAmountCall) function.
+    ///Container type for the return parameters of the [`filledAmount(bytes)`](filledAmountCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct filledAmountReturn {
@@ -3096,8 +3093,7 @@ pub mod GPv2Settlement {
         #[allow(missing_docs)]
         pub orderUid: alloy_sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the
-    /// [`invalidateOrder(bytes)`](invalidateOrderCall) function.
+    ///Container type for the return parameters of the [`invalidateOrder(bytes)`](invalidateOrderCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct invalidateOrderReturn {}
@@ -3236,8 +3232,7 @@ pub mod GPv2Settlement {
         #[allow(missing_docs)]
         pub signed: bool,
     }
-    ///Container type for the return parameters of the
-    /// [`setPreSignature(bytes,bool)`](setPreSignatureCall) function.
+    ///Container type for the return parameters of the [`setPreSignature(bytes,bool)`](setPreSignatureCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setPreSignatureReturn {}
@@ -3396,10 +3391,7 @@ pub mod GPv2Settlement {
             <GPv2Interaction::Data as alloy_sol_types::SolType>::RustType,
         >; 3usize],
     }
-    ///Container type for the return parameters of the
-    /// [`settle(address[],uint256[],(uint256,uint256,address,uint256,uint256,
-    /// uint32,bytes32,uint256,uint256,uint256,bytes)[],(address,uint256,
-    /// bytes)[][3])`](settleCall) function.
+    ///Container type for the return parameters of the [`settle(address[],uint256[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes)[],(address,uint256,bytes)[][3])`](settleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settleReturn {}
@@ -3584,9 +3576,7 @@ pub mod GPv2Settlement {
         pub calldataPayload: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall)
-    /// function.
+    ///Container type for the return parameters of the [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct simulateDelegatecallReturn {
@@ -3747,10 +3737,7 @@ pub mod GPv2Settlement {
         #[allow(missing_docs)]
         pub trade: <GPv2Trade::Data as alloy_sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the
-    /// [`swap((bytes32,uint256,uint256,uint256,bytes)[],address[],(uint256,
-    /// uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,
-    /// bytes))`](swapCall) function.
+    ///Container type for the return parameters of the [`swap((bytes32,uint256,uint256,uint256,bytes)[],address[],(uint256,uint256,address,uint256,uint256,uint32,bytes32,uint256,uint256,uint256,bytes))`](swapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapReturn {}
@@ -3907,8 +3894,7 @@ pub mod GPv2Settlement {
     #[derive(Clone)]
     pub struct vaultCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`vault()`](vaultCall)
-    /// function.
+    ///Container type for the return parameters of the [`vault()`](vaultCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct vaultReturn {
@@ -4042,8 +4028,7 @@ pub mod GPv2Settlement {
     #[derive(Clone)]
     pub struct vaultRelayerCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`vaultRelayer()`](vaultRelayerCall) function.
+    ///Container type for the return parameters of the [`vaultRelayer()`](vaultRelayerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct vaultRelayerReturn {

@@ -185,8 +185,7 @@ pub mod DeadlineCheck {
         #[allow(missing_docs)]
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the
-    /// [`checkDeadline(uint256)`](checkDeadlineCall) function.
+    ///Container type for the return parameters of the [`checkDeadline(uint256)`](checkDeadlineCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct checkDeadlineReturn {}

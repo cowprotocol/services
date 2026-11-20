@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+test-util = ["dep:mockall"]
+
 [dependencies]
 alloy-contract = { workspace = true }
 alloy-dyn-abi = { workspace = true }
@@ -26,9 +29,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
-
-[features]
-test-util = ["dep:mockall"]
 
 [lints]
 workspace = true

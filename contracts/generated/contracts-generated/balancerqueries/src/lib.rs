@@ -1059,9 +1059,7 @@ pub mod BalancerQueries {
         pub funds: <IVault::FundManagement as alloy_sol_types::SolType>::RustType,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`queryBatchSwap(uint8,(bytes32,uint256,uint256,uint256,bytes)[],
-    /// address[],(address,bool,address,bool))`](queryBatchSwapCall) function.
+    ///Container type for the return parameters of the [`queryBatchSwap(uint8,(bytes32,uint256,uint256,uint256,bytes)[],address[],(address,bool,address,bool))`](queryBatchSwapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct queryBatchSwapReturn {
@@ -1240,8 +1238,7 @@ pub mod BalancerQueries {
     #[derive(Clone)]
     pub struct vaultCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`vault()`](vaultCall)
-    /// function.
+    ///Container type for the return parameters of the [`vault()`](vaultCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct vaultReturn {

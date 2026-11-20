@@ -351,8 +351,7 @@ pub mod UniswapV2Factory {
         pub tokenB: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`createPair(address,address)`](createPairCall) function.
+    ///Container type for the return parameters of the [`createPair(address,address)`](createPairCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createPairReturn {
@@ -510,8 +509,7 @@ pub mod UniswapV2Factory {
         pub _1: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getPair(address,address)`](getPairCall) function.
+    ///Container type for the return parameters of the [`getPair(address,address)`](getPairCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getPairReturn {

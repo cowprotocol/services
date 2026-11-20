@@ -70,8 +70,7 @@ pub mod ICowWrapper {
     #[derive(Clone)]
     pub struct SETTLEMENTCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`SETTLEMENT()`](SETTLEMENTCall) function.
+    ///Container type for the return parameters of the [`SETTLEMENT()`](SETTLEMENTCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct SETTLEMENTReturn {
@@ -209,8 +208,7 @@ pub mod ICowWrapper {
         #[allow(missing_docs)]
         pub wrapperData: alloy_sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the
-    /// [`wrappedSettle(bytes,bytes)`](wrappedSettleCall) function.
+    ///Container type for the return parameters of the [`wrappedSettle(bytes,bytes)`](wrappedSettleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct wrappedSettleReturn {}

@@ -5,6 +5,9 @@ authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers 
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+e2e = []
+
 [lib]
 doctest = false
 
@@ -32,9 +35,6 @@ strum = { workspace = true }
 [dev-dependencies]
 maplit = { workspace = true }
 testlib = { workspace = true }
-
-[features]
-e2e = []
 
 [lints]
 workspace = true

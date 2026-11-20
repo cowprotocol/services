@@ -637,9 +637,7 @@ pub mod Balances {
             alloy_sol_types::private::Vec<<Interaction as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`balance((address,address,address),address,address,uint256,bytes32,
-    /// (address,uint256,bytes)[])`](balanceCall) function.
+    ///Container type for the return parameters of the [`balance((address,address,address),address,address,uint256,bytes32,(address,uint256,bytes)[])`](balanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct balanceReturn {
