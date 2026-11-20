@@ -90,8 +90,7 @@ pub struct Order {
     /// An empty list is omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub protocol_fees: Vec<FeePolicy>,
-    /// Who each entry in `protocol_fees` benefits, matched by index. This
-    /// service only charges protocol fees, so every entry is `protocol`.
+    /// Who each entry in `protocol_fees` benefits, matched by index.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub protocol_fee_origins: Vec<Origin>,
 }
@@ -195,6 +194,7 @@ impl From<&auction::Order> for Order {
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
             protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
+            // Only protocol fees are produced on Solana today.
             protocol_fee_origins: order
                 .protocol_fees
                 .iter()
