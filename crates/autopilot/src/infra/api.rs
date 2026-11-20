@@ -24,6 +24,10 @@ use {
 /// Values below this are not useful as they don't give estimators enough time.
 const MIN_TIMEOUT: Duration = Duration::from_millis(250);
 
+/// Part of the caller's timeout that the estimators do not get, so the response
+/// arrives before the caller gives up.
+const RESPONSE_HEADROOM: Duration = Duration::from_millis(100);
+
 #[derive(Clone)]
 struct State {
     estimator: Arc<dyn NativePriceEstimating>,
@@ -32,10 +36,9 @@ struct State {
 
 #[derive(Debug, Deserialize)]
 struct NativePriceQuery {
-    /// Optional timeout in milliseconds for the price estimation request.
-    /// If not provided, uses the default timeout configured for autopilot.
-    /// Values below 250ms are automatically clamped to the minimum (250ms).
-    /// Values exceeding the configured maximum are clamped to the maximum.
+    /// Optional time in milliseconds the caller waits for the response.
+    /// Without it the estimators get `max_timeout`, otherwise
+    /// `clamp(timeout_ms - RESPONSE_HEADROOM, MIN_TIMEOUT, max_timeout)`.
     #[serde(default)]
     timeout_ms: Option<u64>,
 }
@@ -77,11 +80,7 @@ async fn get_native_price(
     Query(query): Query<NativePriceQuery>,
     AxumState(state): AxumState<State>,
 ) -> Response {
-    let timeout = query
-        .timeout_ms
-        .map(Duration::from_millis)
-        .unwrap_or(*state.allowed_timeout.end())
-        .clamp(*state.allowed_timeout.start(), *state.allowed_timeout.end());
+    let timeout = estimation_timeout(query.timeout_ms, &state.allowed_timeout);
 
     let start = Instant::now();
     match state.estimator.estimate_native_price(token, timeout).await {
@@ -98,6 +97,14 @@ async fn get_native_price(
             error_to_response(err)
         }
     }
+}
+
+/// The time the estimators get for a request with the given `timeout_ms`.
+fn estimation_timeout(timeout_ms: Option<u64>, allowed: &RangeInclusive<Duration>) -> Duration {
+    timeout_ms
+        .map(|ms| Duration::from_millis(ms).saturating_sub(RESPONSE_HEADROOM))
+        .unwrap_or(*allowed.end())
+        .clamp(*allowed.start(), *allowed.end())
 }
 
 fn error_to_response(err: PriceEstimationError) -> Response {
@@ -143,6 +150,20 @@ mod tests {
         let body = response.into_body();
         let body = axum::body::to_bytes(body, usize::MAX).await.unwrap();
         assert_eq!(std::str::from_utf8(&body).unwrap(), expected_message);
+    }
+
+    #[test]
+    fn estimators_get_less_time_than_the_caller_waits() {
+        let allowed = MIN_TIMEOUT..=Duration::from_secs(4);
+        let timeout = |ms| estimation_timeout(ms, &allowed);
+
+        assert_eq!(timeout(Some(3499)), Duration::from_millis(3399));
+        assert_eq!(timeout(Some(1999)), Duration::from_millis(1899));
+        // Without a caller timeout there is no response deadline to keep.
+        assert_eq!(timeout(None), Duration::from_secs(4));
+        assert_eq!(timeout(Some(10_000)), Duration::from_secs(4));
+        assert_eq!(timeout(Some(300)), MIN_TIMEOUT);
+        assert_eq!(timeout(Some(0)), MIN_TIMEOUT);
     }
 
     #[tokio::test]
