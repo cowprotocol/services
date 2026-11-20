@@ -10586,6 +10586,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "url",
+ "wincode",
 ]
 
 [[package]]

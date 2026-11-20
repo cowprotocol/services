@@ -70,21 +70,18 @@ impl Signer {
         Ok(signature)
     }
 
-    /// Sign the message into a submittable transaction. The signer's key is
-    /// the only one available, so the message must name it as its sole
-    /// signer.
+    /// Sign the message's fee payer slot, which must be the signer's key. The
+    /// slots of any other required signers stay empty for them to fill.
     pub async fn sign(&self, message: VersionedMessage) -> Result<VersionedTransaction, Error> {
         let pubkey = self.pubkey();
         let required = usize::from(message.header().num_required_signatures);
-        if required != 1 {
-            return Err(Error::MissingSignatures { required });
-        }
-        if message.static_account_keys().first() != Some(&pubkey) {
+        if required == 0 || message.static_account_keys().first() != Some(&pubkey) {
             return Err(Error::NotASigner { pubkey });
         }
-        let signature = self.sign_message(&message.serialize()).await?;
+        let mut signatures = vec![Signature::default(); required];
+        signatures[0] = self.sign_message(&message.serialize()).await?;
         Ok(VersionedTransaction {
-            signatures: vec![signature],
+            signatures,
             message,
         })
     }
@@ -175,8 +172,6 @@ pub enum Error {
     InvalidSignature { pubkey: Pubkey },
     #[error("{pubkey} is not the message's signer")]
     NotASigner { pubkey: Pubkey },
-    #[error("the message requires {required} signers, the signer provides one")]
-    MissingSignatures { required: usize },
 }
 
 #[cfg(test)]
@@ -270,23 +265,26 @@ mod tests {
         ));
     }
 
-    /// A message needing signatures beyond the signer's own is refused
-    /// instead of assembled with empty slots.
+    /// A message needing another signer gets the payer's signature and an
+    /// empty slot for the other one.
     #[tokio::test]
-    async fn refuses_a_message_with_unprovidable_signers() {
+    async fn leaves_the_other_signers_slots_empty() {
         let signer = Signer::Keypair(Keypair::new());
         let instruction = solana_system_interface::instruction::transfer(
             &Pubkey::new_unique(),
             &Pubkey::new_unique(),
             1,
         );
-        let message =
-            v0::Message::try_compile(&signer.pubkey(), &[instruction], &[], Hash::new_unique())
-                .unwrap();
-        assert_eq!(
-            signer.sign(VersionedMessage::V0(message)).await,
-            Err(Error::MissingSignatures { required: 2 })
+        let message = VersionedMessage::V1(
+            v1::Message::try_compile(&signer.pubkey(), &[instruction], Hash::new_unique()).unwrap(),
         );
+        let transaction = signer.sign(message).await.unwrap();
+        assert_eq!(transaction.signatures.len(), 2);
+        assert!(
+            transaction.signatures[0]
+                .verify(signer.pubkey().as_ref(), &transaction.message.serialize())
+        );
+        assert_eq!(transaction.signatures[1], Signature::default());
     }
 
     /// The KMS public key DER unwraps to the raw 32 bytes.

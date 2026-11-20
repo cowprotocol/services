@@ -15,6 +15,7 @@ use {
 pub(crate) enum Kind {
     InvalidAuctionId,
     SolverFailed,
+    CosignFailed,
     SolutionNotAvailable,
     DeadlineExceeded,
     TooManyPendingSettlements,
@@ -50,6 +51,7 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             // Same wording as the EVM driver: an invalid or unproduced
             // solver response is the same kind of failure for autopilot.
             Kind::SolverFailed => "Solver engine returned an invalid response",
+            Kind::CosignFailed => "Solver engine failed to co-sign the settlement",
             Kind::SolutionNotAvailable => "The requested solution is not available",
             Kind::DeadlineExceeded => "The submission deadline has passed",
             Kind::TooManyPendingSettlements => "Too many settlements are pending",
@@ -82,6 +84,7 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
     fn from(value: competition::Error) -> Self {
         match value {
             competition::Error::Solver(_) => Kind::SolverFailed,
+            competition::Error::Cosign(_) => Kind::CosignFailed,
             competition::Error::SolutionNotAvailable => Kind::SolutionNotAvailable,
             competition::Error::DeadlineExceeded => Kind::DeadlineExceeded,
             competition::Error::TooManyPendingSettlements => Kind::TooManyPendingSettlements,
@@ -97,7 +100,8 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
             // Solve-time verdicts never leave `solve`.
             competition::Error::SimulationTimedOut
             | competition::Error::IncompleteSimulation { .. }
-            | competition::Error::TooManyAccounts { .. } => Kind::Unknown,
+            | competition::Error::TooManyAccounts { .. }
+            | competition::Error::NeedsCosigner { .. } => Kind::Unknown,
             // The solver is responsible for valid solutions. Map validation
             // errors to SolverFailed, as the EVM driver does. Map compile,
             // sign, or index-overflow errors to Unknown.
