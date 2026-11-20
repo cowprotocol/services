@@ -59,7 +59,7 @@ impl SolveRequest {
                         .map(|data| AppData::Full(data.clone()));
                     order.into_domain(app_data)
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
             self.tokens.into_iter().map(|token| {
                 let info = token_infos.get(&token.address.into());
                 competition::auction::Token {
@@ -92,6 +92,8 @@ pub enum Error {
     InvalidTokens,
     #[error("invalid order amounts in auction")]
     InvalidAmounts,
+    #[error("protocol fee origins do not match protocol fees")]
+    InvalidProtocolFeeOrigins,
     #[error("blockchain error: {0:?}")]
     Blockchain(#[source] crate::infra::blockchain::Error),
 }
@@ -152,6 +154,10 @@ pub(crate) struct Order {
     #[serde_as(as = "serde_ext::U256")]
     buy_amount: eth::U256,
     protocol_fees: Vec<FeePolicy>,
+    /// Origin of each entry in `protocol_fees`, matched by index. When absent,
+    /// every fee is a protocol fee.
+    #[serde(default)]
+    protocol_fee_origins: Vec<Origin>,
     created: u32,
     valid_to: u32,
     kind: Kind,
@@ -186,8 +192,50 @@ pub(crate) struct Order {
 
 impl Order {
     #[expect(deprecated)]
-    pub(crate) fn into_domain(self, app_data: Option<AppData>) -> competition::Order {
+    pub(crate) fn into_domain(
+        self,
+        app_data: Option<AppData>,
+    ) -> Result<competition::Order, Error> {
         let app_data = app_data.unwrap_or_else(|| AppData::Hash(AppDataHash::from(self.app_data)));
+        let origins = if self.protocol_fee_origins.is_empty() {
+            vec![Origin::Protocol; self.protocol_fees.len()]
+        } else if self.protocol_fee_origins.len() == self.protocol_fees.len() {
+            self.protocol_fee_origins
+        } else {
+            return Err(Error::InvalidProtocolFeeOrigins);
+        };
+        let protocol_fees = origins
+            .into_iter()
+            .zip(self.protocol_fees)
+            .map(|(origin, policy)| competition::order::ProtocolFee {
+                origin: match origin {
+                    Origin::Protocol => competition::order::Origin::Protocol,
+                    Origin::Partner => competition::order::Origin::Partner,
+                },
+                policy: match policy {
+                    FeePolicy::Surplus {
+                        factor,
+                        max_volume_factor,
+                    } => competition::order::FeePolicy::Surplus {
+                        factor,
+                        max_volume_factor,
+                    },
+                    FeePolicy::PriceImprovement {
+                        factor,
+                        max_volume_factor,
+                        quote,
+                    } => competition::order::FeePolicy::PriceImprovement {
+                        factor,
+                        max_volume_factor,
+                        quote: quote.into_domain(self.sell_token, self.buy_token),
+                    },
+                    FeePolicy::Volume { factor } => competition::order::FeePolicy::Volume {
+                        factor,
+                        contributes_to_score: true,
+                    },
+                },
+            })
+            .collect();
         let partial = if self.partially_fillable {
             competition::order::Partial::Yes {
                 available: match self.kind {
@@ -198,7 +246,7 @@ impl Order {
         } else {
             competition::order::Partial::No
         };
-        competition::Order {
+        Ok(competition::Order {
             data: Arc::new(competition::order::OrderData {
                 uid: self.uid.into(),
                 receiver: self.receiver,
@@ -253,32 +301,7 @@ impl Order {
                     data: self.signature.into(),
                     signer: self.owner,
                 },
-                protocol_fees: self
-                    .protocol_fees
-                    .into_iter()
-                    .map(|policy| match policy {
-                        FeePolicy::Surplus {
-                            factor,
-                            max_volume_factor,
-                        } => competition::order::FeePolicy::Surplus {
-                            factor,
-                            max_volume_factor,
-                        },
-                        FeePolicy::PriceImprovement {
-                            factor,
-                            max_volume_factor,
-                            quote,
-                        } => competition::order::FeePolicy::PriceImprovement {
-                            factor,
-                            max_volume_factor,
-                            quote: quote.into_domain(self.sell_token, self.buy_token),
-                        },
-                        FeePolicy::Volume { factor } => competition::order::FeePolicy::Volume {
-                            factor,
-                            contributes_to_score: true,
-                        },
-                    })
-                    .collect(),
+                protocol_fees,
                 quote: self
                     .quote
                     .map(|q| q.into_domain(self.sell_token, self.buy_token)),
@@ -286,7 +309,7 @@ impl Order {
             }),
             app_data,
             partial,
-        }
+        })
     }
 }
 
@@ -354,6 +377,14 @@ enum Class {
     Limit,
 }
 
+/// Who a protocol fee benefits. The solver's own fee is not part of the API.
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum Origin {
+    Protocol,
+    Partner,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum FeePolicy {
@@ -403,5 +434,87 @@ impl Quote {
             },
             solver: self.solver,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order_json(extra: serde_json::Value) -> serde_json::Value {
+        let mut json = serde_json::json!({
+            "uid": format!("0x{}", "11".repeat(56)),
+            "sellToken": format!("0x{}", "aa".repeat(20)),
+            "buyToken": format!("0x{}", "bb".repeat(20)),
+            "sellAmount": "1000",
+            "buyAmount": "900",
+            "created": 0,
+            "validTo": 100,
+            "kind": "sell",
+            "owner": format!("0x{}", "cc".repeat(20)),
+            "partiallyFillable": false,
+            "executed": "0",
+            "preInteractions": [],
+            "postInteractions": [],
+            "appData": format!("0x{}", "00".repeat(32)),
+            "signingScheme": "eip712",
+            "signature": "0x",
+            "quote": null,
+            "protocolFees": [
+                {"volume": {"factor": 0.1}},
+                {"volume": {"factor": 0.2}},
+            ],
+        });
+        json.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        json
+    }
+
+    #[test]
+    fn protocol_fees_without_origins_are_all_protocol() {
+        let order: Order = serde_json::from_value(order_json(serde_json::json!({}))).unwrap();
+        let order = order.into_domain(None).unwrap();
+        let fees = &order.data.protocol_fees;
+        assert_eq!(fees.len(), 2);
+        assert!(
+            fees.iter()
+                .all(|fee| matches!(fee.origin, competition::order::Origin::Protocol))
+        );
+    }
+
+    #[test]
+    fn protocol_fee_origins_match_protocol_fees_by_index() {
+        let json = order_json(serde_json::json!({
+            "protocolFeeOrigins": ["protocol", "partner"],
+        }));
+        let order: Order = serde_json::from_value(json).unwrap();
+        let order = order.into_domain(None).unwrap();
+        let fees = &order.data.protocol_fees;
+        assert!(matches!(
+            fees[0].origin,
+            competition::order::Origin::Protocol
+        ));
+        assert!(matches!(
+            fees[1].origin,
+            competition::order::Origin::Partner
+        ));
+    }
+
+    #[test]
+    fn protocol_fee_origins_must_match_protocol_fees_length() {
+        let json = order_json(serde_json::json!({
+            "protocolFeeOrigins": ["partner"],
+        }));
+        let order: Order = serde_json::from_value(json).unwrap();
+        assert!(order.into_domain(None).is_err());
+    }
+
+    #[test]
+    fn solver_is_not_a_wire_origin() {
+        let json = order_json(serde_json::json!({
+            "protocolFeeOrigins": ["protocol", "solver"],
+        }));
+        assert!(serde_json::from_value::<Order>(json).is_err());
     }
 }

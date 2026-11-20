@@ -32,7 +32,12 @@ impl Trade {
 
     pub fn protocol_fees(&self) -> Vec<FeePolicy> {
         match self {
-            Trade::Fulfillment(fulfillment) => fulfillment.order().protocol_fees.to_vec(),
+            Trade::Fulfillment(fulfillment) => fulfillment
+                .order()
+                .protocol_fees
+                .iter()
+                .map(|fee| fee.policy.clone())
+                .collect(),
             Trade::Jit(_) => vec![],
         }
     }

@@ -104,8 +104,11 @@ pub fn new(
                 // to cover the fee.
                 //
                 // https://github.com/cowprotocol/services/issues/2440
-                let policies: Vec<protocol_fees::FeePolicy> =
-                    order.protocol_fees.iter().map(Into::into).collect();
+                let policies: Vec<protocol_fees::FeePolicy> = order
+                    .protocol_fees
+                    .iter()
+                    .map(|fee| protocol_fees::FeePolicy::from(&fee.policy))
+                    .collect();
                 let (side, limit) = match order.side {
                     Side::Buy => (protocol_fees::Side::Buy, &mut available.sell.amount),
                     Side::Sell => (protocol_fees::Side::Sell, &mut available.buy.amount),

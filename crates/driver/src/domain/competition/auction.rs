@@ -122,7 +122,10 @@ impl Auction {
         for order in &mut self.orders {
             Arc::make_mut(&mut order.data)
                 .protocol_fees
-                .push(policy.clone());
+                .push(competition::order::ProtocolFee {
+                    origin: competition::order::Origin::Solver,
+                    policy: policy.clone(),
+                });
         }
         self
     }

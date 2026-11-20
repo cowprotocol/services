@@ -30,6 +30,10 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: alloy::primitives::U256,
     pub protocol_fees: Vec<FeePolicy>,
+    /// Who benefits from each entry of `protocol_fees`, index-aligned. Missing
+    /// means all `protocol`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocol_fee_origins: Vec<FeeOrigin>,
     pub created: u32,
     pub valid_to: u32,
     pub kind: OrderKind,
@@ -52,6 +56,14 @@ pub struct Order {
     #[serde_as(as = "Option<HexOrDecimalU256>")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub penalty_cap_native: Option<alloy::primitives::U256>,
+}
+
+/// Who benefits from a protocol fee.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeeOrigin {
+    Protocol,
+    Partner,
 }
 
 #[serde_as]

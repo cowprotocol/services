@@ -75,7 +75,7 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
             .order
             .fee_policy
             .iter()
-            .map(|policy| policy.to_json_value())
+            .map(|policy| json!({"origin": "protocol", "policy": policy.to_json_value()}))
             .collect::<Vec<_>>(),
         "created": quote.order.created,
         "validTo": quote.order.valid_to,
