@@ -6,6 +6,8 @@ info:
     Solana settlement program.
   version: 0.0.1
 servers:
+  - description: Solana (Prod)
+    url: "https://api.cow.fi/solana"
   - description: Solana (Staging)
     url: "https://barn.api.cow.fi/solana"
 paths:
