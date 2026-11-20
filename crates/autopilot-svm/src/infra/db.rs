@@ -26,6 +26,7 @@ const TABLES: &[&str] = &[
     "auctions",
     "dead_letter",
     "indexer_state",
+    "order_execution",
     "order_pda",
     "quotes",
     "reference_scores",
@@ -744,55 +745,50 @@ impl TryFrom<OrderRow> for Order {
             executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
             sell_balance: None,
-            quote: match (
-                row.quote_sell_amount,
-                row.quote_buy_amount,
-                row.quote_execution_cost,
+            quote: linked_quote(
+                row.kind,
+                row.quote_sell_amount.as_ref(),
+                row.quote_buy_amount.as_ref(),
+                row.quote_execution_cost.as_ref(),
                 row.quote_solver,
-            ) {
-                // A quote amount past `u64` or a cost the amount cannot absorb
-                // leaves the order unlinked instead of dropping it, out of
-                // market as the orderbook classed it.
-                (Some(sell_amount), Some(buy_amount), Some(execution_cost), Some(solver)) => {
-                    net_quote(row.kind, &sell_amount, &buy_amount, &execution_cost).map(
-                        |(sell_amount, buy_amount)| Quote {
-                            sell_amount,
-                            buy_amount,
-                            fee: 0,
-                            solver: Pubkey(solver.0),
-                        },
-                    )
-                }
-                _ => None,
-            },
+            ),
             protocol_fees: Vec::new(),
         })
     }
 }
 
-/// A stored quote's amounts net of its execution cost, which comes out of the
-/// side the order does not fix: a sell order's quote buys less, a buy order's
-/// sells more. `None` when an amount does not fit `u64` or cannot absorb the
-/// cost.
-fn net_quote(
+/// The quote `solana.order_quotes` links an order to, net of its execution
+/// cost, which comes out of the side the order does not fix: a sell order's
+/// quote buys less, a buy order's sells more. `None` for an unlinked order.
+/// A quote amount past `u64` or a cost the amount cannot absorb also leaves
+/// the order unlinked instead of dropping it, out of market as the orderbook
+/// classed it.
+pub(super) fn linked_quote(
     kind: database::solana::OrderKind,
-    sell_amount: &BigDecimal,
-    buy_amount: &BigDecimal,
-    execution_cost: &BigDecimal,
-) -> Option<(u64, u64)> {
+    sell_amount: Option<&BigDecimal>,
+    buy_amount: Option<&BigDecimal>,
+    execution_cost: Option<&BigDecimal>,
+    solver: Option<ByteArray<32>>,
+) -> Option<Quote> {
     let (sell_amount, buy_amount, execution_cost) = (
-        sell_amount.to_u64()?,
-        buy_amount.to_u64()?,
-        execution_cost.to_u64()?,
+        sell_amount?.to_u64()?,
+        buy_amount?.to_u64()?,
+        execution_cost?.to_u64()?,
     );
-    Some(match kind {
+    let (sell_amount, buy_amount) = match kind {
         database::solana::OrderKind::Sell => (sell_amount, buy_amount.checked_sub(execution_cost)?),
         database::solana::OrderKind::Buy => (sell_amount.checked_add(execution_cost)?, buy_amount),
+    };
+    Some(Quote {
+        sell_amount,
+        buy_amount,
+        fee: 0,
+        solver: Pubkey(solver?.0),
     })
 }
 
 /// Token amounts are `numeric(20,0)` in the database, u64 on chain.
-fn to_amount(value: &BigDecimal) -> Result<u64> {
+pub(super) fn to_amount(value: &BigDecimal) -> Result<u64> {
     value
         .to_u64()
         .with_context(|| format!("amount {value} does not fit u64"))

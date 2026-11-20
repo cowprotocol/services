@@ -2,12 +2,12 @@
 
 use {
     anyhow::{Context, Result},
-    bigdecimal::BigDecimal,
+    bigdecimal::{BigDecimal, ToPrimitive},
     chain_types::{ChainTypes, solana::Solana},
     chrono::{DateTime, Utc},
     database::{
         byte_array::ByteArray,
-        solana::{OrderEventLabel, OrderKind},
+        solana::{OrderEventLabel, OrderKind, PolicyKind},
     },
     sqlx::{Connection, PgExecutor, PgPool},
 };
@@ -118,12 +118,15 @@ pub struct TradeRow {
     pub tx_signature: ByteArray<64>,
     pub instruction_index: i32,
     pub slot: Option<i64>,
+    /// The auction the settlement instruction claims.
+    pub auction_id: Option<i64>,
 }
 
 /// Trades filtered by order uid or owner, newest first, paged by `offset`
 /// and `limit`. The slot comes from any settlement row of the transaction
-/// because the slot is constant per transaction. A trade whose order row is
-/// not indexed yet is omitted until the order lands.
+/// because the slot is constant per transaction. The auction comes from the
+/// trade's own settlement instruction. A trade whose order row is not
+/// indexed yet is omitted until the order lands.
 pub async fn get_trades(
     ex: impl PgExecutor<'_>,
     order_uid: Option<[u8; 32]>,
@@ -135,7 +138,7 @@ pub async fn get_trades(
     const QUERY: &str = r#"
 SELECT t.order_uid, o.owner, o.sell_token, o.buy_token,
        t.sell_amount, t.buy_amount, t.tx_signature,
-       t.instruction_index, s.slot
+       t.instruction_index, s.slot, a.auction_id
 FROM solana.trades t
 JOIN solana.orders o ON o.uid = t.order_uid
 LEFT JOIN LATERAL (
@@ -143,6 +146,8 @@ LEFT JOIN LATERAL (
     WHERE tx_signature = t.tx_signature
     LIMIT 1
 ) s ON true
+LEFT JOIN solana.settlements a
+  ON a.tx_signature = t.tx_signature AND a.instruction_index = t.instruction_index
 WHERE ($1::bytea IS NULL OR t.order_uid = $1)
   AND ($2::bytea IS NULL OR o.owner = $2)
 ORDER BY s.slot DESC NULLS LAST, t.tx_signature DESC, t.instruction_index DESC,
@@ -157,6 +162,81 @@ OFFSET $3 LIMIT $4
         .fetch_all(ex)
         .await
         .context("read solana.trades")
+}
+
+/// One protocol fee an order paid in an auction's settlement, with the
+/// policy that took it and what a price improvement policy measured against.
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct ExecutedFeeRow {
+    pub auction_id: i64,
+    pub order_uid: ByteArray<32>,
+    pub kind: PolicyKind,
+    pub surplus_factor: Option<f64>,
+    pub surplus_max_volume_factor: Option<f64>,
+    pub price_improvement_factor: Option<f64>,
+    pub price_improvement_max_volume_factor: Option<f64>,
+    pub volume_factor: Option<f64>,
+    pub token: ByteArray<32>,
+    pub amount: BigDecimal,
+    pub order_kind: OrderKind,
+    pub order_sell_amount: BigDecimal,
+    pub quote_sell_amount: Option<BigDecimal>,
+    pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_execution_cost: Option<BigDecimal>,
+}
+
+/// The protocol fees of the given `(auction_id, order_uid)` executions,
+/// ordered by execution and then application order. A recorded fee pairs
+/// with the policy at its position: an execution recorded without fees
+/// pairs with none.
+pub async fn executed_protocol_fees(
+    ex: impl PgExecutor<'_>,
+    executions: &[(i64, ByteArray<32>)],
+) -> Result<Vec<ExecutedFeeRow>> {
+    let _timer = query_timer("executed_protocol_fees");
+    const QUERY: &str = r#"
+SELECT k.auction_id, k.order_uid, p.kind, p.surplus_factor, p.surplus_max_volume_factor,
+       p.price_improvement_factor, p.price_improvement_max_volume_factor, p.volume_factor,
+       e.protocol_fee_tokens[p.position] AS token,
+       e.protocol_fee_amounts[p.position] AS amount,
+       o.kind AS order_kind, o.sell_amount AS order_sell_amount,
+       q.sell_amount AS quote_sell_amount, q.buy_amount AS quote_buy_amount,
+       q.execution_cost AS quote_execution_cost
+FROM (SELECT DISTINCT * FROM UNNEST($1::bigint[], $2::bytea[]) AS u(auction_id, order_uid)) AS k
+JOIN solana.order_execution e ON e.auction_id = k.auction_id AND e.order_uid = k.order_uid
+JOIN solana.orders o ON o.uid = k.order_uid
+LEFT JOIN solana.order_quotes q ON q.order_uid = k.order_uid
+JOIN LATERAL (
+    SELECT f.*, (row_number() OVER (ORDER BY f.application_order))::integer AS position
+    FROM solana.fee_policies f
+    WHERE f.auction_id = k.auction_id AND f.order_uid = k.order_uid
+) p ON p.position <= cardinality(e.protocol_fee_amounts)
+ORDER BY k.auction_id, k.order_uid, p.position
+    "#;
+    let (auction_ids, order_uids): (Vec<_>, Vec<_>) = executions.iter().copied().unzip();
+    sqlx::query_as(QUERY)
+        .bind(auction_ids)
+        .bind(order_uids)
+        .fetch_all(ex)
+        .await
+        .context("read solana.order_execution")
+}
+
+/// A stored quote's amounts net of the order's execution cost, which comes
+/// out of the side the order does not fix: a sell order's quote buys less, a
+/// buy order's sells more. `None` when an amount does not fit `u64` or
+/// cannot absorb the cost.
+pub fn net_quote(
+    kind: OrderKind,
+    sell_amount: &BigDecimal,
+    buy_amount: &BigDecimal,
+    execution_cost: u64,
+) -> Option<(u64, u64)> {
+    let (sell_amount, buy_amount) = (sell_amount.to_u64()?, buy_amount.to_u64()?);
+    Some(match kind {
+        OrderKind::Sell => (sell_amount, buy_amount.checked_sub(execution_cost)?),
+        OrderKind::Buy => (sell_amount.checked_add(execution_cost)?, buy_amount),
+    })
 }
 
 /// Whether the order has at least one trade.
@@ -1092,6 +1172,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         let by_uid = get_trades(&pool, Some(uid), None, 0, 10).await.unwrap();
         assert_eq!(by_uid.len(), 1);
         assert_eq!(by_uid[0].slot, Some(42));
+        assert_eq!(by_uid[0].auction_id, Some(7));
         assert_eq!(by_uid[0].instruction_index, 1);
         assert_eq!(by_uid[0].sell_amount, BigDecimal::from(400));
 
@@ -1138,6 +1219,79 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// An execution's fees pair with the auction's policies in application
+    /// order, each policy row with the order's linked quote. An execution
+    /// recorded without fees pairs with no policy, and an execution asked
+    /// for twice reads once.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_pairs_executed_protocol_fees_with_policies() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query("TRUNCATE solana.fee_policies, solana.order_execution, solana.order_quotes")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for (auction_id, kind) in [(7, "priceimprovement"), (7, "volume"), (8, "volume")] {
+            sqlx::query(
+                "INSERT INTO solana.fee_policies (auction_id, order_uid, kind, \
+                 price_improvement_factor, price_improvement_max_volume_factor, volume_factor) \
+                 VALUES ($1, $2, $3::solana.PolicyKind, 0.3, 0.01, 0.002)",
+            )
+            .bind(auction_id)
+            .bind(ByteArray(uid))
+            .bind(kind)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            "INSERT INTO solana.order_execution (order_uid, auction_id, protocol_fee_tokens, \
+             protocol_fee_amounts) VALUES ($1, 7, ARRAY[$2, $2], '{5, 2}'), ($1, 8, '{}', '{}')",
+        )
+        .bind(ByteArray(uid))
+        .bind(ByteArray([0xAB; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
+             solver, execution_cost) VALUES ($1, 1, 1000, 600, $2, 50)",
+        )
+        .bind(ByteArray(uid))
+        .bind(ByteArray([0xCC; 32]))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let fees = executed_protocol_fees(
+            &pool,
+            &[
+                (7, ByteArray(uid)),
+                (8, ByteArray(uid)),
+                (7, ByteArray(uid)),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            fees.iter()
+                .map(|fee| (fee.auction_id, fee.kind, fee.amount.clone()))
+                .collect::<Vec<_>>(),
+            vec![
+                (7, PolicyKind::PriceImprovement, BigDecimal::from(5)),
+                (7, PolicyKind::Volume, BigDecimal::from(2)),
+            ]
+        );
+        assert!(fees.iter().all(|fee| fee.order_uid == ByteArray(uid)
+            && fee.token == ByteArray([0xAB; 32])
+            && fee.order_kind == OrderKind::Sell
+            && fee.order_sell_amount == 1000
+            && fee.quote_buy_amount == Some(BigDecimal::from(600))
+            && fee.quote_execution_cost == Some(BigDecimal::from(50))));
     }
 
     /// A competition reads back once the indexer passes its deadline slot:

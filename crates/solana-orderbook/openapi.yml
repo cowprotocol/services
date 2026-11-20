@@ -871,6 +871,112 @@ components:
           type: integer
           format: int64
           nullable: true
+        executedProtocolFees:
+          description: |
+            Executed protocol fees for this trade, together with the fee
+            policies used. Listed in the order they got applied.
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutedProtocolFee"
+    ExecutedProtocolFee:
+      type: object
+      properties:
+        policy:
+          $ref: "#/components/schemas/FeePolicy"
+        amount:
+          allOf:
+            - description: Fee amount taken.
+            - $ref: "#/components/schemas/TokenAmount"
+        token:
+          allOf:
+            - description: The mint the fee is taken in.
+            - $ref: "#/components/schemas/Pubkey"
+    FeePolicy:
+      description: Defines the ways to calculate the protocol fee.
+      oneOf:
+        - type: object
+          properties:
+            surplus:
+              $ref: "#/components/schemas/Surplus"
+          required:
+            - surplus
+        - type: object
+          properties:
+            volume:
+              $ref: "#/components/schemas/Volume"
+          required:
+            - volume
+        - type: object
+          properties:
+            priceImprovement:
+              $ref: "#/components/schemas/PriceImprovement"
+          required:
+            - priceImprovement
+    Surplus:
+      description: The protocol fee is taken as a percent of the surplus.
+      type: object
+      properties:
+        factor:
+          type: number
+          minimum: 0
+          maximum: 1
+          exclusiveMaximum: true
+        maxVolumeFactor:
+          type: number
+          minimum: 0
+          maximum: 1
+          exclusiveMaximum: true
+      required:
+        - factor
+        - maxVolumeFactor
+    Volume:
+      description: The protocol fee is taken as a percent of the order volume.
+      type: object
+      properties:
+        factor:
+          type: number
+          minimum: 0
+          maximum: 1
+          exclusiveMaximum: true
+      required:
+        - factor
+    PriceImprovement:
+      description: >-
+        The protocol fee is taken as a percent of the order price improvement
+        which is a difference between the executed price and the quote.
+      type: object
+      properties:
+        factor:
+          type: number
+          minimum: 0
+          maximum: 1
+          exclusiveMaximum: true
+        maxVolumeFactor:
+          type: number
+          minimum: 0
+          maximum: 1
+          exclusiveMaximum: true
+        quote:
+          $ref: "#/components/schemas/PriceImprovementQuote"
+      required:
+        - factor
+        - maxVolumeFactor
+        - quote
+    PriceImprovementQuote:
+      description: |
+        The quote the price improvement is measured against: the order's
+        quote net of its execution cost, or for an order placed without a
+        quote a buy amount of zero.
+      type: object
+      properties:
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        fee:
+          description: Always zero, the amounts are net of the cost.
+          allOf:
+            - $ref: "#/components/schemas/TokenAmount"
     SolverCompetitionResponse:
       description: |
         The solutions every solver proposed for one auction. The `auctionId`

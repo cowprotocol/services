@@ -34,14 +34,7 @@ impl ProtocolFees {
 
     /// The policies that apply to `order` at `now`, in application order.
     pub fn apply(&self, order: &Order, now: DateTime<Utc>) -> Vec<FeePolicy> {
-        // An order without a linked quote is out of market, through the same
-        // zero-buy reference quote as on EVM.
-        let quote = order.quote.unwrap_or(Quote {
-            sell_amount: order.sell_amount,
-            buy_amount: 0,
-            fee: 0,
-            solver: Pubkey([0; 32]),
-        });
+        let quote = reference_quote(order.sell_amount, order.quote);
         let in_market = in_market(order, &quote);
         self.policies_at(now)
             .iter()
@@ -84,6 +77,18 @@ impl ProtocolFees {
             _ => &self.config.policies,
         }
     }
+}
+
+/// The quote an order selling `sell_amount` is classed and measured against:
+/// its linked quote, or without one the zero-buy reference quote, as on EVM,
+/// which puts the order out of market.
+pub fn reference_quote(sell_amount: u64, linked: Option<Quote>) -> Quote {
+    linked.unwrap_or(Quote {
+        sell_amount,
+        buy_amount: 0,
+        fee: 0,
+        solver: Pubkey([0; 32]),
+    })
 }
 
 /// Whether the order's limit sits within its quote: the quote buys at least
