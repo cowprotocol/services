@@ -246,12 +246,17 @@ impl<C: ChainTypes> Arbitrator<C> {
                 continue;
             }
 
-            // Compute score without this solver
-            let solutions_without_solver: Vec<_> = ranking
+            // Compute score without this solver. `ranked` lists winners before
+            // non-winners, but the counterfactual auction has to visit the
+            // remaining solutions in score order again: a non-winner that only
+            // lost its token pair to this solver outranks lower-scoring winners
+            // and must get the chance to take the pair from them.
+            let mut solutions_without_solver: Vec<_> = ranking
                 .ranked
                 .iter()
                 .filter(|s| s.solver() != solver)
                 .collect();
+            solutions_without_solver.sort_by_key(|s| Reverse(s.score()));
 
             let winner_indices =
                 self.pick_winners(solutions_without_solver.iter().copied(), context);
