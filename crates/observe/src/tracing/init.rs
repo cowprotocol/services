@@ -186,7 +186,5 @@ fn tracing_panic_hook(panic: &PanicHookInfo) {
     let name = thread.name().unwrap_or("<unnamed>");
     let backtrace = std::backtrace::Backtrace::force_capture();
     tracing::error!("thread '{name}' {panic}\nstack backtrace:\n{backtrace}");
-    if crate::panic_hook::exits_process() {
-        std::process::exit(1);
-    }
+    crate::panic_hook::exit_if_installed();
 }
