@@ -33,7 +33,10 @@ use {
     leader_lock::LeaderLockTracker,
     num::ToPrimitive,
     rand::seq::SliceRandom,
-    shared::{canonical_batch::Schedule, token_list::AutoUpdatingTokenList},
+    shared::{
+        canonical_batch::Schedule as CanonicalBatchSchedule,
+        token_list::AutoUpdatingTokenList,
+    },
     std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
@@ -60,7 +63,7 @@ pub struct Config {
     pub enable_leader_lock: bool,
     pub auction_delta_checkpoint_interval: Duration,
     /// `None` when canonical batches are off.
-    pub canonical_batch_schedule: Option<Schedule>,
+    pub canonical_batch_schedule: Option<CanonicalBatchSchedule>,
 }
 
 impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
@@ -74,7 +77,9 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
-            canonical_batch_schedule: value.canonical_batch_interval.map(Schedule::from),
+            canonical_batch_schedule: value
+                .canonical_batch_interval
+                .map(CanonicalBatchSchedule::from),
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
                     slot_length: cfg.slot_length,
