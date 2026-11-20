@@ -34,11 +34,11 @@ use {
         },
         recover_discriminator,
     },
-    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
+    cow_solana_rpc::{CommitmentConfig, Response, RpcSimulateTransactionResult, SolanaRPC},
     solana_sdk::{
         hash::Hash,
         instruction::{AccountMeta, Instruction},
-        message::{VersionedMessage, v1},
+        message::{VersionedMessage, compiled_instruction::CompiledInstruction, v1},
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -165,59 +165,103 @@ async fn simulate(
     settlement_program: Pubkey,
     compute_unit_limit: u32,
 ) -> Result<()> {
+    let settlement = settlement_message(transactions)?;
+    let (instructions, origins) = merge(transactions, settlement_program)?;
+    let config = settlement
+        .config
+        .with_compute_unit_limit(compute_unit_limit);
+    // The simulation replaces the blockhash and checks no signature.
+    let merged = v1::Message::try_compile_with_config(
+        &settlement.account_keys[0],
+        &instructions,
+        Hash::default(),
+        config,
+    )?;
+    let transaction = VersionedTransaction {
+        signatures: vec![Signature::default(); usize::from(merged.header.num_required_signatures)],
+        message: VersionedMessage::V1(merged),
+    };
+    let response = rpc.simulate_unsigned_transaction(&transaction).await?;
+    print_result(response, &origins, settlement.config.compute_unit_limit);
+    Ok(())
+}
+
+/// The last transaction's message, the v1 settlement whose config the merged
+/// transaction takes.
+fn settlement_message(
+    transactions: &[(VersionedTransaction, Vec<Pubkey>)],
+) -> Result<&v1::Message> {
     let Some((settlement, _)) = transactions.last() else {
         bail!("no transaction to simulate");
     };
     let VersionedMessage::V1(message) = &settlement.message else {
         bail!("the last transaction is not a v1 settlement");
     };
+    Ok(message)
+}
+
+/// The transaction a merged instruction comes from and its position there.
+type Origin = (usize, usize);
+
+/// The instructions of `transactions` in order, each with its [`Origin`].
+fn merge(
+    transactions: &[(VersionedTransaction, Vec<Pubkey>)],
+    settlement_program: Pubkey,
+) -> Result<(Vec<Instruction>, Vec<Origin>)> {
     let mut instructions = Vec::new();
-    // The transaction and the position each merged instruction comes from.
     let mut origins = Vec::new();
     for (n, (transaction, keys)) in transactions.iter().enumerate() {
         let offset = u16::try_from(instructions.len())?;
-        for (index, instruction) in transaction.message.instructions().iter().enumerate() {
-            let program_id = keys[usize::from(instruction.program_id_index)];
-            let accounts = instruction
-                .accounts
-                .iter()
-                .map(|&account| {
-                    let account = usize::from(account);
-                    AccountMeta {
-                        pubkey: keys[account],
-                        is_signer: transaction.message.is_signer(account),
-                        is_writable: transaction.message.is_maybe_writable(account, None),
-                    }
-                })
-                .collect();
-            let mut data = instruction.data.clone();
-            if program_id == settlement_program {
-                shift_counterpart(&mut data, offset)?;
+        for (index, compiled) in transaction.message.instructions().iter().enumerate() {
+            let mut instruction = decompile(&transaction.message, keys, compiled);
+            if instruction.program_id == settlement_program {
+                shift_counterpart(&mut instruction.data, offset)?;
             }
-            instructions.push(Instruction {
-                program_id,
-                accounts,
-                data,
-            });
+            instructions.push(instruction);
             origins.push((n, index));
         }
     }
-    let payer = settlement.message.static_account_keys()[0];
-    let config = message.config.with_compute_unit_limit(compute_unit_limit);
-    // The simulation replaces the blockhash and checks no signature.
-    let merged =
-        v1::Message::try_compile_with_config(&payer, &instructions, Hash::default(), config)?;
-    let transaction = VersionedTransaction {
-        signatures: vec![Signature::default(); usize::from(merged.header.num_required_signatures)],
-        message: VersionedMessage::V1(merged),
-    };
-    let response = rpc.simulate_unsigned_transaction(&transaction).await?;
+    Ok((instructions, origins))
+}
+
+/// `compiled` with its accounts resolved through `keys`, the account keys of
+/// `message`.
+fn decompile(
+    message: &VersionedMessage,
+    keys: &[Pubkey],
+    compiled: &CompiledInstruction,
+) -> Instruction {
+    let accounts = compiled
+        .accounts
+        .iter()
+        .map(|&account| {
+            let account = usize::from(account);
+            AccountMeta {
+                pubkey: keys[account],
+                is_signer: message.is_signer(account),
+                is_writable: message.is_maybe_writable(account, None),
+            }
+        })
+        .collect();
+    Instruction {
+        program_id: keys[usize::from(compiled.program_id_index)],
+        accounts,
+        data: compiled.data.clone(),
+    }
+}
+
+/// Prints the compute units the simulation used against the settlement's
+/// `declared_limit`, where it fails and its logs.
+fn print_result(
+    response: Response<RpcSimulateTransactionResult>,
+    origins: &[Origin],
+    declared_limit: Option<u32>,
+) {
     let result = response.value;
     println!(
-        "simulated at slot {}, {} compute units used, the settlement declares {:?}",
+        "simulated at slot {}, {} compute units used, the settlement declares {declared_limit:?}",
         response.context.slot,
         result.units_consumed.unwrap_or_default(),
-        message.config.compute_unit_limit,
     );
     let err = result.err.map(TransactionError::from);
     if let Some(TransactionError::InstructionError(at, failure)) = &err
@@ -230,7 +274,6 @@ async fn simulate(
     for line in result.logs.unwrap_or_default() {
         println!("  {line}");
     }
-    Ok(())
 }
 
 /// Adds `offset` to the position of the counterpart a `BeginSettle` or a
