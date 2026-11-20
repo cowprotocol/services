@@ -149,6 +149,33 @@ fn policies_apply_in_list_order() {
     assert_eq!(fill.executed_buy, 1_800);
 }
 
+/// The creation fee comes off whole before the surplus policy measures the
+/// fill: 100 of the 200 over the limit, then half of the 100 left. The
+/// settled legs give both fees back. A buy order pays it in sell token.
+#[test]
+fn a_sponsored_creation_fee_is_taken_whole() {
+    let policies = [
+        FeePolicy::SponsoredCreation { amount: 100 },
+        FeePolicy::Surplus {
+            factor: 0.5,
+            max_volume_factor: 0.5,
+        },
+    ];
+    let mut sell = fill(Side::Sell, 1_000, 1_800, 1_000, 2_000);
+    assert_eq!(apply_protocol_fees(&mut sell, &policies).unwrap(), 150);
+    assert_eq!(sell.executed_buy, 1_850);
+    assert_eq!(
+        protocol_fees_by_policy(&sell, &policies).unwrap(),
+        vec![100, 50]
+    );
+
+    let policies = [FeePolicy::SponsoredCreation { amount: 100 }];
+    let mut buy = fill(Side::Buy, 1_000, 1_000, 800, 1_000);
+    assert_eq!(apply_protocol_fees(&mut buy, &policies).unwrap(), 100);
+    assert_eq!(buy.executed_sell, 900);
+    assert_eq!(protocol_fees_by_policy(&buy, &policies).unwrap(), vec![100]);
+}
+
 #[test]
 fn a_fill_under_its_limit_fails_a_surplus_policy() {
     let mut fill = fill(Side::Sell, 1_000, 1_800, 1_000, 1_700);
@@ -186,8 +213,11 @@ fn a_failed_policy_leaves_the_fill_untouched() {
 fn random_policy(rng: &mut StdRng) -> FeePolicy<Solana> {
     let factor = rng.random_range(0.0..=0.5);
     let max_volume_factor = rng.random_range(0.0..=0.5);
-    match rng.random_range(0..3) {
+    match rng.random_range(0..4) {
         0 => FeePolicy::Volume { factor },
+        3 => FeePolicy::SponsoredCreation {
+            amount: rng.random_range(0..=1u64 << 20),
+        },
         1 => FeePolicy::Surplus {
             factor,
             max_volume_factor,
@@ -348,7 +378,7 @@ fn huge_legs_overflow_only_the_backward_math() {
 }
 
 #[test]
-fn only_a_volume_policy_moves_the_limit() {
+fn a_surplus_policy_leaves_the_limit_where_a_volume_policy_moves_it() {
     let volume = |factor| FeePolicy::<Solana>::Volume { factor };
     let surplus = FeePolicy::<Solana>::Surplus {
         factor: 0.5,
@@ -362,6 +392,29 @@ fn only_a_volume_policy_moves_the_limit() {
     assert_eq!(tighten_limit(&[volume(0.1)], Side::Sell, 1_000), 1_111);
     assert_eq!(tighten_limit(&[volume(0.1)], Side::Buy, 1_000), 909);
     assert_eq!(tighten_limit(&[volume(0.1)], Side::Sell, 0), 0);
+}
+
+/// A creation fee moves the limit by its amount. Taken before the volume
+/// fee, it moves the limit the volume fee already tightened: 1111 and 50. A
+/// fee no fill can absorb saturates the limit.
+#[test]
+fn a_sponsored_creation_fee_moves_the_limit_by_its_amount() {
+    let creation = |amount| FeePolicy::<Solana>::SponsoredCreation { amount };
+    assert_eq!(tighten_limit(&[creation(50)], Side::Sell, 1_000), 1_050);
+    assert_eq!(tighten_limit(&[creation(50)], Side::Buy, 1_000), 950);
+    assert_eq!(
+        tighten_limit(
+            &[creation(50), FeePolicy::Volume { factor: 0.1 }],
+            Side::Sell,
+            1_000
+        ),
+        1_161
+    );
+    assert_eq!(tighten_limit(&[creation(1_001)], Side::Buy, 1_000), 0);
+    assert_eq!(
+        tighten_limit(&[creation(1)], Side::Sell, u64::MAX),
+        u64::MAX
+    );
 }
 
 /// The fill meets the last policy last, so it tightens the limit first: 1000

@@ -93,6 +93,7 @@ pub struct Order {
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
@@ -106,6 +107,13 @@ pub enum FeePolicy {
     },
     #[serde(rename_all = "camelCase")]
     Volume { factor: f64 },
+    /// Solana only: the creation fee of a sponsored order, in atoms of its
+    /// surplus token.
+    #[serde(rename_all = "camelCase")]
+    SponsoredCreation {
+        #[serde_as(as = "DisplayFromStr")]
+        amount: u64,
+    },
 }
 
 /// The quote a price improvement policy measures the fill against.
@@ -148,6 +156,7 @@ impl From<&fee::FeePolicy> for FeePolicy {
                 },
             },
             fee::FeePolicy::Volume { factor } => Self::Volume { factor },
+            fee::FeePolicy::SponsoredCreation { amount } => Self::SponsoredCreation { amount },
         }
     }
 }
@@ -273,6 +282,7 @@ mod tests {
             sell_balance: Some(500),
             quote: None,
             protocol_fees: Vec::new(),
+            creation_fee: None,
         }
     }
 
@@ -357,6 +367,7 @@ mod tests {
         let charged = SolveRequest {
             orders: vec![Order::from(&auction::Order {
                 protocol_fees: vec![
+                    fee::FeePolicy::SponsoredCreation { amount: 10_000 },
                     fee::FeePolicy::Surplus {
                         factor: 0.5,
                         max_volume_factor: 0.01,
@@ -381,6 +392,7 @@ mod tests {
         assert_eq!(
             json["orders"][0]["protocolFees"],
             serde_json::json!([
+                {"sponsoredCreation": {"amount": "10000"}},
                 {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}},
                 {"priceImprovement": {
                     "factor": 0.5,

@@ -110,11 +110,11 @@ impl Order {
     }
 
     /// Build the wire order from a domain order, the taker and the settlement
-    /// program id. The volume fees among `policies` tighten the limit leg
-    /// first, then `cut` moves it by what the driver cuts from the fill, and
-    /// `fee` tightens it last: a sell order's minimum buy rises, a buy
-    /// order's maximum sell falls. A minimum buy past `u64::MAX` saturates:
-    /// no fill can meet it.
+    /// program id. The volume and sponsored creation fees among `policies`
+    /// tighten the limit leg first, then `cut` moves it by what the driver cuts
+    /// from the fill, and `fee` tightens it last: a sell order's minimum buy
+    /// rises, a buy order's maximum sell falls. A minimum buy past `u64::MAX`
+    /// saturates: no fill can meet it.
     ///
     /// The swap output must land in the buy-mint buffer PDA so that
     /// `FinalizeSettle` can push it to the user's buy token account. Solvers

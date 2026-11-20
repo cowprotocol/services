@@ -29,6 +29,9 @@ pub enum FeePolicy<C: ChainTypes = Evm> {
     },
     /// Fee as a percentage of order volume.
     Volume { factor: f64 },
+    /// The fee the funder paid to create a sponsored order, in the surplus
+    /// token, taken whole from the fill.
+    SponsoredCreation { amount: C::Amount },
 }
 
 /// Quote data for price improvement fee calculation.
@@ -158,6 +161,7 @@ fn protocol_fee<C: ChainTypes>(
             Ok(surplus_fee.min(volume_fee))
         }
         FeePolicy::Volume { factor } => volume_fee(order, custom_prices, *factor),
+        FeePolicy::SponsoredCreation { amount } => Ok(*amount),
     }
 }
 
@@ -169,7 +173,8 @@ pub struct FeeShares<A> {
     /// volume policy.
     pub surplus: Option<A>,
     /// The policy's share of the volume: the cap of a surplus or price
-    /// improvement policy, the whole fee of a volume policy.
+    /// improvement policy, the whole fee of a volume policy. The amount of a
+    /// sponsored creation policy, which takes no share.
     pub volume: A,
 }
 
@@ -223,6 +228,10 @@ pub fn fee_shares_before_settlement<C: ChainTypes>(
         FeePolicy::Volume { factor } => Ok(FeeShares {
             surplus: None,
             volume: volume_share_before_settlement(order, *factor)?,
+        }),
+        FeePolicy::SponsoredCreation { amount } => Ok(FeeShares {
+            surplus: None,
+            volume: *amount,
         }),
     }
 }
@@ -296,31 +305,38 @@ pub fn apply_protocol_fees<C: ChainTypes>(
 }
 
 /// The limit leg a fill has to reach for the signed `limit` to hold once the
-/// volume fees among `policies` are taken: a sell order's minimum buy rises,
-/// a buy order's maximum sell falls. The fill meets the policies in list
-/// order, so the last one tightens first. A surplus or price improvement fee
-/// takes a share of the surplus and cannot cross the limit. When a volume
-/// fee has no reachable boundary (its fee overflows, its factor lies outside
-/// `[0, 1)` or the search runs out of rounds), a minimum buy saturates and a
-/// maximum sell drops to zero: no fill can meet either.
+/// volume and sponsored creation fees among `policies` are taken: a sell
+/// order's minimum buy rises, a buy order's maximum sell falls. The fill
+/// meets the policies in list order, so the last one tightens first. A
+/// surplus or price improvement fee takes a share of the surplus and cannot
+/// cross the limit. When a fee has no reachable boundary (it overflows, a
+/// volume factor lies outside `[0, 1)` or the search runs out of rounds), a
+/// minimum buy saturates and a maximum sell drops to zero: no fill can meet
+/// either.
+///
+/// A sponsored creation fee moves the whole order's limit by its amount. A
+/// partial fill pays the whole fee but is asked for only its share of that
+/// move, so one at the moved limit can end under the signed limit: the
+/// caller checks the limit on the fill.
 pub fn tighten_limit<C: ChainTypes>(
     policies: &[FeePolicy<C>],
     side: Side,
     limit: C::Amount,
 ) -> C::Amount {
-    policies
-        .iter()
-        .rev()
-        .filter_map(|policy| match policy {
-            FeePolicy::Volume { factor } => Some(*factor),
-            FeePolicy::Surplus { .. } | FeePolicy::PriceImprovement { .. } => None,
+    policies.iter().rev().fold(limit, |limit, policy| {
+        let tightened = match policy {
+            FeePolicy::Volume { factor } => volume_limit(side, *factor, limit),
+            FeePolicy::SponsoredCreation { amount } => match side {
+                Side::Sell => limit.try_add(*amount),
+                Side::Buy => limit.try_sub(*amount),
+            },
+            FeePolicy::Surplus { .. } | FeePolicy::PriceImprovement { .. } => Ok(limit),
+        };
+        tightened.unwrap_or_else(|_| match side {
+            Side::Sell => C::Amount::max_value(),
+            Side::Buy => C::Amount::zero(),
         })
-        .fold(limit, |limit, factor| {
-            volume_limit(side, factor, limit).unwrap_or_else(|_| match side {
-                Side::Sell => C::Amount::max_value(),
-                Side::Buy => C::Amount::zero(),
-            })
-        })
+    })
 }
 
 /// Rounds [`volume_limit`] takes before it gives up.

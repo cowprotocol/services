@@ -293,6 +293,32 @@ fn solana_surplus_fee_policy_doubles_score() {
     assert_eq!(ranking.ranked[0].score(), 10);
 }
 
+/// A fill that repaid a 3 atom creation fee scores what its route achieved:
+/// the 7 atoms it left over the limit and the fee.
+#[test]
+fn solana_sponsored_creation_fee_counts_towards_the_score() {
+    let uid = sol_uid(1);
+    let (mint_a, mint_b) = (Pubkey([1; 32]), Pubkey([2; 32]));
+    let context = AuctionContext::<Solana> {
+        fee_policies: HashMap::from([(uid, vec![FeePolicy::SponsoredCreation { amount: 3 }])]),
+        native_prices: HashMap::from([(mint_b, SOL_UNIT_PRICE)]),
+        ..Default::default()
+    };
+    let solutions = vec![Solution::new(
+        1,
+        Pubkey([3; 32]),
+        vec![sell_order::<Solana>(uid, mint_a, mint_b, 97, |n| n)],
+    )];
+    let arbitrator = Arbitrator::<Solana> {
+        max_winners: 1,
+        wrapped_native: Pubkey([0xff; 32]),
+    };
+
+    let ranking = arbitrator.arbitrate(solutions, &context);
+
+    assert_eq!(ranking.ranked[0].score(), 10);
+}
+
 /// A solution that only settles a scoring order at exactly the limit price
 /// scores zero, but is still retained (and wins if unopposed) because it
 /// contributes to score.

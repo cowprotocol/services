@@ -45,6 +45,7 @@ use {
     },
     solana_system_interface::instruction::SystemInstruction,
     solana_token::receivable_or_creatable,
+    solana_transaction_fee::ComputeBudget,
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::instruction::TokenInstruction,
     std::time::{Duration, Instant},
@@ -393,10 +394,10 @@ fn validate(
     // Wallets wrap the bundle in instructions of their own, before and after
     // ours, so those sit outside the template.
     let mut bundle = Vec::with_capacity(message.instructions().len());
-    let mut compute_budget = ComputeBudget::default();
+    let compute_budget = ComputeBudget::of(message).map_err(PlacementError::InvalidTransaction)?;
     for instruction in message.instructions() {
         match keys.get(usize::from(instruction.program_id_index)) {
-            Some(&solana_compute_budget_interface::ID) => compute_budget.read(&instruction.data)?,
+            Some(&solana_compute_budget_interface::ID) => {}
             Some(&LIGHTHOUSE_PROGRAM) => check_lighthouse(&instruction.data)?,
             _ => bundle.push(instruction),
         }
@@ -766,12 +767,6 @@ const WRAP_TRANSFER: u8 = 2;
 const WRAP_SYNC: u8 = 3;
 const APPROVE: u8 = 4;
 
-/// The compute units a transaction can consume at most, whatever it declares.
-/// A transaction that names no limit is priced against this, since the units
-/// the runtime would otherwise grant depend on which programs each
-/// instruction calls.
-const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
-
 /// Lighthouse, the guard program wallets wrap a transaction in to assert the
 /// state it leaves behind.
 const LIGHTHOUSE_PROGRAM: Pubkey =
@@ -794,60 +789,6 @@ fn check_lighthouse(data: &[u8]) -> Result<(), PlacementError> {
         _ => Err(PlacementError::InvalidTransaction(
             "only lighthouse assertions are accepted on a sponsored creation",
         )),
-    }
-}
-
-/// What the client asked the runtime to charge for priority.
-#[derive(Default)]
-struct ComputeBudget {
-    /// Micro-lamports per compute unit.
-    price: Option<u64>,
-    /// Compute units the transaction may consume.
-    limit: Option<u32>,
-}
-
-impl ComputeBudget {
-    /// Read one compute-budget instruction. Duplicates of a kind are rejected
-    /// because the runtime rejects them too, so accepting one would price the
-    /// transaction off a value that never takes effect.
-    fn read(&mut self, data: &[u8]) -> Result<(), PlacementError> {
-        // Discriminators of `SetComputeUnitLimit` (u32) and
-        // `SetComputeUnitPrice` (u64), both little-endian.
-        let (slot_taken, malformed) = match data.split_first() {
-            Some((2, limit)) => {
-                let limit = limit
-                    .try_into()
-                    .map(u32::from_le_bytes)
-                    .map_err(|_| "malformed compute unit limit");
-                (self.limit.is_some(), limit.map(|v| self.limit = Some(v)))
-            }
-            Some((3, price)) => {
-                let price = price
-                    .try_into()
-                    .map(u64::from_le_bytes)
-                    .map_err(|_| "malformed compute unit price");
-                (self.price.is_some(), price.map(|v| self.price = Some(v)))
-            }
-            // Heap frames and data size limits cost the funder nothing.
-            _ => return Ok(()),
-        };
-        if slot_taken {
-            return Err(PlacementError::InvalidTransaction(
-                "the transaction sets a compute budget twice",
-            ));
-        }
-        malformed.map_err(PlacementError::InvalidTransaction)
-    }
-
-    /// The most the transaction could pay in priority fee, in lamports,
-    /// rounded up. An undeclared limit is priced at the network ceiling.
-    fn max_priority_fee_lamports(&self) -> u128 {
-        let Some(price) = self.price else {
-            return 0;
-        };
-        let limit = self.limit.unwrap_or(MAX_COMPUTE_UNIT_LIMIT);
-        // Micro-lamports per unit times units, rounded up to whole lamports.
-        (u128::from(price) * u128::from(limit)).div_ceil(1_000_000)
     }
 }
 
@@ -1107,67 +1048,6 @@ mod tests {
         let rpc = validity_answers([false, false]);
         let valid = blockhash_valid(&rpc, &Hash::default(), Duration::from_secs(2)).await;
         assert!(!valid.unwrap());
-    }
-
-    fn set_limit(units: u32) -> Vec<u8> {
-        std::iter::once(2u8)
-            .chain(units.to_le_bytes())
-            .collect::<Vec<_>>()
-    }
-
-    fn set_price(micro_lamports: u64) -> Vec<u8> {
-        std::iter::once(3u8)
-            .chain(micro_lamports.to_le_bytes())
-            .collect::<Vec<_>>()
-    }
-
-    /// The fee is the product, so a steep price over few units stays cheap
-    /// while a modest price over the whole compute ceiling does not.
-    #[test]
-    fn the_fee_is_the_price_times_the_limit() {
-        let mut steep = ComputeBudget::default();
-        steep.read(&set_price(1_000_000)).unwrap();
-        steep.read(&set_limit(20_000)).unwrap();
-        assert_eq!(steep.max_priority_fee_lamports(), 20_000);
-
-        let mut wide = ComputeBudget::default();
-        wide.read(&set_price(1_000)).unwrap();
-        wide.read(&set_limit(MAX_COMPUTE_UNIT_LIMIT)).unwrap();
-        assert_eq!(wide.max_priority_fee_lamports(), 1_400);
-    }
-
-    /// No price means no priority fee. A price without a limit is priced at
-    /// the ceiling, since the transaction may consume up to it.
-    #[test]
-    fn an_undeclared_limit_is_priced_at_the_ceiling() {
-        assert_eq!(ComputeBudget::default().max_priority_fee_lamports(), 0);
-
-        let mut priced = ComputeBudget::default();
-        priced.read(&set_price(1_000_000)).unwrap();
-        assert_eq!(priced.max_priority_fee_lamports(), 1_400_000);
-    }
-
-    /// The runtime rejects a repeated compute-budget instruction, so pricing
-    /// the transaction off the first one would read a value that never runs.
-    #[test]
-    fn a_repeated_compute_budget_is_rejected() {
-        let mut budget = ComputeBudget::default();
-        budget.read(&set_price(10)).unwrap();
-        assert!(budget.read(&set_price(20)).is_err());
-
-        let mut budget = ComputeBudget::default();
-        budget.read(&set_limit(10)).unwrap();
-        assert!(budget.read(&set_limit(20)).is_err());
-    }
-
-    /// A truncated payload is refused rather than read as a smaller number.
-    #[test]
-    fn a_malformed_payload_is_rejected() {
-        let mut budget = ComputeBudget::default();
-        assert!(budget.read(&[3, 1, 2, 3]).is_err());
-        assert!(budget.read(&[2, 1]).is_err());
-        // Variants that cost the funder nothing are ignored, not parsed.
-        assert!(budget.read(&[1, 0, 0, 4, 0]).is_ok());
     }
 
     fn quote(sell_amount: u64, buy_amount: u64) -> db::OrderQuote {

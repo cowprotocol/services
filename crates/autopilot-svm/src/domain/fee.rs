@@ -1,8 +1,11 @@
 //! Which protocol fee policies apply to an order.
 
 use {
-    crate::domain::auction::Order,
-    chain_types::solana::{Pubkey, Solana},
+    crate::domain::auction::{Order, OrderKind},
+    chain_types::{
+        ChainTypes,
+        solana::{Pubkey, Solana},
+    },
     chrono::{DateTime, Utc},
     configs::autopilot::fee_policy::{
         FeePoliciesConfig,
@@ -10,6 +13,7 @@ use {
         FeePolicyKind,
         FeePolicyOrderClass,
     },
+    std::{collections::HashMap, num::NonZero},
 };
 
 /// A protocol fee policy as the driver applies it to a fill.
@@ -86,6 +90,28 @@ impl ProtocolFees {
     }
 }
 
+/// The policy that repays the `lamports` the funder paid to create `order`:
+/// their worth in atoms of the order's surplus token at `prices`, lamports
+/// per 10^9 atoms, rounded up. `None` without a positive price for the
+/// token. An amount past `u64::MAX` saturates: no fill can absorb it.
+pub fn sponsored_creation(
+    order: &Order,
+    lamports: u64,
+    prices: &HashMap<solana_sdk::pubkey::Pubkey, u64>,
+) -> Option<FeePolicy> {
+    let token = match order.kind {
+        OrderKind::Sell => order.buy_token,
+        OrderKind::Buy => order.sell_token,
+    };
+    let price = prices.get(&solana_sdk::pubkey::Pubkey::new_from_array(token.0))?;
+    let price = NonZero::new(u128::from(*price))?;
+    let atoms =
+        (u128::from(lamports) * u128::from(Solana::NATIVE_PRICE_DENOMINATOR)).div_ceil(price.get());
+    Some(FeePolicy::SponsoredCreation {
+        amount: u64::try_from(atoms).unwrap_or(u64::MAX),
+    })
+}
+
 /// Whether the order's limit sits within its quote: the quote buys at least
 /// the limit's rate. The EVM `is_order_outside_market_price` check with the
 /// quote's fee at zero, exact in `u128`.
@@ -98,7 +124,6 @@ fn in_market(order: &Order, quote: &Quote) -> bool {
 mod tests {
     use {
         super::*,
-        crate::domain::auction::OrderKind,
         chain_types::solana::{AppData, IntentHash},
     };
 
@@ -124,6 +149,7 @@ mod tests {
             sell_balance: None,
             quote,
             protocol_fees: Vec::new(),
+            creation_fee: None,
         }
     }
 
@@ -265,6 +291,32 @@ mod tests {
             empty_upcoming.apply(&order, "2026-06-01T00:00:00Z".parse().unwrap()),
             vec![FeePolicy::Volume { factor: 0.001 }]
         );
+    }
+
+    /// At 0.5 lamports an atom of the buy token and 2 of the sell token,
+    /// 10001 lamports are 20002 buy atoms for a sell order and 5001 sell
+    /// atoms, rounded up, for a buy order. A token priced at zero or not at
+    /// all converts to no policy.
+    #[test]
+    fn the_creation_fee_converts_into_the_surplus_token() {
+        let sdk = |token: Pubkey| solana_sdk::pubkey::Pubkey::new_from_array(token.0);
+        let (sell, buy) = (order(OrderKind::Sell, None), order(OrderKind::Buy, None));
+        let denominator = Solana::NATIVE_PRICE_DENOMINATOR;
+        let prices = HashMap::from([
+            (sdk(sell.sell_token), 2 * denominator),
+            (sdk(sell.buy_token), denominator / 2),
+        ]);
+        assert_eq!(
+            sponsored_creation(&sell, 10_001, &prices),
+            Some(FeePolicy::SponsoredCreation { amount: 20_002 })
+        );
+        assert_eq!(
+            sponsored_creation(&buy, 10_001, &prices),
+            Some(FeePolicy::SponsoredCreation { amount: 5_001 })
+        );
+        let unpriced = HashMap::from([(sdk(sell.buy_token), 0)]);
+        assert_eq!(sponsored_creation(&sell, 10_001, &unpriced), None);
+        assert_eq!(sponsored_creation(&buy, 10_001, &unpriced), None);
     }
 
     #[test]
