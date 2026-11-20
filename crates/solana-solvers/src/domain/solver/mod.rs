@@ -243,14 +243,16 @@ impl<Q: Aggregator + Sync> Solver<Q> {
                     tracing::debug!(raise, "bid raised by buffer tokens");
                 }
                 quote.out_amount += raise;
-                let swap = self
+                let solution = self
                     .limited("swap", self.quoter.swap(&quote, &auction.taker))
-                    .await?;
-                return assemble(id, &orders, swap);
+                    .await
+                    .and_then(|swap| assemble(id, &orders, swap));
+                if solution.is_none() {
+                    give_back(buffers, &batch.buy_destination, raise);
+                }
+                return solution;
             }
-            if let Some(left) = buffers.lock().unwrap().get_mut(&batch.buy_destination) {
-                *left += raise;
-            }
+            give_back(buffers, &batch.buy_destination, raise);
             // The orders are sorted most to least permissive. Removing only
             // the tail matters because price impact can make orders that fail
             // at this size clear once the batch is smaller.
@@ -388,6 +390,13 @@ fn take(buffers: &Mutex<HashMap<Pubkey, u64>>, destination: &Pubkey, wanted: u64
     taken
 }
 
+/// Returns `amount` that [`take`] took for `destination` to `buffers`.
+fn give_back(buffers: &Mutex<HashMap<Pubkey, u64>>, destination: &Pubkey, amount: u64) {
+    if let Some(left) = buffers.lock().unwrap().get_mut(destination) {
+        *left += amount;
+    }
+}
+
 /// The swap to quote for `orders`, orders of one side on one pair: their
 /// mints, destination and side, over their totals. `None` for no orders or
 /// when the quoted amount overflows. The other leg is a limit the batch
@@ -437,6 +446,7 @@ mod tests {
     const SLOW: u8 = 0xfd;
     const IMPACT: u8 = 0xfc;
     const ROUTES_BUYS: u8 = 0xfb;
+    const NO_SWAP: u8 = 0xfa;
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -524,7 +534,8 @@ mod tests {
     /// unit, and buys on the `ROUTES_BUYS` mint at the same rate, except the
     /// `NO_ROUTE` mint (no route), the `RATE_LIMITED` mint (429), the
     /// `SLOW` mint (ten seconds) and the `IMPACT` mint, whose rate worsens
-    /// with size: `in + 1000` out. Expects every sell's route to deliver
+    /// with size: `in + 1000` out. The `NO_SWAP` mint quotes but fails to
+    /// build its swap. Expects every sell's route to deliver
     /// 100 more than it guarantees. Rejects other buys. Records when
     /// each quote started, the amounts quoted in that order, the most that
     /// ran at once, and the input of every swap built.
@@ -554,12 +565,15 @@ mod tests {
             _taker: &Pubkey,
         ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send {
             self.swaps.lock().unwrap().push(quote.in_amount);
-            let swap = dex::Swap {
-                in_amount: quote.in_amount,
-                out_amount: quote.out_amount,
-                instructions: vec![],
+            let swap = match quote.raw {
+                serde_json::Value::Bool(true) => Err(dex::Error::NotFound),
+                _ => Ok(dex::Swap {
+                    in_amount: quote.in_amount,
+                    out_amount: quote.out_amount,
+                    instructions: vec![],
+                }),
             };
-            async move { Ok(swap) }
+            async move { swap }
         }
 
         fn quote(
@@ -599,6 +613,7 @@ mod tests {
                         };
                         Ok(dex::Quote {
                             expected_out_amount: out_amount.saturating_add(100),
+                            raw: serde_json::Value::Bool(sell_mint == pubkey(NO_SWAP)),
                             ..quote_of(amount, out_amount)
                         })
                     }
@@ -709,6 +724,27 @@ mod tests {
             auction(
                 vec![
                     sell_with_limit(0x01, pubkey(0x10), 3_000),
+                    sell_of(0x02, pubkey(IMPACT), 100, 400),
+                ],
+                Duration::from_secs(60),
+            ),
+            100,
+        );
+
+        let solutions = solver(1, Duration::ZERO).solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solutions[0].prices[&pubkey(IMPACT)], 1_200);
+    }
+
+    /// The first pair's swap fails to build, so the second pair, quoted
+    /// after it, still raises its bid by all 100.
+    #[tokio::test]
+    async fn a_batch_whose_swap_fails_leaves_the_buffer() {
+        let auction = with_buffer(
+            auction(
+                vec![
+                    order(0x01, dex::Side::Sell, pubkey(NO_SWAP)),
                     sell_of(0x02, pubkey(IMPACT), 100, 400),
                 ],
                 Duration::from_secs(60),
