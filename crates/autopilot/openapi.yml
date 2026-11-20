@@ -24,10 +24,11 @@ paths:
         - in: query
           name: timeout_ms
           description: |
-            Optional timeout in milliseconds for the price estimation request.
+            Optional time in milliseconds the caller waits for the response.
             If not provided, uses the default timeout configured for autopilot.
-            Values below 250ms are automatically clamped to the minimum (250ms).
-            Values exceeding the configured maximum are clamped to the maximum.
+            The price estimators get this time minus 100ms, so the response
+            arrives before the caller gives up. The result is clamped to the
+            range from 250ms to the configured maximum.
           schema:
             type: integer
             format: int64
