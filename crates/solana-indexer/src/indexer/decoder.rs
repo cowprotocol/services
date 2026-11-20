@@ -51,6 +51,13 @@ use {
     tokio::sync::mpsc::{self, Receiver},
 };
 
+/// The SPL Memo program.
+const MEMO_PROGRAM: Pubkey = Pubkey::from_str_const("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+/// What a memo naming the quote of the order created next to it starts with.
+/// The quote id follows in decimal, as in `cow:quote:42`.
+const QUOTE_MEMO_PREFIX: &str = "cow:quote:";
+
 /// Decoder component.
 pub(crate) struct Decoder {
     /// Persistence layer.
@@ -327,10 +334,12 @@ impl Decoder {
         // `relevant_instructions` reconstructs the account list internally to
         // resolve program ids; rebuild it once here so the decode can resolve
         // account indices to pubkeys too.
+        let account_keys = build_account_keys(&tx);
+        let quote_id = memo_quote_id(&tx, &account_keys);
         let ctx = TxContext {
             slot,
             signature,
-            account_keys: build_account_keys(&tx),
+            account_keys,
             post_token_balances: tx
                 .meta
                 .map(|meta| meta.post_token_balances)
@@ -342,7 +351,16 @@ impl Decoder {
                 .into_iter()
                 .partition(|instruction| instruction.program_id == self.settlement_program);
 
-        let events = decode_settlement(&settlement, &ctx)?;
+        let mut events = decode_settlement(&settlement, &ctx)?;
+        // The memo names no order, so it counts only next to a single
+        // creation.
+        let mut creations = events.iter_mut().filter_map(|event| match event {
+            SettlementEvent::OrderCreated(created) => Some(created),
+            _ => None,
+        });
+        if let (Some(created), None) = (creations.next(), creations.next()) {
+            created.quote_id = quote_id;
+        }
 
         for instruction in &solflow {
             self.decode_solflow(instruction);
@@ -536,6 +554,7 @@ fn order_created(
         },
         partially_fillable: intent.flags.partially_fillable,
         app_data: intent.app_data,
+        quote_id: None,
     })))
 }
 
@@ -797,6 +816,42 @@ impl RawInstruction<'_> {
             inner_ix_path: self.inner_ix_path,
         })
     }
+}
+
+/// The quote id the transaction's memo names: the id of its one memo
+/// starting with [`QUOTE_MEMO_PREFIX`], top-level or emitted through a CPI.
+/// `None` without such a memo, with several, or when no decimal id that fits
+/// follows the prefix.
+fn memo_quote_id(tx: &SubscribeUpdateTransactionInfo, account_keys: &[Pubkey]) -> Option<i64> {
+    let top_level = tx
+        .transaction
+        .as_ref()
+        .and_then(|transaction| transaction.message.as_ref())
+        .map(|message| message.instructions.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .map(|instruction| (instruction.program_id_index, &instruction.data));
+    let inner = tx
+        .meta
+        .as_ref()
+        .map(|meta| meta.inner_instructions.as_slice())
+        .unwrap_or_default()
+        .iter()
+        .flat_map(|group| &group.instructions)
+        .map(|instruction| (instruction.program_id_index, &instruction.data));
+    let mut ids = top_level
+        .chain(inner)
+        .filter(|(program, _)| account_keys.get(*program as usize) == Some(&MEMO_PROGRAM))
+        .filter_map(|(_, data)| {
+            std::str::from_utf8(data)
+                .ok()?
+                .strip_prefix(QUOTE_MEMO_PREFIX)
+        });
+    let id = ids.next()?;
+    if ids.next().is_some() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    id.parse().ok()
 }
 
 /// Solana caps the instruction stack at height 5 (top-level = height 1), so a

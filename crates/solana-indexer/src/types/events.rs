@@ -67,6 +67,8 @@ pub(crate) struct CreatedOrder {
     pub partially_fillable: bool,
     /// App-data hash carried by the intent.
     pub app_data: [u8; 32],
+    /// The quote the creation transaction names in a memo, if it names one.
+    pub quote_id: Option<i64>,
 }
 
 /// A finalized settlement: one `BeginSettle`/`FinalizeSettle` pair.
