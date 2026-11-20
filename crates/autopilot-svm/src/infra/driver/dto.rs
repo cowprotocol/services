@@ -194,7 +194,8 @@ impl From<&auction::Order> for Order {
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
             protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
-            // Only protocol fees are produced on Solana today.
+            // Solana orders carry no partner fee (see `max-partner-fee` in config.rs),
+            // so every origin is protocol.
             protocol_fee_origins: order
                 .protocol_fees
                 .iter()
