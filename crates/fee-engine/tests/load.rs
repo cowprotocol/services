@@ -2,7 +2,6 @@
 
 use {
     alloy_primitives::{Address, U256, address},
-    chrono::Utc,
     fee_engine::{
         AppData,
         CompileError,
@@ -65,9 +64,8 @@ fn mainnet_sample_loads_in_file_order() {
 #[test]
 fn mainnet_sample_lists_reach_the_rules() {
     let rules = load_rules_from_str(RULES).unwrap();
-    let evaluator = rules.evaluator(Utc::now());
 
-    let evaluation = evaluator.evaluate(OrderView {
+    let evaluation = rules.evaluate(OrderView {
         order: &order(USDC, USDT),
         app_data: &AppData::default(),
         partner_fees: &[],
@@ -83,7 +81,7 @@ fn mainnet_sample_lists_reach_the_rules() {
 
     let mut quoted = order(USDC, USDT);
     quoted.metadata.quote = Some(Default::default());
-    let evaluation = evaluator.evaluate(OrderView {
+    let evaluation = rules.evaluate(OrderView {
         order: &quoted,
         app_data: &AppData::default(),
         partner_fees: &[],
@@ -95,7 +93,7 @@ fn mainnet_sample_lists_reach_the_rules() {
         [Fee::PriceImprovement { .. }, Fee::Volume { .. }]
     ));
 
-    let evaluation = evaluator.evaluate(OrderView {
+    let evaluation = rules.evaluate(OrderView {
         order: &order(WETH, USDC),
         app_data: &AppData::default(),
         partner_fees: &[],
@@ -109,7 +107,6 @@ fn mainnet_sample_lists_reach_the_rules() {
 fn partner_fee_under(source: &str) -> Vec<Fee> {
     load_rules_from_str(source)
         .unwrap()
-        .evaluator(Utc::now())
         .evaluate(OrderView {
             order: &order(WETH, USDC),
             app_data: &AppData::default(),
@@ -181,7 +178,7 @@ fn a_host_list_reaches_the_rules_and_may_not_be_defined() {
     assert!(load_rules_toml(tables.clone()).is_err());
     tables.add_host_list("host_tokens", [USDC]).unwrap();
     let rules = load_rules_toml(tables.clone()).unwrap();
-    let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+    let evaluation = rules.evaluate(OrderView {
         order: &order(USDC, USDT),
         app_data: &AppData::default(),
         partner_fees: &[],

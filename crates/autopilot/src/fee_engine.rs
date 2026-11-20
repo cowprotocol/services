@@ -70,12 +70,7 @@ impl FeeEngineFees {
         Ok(Self { rules })
     }
 
-    fn evaluate(
-        &self,
-        order: &boundary::Order,
-        in_market: bool,
-        now: DateTime<Utc>,
-    ) -> Evaluation<'_> {
+    fn evaluate(&self, order: &boundary::Order, in_market: bool) -> Evaluation<'_> {
         // TODO: keep the parsed documents by their hash; the parse is about
         // 1 µs per order, a quarter of the evaluation.
         // An order without a document that parses has no partner fee.
@@ -92,7 +87,7 @@ impl FeeEngineFees {
                 ))
             })
             .unwrap_or_default();
-        let evaluation = self.rules.evaluator(now).evaluate(fee_engine::OrderView {
+        let evaluation = self.rules.evaluate(fee_engine::OrderView {
             order,
             app_data: &app_data,
             partner_fees: &partner_fees,
@@ -107,7 +102,6 @@ impl FeeEngineFees {
         &self,
         order: &boundary::Order,
         quote: Option<&domain::Quote>,
-        now: DateTime<Utc>,
     ) -> (Evaluation<'_>, Vec<PolicyWithOrigin>) {
         let quote = reference_quote(order, quote);
         let in_market = !boundary::is_order_outside_market_price(
@@ -115,7 +109,7 @@ impl FeeEngineFees {
             &(&quote).into(),
             order.data.kind,
         );
-        let evaluation = self.evaluate(order, in_market, now);
+        let evaluation = self.evaluate(order, in_market);
         let fees = policies(&evaluation, &quote);
         (evaluation, fees)
     }
@@ -146,7 +140,7 @@ impl ComparedFees {
                 .auction_fees(order, quote, surplus_capturing_jit_order_owners, now)
         });
         let (evaluation, engine) = fee_engine::time_evaluation(FeeSource::Engine, || {
-            self.engine.auction_fees(order, quote, now)
+            self.engine.auction_fees(order, quote)
         });
         let outcome = report(order, &evaluation, &engine, &legacy);
         (outcome.fees(engine, legacy), outcome)
@@ -465,7 +459,7 @@ fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]
     fn auction_fees_are_the_protocol_fees_then_the_capped_partner_fees() {
         let order = order(USDC, WETH, Some(VOLUME_PARTNER_FEES));
         let quote = quote(2000);
-        let (_, fees) = engine().auction_fees(&order, Some(&quote), Utc::now());
+        let (_, fees) = engine().auction_fees(&order, Some(&quote));
         assert_eq!(
             fees,
             [
@@ -505,7 +499,7 @@ fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]
         .unwrap();
         let engine = FeeEngineFees::new(&config, WETH, &[]).unwrap();
         let order = order(USDC, WETH, None);
-        let (_, engine_fees) = engine.auction_fees(&order, None, Utc::now());
+        let (_, engine_fees) = engine.auction_fees(&order, None);
         let (fees, outcome) = ComparedFees::new(legacy(0.0002), engine).auction_outcome(
             &order,
             None,

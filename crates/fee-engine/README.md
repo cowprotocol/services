@@ -12,35 +12,38 @@ A rule is a `RuleDefinition`: a name and two expressions in
 [CEL](https://cel.dev) syntax. `when` must return a bool. `fee` must return
 one fee or a list of fees. The engine does not run a CEL interpreter: the
 `cel` crate only parses, and `RuleSet::new` compiles each expression to a
-typed Rust closure (`src/compile`). It supports the subset of CEL listed
-under [Names a rule can use](#names-a-rule-can-use); anything else does not
+typed Rust closure (see [How a rule compiles](#how-a-rule-compiles)). It
+supports the subset of CEL listed under
+[Names a rule can use](#names-a-rule-can-use); anything else does not
 compile.
 
-`RuleSet::new` refuses the whole set when a rule name is empty or repeats,
-a list takes a reserved name or an expression does not compile. An
-expression does not compile when it does not parse, names an unknown field,
-list or function, mixes types (`order.sellAmount == "x"`, a `when` that is
-not a bool), or has a constant part that fails, such as a fee argument off
-the grid (`volume(0.001)`), in any branch. A rule whose expression fails on
-an order (a missing optional field, an arithmetic overflow, a computed fee
-argument off the grid) is skipped for that order and reported to the
-caller.
+A mistake in a rule shows at one of three points:
 
-`RuleSet::validate_on_sample_order` is a separate pass over two sample
-orders, so one run shows all the mistakes that compiling cannot find. On
-the full sample (every optional field present) both expressions of every
-rule run, whatever `when` says, and every one that fails is reported. On
-the bare sample (no optional field present) the rules run as on a real
-order, and every rule that is skipped is reported. This catches a rule that
-reads a field an order may lack, such as `order.ethflowData.userValidTo`,
-directly instead of through the optional operator
-(`order.?ethflowData.userValidTo`), which would be skipped on every order
-that is not an ethflow order.
+1. When the rules compile. `RuleSet::new` refuses the whole set when a rule
+   name is empty or repeats, a list takes a reserved name or an expression
+   does not compile. An expression does not compile when it does not parse,
+   names an unknown field, list or function, mixes types
+   (`order.sellAmount == "x"`, a `when` that is not a bool), or has a
+   constant part that fails, such as a fee argument off the grid
+   (`volume(0.001)`), in any branch.
+2. On the sample orders. `RuleSet::validate_on_sample_order` is a separate
+   pass over two sample orders, so one run shows the mistakes that compiling
+   cannot find. On the full sample (every optional field present) both
+   expressions of every rule run, whatever `when` says, and every one that
+   fails is reported. On the bare sample (no optional field present) the
+   rules run as on a real order, and every rule that is skipped is reported.
+   This catches a rule that reads a field an order may lack, such as
+   `order.ethflowData.userValidTo`, without a `has(order.ethflowData)`
+   guard: it would be skipped on every order that is not an ethflow order.
+3. On an order. A rule whose expression fails on an order (a missing
+   optional field, an arithmetic overflow, a computed fee argument off the
+   grid) is skipped for that order and reported to the caller.
 
-The pass has limits:
+The pass over the sample orders has limits:
 
 - A ternary, `&&` or `||` runs only what the sample order reaches.
-- Every amount in the samples is 1, and every timestamp is `now`. A fee
+- Every amount in the samples is 1, and every time is the time of the
+  check. A fee
   computed from the order is checked only at those values:
   `volume(order.buyAmount / order.sellAmount)` passes, but on a real order
   it can give an out-of-range argument, and the rule is then skipped and
@@ -99,7 +102,7 @@ fee  = 'no_fee()'
 
 [[rule]]
 name = "Trust Wallet"
-when = 'order.appData.?appCode.orValue("").lowerAscii() == "trust wallet"'
+when = 'has(order.appData.appCode) && order.appData.appCode == "Trust Wallet"'
 fee  = 'no_fee()'
 
 [[rule]]
@@ -119,52 +122,66 @@ name to the rule text in git, the host must log which rules file it loaded.
 
 ## Names a rule can use
 
-`RuleSet::evaluator` fixes `now`; `Evaluator::evaluate` reads `order` from
-the `OrderView` the host passes. The lists and every constant part of an
-expression are bound when the rules compile.
+`RuleSet::evaluate` reads `order` from the `OrderView` the host passes. The
+lists and every constant part of an expression are bound when the rules
+compile.
 
 ### Operators and functions
 
 - Literals: bools, numbers (`2`, `2u`, `0.3`, `1e24`), strings and lists of
   fees or of strings.
-- `&&`, `||`, `!`, `? :`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in`.
-- `+ - * / %` on numbers; `+` and `-` on timestamps and durations.
-- `has(...)`, and the optional operator `.?` ended by `.orValue(d)` or
-  `.hasValue()`; see the `order` section.
-- `timestamp`, `duration`, `int`, `uint`, `double` (a decimal, see
-  [Numbers](#numbers)).
-- `lowerAscii`, `upperAscii`, `startsWith`, `endsWith`, `contains` on
-  strings.
-- `math.greatest`, `math.least`, `math.ceil`, `math.floor`, `math.round`
-  (half away from zero), `math.trunc`, `math.abs`.
+- `&&`, `||`, `!`, `? :`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `in`. As in
+  CEL, a false operand decides `&&` and a true one `||`, also when the
+  other operand fails.
+- `+ - * / %` and unary `-` on numbers.
+- `has(...)`; see the `order` section.
+- The [fee functions](#fee-functions).
 
-Not supported: macros (`exists`, `all`, `filter`, `map`), maps, indexing,
-`size`, `matches`, `string`, `optMap`, `math.sqrt` and the rest of the CEL
-extensions. A rule that uses one does not compile; test a list with `in`.
+Not supported:
+
+- The other macros (`exists`, `all`, `filter`, `map`); test a list with
+  `in`.
+- The optional operator `.?`; guard an optional field with `has`.
+- Functions called on a value (`startsWith`, `lowerAscii`, `size`,
+  `matches`).
+- Conversions (`int`, `uint`, `double`, `string`), the `math` functions and
+  the rest of the CEL extensions.
+- `now`, `timestamp` and `duration`: a rule does not see the current time,
+  and the times of an order are numbers.
+- Maps and indexing.
+
+A rule that uses one of them does not compile.
 
 ```
 when: order.kind == "sell" && order.sellAmount > 1e21
 fee:  surplus(order.partiallyFillable ? 40 : 50, 100)
-fee:  volume(math.greatest(1.0, math.least(10.0, order.sellAmount / 1e20)))
+fee:  volume(order.sellAmount > 1e21 ? 1 : 2.5)
 ```
 
 ### Numbers
 
 Numbers are exact; there are no doubles.
 
-- `uint` is 256 bits: `sellAmount`, `buyAmount`, `validTo`, `validFrom`.
+- `uint` is 256 bits: `sellAmount`, `buyAmount`, `creationDate`, `validTo`,
+  `validFrom`.
 - `int` is 256 bits: `ethflowData.userValidTo` and integer literals.
 - A number with a fraction is a decimal (`rust_decimal`, 28 digits), as are
   literals such as `0.3` and `1e21`. The engine reads each literal from the
-  rule text, so `1e24` is exactly 10^24.
+  rule text, so `1e24` is exactly 10^24. A whole literal too large for a
+  decimal (`1e30`) is an integer.
 
-Values of different types compare exactly. In arithmetic, a constant takes
-the type of the other side when its value does not change, so
-`order.validTo - 3600` stays a `uint`; otherwise the value goes to the
-wider type (`uint` < `int` < decimal). All arithmetic is checked: an
-overflow, a `uint` below zero, a division by zero or a decimal past about
-7.9e28 (e.g. `order.sellAmount / 1e20` on a huge amount) skips the rule for
-that order. Comparisons have no such limit.
+Values of different types compare exactly. In arithmetic both sides must
+have one type:
+
+- An integer constant takes the type of the other side when its value does
+  not change, so `order.validTo - 3600` stays a `uint`.
+- A decimal constant makes the operation decimal, so
+  `order.sellAmount / 1e20` keeps its fraction.
+- Otherwise both sides go to the wider type (`uint` < `int` < decimal).
+
+All arithmetic is checked: an overflow, a `uint` below zero, a division by
+zero or a decimal past about 7.9e28 (e.g. `order.sellAmount / 1e20` on a
+huge amount) skips the rule for that order. Comparisons have no such limit.
 
 ### Fee functions
 
@@ -191,28 +208,15 @@ fee: no_fee()
 
 ### Lists
 
-Each entry of the lists map is a set under its name; `in` is one hash
-lookup whatever the size of the list. A member that parses as a `0x`
+Each entry of the lists map is a set under its name; `in` is one lookup
+whatever the size of the list. A member that parses as a `0x`
 address is an address, in any letter case; any other member is a string,
-compared as written. The names `order`, `now` and `math` are reserved.
+compared as written. The name `order` is reserved.
 `in` is the only operation on a list.
 
 ```
 when: order.sellToken in stablecoins && order.buyToken in stablecoins
-when: order.appData.?appCode.orValue("") in partner_apps
-```
-
-### `now`
-
-The time passed to `RuleSet::evaluator` as a timestamp, the same for every
-order evaluated through it. It compares with `timestamp("…")` and adds or
-subtracts a `duration("…")`. Duration units are `h`, `m`, `s`, `ms`, `us`
-and `ns`; there is no `d`. `timestamp` of a number reads it as Unix
-seconds.
-
-```
-when: now < timestamp("2026-12-01T00:00:00Z")
-when: now > order.creationDate + duration("24h")
+when: has(order.appData.appCode) && order.appData.appCode in partner_apps
 ```
 
 ### `order`
@@ -225,7 +229,7 @@ set looks like this (hashes shortened):
 ```json
 {
   "owner": "0x40a50cf069e992aa4536211b23f286ef88752187",
-  "creationDate": "2026-10-28T14:03:11.520Z",
+  "creationDate": 1793196191,
   "sellToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
   "buyToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
   "receiver": "0x0000000000000000000000000000000000000000",
@@ -251,10 +255,10 @@ set looks like this (hashes shortened):
 ```
 
 The types: `owner`, `sellToken`, `buyToken` and `receiver` are addresses;
-an address compares with a string literal in any letter case, and is the
-lowercase hex where a string is expected (`startsWith`). `creationDate` is
-a timestamp. `kind` and `signingScheme` are strings. The amounts and times
-are numbers, see [Numbers](#numbers).
+an address compares with another address, or with a string literal in any
+letter case. `kind` and `signingScheme` are strings. The amounts are
+numbers, and so are the times (`creationDate`, `validTo`, `validFrom`,
+`ethflowData.userValidTo`), in Unix seconds; see [Numbers](#numbers).
 
 `inMarket` is `OrderView::in_market` as the host passes it. The engine does not
 check it: the host must pass false when the order has no quote.
@@ -266,17 +270,16 @@ fee has depended on (`uid`, `feeAmount`, the token balances, the onchain
 placement) and the quote are not here: a quote request has no quote, so a
 fee that read it could not be quoted. Naming one of them does not compile.
 An unset `receiver` is the zero address. Other optional fields are absent
-when unset. Reach one with the optional operator `.?`: it yields an absent
-value instead of failing and reaches through an optional parent, so
-`order.?ethflowData.userValidTo` reads on any order, where
-`order.ethflowData.userValidTo` needs a `has(order.ethflowData)` guard
-first. End the chain with `.orValue(d)` for a plain value or `.hasValue()`
-for a bool.
+when unset, and a rule that reads an absent field is skipped for that
+order. Guard the read with `has`:
+`has(order.validFrom) && order.validFrom > 0`. `has` of a field under an
+absent object is false, so `has(order.ethflowData.userValidTo)` is safe on
+any order.
 
 ```
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
-when: timestamp(order.validTo) - now > duration("1h")
-when: order.?ethflowData.hasValue()
+when: order.validTo - order.creationDate > 3600
+when: has(order.ethflowData) && order.ethflowData.userValidTo > 0
 fee:  order.inMarket ? price_improvement(50, 100) : surplus(50, 100)
 ```
 
@@ -294,24 +297,23 @@ document is here, hooks, wrappers and partner fees included (see `partner_fees` 
 Outcome). The host passes `AppData::default()` and no partner fees when the
 order has no document or the protocol cannot parse it. `appData` and
 `appData.metadata` are always present; every field under them is optional,
-so reach it with `.?` or guard it with `has`.
+so guard it with `has`.
 
 `metadata.enableFastPath` and `metadata.validFrom` are not here: read
 `order.fastPath` and `order.validFrom`, which hold the values in effect.
 
 `appCode` is free text in the case the wallet chose, and the same wallet
-does not always choose the same. Compare it through `lowerAscii()` against
-a lowercase literal; a plain `==` against a mixed-case literal matches only
-that spelling.
+does not always choose the same. `==` and `in` match one spelling only, so
+put every spelling a wallet uses in a list.
 
 ```
-when: order.appData.?appCode.orValue("").lowerAscii() == "cow swap"
+when: has(order.appData.appCode) && order.appData.appCode == "CoW Swap"
 when: has(order.appData.metadata.flashloan)
 ```
 
 ## Outcome
 
-`Evaluator::evaluate` returns an `Evaluation` with the matches and the
+`RuleSet::evaluate` returns an `Evaluation` with the matches and the
 diagnostics, and logs nothing itself:
 
 - `matched`: a `Match { rule, fees }` for every rule whose `when` held, in
@@ -325,3 +327,30 @@ diagnostics, and logs nothing itself:
   the match it picks. They are capped by `max-volume-bps` as the autopilot
   caps them; a fee past the cap stays, with a zero volume share or volume cap.
   Without `[partner-fees]` the list is empty.
+
+## How a rule compiles
+
+`src/compile` turns each expression into a closure, once, in
+`RuleSet::new`:
+
+1. The `cel` crate parses the text into a tree.
+2. `compile::expression` walks the tree from the leaves up. Each part
+   becomes a `Node`: its type (bool, number, string, address, fee, list)
+   and its value, which is a constant or a closure that reads the order.
+3. An operator or function checks the types of its operands, then builds
+   its value from theirs. When every operand is a constant, the result is
+   computed at once, so a part that reads nothing from the order costs
+   nothing per order. A constant that fails is a compile error.
+4. `order.<field>` becomes a call to a Rust accessor from the field table
+   in `src/order_view`. The engine builds no copy of the order.
+5. A list becomes a set, and `in` a lookup in it.
+
+In `order.sellToken in stablecoins && order.sellAmount > 1e21`, the first
+operand is a set lookup on the sell token. The second is a 256-bit integer
+comparison: `1e21` is whole, so it is converted to a `uint` when the rule
+compiles. `&&` does not run the second operand when the first is false.
+
+To add a field, add a row to its object's table in `src/order_view`. To add
+a function, add an arm to `call_node` in `src/compile/mod.rs`. Document
+both here with an example line:
+`tests/readme.rs` compiles every `when:` and `fee:` line of this file.

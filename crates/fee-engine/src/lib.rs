@@ -7,7 +7,7 @@
 //! caller picks which to act on.
 //!
 //! A rule sees `order` (the fee-relevant fields of the API order, amounts as
-//! exact integers), `now` and every list. `README.md` documents every name a
+//! exact integers) and every list. `README.md` documents every name a
 //! rule can use, with an example each, and the TOML file
 //! [`load_rules_from_str`] reads.
 
@@ -22,7 +22,7 @@ mod report;
 mod rules;
 
 pub use {
-    evaluator::{Evaluation, Evaluator, Match, RuleError, Skipped},
+    evaluator::{Evaluation, Match, RuleError, Skipped},
     fee::{FactorError, Fee, FeeKind},
     fee_factor::FeeFactor,
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},

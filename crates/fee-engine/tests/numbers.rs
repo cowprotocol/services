@@ -3,7 +3,7 @@
 
 use {
     alloy_primitives::U256,
-    chrono::Utc,
+    chrono::DateTime,
     fee_engine::{AppData, Fee, FeeFactor, OrderView, RuleDefinition, RuleSetDefinition},
     model::order::{Order, OrderData},
     rust_decimal::Decimal,
@@ -32,7 +32,7 @@ fn evaluate(when: &str, fee: &str, order: &Order) -> Result<Option<Vec<Fee>>, St
         ..Default::default()
     };
     let rules = fee_engine::RuleSet::new(definition).map_err(|err| err.to_string())?;
-    let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+    let evaluation = rules.evaluate(OrderView {
         order,
         app_data: &AppData::default(),
         partner_fees: &[],
@@ -105,10 +105,6 @@ fn decimal_arithmetic_is_exact() {
         evaluate("true", "volume(order.sellAmount / 1e20)", &order),
         Ok(Some(volume("0.3")))
     );
-    assert_eq!(
-        evaluate("true", "volume(math.round(2.5))", &order),
-        Ok(Some(volume("3")))
-    );
 }
 
 #[test]
@@ -119,7 +115,19 @@ fn integer_arithmetic_keeps_its_type() {
     assert!(matches("order.validTo - 3600 > 0u", &order));
     // With a decimal constant, it divides as decimals.
     assert!(matches("order.sellAmount / 2.0 == 3.5", &order));
-    assert!(matches("int(order.buyAmount) - 5 == -3", &order));
+    // With a negative constant, it goes to an int.
+    assert!(matches("order.buyAmount + -5 == -3", &order));
+}
+
+#[test]
+fn times_are_unix_seconds() {
+    let mut order = order(U256::from(1), U256::from(1));
+    order.metadata.creation_date = DateTime::from_timestamp(1_793_196_191, 520_000_000).unwrap();
+    assert!(matches("order.creationDate == 1793196191", &order));
+    assert!(matches(
+        "order.validTo - order.creationDate == 6803809",
+        &order
+    ));
 }
 
 #[test]

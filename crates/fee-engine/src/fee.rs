@@ -89,14 +89,19 @@ pub enum FactorError {
     OutOfRange,
 }
 
-/// Compiles a call to a fee function, or `None` if `name` is not one.
-pub(crate) fn call(name: &str, args: Vec<Num>) -> Result<Option<Val<Fee>>, String> {
+/// Compiles a call to a fee function, or `None` if `name` is not one; `args`
+/// compiles the arguments.
+pub(crate) fn call(
+    name: &str,
+    args: impl FnOnce() -> Result<Vec<Num>, String>,
+) -> Result<Option<Val<Fee>>, String> {
     let kind = match name {
         "volume" => FeeKind::Volume,
         "surplus" => FeeKind::Surplus,
         "price_improvement" => FeeKind::PriceImprovement,
         _ => return Ok(None),
     };
+    let args = args()?;
     let arity = if kind == FeeKind::Volume { 1 } else { 2 };
     if args.len() != arity {
         return Err(format!(
@@ -156,7 +161,6 @@ mod tests {
     use {
         super::*,
         crate::{AppData, OrderView, RuleDefinition, RuleSet, RuleSetDefinition},
-        chrono::Utc,
         model::order::Order,
     };
 
@@ -174,7 +178,7 @@ mod tests {
         })
         .map_err(|err| err.to_string())?;
         let order = Order::default();
-        let mut evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+        let mut evaluation = rules.evaluate(OrderView {
             order: &order,
             app_data: &AppData::default(),
             partner_fees: &[],

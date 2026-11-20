@@ -3,7 +3,6 @@
 use {
     crate::{
         AppData,
-        Evaluator,
         Fee,
         FeeFactor,
         OrderView,
@@ -96,9 +95,9 @@ fn bps_of_volume<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FeeFactor
         .map_err(|error| de::Error::custom(format!("max-volume-bps = {bps} {error}")))
 }
 
-/// Names the evaluator binds itself; a list under one of them would be
-/// shadowed or overwritten without any error.
-const RESERVED_NAMES: [&str; 3] = ["order", "now", "math"];
+/// Names the engine binds itself; a list under one of them would be
+/// shadowed without any error.
+const RESERVED_NAMES: [&str; 1] = ["order"];
 
 /// Why a set of rule definitions was refused.
 #[derive(Debug, thiserror::Error)]
@@ -256,8 +255,7 @@ impl RuleSet {
                 (name.clone(), Arc::new(set))
             })
             .collect();
-        let mut env = Env::stdlib();
-        cel::extensions::math(&mut env).expect("math names are free in the stdlib");
+        let env = Env::stdlib();
         let mut rules = Vec::with_capacity(definitions.len());
         let mut names = HashSet::new();
         for (index, definition) in definitions.into_iter().enumerate() {
@@ -282,7 +280,6 @@ impl RuleSet {
     /// order would skip on the bare one. See the README.
     pub fn validate_on_sample_order(&self) -> Result<(), Vec<SampleOrderError>> {
         let now = Utc::now();
-        let evaluator = self.evaluator(now);
         let error = |sample| {
             move |skipped: Skipped<'_>| SampleOrderError {
                 rule: skipped.rule.name().to_owned(),
@@ -291,7 +288,7 @@ impl RuleSet {
                 sample,
             }
         };
-        let mut errors: Vec<_> = evaluator
+        let mut errors: Vec<_> = self
             .evaluate_all_expressions(OrderView {
                 order: &full_sample_order(now),
                 app_data: &sample_app_data(),
@@ -301,7 +298,7 @@ impl RuleSet {
             .into_iter()
             .map(error(Sample::Full))
             .collect();
-        let on_bare: Vec<_> = evaluator
+        let on_bare: Vec<_> = self
             .evaluate(OrderView {
                 order: &bare_sample_order(now),
                 app_data: &AppData::default(),
@@ -333,12 +330,6 @@ impl RuleSet {
     /// `None` counts no partner fee.
     pub fn max_partner_fee(&self) -> Option<FeeFactor> {
         self.max_partner_fee
-    }
-
-    /// Evaluates orders at `now`. Cheap: lists and functions are bound
-    /// once, in [`RuleSet::new`].
-    pub fn evaluator(&self, now: DateTime<Utc>) -> Evaluator<'_> {
-        Evaluator::new(self, now)
     }
 }
 
@@ -389,7 +380,7 @@ pub(crate) fn sample_app_data() -> AppData {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {super::*, alloy_primitives::Address};
 
     fn rule(name: &str, when: &str, fee: &str) -> RuleDefinition {
         RuleDefinition {
@@ -444,7 +435,7 @@ mod tests {
         order.data.sell_token = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
             .parse()
             .unwrap();
-        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+        let evaluation = rules.evaluate(OrderView {
             order: &order,
             app_data: &AppData::default(),
             partner_fees: &[],
@@ -453,13 +444,42 @@ mod tests {
         assert_eq!(evaluation.matched.len(), 1);
     }
 
+    /// A short list is scanned and a longer one hashed.
+    #[test]
+    fn lists_of_any_size_find_their_members() {
+        for size in [1u8, 4, 5, 40] {
+            let members: Vec<_> = (1..=size).map(Address::with_last_byte).collect();
+            let rules = RuleSet::new(RuleSetDefinition {
+                lists: BTreeMap::from([(
+                    "members".to_owned(),
+                    members.iter().map(Address::to_string).collect(),
+                )]),
+                rules: vec![rule("Members", "order.sellToken in members", "no_fee()")],
+                ..Default::default()
+            })
+            .unwrap();
+            let matches = |sell_token| {
+                let mut order = Order::default();
+                order.data.sell_token = sell_token;
+                let evaluation = rules.evaluate(OrderView {
+                    order: &order,
+                    app_data: &AppData::default(),
+                    partner_fees: &[],
+                    in_market: false,
+                });
+                !evaluation.matched.is_empty()
+            };
+            assert!(members.iter().all(|member| matches(*member)), "{size}");
+            assert!(!matches(Address::with_last_byte(size + 1)), "{size}");
+        }
+    }
+
     #[test]
     fn folds_a_fee_that_reads_nothing_from_the_order() {
         let rules = RuleSet::new(RuleSetDefinition {
             rules: vec![
                 rule("constant", "true", "[surplus(50, 98), volume(2)]"),
                 rule("reads the order", "true", "volume(order.inMarket ? 1 : 2)"),
-                rule("reads the time", "true", "volume(now > now ? 1 : 2)"),
             ],
             ..Default::default()
         })
@@ -469,9 +489,9 @@ mod tests {
             .iter()
             .map(|rule| matches!(rule.fee, Val::Const(_)))
             .collect();
-        assert_eq!(constant, [true, false, false]);
+        assert_eq!(constant, [true, false]);
 
-        let evaluation = rules.evaluator(Utc::now()).evaluate(OrderView {
+        let evaluation = rules.evaluate(OrderView {
             order: &Order::default(),
             app_data: &AppData::default(),
             partner_fees: &[],
@@ -582,6 +602,46 @@ mod tests {
                 "volume(1)",
                 "macros",
             ),
+            (
+                "size(order.kind) > 0",
+                "volume(1)",
+                "unknown function `size`",
+            ),
+            (
+                "order.kind.startsWith('s')",
+                "volume(1)",
+                "unknown function `startsWith`",
+            ),
+            (
+                "true",
+                "volume(math.greatest(1, 2))",
+                "unknown function `greatest`",
+            ),
+            (
+                "order.?validFrom.orValue(0) > 0",
+                "volume(1)",
+                "unknown function `orValue`",
+            ),
+            (
+                "has(order.?ethflowData.userValidTo)",
+                "volume(1)",
+                "`.?` is not supported",
+            ),
+            (
+                "now > timestamp('2026-12-01T00:00:00Z')",
+                "volume(1)",
+                "unknown name `now`",
+            ),
+            (
+                "order.validTo > timestamp('2026-12-01T00:00:00Z')",
+                "volume(1)",
+                "unknown function `timestamp`",
+            ),
+            (
+                "true",
+                "[volume(1), 'x']",
+                "only fees or only string literals",
+            ),
         ] {
             let error = message(when, fee);
             assert!(error.contains(expected), "{when} / {fee}: {error}");
@@ -617,28 +677,28 @@ mod tests {
         validate(vec![
             rule(
                 "Ethflow",
-                "order.?ethflowData.userValidTo.orValue(0) > 0",
+                "has(order.ethflowData) && order.ethflowData.userValidTo > 0",
                 "no_fee()",
             ),
             rule("Fast path", "order.fastPath", "no_fee()"),
             rule(
                 "App code",
-                "order.appData.?appCode.orValue('') == 'sample'",
+                "has(order.appData.appCode) && order.appData.appCode == 'sample'",
                 "no_fee()",
             ),
             rule(
                 "Ratio",
-                "order.?ethflowData.userValidTo.orValue(0) + 1 > 0",
-                "volume(math.least(10.0, order.buyAmount / order.sellAmount))",
+                "order.sellAmount > 0",
+                "volume(order.buyAmount / order.sellAmount)",
             ),
             rule(
                 "Expiry",
-                "order.validTo - 3600 > 0 && now - timestamp(order.validTo) < duration('1h')",
+                "order.validTo - 3600 > 0 && order.validTo - order.creationDate < 3600",
                 "no_fee()",
             ),
             rule(
                 "Valid from",
-                "order.?validFrom.orValue(0) + 1 > 0",
+                "has(order.validFrom) && order.validFrom + 1 > 0",
                 "no_fee()",
             ),
             rule("Default", "true", "[surplus(50, 100), volume(0.3)]"),
@@ -671,18 +731,13 @@ mod tests {
         validate(vec![
             rule(
                 "Guarded",
-                "order.?ethflowData.userValidTo.orValue(0) != 0",
+                "has(order.ethflowData) && order.ethflowData.userValidTo != 0",
                 "volume(1)",
             ),
             rule(
                 "Fee behind its guard",
-                "order.?validFrom.hasValue()",
+                "has(order.validFrom)",
                 "volume(order.validFrom > 0 ? 1 : 2)",
-            ),
-            rule(
-                "Nested",
-                "order.?ethflowData.userValidTo.hasValue()",
-                "no_fee()",
             ),
             rule(
                 "Last field only",

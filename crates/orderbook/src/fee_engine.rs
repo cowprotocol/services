@@ -4,7 +4,6 @@
 use {
     alloy::primitives::Address,
     app_data::ValidatedAppData,
-    chrono::Utc,
     configs::{fee_engine::FeeEngineConfig, fee_factor::FeeFactor},
     fee_engine::{Evaluation, Fee, Outcome, PartnerFee, RuleSet},
     model::order::{Order, OrderUid},
@@ -53,15 +52,12 @@ impl FeeEngineVolumeFees {
         partner_fees: &[PartnerFee],
         in_market: bool,
     ) -> Evaluation<'_> {
-        let evaluation = self
-            .rules
-            .evaluator(Utc::now())
-            .evaluate(fee_engine::OrderView {
-                order,
-                app_data: &shared::fee_engine::app_data(&app_data.protocol, app_code),
-                partner_fees,
-                in_market,
-            });
+        let evaluation = self.rules.evaluate(fee_engine::OrderView {
+            order,
+            app_data: &shared::fee_engine::app_data(&app_data.protocol, app_code),
+            partner_fees,
+            in_market,
+        });
         evaluation.warn_skipped();
         evaluation
     }

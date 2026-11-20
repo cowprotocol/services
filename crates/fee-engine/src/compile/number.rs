@@ -1,10 +1,14 @@
 //! Exact numbers: `uint` is a `U256`, `int` an `I256`, a number with a
 //! fraction a `Decimal`. Mixed operands are promoted, never rounded.
+//!
+//! [`Num`] is a number while it compiles: its type is known, so operators
+//! on one type run natively. [`Number`] is a value of any of the types, for
+//! the conversions and for comparisons across types.
 
 use {
     crate::{
         RuleError,
-        compile::node::{Val, map2},
+        compile::node::{Val, Value, map2},
     },
     alloy_primitives::{I256, U256, U512},
     rust_decimal::{
@@ -24,6 +28,7 @@ pub(crate) enum Number {
 
 impl Number {
     /// `(negative, magnitude, scale)`: the value is `±magnitude / 10^scale`.
+    /// Zero is never negative.
     fn parts(self) -> (bool, U512, u32) {
         match self {
             Number::UInt(u) => (false, U512::from(u), 0),
@@ -39,24 +44,18 @@ impl Number {
     /// Exact order of any two numbers. Magnitudes are at most 2^256 and a
     /// decimal scale at most 28, so the scaled values fit 512 bits.
     pub(crate) fn cmp_exact(self, other: Number) -> Ordering {
-        let (a_neg, a, a_scale) = self.parts();
-        let (b_neg, b, b_scale) = other.parts();
-        let a_zero = a.is_zero();
-        let b_zero = b.is_zero();
-        let (a_neg, b_neg) = (a_neg && !a_zero, b_neg && !b_zero);
-        if a_neg != b_neg {
-            return if a_neg {
-                Ordering::Less
-            } else {
-                Ordering::Greater
-            };
+        let (a_negative, a, a_scale) = self.parts();
+        let (b_negative, b, b_scale) = other.parts();
+        if a_negative != b_negative {
+            return b_negative.cmp(&a_negative);
         }
         let ten = U512::from(10);
         let a = a * ten.pow(U512::from(b_scale));
         let b = b * ten.pow(U512::from(a_scale));
-        if a_neg { b.cmp(&a) } else { a.cmp(&b) }
+        if a_negative { b.cmp(&a) } else { a.cmp(&b) }
     }
 
+    /// Drops the fraction of a decimal; a negative number is out of range.
     pub(crate) fn to_uint(self) -> Result<U256, RuleError> {
         match self {
             Number::UInt(u) => Ok(u),
@@ -69,6 +68,7 @@ impl Number {
         }
     }
 
+    /// Drops the fraction of a decimal.
     pub(crate) fn to_int(self) -> Result<I256, RuleError> {
         match self {
             Number::UInt(u) => I256::try_from(u).map_err(|_| RuleError::Range("int")),
@@ -80,6 +80,7 @@ impl Number {
         }
     }
 
+    /// An integer past 96 bits is out of range.
     pub(crate) fn to_decimal(self) -> Result<Decimal, RuleError> {
         let range = || RuleError::Range("decimal");
         match self {
@@ -95,17 +96,18 @@ impl Number {
         }
     }
 
-    /// Exact conversion, or `None` when the value would change.
-    fn convert(self, kind: Kind) -> Option<Number> {
+    /// Whether the value stays the same as a `kind`.
+    fn converts_exactly(self, kind: Kind) -> bool {
         let converted = match kind {
-            Kind::UInt => Number::UInt(self.to_uint().ok()?),
-            Kind::Int => Number::Int(self.to_int().ok()?),
-            Kind::Decimal => Number::Decimal(self.to_decimal().ok()?),
+            Kind::UInt => self.to_uint().map(Number::UInt),
+            Kind::Int => self.to_int().map(Number::Int),
+            Kind::Decimal => self.to_decimal().map(Number::Decimal),
         };
-        (converted.cmp_exact(self) == Ordering::Equal).then_some(converted)
+        converted.is_ok_and(|converted| converted.cmp_exact(self) == Ordering::Equal)
     }
 }
 
+/// The type of a number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     UInt,
@@ -165,14 +167,6 @@ impl Num {
         }
     }
 
-    fn from_number(number: Number) -> Num {
-        match number {
-            Number::UInt(u) => Num::UInt(Val::Const(u)),
-            Number::Int(i) => Num::Int(Val::Const(i)),
-            Number::Decimal(d) => Num::Decimal(Val::Const(d)),
-        }
-    }
-
     /// The number as a [`Number`], for the mixed-type paths.
     pub(crate) fn into_number(self) -> Result<Val<Number>, String> {
         match self {
@@ -182,31 +176,44 @@ impl Num {
         }
     }
 
-    /// Converts to `kind`: exactly at compile time for a constant (else a
-    /// compile error), checked per order otherwise.
-    pub(crate) fn into_kind(self, kind: Kind) -> Result<Num, String> {
-        if self.kind() == kind {
-            return Ok(self);
+    /// The number as a `uint`; see [`Num::convert`].
+    pub(crate) fn into_uint(self) -> Result<Val<U256>, String> {
+        match self {
+            Num::UInt(value) => Ok(value),
+            other => other.convert(Kind::UInt, Number::to_uint),
         }
-        if let Some(number) = self.constant() {
-            return number
-                .convert(kind)
-                .map(Num::from_number)
-                .ok_or_else(|| format!("{number} is not exactly a {kind}"));
-        }
-        let number = self.into_number()?;
-        Ok(match kind {
-            Kind::UInt => Num::UInt(number.map(Number::to_uint)?),
-            Kind::Int => Num::Int(number.map(Number::to_int)?),
-            Kind::Decimal => Num::Decimal(number.map(Number::to_decimal)?),
-        })
     }
 
-    pub(crate) fn into_decimal(self) -> Result<Val<Decimal>, String> {
-        match self.into_kind(Kind::Decimal)? {
-            Num::Decimal(d) => Ok(d),
-            _ => unreachable!(),
+    /// The number as an `int`; see [`Num::convert`].
+    pub(crate) fn into_int(self) -> Result<Val<I256>, String> {
+        match self {
+            Num::Int(value) => Ok(value),
+            other => other.convert(Kind::Int, Number::to_int),
         }
+    }
+
+    /// The number as a decimal; see [`Num::convert`].
+    pub(crate) fn into_decimal(self) -> Result<Val<Decimal>, String> {
+        match self {
+            Num::Decimal(value) => Ok(value),
+            other => other.convert(Kind::Decimal, Number::to_decimal),
+        }
+    }
+
+    /// Converts with `to`, which gives a `kind`. A constant must convert
+    /// exactly, else it is a compile error; any other value is checked per
+    /// order.
+    fn convert<T: Value>(
+        self,
+        kind: Kind,
+        to: fn(Number) -> Result<T, RuleError>,
+    ) -> Result<Val<T>, String> {
+        if let Some(number) = self.constant()
+            && !number.converts_exactly(kind)
+        {
+            return Err(format!("{number} is not exactly a {kind}"));
+        }
+        self.into_number()?.map(to)
     }
 
     /// The type both operands share without changing a value. A constant
@@ -216,7 +223,7 @@ impl Num {
         let (ka, kb) = (a.kind(), b.kind());
         let adopts = |constant: Option<Number>, from: Kind, to: Kind| {
             (decimal_to_integer || from != Kind::Decimal)
-                && constant.is_some_and(|n| n.convert(to).is_some())
+                && constant.is_some_and(|number| number.converts_exactly(to))
         };
         if ka == kb || adopts(b.constant(), kb, ka) {
             Some(ka)
@@ -240,12 +247,12 @@ impl Num {
         Num::pair(a, b, kind)
     }
 
+    /// Both operands converted to `kind`.
     pub(crate) fn pair(a: Num, b: Num, kind: Kind) -> Result<Pair, String> {
-        Ok(match (a.into_kind(kind)?, b.into_kind(kind)?) {
-            (Num::UInt(a), Num::UInt(b)) => Pair::UInt(a, b),
-            (Num::Int(a), Num::Int(b)) => Pair::Int(a, b),
-            (Num::Decimal(a), Num::Decimal(b)) => Pair::Decimal(a, b),
-            _ => unreachable!("both converted to {kind:?}"),
+        Ok(match kind {
+            Kind::UInt => Pair::UInt(a.into_uint()?, b.into_uint()?),
+            Kind::Int => Pair::Int(a.into_int()?, b.into_int()?),
+            Kind::Decimal => Pair::Decimal(a.into_decimal()?, b.into_decimal()?),
         })
     }
 }

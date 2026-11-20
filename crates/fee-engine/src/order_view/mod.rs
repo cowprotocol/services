@@ -1,12 +1,14 @@
 //! The order as a rule sees it: the fields a rule can read, resolved to
 //! Rust accessors when the rules compile.
+//!
+//! Each object is a table of fields. A new field is a row in its object's
+//! table and a line in the `order` section of the README.
 
 mod app_data;
 
 pub use app_data::AppData;
 use {
     alloy_primitives::{Address, I256, U256},
-    chrono::{DateTime, Utc},
     model::{order::OrderKind, signature::SigningScheme},
 };
 
@@ -25,17 +27,11 @@ pub struct OrderView<'a> {
     pub in_market: bool,
 }
 
-/// What one evaluation reads: the order and the evaluator's `now`.
-pub(crate) struct Input<'a> {
-    pub(crate) order: OrderView<'a>,
-    pub(crate) now: DateTime<Utc>,
-}
-
 /// A nested object of the view, such as `order` or `order.appData`.
 pub(crate) struct Object {
     pub(crate) name: &'static str,
     /// Whether the object is in this order's view.
-    pub(crate) present: fn(&Input<'_>) -> bool,
+    pub(crate) present: fn(&OrderView<'_>) -> bool,
     pub(crate) fields: &'static [Field],
 }
 
@@ -45,11 +41,13 @@ impl Object {
     }
 }
 
+/// A name under an [`Object`].
 pub(crate) struct Field {
     pub(crate) name: &'static str,
     pub(crate) kind: FieldKind,
 }
 
+/// What a field is: a nested object, or a value with its accessor.
 pub(crate) enum FieldKind {
     Object(&'static Object),
     Value(Getter),
@@ -58,23 +56,21 @@ pub(crate) enum FieldKind {
 /// Reads a field; `None` when the order does not have it.
 #[derive(Clone, Copy)]
 pub(crate) enum Getter {
-    Address(fn(&Input<'_>) -> Option<Address>),
-    UInt(fn(&Input<'_>) -> Option<U256>),
-    Int(fn(&Input<'_>) -> Option<I256>),
-    Bool(fn(&Input<'_>) -> Option<bool>),
-    Text(for<'a> fn(&Input<'a>) -> Option<&'a str>),
-    Timestamp(fn(&Input<'_>) -> Option<DateTime<Utc>>),
+    Address(fn(&OrderView<'_>) -> Option<Address>),
+    UInt(fn(&OrderView<'_>) -> Option<U256>),
+    Int(fn(&OrderView<'_>) -> Option<I256>),
+    Bool(fn(&OrderView<'_>) -> Option<bool>),
+    Text(for<'a> fn(&OrderView<'a>) -> Option<&'a str>),
 }
 
 impl Getter {
-    pub(crate) fn present(self, input: &Input<'_>) -> bool {
+    pub(crate) fn present(self, view: &OrderView<'_>) -> bool {
         match self {
-            Getter::Address(get) => get(input).is_some(),
-            Getter::UInt(get) => get(input).is_some(),
-            Getter::Int(get) => get(input).is_some(),
-            Getter::Bool(get) => get(input).is_some(),
-            Getter::Text(get) => get(input).is_some(),
-            Getter::Timestamp(get) => get(input).is_some(),
+            Getter::Address(get) => get(view).is_some(),
+            Getter::UInt(get) => get(view).is_some(),
+            Getter::Int(get) => get(view).is_some(),
+            Getter::Bool(get) => get(view).is_some(),
+            Getter::Text(get) => get(view).is_some(),
         }
     }
 }
@@ -93,15 +89,15 @@ const fn object(name: &'static str, object: &'static Object) -> Field {
     }
 }
 
-fn kind<'a>(input: &Input<'a>) -> Option<&'a str> {
-    Some(match input.order.order.data.kind {
+fn kind<'a>(view: &OrderView<'a>) -> Option<&'a str> {
+    Some(match view.order.data.kind {
         OrderKind::Buy => "buy",
         OrderKind::Sell => "sell",
     })
 }
 
-fn signing_scheme<'a>(input: &Input<'a>) -> Option<&'a str> {
-    Some(match input.order.order.signature.scheme() {
+fn signing_scheme<'a>(view: &OrderView<'a>) -> Option<&'a str> {
+    Some(match view.order.signature.scheme() {
         SigningScheme::Eip712 => "eip712",
         SigningScheme::EthSign => "ethsign",
         SigningScheme::Eip1271 => "eip1271",
@@ -115,52 +111,56 @@ pub(crate) static ORDER: Object = Object {
     fields: &[
         value(
             "owner",
-            Getter::Address(|i| Some(i.order.order.metadata.owner)),
+            Getter::Address(|view| Some(view.order.metadata.owner)),
         ),
         value(
             "creationDate",
-            Getter::Timestamp(|i| Some(i.order.order.metadata.creation_date)),
+            // Unix seconds, as `validTo`.
+            Getter::UInt(|view| {
+                let seconds = view.order.metadata.creation_date.timestamp();
+                Some(U256::from(seconds.max(0).unsigned_abs()))
+            }),
         ),
         value(
             "sellToken",
-            Getter::Address(|i| Some(i.order.order.data.sell_token)),
+            Getter::Address(|view| Some(view.order.data.sell_token)),
         ),
         value(
             "buyToken",
-            Getter::Address(|i| Some(i.order.order.data.buy_token)),
+            Getter::Address(|view| Some(view.order.data.buy_token)),
         ),
         value(
             "receiver",
-            Getter::Address(|i| Some(Address::from(*i.order.order.data.receiver.raw_bytes()))),
+            Getter::Address(|view| Some(Address::from(*view.order.data.receiver.raw_bytes()))),
         ),
         value(
             "sellAmount",
-            Getter::UInt(|i| Some(i.order.order.data.sell_amount)),
+            Getter::UInt(|view| Some(view.order.data.sell_amount)),
         ),
         value(
             "buyAmount",
-            Getter::UInt(|i| Some(i.order.order.data.buy_amount)),
+            Getter::UInt(|view| Some(view.order.data.buy_amount)),
         ),
         value("kind", Getter::Text(kind)),
         value(
             "partiallyFillable",
-            Getter::Bool(|i| Some(i.order.order.data.partially_fillable)),
+            Getter::Bool(|view| Some(view.order.data.partially_fillable)),
         ),
         value("signingScheme", Getter::Text(signing_scheme)),
         value(
             "validTo",
-            Getter::UInt(|i| Some(U256::from(i.order.order.data.valid_to))),
+            Getter::UInt(|view| Some(U256::from(view.order.data.valid_to))),
         ),
         value(
             "validFrom",
-            Getter::UInt(|i| i.order.order.metadata.valid_from.map(U256::from)),
+            Getter::UInt(|view| view.order.metadata.valid_from.map(U256::from)),
         ),
         object("appData", &app_data::APP_DATA),
         value(
             "fastPath",
-            Getter::Bool(|i| Some(i.order.order.metadata.fast_path)),
+            Getter::Bool(|view| Some(view.order.metadata.fast_path)),
         ),
-        value("inMarket", Getter::Bool(|i| Some(i.order.in_market))),
+        value("inMarket", Getter::Bool(|view| Some(view.in_market))),
         object("ethflowData", &ETHFLOW_DATA),
     ],
 };
@@ -168,11 +168,11 @@ pub(crate) static ORDER: Object = Object {
 static ETHFLOW_DATA: Object =
     Object {
         name: "ethflowData",
-        present: |i| i.order.order.metadata.ethflow_data.is_some(),
+        present: |view| view.order.metadata.ethflow_data.is_some(),
         fields: &[value(
             "userValidTo",
-            Getter::Int(|i| {
-                i.order.order.metadata.ethflow_data.as_ref().map(|ethflow| {
+            Getter::Int(|view| {
+                view.order.metadata.ethflow_data.as_ref().map(|ethflow| {
                     I256::try_from(ethflow.user_valid_to).expect("an i64 fits 256 bits")
                 })
             }),

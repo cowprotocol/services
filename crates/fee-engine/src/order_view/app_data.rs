@@ -1,6 +1,6 @@
 //! The order's app data as a rule sees it.
 
-use super::{Getter, Input, Object, object, value};
+use super::{Getter, Object, OrderView, object, value};
 
 /// The app data a rule can read. The host copies it from the protocol's
 /// parsed document; `AppData::default()` when the order has none.
@@ -11,8 +11,8 @@ pub struct AppData {
     pub flashloan: bool,
 }
 
-fn app_code<'a>(input: &Input<'a>) -> Option<&'a str> {
-    input.order.app_data.app_code.as_deref()
+fn app_code<'a>(view: &OrderView<'a>) -> Option<&'a str> {
+    view.app_data.app_code.as_deref()
 }
 
 pub(super) static APP_DATA: Object = Object {
@@ -29,6 +29,6 @@ static METADATA: Object = Object {
     present: |_| true,
     fields: &[value(
         "flashloan",
-        Getter::Bool(|i| i.order.app_data.flashloan.then_some(true)),
+        Getter::Bool(|view| view.app_data.flashloan.then_some(true)),
     )],
 };

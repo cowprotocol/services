@@ -1,18 +1,31 @@
 //! Typed compiled expressions: a constant, or a closure over the order.
+//!
+//! A [`Node`] is a compiled expression with its type. Most hold a [`Val`];
+//! text has its own [`Text`], because it may borrow from the order.
 
 use {
-    crate::{Fee, RuleError, order_view::Input},
-    alloy_primitives::Address,
-    chrono::{DateTime, TimeDelta, Utc},
+    super::number::Num,
+    crate::{
+        Fee,
+        RuleError,
+        order_view::{Object, OrderView},
+    },
+    alloy_primitives::{Address, map::AddressSet},
     std::{borrow::Cow, collections::HashSet, sync::Arc},
 };
 
+/// What a compiled value must be: a constant is cloned per order, and the
+/// rule set is shared between threads.
+pub(crate) trait Value: Clone + Send + Sync + 'static {}
+
+impl<T: Clone + Send + Sync + 'static> Value for T {}
+
 /// A closure that computes a value from one order.
-pub(crate) type Dyn<T> = Box<dyn Fn(&Input<'_>) -> Result<T, RuleError> + Send + Sync>;
+pub(crate) type Dyn<T> = Box<dyn Fn(&OrderView<'_>) -> Result<T, RuleError> + Send + Sync>;
 
 /// A text closure; it may borrow from the order.
 pub(crate) type DynText =
-    Box<dyn for<'a> Fn(&Input<'a>) -> Result<Cow<'a, str>, RuleError> + Send + Sync>;
+    Box<dyn for<'a> Fn(&OrderView<'a>) -> Result<Cow<'a, str>, RuleError> + Send + Sync>;
 
 /// A value known when the rules load, or computed per order.
 pub(crate) enum Val<T> {
@@ -20,42 +33,38 @@ pub(crate) enum Val<T> {
     Dyn(Dyn<T>),
 }
 
-impl<T: Clone + Send + Sync + 'static> Val<T> {
-    pub(crate) fn eval(&self, input: &Input<'_>) -> Result<T, RuleError> {
+impl<T: Value> Val<T> {
+    /// The value for one order.
+    pub(crate) fn eval(&self, view: &OrderView<'_>) -> Result<T, RuleError> {
         match self {
             Val::Const(value) => Ok(value.clone()),
-            Val::Dyn(f) => f(input),
+            Val::Dyn(f) => f(view),
         }
     }
 
     /// Applies `f`; folds it when the value is constant.
-    pub(crate) fn map<R: Clone + Send + Sync + 'static>(
+    pub(crate) fn map<R: Value>(
         self,
         f: impl Fn(T) -> Result<R, RuleError> + Send + Sync + 'static,
     ) -> Result<Val<R>, String> {
         Ok(match self {
             Val::Const(value) => Val::Const(f(value).map_err(|err| err.to_string())?),
-            Val::Dyn(a) => Val::Dyn(Box::new(move |input| f(a(input)?))),
+            Val::Dyn(a) => Val::Dyn(Box::new(move |view| f(a(view)?))),
         })
     }
 }
 
 /// Combines two values with `f`; folds it when both are constant.
-pub(crate) fn map2<A, B, R>(
+pub(crate) fn map2<A: Value, B: Value, R: Value>(
     a: Val<A>,
     b: Val<B>,
     f: impl Fn(A, B) -> Result<R, RuleError> + Send + Sync + 'static,
-) -> Result<Val<R>, String>
-where
-    A: Clone + Send + Sync + 'static,
-    B: Clone + Send + Sync + 'static,
-    R: Clone + Send + Sync + 'static,
-{
+) -> Result<Val<R>, String> {
     Ok(match (a, b) {
         (Val::Const(a), Val::Const(b)) => Val::Const(f(a, b).map_err(|err| err.to_string())?),
-        (Val::Const(a), Val::Dyn(b)) => Val::Dyn(Box::new(move |input| f(a.clone(), b(input)?))),
-        (Val::Dyn(a), Val::Const(b)) => Val::Dyn(Box::new(move |input| f(a(input)?, b.clone()))),
-        (Val::Dyn(a), Val::Dyn(b)) => Val::Dyn(Box::new(move |input| f(a(input)?, b(input)?))),
+        (Val::Const(a), Val::Dyn(b)) => Val::Dyn(Box::new(move |view| f(a.clone(), b(view)?))),
+        (Val::Dyn(a), Val::Const(b)) => Val::Dyn(Box::new(move |view| f(a(view)?, b.clone()))),
+        (Val::Dyn(a), Val::Dyn(b)) => Val::Dyn(Box::new(move |view| f(a(view)?, b(view)?))),
     })
 }
 
@@ -66,34 +75,27 @@ pub(crate) enum Text {
 }
 
 impl Text {
-    pub(crate) fn eval<'a>(&self, input: &Input<'a>) -> Result<Cow<'a, str>, RuleError> {
+    /// The text for one order; a constant is cloned.
+    pub(crate) fn eval<'a>(&self, view: &OrderView<'a>) -> Result<Cow<'a, str>, RuleError> {
         match self {
             Text::Const(text) => Ok(Cow::Owned(text.clone())),
-            Text::Dyn(f) => f(input),
+            Text::Dyn(f) => f(view),
         }
     }
 
-    /// Applies a text-to-text function; folds it when the text is constant.
-    pub(crate) fn map(self, f: fn(Cow<'_, str>) -> Cow<'_, str>) -> Text {
-        match self {
-            Text::Const(text) => Text::Const(f(Cow::Owned(text)).into_owned()),
-            Text::Dyn(a) => Text::Dyn(Box::new(move |input| Ok(f(a(input)?)))),
-        }
-    }
-
-    /// A predicate over the text and a second text, such as `==` or
-    /// `startsWith`. The constant side is not cloned per order.
-    pub(crate) fn test(self, other: Text, f: fn(&str, &str) -> bool) -> Val<bool> {
+    /// A predicate over the text and a second text, such as `==`. The
+    /// constant side is not cloned per order.
+    pub(crate) fn test(
+        self,
+        other: Text,
+        f: impl Fn(&str, &str) -> bool + Send + Sync + 'static,
+    ) -> Val<bool> {
         match (self, other) {
             (Text::Const(a), Text::Const(b)) => Val::Const(f(&a, &b)),
-            (Text::Dyn(a), Text::Const(b)) => {
-                Val::Dyn(Box::new(move |input| Ok(f(&a(input)?, &b))))
-            }
-            (Text::Const(a), Text::Dyn(b)) => {
-                Val::Dyn(Box::new(move |input| Ok(f(&a, &b(input)?))))
-            }
+            (Text::Dyn(a), Text::Const(b)) => Val::Dyn(Box::new(move |view| Ok(f(&a(view)?, &b)))),
+            (Text::Const(a), Text::Dyn(b)) => Val::Dyn(Box::new(move |view| Ok(f(&a, &b(view)?)))),
             (Text::Dyn(a), Text::Dyn(b)) => {
-                Val::Dyn(Box::new(move |input| Ok(f(&a(input)?, &b(input)?))))
+                Val::Dyn(Box::new(move |view| Ok(f(&a(view)?, &b(view)?))))
             }
         }
     }
@@ -102,7 +104,7 @@ impl Text {
 /// The members of a list, split by type so `in` is one hash lookup.
 #[derive(Debug, Default)]
 pub(crate) struct Set {
-    pub(crate) addresses: HashSet<Address>,
+    pub(crate) addresses: AddressSet,
     pub(crate) texts: HashSet<String>,
 }
 
@@ -124,30 +126,19 @@ impl Set {
     }
 }
 
-/// Where a field of the order is, for `has`, `.?` and plain reads.
-#[derive(Clone, Copy)]
-pub(crate) enum Path {
-    Object(&'static crate::order_view::Object),
-    Field(&'static crate::order_view::Field),
-}
-
 /// A compiled expression with its type.
 pub(crate) enum Node {
     Bool(Val<bool>),
-    Number(super::number::Num),
+    Number(Num),
     Text(Text),
     Address(Val<Address>),
-    Timestamp(Val<DateTime<Utc>>),
-    Duration(Val<TimeDelta>),
     /// One fee, from a fee function.
     Fee(Val<Fee>),
     /// Several fees, from a list or `no_fee()`.
     Fees(Val<Vec<Fee>>),
     List(Arc<Set>),
-    /// `order` or one of its nested objects, read plainly.
-    Object(&'static crate::order_view::Object),
-    /// The result of `.?`: a field that may be absent.
-    Optional(Path),
+    /// `order` or one of its nested objects.
+    Object(&'static Object),
 }
 
 impl Node {
@@ -157,13 +148,10 @@ impl Node {
             Node::Number(_) => "number",
             Node::Text(_) => "string",
             Node::Address(_) => "address",
-            Node::Timestamp(_) => "timestamp",
-            Node::Duration(_) => "duration",
             Node::Fee(_) => "fee",
             Node::Fees(_) => "list of fees",
             Node::List(_) => "list",
             Node::Object(_) => "object",
-            Node::Optional(_) => "optional",
         }
     }
 
@@ -174,22 +162,10 @@ impl Node {
         }
     }
 
-    pub(crate) fn into_number(self) -> Result<super::number::Num, String> {
+    pub(crate) fn into_number(self) -> Result<Num, String> {
         match self {
             Node::Number(value) => Ok(value),
             other => Err(format!("expected a number, found a {}", other.type_name())),
-        }
-    }
-
-    /// Text; an address becomes its lowercase hex.
-    pub(crate) fn into_text(self) -> Result<Text, String> {
-        match self {
-            Node::Text(text) => Ok(text),
-            Node::Address(Val::Const(address)) => Ok(Text::Const(hex(address))),
-            Node::Address(Val::Dyn(f)) => Ok(Text::Dyn(Box::new(move |input| {
-                Ok(Cow::Owned(hex(f(input)?)))
-            }))),
-            other => Err(format!("expected a string, found a {}", other.type_name())),
         }
     }
 
@@ -201,8 +177,4 @@ impl Node {
             other => Err(format!("expected fees, found a {}", other.type_name())),
         }
     }
-}
-
-fn hex(address: Address) -> String {
-    format!("{address:#x}")
 }
