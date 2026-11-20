@@ -379,7 +379,16 @@ components:
             their solution.
           type: array
           items:
-            $ref: "#/components/schemas/ProtocolFee"
+            $ref: "#/components/schemas/FeePolicy"
+        protocolFeeOrigins:
+          description: |-
+            Who benefits from each entry of `protocolFees`, index-aligned: the
+            entry at index `i` of both lists describes the same fee. Missing or
+            empty means every entry is `protocol`. The solver's own fee is not
+            part of this list.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeeOrigin"
         quote:
           allOf:
             - description: A winning quote.
@@ -715,21 +724,6 @@ components:
       properties:
         calldata:
           $ref: "#/components/schemas/Calldata"
-    ProtocolFee:
-      description: >
-        A protocol fee policy and who it benefits.
-
-        The solver should make sure the fee policy is applied when computing
-        their solution.
-      type: object
-      required:
-        - origin
-        - policy
-      properties:
-        origin:
-          $ref: "#/components/schemas/FeeOrigin"
-        policy:
-          $ref: "#/components/schemas/FeePolicy"
     FeeOrigin:
       description: >
         Who a protocol fee benefits. The solver's own fee is not part of this

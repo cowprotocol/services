@@ -89,16 +89,11 @@ pub struct Order {
     /// The protocol fees the driver takes from the order's fills, in order.
     /// An empty list is omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub protocol_fees: Vec<ProtocolFee>,
-}
-
-/// A protocol fee and who it benefits. This service only charges protocol
-/// fees, so the origin is always `protocol`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProtocolFee {
-    pub origin: Origin,
-    pub policy: FeePolicy,
+    pub protocol_fees: Vec<FeePolicy>,
+    /// Who each entry in `protocol_fees` benefits, matched by index. This
+    /// service only charges protocol fees, so every entry is `protocol`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocol_fee_origins: Vec<Origin>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,15 +101,6 @@ pub struct ProtocolFee {
 pub enum Origin {
     Protocol,
     Partner,
-}
-
-impl From<&fee::FeePolicy> for ProtocolFee {
-    fn from(policy: &fee::FeePolicy) -> Self {
-        Self {
-            origin: Origin::Protocol,
-            policy: FeePolicy::from(policy),
-        }
-    }
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
@@ -208,7 +194,12 @@ impl From<&auction::Order> for Order {
             executed: order.executed,
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
-            protocol_fees: order.protocol_fees.iter().map(ProtocolFee::from).collect(),
+            protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
+            protocol_fee_origins: order
+                .protocol_fees
+                .iter()
+                .map(|_| Origin::Protocol)
+                .collect(),
         }
     }
 }
@@ -406,8 +397,8 @@ mod tests {
         assert_eq!(
             json["orders"][0]["protocolFees"],
             serde_json::json!([
-                {"origin": "protocol", "policy": {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}}},
-                {"origin": "protocol", "policy": {"priceImprovement": {
+                {"surplus": {"factor": 0.5, "maxVolumeFactor": 0.01}},
+                {"priceImprovement": {
                     "factor": 0.5,
                     "maxVolumeFactor": 0.01,
                     "quote": {
@@ -416,9 +407,13 @@ mod tests {
                         "fee": "0",
                         "solver": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
                     },
-                }}},
-                {"origin": "protocol", "policy": {"volume": {"factor": 0.001}}},
+                }},
+                {"volume": {"factor": 0.001}},
             ])
+        );
+        assert_eq!(
+            json["orders"][0]["protocolFeeOrigins"],
+            serde_json::json!(["protocol", "protocol", "protocol"])
         );
         assert_eq!(
             serde_json::from_value::<SolveRequest>(json).unwrap(),

@@ -21,6 +21,7 @@ enum Kind {
     MissingSurplusFee,
     InvalidTokens,
     InvalidAmounts,
+    InvalidProtocolFeeOrigins,
     QuoteSameTokens,
     FailedToSubmit,
     NoValidOrders,
@@ -61,6 +62,10 @@ impl From<Kind> for (axum::http::StatusCode, axum::Json<Error>) {
             Kind::InvalidAmounts => {
                 "Invalid order specified in the auction, some orders have either a 0 remaining buy \
                  or sell amount"
+            }
+            Kind::InvalidProtocolFeeOrigins => {
+                "Invalid protocol fees specified in the auction, protocolFeeOrigins must match \
+                 protocolFees by index"
             }
             Kind::FailedToSubmit => "Could not submit the solution to the blockchain",
             Kind::TooManyPendingSettlements => "Settlement queue is full",
@@ -179,6 +184,7 @@ impl From<api::routes::AuctionError> for (axum::http::StatusCode, axum::Json<Err
             api::routes::AuctionError::MissingSurplusFee => Kind::MissingSurplusFee,
             api::routes::AuctionError::InvalidTokens => Kind::InvalidTokens,
             api::routes::AuctionError::InvalidAmounts => Kind::InvalidAmounts,
+            api::routes::AuctionError::InvalidProtocolFeeOrigins => Kind::InvalidProtocolFeeOrigins,
             api::routes::AuctionError::Blockchain(_) => Kind::Unknown,
         };
         error.into()

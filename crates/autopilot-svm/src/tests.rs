@@ -278,14 +278,16 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         let solve = solved.recv().await.unwrap();
         assert_eq!(
             solve.orders[0].protocol_fees,
-            vec![dto::ProtocolFee {
-                origin: dto::Origin::Protocol,
-                policy: dto::FeePolicy::Surplus {
-                    factor: 0.5,
-                    max_volume_factor: 0.9,
-                },
+            vec![dto::FeePolicy::Surplus {
+                factor: 0.5,
+                max_volume_factor: 0.9,
             }],
             "policy forwarded to the driver"
+        );
+        assert_eq!(
+            solve.orders[0].protocol_fee_origins,
+            vec![dto::Origin::Protocol],
+            "origin forwarded to the driver"
         );
         let ranking = SolanaArbitrator::new(1, wrapped_native).arbitrate(solutions, &auction);
         assert_eq!(ranking.winner_count(), 1, "solution won");
