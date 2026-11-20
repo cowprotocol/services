@@ -1,5 +1,6 @@
 //! Wire DTOs for the `/solve` route.
 
+mod app_data;
 mod solve_request;
 mod solve_response;
 

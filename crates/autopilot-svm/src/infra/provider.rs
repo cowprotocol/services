@@ -620,6 +620,7 @@ mod tests {
             partially_fillable: false,
             order_pda: ChainPubkey([0x77; 32]),
             app_data: AppData([0; 32]),
+            full_app_data: None,
             created_on_chain,
             executed: 0,
             creation: None,

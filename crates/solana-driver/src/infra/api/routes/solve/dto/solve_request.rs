@@ -6,6 +6,7 @@
 //! in sync.
 
 use {
+    super::app_data,
     crate::{
         domain::{self, order_uid::OrderUid, protocol_fee},
         infra::api::routes::Kind,
@@ -100,6 +101,11 @@ pub struct Order {
     order_pda: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     app_data: AppData,
+    /// The document `app_data` is the hash of, when the orderbook knows it.
+    /// Absent for an unregistered document and from an autopilot that
+    /// predates hooks; an order without it runs no hooks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    full_app_data: Option<String>,
     /// The cumulative fill on the order's own side. Absent from an autopilot
     /// that predates partial fills.
     #[serde(default)]
@@ -192,9 +198,10 @@ impl FeePolicy {
     }
 }
 
-impl From<Order> for domain::Order {
-    fn from(order: Order) -> Self {
-        Self {
+impl Order {
+    fn into_domain(self) -> Result<domain::Order, app_data::InvalidHooks> {
+        let order = self;
+        Ok(domain::Order {
             uid: order.uid,
             owner: order.owner,
             receiver: order.receiver,
@@ -209,9 +216,10 @@ impl From<Order> for domain::Order {
             partially_fillable: order.partially_fillable,
             order_pda: order.order_pda,
             app_data: order.app_data.0,
+            hooks: app_data::hooks(order.full_app_data.as_deref())?,
             executed: order.executed,
             sell_balance: order.sell_balance,
-        }
+        })
     }
 }
 
@@ -238,7 +246,8 @@ impl SolveRequest {
         let id = domain::auction::Id::try_from(self.id)?;
         let mut creations = HashMap::new();
         let mut fee_policies = HashMap::new();
-        for order in &self.orders {
+        let mut orders = Vec::with_capacity(self.orders.len());
+        for order in self.orders {
             if let Some(bytes) = &order.creation {
                 let creation = bincode::deserialize(bytes).map_err(|_| Error::InvalidCreation)?;
                 creations.insert(order.uid, creation);
@@ -252,10 +261,19 @@ impl SolveRequest {
                     .collect::<Result<_, _>>()?;
                 fee_policies.insert(order.uid, policies);
             }
+            let uid = order.uid;
+            match order.into_domain() {
+                Ok(order) => orders.push(order),
+                Err(err) => {
+                    tracing::warn!(order = %uid, %err, "dropping order, its hooks are invalid");
+                    creations.remove(&uid);
+                    fee_policies.remove(&uid);
+                }
+            }
         }
         Ok(domain::Auction {
             id: Some(id),
-            orders: self.orders.into_iter().map(Into::into).collect(),
+            orders,
             // Placeholder; the domain does not consume it yet.
             deadline_slot: domain::Slot(0),
             deadline: self.deadline,
@@ -294,6 +312,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::new_from_array([0x77; 32]),
             app_data: AppData([0; 32]),
+            full_app_data: None,
             executed: 0,
             creation: Some(vec![1, 2, 3]),
             sell_balance: Some(500),
@@ -355,6 +374,64 @@ mod tests {
                 protocol_fee::FeePolicy::Volume { factor: 0.001 },
             ]
         );
+    }
+
+    /// An order whose app data hooks are invalid is dropped on receipt, with
+    /// its fee policies; one with valid hooks carries them.
+    #[test]
+    fn into_domain_drops_an_order_with_invalid_hooks() {
+        let hook = |is_signer: bool| {
+            serde_json::json!({"metadata": {"hooks": {"post": [{
+                "target": pubkey(0xc1).to_string(),
+                "callData": "0x01",
+                "accounts": [{
+                    "pubkey": pubkey(0x02).to_string(),
+                    "isSigner": is_signer,
+                    "isWritable": true,
+                }],
+            }]}}})
+            .to_string()
+        };
+        let valid = Order {
+            full_app_data: Some(hook(false)),
+            creation: None,
+            ..order()
+        };
+        let invalid = Order {
+            uid: OrderUid([0x12; 32]),
+            full_app_data: Some(hook(true)),
+            creation: None,
+            protocol_fees: vec![FeePolicy::Volume { factor: 0.001 }],
+            ..order()
+        };
+        let request = SolveRequest {
+            id: 7,
+            deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
+            orders: vec![valid, invalid],
+            tokens: HashMap::new(),
+        };
+
+        let auction = request.into_domain().unwrap();
+
+        assert_eq!(auction.orders.len(), 1);
+        assert_eq!(auction.orders[0].uid, OrderUid([0x11; 32]));
+        assert_eq!(auction.orders[0].hooks.post[0].program_id, pubkey(0xc1));
+        assert!(auction.fee_policies.is_empty());
+    }
+
+    /// The document travels as `fullAppData`, absent when unknown.
+    #[test]
+    fn full_app_data_is_optional() {
+        let json = serde_json::to_value(order()).unwrap();
+        assert!(json.get("fullAppData").is_none());
+
+        let order = Order {
+            full_app_data: Some("{}".to_owned()),
+            ..order()
+        };
+        let json = serde_json::to_value(&order).unwrap();
+        assert_eq!(json["fullAppData"], "{}");
+        assert_eq!(serde_json::from_value::<Order>(json).unwrap(), order);
     }
 
     #[test]
@@ -438,7 +515,7 @@ mod tests {
         json["receiver"] = serde_json::json!(pubkey(0x23).to_string());
         let parsed: Order = serde_json::from_value(json).unwrap();
         assert_eq!(parsed.receiver, Some(pubkey(0x23)));
-        assert_eq!(domain::Order::from(parsed).receiver, Some(pubkey(0x23)));
+        assert_eq!(parsed.into_domain().unwrap().receiver, Some(pubkey(0x23)));
     }
 
     #[test]

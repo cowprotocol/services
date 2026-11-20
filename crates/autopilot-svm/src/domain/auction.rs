@@ -40,6 +40,9 @@ pub struct Order {
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
     pub app_data: AppData,
+    /// The document `app_data` is the hash of, once registered. The driver
+    /// reads the order's hooks from it.
+    pub full_app_data: Option<String>,
     /// Whether the order PDA already exists on chain. A pending sponsored
     /// order creates its PDA only at settlement time through its presigned
     /// transaction.
@@ -207,6 +210,7 @@ mod tests {
             partially_fillable: false,
             order_pda: chain_types::solana::Pubkey([7; 32]),
             app_data: AppData([0; 32]),
+            full_app_data: None,
             created_on_chain: true,
             executed: 0,
             creation: None,

@@ -3,6 +3,7 @@
 use {
     super::{
         buy_token_accounts::{BuyTokenAccountCache, BuyTokenAccounts},
+        hooks::Hooks,
         order_uid::OrderUid,
         protocol_fee::FeePolicies,
         slot::Slot,
@@ -174,6 +175,17 @@ impl Auction {
         Ok(resolved)
     }
 
+    /// Hooks must be valid or they are removed from the settled order.
+    pub(super) fn drop_invalid_hooks(&mut self, solver: &Pubkey) {
+        self.orders.retain(|order| match order.hooks.check(solver) {
+            Ok(()) => true,
+            Err(err) => {
+                tracing::warn!(order = %order.uid, %err, "dropping order, its hooks are invalid");
+                false
+            }
+        });
+    }
+
     /// Drop the creations whose order PDA already exists on chain: an earlier
     /// settlement attempt landed them and the autopilot still ships them
     /// until the indexer catches up. Simulating one fails on the existing
@@ -270,6 +282,9 @@ pub struct Order {
     pub partially_fillable: bool,
     pub order_pda: Pubkey,
     pub app_data: [u8; 32],
+    /// Additional instructions the order's app data asks the settlement to run
+    /// around its fill.
+    pub hooks: Hooks,
     /// The cumulative fill on the order's own side: sell-token units for a
     /// sell order, buy-token units for a buy order.
     pub executed: u64,
@@ -362,6 +377,11 @@ impl Order {
     pub fn buys_native_sol(&self) -> bool {
         self.buy_token == ENCODED_NATIVE_SOL_TRANSFER
     }
+
+    /// Pre-hooks should only be executed the first time an order is executed
+    pub fn runs_pre_hooks(&self) -> bool {
+        self.executed == 0
+    }
 }
 
 /// Narrows a leg scaled from, and bounded by, `u64` amounts.
@@ -429,9 +449,41 @@ mod tests {
             partially_fillable: false,
             order_pda: pubkey(0x77),
             app_data: [0; 32],
+            hooks: Default::default(),
             executed: 0,
             sell_balance: None,
         }
+    }
+
+    /// A hook consuming the solver's account, as an account or as its target,
+    /// drops its order on receipt; the other orders stay.
+    #[test]
+    fn drops_the_orders_with_invalid_hooks() {
+        use crate::domain::hooks::{Hook, HookAccount, Hooks};
+        let solver = pubkey(0xbb);
+        let hook = |program: u8, account: u8| Hook {
+            program_id: pubkey(program),
+            accounts: vec![HookAccount {
+                pubkey: pubkey(account),
+                is_writable: false,
+            }],
+            data: Vec::new(),
+        };
+        let with_hooks = |uid: u8, pre: Vec<Hook>, post: Vec<Hook>| Order {
+            hooks: Hooks { pre, post },
+            ..order(uid, pubkey(0x66))
+        };
+        let mut auction = auction(vec![
+            with_hooks(1, vec![hook(0xc1, 0x01)], vec![hook(0xc2, 0x02)]),
+            with_hooks(2, Vec::new(), vec![hook(0xc2, 0xbb)]),
+            with_hooks(3, vec![hook(0xbb, 0x01)], Vec::new()),
+            order(4, pubkey(0x66)),
+        ]);
+
+        auction.drop_invalid_hooks(&solver);
+
+        let uids: Vec<_> = auction.orders.iter().map(|order| order.uid).collect();
+        assert_eq!(uids, vec![OrderUid([1; 32]), OrderUid([4; 32])]);
     }
 
     fn auction(orders: Vec<Order>) -> Auction {

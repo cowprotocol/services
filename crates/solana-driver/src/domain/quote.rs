@@ -54,6 +54,7 @@ pub(crate) fn order(
         partially_fillable: false,
         order_pda: find_order_pda(program_id, &uid).0,
         app_data: [0; 32],
+        hooks: Default::default(),
         executed: 0,
         sell_balance: None,
     })
@@ -88,6 +89,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::default(),
             app_data: [0; 32],
+            hooks: Default::default(),
             executed: 0,
             sell_balance: None,
         };
