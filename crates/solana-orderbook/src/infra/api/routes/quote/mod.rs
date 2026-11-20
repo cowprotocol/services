@@ -339,6 +339,9 @@ struct Competition {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CompetitionRequest {
+    /// Who asked, so a quote can be found by the trader who asked for it.
+    #[serde_as(as = "DisplayFromStr")]
+    from: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
     sell_token: Pubkey,
     #[serde_as(as = "DisplayFromStr")]
@@ -409,6 +412,7 @@ fn competition(
 ) -> Competition {
     Competition {
         request: CompetitionRequest {
+            from: request.from,
             sell_token: request.sell_token,
             buy_token: request.buy_token,
             amount,
