@@ -404,8 +404,7 @@ pub mod MockERC4626Wrapper {
         pub _1: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`allowance(address,address)`](allowanceCall) function.
+    ///Container type for the return parameters of the [`allowance(address,address)`](allowanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowanceReturn {
@@ -567,8 +566,7 @@ pub mod MockERC4626Wrapper {
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`approve(address,uint256)`](approveCall) function.
+    ///Container type for the return parameters of the [`approve(address,uint256)`](approveCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct approveReturn {
@@ -721,8 +719,7 @@ pub mod MockERC4626Wrapper {
     #[derive(Clone)]
     pub struct assetCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`asset()`](assetCall)
-    /// function.
+    ///Container type for the return parameters of the [`asset()`](assetCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct assetReturn {
@@ -856,8 +853,7 @@ pub mod MockERC4626Wrapper {
     #[derive(Clone)]
     pub struct balanceOfCall(pub alloy_sol_types::private::Address);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`balanceOf(address)`](balanceOfCall) function.
+    ///Container type for the return parameters of the [`balanceOf(address)`](balanceOfCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct balanceOfReturn {
@@ -1002,8 +998,7 @@ pub mod MockERC4626Wrapper {
         pub shares: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`convertToAssets(uint256)`](convertToAssetsCall) function.
+    ///Container type for the return parameters of the [`convertToAssets(uint256)`](convertToAssetsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct convertToAssetsReturn {
@@ -1145,8 +1140,7 @@ pub mod MockERC4626Wrapper {
     #[derive(Clone)]
     pub struct decimalsCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`decimals()`](decimalsCall) function.
+    ///Container type for the return parameters of the [`decimals()`](decimalsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct decimalsReturn {
@@ -1284,8 +1278,7 @@ pub mod MockERC4626Wrapper {
         #[allow(missing_docs)]
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the
-    /// [`mint(address,uint256)`](mintCall) function.
+    ///Container type for the return parameters of the [`mint(address,uint256)`](mintCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct mintReturn {}
@@ -1433,8 +1426,7 @@ pub mod MockERC4626Wrapper {
     #[derive(Clone)]
     pub struct rateDenominatorCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`rateDenominator()`](rateDenominatorCall) function.
+    ///Container type for the return parameters of the [`rateDenominator()`](rateDenominatorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct rateDenominatorReturn {
@@ -1572,8 +1564,7 @@ pub mod MockERC4626Wrapper {
     #[derive(Clone)]
     pub struct rateNumeratorCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`rateNumerator()`](rateNumeratorCall) function.
+    ///Container type for the return parameters of the [`rateNumerator()`](rateNumeratorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct rateNumeratorReturn {
@@ -1716,8 +1707,7 @@ pub mod MockERC4626Wrapper {
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transfer(address,uint256)`](transferCall) function.
+    ///Container type for the return parameters of the [`transfer(address,uint256)`](transferCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferReturn {
@@ -1877,8 +1867,7 @@ pub mod MockERC4626Wrapper {
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transferFrom(address,address,uint256)`](transferFromCall) function.
+    ///Container type for the return parameters of the [`transferFrom(address,address,uint256)`](transferFromCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferFromReturn {

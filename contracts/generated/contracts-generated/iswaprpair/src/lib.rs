@@ -1425,8 +1425,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
+    ///Container type for the return parameters of the [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORReturn {
@@ -1569,8 +1568,7 @@ pub mod ISwaprPair {
         pub spender: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`allowance(address,address)`](allowanceCall) function.
+    ///Container type for the return parameters of the [`allowance(address,address)`](allowanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowanceReturn {
@@ -1732,8 +1730,7 @@ pub mod ISwaprPair {
         pub value: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`approve(address,uint256)`](approveCall) function.
+    ///Container type for the return parameters of the [`approve(address,uint256)`](approveCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct approveReturn {
@@ -1889,8 +1886,7 @@ pub mod ISwaprPair {
         pub owner: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`balanceOf(address)`](balanceOfCall) function.
+    ///Container type for the return parameters of the [`balanceOf(address)`](balanceOfCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct balanceOfReturn {
@@ -2035,8 +2031,7 @@ pub mod ISwaprPair {
         pub to: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`burn(address)`](burnCall) function.
+    ///Container type for the return parameters of the [`burn(address)`](burnCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct burnReturn {
@@ -2193,8 +2188,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct decimalsCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`decimals()`](decimalsCall) function.
+    ///Container type for the return parameters of the [`decimals()`](decimalsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct decimalsReturn {
@@ -2328,8 +2322,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct factoryCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`factory()`](factoryCall) function.
+    ///Container type for the return parameters of the [`factory()`](factoryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryReturn {
@@ -2463,8 +2456,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct getReservesCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getReserves()`](getReservesCall) function.
+    ///Container type for the return parameters of the [`getReserves()`](getReservesCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getReservesReturn {
@@ -2630,8 +2622,7 @@ pub mod ISwaprPair {
         #[allow(missing_docs)]
         pub _1: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`initialize(address,address)`](initializeCall) function.
+    ///Container type for the return parameters of the [`initialize(address,address)`](initializeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeReturn {}
@@ -2782,8 +2773,7 @@ pub mod ISwaprPair {
         pub to: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`mint(address)`](mintCall) function.
+    ///Container type for the return parameters of the [`mint(address)`](mintCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct mintReturn {
@@ -2925,8 +2915,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct nameCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`name()`](nameCall)
-    /// function.
+    ///Container type for the return parameters of the [`name()`](nameCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct nameReturn {
@@ -3063,8 +3052,7 @@ pub mod ISwaprPair {
         pub owner: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`nonces(address)`](noncesCall) function.
+    ///Container type for the return parameters of the [`nonces(address)`](noncesCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct noncesReturn {
@@ -3220,9 +3208,7 @@ pub mod ISwaprPair {
         #[allow(missing_docs)]
         pub s: alloy_sol_types::private::FixedBytes<32>,
     }
-    ///Container type for the return parameters of the
-    /// [`permit(address,address,uint256,uint256,uint8,bytes32,
-    /// bytes32)`](permitCall) function.
+    ///Container type for the return parameters of the [`permit(address,address,uint256,uint256,uint8,bytes32,bytes32)`](permitCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct permitReturn {}
@@ -3422,8 +3408,7 @@ pub mod ISwaprPair {
         #[allow(missing_docs)]
         pub data: alloy_sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the
-    /// [`swap(uint256,uint256,address,bytes)`](swapCall) function.
+    ///Container type for the return parameters of the [`swap(uint256,uint256,address,bytes)`](swapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapReturn {}
@@ -3585,8 +3570,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct swapFeeCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapFee()`](swapFeeCall) function.
+    ///Container type for the return parameters of the [`swapFee()`](swapFeeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapFeeReturn {
@@ -3724,8 +3708,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct symbolCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`symbol()`](symbolCall)
-    /// function.
+    ///Container type for the return parameters of the [`symbol()`](symbolCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct symbolReturn {
@@ -3858,8 +3841,7 @@ pub mod ISwaprPair {
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct syncCall;
-    ///Container type for the return parameters of the [`sync()`](syncCall)
-    /// function.
+    ///Container type for the return parameters of the [`sync()`](syncCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct syncReturn {}
@@ -3988,8 +3970,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct token0Call;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`token0()`](token0Call)
-    /// function.
+    ///Container type for the return parameters of the [`token0()`](token0Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token0Return {
@@ -4123,8 +4104,7 @@ pub mod ISwaprPair {
     #[derive(Clone)]
     pub struct token1Call;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`token1()`](token1Call)
-    /// function.
+    ///Container type for the return parameters of the [`token1()`](token1Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token1Return {
@@ -4263,8 +4243,7 @@ pub mod ISwaprPair {
         pub value: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transfer(address,uint256)`](transferCall) function.
+    ///Container type for the return parameters of the [`transfer(address,uint256)`](transferCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferReturn {
@@ -4424,8 +4403,7 @@ pub mod ISwaprPair {
         pub value: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transferFrom(address,address,uint256)`](transferFromCall) function.
+    ///Container type for the return parameters of the [`transferFrom(address,address,uint256)`](transferFromCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferFromReturn {

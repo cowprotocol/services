@@ -67,8 +67,7 @@ pub mod ERC1271SignatureValidator {
         pub signature: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
+    ///Container type for the return parameters of the [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignatureReturn {
@@ -218,8 +217,7 @@ pub mod ERC1271SignatureValidator {
             }
         }
     };
-    ///Container for all the [`ERC1271SignatureValidator`](self) function
-    /// calls.
+    ///Container for all the [`ERC1271SignatureValidator`](self) function calls.
     #[derive(Clone)]
     pub enum ERC1271SignatureValidatorCalls {
         #[allow(missing_docs)]

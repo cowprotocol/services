@@ -3129,9 +3129,7 @@ pub mod CoWSwapEthFlow {
         pub order: <EthFlowOrder::Data as alloy_sol_types::SolType>::RustType,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`createOrder((address,address,uint256,uint256,bytes32,uint256,uint32,
-    /// bool,int64))`](createOrderCall) function.
+    ///Container type for the return parameters of the [`createOrder((address,address,uint256,uint256,bytes32,uint256,uint32,bool,int64))`](createOrderCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createOrderReturn {
@@ -3275,9 +3273,7 @@ pub mod CoWSwapEthFlow {
         #[allow(missing_docs)]
         pub order: <EthFlowOrder::Data as alloy_sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the
-    /// [`invalidateOrder((address,address,uint256,uint256,bytes32,uint256,
-    /// uint32,bool,int64))`](invalidateOrderCall) function.
+    ///Container type for the return parameters of the [`invalidateOrder((address,address,uint256,uint256,bytes32,uint256,uint32,bool,int64))`](invalidateOrderCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct invalidateOrderReturn {}
@@ -3416,10 +3412,7 @@ pub mod CoWSwapEthFlow {
             <EthFlowOrder::Data as alloy_sol_types::SolType>::RustType,
         >,
     }
-    ///Container type for the return parameters of the
-    /// [`invalidateOrdersIgnoringNotAllowed((address,address,uint256,uint256,
-    /// bytes32,uint256,uint32,bool,
-    /// int64)[])`](invalidateOrdersIgnoringNotAllowedCall) function.
+    ///Container type for the return parameters of the [`invalidateOrdersIgnoringNotAllowed((address,address,uint256,uint256,bytes32,uint256,uint32,bool,int64)[])`](invalidateOrdersIgnoringNotAllowedCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct invalidateOrdersIgnoringNotAllowedReturn {}
@@ -3567,8 +3560,7 @@ pub mod CoWSwapEthFlow {
         pub _1: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
+    ///Container type for the return parameters of the [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignatureReturn {
@@ -3725,8 +3717,7 @@ pub mod CoWSwapEthFlow {
     #[derive(Clone)]
     pub struct ordersCall(pub alloy_sol_types::private::FixedBytes<32>);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`orders(bytes32)`](ordersCall) function.
+    ///Container type for the return parameters of the [`orders(bytes32)`](ordersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ordersReturn {
@@ -3882,8 +3873,7 @@ pub mod CoWSwapEthFlow {
         #[allow(missing_docs)]
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the
-    /// [`unwrap(uint256)`](unwrapCall) function.
+    ///Container type for the return parameters of the [`unwrap(uint256)`](unwrapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct unwrapReturn {}
@@ -4018,8 +4008,7 @@ pub mod CoWSwapEthFlow {
         #[allow(missing_docs)]
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the
-    /// [`wrap(uint256)`](wrapCall) function.
+    ///Container type for the return parameters of the [`wrap(uint256)`](wrapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct wrapReturn {}

@@ -4184,8 +4184,7 @@ pub mod BalancerV2Vault {
     #[derive(Clone)]
     pub struct WETHCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`WETH()`](WETHCall)
-    /// function.
+    ///Container type for the return parameters of the [`WETH()`](WETHCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct WETHReturn {
@@ -4335,9 +4334,7 @@ pub mod BalancerV2Vault {
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`batchSwap(uint8,(bytes32,uint256,uint256,uint256,bytes)[],address[],
-    /// (address,bool,address,bool),int256[],uint256)`](batchSwapCall) function.
+    ///Container type for the return parameters of the [`batchSwap(uint8,(bytes32,uint256,uint256,uint256,bytes)[],address[],(address,bool,address,bool),int256[],uint256)`](batchSwapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct batchSwapReturn {
@@ -4546,9 +4543,7 @@ pub mod BalancerV2Vault {
         #[allow(missing_docs)]
         pub userData: alloy_sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the
-    /// [`flashLoan(address,address[],uint256[],bytes)`](flashLoanCall)
-    /// function.
+    ///Container type for the return parameters of the [`flashLoan(address,address[],uint256[],bytes)`](flashLoanCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct flashLoanReturn {}
@@ -4715,9 +4710,7 @@ pub mod BalancerV2Vault {
         pub tokens: alloy_sol_types::private::Vec<alloy_sol_types::private::Address>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getInternalBalance(address,address[])`](getInternalBalanceCall)
-    /// function.
+    ///Container type for the return parameters of the [`getInternalBalance(address,address[])`](getInternalBalanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getInternalBalanceReturn {
@@ -4878,8 +4871,7 @@ pub mod BalancerV2Vault {
     #[derive(Clone)]
     pub struct getPausedStateCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getPausedState()`](getPausedStateCall) function.
+    ///Container type for the return parameters of the [`getPausedState()`](getPausedStateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getPausedStateReturn {
@@ -5050,8 +5042,7 @@ pub mod BalancerV2Vault {
         pub poolId: alloy_sol_types::private::FixedBytes<32>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getPool(bytes32)`](getPoolCall) function.
+    ///Container type for the return parameters of the [`getPool(bytes32)`](getPoolCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getPoolReturn {
@@ -5209,8 +5200,7 @@ pub mod BalancerV2Vault {
         pub poolId: alloy_sol_types::private::FixedBytes<32>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getPoolTokens(bytes32)`](getPoolTokensCall) function.
+    ///Container type for the return parameters of the [`getPoolTokens(bytes32)`](getPoolTokensCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getPoolTokensReturn {
@@ -5384,9 +5374,7 @@ pub mod BalancerV2Vault {
         pub relayer: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`hasApprovedRelayer(address,address)`](hasApprovedRelayerCall)
-    /// function.
+    ///Container type for the return parameters of the [`hasApprovedRelayer(address,address)`](hasApprovedRelayerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct hasApprovedRelayerReturn {
@@ -5543,9 +5531,7 @@ pub mod BalancerV2Vault {
             <IVault::UserBalanceOp as alloy_sol_types::SolType>::RustType,
         >,
     }
-    ///Container type for the return parameters of the
-    /// [`manageUserBalance((uint8,address,uint256,address,
-    /// address)[])`](manageUserBalanceCall) function.
+    ///Container type for the return parameters of the [`manageUserBalance((uint8,address,uint256,address,address)[])`](manageUserBalanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct manageUserBalanceReturn {}
@@ -5692,9 +5678,7 @@ pub mod BalancerV2Vault {
         #[allow(missing_docs)]
         pub approved: bool,
     }
-    ///Container type for the return parameters of the
-    /// [`setRelayerApproval(address,address,bool)`](setRelayerApprovalCall)
-    /// function.
+    ///Container type for the return parameters of the [`setRelayerApproval(address,address,bool)`](setRelayerApprovalCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setRelayerApprovalReturn {}
@@ -5860,9 +5844,7 @@ pub mod BalancerV2Vault {
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swap((bytes32,uint8,address,address,uint256,bytes),(address,bool,
-    /// address,bool),uint256,uint256)`](swapCall) function.
+    ///Container type for the return parameters of the [`swap((bytes32,uint8,address,address,uint256,bytes),(address,bool,address,bool),uint256,uint256)`](swapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapReturn {

@@ -585,9 +585,7 @@ pub mod Signatures {
             alloy_sol_types::private::Vec<<Interaction as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`validate((address,address),address,bytes32,bytes,(address,uint256,
-    /// bytes)[])`](validateCall) function.
+    ///Container type for the return parameters of the [`validate((address,address),address,bytes32,bytes,(address,uint256,bytes)[])`](validateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct validateReturn {

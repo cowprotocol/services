@@ -2495,8 +2495,7 @@ pub mod GnosisSafe {
     #[derive(Clone)]
     pub struct VERSIONCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`VERSION()`](VERSIONCall) function.
+    ///Container type for the return parameters of the [`VERSION()`](VERSIONCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct VERSIONReturn {
@@ -2630,8 +2629,7 @@ pub mod GnosisSafe {
     #[derive(Clone)]
     pub struct domainSeparatorCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`domainSeparator()`](domainSeparatorCall) function.
+    ///Container type for the return parameters of the [`domainSeparator()`](domainSeparatorCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct domainSeparatorReturn {
@@ -2790,9 +2788,7 @@ pub mod GnosisSafe {
         pub signatures: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,
-    /// address,address,bytes)`](execTransactionCall) function.
+    ///Container type for the return parameters of the [`execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)`](execTransactionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct execTransactionReturn {
@@ -3011,8 +3007,7 @@ pub mod GnosisSafe {
     #[derive(Clone)]
     pub struct nonceCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`nonce()`](nonceCall)
-    /// function.
+    ///Container type for the return parameters of the [`nonce()`](nonceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct nonceReturn {
@@ -3166,9 +3161,7 @@ pub mod GnosisSafe {
         #[allow(missing_docs)]
         pub paymentReceiver: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`setup(address[],uint256,address,bytes,address,address,uint256,
-    /// address)`](setupCall) function.
+    ///Container type for the return parameters of the [`setup(address[],uint256,address,bytes,address,address,uint256,address)`](setupCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct setupReturn {}

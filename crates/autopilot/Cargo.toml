@@ -5,6 +5,10 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[features]
+test-util = ["dep:tempfile", "configs/test-util", "price-estimation/test-util"]
+tokio-console = ["observe/tokio-console"]
+
 [lib]
 doctest = false
 name = "autopilot"
@@ -90,10 +94,6 @@ mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-
-[features]
-test-util = ["configs/test-util", "dep:tempfile", "price-estimation/test-util"]
-tokio-console = ["observe/tokio-console"]
 
 [lints]
 workspace = true

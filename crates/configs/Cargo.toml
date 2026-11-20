@@ -3,6 +3,10 @@ name = "configs"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+s3 = ["dep:s3"]
+test-util = ["dep:tempfile", "rate-limit/test-util"]
+
 [dependencies]
 alloy-primitives = { workspace = true, features = ["map", "serde"] }
 anyhow = { workspace = true }
@@ -22,10 +26,6 @@ configs = { path = ".", features = ["s3"] }
 rate-limit = { workspace = true, features = ["test-util"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
-
-[features]
-s3 = ["dep:s3"]
-test-util = ["dep:tempfile", "rate-limit/test-util"]
 
 [lints]
 workspace = true

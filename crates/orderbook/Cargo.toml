@@ -5,6 +5,11 @@ authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers 
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[features]
+e2e = []
+test-util = ["dep:tempfile", "shared/test-util"]
+tokio-console = ["observe/tokio-console"]
+
 [lib]
 doctest = false
 name = "orderbook"
@@ -80,11 +85,6 @@ mockall = { workspace = true }
 shared = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
-
-[features]
-e2e = []
-test-util = ["dep:tempfile", "shared/test-util"]
-tokio-console = ["observe/tokio-console"]
 
 [lints]
 workspace = true

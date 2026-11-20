@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
-[workspace]
-exclude = ["generated"]
-
 [dependencies]
 alloy-sol-macro-expander = "1.4.1"
 alloy-sol-macro-input = { version = "1.4.1", features = ["json"] }
@@ -18,3 +15,6 @@ rayon = "1"
 reqwest = { version = "0.13", features = ["blocking", "json"] }
 serde_json = "1.0.117"
 syn = "2.0.108"
+
+[workspace]
+exclude = ["generated"]

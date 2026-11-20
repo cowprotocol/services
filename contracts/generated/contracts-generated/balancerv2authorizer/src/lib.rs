@@ -632,8 +632,7 @@ pub mod BalancerV2Authorizer {
         #[allow(missing_docs)]
         pub account: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`grantRole(bytes32,address)`](grantRoleCall) function.
+    ///Container type for the return parameters of the [`grantRole(bytes32,address)`](grantRoleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct grantRoleReturn {}
@@ -785,8 +784,7 @@ pub mod BalancerV2Authorizer {
         #[allow(missing_docs)]
         pub account: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`grantRoles(bytes32[],address)`](grantRolesCall) function.
+    ///Container type for the return parameters of the [`grantRoles(bytes32[],address)`](grantRolesCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct grantRolesReturn {}

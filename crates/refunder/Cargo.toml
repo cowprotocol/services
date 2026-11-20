@@ -5,6 +5,9 @@ authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers 
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+tokio-console = ["observe/tokio-console"]
+
 [[bin]]
 name = "refunder"
 path = "src/main.rs"
@@ -37,9 +40,6 @@ url = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
-
-[features]
-tokio-console = ["observe/tokio-console"]
 
 [lints]
 workspace = true

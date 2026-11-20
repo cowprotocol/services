@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+test_helpers = []
+
 [dependencies]
 alloy-primitives = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
@@ -19,9 +22,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 hex-literal = { workspace = true }
-
-[features]
-test_helpers = []
 
 [lints]
 workspace = true
