@@ -362,7 +362,7 @@ mod tests {
         assert_eq!(config.competition.solve_deadline, Duration::from_secs(6));
         assert_eq!(config.competition.submission_deadline_slots.get(), 25);
         assert_eq!(config.fee_policies.policies.len(), 1);
-        assert!(config.fee_policies.upcoming_policies.policies.is_empty());
+        assert!(config.fee_policies.upcoming_policies.is_empty());
         assert_eq!(config.api_address, "0.0.0.0:12088".parse().unwrap());
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));

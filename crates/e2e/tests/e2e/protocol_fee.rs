@@ -805,14 +805,14 @@ async fn volume_fee_buy_order_test(web3: Web3) {
                 drivers: vec![Solver::test("test_solver", solver.address())],
                 fee_policies: FeePoliciesConfig {
                     policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
-                    upcoming_policies: UpcomingFeePolicies {
+                    upcoming_policies: vec![UpcomingFeePolicies {
                         policies: vec![fee_policy.clone(), fee_policy],
                         // Set the effective time to 10 minutes ago to make sure
                         // the new policy is applied
                         effective_from_timestamp: Some(
                             chrono::Utc::now() - chrono::Duration::minutes(10),
                         ),
-                    },
+                    }],
                     ..Default::default()
                 },
                 ..Configuration::test_no_drivers()
@@ -967,14 +967,14 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
                 drivers: vec![Solver::test("test_solver", solver.address())],
                 fee_policies: FeePoliciesConfig {
                     policies: vec![fee_policy.clone(), fee_policy],
-                    upcoming_policies: UpcomingFeePolicies {
+                    upcoming_policies: vec![UpcomingFeePolicies {
                         policies: vec![future_fee_policy.clone(), future_fee_policy],
                         // Set the effective time to far in the future to make
                         // sure the new policy is NOT applied
                         effective_from_timestamp: Some(
                             chrono::Utc::now() + chrono::Duration::days(1),
                         ),
-                    },
+                    }],
                     ..Default::default()
                 },
                 ..Configuration::test_no_drivers()
