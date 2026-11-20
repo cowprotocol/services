@@ -7,7 +7,7 @@ use {
     database::solana::OrderKind,
     serde::Serialize,
     serde_with::{DisplayFromStr, serde_as},
-    solana_sdk::pubkey::Pubkey,
+    solana_sdk::{pubkey::Pubkey, signature::Signature},
 };
 
 /// One order with its fill state, camelCase on the wire, pubkeys as base58,
@@ -47,6 +47,20 @@ pub struct Order {
     #[serde_as(as = "DisplayFromStr")]
     pub order_pda: Pubkey,
     pub creation_date: DateTime<Utc>,
+    /// The transaction that created the order's account. Absent while a
+    /// sponsored creation is pending.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub creation_tx_signature: Option<Signature>,
+    /// When the indexer recorded the cancellation. Only cancelled orders
+    /// carry it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancellation_date: Option<DateTime<Utc>>,
+    /// The transaction that cancelled the order. Only cancelled orders
+    /// carry it.
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cancellation_tx_signature: Option<Signature>,
     /// Sell tokens pulled from the order so far.
     #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigDecimal,
@@ -102,6 +116,9 @@ impl Order {
     pub fn new(row: OrderRow, now_unix: i64, block_height: Option<i64>) -> Self {
         let status = status(&row, now_unix, block_height);
         let kind = kind(&row);
+        // Cancelling a fully filled order only recovers its account's rent,
+        // so only a `cancelled` order reports its cancellation.
+        let cancelled = status == Status::Cancelled;
         Self {
             uid: const_hex::encode_prefixed(row.uid.0),
             owner: Pubkey::new_from_array(row.owner.0),
@@ -121,6 +138,14 @@ impl Order {
             full_app_data: row.full_app_data,
             order_pda: Pubkey::new_from_array(row.order_pda.0),
             creation_date: row.creation_timestamp,
+            creation_tx_signature: row
+                .created_by_tx
+                .map(|signature| Signature::from(signature.0)),
+            cancellation_date: row.cancellation_timestamp.filter(|_| cancelled),
+            cancellation_tx_signature: row
+                .cancelled_by_tx
+                .filter(|_| cancelled)
+                .map(|signature| Signature::from(signature.0)),
             executed_sell_amount_before_fees: row.amount_withdrawn.clone(),
             executed_sell_amount: row.amount_withdrawn,
             executed_buy_amount: row.amount_received,
@@ -189,6 +214,8 @@ mod tests {
             amount_received: 0.into(),
             executed_fee: 0.into(),
             cancellation_timestamp: None,
+            created_by_tx: None,
+            cancelled_by_tx: None,
             last_valid_block_height: None,
         }
     }
@@ -295,6 +322,47 @@ mod tests {
         };
         let json = serde_json::to_value(Order::new(registered, 1_500, None)).unwrap();
         assert_eq!(json["fullAppData"], "{}");
+    }
+
+    /// The signatures are base58 of 64 bytes of 9 and of 7.
+    #[test]
+    fn only_a_cancelled_order_reports_its_cancellation() {
+        let pending = serde_json::to_value(Order::new(row(), 1_500, None)).unwrap();
+        assert!(pending.get("creationTxSignature").is_none());
+
+        let created = OrderRow {
+            created_by_tx: Some(ByteArray([9; 64])),
+            ..row()
+        };
+        let json = serde_json::to_value(Order::new(created.clone(), 1_500, None)).unwrap();
+        assert_eq!(
+            json["creationTxSignature"],
+            "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA"
+        );
+        assert!(json.get("cancellationDate").is_none());
+        assert!(json.get("cancellationTxSignature").is_none());
+
+        let cancelled = OrderRow {
+            cancellation_timestamp: Some(DateTime::from_timestamp(1_100, 0).unwrap()),
+            cancelled_by_tx: Some(ByteArray([7; 64])),
+            ..created
+        };
+        let json = serde_json::to_value(Order::new(cancelled.clone(), 1_500, None)).unwrap();
+        assert_eq!(json["status"], "cancelled");
+        assert_eq!(json["cancellationDate"], "1970-01-01T00:18:20Z");
+        assert_eq!(
+            json["cancellationTxSignature"],
+            "99eUso3aSbE9tqGSTXzo3TLfKb9RkMTURrHKQ1K7Zh3BbeqPevr5E1iCbpTjqHuTFLtfxTTD5ekfVuZFzQyEQf8"
+        );
+
+        let rent_recovered = OrderRow {
+            amount_withdrawn: 1_000.into(),
+            ..cancelled
+        };
+        let json = serde_json::to_value(Order::new(rent_recovered, 1_500, None)).unwrap();
+        assert_eq!(json["status"], "fulfilled");
+        assert!(json.get("cancellationDate").is_none());
+        assert!(json.get("cancellationTxSignature").is_none());
     }
 
     /// The fee is in the sell token, and with no signed fee the sell amount

@@ -76,6 +76,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
                 SlotConfig {
                     slot_length: cfg.slot_length,
                     tx_propagation_latency: cfg.tx_propagation_latency,
+                    consecutive_skips_before_forcing: cfg.consecutive_skips_before_forcing,
                 }
             }),
         }
@@ -87,6 +88,10 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
 pub struct SlotConfig {
     pub slot_length: Duration,
     pub tx_propagation_latency: Duration,
+    /// How many auctions may be skipped for starting too late before late
+    /// auctions get forced (solved anyway) until the run loop is back on
+    /// schedule.
+    pub consecutive_skips_before_forcing: u32,
 }
 
 pub struct Probes {
@@ -209,6 +214,10 @@ impl RunLoop {
     pub async fn run_forever(self, mut control: ShutdownController) {
         let mut last_auction = None;
         let mut last_block = None;
+        // Auctions skipped for starting too late since the last auction that
+        // was solved on time. Once it reaches the maximum, late auctions
+        // get forced until an auction is on time again.
+        let mut auction_skips_since_on_time = 0;
 
         let self_arc = Arc::new(self);
         let leader = self_arc
@@ -240,6 +249,7 @@ impl RunLoop {
                 // the drivers received; ensure we start from a checkpoint when
                 // leadership is (re)gained.
                 self_arc.delta_state.lock().unwrap().reset();
+                auction_skips_since_on_time = 0;
                 // only the leader is supposed to run the auctions
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
@@ -250,8 +260,48 @@ impl RunLoop {
                 .await
             {
                 let auction_id = auction.id;
+                let solve_deadline = match self_arc.schedule_auction(auction_skips_since_on_time) {
+                    Schedule::OnTime(deadline) => {
+                        auction_skips_since_on_time = 0;
+                        deadline
+                    }
+                    Schedule::Forced(deadline) => {
+                        // Not resetting the counter: late auctions keep getting
+                        // forced until one is on time again.
+                        tracing::info!(
+                            auction_id,
+                            auction_skips_since_on_time,
+                            %deadline,
+                            "not enough time to solve before next block but too many auctions \
+                             were skipped, forcing auction targeting the block after"
+                        );
+                        Metrics::get().forced_auctions.inc();
+                        deadline
+                    }
+                    Schedule::Skip { missed_by } => {
+                        tracing::info!(
+                            auction_id,
+                            ?missed_by,
+                            "skipping auction, not enough time to solve before next block"
+                        );
+                        Metrics::get().skipped_auctions.inc();
+                        auction_skips_since_on_time += 1;
+                        // A skip gives up the rest of the slot. Without this a
+                        // new order could wake the loop while the same block is
+                        // still current and force a late auction right away.
+                        // Comparing timestamps (not numbers or hashes) resumes
+                        // on the next slot even if a reorg replaced the block.
+                        let _ = self_arc
+                            .eth
+                            .current_block()
+                            .clone()
+                            .wait_for(|block| block.timestamp > start_block.timestamp)
+                            .await;
+                        continue;
+                    }
+                };
                 self_arc
-                    .single_run(&auction, start_block, &leader_lock_tracker)
+                    .single_run(&auction, start_block, solve_deadline, &leader_lock_tracker)
                     .instrument(tracing::info_span!("auction", auction_id))
                     .await
             }
@@ -274,14 +324,15 @@ impl RunLoop {
         });
     }
 
-    fn pick_solve_deadline(&self) -> DateTime<Utc> {
+    fn schedule_auction(&self, auction_skips_since_on_time: u32) -> Schedule {
         let now = chrono::Utc::now();
         let last_block = *self.eth.current_block().borrow();
-        pick_solve_deadline_impl(
+        schedule_auction_impl(
             now,
+            last_block,
             self.config.min_solve_time,
             self.config.sync_solve_deadline_to_blockchain.as_ref(),
-            last_block,
+            auction_skips_since_on_time,
         )
     }
 
@@ -393,9 +444,10 @@ impl RunLoop {
         self: &Arc<Self>,
         auction: &Arc<domain::Auction>,
         start_block: BlockInfo,
+        solve_deadline: DateTime<Utc>,
         leader: &LeaderLockTracker,
     ) {
-        tracing::info!(auction_id = ?auction.id, "solving");
+        tracing::info!(auction_id = ?auction.id, deadline = %solve_deadline, "solving");
 
         // Mark all auction orders as `Ready` for competition
         self.persistence
@@ -403,7 +455,7 @@ impl RunLoop {
         tracing::trace!(auction_id = ?auction.id, "orders marked as ready");
 
         // Collect valid solutions from all drivers
-        let solutions = self.fetch_solutions(auction).await;
+        let solutions = self.fetch_solutions(auction, solve_deadline).await;
         observe::bids(&solutions);
         if solutions.is_empty() {
             return;
@@ -591,8 +643,8 @@ impl RunLoop {
     async fn build_auction_requests(
         &self,
         auction: &Arc<domain::Auction>,
+        deadline: DateTime<Utc>,
     ) -> (solve::EncodedRequests, solve::EncodedRequests) {
-        let deadline = self.pick_solve_deadline();
         let trusted_tokens = self.trusted_tokens.all();
 
         let (request, delta_request) = tokio::join!(
@@ -621,8 +673,9 @@ impl RunLoop {
     async fn fetch_solutions(
         &self,
         auction: &Arc<domain::Auction>,
+        deadline: DateTime<Utc>,
     ) -> Vec<competition::Bid<Unscored>> {
-        let (request, delta_request) = self.build_auction_requests(auction).await;
+        let (request, delta_request) = self.build_auction_requests(auction, deadline).await;
 
         let mut bids = futures::future::join_all(self.drivers.iter().cloned().map(|driver| {
             let requests = if driver.extensions.auction_deltas {
@@ -777,58 +830,68 @@ impl RunLoop {
     }
 }
 
-/// Picks a `/solve` deadline that ends shortly before a block gets
-/// mined to maximize the chance that solutions get mined instantly.
-/// If the auction needs to cross block boundaries solvers just get
-/// a lot more time for proposing a solution.
+/// What the run loop should do with an auction given the current block timing.
+#[derive(Debug, PartialEq)]
+enum Schedule {
+    /// Solve with this `/solve` deadline; solutions can land in the next
+    /// block (or block timing is not synced at all).
+    OnTime(DateTime<Utc>),
+    /// Too late for the next block, but the maximum number of auctions were
+    /// skipped since the last on-time auction: solve with a deadline
+    /// targeting the block after the next one, never shorter than the minimum
+    /// solve time.
+    Forced(DateTime<Utc>),
+    /// Too late for the next block: skip this auction.
+    Skip {
+        /// How much later the next block's deadline would have had to be to
+        /// give solvers the minimum solve time.
+        missed_by: Duration,
+    },
+}
+
+/// Decides how to run an auction starting at `now`.
+///
+/// If the solve deadline is synced to the blockchain it is picked to end
+/// shortly before the next block gets mined to maximize the chance that
+/// solutions get mined instantly. Auctions that start too late to give solvers
+/// `min_solve_time` before the next block get skipped instead of delayed,
+/// unless `skips_since_on_time` already reached the configured maximum, in
+/// which case they get forced.
 ///
 /// This function panics if any of the time computations over- or
 /// underflow. This should not happen as we deal with times within
 /// seconds of the current time.
-fn pick_solve_deadline_impl(
-    now: chrono::DateTime<chrono::Utc>,
+fn schedule_auction_impl(
+    now: DateTime<Utc>,
+    current_block: BlockInfo,
     min_solve_time: Duration,
     slot_config: Option<&SlotConfig>,
-    current_block: BlockInfo,
-) -> chrono::DateTime<chrono::Utc> {
+    skips_since_on_time: u32,
+) -> Schedule {
     let minimum_deadline = now + min_solve_time;
 
     let Some(SlotConfig {
         slot_length,
         tx_propagation_latency,
+        consecutive_skips_before_forcing,
     }) = slot_config
     else {
-        return minimum_deadline;
+        return Schedule::OnTime(minimum_deadline);
     };
 
     let current_block_time =
         DateTime::from_timestamp_secs(current_block.timestamp.try_into().unwrap()).unwrap();
+    let deadline = current_block_time + *slot_length - *tx_propagation_latency;
 
-    for delay_in_blocks in 1..10 {
-        let target = current_block_time + slot_length.saturating_mul(delay_in_blocks)
-            - *tx_propagation_latency;
-        if target >= minimum_deadline {
-            if delay_in_blocks == 1 {
-                tracing::debug!(
-                    deadline = target.to_string(),
-                    current_block = current_block.number,
-                    "optimal solve deadline is before next block"
-                );
-            } else {
-                tracing::debug!(
-                    delay_in_blocks,
-                    deadline = target.to_string(),
-                    current_block = current_block.number,
-                    "delay auction for optimal deadline"
-                );
-            }
-            // first timestamp that gives at least the required amount of time
-            // and is aligned with the chain's block production
-            return target;
-        }
+    if deadline >= minimum_deadline {
+        return Schedule::OnTime(deadline);
     }
-
-    minimum_deadline
+    if skips_since_on_time >= *consecutive_skips_before_forcing {
+        return Schedule::Forced((deadline + *slot_length).max(minimum_deadline));
+    }
+    Schedule::Skip {
+        missed_by: (minimum_deadline - deadline).to_std().unwrap_or_default(),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -848,6 +911,17 @@ enum SolveError {
 struct Metrics {
     /// Tracks the last executed auction.
     auction: prometheus::IntGauge,
+
+    /// Tracks the number of auctions that were skipped because they started
+    /// too late to give solvers the minimum solve time before the targeted
+    /// block.
+    skipped_auctions: prometheus::IntCounter,
+
+    /// Tracks the number of auctions that started too late for the next block
+    /// but were solved anyway (targeting the block after) because the
+    /// maximum number of auctions had been skipped since the last on-time
+    /// auction.
+    forced_auctions: prometheus::IntCounter,
 
     /// Tracks the number of winners per auction.
     #[metric(buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10))]
@@ -1277,51 +1351,75 @@ mod tests {
         let standard_deadline = "2026-06-01T12:00:10Z".parse::<Ts>().unwrap();
 
         // syncing to blockchain is not configured -> deadline = now +
-        // min_solve_time
-        let deadline = pick_solve_deadline_impl(now, min_solve_time, None, last_block);
-        assert_eq!(deadline, standard_deadline);
+        // min_solve_time, even after skips (nothing gets skipped)
+        let schedule = schedule_auction_impl(now, last_block, min_solve_time, None, 0);
+        assert_eq!(schedule, Schedule::OnTime(standard_deadline));
 
         // both sync parameters provided -> deadline gets synced to expected
         // block production
-        let slot_config = Some(SlotConfig {
+        let slot_config = SlotConfig {
             slot_length: Duration::from_secs(12),
             tx_propagation_latency: Duration::from_secs(2),
-        });
-        let deadline =
-            pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
+            consecutive_skips_before_forcing: 2,
+        };
+        let schedule = |now, skips_since_on_time| {
+            schedule_auction_impl(
+                now,
+                last_block,
+                min_solve_time,
+                Some(&slot_config),
+                skips_since_on_time,
+            )
+        };
+
         // now is 1s after the last block (n), 11s left before the slot ends, 9s
         // before we are supposed to submit a solution, 9s minimum solve
         // time => synced deadline is equal to standard deadline (2s
         // before block n+1)
-        assert_eq!(deadline, standard_deadline);
+        assert_eq!(schedule(now, 0), Schedule::OnTime(standard_deadline));
+
+        // now is 500ms after the last block (n), 9s minimum solve time ends
+        // 500ms before the deadline for block n+1 => solvers get the extra time
+        assert_eq!(
+            schedule(now - Duration::from_millis(500), 0),
+            Schedule::OnTime(standard_deadline)
+        );
 
         // now is 2s after the last block (n), 10s left before the slot ends, 8s
         // before we are supposed to submit a solution for this slot, 9s
         // minimum solve time => we barely missed the deadline of the
-        // current slot so now solvers get until 2s before the block n+2
-        let deadline = pick_solve_deadline_impl(
-            now + Duration::from_secs(1),
-            min_solve_time,
-            slot_config.as_ref(),
-            last_block,
-        );
-        assert_eq!(deadline, "2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
+        // current slot so the auction gets skipped while fewer than
+        // `consecutive_skips_before_forcing` auctions were skipped since the
+        // last on-time auction
+        let late = now + Duration::from_secs(1);
+        let skip = Schedule::Skip {
+            missed_by: Duration::from_secs(1),
+        };
+        assert_eq!(schedule(late, 0), skip);
+        assert_eq!(schedule(late, 1), skip);
+        // ... and once the maximum is reached late auctions get forced to
+        // target block n+2 instead (2s before block n+2)
+        let forced = Schedule::Forced("2026-06-01T12:00:22Z".parse::<Ts>().unwrap());
+        assert_eq!(schedule(late, 2), forced);
+        assert_eq!(schedule(late, 3), forced);
 
-        // let's move to gnosis chain where 1 block is 5s (1 block is not enough
-        // for the solve deadline)
-        let slot_config = Some(SlotConfig {
-            slot_length: Duration::from_secs(5),
-            tx_propagation_latency: Duration::from_secs(2),
-        });
-        let last_block_time = "2026-06-01T12:00:00Z".parse::<Ts>().unwrap().timestamp() as u64;
-        let last_block = block_with_timestamp(last_block_time);
-        let now = "2026-06-01T12:00:01Z".parse::<Ts>().unwrap();
-        // now is 1s after the last block n, 4s left in the block, we need to
-        // submit 2s before a block, min_solve_time 9s => deadline is 2s
-        // before block n+3
-        let deadline =
-            pick_solve_deadline_impl(now, min_solve_time, slot_config.as_ref(), last_block);
-        assert_eq!(deadline, "2026-06-01T12:00:13Z".parse::<Ts>().unwrap());
+        // now is 14s after the last block (n), block n+1 is overdue => the
+        // forced deadline gives solvers at least the minimum solve time
+        let very_late = now + Duration::from_secs(13);
+        assert_eq!(
+            schedule(very_late, 2),
+            Schedule::Forced(very_late + min_solve_time)
+        );
+
+        // never skipping is allowed
+        let never_skip = SlotConfig {
+            consecutive_skips_before_forcing: 0,
+            ..slot_config
+        };
+        assert_eq!(
+            schedule_auction_impl(late, last_block, min_solve_time, Some(&never_skip), 0),
+            forced
+        );
     }
 
     #[test]

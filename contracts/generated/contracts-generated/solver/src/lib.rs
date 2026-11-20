@@ -147,8 +147,7 @@ pub mod Solver {
         #[allow(missing_docs)]
         pub countGas: bool,
     }
-    ///Container type for the return parameters of the
-    /// [`storeBalance(address,address,bool)`](storeBalanceCall) function.
+    ///Container type for the return parameters of the [`storeBalance(address,address,bool)`](storeBalanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct storeBalanceReturn {}
@@ -320,9 +319,7 @@ pub mod Solver {
         pub settlementCall: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swap(address,address[],address,address,address,uint256,address,
-    /// bytes)`](swapCall) function.
+    ///Container type for the return parameters of the [`swap(address,address[],address,address,address,uint256,address,bytes)`](swapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapReturn {

@@ -599,9 +599,7 @@ pub mod FlashLoanRouter {
         #[allow(missing_docs)]
         pub settlement: alloy_sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the
-    /// [`flashLoanAndSettle((uint256,address,address,address)[],
-    /// bytes)`](flashLoanAndSettleCall) function.
+    ///Container type for the return parameters of the [`flashLoanAndSettle((uint256,address,address,address)[],bytes)`](flashLoanAndSettleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct flashLoanAndSettleReturn {}
@@ -754,8 +752,7 @@ pub mod FlashLoanRouter {
     #[derive(Clone)]
     pub struct settlementContractCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`settlementContract()`](settlementContractCall) function.
+    ///Container type for the return parameters of the [`settlementContract()`](settlementContractCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settlementContractReturn {

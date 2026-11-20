@@ -105,7 +105,7 @@ A subset of the `forked_node` tests will require a `FORK_GNOSIS_URL`, refer to t
 
 In order to run `pamm_` prefixed tests you have to set:
 1. `NODE_WS_URL` pointing to live mainnet RPC node websocket.
-2. `PAMM_QUOTE_STREAM_URL` pointing to the builder's quote stream (i.e. `wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream`).s
+2. `PAMM_QUOTE_STREAM_URL` pointing to the builder's quote stream (i.e. `wss://eu.data.titanbuilder.xyz/ws/pamm_quote_stream_v2`).
 
 ## Profiling
 

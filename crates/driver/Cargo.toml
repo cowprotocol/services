@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[features]
+tokio-console = ["observe/tokio-console"]
+
 [lib]
 doctest = false
 name = "driver"
@@ -109,9 +112,6 @@ maplit = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
 tower = { workspace = true, features = ["util"] }
-
-[features]
-tokio-console = ["observe/tokio-console"]
 
 [lints]
 workspace = true

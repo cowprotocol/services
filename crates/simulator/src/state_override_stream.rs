@@ -38,6 +38,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::sync::watch,
+    tokio_tungstenite::tungstenite::Message,
 };
 
 /// The units a venue may keep its stamp in, along with the width of the field
@@ -138,6 +139,9 @@ fn restamp_word(word: &mut B256, stamp: u32, timestamp: u64) {
 /// chain which respaces its blocks is followed within a few of them.
 const SPACING_SAMPLES: usize = 4;
 
+const MIN_BACKOFF: Duration = Duration::from_millis(250);
+const MAX_BACKOFF: Duration = Duration::from_secs(15);
+
 /// State overrides delivered some point in time.
 #[derive(Clone)]
 struct Snapshot {
@@ -229,15 +233,20 @@ fn restamp(mut overrides: StateOverride, stamp: Option<u32>, timestamp: u64) -> 
     overrides
 }
 
+/// One message of Titan's `pamm_quote_stream_v2`: the newest quotes of any
+/// number of venues.
+#[derive(Debug, Deserialize)]
+struct Frame {
+    venues: Vec<Venue>,
+}
+
+/// One venue's overrides for the block the builder is about to build.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Frame {
+struct Venue {
+    quote_address: Address,
     block_number: Option<u64>,
-    // Venue keys are addresses flattened alongside the metadata fields above;
-    // unknown non-address keys (e.g. future schema additions) are skipped by
-    // the address parse inside the deserializer.
-    #[serde(flatten, deserialize_with = "deserialize_venue_overrides")]
-    venues: BTreeMap<Address, VenueUpdate>,
+    state_override: StateOverride,
 }
 
 /// Infers how far apart the chain spaces its blocks — 12s on mainnet, 5s on
@@ -301,46 +310,6 @@ fn quoted_at(head: &BlockInfo, block: u64, spacing: u64) -> Option<u32> {
     u32::try_from(timestamp).ok()
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct VenueUpdate {
-    state_override: StateOverride,
-}
-
-fn deserialize_venue_overrides<'de, D>(
-    deserializer: D,
-) -> Result<BTreeMap<Address, VenueUpdate>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    struct Vis;
-
-    impl<'de> serde::de::Visitor<'de> for Vis {
-        type Value = BTreeMap<Address, VenueUpdate>;
-
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("a map of venue address overrides")
-        }
-
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::MapAccess<'de>,
-        {
-            let mut out = BTreeMap::new();
-            while let Some(key) = map.next_key::<&str>()? {
-                let Ok(address) = key.parse::<Address>() else {
-                    map.next_value::<serde::de::IgnoredAny>()?;
-                    continue;
-                };
-                out.insert(address, map.next_value::<VenueUpdate>()?);
-            }
-            Ok(out)
-        }
-    }
-
-    deserializer.deserialize_map(Vis)
-}
-
 /// Spawns a new background task that streams state override updates
 /// into the return [`SimulationOverrides`] instance.
 ///
@@ -370,7 +339,7 @@ async fn run_stream(
     blocks: CurrentBlockWatcher,
     sender: watch::Sender<Snapshot>,
 ) {
-    let mut backoff = Duration::from_millis(250);
+    let mut backoff = MIN_BACKOFF;
     let mut venues = Venues::default();
     let mut spacing = BlockSpacing::default();
     let mut last_block_number = 0u64;
@@ -378,7 +347,6 @@ async fn run_stream(
     loop {
         match tokio_tungstenite::connect_async(ws_url.as_str()).await {
             Ok((ws_stream, _)) => {
-                backoff = Duration::from_millis(250);
                 let (mut write, mut read) = ws_stream.split();
                 tracing::debug!(url = %ws_url, "state-override stream connected");
 
@@ -391,6 +359,9 @@ async fn run_stream(
                         }
                     };
 
+                    if let Message::Close(close) = &message {
+                        tracing::warn!(?close, "state-override stream closed by server");
+                    }
                     if !message.is_text() && !message.is_binary() {
                         continue;
                     }
@@ -398,18 +369,23 @@ async fn run_stream(
                     Metrics::get().frames_received.inc();
                     match serde_json::from_slice::<Frame>(&message.into_data()) {
                         Ok(frame) => {
-                            if let Some(block_number) = frame.block_number {
-                                last_block_number = block_number;
-                            }
+                            // Reset only on a usable frame: a server that
+                            // accepts and then closes at once would otherwise
+                            // be redialled four times a second.
+                            backoff = MIN_BACKOFF;
                             // Frames arrive many times a second, so sampling
                             // the watcher here sees every block the node
                             // reports without a stream of its own to poll.
                             let head = *blocks.borrow();
                             spacing.observe(&head);
-                            let quoted_at = spacing
-                                .get()
-                                .and_then(|spacing| quoted_at(&head, last_block_number, spacing));
-                            venues.update(frame, quoted_at);
+                            for venue in frame.venues {
+                                let block = venue.block_number.unwrap_or(last_block_number);
+                                last_block_number = last_block_number.max(block);
+                                let quoted_at = spacing
+                                    .get()
+                                    .and_then(|spacing| quoted_at(&head, block, spacing));
+                                venues.update(venue, quoted_at);
+                            }
                             publish(&venues, last_block_number, &sender);
                         }
                         Err(err) => {
@@ -429,7 +405,7 @@ async fn run_stream(
         Metrics::get().reconnects.inc();
         tracing::debug!(?backoff, "state-override stream reconnecting");
         tokio::time::sleep(backoff).await;
-        backoff = (backoff * 2).min(Duration::from_secs(15));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
     }
 }
 
@@ -445,21 +421,20 @@ struct Quotes {
 struct Venues(BTreeMap<Address, Quotes>);
 
 impl Venues {
-    /// Replaces each venue's quotes with the ones the frame carries, recording
-    /// which of them are stamped `quoted_at` — the timestamp of the block the
-    /// frame quotes for.
+    /// Replaces the venue's quotes with the ones it just sent, recording
+    /// whether they are stamped `quoted_at` — the timestamp of the block the
+    /// venue quotes for.
     ///
-    /// A frame holds the venue's whole set of lanes, including the ones it did
-    /// not requote this block, so the previous frame is dropped rather than
+    /// A venue sends its whole set of lanes, including the ones it did not
+    /// requote this block, so its previous quotes are dropped rather than
     /// merged: accumulating would keep lanes of a venue that has gone away
     /// alive forever.
-    fn update(&mut self, frame: Frame, quoted_at: Option<u32>) {
-        for (venue, update) in frame.venues {
-            let overrides = update.state_override;
-            let stamp =
-                quoted_at.filter(|stamp| words(&overrides).any(|word| carries_stamp(word, *stamp)));
-            self.0.insert(venue, Quotes { overrides, stamp });
-        }
+    fn update(&mut self, venue: Venue, quoted_at: Option<u32>) {
+        let overrides = venue.state_override;
+        let stamp =
+            quoted_at.filter(|stamp| words(&overrides).any(|word| carries_stamp(word, *stamp)));
+        self.0
+            .insert(venue.quote_address, Quotes { overrides, stamp });
     }
 
     /// Folds every venue's newest frame into one override set, along with the
@@ -598,7 +573,6 @@ mod tests {
         futures::StreamExt,
         std::time::Duration,
         tokio::time::timeout,
-        tokio_tungstenite::tungstenite::Message,
     };
 
     /// Shared `PrioUpdateRegistry` every venue writes its lanes into.
@@ -635,12 +609,12 @@ mod tests {
         }
     }
 
-    fn frame_with(
+    fn venue_with(
         venue: Address,
         account: Address,
         balance: Option<U256>,
         storage_slot: Option<B256>,
-    ) -> Frame {
+    ) -> Venue {
         let mut account_override = AccountOverride::default();
         if let Some(balance) = balance {
             account_override.balance = Some(balance);
@@ -652,9 +626,10 @@ mod tests {
         }
         let mut state_override = StateOverride::default();
         state_override.insert(account, account_override);
-        Frame {
+        Venue {
+            quote_address: venue,
             block_number: None,
-            venues: BTreeMap::from([(venue, VenueUpdate { state_override })]),
+            state_override,
         }
     }
 
@@ -666,18 +641,26 @@ mod tests {
         word
     }
 
-    /// A frame quoting `lanes` of the shared registry on behalf of `venue`.
-    fn registry_frame(venue: Address, lanes: &[(B256, B256)]) -> Frame {
+    /// `venue` quoting `lanes` of the shared registry.
+    fn registry_venue(venue: Address, lanes: &[(B256, B256)]) -> Venue {
         let account_override = AccountOverride {
             state_diff: Some(lanes.iter().copied().collect()),
             ..Default::default()
         };
         let mut state_override = StateOverride::default();
         state_override.insert(REGISTRY, account_override);
-        Frame {
+        Venue {
+            quote_address: venue,
             block_number: None,
-            venues: BTreeMap::from([(venue, VenueUpdate { state_override })]),
+            state_override,
         }
+    }
+
+    /// The single venue a captured frame carries.
+    fn venue_of(frame: &str) -> Venue {
+        let mut frame: Frame = serde_json::from_str(frame).unwrap();
+        assert_eq!(frame.venues.len(), 1);
+        frame.venues.pop().unwrap()
     }
 
     fn lane(index: u8) -> B256 {
@@ -695,40 +678,38 @@ mod tests {
 
     #[test]
     fn frame_parses_verbatim_titan_sample() {
-        let sample = r#"{
-            "slot": 14285824,
-            "blockNumber": 25051224,
-            "timestamp": 1778253913749564761,
-            "future-metadata": "ignored",
-            "0x1111111111111111111111111111111111111111": {
-                "stateOverride": {
-                    "0x2222222222222222222222222222222222222222": {
-                        "balance": "0x0",
-                        "nonce": "0x1",
-                        "stateDiff": { "0x0000000000000000000000000000000000000000000000000000000000000001": "0x0000000000000000000000000000000000000000000000000000000000000000" }
-                    }
-                }
-            },
-            "not-an-address": { "stateOverride": {} }
-        }"#;
+        // Captured from wss://eu.data.titanbuilder.xyz/ws/pamm_quote_stream_v2,
+        // plus the empty venue Titan also sends.
+        let sample = r#"{"venues":[{"maker":"Kaliber","quoteAddress":"0xb8d4e06e3038b07b4376ba3020eabce69f673463","pricedAddresses":["0xb8d4e06e3038b07b4376ba3020eabce69f673463","0xf639cf213b63f7e77d699ff686d591c0ba55fc63"],"assetPairs":[{"token_1":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","token_2":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"}],"pairSequences":[289294236775930721378413677],"slot":15682672,"blockNumber":26442876,"timestamp":1795016079179081678,"stateOverride":{"0xf639cf213b63f7e77d699ff686d591c0ba55fc63":{"balance":"0x0","nonce":"0x1","stateDiff":{"0x5f6f40f9f9889cf7f6ddcc76f464a1becf3be79a0abee0e17d2f489ec2860d47":"0x000000000000000000000000000000006afdc5970000004b0000000000089ded"}},"0xdb50d150637408220a6f528ea0d27863fdfb6654":{"balance":"0x15eb00b1d99a7f8","nonce":"0x8a"}}},
+            {"maker":null,"quoteAddress":"0x38e6f145586043a030d02f1aa32eb55c65183a1d","pricedAddresses":["0x38e6f145586043a030d02f1aa32eb55c65183a1d"],"assetPairs":[],"pairSequences":[],"slot":15682672,"blockNumber":26442876,"timestamp":1795016079556147200,"stateOverride":{}}]}"#;
         let frame: Frame = serde_json::from_str(sample).unwrap();
-        assert_eq!(frame.block_number, Some(25051224));
-        // Non-address top-level keys ("future-metadata", "not-an-address")
-        // are skipped by the venue deserializer.
-        assert_eq!(frame.venues.len(), 1);
+        assert_eq!(frame.venues.len(), 2);
 
-        let venue = address!("1111111111111111111111111111111111111111");
-        let account = address!("2222222222222222222222222222222222222222");
-        let update = frame.venues.get(&venue).unwrap();
-        let override_entry = update.state_override.get(&account).unwrap();
+        let venue = &frame.venues[0];
+        assert_eq!(
+            venue.quote_address,
+            address!("b8d4e06e3038b07b4376ba3020eabce69f673463")
+        );
+        assert_eq!(venue.block_number, Some(26442876));
+        let account = address!("f639cf213b63f7e77d699ff686d591c0ba55fc63");
+        let override_entry = venue.state_override.get(&account).unwrap();
         assert_eq!(override_entry.nonce, Some(1));
         assert!(override_entry.state_diff.is_some());
+        assert!(frame.venues[1].state_override.is_empty());
     }
 
-    fn fold(frames: Vec<Frame>) -> StateOverride {
+    #[test]
+    fn v1_frame_is_rejected() {
+        // The deprecated per-venue layout must count as a parse failure rather
+        // than parse into a frame without venues.
+        let v1 = r#"{"blockNumber":1,"0x1111111111111111111111111111111111111111":{"stateOverride":{}}}"#;
+        assert!(serde_json::from_str::<Frame>(v1).is_err());
+    }
+
+    fn fold(quotes: Vec<Venue>) -> StateOverride {
         let mut venues = Venues::default();
-        for frame in frames {
-            venues.update(frame, Some(QUOTED_AT));
+        for venue in quotes {
+            venues.update(venue, Some(QUOTED_AT));
         }
         venues.fold().0
     }
@@ -742,8 +723,8 @@ mod tests {
         // one leaves out is no longer being quoted and has to fall back to
         // committed on-chain state.
         let overrides = fold(vec![
-            frame_with(venue, account, None, Some(B256::ZERO)),
-            frame_with(venue, account, Some(U256::ZERO), None),
+            venue_with(venue, account, None, Some(B256::ZERO)),
+            venue_with(venue, account, Some(U256::ZERO), None),
         ]);
         assert_eq!(overrides[&account].balance, Some(U256::ZERO));
         assert!(overrides[&account].state_diff.is_none());
@@ -757,8 +738,8 @@ mod tests {
         let account_b = address!("4444444444444444444444444444444444444444");
 
         let overrides = fold(vec![
-            frame_with(venue_a, account_a, None, Some(B256::ZERO)),
-            frame_with(venue_b, account_b, None, Some(B256::ZERO)),
+            venue_with(venue_a, account_a, None, Some(B256::ZERO)),
+            venue_with(venue_b, account_b, None, Some(B256::ZERO)),
         ]);
         assert!(overrides.contains_key(&account_a));
         assert!(overrides.contains_key(&account_b));
@@ -773,8 +754,8 @@ mod tests {
         // Venue B describes the shared account without a balance, which means
         // "unchanged", not "cleared": it only ever states what it set itself.
         let overrides = fold(vec![
-            frame_with(venue_a, shared, Some(U256::from(1)), None),
-            frame_with(venue_b, shared, None, Some(B256::ZERO)),
+            venue_with(venue_a, shared, Some(U256::from(1)), None),
+            venue_with(venue_b, shared, None, Some(B256::ZERO)),
         ]);
         assert_eq!(overrides[&shared].balance, Some(U256::from(1)));
         assert!(overrides[&shared].state_diff.is_some());
@@ -787,14 +768,14 @@ mod tests {
         }))
     }
 
-    /// Handle over a snapshot built by folding `frames` in order, as if every
+    /// Handle over a snapshot built by folding `quotes` in order, as if every
     /// frame were quoting for `QUOTED_BLOCK`. Frames whose words carry no
     /// `QUOTED_AT` stamp are recognised as quoting nothing, exactly as in the
     /// stream.
-    fn handle_for(frames: Vec<Frame>, block_number: u64, max_age: Duration) -> SimulationOverrides {
+    fn handle_for(quotes: Vec<Venue>, block_number: u64, max_age: Duration) -> SimulationOverrides {
         let mut venues = Venues::default();
-        for frame in frames {
-            venues.update(frame, Some(QUOTED_AT));
+        for venue in quotes {
+            venues.update(venue, Some(QUOTED_AT));
         }
         let (overrides, stamp) = venues.fold();
         let (_sender, receiver) = watch::channel(Snapshot {
@@ -878,7 +859,7 @@ mod tests {
         let simulated_at = stamp - 12;
 
         let handle = handle_for(
-            vec![registry_frame(
+            vec![registry_venue(
                 venue,
                 &[(lane(1), word(stamp, 0xaa)), (lane(2), word(stamp, 0xbb))],
             )],
@@ -902,7 +883,7 @@ mod tests {
         // The venue still carries lane 2 in its frame, but stamped for the
         // previous slot: it is not quoting that pair for this block.
         let handle = handle_for(
-            vec![registry_frame(
+            vec![registry_venue(
                 venue,
                 &[
                     (lane(1), word(stamp, 0xcc)),
@@ -924,7 +905,7 @@ mod tests {
     #[test]
     fn restamping_leaves_every_other_byte_untouched() {
         let mut venues = Venues::default();
-        venues.update(serde_json::from_str(FERMI_FRAME).unwrap(), Some(QUOTED_AT));
+        venues.update(venue_of(FERMI_FRAME), Some(QUOTED_AT));
         let (overrides, stamp) = venues.fold();
         assert_eq!(stamp, Some(QUOTED_AT));
 
@@ -957,7 +938,7 @@ mod tests {
         // alone, and only that field moves into the simulated block.
         let venue = address!("28d9ccedf1b7ac9b3f090f4f0292837de87c1d39");
         let mut venues = Venues::default();
-        venues.update(serde_json::from_str(OTHER_FRAME).unwrap(), Some(QUOTED_AT));
+        venues.update(venue_of(OTHER_FRAME), Some(QUOTED_AT));
         let (original, stamp) = venues.fold();
         assert_eq!(stamp, Some(QUOTED_AT));
         let (slot, before) = original[&venue]
@@ -998,7 +979,7 @@ mod tests {
         let (quoted_at, simulated_at) = (1_788_781_715u32, 1_788_781_703u64);
         let mut venues = Venues::default();
         venues.update(
-            registry_frame(Address::ZERO, &[(lane(1), original)]),
+            registry_venue(Address::ZERO, &[(lane(1), original)]),
             Some(quoted_at),
         );
         let (sender, receiver) = watch::channel(non_empty_snapshot(0, Instant::now()));
@@ -1079,8 +1060,8 @@ mod tests {
         // the other's.
         let handle = handle_for(
             vec![
-                registry_frame(venue_a, &[(lane(1), word(stamp, 0xaa))]),
-                registry_frame(venue_b, &[(lane(2), word(stamp, 0xbb))]),
+                registry_venue(venue_a, &[(lane(1), word(stamp, 0xaa))]),
+                registry_venue(venue_b, &[(lane(2), word(stamp, 0xbb))]),
             ],
             100,
             Duration::from_secs(30),
@@ -1100,8 +1081,8 @@ mod tests {
 
         let server_url: url::Url = format!("ws://{addr}").parse().unwrap();
         let account = address!("2222222222222222222222222222222222222222");
-        let first = r#"{"blockNumber":10,"0x1111111111111111111111111111111111111111":{"stateOverride":{"0x2222222222222222222222222222222222222222":{"balance":"0x1"}}}}"#;
-        let second = r#"{"blockNumber":11,"0x1111111111111111111111111111111111111111":{"stateOverride":{"0x2222222222222222222222222222222222222222":{"balance":"0x2"}}}}"#;
+        let first = r#"{"venues":[{"quoteAddress":"0x1111111111111111111111111111111111111111","blockNumber":10,"stateOverride":{"0x2222222222222222222222222222222222222222":{"balance":"0x1"}}}]}"#;
+        let second = r#"{"venues":[{"quoteAddress":"0x1111111111111111111111111111111111111111","blockNumber":11,"stateOverride":{"0x2222222222222222222222222222222222222222":{"balance":"0x2"}}}]}"#;
 
         let server_handle = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
@@ -1144,70 +1125,67 @@ mod tests {
         assert!(got.is_ok(), "did not observe the newest overrides in time");
     }
 
-    // Real frames captured from
-    // wss://eu.rpc.titanbuilder.xyz/ws/pamm_quote_stream.
-    const FERMI_FRAME: &str = r#"{
+    // Real venue quotes captured from the deprecated v1 stream, moved into the
+    // `pamm_quote_stream_v2` envelope.
+    const FERMI_FRAME: &str = r#"{"venues":[{
+        "quoteAddress":"0xb1076fe3ab5e28005c7c323bac5ac06a680d452e",
         "slot":14711587,
         "blockNumber":25475333,
         "timestamp":1783363067584411872,
-        "0xb1076fe3ab5e28005c7c323bac5ac06a680d452e":{
-            "stateOverride":{
-                "0xa048e0c08b7acb48363711800ac9d49de8e58d13":{
-                    "balance":"0x10848dc44f1e140",
-                    "nonce":"0x42ee"
-                },
-                "0x14e870f0a7c764ca71289952006d6bf130058927":{
-                    "balance":"0x10aaf167cb7dbea",
-                    "nonce":"0x23da"
-                },
-                "0x69939a6c590c9cd0bf8efbe9b3df2cdac4a4906b":{
-                    "balance":"0x88ecb0471d376e",
-                    "nonce":"0x2fad"
-                },
-                "0xfc42be9494f1af6b03adad71811c62ada2d6f3c3":{
-                    "balance":"0x10e7e3c0b4f8ba0",
-                    "nonce":"0x1d99"
-                },
-                "0xda7afeed01fe625cf15d187a19f94b45f00b8c5f":{
-                    "balance":"0x0",
-                    "nonce":"0x1",
-                    "stateDiff":{
-                        "0x6d3af688dd77e4167e6ad8613dea4a162f5e340043b2c026e3d2b5b40d12c92d":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960",
-                        "0x9a965d2bccf7f891d58fe85acac20d9de58c11ac1d222dfff7973a09ad71143a":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698",
-                        "0xe25ff9533ce41163d3738b63c7d954cd7449a0ba0dd0dac8db25ae29536b4961":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960",
-                        "0x939ee2e42000f154d3be2302ab4d3cb916e4b2852ef6a0caa2fd76c417120248":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698"
-                    }
+        "stateOverride":{
+            "0xa048e0c08b7acb48363711800ac9d49de8e58d13":{
+                "balance":"0x10848dc44f1e140",
+                "nonce":"0x42ee"
+            },
+            "0x14e870f0a7c764ca71289952006d6bf130058927":{
+                "balance":"0x10aaf167cb7dbea",
+                "nonce":"0x23da"
+            },
+            "0x69939a6c590c9cd0bf8efbe9b3df2cdac4a4906b":{
+                "balance":"0x88ecb0471d376e",
+                "nonce":"0x2fad"
+            },
+            "0xfc42be9494f1af6b03adad71811c62ada2d6f3c3":{
+                "balance":"0x10e7e3c0b4f8ba0",
+                "nonce":"0x1d99"
+            },
+            "0xda7afeed01fe625cf15d187a19f94b45f00b8c5f":{
+                "balance":"0x0",
+                "nonce":"0x1",
+                "stateDiff":{
+                    "0x6d3af688dd77e4167e6ad8613dea4a162f5e340043b2c026e3d2b5b40d12c92d":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960",
+                    "0x9a965d2bccf7f891d58fe85acac20d9de58c11ac1d222dfff7973a09ad71143a":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698",
+                    "0xe25ff9533ce41163d3738b63c7d954cd7449a0ba0dd0dac8db25ae29536b4961":"0x6a4bf5fb010000000000000000000000000000000000000000000029cdbee960",
+                    "0x939ee2e42000f154d3be2302ab4d3cb916e4b2852ef6a0caa2fd76c417120248":"0x6a4bf5fb010000000000000000000000000000000000000000000029c8581698"
                 }
             }
         }
-    }"#;
+    }]}"#;
 
-    const OTHER_FRAME: &str = r#"{
+    const OTHER_FRAME: &str = r#"{"venues":[{
+        "quoteAddress":"0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39",
         "slot":14711587,
         "blockNumber":25475333,
         "timestamp":1783363067506613546,
-        "0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39":{
-            "stateOverride":{
-                "0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39":{
-                    "balance":"0x0",
-                    "nonce":"0x1",
-                    "stateDiff":{
-                        "0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b000000000000000000000000":"0x5d393a1348485d39e6f3484885cda948444485cd9644363600019f38b8de3300"
-                    }
-                },
-                "0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b":{
-                    "balance":"0x12e8705b8c388ab1",
-                    "nonce":"0xdda1"
+        "stateOverride":{
+            "0x28d9ccedf1b7ac9b3f090f4f0292837de87c1d39":{
+                "balance":"0x0",
+                "nonce":"0x1",
+                "stateDiff":{
+                    "0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b000000000000000000000000":"0x5d393a1348485d39e6f3484885cda948444485cd9644363600019f38b8de3300"
                 }
+            },
+            "0xe3ffa73f3a3b56e693c2ed775464cb3fbe78307b":{
+                "balance":"0x12e8705b8c388ab1",
+                "nonce":"0xdda1"
             }
         }
-    }"#;
+    }]}"#;
 
     #[test]
     fn parses_real_titan_frames() {
-        let fermi: Frame = serde_json::from_str(FERMI_FRAME).unwrap();
+        let fermi = venue_of(FERMI_FRAME);
         assert_eq!(fermi.block_number, Some(QUOTED_BLOCK));
-        assert_eq!(fermi.venues.len(), 1);
 
         let mut venues = Venues::default();
         venues.update(fermi, Some(QUOTED_AT));
@@ -1236,7 +1214,7 @@ mod tests {
         assert_eq!(projected, QUOTED_AT);
 
         let mut venues = Venues::default();
-        venues.update(serde_json::from_str(FERMI_FRAME).unwrap(), Some(projected));
+        venues.update(venue_of(FERMI_FRAME), Some(projected));
         let (overrides, stamp) = venues.fold();
         assert_eq!(stamp, Some(QUOTED_AT));
         let stamp = projected.to_be_bytes();
@@ -1274,10 +1252,7 @@ mod tests {
 
     #[test]
     fn real_frames_of_different_venues_are_folded_together() {
-        let overrides = fold(vec![
-            serde_json::from_str(FERMI_FRAME).unwrap(),
-            serde_json::from_str(OTHER_FRAME).unwrap(),
-        ]);
+        let overrides = fold(vec![venue_of(FERMI_FRAME), venue_of(OTHER_FRAME)]);
 
         assert_eq!(overrides.len(), 7);
         assert!(overrides.contains_key(&REGISTRY));
@@ -1287,7 +1262,7 @@ mod tests {
     #[test]
     fn yields_state_overrides_for_real_data() {
         let handle = handle_for(
-            vec![serde_json::from_str(FERMI_FRAME).unwrap()],
+            vec![venue_of(FERMI_FRAME)],
             25475333,
             Duration::from_secs(30),
         );

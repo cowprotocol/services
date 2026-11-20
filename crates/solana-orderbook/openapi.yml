@@ -6,6 +6,8 @@ info:
     Solana settlement program.
   version: 0.0.1
 servers:
+  - description: Solana (Prod)
+    url: "https://api.cow.fi/solana"
   - description: Solana (Staging)
     url: "https://barn.api.cow.fi/solana"
 paths:
@@ -735,6 +737,25 @@ components:
         creationDate:
           type: string
           format: date-time
+        creationTxSignature:
+          description: |
+            The transaction that created the order's account. Absent while a
+            sponsored creation is pending.
+          allOf:
+            - $ref: "#/components/schemas/Signature"
+        cancellationDate:
+          description: |
+            When the indexer recorded the cancellation. Only cancelled orders
+            carry it.
+          type: string
+          format: date-time
+        cancellationTxSignature:
+          description: |
+            The transaction that cancelled the order. Only cancelled orders
+            carry it: cancelling a fully filled order only recovers its
+            account's rent, and the order stays `fulfilled`.
+          allOf:
+            - $ref: "#/components/schemas/Signature"
         executedSellAmount:
           description: Sell tokens pulled from the order so far.
           allOf:

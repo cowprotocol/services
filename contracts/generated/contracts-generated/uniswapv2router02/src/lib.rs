@@ -315,8 +315,7 @@ pub mod UniswapV2Router02 {
     #[derive(Clone)]
     pub struct WETHCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`WETH()`](WETHCall)
-    /// function.
+    ///Container type for the return parameters of the [`WETH()`](WETHCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct WETHReturn {
@@ -467,9 +466,7 @@ pub mod UniswapV2Router02 {
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`addLiquidity(address,address,uint256,uint256,uint256,uint256,address,
-    /// uint256)`](addLiquidityCall) function.
+    ///Container type for the return parameters of the [`addLiquidity(address,address,uint256,uint256,uint256,uint256,address,uint256)`](addLiquidityCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addLiquidityReturn {
@@ -702,8 +699,7 @@ pub mod UniswapV2Router02 {
     #[derive(Clone)]
     pub struct factoryCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`factory()`](factoryCall) function.
+    ///Container type for the return parameters of the [`factory()`](factoryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryReturn {
@@ -844,8 +840,7 @@ pub mod UniswapV2Router02 {
         pub reserveB: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`quote(uint256,uint256,uint256)`](quoteCall) function.
+    ///Container type for the return parameters of the [`quote(uint256,uint256,uint256)`](quoteCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteReturn {
@@ -1020,9 +1015,7 @@ pub mod UniswapV2Router02 {
         pub deadline: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapTokensForExactTokens(uint256,uint256,address[],address,
-    /// uint256)`](swapTokensForExactTokensCall) function.
+    ///Container type for the return parameters of the [`swapTokensForExactTokens(uint256,uint256,address[],address,uint256)`](swapTokensForExactTokensCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapTokensForExactTokensReturn {

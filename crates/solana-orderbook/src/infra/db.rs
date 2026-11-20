@@ -37,6 +37,10 @@ pub struct OrderRow {
     /// The fee the order paid across its settlements, in the sell token.
     pub executed_fee: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
+    /// The transaction that created the order PDA, once indexed.
+    pub created_by_tx: Option<ByteArray<64>>,
+    /// The transaction that cancelled the order PDA.
+    pub cancelled_by_tx: Option<ByteArray<64>>,
     /// The height the stored creation transaction dies at, while the order
     /// still awaits its on-chain creation. `None` once created, and for
     /// orders that were never sponsored.
@@ -56,7 +60,7 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
        COALESCE(p.amount_received, 0) AS amount_received,
        COALESCE((SELECT SUM(e.executed_fee) FROM solana.order_execution e
                  WHERE e.order_uid = o.uid), 0) AS executed_fee,
-       p.cancellation_timestamp,
+       p.cancellation_timestamp, p.created_by_tx, p.cancelled_by_tx,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
@@ -89,13 +93,13 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
        COALESCE(p.amount_received, 0) AS amount_received,
        COALESCE((SELECT SUM(e.executed_fee) FROM solana.order_execution e
                  WHERE e.order_uid = o.uid), 0) AS executed_fee,
-       p.cancellation_timestamp,
+       p.cancellation_timestamp, p.created_by_tx, p.cancelled_by_tx,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
             THEN o.last_valid_block_height END AS last_valid_block_height
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 LEFT JOIN solana.app_data a ON a.contract_app_data = o.app_data
-WHERE o.owner = $1
+WHERE o.owner = $1 AND NOT COALESCE(p.is_reorged, false)
 ORDER BY o.creation_timestamp DESC
 LIMIT $2 OFFSET $3
     "#;
@@ -864,20 +868,23 @@ VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, $4, 'sell'::solana.OrderKind, false, 
         .unwrap();
         sqlx::query(
             r#"
-INSERT INTO solana.order_pda (order_uid, created_by, amount_withdrawn, cancellation_timestamp)
-VALUES ($1, $2, 400, CASE WHEN $3 THEN now() END)
+INSERT INTO solana.order_pda (order_uid, created_by, created_by_tx, amount_withdrawn,
+    cancellation_timestamp, cancelled_by_tx)
+VALUES ($1, $2, $4, 400, CASE WHEN $3 THEN now() END, CASE WHEN $3 THEN $5::bytea END)
             "#,
         )
         .bind(ByteArray(uid))
         .bind(ByteArray([0xAA; 32]))
         .bind(cancelled)
+        .bind(ByteArray([0xC0; 64]))
+        .bind(ByteArray([0xC1; 64]))
         .execute(pool)
         .await
         .unwrap();
     }
 
-    /// Pagination walks one owner's orders newest first, other owners are
-    /// excluded, and the fill state joins in.
+    /// Pagination walks one owner's orders newest first, other owners and
+    /// rolled-back creations are excluded, and the fill state joins in.
     #[tokio::test]
     #[ignore = "needs the solana.* schema applied to the local database"]
     async fn solana_db_reads_orders_by_owner_paginated() {
@@ -915,6 +922,15 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         let second = get_orders_by_owner(&pool, [0xAA; 32], 1, 1).await.unwrap();
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].uid, ByteArray([0x12; 32]));
+
+        // Only the first order has a PDA row to roll back.
+        sqlx::query("UPDATE solana.order_pda SET is_reorged = true")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let page = get_orders_by_owner(&pool, [0xAA; 32], 0, 10).await.unwrap();
+        let uids: Vec<_> = page.iter().map(|row| row.uid).collect();
+        assert_eq!(uids, vec![ByteArray([0x12; 32])]);
     }
 
     /// A sponsored order lands with its presigned transaction, expiry, and
@@ -1076,6 +1092,8 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         assert_eq!(row.amount_withdrawn, BigDecimal::from(400));
         assert_eq!(row.amount_received, BigDecimal::from(0));
         assert!(row.cancellation_timestamp.is_none());
+        assert_eq!(row.created_by_tx, Some(ByteArray([0xC0; 64])));
+        assert!(row.cancelled_by_tx.is_none());
 
         assert!(
             find_order_by_uid(&pool, [0x99; 32])
@@ -1087,6 +1105,7 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
         seed(&pool, uid, true).await;
         let row = find_order_by_uid(&pool, uid).await.unwrap().unwrap();
         assert!(row.cancellation_timestamp.is_some());
+        assert_eq!(row.cancelled_by_tx, Some(ByteArray([0xC1; 64])));
     }
 
     #[tokio::test]

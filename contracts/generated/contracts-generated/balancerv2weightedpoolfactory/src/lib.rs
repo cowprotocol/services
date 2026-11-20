@@ -306,9 +306,7 @@ pub mod BalancerV2WeightedPoolFactory {
         pub owner: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`create(string,string,address[],uint256[],uint256,
-    /// address)`](createCall) function.
+    ///Container type for the return parameters of the [`create(string,string,address[],uint256[],uint256,address)`](createCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createReturn {
@@ -488,8 +486,7 @@ pub mod BalancerV2WeightedPoolFactory {
             }
         }
     };
-    ///Container for all the [`BalancerV2WeightedPoolFactory`](self) function
-    /// calls.
+    ///Container for all the [`BalancerV2WeightedPoolFactory`](self) function calls.
     #[derive(Clone)]
     pub enum BalancerV2WeightedPoolFactoryCalls {
         #[allow(missing_docs)]

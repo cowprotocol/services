@@ -3,6 +3,7 @@
 
 use {
     super::quoter::{Kind, Order, Quote},
+    base64::{Engine, prelude::BASE64_STANDARD},
     configs::price_estimation::QuoteVerificationMode,
     cow_settlement_client::instruction::CreateOrder,
     cow_settlement_interface::{
@@ -20,6 +21,7 @@ use {
     cow_solana_rpc::SolanaRPC,
     futures::future::join_all,
     moka::sync::Cache,
+    observe::tracing::lazy::Lazy,
     solana_sdk::{
         account::Account,
         instruction::Instruction,
@@ -377,10 +379,13 @@ impl Verifier {
             return Verdict::Unverified;
         };
         if let Some(err) = &settled.err {
+            // `simulateBundle` drops a failed leg's logs. A replay of the
+            // bundle elsewhere recovers them.
             tracing::debug!(
                 driver,
                 ?err,
-                logs = ?settled.logs,
+                slot = response.context.slot,
+                bundle = ?Lazy(|| bundle.iter().map(encoded).collect::<Vec<_>>()),
                 "quote unverified, its settlement fails in simulation"
             );
             return Verdict::Unverified;
@@ -569,6 +574,11 @@ impl Verifier {
             })
             .collect())
     }
+}
+
+/// `transaction` in wire format, base64.
+fn encoded(transaction: &VersionedTransaction) -> String {
+    BASE64_STANDARD.encode(wincode::serialize(transaction).unwrap_or_default())
 }
 
 /// The accounts a transaction requires signatures from.

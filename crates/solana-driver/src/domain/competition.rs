@@ -649,6 +649,9 @@ impl Competition {
         for trade in &mut filled.trades {
             trade.order_uid = order.uid;
         }
+        // A quote's settlement is only simulated, so it declares the ceiling
+        // and a route its engine underestimated still finishes.
+        filled.cu_estimate = Some(MAX_COMPUTE_UNIT_LIMIT);
         let settlement = super::Settlement::new(program_id, None, vec![order], filled)?;
         let resolved = settlement
             .resolve_accounts(&self.blockchain, self.solver.pubkey())

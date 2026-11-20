@@ -25,6 +25,7 @@ use {
         },
     },
     solana_sdk::{
+        message::VersionedMessage,
         program_pack::Pack,
         pubkey::Pubkey,
         rent::Rent,
@@ -1642,4 +1643,42 @@ async fn quote_with_an_owner_answers_the_settlement_transaction() {
     let pda = find_order_pda(&program_id(), &order.intent().unwrap().uid()).0;
     assert!(keys.contains(&pda));
     assert!(keys.contains(&order.sell_token_account()));
+}
+
+/// The settlement declares the compute unit ceiling over the engine's
+/// estimate, while the network fee stays priced at the estimate: 2_000
+/// lamports plus the 5_000 signature fee.
+#[tokio::test]
+async fn quote_settlement_declares_the_compute_unit_ceiling() {
+    let mut solution = quote_solution("1000");
+    solution["solutions"][0]["cuEstimate"] = serde_json::json!(200_000);
+    let engine = spawn_mock_solver_engine(solution).await;
+    let (solver, _) = solver_with_keypair(engine).await;
+    let mut mocks = Mocks::new();
+    mocks.insert(
+        RpcRequest::GetRecentPrioritizationFees,
+        serde_json::json!([{ "slot": 1, "prioritizationFee": 10_000 }]),
+    );
+    let addr = spawn_server_with_mocks(vec![solver], mocks).await;
+    let mut request = quote_request("sell", "1000");
+    request["owner"] = serde_json::json!(pubkey(0x66).to_string());
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/mock/quote"))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(json["networkFee"], "7000");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(json["transaction"].as_str().unwrap())
+        .unwrap();
+    let transaction: VersionedTransaction = bincode::deserialize(&bytes).unwrap();
+    let VersionedMessage::V1(message) = transaction.message else {
+        panic!("quote settlements are v1 messages");
+    };
+    assert_eq!(message.config.compute_unit_limit, Some(1_400_000));
 }
