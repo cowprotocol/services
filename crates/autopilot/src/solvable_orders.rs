@@ -431,7 +431,7 @@ impl SolvableOrdersCache {
         // details. This will cause us to fetch orders created or
         // cancelled in the buffer period multiple times but that is a
         // small price to pay for not missing orders.
-        orders.fetched_from_db -= chrono::TimeDelta::seconds(60);
+        orders.fetched_from_db -= chrono::TimeDelta::seconds(12 * 3);
         Ok(orders)
     }
 
