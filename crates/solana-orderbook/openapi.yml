@@ -329,8 +329,14 @@ paths:
                 quoteId:
                   description: |
                     The id the quote endpoint answered for this order. Stored
-                    with the order when the quote matches it, dropped
-                    otherwise.
+                    with the order when the quote matches it and is unexpired,
+                    otherwise the order is quoted afresh. An order naming no
+                    quote stores the best stored quote with its pair, side and
+                    fixed amount, or is quoted afresh too. An order no driver
+                    has a route for, on a token without a native price, or
+                    whose amount the execution cost swallows is placed
+                    without a quote. Any other failure of the fresh quote
+                    rejects the order with the quote's error.
                   type: integer
                   format: int64
                   nullable: true
@@ -385,6 +391,14 @@ paths:
             (`AppDataHashMismatch`), a mint the settlement program
             cannot move (`UnsupportedToken`), a dead blockhash
             (`BlockhashExpired`), or a known uid (`DuplicatedOrder`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: |
+            A driver or the native price lookup failed while quoting the
+            order (`NoLiquidity`). A retry may succeed.
           content:
             application/json:
               schema:
