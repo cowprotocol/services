@@ -106,6 +106,37 @@ WITH page AS (
         .instrument(info_span!("trades_by_order_uid"))
 }
 
+/// Settlement tx hash of the order's latest trade. `None` when the order never
+/// traded, `Some(None)` when the trade's settlement is not indexed yet. Orphan
+/// trades are excluded like in [`trades_by_order_uid`].
+#[instrument(skip_all)]
+pub async fn latest_trade_tx_hash(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+) -> Result<Option<Option<TransactionHash>>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT settlement.tx_hash
+FROM trades
+LEFT JOIN LATERAL (
+    SELECT tx_hash FROM settlements
+    WHERE settlements.block_number = trades.block_number
+    AND   settlements.log_index > trades.log_index
+    ORDER BY settlements.log_index ASC
+    LIMIT 1
+) AS settlement ON true
+WHERE trades.order_uid = $1
+AND (EXISTS (SELECT 1 FROM orders WHERE uid = $1)
+     OR EXISTS (SELECT 1 FROM jit_orders WHERE uid = $1))
+ORDER BY trades.block_number DESC, trades.log_index DESC
+LIMIT 1
+"#;
+    let row: Option<(Option<TransactionHash>,)> = sqlx::query_as(QUERY)
+        .bind(order_uid)
+        .fetch_optional(ex)
+        .await?;
+    Ok(row.map(|(tx_hash,)| tx_hash))
+}
+
 /// Trades filtered by `owner`.
 ///
 /// "Owner" is spread across three tables depending on the order type, so we
@@ -1358,6 +1389,100 @@ mod tests {
         assert_eq!(
             rows.iter().map(|t| t.block_number).collect::<Vec<_>>(),
             vec![5, 10]
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_latest_trade_tx_hash() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let users_and_orders = generate_owners_and_order_ids(&[2]).await;
+        let (owner, uids) = &users_and_orders[0];
+        let (uid, orphan_uid) = (uids[0], uids[1]);
+        assert_eq!(latest_trade_tx_hash(&mut db, &uid).await.unwrap(), None);
+
+        // A trade whose order is in neither metadata table is ignored.
+        add_trade(
+            &mut db,
+            *owner,
+            orphan_uid,
+            EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(
+            latest_trade_tx_hash(&mut db, &orphan_uid).await.unwrap(),
+            None
+        );
+
+        add_order_and_trade(
+            &mut db,
+            *owner,
+            uid,
+            EventIndex {
+                block_number: 1,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(
+            latest_trade_tx_hash(&mut db, &uid).await.unwrap(),
+            Some(None)
+        );
+
+        // A later fill of the same order replaces the earlier one, even while
+        // only the earlier fill's settlement is indexed.
+        add_trade(
+            &mut db,
+            *owner,
+            uid,
+            EventIndex {
+                block_number: 2,
+                log_index: 0,
+            },
+            None,
+            None,
+        )
+        .await;
+        add_settlement(
+            &mut db,
+            EventIndex {
+                block_number: 1,
+                log_index: 1,
+            },
+            Default::default(),
+            ByteArray([1; 32]),
+            1,
+        )
+        .await;
+        assert_eq!(
+            latest_trade_tx_hash(&mut db, &uid).await.unwrap(),
+            Some(None)
+        );
+        let latest_tx = ByteArray([2; 32]);
+        add_settlement(
+            &mut db,
+            EventIndex {
+                block_number: 2,
+                log_index: 1,
+            },
+            Default::default(),
+            latest_tx,
+            2,
+        )
+        .await;
+        assert_eq!(
+            latest_trade_tx_hash(&mut db, &uid).await.unwrap(),
+            Some(Some(latest_tx))
         );
     }
 }

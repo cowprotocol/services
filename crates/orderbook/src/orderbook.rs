@@ -1,9 +1,6 @@
 use {
     crate::{
-        database::{
-            orders::{InsertionError, OrderStoring},
-            trades::{TradeFilter, TradeRetrieving},
-        },
+        database::orders::{InsertionError, OrderStoring},
         dto::{self, OrderSimulationRequest, OrderSimulationResult},
         solver_competition::LoadSolverCompetitionError,
     },
@@ -594,9 +591,7 @@ impl Orderbook {
         // latest state of an already executed order is not `Traded`. To
         // detect that we first check the trades table and return the
         // appropriate competition data.
-        let trades = self.database.trades(&TradeFilter::OrderUid(*uid)).await?;
-
-        match trades.first().map(|trade| trade.tx_hash) {
+        match self.database.latest_trade_tx_hash(uid).await? {
             Some(Some(tx_hash)) => {
                 let competition = self
                     .database
