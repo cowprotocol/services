@@ -418,7 +418,7 @@ impl OrderStoring for Postgres {
     }
 
     async fn latest_order_event(&self, order_uid: &OrderUid) -> Result<Option<OrderEvent>> {
-        let mut ex = self.pool.begin().await.context("could not init tx")?;
+        let mut ex = self.pool.acquire().await?;
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["latest_order_event"])
