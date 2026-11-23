@@ -1,7 +1,7 @@
 use {
     database::order_events::{OrderEvent, OrderEventLabel},
     e2e::setup::*,
-    ethrpc::alloy::CallBuilderExt,
+    ethrpc::alloy::{CallBuilderExt, EvmProviderExt},
     model::{
         order::{OrderCreation, OrderKind},
         signature::EcdsaSigningScheme,
@@ -98,24 +98,33 @@ async fn test(web3: Web3) {
     let uid_b = services.create_order(&order_b).await.unwrap();
 
     tracing::info!("Withdrawing WETH to render the order invalid due to insufficient funds");
-    onchain
+    // Both withdrawals go into one block. With one block each, the autopilot
+    // can settle `order_b` before the withdrawal of `trader_b` is mined.
+    let provider = &onchain.web3().provider;
+    provider.evm_set_automine(false).await.unwrap();
+    let withdrawal_a = onchain
         .contracts()
         .weth
         .withdraw(3u64.eth())
         .from(trader_a.address())
-        .send_and_watch()
+        .send()
         .await
         .unwrap();
-    onchain
+    let withdrawal_b = onchain
         .contracts()
         .weth
         .withdraw(3u64.eth())
         .from(trader_b.address())
-        .send_and_watch()
+        .send()
         .await
         .unwrap();
+    onchain.mint_block().await;
+    provider.evm_set_automine(true).await.unwrap();
+    tokio::try_join!(withdrawal_a.watch(), withdrawal_b.watch()).unwrap();
 
     let orders_are_invalid = || async {
+        // The autopilot only updates its orders on a new block or a new order.
+        onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
         events_a.last().map(|e| e.label) == Some(OrderEventLabel::Invalid)
@@ -160,14 +169,15 @@ async fn test(web3: Web3) {
         .send_and_watch()
         .await
         .unwrap();
-    let orders_updated = || async {
+    // `Traded` is not always the last event. An autopilot update that started
+    // before the trade can store a `Filtered` or `Invalid` event after it.
+    let orders_traded = || async {
         onchain.mint_block().await;
         let events_a = crate::database::events_of_order(services.db(), &uid_a).await;
         let events_b = crate::database::events_of_order(services.db(), &uid_b).await;
-        events_a.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
-            && events_b.last().map(|o| o.label) == Some(OrderEventLabel::Traded)
+        was_traded(&events_a) && was_traded(&events_b)
     };
-    wait_for_condition(TIMEOUT, orders_updated).await.unwrap();
+    wait_for_condition(TIMEOUT, orders_traded).await.unwrap();
 
     // Verify the autopilot never emits two consecutive `Invalid` events for the
     // same order (the writer's deduplication is supposed to prevent that).
@@ -181,6 +191,12 @@ async fn test(web3: Web3) {
         check_non_consecutive_invalid_events(&events_b),
         "order_b has consecutive Invalid events: {events_b:?}"
     );
+}
+
+fn was_traded(events: &[OrderEvent]) -> bool {
+    events
+        .iter()
+        .any(|event| event.label == OrderEventLabel::Traded)
 }
 
 fn check_non_consecutive_invalid_events(events: &[OrderEvent]) -> bool {
