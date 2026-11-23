@@ -86,6 +86,13 @@ async fn wait_for_cow_test(web3: Web3) {
         0
     );
     assert!(schedule["secondsUntilNextBatch"].as_u64().unwrap() < u64::from(INTERVAL));
+    let min_validity = OrderValidationConfig::default()
+        .min_order_validity_period
+        .as_secs();
+    assert_eq!(
+        schedule["nextBatchValidTo"].as_u64().unwrap(),
+        schedule["nextBatch"].as_u64().unwrap() + u64::from(INTERVAL) + min_validity
+    );
 
     let order = |trader: &TestAccount,
                  sell_token: Address,
