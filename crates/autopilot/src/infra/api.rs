@@ -80,7 +80,11 @@ async fn get_native_price(
     Query(query): Query<NativePriceQuery>,
     AxumState(state): AxumState<State>,
 ) -> Response {
-    let timeout = estimation_timeout(query.timeout_ms, &state.allowed_timeout);
+    let timeout = query
+        .timeout_ms
+        .map(|ms| Duration::from_millis(ms).saturating_sub(RESPONSE_HEADROOM))
+        .unwrap_or(*state.allowed_timeout.end())
+        .clamp(*state.allowed_timeout.start(), *state.allowed_timeout.end());
 
     let start = Instant::now();
     match state.estimator.estimate_native_price(token, timeout).await {
@@ -97,14 +101,6 @@ async fn get_native_price(
             error_to_response(err)
         }
     }
-}
-
-/// The time the estimators get for a request with the given `timeout_ms`.
-fn estimation_timeout(timeout_ms: Option<u64>, allowed: &RangeInclusive<Duration>) -> Duration {
-    timeout_ms
-        .map(|ms| Duration::from_millis(ms).saturating_sub(RESPONSE_HEADROOM))
-        .unwrap_or(*allowed.end())
-        .clamp(*allowed.start(), *allowed.end())
 }
 
 fn error_to_response(err: PriceEstimationError) -> Response {
