@@ -586,11 +586,10 @@ impl Orderbook {
         };
 
         // Once an order was executed we always want to return `Traded` with the
-        // competition data of the **first** time it was traded for a stable
-        // result. Under some circumstances it can happen that the
-        // latest state of an already executed order is not `Traded`. To
-        // detect that we first check the trades table and return the
-        // appropriate competition data.
+        // competition data of its latest trade, not of the latest auction.
+        // Under some circumstances it can happen that the latest state of an
+        // already executed order is not `Traded`. To detect that we first check
+        // the trades table and return the appropriate competition data.
         match self.database.latest_trade_tx_hash(uid).await? {
             Some(Some(tx_hash)) => {
                 let competition = self
