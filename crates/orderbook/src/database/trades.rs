@@ -163,6 +163,20 @@ impl TradeRetrievingPaginated for Postgres {
     }
 }
 
+impl Postgres {
+    /// See [`database::trades::latest_trade_tx_hash`].
+    pub async fn latest_trade_tx_hash(&self, uid: &OrderUid) -> Result<Option<Option<B256>>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["latest_trade_tx_hash"])
+            .start_timer();
+
+        let mut ex = self.pool.acquire().await?;
+        let tx_hash = database::trades::latest_trade_tx_hash(&mut ex, &ByteArray(uid.0)).await?;
+        Ok(tx_hash.map(|hash| hash.map(|hash| B256::from(hash.0))))
+    }
+}
+
 fn trade_from(
     row: TradesQueryRow,
     executed_protocol_fees: Vec<ExecutedProtocolFee>,
