@@ -19,6 +19,7 @@ use {
         order_quoting::{QuoteCompetition, QuoteData, QuoteSearchParameters, QuoteStoring},
         quote_storage::{find_quote, get_quote, save_quote},
     },
+    sqlx::Connection,
     std::{collections::HashMap, ops::DerefMut, sync::Arc},
 };
 
@@ -133,8 +134,11 @@ impl Postgres {
         let data = std::str::from_utf8(&json).context("serialized auction is not valid UTF-8")?;
 
         let mut ex = self.pool.acquire().await?;
-        database::auction::insert_auction_with_id(&mut ex, new_auction_id, data).await?;
-        Ok(())
+        let result = database::auction::insert_auction_with_id(&mut ex, new_auction_id, data).await;
+        // sqlx does not shrink the write buffer, so each pooled connection
+        // would keep a buffer of the size of the auction.
+        ex.shrink_buffers();
+        Ok(result?)
     }
 
     pub async fn fetch_latest_prices(&self) -> Result<HashMap<Address, BigDecimal>> {

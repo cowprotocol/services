@@ -843,8 +843,7 @@ pub mod Swapper {
         pub _1: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
+    ///Container type for the return parameters of the [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignatureReturn {
@@ -1013,9 +1012,7 @@ pub mod Swapper {
             alloy_sol_types::private::Vec<<Interaction as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swap(address,(address,uint256),(address,uint256),(address,uint256),
-    /// (address,uint256,bytes)[])`](swapCall) function.
+    ///Container type for the return parameters of the [`swap(address,(address,uint256),(address,uint256),(address,uint256),(address,uint256,bytes)[])`](swapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapReturn {

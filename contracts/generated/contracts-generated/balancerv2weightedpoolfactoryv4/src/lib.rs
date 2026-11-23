@@ -486,9 +486,7 @@ pub mod BalancerV2WeightedPoolFactoryV4 {
         pub owner: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`create(string,string,address[],uint256[],address[],uint256,
-    /// address)`](createCall) function.
+    ///Container type for the return parameters of the [`create(string,string,address[],uint256[],address[],uint256,address)`](createCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createReturn {
@@ -684,8 +682,7 @@ pub mod BalancerV2WeightedPoolFactoryV4 {
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct disableCall;
-    ///Container type for the return parameters of the
-    /// [`disable()`](disableCall) function.
+    ///Container type for the return parameters of the [`disable()`](disableCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct disableReturn {}
@@ -814,8 +811,7 @@ pub mod BalancerV2WeightedPoolFactoryV4 {
     #[derive(Clone)]
     pub struct versionCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`version()`](versionCall) function.
+    ///Container type for the return parameters of the [`version()`](versionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct versionReturn {
@@ -940,8 +936,7 @@ pub mod BalancerV2WeightedPoolFactoryV4 {
             }
         }
     };
-    ///Container for all the [`BalancerV2WeightedPoolFactoryV4`](self) function
-    /// calls.
+    ///Container for all the [`BalancerV2WeightedPoolFactoryV4`](self) function calls.
     #[derive(Clone)]
     pub enum BalancerV2WeightedPoolFactoryV4Calls {
         #[allow(missing_docs)]

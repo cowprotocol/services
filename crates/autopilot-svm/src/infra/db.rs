@@ -26,6 +26,7 @@ const TABLES: &[&str] = &[
     "auctions",
     "dead_letter",
     "indexer_state",
+    "order_execution",
     "order_pda",
     "quotes",
     "reference_scores",
@@ -69,6 +70,7 @@ pub struct OrderRow {
     pub creation: Option<Vec<u8>>,
     pub quote_sell_amount: Option<BigDecimal>,
     pub quote_buy_amount: Option<BigDecimal>,
+    pub quote_execution_cost: Option<BigDecimal>,
     pub quote_solver: Option<ByteArray<32>>,
 }
 
@@ -97,6 +99,7 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
        CASE WHEN p.order_uid IS NULL THEN o.presigned_transaction END AS creation,
        q.sell_amount AS quote_sell_amount,
        q.buy_amount AS quote_buy_amount,
+       q.execution_cost AS quote_execution_cost,
        q.solver AS quote_solver
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
@@ -742,31 +745,50 @@ impl TryFrom<OrderRow> for Order {
             executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
             sell_balance: None,
-            quote: match (
-                row.quote_sell_amount,
-                row.quote_buy_amount,
+            quote: linked_quote(
+                row.kind,
+                row.quote_sell_amount.as_ref(),
+                row.quote_buy_amount.as_ref(),
+                row.quote_execution_cost.as_ref(),
                 row.quote_solver,
-            ) {
-                // A quote amount past `u64` leaves the order unlinked, out of
-                // market as the orderbook classed it, instead of dropping it.
-                (Some(sell_amount), Some(buy_amount), Some(solver)) => to_amount(&sell_amount)
-                    .ok()
-                    .zip(to_amount(&buy_amount).ok())
-                    .map(|(sell_amount, buy_amount)| Quote {
-                        sell_amount,
-                        buy_amount,
-                        fee: 0,
-                        solver: Pubkey(solver.0),
-                    }),
-                _ => None,
-            },
+            ),
             protocol_fees: Vec::new(),
         })
     }
 }
 
+/// The quote `solana.order_quotes` links an order to, net of its execution
+/// cost, which comes out of the side the order does not fix: a sell order's
+/// quote buys less, a buy order's sells more. `None` for an unlinked order.
+/// A quote amount past `u64` or a cost the amount cannot absorb also leaves
+/// the order unlinked instead of dropping it, out of market as the orderbook
+/// classed it.
+pub(super) fn linked_quote(
+    kind: database::solana::OrderKind,
+    sell_amount: Option<&BigDecimal>,
+    buy_amount: Option<&BigDecimal>,
+    execution_cost: Option<&BigDecimal>,
+    solver: Option<ByteArray<32>>,
+) -> Option<Quote> {
+    let (sell_amount, buy_amount, execution_cost) = (
+        sell_amount?.to_u64()?,
+        buy_amount?.to_u64()?,
+        execution_cost?.to_u64()?,
+    );
+    let (sell_amount, buy_amount) = match kind {
+        database::solana::OrderKind::Sell => (sell_amount, buy_amount.checked_sub(execution_cost)?),
+        database::solana::OrderKind::Buy => (sell_amount.checked_add(execution_cost)?, buy_amount),
+    };
+    Some(Quote {
+        sell_amount,
+        buy_amount,
+        fee: 0,
+        solver: Pubkey(solver?.0),
+    })
+}
+
 /// Token amounts are `numeric(20,0)` in the database, u64 on chain.
-fn to_amount(value: &BigDecimal) -> Result<u64> {
+pub(super) fn to_amount(value: &BigDecimal) -> Result<u64> {
     value
         .to_u64()
         .with_context(|| format!("amount {value} does not fit u64"))
@@ -908,7 +930,28 @@ mod tests {
             creation: None,
             quote_sell_amount: None,
             quote_buy_amount: None,
+            quote_execution_cost: None,
             quote_solver: None,
+        }
+    }
+
+    fn linked_row(kind: database::solana::OrderKind, execution_cost: u64) -> super::OrderRow {
+        super::OrderRow {
+            kind,
+            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
+            quote_buy_amount: Some(BigDecimal::from(2_000u64)),
+            quote_execution_cost: Some(BigDecimal::from(execution_cost)),
+            quote_solver: Some(ByteArray([9; 32])),
+            ..conversion_row()
+        }
+    }
+
+    fn quote(sell_amount: u64, buy_amount: u64) -> Quote {
+        Quote {
+            sell_amount,
+            buy_amount,
+            fee: 0,
+            solver: Pubkey([9; 32]),
         }
     }
 
@@ -918,30 +961,40 @@ mod tests {
             super::Order::try_from(conversion_row()).unwrap().quote,
             None
         );
-        let linked = super::OrderRow {
-            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
-            quote_buy_amount: Some(BigDecimal::from(2_000u64)),
-            quote_solver: Some(ByteArray([9; 32])),
-            ..conversion_row()
-        };
+        let linked = linked_row(database::solana::OrderKind::Sell, 0);
         assert_eq!(
             super::Order::try_from(linked).unwrap().quote,
-            Some(Quote {
-                sell_amount: 1_000,
-                buy_amount: 2_000,
-                fee: 0,
-                solver: Pubkey([9; 32]),
-            })
+            Some(quote(1_000, 2_000))
         );
         // The orderbook stores the quote's unfixed side unchecked, so it can
         // exceed `u64`. The order then stays in the auction without a quote.
         let oversized = super::OrderRow {
-            quote_sell_amount: Some(BigDecimal::from(1_000u64)),
             quote_buy_amount: Some(BigDecimal::from(u64::MAX) + BigDecimal::from(1u64)),
-            quote_solver: Some(ByteArray([9; 32])),
-            ..conversion_row()
+            ..linked_row(database::solana::OrderKind::Sell, 0)
         };
         assert_eq!(super::Order::try_from(oversized).unwrap().quote, None);
+    }
+
+    /// The quote's execution cost comes out of the side the order does not
+    /// fix: a sell order's quote buys less, a buy order's sells more. A cost
+    /// the amount cannot absorb leaves the order without a quote.
+    #[test]
+    fn a_linked_quote_converts_net_of_its_execution_cost() {
+        let converted = |kind, execution_cost| {
+            super::Order::try_from(linked_row(kind, execution_cost))
+                .unwrap()
+                .quote
+        };
+        assert_eq!(
+            converted(database::solana::OrderKind::Sell, 100),
+            Some(quote(1_000, 1_900))
+        );
+        assert_eq!(
+            converted(database::solana::OrderKind::Buy, 100),
+            Some(quote(1_100, 2_000))
+        );
+        assert_eq!(converted(database::solana::OrderKind::Sell, 2_001), None);
+        assert_eq!(converted(database::solana::OrderKind::Buy, u64::MAX), None);
     }
 
     #[test]
@@ -1161,7 +1214,7 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
         insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
         sqlx::query(
             "INSERT INTO solana.order_quotes (order_uid, quote_id, sell_amount, buy_amount, \
-             solver) VALUES ($1, 7, 1000, 2100, $2)",
+             execution_cost, solver) VALUES ($1, 7, 1000, 2100, 150, $2)",
         )
         .bind(ByteArray([1u8; 32]))
         .bind(ByteArray([0xCC; 32]))
@@ -1250,6 +1303,10 @@ WHERE uid = $1
         assert_eq!(
             orders[0].quote_sell_amount.as_ref().unwrap().to_u64(),
             Some(1_000)
+        );
+        assert_eq!(
+            orders[0].quote_execution_cost.as_ref().unwrap().to_u64(),
+            Some(150)
         );
         assert_eq!(orders[0].quote_solver, Some(ByteArray([0xCC; 32])));
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);

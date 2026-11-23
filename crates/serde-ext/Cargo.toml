@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+solana = ["dep:solana-pubkey"]
+
 [dependencies]
 alloy-primitives = { workspace = true }
 const-hex = { workspace = true }
@@ -15,9 +18,6 @@ url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 serde-ext = { path = ".", features = ["solana"] }
-
-[features]
-solana = ["dep:solana-pubkey"]
 
 [lints]
 workspace = true

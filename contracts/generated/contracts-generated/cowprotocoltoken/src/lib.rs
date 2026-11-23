@@ -996,8 +996,7 @@ pub mod CowProtocolToken {
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
+    ///Container type for the return parameters of the [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORReturn {
@@ -1140,8 +1139,7 @@ pub mod CowProtocolToken {
         pub spender: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`allowance(address,address)`](allowanceCall) function.
+    ///Container type for the return parameters of the [`allowance(address,address)`](allowanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowanceReturn {
@@ -1303,8 +1301,7 @@ pub mod CowProtocolToken {
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`approve(address,uint256)`](approveCall) function.
+    ///Container type for the return parameters of the [`approve(address,uint256)`](approveCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct approveReturn {
@@ -1460,8 +1457,7 @@ pub mod CowProtocolToken {
         pub account: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`balanceOf(address)`](balanceOfCall) function.
+    ///Container type for the return parameters of the [`balanceOf(address)`](balanceOfCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct balanceOfReturn {
@@ -1603,8 +1599,7 @@ pub mod CowProtocolToken {
     #[derive(Clone)]
     pub struct decimalsCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`decimals()`](decimalsCall) function.
+    ///Container type for the return parameters of the [`decimals()`](decimalsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct decimalsReturn {
@@ -1742,8 +1737,7 @@ pub mod CowProtocolToken {
         #[allow(missing_docs)]
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the
-    /// [`mint(address,uint256)`](mintCall) function.
+    ///Container type for the return parameters of the [`mint(address,uint256)`](mintCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct mintReturn {}
@@ -1891,8 +1885,7 @@ pub mod CowProtocolToken {
     #[derive(Clone)]
     pub struct nameCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`name()`](nameCall)
-    /// function.
+    ///Container type for the return parameters of the [`name()`](nameCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct nameReturn {
@@ -2029,8 +2022,7 @@ pub mod CowProtocolToken {
         pub owner: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`nonces(address)`](noncesCall) function.
+    ///Container type for the return parameters of the [`nonces(address)`](noncesCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct noncesReturn {
@@ -2186,9 +2178,7 @@ pub mod CowProtocolToken {
         #[allow(missing_docs)]
         pub s: alloy_sol_types::private::FixedBytes<32>,
     }
-    ///Container type for the return parameters of the
-    /// [`permit(address,address,uint256,uint256,uint8,bytes32,
-    /// bytes32)`](permitCall) function.
+    ///Container type for the return parameters of the [`permit(address,address,uint256,uint256,uint8,bytes32,bytes32)`](permitCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct permitReturn {}
@@ -2385,9 +2375,7 @@ pub mod CowProtocolToken {
         pub calldataPayload: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall)
-    /// function.
+    ///Container type for the return parameters of the [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct simulateDelegatecallReturn {
@@ -2540,8 +2528,7 @@ pub mod CowProtocolToken {
     #[derive(Clone)]
     pub struct symbolCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`symbol()`](symbolCall)
-    /// function.
+    ///Container type for the return parameters of the [`symbol()`](symbolCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct symbolReturn {
@@ -2680,8 +2667,7 @@ pub mod CowProtocolToken {
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transfer(address,uint256)`](transferCall) function.
+    ///Container type for the return parameters of the [`transfer(address,uint256)`](transferCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferReturn {
@@ -2841,8 +2827,7 @@ pub mod CowProtocolToken {
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transferFrom(address,address,uint256)`](transferFromCall) function.
+    ///Container type for the return parameters of the [`transferFrom(address,address,uint256)`](transferFromCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferFromReturn {

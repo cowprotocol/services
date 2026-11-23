@@ -500,9 +500,7 @@ pub mod BalancerV2ComposableStablePoolFactoryV5 {
         pub owner: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`create(string,string,address[],uint256,address[],uint256[],bool[],
-    /// uint256,address)`](createCall) function.
+    ///Container type for the return parameters of the [`create(string,string,address[],uint256,address[],uint256[],bool[],uint256,address)`](createCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createReturn {
@@ -720,8 +718,7 @@ pub mod BalancerV2ComposableStablePoolFactoryV5 {
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct disableCall;
-    ///Container type for the return parameters of the
-    /// [`disable()`](disableCall) function.
+    ///Container type for the return parameters of the [`disable()`](disableCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct disableReturn {}
@@ -850,8 +847,7 @@ pub mod BalancerV2ComposableStablePoolFactoryV5 {
     #[derive(Clone)]
     pub struct versionCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`version()`](versionCall) function.
+    ///Container type for the return parameters of the [`version()`](versionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct versionReturn {
@@ -976,8 +972,7 @@ pub mod BalancerV2ComposableStablePoolFactoryV5 {
             }
         }
     };
-    ///Container for all the [`BalancerV2ComposableStablePoolFactoryV5`](self)
-    /// function calls.
+    ///Container for all the [`BalancerV2ComposableStablePoolFactoryV5`](self) function calls.
     #[derive(Clone)]
     pub enum BalancerV2ComposableStablePoolFactoryV5Calls {
         #[allow(missing_docs)]
@@ -1186,8 +1181,7 @@ pub mod BalancerV2ComposableStablePoolFactoryV5 {
             }
         }
     }
-    ///Container for all the [`BalancerV2ComposableStablePoolFactoryV5`](self)
-    /// events.
+    ///Container for all the [`BalancerV2ComposableStablePoolFactoryV5`](self) events.
     #[derive(Clone, Debug, PartialEq, Eq, Hash)]
     pub enum BalancerV2ComposableStablePoolFactoryV5Events {
         #[allow(missing_docs)]

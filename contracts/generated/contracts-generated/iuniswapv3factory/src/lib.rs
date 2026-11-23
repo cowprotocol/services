@@ -554,8 +554,7 @@ pub mod IUniswapV3Factory {
         pub fee: alloy_sol_types::private::primitives::aliases::U24,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getPool(address,address,uint24)`](getPoolCall) function.
+    ///Container type for the return parameters of the [`getPool(address,address,uint24)`](getPoolCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getPoolReturn {
@@ -715,8 +714,7 @@ pub mod IUniswapV3Factory {
     #[derive(Clone)]
     pub struct ownerCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`owner()`](ownerCall)
-    /// function.
+    ///Container type for the return parameters of the [`owner()`](ownerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ownerReturn {

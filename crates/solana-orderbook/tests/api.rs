@@ -122,6 +122,27 @@ async fn spawn_mock_driver_after(delay: Duration, response: serde_json::Value) -
     addr
 }
 
+/// A driver stand-in with no route: every `/quote` answers the driver's
+/// `QuotingFailed` error.
+async fn spawn_routeless_driver() -> SocketAddr {
+    let app = axum::Router::new().route(
+        "/quote",
+        axum::routing::post(|| async {
+            (
+                axum::http::StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({
+                    "kind": "QuotingFailed",
+                    "description": "No valid quote found",
+                })),
+            )
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    addr
+}
+
 #[tokio::test]
 async fn healthz_returns_200() {
     let addr = spawn_server().await;
@@ -1533,11 +1554,11 @@ async fn quote_checks_the_app_data_forms() {
     }
 }
 
-/// The stored quote sells what an order placed on it signs, the answered
-/// `sellAmount` plus `feeAmount`, and buys the answered `buyAmount`.
+/// The stored quote is the route, whatever amount form the request names:
+/// the fee an after-fee sell or a buy pays on top stays out of it.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
-async fn solana_db_quote_stores_the_amount_to_sign() {
+async fn solana_db_quote_stores_the_route_without_the_fee_on_top() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
     sqlx::query("TRUNCATE solana.quotes")
         .execute(&pool)
@@ -1561,31 +1582,43 @@ async fn solana_db_quote_stores_the_amount_to_sign() {
     let shutdown = CancellationToken::new();
     tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
 
-    let mut body = quote_body(serde_json::json!({"validFor": 1800}));
-    body.as_object_mut().unwrap().remove("sellAmountBeforeFee");
-    body["sellAmountAfterFee"] = serde_json::json!("10000000");
-    let response = reqwest::Client::new()
-        .post(format!("http://{addr}/api/v1/quote"))
-        .json(&body)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    let json: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(json["quote"]["sellAmount"], "10000000");
-    assert_eq!(json["quote"]["feeAmount"], "2220240");
-    assert_eq!(json["quote"]["buyAmount"], "10000000");
+    let mut after_fee = quote_body(serde_json::json!({"validFor": 1800}));
+    after_fee
+        .as_object_mut()
+        .unwrap()
+        .remove("sellAmountBeforeFee");
+    let mut buy = after_fee.clone();
+    after_fee["sellAmountAfterFee"] = serde_json::json!("10000000");
+    buy["kind"] = serde_json::json!("buy");
+    buy["buyAmountAfterFee"] = serde_json::json!("10000000");
+    for body in [after_fee, buy] {
+        let (status, json) = quote_json(addr, body).await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(json["quote"]["sellAmount"], "10000000");
+        assert_eq!(json["quote"]["feeAmount"], "2220240");
+        assert_eq!(json["quote"]["buyAmount"], "10000000");
+    }
 
-    let stored: (String, String) =
-        sqlx::query_as("SELECT sell_amount::text, buy_amount::text FROM solana.quotes")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(stored, ("12220240".to_owned(), "10000000".to_owned()));
+    let stored: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT kind::text, sell_amount::text, buy_amount::text FROM solana.quotes ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let route = |kind: &str| {
+        (
+            kind.to_owned(),
+            "10000000".to_owned(),
+            "10000000".to_owned(),
+        )
+    };
+    assert_eq!(stored, [route("sell"), route("buy")]);
 }
 
-/// The answered quote, net of the execution cost, lands in `solana.quotes`
-/// and its id comes back.
+/// The winning route lands in `solana.quotes` as its driver quoted it, with
+/// its network fee and the native prices apart, and its id comes back. The
+/// answer is that route net of the cost: the fee and the rent, half an atom
+/// a lamport at the buy token's price.
 #[tokio::test]
 #[ignore = "needs the solana.* schema applied to the local database"]
 async fn solana_db_quote_is_persisted() {
@@ -1599,14 +1632,29 @@ async fn solana_db_quote_is_persisted() {
         "sellAmount": "10000000",
         "buyAmount": "10000000",
         "solver": solver.to_string(),
+        "networkFee": "6400",
     }))
     .await;
+    let sell: solana_sdk::pubkey::Pubkey = "So11111111111111111111111111111111111111112"
+        .parse()
+        .unwrap();
+    let buy: solana_sdk::pubkey::Pubkey = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        .parse()
+        .unwrap();
     let api = Api {
         pool: pool.clone(),
         quoter: Quoter::new(
             vec![format!("http://{driver}/").parse().unwrap()],
             Duration::from_secs(1),
         ),
+        prices: spawn_mock_autopilot(move |mint| {
+            Some(if mint == sell.to_string() {
+                1_000_000_000
+            } else {
+                2_000_000_000
+            })
+        })
+        .await,
         ..mock_api().await
     };
     let (listener, addr) = api.bind().await.unwrap();
@@ -1622,6 +1670,8 @@ async fn solana_db_quote_is_persisted() {
     assert_eq!(response.status(), reqwest::StatusCode::OK);
     let json: serde_json::Value = response.json().await.unwrap();
     let id = json["id"].as_i64().unwrap();
+    // 10000000 less the 3200 fee and the 1110120 rent.
+    assert_eq!(json["quote"]["buyAmount"], "8886680");
 
     type Row = (
         i64,
@@ -1640,23 +1690,33 @@ async fn solana_db_quote_is_persisted() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let sell: solana_sdk::pubkey::Pubkey = "So11111111111111111111111111111111111111112"
-        .parse()
-        .unwrap();
-    let buy: solana_sdk::pubkey::Pubkey = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-        .parse()
-        .unwrap();
     assert_eq!(row.0, id);
     assert_eq!(row.1, sell.to_bytes());
     assert_eq!(row.2, buy.to_bytes());
     assert_eq!(row.3, "10000000");
-    assert_eq!(row.4, "7779760");
+    assert_eq!(row.4, "10000000");
     assert_eq!(row.5, "sell");
     assert_eq!(row.6, solver.to_bytes());
     // The stored expiry is the answered one, up to timestamptz rounding.
     let answered: chrono::DateTime<chrono::Utc> =
         json["expiration"].as_str().unwrap().parse().unwrap();
     assert!((row.7 - answered).num_milliseconds().abs() <= 1);
+    let cost: (String, String, String, bool) = sqlx::query_as(
+        "SELECT network_fee::text, sell_token_price::text, buy_token_price::text, verified FROM \
+         solana.quotes",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        cost,
+        (
+            "6400".to_owned(),
+            "1000000000".to_owned(),
+            "2000000000".to_owned(),
+            false
+        )
+    );
 }
 
 /// Parameter validation of the trades endpoint short-circuits before any
@@ -1677,6 +1737,104 @@ async fn trades_rejects_an_invalid_limit() {
         let json: serde_json::Value = response.json().await.unwrap();
         assert_eq!(json["errorType"], "InvalidLimit");
     }
+}
+
+/// A settled trade lists the protocol fees its auction recorded, each with
+/// the policy that took it, in application order.
+#[tokio::test]
+#[ignore = "needs a local database"]
+async fn solana_db_trades_return_the_executed_protocol_fees() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.orders, solana.trades, solana.settlements, solana.fee_policies, \
+         solana.order_execution, solana.order_quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let uid = [0x11; 32];
+    sqlx::query(
+        "INSERT INTO solana.orders (uid, owner, sell_token, buy_token, sell_token_account, \
+         buy_token_account, sell_amount, buy_amount, valid_to, kind, partially_fillable, \
+         app_data, creation_timestamp, order_pda) VALUES ($1, $2, $2, $3, $2, $2, 1000, 500, \
+         4294967295, 'sell', false, $2, now(), $1)",
+    )
+    .bind(ByteArray(uid))
+    .bind(ByteArray([0xAA; 32]))
+    .bind(ByteArray([0x22; 32]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.trades (tx_signature, instruction_index, order_uid, sell_amount, \
+         buy_amount, fee_amount, slot) VALUES ($1, 0, $2, 1000, 600, 0, 42)",
+    )
+    .bind(ByteArray([9; 64]))
+    .bind(ByteArray(uid))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.settlements (slot, tx_signature, instruction_index, solver, \
+         auction_id) VALUES (42, $1, 0, $2, 7)",
+    )
+    .bind(ByteArray([9; 64]))
+    .bind(ByteArray([0xCC; 32]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.fee_policies (auction_id, order_uid, kind, surplus_factor, \
+         surplus_max_volume_factor, volume_factor) VALUES (7, $1, 'surplus', 0.5, 0.9, NULL), (7, \
+         $1, 'volume', NULL, NULL, 0.002)",
+    )
+    .bind(ByteArray(uid))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO solana.order_execution (order_uid, auction_id, protocol_fee_tokens, \
+         protocol_fee_amounts) VALUES ($1, 7, ARRAY[$2, $2], '{40, 1}')",
+    )
+    .bind(ByteArray(uid))
+    .bind(ByteArray([0x22; 32]))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let api = Api {
+        pool,
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    tokio::spawn(async move { api.serve(listener, CancellationToken::new()).await.unwrap() });
+
+    let json: serde_json::Value = reqwest::Client::new()
+        .get(format!(
+            "http://{addr}/api/v2/trades?orderUid=0x{}",
+            "11".repeat(32)
+        ))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3";
+    assert_eq!(
+        json[0]["executedProtocolFees"],
+        serde_json::json!([
+            {
+                "policy": { "surplus": { "factor": 0.5, "maxVolumeFactor": 0.9 } },
+                "amount": "40",
+                "token": token,
+            },
+            {
+                "policy": { "volume": { "factor": 0.002 } },
+                "amount": "1",
+                "token": token,
+            },
+        ])
+    );
 }
 
 /// Parameter validation of the account orders endpoint short-circuits before
@@ -1744,18 +1902,48 @@ fn sponsored_mocks(blockhash_valid: bool, accounts: serde_json::Value) -> Mocks 
     ])
 }
 
-/// A sponsored-placement server whose mock RPC answers from `mocks`.
+/// A sponsored-placement server whose mock RPC answers from `mocks` and
+/// whose only driver has no route, so an order quoted afresh lands without a
+/// quote.
 async fn spawn_sponsored_server_with(
     pool: PgPool,
     funder: solana_sdk::pubkey::Pubkey,
     mocks: Mocks,
 ) -> SocketAddr {
+    let driver = spawn_routeless_driver().await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    spawn_sponsored_quoting_server(pool, funder, mocks, quoter).await
+}
+
+/// A sponsored-placement server whose mock RPC answers from `mocks` and
+/// whose fresh quotes ask `quoter`.
+async fn spawn_sponsored_quoting_server(
+    pool: PgPool,
+    funder: solana_sdk::pubkey::Pubkey,
+    mocks: Mocks,
+    quoter: Quoter,
+) -> SocketAddr {
+    spawn_sponsored_server_over(pool, funder, SolanaRPC::new_mock_with_mocks(mocks), quoter).await
+}
+
+/// A sponsored-placement server reading the chain through `rpc`, whose fresh
+/// quotes ask `quoter`.
+async fn spawn_sponsored_server_over(
+    pool: PgPool,
+    funder: solana_sdk::pubkey::Pubkey,
+    rpc: SolanaRPC,
+    quoter: Quoter,
+) -> SocketAddr {
     let api = Api {
         pool,
+        quoter,
         sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
             funder,
             settlement_program: program_id(),
-            rpc: SolanaRPC::new_mock_with_mocks(mocks),
+            rpc,
             max_priority_fee_lamports: 100_000,
             mints: Default::default(),
             blockhash_catch_up: Duration::ZERO,
@@ -2867,8 +3055,8 @@ async fn create_order_checks_the_mints_on_chain() {
 async fn solana_db_create_order_persists_a_sponsored_order() {
     let pool = PgPool::connect("postgresql://").await.unwrap();
     sqlx::query(
-        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events \
-         CASCADE",
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
     )
     .execute(&pool)
     .await
@@ -2909,8 +3097,12 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
             buy_token: ByteArray(intent.buy.encode().0.to_bytes()),
             sell_amount: intent.sell_amount.get(),
             buy_amount: intent.buy_amount.get(),
+            network_fee: 0,
+            sell_token_price: 1_000_000_000,
+            buy_token_price: 1_000_000_000,
             kind: OrderKind::Sell,
             solver: ByteArray([0xDD; 32]),
+            verified: false,
             expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
         },
     )
@@ -2955,7 +3147,7 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
     );
 
     // A named quote that does not match the order (wrong pair here) is
-    // dropped: the order lands unlinked.
+    // dropped and the dead quoter has no route: the order lands unlinked.
     let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
     let other_owner = solana_sdk::signer::keypair::Keypair::new();
     let other = sponsored_intent(other_owner.pubkey(), false);
@@ -2966,8 +3158,12 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
             buy_token: ByteArray(other.buy.encode().0.to_bytes()),
             sell_amount: other.sell_amount.get(),
             buy_amount: other.buy_amount.get(),
+            network_fee: 0,
+            sell_token_price: 1_000_000_000,
+            buy_token_price: 1_000_000_000,
             kind: OrderKind::Sell,
             solver: ByteArray([0xDD; 32]),
+            verified: false,
             expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
         },
     )
@@ -2998,8 +3194,12 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
             buy_token: ByteArray(late.buy.encode().0.to_bytes()),
             sell_amount: late.sell_amount.get(),
             buy_amount: late.buy_amount.get(),
+            network_fee: 0,
+            sell_token_price: 1_000_000_000,
+            buy_token_price: 1_000_000_000,
             kind: OrderKind::Sell,
             solver: ByteArray([0xDD; 32]),
+            verified: false,
             expiration: chrono::Utc::now() - chrono::Duration::seconds(1),
         },
     )
@@ -3018,6 +3218,540 @@ async fn solana_db_create_order_persists_a_sponsored_order() {
         .await
         .unwrap();
     assert_eq!(copies, 1, "the expired quote must not be copied");
+}
+
+/// An order naming no `quoteId` takes the best stored quote with its pair,
+/// side and fixed amount: a verified one before any other, then the highest
+/// buy amount net of the quote's own network fee, like the EVM search. A
+/// quote that is expired, of another amount, of the other side or stored
+/// without prices is no match, however good. The copy is the route with the
+/// order's cost apart: the quote's network fee and the rent of the order's
+/// missing buy token account, each rounded up, a million lamports an atom.
+/// An order naming a quote the link drops is quoted afresh instead, like the
+/// EVM `find_quote`: with no driver routing it, it lands unlinked, the
+/// matching stored quote notwithstanding.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_takes_the_best_stored_quote_when_it_names_none() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let intent = sponsored_intent(owner.pubkey(), false);
+    let quote = |sell_amount, buy_amount, kind, seconds| db::Quote {
+        sell_token: ByteArray(intent.sell.mint.to_bytes()),
+        buy_token: ByteArray(intent.buy.encode().0.to_bytes()),
+        sell_amount,
+        buy_amount,
+        network_fee: 0,
+        sell_token_price: 1_000_000_000_000_000,
+        buy_token_price: 1_000_000_000_000_000,
+        kind,
+        solver: ByteArray([0xDD; 32]),
+        verified: false,
+        expiration: chrono::Utc::now() + chrono::Duration::seconds(seconds),
+    };
+    db::save_quote(&pool, &quote(1_000, 2_100, OrderKind::Sell, 60))
+        .await
+        .unwrap();
+    // 50.5 atoms of network fee leave 2449, the best of the unverified.
+    let best = db::save_quote(
+        &pool,
+        &db::Quote {
+            network_fee: 50_500_000,
+            ..quote(1_000, 2_500, OrderKind::Sell, 60)
+        },
+    )
+    .await
+    .unwrap();
+    // The highest route, 2400 once its 200 atoms of network fee come off.
+    db::save_quote(
+        &pool,
+        &db::Quote {
+            network_fee: 200_000_000,
+            ..quote(1_000, 2_600, OrderKind::Sell, 60)
+        },
+    )
+    .await
+    .unwrap();
+    let expired = db::save_quote(&pool, &quote(1_000, 3_000, OrderKind::Sell, -1))
+        .await
+        .unwrap();
+    db::save_quote(&pool, &quote(999, 9_000, OrderKind::Sell, 60))
+        .await
+        .unwrap();
+    db::save_quote(&pool, &quote(1, 2_000, OrderKind::Buy, 60))
+        .await
+        .unwrap();
+    db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token_price: 0,
+            buy_token_price: 0,
+            ..quote(1_000, 9_000, OrderKind::Sell, 60)
+        },
+    )
+    .await
+    .unwrap();
+
+    // A named quote the link drops is quoted afresh, not swapped for the
+    // matching stored one, and the routeless driver leaves the order unlinked.
+    let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+    let transaction = creation_tx(funder, &owner, &intent, vec![], true);
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "partiallySignedTx": transaction, "quoteId": expired }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let copies: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.order_quotes")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        copies, 0,
+        "a dropped quote id must not fall back to the search"
+    );
+    // An order naming no quote takes the best stored match.
+    let place = || async {
+        let addr = spawn_sponsored_server(pool.clone(), funder, true).await;
+        let owner = solana_sdk::signer::keypair::Keypair::new();
+        let intent = sponsored_intent(owner.pubkey(), false);
+        let (status, _) =
+            post_order(addr, creation_tx(funder, &owner, &intent, vec![], true)).await;
+        assert_eq!(status, reqwest::StatusCode::CREATED);
+    };
+    place().await;
+    // A verified quote wins over a better unverified one.
+    let verified = db::save_quote(
+        &pool,
+        &db::Quote {
+            verified: true,
+            ..quote(1_000, 2_200, OrderKind::Sell, 60)
+        },
+    )
+    .await
+    .unwrap();
+    place().await;
+
+    let linked: Vec<(Option<i64>, String, String, bool)> = sqlx::query_as(
+        "SELECT quote_id, buy_amount::text, execution_cost::text, verified FROM \
+         solana.order_quotes ORDER BY creation_timestamp",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        linked,
+        vec![
+            // 51 atoms of network fee and 3 of rent.
+            (Some(best), "2500".to_owned(), "54".to_owned(), false),
+            (Some(verified), "2200".to_owned(), "3".to_owned(), true),
+        ]
+    );
+}
+
+/// An order placed on a stored quote pays its own cost on it, in the token
+/// the order does not fix: the network fee converts at the buy token's price
+/// for a sell order and at the sell token's for a buy order, and an order
+/// whose buy token account exists owes no rent, whatever the quote's
+/// requester owed. The lookups answer the mints, the Clock sysvar and the
+/// buy token account, then that account again for the rent.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_charges_a_stored_quote_the_orders_own_cost() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    // 50.5 million lamports of network fee: 50.5 atoms of the buy token, 25.25
+    // of the sell token, rounded up.
+    for (kind, intent_kind, cost) in [
+        (
+            OrderKind::Sell,
+            cow_settlement_interface::data::intent::OrderKind::Sell,
+            "51",
+        ),
+        (
+            OrderKind::Buy,
+            cow_settlement_interface::data::intent::OrderKind::Buy,
+            "26",
+        ),
+    ] {
+        let owner = solana_sdk::signer::keypair::Keypair::new();
+        let mut intent = sponsored_intent(owner.pubkey(), false);
+        intent.flags.kind = intent_kind;
+        let buy_mint = intent.buy.encode().0;
+        let quote_id = db::save_quote(
+            &pool,
+            &db::Quote {
+                sell_token: ByteArray(intent.sell.mint.to_bytes()),
+                buy_token: ByteArray(buy_mint.to_bytes()),
+                sell_amount: intent.sell_amount.get(),
+                buy_amount: intent.buy_amount.get(),
+                network_fee: 50_500_000,
+                sell_token_price: 2_000_000_000_000_000,
+                buy_token_price: 1_000_000_000_000_000,
+                kind,
+                solver: ByteArray([0xDD; 32]),
+                verified: false,
+                expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
+            },
+        )
+        .await
+        .unwrap();
+        let classic = solana_testlib::account_json(&mint_account(spl_token_interface::ID));
+        let buy_account = solana_testlib::token_account_json(&buy_mint, &owner.pubkey());
+        let rpc = SolanaRPC::new_mock_with_mocks_map(MocksMap::from_iter([
+            (
+                RpcRequest::IsBlockhashValid,
+                serde_json::json!({
+                    "context": { "slot": 1u64, "apiVersion": "2.0.0" },
+                    "value": true,
+                }),
+            ),
+            (RpcRequest::GetBlockHeight, serde_json::json!(100u64)),
+            (
+                RpcRequest::GetMultipleAccounts,
+                solana_testlib::multiple_accounts_json([
+                    classic.clone(),
+                    classic,
+                    serde_json::Value::Null,
+                    buy_account.clone(),
+                ]),
+            ),
+            (
+                RpcRequest::GetMultipleAccounts,
+                solana_testlib::multiple_accounts_json([buy_account]),
+            ),
+        ]));
+        let addr = spawn_sponsored_server_over(pool.clone(), funder, rpc, dead_quoter()).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/api/v1/orders"))
+            .json(&serde_json::json!({
+                "partiallySignedTx": creation_tx(funder, &owner, &intent, vec![], true),
+                "quoteId": quote_id,
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+        let linked: String = sqlx::query_scalar(
+            "SELECT execution_cost::text FROM solana.order_quotes WHERE quote_id = $1",
+        )
+        .bind(quote_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(linked, cost, "{kind:?}");
+    }
+}
+
+/// A stored quote without the native prices its cost converts at is not
+/// placed on: an order naming it is quoted afresh.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_skips_a_stored_quote_without_prices() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    // Amounts large enough for the fresh quote to absorb the rent.
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    intent.sell_amount = std::num::NonZeroU64::new(10_000_000).unwrap();
+    intent.buy_amount = std::num::NonZeroU64::new(1_000_000).unwrap();
+    let unpriced = db::save_quote(
+        &pool,
+        &db::Quote {
+            sell_token: ByteArray(intent.sell.mint.to_bytes()),
+            buy_token: ByteArray(intent.buy.encode().0.to_bytes()),
+            sell_amount: 10_000_000,
+            buy_amount: 9_000_000,
+            network_fee: 0,
+            sell_token_price: 0,
+            buy_token_price: 0,
+            kind: OrderKind::Sell,
+            solver: ByteArray([0xDD; 32]),
+            verified: false,
+            expiration: chrono::Utc::now() + chrono::Duration::seconds(60),
+        },
+    )
+    .await
+    .unwrap();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "5000000",
+        "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+    }))
+    .await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    let addr = spawn_sponsored_quoting_server(
+        pool.clone(),
+        funder,
+        sponsored_mocks(true, classic_mints()),
+        quoter,
+    )
+    .await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({
+            "partiallySignedTx": creation_tx(funder, &owner, &intent, vec![], true),
+            "quoteId": unpriced,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::CREATED);
+    let (quote_id, buy_amount): (Option<i64>, String) =
+        sqlx::query_as("SELECT quote_id, buy_amount::text FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_ne!(quote_id, Some(unpriced));
+    assert_eq!(buy_amount, "5000000");
+}
+
+/// When no stored quote matches, the drivers quote the order afresh and the
+/// order is placed on that quote, stored like one the quote endpoint
+/// answers: the route with its network fee apart. The order's copy carries
+/// the cost, that fee and the missing buy token account's rent, a lamport an
+/// atom at the mocked prices.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_quotes_an_order_no_stored_quote_matches() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let solver = solana_sdk::pubkey::Pubkey::new_unique();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "3461207",
+        "solver": solver.to_string(),
+        "networkFee": "6400",
+    }))
+    .await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let mut intent = sponsored_intent(owner.pubkey(), false);
+    intent.sell_amount = std::num::NonZeroU64::new(10_000_000).unwrap();
+    intent.buy_amount = std::num::NonZeroU64::new(1_000_000).unwrap();
+    let addr = spawn_sponsored_quoting_server(
+        pool.clone(),
+        funder,
+        sponsored_mocks(true, classic_mints()),
+        quoter,
+    )
+    .await;
+
+    let (status, _) = post_order(addr, creation_tx(funder, &owner, &intent, vec![], true)).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+
+    let stored: (i64, String, String, String, OrderKind, Vec<u8>) = sqlx::query_as(
+        "SELECT id, sell_amount::text, buy_amount::text, network_fee::text, kind, solver FROM \
+         solana.quotes",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (
+            stored.1.as_str(),
+            stored.2.as_str(),
+            stored.3.as_str(),
+            stored.4
+        ),
+        ("10000000", "3461207", "6400", OrderKind::Sell)
+    );
+    assert_eq!(stored.5, solver.to_bytes().to_vec());
+    let linked: (Option<i64>, String, String, String) = sqlx::query_as(
+        "SELECT quote_id, sell_amount::text, buy_amount::text, execution_cost::text FROM \
+         solana.order_quotes",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // The 6400 network fee and the 2220240 rent.
+    assert_eq!(
+        linked,
+        (
+            Some(stored.0),
+            "10000000".to_owned(),
+            "3461207".to_owned(),
+            "2226640".to_owned()
+        )
+    );
+}
+
+/// A fresh quote whose costs swallow the order's amount places the order
+/// without a quote: it is out of market, like an order no driver routes.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_places_an_order_its_fresh_quote_cannot_net() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    // The buy amount is under the rent of the missing buy token account.
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "1000",
+        "buyAmount": "1000",
+        "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+    }))
+    .await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr = spawn_sponsored_quoting_server(
+        pool.clone(),
+        funder,
+        sponsored_mocks(true, classic_mints()),
+        quoter,
+    )
+    .await;
+
+    let (status, _) = post_order(addr, sponsored_creation_tx(funder, &owner, true)).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let stored: (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM solana.orders), (SELECT count(*) FROM solana.quotes), \
+         (SELECT count(*) FROM solana.order_quotes)",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, (1, 0, 0));
+}
+
+/// A driver failing for any reason but a missing route rejects the order
+/// with the quote's `NoLiquidity`, even when the other driver has no route.
+/// The EVM orderbook rejects on an estimator error the same way.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_rejects_an_order_a_driver_failed_to_quote() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let routeless = spawn_routeless_driver().await;
+    let quoter = Quoter::new(
+        vec![
+            format!("http://{routeless}/").parse().unwrap(),
+            // Nothing listens here.
+            "http://127.0.0.1:1/".parse().unwrap(),
+        ],
+        Duration::from_secs(1),
+    );
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr = spawn_sponsored_quoting_server(
+        pool.clone(),
+        funder,
+        sponsored_mocks(true, classic_mints()),
+        quoter,
+    )
+    .await;
+
+    let (status, kind) = post_order(addr, sponsored_creation_tx(funder, &owner, true)).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (reqwest::StatusCode::NOT_FOUND, "NoLiquidity")
+    );
+    let orders: i64 = sqlx::query_scalar("SELECT count(*) FROM solana.orders")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(orders, 0);
+}
+
+/// A native SOL buy is placed on a fresh quote paying less than an empty
+/// wallet can take: placement checked the payout of the order's own limit,
+/// and the quote only tells how far out of market that limit is.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_create_order_links_a_native_buy_quoted_under_the_payout_floor() {
+    let pool = PgPool::connect("postgresql://").await.unwrap();
+    sqlx::query(
+        "TRUNCATE solana.order_pda, solana.orders, solana.order_quotes, solana.order_events, \
+         solana.quotes CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let driver = spawn_mock_driver(serde_json::json!({
+        "sellAmount": "1000",
+        "buyAmount": "500000",
+        "solver": solana_sdk::pubkey::Pubkey::new_unique().to_string(),
+    }))
+    .await;
+    let quoter = Quoter::new(
+        vec![format!("http://{driver}/").parse().unwrap()],
+        Duration::from_secs(1),
+    );
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    // The limit is the rent-exempt minimum of an empty wallet.
+    let intent = native_buy_intent(owner.pubkey(), 890_880);
+    let addr = spawn_sponsored_quoting_server(
+        pool.clone(),
+        funder,
+        sponsored_mocks(
+            true,
+            accounts_response(&[Some(mint_account(spl_token_interface::ID)), None, None]),
+        ),
+        quoter,
+    )
+    .await;
+
+    let (status, _) = post_order(addr, creation_tx(funder, &owner, &intent, vec![], true)).await;
+    assert_eq!(status, reqwest::StatusCode::CREATED);
+    let linked: (String, String) =
+        sqlx::query_as("SELECT sell_amount::text, buy_amount::text FROM solana.order_quotes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked, ("1000".to_owned(), "500000".to_owned()));
 }
 
 /// The buy account may belong to a wallet other than the owner: the

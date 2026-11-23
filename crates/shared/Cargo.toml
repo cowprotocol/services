@@ -5,6 +5,9 @@ authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers 
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+test-util = ["dep:mockall"]
+
 [lib]
 doctest = false
 
@@ -79,9 +82,6 @@ signature-validator = { workspace = true, features = ["test-util"] }
 testlib = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 toml = { workspace = true }
-
-[features]
-test-util = ["dep:mockall"]
 
 [lints]
 workspace = true

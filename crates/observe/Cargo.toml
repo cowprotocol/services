@@ -5,6 +5,10 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+default = []
+tokio-console = ["dep:console-subscriber"]
+
 [dependencies]
 async-nats = { workspace = true }
 async-trait = { workspace = true }
@@ -38,12 +42,8 @@ url = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 
-[target.'cfg(tokio_unstable)'.dependencies]
+[target."cfg(tokio_unstable)".dependencies]
 console-subscriber = { workspace = true, optional = true }
-
-[features]
-default = []
-tokio-console = ["dep:console-subscriber"]
 
 [lints]
 workspace = true

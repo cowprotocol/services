@@ -6573,8 +6573,7 @@ pub mod IZeroex {
         #[allow(missing_docs)]
         pub r#impl: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`extend(bytes4,address)`](extendCall) function.
+    ///Container type for the return parameters of the [`extend(bytes4,address)`](extendCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct extendReturn {}
@@ -6729,10 +6728,7 @@ pub mod IZeroex {
         pub takerTokenFillAmount: u128,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`fillOrKillLimitOrder((address,address,uint128,uint128,uint128,address,
-    /// address,address,address,bytes32,uint64,uint256),(uint8,uint8,bytes32,
-    /// bytes32),uint128)`](fillOrKillLimitOrderCall) function.
+    ///Container type for the return parameters of the [`fillOrKillLimitOrder((address,address,uint128,uint128,uint128,address,address,address,address,bytes32,uint64,uint256),(uint8,uint8,bytes32,bytes32),uint128)`](fillOrKillLimitOrderCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct fillOrKillLimitOrderReturn {
@@ -6903,10 +6899,7 @@ pub mod IZeroex {
         pub signature: <LibSignature::Signature as alloy_sol_types::SolType>::RustType,
     }
     #[derive()]
-    ///Container type for the return parameters of the
-    /// [`getLimitOrderRelevantState((address,address,uint128,uint128,uint128,
-    /// address,address,address,address,bytes32,uint64,uint256),(uint8,uint8,
-    /// bytes32,bytes32))`](getLimitOrderRelevantStateCall) function.
+    ///Container type for the return parameters of the [`getLimitOrderRelevantState((address,address,uint128,uint128,uint128,address,address,address,address,bytes32,uint64,uint256),(uint8,uint8,bytes32,bytes32))`](getLimitOrderRelevantStateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getLimitOrderRelevantStateReturn {
@@ -7088,8 +7081,7 @@ pub mod IZeroex {
     #[derive(Clone)]
     pub struct ownerCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`owner()`](ownerCall)
-    /// function.
+    ///Container type for the return parameters of the [`owner()`](ownerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ownerReturn {

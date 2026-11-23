@@ -2666,8 +2666,7 @@ pub mod Permit2 {
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
+    ///Container type for the return parameters of the [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORReturn {
@@ -2812,8 +2811,7 @@ pub mod Permit2 {
         pub _2: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`allowance(address,address,address)`](allowanceCall) function.
+    ///Container type for the return parameters of the [`allowance(address,address,address)`](allowanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowanceReturn {
@@ -3009,8 +3007,7 @@ pub mod Permit2 {
         #[allow(missing_docs)]
         pub expiration: alloy_sol_types::private::primitives::aliases::U48,
     }
-    ///Container type for the return parameters of the
-    /// [`approve(address,address,uint160,uint48)`](approveCall) function.
+    ///Container type for the return parameters of the [`approve(address,address,uint160,uint48)`](approveCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct approveReturn {}
@@ -3178,9 +3175,7 @@ pub mod Permit2 {
         #[allow(missing_docs)]
         pub signature: alloy_sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the
-    /// [`permit(address,((address,uint160,uint48,uint48),address,uint256),
-    /// bytes)`](permitCall) function.
+    ///Container type for the return parameters of the [`permit(address,((address,uint160,uint48,uint48),address,uint256),bytes)`](permitCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct permitReturn {}
@@ -3344,9 +3339,7 @@ pub mod Permit2 {
         #[allow(missing_docs)]
         pub token: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`transferFrom(address,address,uint160,address)`](transferFromCall)
-    /// function.
+    ///Container type for the return parameters of the [`transferFrom(address,address,uint160,address)`](transferFromCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferFromReturn {}

@@ -1,18 +1,22 @@
-//! Decodes base64 wire transactions, such as the `bundle` field of a `failed
-//! quote bundle` trace, into each instruction's program, kind, accounts and
-//! amounts.
-//!
-//! To capture bundles, add `solana_orderbook::infra::verifier=trace` to the
-//! orderbook's log filter through its log filter socket (see "Changing Log
-//! Filters" in the README), then pass the `bundle` field of a `failed quote
-//! bundle` log:
+//! Decodes base64 wire transactions, such as the `bundle` field of a `quote
+//! unverified, its settlement fails in simulation` log, into each
+//! instruction's program, kind, accounts and amounts:
 //!
 //! ```sh
 //! cargo run -p solana-orderbook --example decode_bundle -- '["AQ...", "AQ..."]'
 //! ```
+//!
+//! `--simulate` merges the transactions into one and simulates it with
+//! `simulateTransaction`, which returns the logs `simulateBundle` drops for a
+//! failed transaction. It reads the current state, not the state at the
+//! logged `slot`, so simulate soon after the capture:
+//!
+//! ```sh
+//! cargo run -p solana-orderbook --example decode_bundle -- --rpc-url <url> --simulate '["AQ...", "AQ..."]'
+//! ```
 
 use {
-    anyhow::{Context, Result},
+    anyhow::{Context, Result, bail},
     base64::{Engine, prelude::BASE64_STANDARD},
     clap::Parser,
     cow_settlement_interface::{
@@ -25,8 +29,15 @@ use {
         },
         recover_discriminator,
     },
-    cow_solana_rpc::{CommitmentConfig, SolanaRPC},
-    solana_sdk::{message::VersionedMessage, pubkey::Pubkey, transaction::VersionedTransaction},
+    cow_solana_rpc::{CommitmentConfig, Response, RpcSimulateTransactionResult, SolanaRPC},
+    solana_sdk::{
+        hash::Hash,
+        instruction::{AccountMeta, Instruction},
+        message::{VersionedMessage, compiled_instruction::CompiledInstruction, v1},
+        pubkey::Pubkey,
+        signature::Signature,
+        transaction::{TransactionError, VersionedTransaction},
+    },
     solana_system_interface::instruction::SystemInstruction,
     spl_token_2022_interface::instruction::TokenInstruction,
     std::time::Duration,
@@ -38,6 +49,9 @@ const LOOKUP_TABLE_META_SIZE: usize = 56;
 
 /// Accounts listed per instruction, the rest are only counted.
 const SHOWN_ACCOUNTS: usize = 8;
+
+/// The most compute units a transaction may declare.
+const MAX_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
 
 #[derive(Parser)]
 struct Args {
@@ -52,6 +66,16 @@ struct Args {
     /// Settlement program the transactions call. Staging deploys its own.
     #[arg(long, env, default_value_t = cow_settlement_interface::ID)]
     settlement_program: Pubkey,
+
+    /// Also simulates the transactions merged into one, in order. The last
+    /// must be a v1 settlement, whose config the merged transaction takes.
+    #[arg(long)]
+    simulate: bool,
+
+    /// The merged transaction's compute unit limit, which all of its parts
+    /// spend from.
+    #[arg(long, default_value_t = MAX_COMPUTE_UNIT_LIMIT)]
+    compute_unit_limit: u32,
 }
 
 #[tokio::main]
@@ -73,10 +97,13 @@ async fn main() -> Result<()> {
             transactions.push(arg);
         }
     }
+    let mut decoded = Vec::new();
     for (n, transaction) in transactions.iter().enumerate() {
         let bytes = BASE64_STANDARD.decode(transaction.trim())?;
-        // Landed settlements are v1 messages, which bincode can't read.
-        let transaction: VersionedTransaction = wincode::deserialize(&bytes)?;
+        // v1 messages need wincode, but orderbook v2.388 logs them in
+        // bincode's serde layout.
+        let transaction: VersionedTransaction =
+            wincode::deserialize(&bytes).or_else(|_| bincode::deserialize(&bytes))?;
         let keys = account_keys(&transaction.message, rpc.as_ref()).await?;
         let version = match &transaction.message {
             VersionedMessage::Legacy(_) => "legacy",
@@ -110,7 +137,158 @@ async fn main() -> Result<()> {
                 println!("      +{} more", accounts.len() - SHOWN_ACCOUNTS);
             }
         }
+        decoded.push((transaction, keys));
     }
+    if args.simulate {
+        let rpc = rpc.as_ref().context("--simulate needs --rpc-url")?;
+        simulate(
+            rpc,
+            &decoded,
+            args.settlement_program,
+            args.compute_unit_limit,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Simulates `transactions`, each with its account keys, merged into one, and
+/// prints where it fails and its logs.
+async fn simulate(
+    rpc: &SolanaRPC,
+    transactions: &[(VersionedTransaction, Vec<Pubkey>)],
+    settlement_program: Pubkey,
+    compute_unit_limit: u32,
+) -> Result<()> {
+    let settlement = settlement_message(transactions)?;
+    let (instructions, origins) = merge(transactions, settlement_program)?;
+    let config = settlement
+        .config
+        .with_compute_unit_limit(compute_unit_limit);
+    // The simulation replaces the blockhash and checks no signature.
+    let merged = v1::Message::try_compile_with_config(
+        &settlement.account_keys[0],
+        &instructions,
+        Hash::default(),
+        config,
+    )?;
+    let transaction = VersionedTransaction {
+        signatures: vec![Signature::default(); usize::from(merged.header.num_required_signatures)],
+        message: VersionedMessage::V1(merged),
+    };
+    let response = rpc.simulate_unsigned_transaction(&transaction).await?;
+    print_result(response, &origins, settlement.config.compute_unit_limit);
+    Ok(())
+}
+
+/// The last transaction's message, the v1 settlement whose config the merged
+/// transaction takes.
+fn settlement_message(
+    transactions: &[(VersionedTransaction, Vec<Pubkey>)],
+) -> Result<&v1::Message> {
+    let Some((settlement, _)) = transactions.last() else {
+        bail!("no transaction to simulate");
+    };
+    let VersionedMessage::V1(message) = &settlement.message else {
+        bail!("the last transaction is not a v1 settlement");
+    };
+    Ok(message)
+}
+
+/// The transaction a merged instruction comes from and its position there.
+type Origin = (usize, usize);
+
+/// The instructions of `transactions` in order, each with its [`Origin`].
+fn merge(
+    transactions: &[(VersionedTransaction, Vec<Pubkey>)],
+    settlement_program: Pubkey,
+) -> Result<(Vec<Instruction>, Vec<Origin>)> {
+    let mut instructions = Vec::new();
+    let mut origins = Vec::new();
+    for (n, (transaction, keys)) in transactions.iter().enumerate() {
+        let offset = u16::try_from(instructions.len())?;
+        for (index, compiled) in transaction.message.instructions().iter().enumerate() {
+            let mut instruction = decompile(&transaction.message, keys, compiled);
+            if instruction.program_id == settlement_program {
+                shift_counterpart(&mut instruction.data, offset)?;
+            }
+            instructions.push(instruction);
+            origins.push((n, index));
+        }
+    }
+    Ok((instructions, origins))
+}
+
+/// `compiled` with its accounts resolved through `keys`, the account keys of
+/// `message`.
+fn decompile(
+    message: &VersionedMessage,
+    keys: &[Pubkey],
+    compiled: &CompiledInstruction,
+) -> Instruction {
+    let accounts = compiled
+        .accounts
+        .iter()
+        .map(|&account| {
+            let account = usize::from(account);
+            AccountMeta {
+                pubkey: keys[account],
+                is_signer: message.is_signer(account),
+                is_writable: message.is_maybe_writable(account, None),
+            }
+        })
+        .collect();
+    Instruction {
+        program_id: keys[usize::from(compiled.program_id_index)],
+        accounts,
+        data: compiled.data.clone(),
+    }
+}
+
+/// Prints the compute units the simulation used against the settlement's
+/// `declared_limit`, where it fails and its logs.
+fn print_result(
+    response: Response<RpcSimulateTransactionResult>,
+    origins: &[Origin],
+    declared_limit: Option<u32>,
+) {
+    let result = response.value;
+    println!(
+        "simulated at slot {}, {} compute units used, the settlement declares {declared_limit:?}",
+        response.context.slot,
+        result.units_consumed.unwrap_or_default(),
+    );
+    let err = result.err.map(TransactionError::from);
+    if let Some(TransactionError::InstructionError(at, failure)) = &err
+        && let Some((n, index)) = origins.get(usize::from(*at))
+    {
+        println!("  fails at transaction {n} instruction {index}: {failure:?}");
+    } else if let Some(err) = err {
+        println!("  fails: {err:?}");
+    }
+    for line in result.logs.unwrap_or_default() {
+        println!("  {line}");
+    }
+}
+
+/// Adds `offset` to the position of the counterpart a `BeginSettle` or a
+/// `FinalizeSettle` names, a u16 LE right after the discriminator. Other
+/// instructions keep their data.
+fn shift_counterpart(data: &mut [u8], offset: u16) -> Result<()> {
+    let kind = recover_discriminator(data).map(|(kind, _)| kind);
+    if !matches!(
+        kind,
+        Ok(SettlementInstruction::BeginSettle | SettlementInstruction::FinalizeSettle)
+    ) {
+        return Ok(());
+    }
+    let position = data
+        .get_mut(1..3)
+        .context("settle instruction without its counterpart's position")?;
+    let shifted = u16::from_le_bytes([position[0], position[1]])
+        .checked_add(offset)
+        .context("counterpart position overflows")?;
+    position.copy_from_slice(&shifted.to_le_bytes());
     Ok(())
 }
 

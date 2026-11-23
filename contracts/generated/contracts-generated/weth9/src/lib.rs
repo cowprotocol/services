@@ -801,8 +801,7 @@ pub mod WETH9 {
         pub _1: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`allowance(address,address)`](allowanceCall) function.
+    ///Container type for the return parameters of the [`allowance(address,address)`](allowanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct allowanceReturn {
@@ -964,8 +963,7 @@ pub mod WETH9 {
         pub wad: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`approve(address,uint256)`](approveCall) function.
+    ///Container type for the return parameters of the [`approve(address,uint256)`](approveCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct approveReturn {
@@ -1118,8 +1116,7 @@ pub mod WETH9 {
     #[derive(Clone)]
     pub struct balanceOfCall(pub alloy_sol_types::private::Address);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`balanceOf(address)`](balanceOfCall) function.
+    ///Container type for the return parameters of the [`balanceOf(address)`](balanceOfCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct balanceOfReturn {
@@ -1261,8 +1258,7 @@ pub mod WETH9 {
     #[derive(Clone)]
     pub struct decimalsCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`decimals()`](decimalsCall) function.
+    ///Container type for the return parameters of the [`decimals()`](decimalsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct decimalsReturn {
@@ -1395,8 +1391,7 @@ pub mod WETH9 {
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct depositCall;
-    ///Container type for the return parameters of the
-    /// [`deposit()`](depositCall) function.
+    ///Container type for the return parameters of the [`deposit()`](depositCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct depositReturn {}
@@ -1525,8 +1520,7 @@ pub mod WETH9 {
     #[derive(Clone)]
     pub struct nameCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`name()`](nameCall)
-    /// function.
+    ///Container type for the return parameters of the [`name()`](nameCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct nameReturn {
@@ -1660,8 +1654,7 @@ pub mod WETH9 {
     #[derive(Clone)]
     pub struct symbolCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`symbol()`](symbolCall)
-    /// function.
+    ///Container type for the return parameters of the [`symbol()`](symbolCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct symbolReturn {
@@ -1800,8 +1793,7 @@ pub mod WETH9 {
         pub wad: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transfer(address,uint256)`](transferCall) function.
+    ///Container type for the return parameters of the [`transfer(address,uint256)`](transferCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferReturn {
@@ -1961,8 +1953,7 @@ pub mod WETH9 {
         pub wad: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`transferFrom(address,address,uint256)`](transferFromCall) function.
+    ///Container type for the return parameters of the [`transferFrom(address,address,uint256)`](transferFromCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct transferFromReturn {
@@ -2124,8 +2115,7 @@ pub mod WETH9 {
         #[allow(missing_docs)]
         pub wad: alloy_sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the
-    /// [`withdraw(uint256)`](withdrawCall) function.
+    ///Container type for the return parameters of the [`withdraw(uint256)`](withdrawCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct withdrawReturn {}

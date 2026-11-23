@@ -1,12 +1,10 @@
-mod banned;
 mod fast_path;
 mod run_loop;
 
 use {
     self::{fast_path::FastPathNotifier, run_loop::RunLoopWaker},
-    crate::{domain::OrderUid, infra::order_notify::banned::CachePrewarmer},
+    crate::domain::OrderUid,
     futures::{channel::mpsc, future::join_all},
-    order_validation::banned::Users,
     sqlx::PgPool,
     std::{sync::Arc, time::Duration},
 };
@@ -28,7 +26,6 @@ pub struct Notifier {
 
 impl Notifier {
     pub fn new(
-        banned_users: Arc<Users>,
         run_loop_wake: Arc<tokio::sync::Notify>,
         fast_path_sender: mpsc::UnboundedSender<OrderUid>,
     ) -> Self {
@@ -36,7 +33,6 @@ impl Notifier {
             listeners: vec![
                 Box::new(RunLoopWaker(run_loop_wake)),
                 Box::new(FastPathNotifier(fast_path_sender)),
-                Box::new(CachePrewarmer(banned_users)),
             ],
         }
     }

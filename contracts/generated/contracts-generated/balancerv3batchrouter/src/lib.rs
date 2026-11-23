@@ -2566,9 +2566,7 @@ pub mod BalancerV3BatchRouter {
         pub userData: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`querySwapExactIn((address,(address,address,bool)[],uint256,uint256)[],
-    /// address,bytes)`](querySwapExactInCall) function.
+    ///Container type for the return parameters of the [`querySwapExactIn((address,(address,address,bool)[],uint256,uint256)[],address,bytes)`](querySwapExactInCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct querySwapExactInReturn {
@@ -2772,9 +2770,7 @@ pub mod BalancerV3BatchRouter {
         pub userData: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`querySwapExactOut((address,(address,address,bool)[],uint256,
-    /// uint256)[],address,bytes)`](querySwapExactOutCall) function.
+    ///Container type for the return parameters of the [`querySwapExactOut((address,(address,address,bool)[],uint256,uint256)[],address,bytes)`](querySwapExactOutCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct querySwapExactOutReturn {
@@ -2980,9 +2976,7 @@ pub mod BalancerV3BatchRouter {
         pub userData: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapExactIn((address,(address,address,bool)[],uint256,uint256)[],
-    /// uint256,bool,bytes)`](swapExactInCall) function.
+    ///Container type for the return parameters of the [`swapExactIn((address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes)`](swapExactInCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapExactInReturn {
@@ -3193,9 +3187,7 @@ pub mod BalancerV3BatchRouter {
         pub userData: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swapExactOut((address,(address,address,bool)[],uint256,uint256)[],
-    /// uint256,bool,bytes)`](swapExactOutCall) function.
+    ///Container type for the return parameters of the [`swapExactOut((address,(address,address,bool)[],uint256,uint256)[],uint256,bool,bytes)`](swapExactOutCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapExactOutReturn {
@@ -3395,8 +3387,7 @@ pub mod BalancerV3BatchRouter {
     #[derive(Clone)]
     pub struct versionCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`version()`](versionCall) function.
+    ///Container type for the return parameters of the [`version()`](versionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct versionReturn {
