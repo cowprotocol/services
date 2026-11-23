@@ -49,19 +49,26 @@ pub struct UpcomingProtocolFees {
 }
 
 impl UpcomingProtocolFees {
-    fn from_config(value: UpcomingFeePolicies) -> Option<Self> {
-        value
-            // both config fields must be non-empty
-            .effective_from_timestamp
-            .filter(|_| !value.policies.is_empty())
-            .map(|effective_from_timestamp| UpcomingProtocolFees {
-                fee_policies: value
-                    .policies
-                    .into_iter()
-                    .map(ProtocolFee::from)
-                    .collect::<Vec<_>>(),
-                effective_from_timestamp,
+    /// The configured entries with both a timestamp and policies, sorted by
+    /// timestamp.
+    fn from_config(values: &[UpcomingFeePolicies]) -> Vec<Self> {
+        let mut upcoming: Vec<_> = values
+            .iter()
+            .filter(|value| !value.policies.is_empty())
+            .filter_map(|value| {
+                Some(UpcomingProtocolFees {
+                    effective_from_timestamp: value.effective_from_timestamp?,
+                    fee_policies: value
+                        .policies
+                        .iter()
+                        .cloned()
+                        .map(ProtocolFee::from)
+                        .collect(),
+                })
             })
+            .collect();
+        upcoming.sort_by_key(|upcoming| upcoming.effective_from_timestamp);
+        upcoming
     }
 }
 
@@ -98,7 +105,7 @@ pub(crate) fn reference_quote(
 pub struct ProtocolFees {
     fee_policies: Vec<ProtocolFee>,
     max_partner_fee: FeeFactor,
-    upcoming_fee_policies: Option<UpcomingProtocolFees>,
+    upcoming_fee_policies: Vec<UpcomingProtocolFees>,
     volume_fee_policy: VolumeFeePolicy,
 }
 
@@ -123,9 +130,7 @@ impl ProtocolFees {
                 .map(ProtocolFee::from)
                 .collect(),
             max_partner_fee: config.max_partner_fee,
-            upcoming_fee_policies: UpcomingProtocolFees::from_config(
-                config.upcoming_policies.clone(),
-            ),
+            upcoming_fee_policies: UpcomingProtocolFees::from_config(&config.upcoming_policies),
             volume_fee_policy,
         }
     }
@@ -243,6 +248,8 @@ impl ProtocolFees {
         self.apply_policies(order, &reference_quote, partner_fee, now)
     }
 
+    /// An order gets the policies of the latest upcoming entry that took effect
+    /// at or before its creation, and the current policies if none did.
     fn apply_policies(
         &self,
         order: &boundary::Order,
@@ -252,8 +259,9 @@ impl ProtocolFees {
     ) -> Vec<PolicyWithOrigin> {
         let fee_policies = self
             .upcoming_fee_policies
-            .as_ref()
-            .filter(|upcoming| upcoming.effective_from_timestamp <= now)
+            .iter()
+            .rev()
+            .find(|upcoming| upcoming.effective_from_timestamp <= order.metadata.creation_date)
             .map(|upcoming| &upcoming.fee_policies)
             .unwrap_or(&self.fee_policies);
 
@@ -384,7 +392,7 @@ impl Quote {
 
 #[cfg(test)]
 mod test {
-    use {super::*, model::order::OrderMetadata};
+    use {super::*, configs::autopilot::fee_policy::FeePolicyKind, model::order::OrderMetadata};
 
     /// `policy` as requested by a partner.
     fn partner(policy: Policy) -> PolicyWithOrigin {
@@ -714,5 +722,60 @@ mod test {
                 })
             ]
         );
+    }
+
+    #[test]
+    fn upcoming_policies_apply_by_order_creation_date() {
+        let surplus = |factor: f64| FeePolicy {
+            kind: FeePolicyKind::Surplus {
+                factor: factor.try_into().unwrap(),
+                max_volume_factor: 0.01.try_into().unwrap(),
+            },
+            order_class: FeePolicyOrderClass::Any,
+        };
+        let upcoming = |timestamp: &str, factor: f64| UpcomingFeePolicies {
+            policies: vec![surplus(factor)],
+            effective_from_timestamp: Some(timestamp.parse().unwrap()),
+        };
+        let fees = ProtocolFees::new(
+            &FeePoliciesConfig {
+                policies: vec![surplus(0.1)],
+                upcoming_policies: vec![
+                    upcoming("2026-03-01T00:00:00Z", 0.3),
+                    upcoming("2026-02-01T00:00:00Z", 0.2),
+                    UpcomingFeePolicies {
+                        policies: vec![],
+                        effective_from_timestamp: Some("2026-02-15T00:00:00Z".parse().unwrap()),
+                    },
+                ],
+                ..Default::default()
+            },
+            vec![],
+            false,
+            Address::ZERO,
+        );
+        let factor = |creation_date: &str| {
+            let order = boundary::Order {
+                metadata: OrderMetadata {
+                    creation_date: creation_date.parse().unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            match fees.apply(&order, None, &[])[..] {
+                [
+                    PolicyWithOrigin {
+                        policy: Policy::Surplus { factor, .. },
+                        origin: Origin::Protocol,
+                    },
+                ] => factor.get(),
+                ref policies => panic!("unexpected policies: {policies:?}"),
+            }
+        };
+
+        assert_eq!(factor("2026-01-31T23:59:59Z"), 0.1);
+        assert_eq!(factor("2026-02-01T00:00:00Z"), 0.2);
+        assert_eq!(factor("2026-02-20T00:00:00Z"), 0.2);
+        assert_eq!(factor("2026-03-01T00:00:00Z"), 0.3);
     }
 }

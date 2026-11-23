@@ -1,7 +1,18 @@
 use {
     crate::fee_factor::FeeFactor,
     chrono::{DateTime, Utc},
-    serde::{Deserialize, Serialize},
+    serde::{
+        Deserialize,
+        Deserializer,
+        Serialize,
+        de::{
+            MapAccess,
+            SeqAccess,
+            Visitor,
+            value::{MapAccessDeserializer, SeqAccessDeserializer},
+        },
+    },
+    std::fmt,
 };
 
 pub const fn default_max_partner_fee() -> FeeFactor {
@@ -21,9 +32,10 @@ pub struct FeePoliciesConfig {
     #[serde(default = "default_max_partner_fee")]
     pub max_partner_fee: FeeFactor,
 
-    /// Fee policies that will become effective at a future timestamp.
-    #[serde(default)]
-    pub upcoming_policies: UpcomingFeePolicies,
+    /// Fee policies that take over from `policies` at a timestamp, each entry
+    /// at its own. Accepts one table or an array of tables.
+    #[serde(default, deserialize_with = "one_or_many")]
+    pub upcoming_policies: Vec<UpcomingFeePolicies>,
 }
 
 impl Default for FeePoliciesConfig {
@@ -56,6 +68,38 @@ pub struct UpcomingFeePolicies {
 
     /// Timestamp from which the `policies` will become active.
     pub effective_from_timestamp: Option<DateTime<Utc>>,
+}
+
+fn one_or_many<'de, D>(deserializer: D) -> Result<Vec<UpcomingFeePolicies>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct OneOrMany;
+
+    impl<'de> Visitor<'de> for OneOrMany {
+        type Value = Vec<UpcomingFeePolicies>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a table or an array of tables")
+        }
+
+        fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            UpcomingFeePolicies::deserialize(MapAccessDeserializer::new(map))
+                .map(|upcoming| vec![upcoming])
+        }
+
+        fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            Vec::deserialize(SeqAccessDeserializer::new(seq))
+        }
+    }
+
+    deserializer.deserialize_any(OneOrMany)
 }
 
 /// Method used to calculate the protocol fee for an order.
@@ -146,8 +190,7 @@ mod tests {
         let config: FeePoliciesConfig = toml::from_str(toml).unwrap();
         assert!(config.policies.is_empty());
         assert_eq!(config.max_partner_fee.get(), 0.01);
-        assert!(config.upcoming_policies.policies.is_empty());
-        assert!(config.upcoming_policies.effective_from_timestamp.is_none());
+        assert!(config.upcoming_policies.is_empty());
     }
 
     #[test]
@@ -173,8 +216,75 @@ mod tests {
         let config: FeePoliciesConfig = toml::from_str(toml).unwrap();
         assert_eq!(config.policies.len(), 2);
         assert_eq!(config.max_partner_fee.get(), 0.005);
-        assert_eq!(config.upcoming_policies.policies.len(), 1);
-        assert!(config.upcoming_policies.effective_from_timestamp.is_some());
+        assert_eq!(config.upcoming_policies.len(), 1);
+        assert_eq!(config.upcoming_policies[0].policies.len(), 1);
+        assert!(
+            config.upcoming_policies[0]
+                .effective_from_timestamp
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn deserialize_upcoming_fee_policies_list() {
+        let toml = r#"
+        [[upcoming-policies]]
+        effective-from-timestamp = "2025-06-01T00:00:00Z"
+
+        [[upcoming-policies.policies]]
+        kind.volume = { factor = 0.2 }
+        order-class = "any"
+
+        [[upcoming-policies]]
+        effective-from-timestamp = "2025-07-01T00:00:00Z"
+
+        [[upcoming-policies.policies]]
+        kind.volume = { factor = 0.3 }
+        order-class = "any"
+        "#;
+        let config: FeePoliciesConfig = toml::from_str(toml).unwrap();
+        let timestamps: Vec<_> = config
+            .upcoming_policies
+            .iter()
+            .map(|upcoming| upcoming.effective_from_timestamp.unwrap().to_rfc3339())
+            .collect();
+        assert_eq!(
+            timestamps,
+            ["2025-06-01T00:00:00+00:00", "2025-07-01T00:00:00+00:00"]
+        );
+    }
+
+    #[test]
+    fn upcoming_fee_policies_list_round_trips() {
+        let config: FeePoliciesConfig = toml::from_str(
+            r#"
+            [[upcoming-policies]]
+            effective-from-timestamp = "2025-06-01T00:00:00Z"
+
+            [[upcoming-policies.policies]]
+            kind.volume = { factor = 0.2 }
+            order-class = "any"
+            "#,
+        )
+        .unwrap();
+        let serialized = toml::to_string(&config).unwrap();
+        let deserialized: FeePoliciesConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.upcoming_policies.len(), 1);
+        assert_eq!(deserialized.upcoming_policies[0].policies.len(), 1);
+    }
+
+    #[test]
+    fn deserialize_upcoming_fee_policies_reports_the_bad_field() {
+        let toml = r#"
+        [upcoming-policies]
+        effective-from-timestamp = "2025-06-01T00:00:00Z"
+
+        [[upcoming-policies.policies]]
+        kind.volume = { factor = 1.5 }
+        order-class = "any"
+        "#;
+        let error = toml::from_str::<FeePoliciesConfig>(toml).unwrap_err();
+        assert!(!error.to_string().contains("a table or an array of tables"));
     }
 
     #[test]
