@@ -10,11 +10,6 @@ use {
 };
 
 #[async_trait::async_trait]
-pub trait TradeRetrieving: Send + Sync {
-    async fn trades(&self, filter: &TradeFilter) -> Result<Vec<Trade>>;
-}
-
-#[async_trait::async_trait]
 pub trait TradeRetrievingPaginated: Send + Sync {
     async fn trades_paginated(&self, filter: &PaginatedTradeFilter) -> Result<Vec<Trade>>;
 }
@@ -33,66 +28,6 @@ pub struct PaginatedTradeFilter {
     pub filter: TradeFilter,
     pub offset: u64,
     pub limit: u64,
-}
-
-#[async_trait::async_trait]
-impl TradeRetrieving for Postgres {
-    async fn trades(&self, filter: &TradeFilter) -> Result<Vec<Trade>> {
-        let timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["trades"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await?;
-        // For v1 API, return all results without pagination (use large default
-        // values).
-        let trades = match filter {
-            TradeFilter::Owner(owner) => {
-                database::trades::trades_by_owner(&mut ex, &ByteArray(owner.0.0), 0, i64::MAX).await
-            }
-            TradeFilter::OrderUid(uid) => {
-                database::trades::trades_by_order_uid(&mut ex, &ByteArray(uid.0), 0, i64::MAX).await
-            }
-        }?;
-        timer.stop_and_record();
-
-        let auction_order_uids = trades
-            .iter()
-            .filter_map(|t| t.auction_id.map(|auction_id| (auction_id, t.order_uid)))
-            .collect::<Vec<_>>();
-
-        if auction_order_uids.len() >= u16::MAX as usize {
-            // We use these ids as arguments for an SQL query and sqlx only
-            // allows u16::MAX arguments. To avoid a panic later on
-            // we return an error here.
-            anyhow::bail!("query response too large");
-        }
-
-        let executed_protocol_fees = self
-            .executed_protocol_fees(&mut ex, auction_order_uids.as_slice())
-            .await?;
-        let penalty_caps = {
-            let _timer = super::Metrics::get()
-                .database_queries
-                .with_label_values(&["penalty_caps"])
-                .start_timer();
-            database::auction::penalty_caps(&mut ex, auction_order_uids.as_slice()).await?
-        };
-
-        trades
-            .into_iter()
-            .map(|trade| {
-                let key = trade
-                    .auction_id
-                    .map(|auction_id| (auction_id, trade.order_uid));
-                let executed_protocol_fees = key
-                    .and_then(|key| executed_protocol_fees.get(&key).cloned())
-                    .unwrap_or_default();
-                let penalty_cap_native = key.and_then(|key| penalty_caps.get(&key).cloned());
-                trade_from(trade, executed_protocol_fees, penalty_cap_native)
-            })
-            .collect::<Result<Vec<_>>>()
-    }
 }
 
 #[async_trait::async_trait]
