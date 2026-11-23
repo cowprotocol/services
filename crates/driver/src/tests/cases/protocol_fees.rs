@@ -11,7 +11,7 @@ use {
                 ab_liquidity_quote,
                 ab_order,
                 ab_solution,
-                fee::{Policy, Quote},
+                fee::{Origin, Policy, Quote},
                 test_solver,
             },
         },
@@ -47,6 +47,10 @@ struct TestCase {
 
 #[cfg(test)]
 async fn protocol_fee_test_case(test_case: TestCase) {
+    protocol_fee_test_case_with_origins(test_case, Vec::new()).await;
+}
+
+async fn protocol_fee_test_case_with_origins(test_case: TestCase, fee_origins: Vec<Origin>) {
     use number::testing::ApproxEq;
 
     let test_name = format!(
@@ -81,6 +85,7 @@ async fn protocol_fee_test_case(test_case: TestCase) {
         .solver_fee(Some(solver_fee))
         .side(test_case.order.side)
         .fee_policy(test_case.fee_policy)
+        .fee_origins(fee_origins)
         .executed(executed)
         .partial(eth::U256::ZERO)
         // Surplus is configured explicitly via executed/quoted amounts
@@ -631,6 +636,62 @@ async fn volume_protocol_fee_buy_order() {
         expected_score: 16.ether().into_wei(),
     };
     protocol_fee_test_case(test_case).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn volume_partner_fee_buy_order() {
+    // Same amounts as `volume_protocol_fee_buy_order`. The driver does not
+    // branch on origin yet, so a partner fee must be applied identically.
+    let fee_policy = Policy::Volume { factor: 0.5 };
+    let test_case = TestCase {
+        fee_policy: vec![fee_policy],
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            solver: Amounts {
+                sell: 30.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 45.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+        },
+        expected_score: 16.ether().into_wei(),
+    };
+    protocol_fee_test_case_with_origins(test_case, vec![Origin::Partner]).await;
+}
+
+#[tokio::test]
+#[ignore]
+async fn volume_explicit_protocol_origin_buy_order() {
+    // Same amounts as `volume_partner_fee_buy_order`, with an explicit
+    // `protocol` origin instead of the default absent-field path.
+    let fee_policy = Policy::Volume { factor: 0.5 };
+    let test_case = TestCase {
+        fee_policy: vec![fee_policy],
+        order: Order {
+            sell_amount: 50.ether().into_wei(),
+            buy_amount: 40.ether().into_wei(),
+            side: order::Side::Buy,
+        },
+        execution: Execution {
+            solver: Amounts {
+                sell: 30.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+            driver: Amounts {
+                sell: 45.ether().into_wei(),
+                buy: 40.ether().into_wei(),
+            },
+        },
+        expected_score: 16.ether().into_wei(),
+    };
+    protocol_fee_test_case_with_origins(test_case, vec![Origin::Protocol]).await;
 }
 
 #[tokio::test]

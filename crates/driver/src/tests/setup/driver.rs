@@ -75,7 +75,7 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
             .order
             .fee_policy
             .iter()
-            .map(|policy| json!({"origin": "protocol", "policy": policy.to_json_value()}))
+            .map(|policy| policy.to_json_value())
             .collect::<Vec<_>>(),
         "created": quote.order.created,
         "validTo": quote.order.valid_to,
@@ -102,6 +102,16 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
             "0x{}",
             const_hex::encode(quote.order.receiver.raw_bytes())
         ));
+    }
+    if !quote.order.fee_origins.is_empty() {
+        order["protocolFeeOrigins"] = json!(
+            quote
+                .order
+                .fee_origins
+                .iter()
+                .map(|origin| origin.as_str())
+                .collect::<Vec<_>>()
+        );
     }
     order
 }
