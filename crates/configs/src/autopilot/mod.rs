@@ -75,8 +75,8 @@ pub struct Configuration {
     /// Describes how the protocol fees should be calculated.
     pub fee_policies: FeePoliciesConfig,
 
-    /// Protocol fee rules, compared with `fee_policies`. Absent, the autopilot
-    /// uses `fee_policies` alone.
+    /// Protocol fee rules. With them, the autopilot ignores the legacy fee
+    /// config; absent, it uses `fee_policies` alone.
     pub fee_engine: Option<FeeEngineConfig>,
 
     /// Describes how per-order penalty caps should be calculated (CIP-87).
