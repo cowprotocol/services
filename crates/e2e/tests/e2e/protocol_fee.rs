@@ -708,7 +708,7 @@ fn time_switched_volume_fees(
     effective_from: chrono::DateTime<chrono::Utc>,
     upcoming_bps: u32,
     current_bps: u32,
-) -> Option<configs::fee_engine::FeeEngineConfig> {
+) -> configs::fee_engine::FeeEngineConfig {
     fee_engine_config(&format!(
         r#"
 [[rule]]

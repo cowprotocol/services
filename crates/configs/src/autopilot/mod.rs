@@ -72,12 +72,15 @@ pub struct Configuration {
     /// Solver drivers to dispatch auctions to.
     pub drivers: Vec<Solver>,
 
-    /// Describes how the protocol fees should be calculated.
+    /// Deprecated and ignored: `fee_engine` decides the fees. Kept so that a
+    /// config that still sets it loads.
+    #[serde(default)]
     pub fee_policies: FeePoliciesConfig,
 
-    /// Protocol fee rules. With them, the autopilot ignores the legacy fee
-    /// config; absent, it uses `fee_policies` alone.
-    pub fee_engine: Option<FeeEngineConfig>,
+    /// Protocol fee rules and the partner fee cap. Absent, no order pays a
+    /// fee.
+    #[serde(default)]
+    pub fee_engine: FeeEngineConfig,
 
     /// Describes how per-order penalty caps should be calculated (CIP-87).
     /// If absent, orders don't get a penalty cap assigned.
@@ -424,8 +427,7 @@ mod tests {
 
         let config: Configuration = toml::from_str(toml).unwrap();
 
-        let fee_engine = config.fee_engine.unwrap();
-        assert!(fee_engine.rules.is_some() && fee_engine.partner_fees.is_some());
+        assert!(config.fee_engine.rules.is_some() && config.fee_engine.partner_fees.is_some());
 
         assert_eq!(config.drivers.len(), 2);
         assert_eq!(config.drivers[0].name, "solver1");

@@ -1,10 +1,7 @@
 //! The partner fees the engine returns apart from the rule's fees.
 //!
-//! The cap is the autopilot's: `get_partner_fee` in `autopilot::domain::fee`
-//! and the orderbook's fast-path check (`capped_partner_volume_factors` in
-//! `shared::fee`) use [`PartnerFeeBudget`] from here. The fast-path check
-//! spends no cap budget on surplus fees; [`partner_fees`] does, as the
-//! autopilot does.
+//! [`partner_fees`] spends the cap on every fee, as an auction charges them.
+//! A host that settles at the quoted price passes only the volume fees.
 
 use {
     crate::{Fee, FeeFactor},
@@ -54,14 +51,14 @@ pub(crate) fn partner_fees(fees: &[PartnerFee], cap: FeeFactor) -> Vec<Fee> {
 /// The share of the volume an order's partner fees may still take, spent fee
 /// by fee in app-data order.
 #[derive(Debug)]
-pub struct PartnerFeeBudget {
+struct PartnerFeeBudget {
     cap: FeeFactor,
     /// In [0, `cap`].
     accumulated: Decimal,
 }
 
 impl PartnerFeeBudget {
-    pub fn new(cap: FeeFactor) -> Self {
+    fn new(cap: FeeFactor) -> Self {
         Self {
             cap,
             accumulated: Decimal::ZERO,
@@ -71,7 +68,7 @@ impl PartnerFeeBudget {
     /// Caps `value` to the headroom `(1 + cap) / (1 + accumulated) - 1` the
     /// fees before it left and spends it. With three or more fees the
     /// compounded total can pass `cap` slightly. A negative `value` is zero.
-    pub fn capped_fee_factor(&mut self, value: Decimal) -> FeeFactor {
+    fn capped_fee_factor(&mut self, value: Decimal) -> FeeFactor {
         let cap = self.cap.get();
         // Clamped before it is spent too, so a negative value cannot lower
         // `accumulated` and raise the headroom past the cap.

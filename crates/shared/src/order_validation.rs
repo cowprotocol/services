@@ -1,6 +1,6 @@
 use {
     crate::{
-        fee::OrderbookFees,
+        fee_engine::FeeEngineVolumeFees,
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
             AdditionalCost,
@@ -450,7 +450,7 @@ pub struct OrderValidator {
     max_gas_per_order: u64,
     same_tokens_policy: SameTokensPolicy,
     /// The volume fees the fast-path limit-price check leaves room for.
-    volume_fees: Arc<dyn OrderbookFees>,
+    volume_fees: Arc<FeeEngineVolumeFees>,
     wrapper_validator: order_validation::wrappers::Validator,
 }
 
@@ -512,7 +512,7 @@ impl OrderValidator {
         app_data_validator: Validator,
         max_gas_per_order: u64,
         same_tokens_policy: SameTokensPolicy,
-        volume_fees: Arc<dyn OrderbookFees>,
+        volume_fees: Arc<FeeEngineVolumeFees>,
         wrapper_validator: order_validation::wrappers::Validator,
     ) -> Self {
         Self {
@@ -1348,7 +1348,6 @@ mod tests {
     use {
         super::*,
         crate::{
-            fee::LegacyVolumeFees,
             order_creation_simulation::MockOrderSimulating,
             order_quoting::{
                 FindQuoteError,
@@ -1376,6 +1375,11 @@ mod tests {
         serde_json::json,
         signature_validator::MockSignatureValidating,
     };
+
+    /// Volume fees from no rules: no order pays one.
+    fn no_volume_fees() -> Arc<FeeEngineVolumeFees> {
+        Arc::new(FeeEngineVolumeFees::new(&Default::default(), Address::ZERO).unwrap())
+    }
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -1424,7 +1428,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -1493,7 +1497,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
         std::assert_matches!(
@@ -1624,7 +1628,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
         let order = || PreOrderData {
@@ -1691,7 +1695,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::AllowSell,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -1790,7 +1794,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Allow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -1866,7 +1870,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -1994,7 +1998,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2206,7 +2210,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2281,7 +2285,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2344,7 +2348,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
         let order = OrderCreation {
@@ -2400,7 +2404,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2460,7 +2464,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2526,7 +2530,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2593,7 +2597,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2654,7 +2658,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -2726,7 +2730,7 @@ mod tests {
                 Default::default(),
                 u64::MAX,
                 SameTokensPolicy::Disallow,
-                Arc::new(LegacyVolumeFees::default()),
+                no_volume_fees(),
                 wrapper_validator(),
             );
 
@@ -2822,7 +2826,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -3241,7 +3245,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         );
 
@@ -3356,7 +3360,7 @@ mod tests {
             Default::default(),
             u64::MAX,
             SameTokensPolicy::Disallow,
-            Arc::new(LegacyVolumeFees::default()),
+            no_volume_fees(),
             wrapper_validator(),
         )
     }
