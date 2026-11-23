@@ -1941,10 +1941,16 @@ components:
             Seconds until `nextBatch` by the server's clock, so a countdown
             doesn't depend on the client's clock.
           type: integer
+        nextBatchValidTo:
+          description: >
+            The smallest `validTo`, in Unix seconds, that an order with
+            `enableWaitForCow` should use.
+          type: integer
       required:
         - intervalSeconds
         - nextBatch
         - secondsUntilNextBatch
+        - nextBatchValidTo
     OrderCancellationError:
       type: object
       properties:

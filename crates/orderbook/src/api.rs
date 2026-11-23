@@ -76,6 +76,8 @@ pub struct AppState {
     pub hide_competition_before_deadline: bool,
     /// `None` when canonical batches are off.
     pub canonical_batch_schedule: Option<Schedule>,
+    /// How long an order must stay valid after it can first trade.
+    pub min_order_validity_period: Duration,
 }
 
 impl AppState {
@@ -172,6 +174,7 @@ pub fn handle_all_routes(
     current_block_stream: CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
     canonical_batch_schedule: Option<Schedule>,
+    min_order_validity_period: Duration,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
 
@@ -186,6 +189,7 @@ pub fn handle_all_routes(
         current_block_stream,
         hide_competition_before_deadline,
         canonical_batch_schedule,
+        min_order_validity_period,
     });
 
     let routes = [

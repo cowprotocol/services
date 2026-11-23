@@ -533,6 +533,7 @@ pub async fn run(config: Configuration) {
         current_block_stream,
         config.hide_competition_before_deadline,
         canonical_batch_schedule,
+        config.order_validation.min_order_validity_period,
     );
 
     let mut metrics_address = config.bind_address;
@@ -581,6 +582,7 @@ fn serve_api(
     current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
     canonical_batch_schedule: Option<Schedule>,
+    min_order_validity_period: Duration,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -593,6 +595,7 @@ fn serve_api(
         current_block_stream,
         hide_competition_before_deadline,
         canonical_batch_schedule,
+        min_order_validity_period,
     );
     tracing::info!(%address, "serving order book");
 
