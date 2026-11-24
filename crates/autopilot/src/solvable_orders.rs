@@ -2,6 +2,7 @@ use {
     crate::{
         boundary::{self, SolvableOrders},
         domain::{self, auction::Price},
+        fee_engine::FeeEngineFees,
         infra::{self},
     },
     account_balances::{BalanceFetching, Query},
@@ -120,7 +121,7 @@ pub struct SolvableOrdersCache {
     cache: Mutex<Option<Inner>>,
     native_price_estimator: Arc<NativePriceUpdater>,
     weth: Address,
-    protocol_fees: Arc<dyn domain::fee::AutopilotFees>,
+    protocol_fees: Arc<FeeEngineFees>,
     penalty_cap_calculator: Option<Arc<domain::penalty_cap::PenaltyCapCalculator>>,
     surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
     native_price_timeout: Duration,
@@ -146,7 +147,7 @@ impl SolvableOrdersCache {
         deny_listed_tokens: DenyListedTokens,
         native_price_estimator: Arc<NativePriceUpdater>,
         weth: Address,
-        protocol_fees: Arc<dyn domain::fee::AutopilotFees>,
+        protocol_fees: Arc<FeeEngineFees>,
         penalty_cap_calculator: Option<Arc<domain::penalty_cap::PenaltyCapCalculator>>,
         surplus_capturing_jit_order_owners: Arc<Vec<Address>>,
         native_price_timeout: Duration,
@@ -326,12 +327,8 @@ impl SolvableOrdersCache {
                             .penalty_cap_calculator
                             .as_ref()
                             .map(|calculator| calculator.calculate(order, &prices));
-                        let protocol_fees = self.protocol_fees.auction_fees(
-                            order,
-                            quote.as_ref(),
-                            &surplus_capturing_jit_order_owners,
-                            now,
-                        );
+                        let protocol_fees =
+                            self.protocol_fees.auction_fees(order, quote.as_ref(), now);
                         boundary::order::to_domain(order, protocol_fees, quote, penalty_cap_native)
                     })
                     .collect()

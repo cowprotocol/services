@@ -57,8 +57,7 @@ fee:  surplus(50, 100)
 tried in file order, and `[partner-fees]` holds `max-volume-bps`, the basis
 points of the volume an order's partner fees may take together; it lands on
 the fee grid like a fee argument. Without the table the engine returns no
-partner fee, as the orderbook counts none without
-`order-quoting.max-partner-fee`.
+partner fee.
 Unknown top-level and rule keys are refused; any key under `[lists]` is a
 list name, so a list that no rule names loads without error. The file goes
 through `RuleSet::new` and `RuleSet::validate_on_sample_order`; any failure

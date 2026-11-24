@@ -18,8 +18,6 @@ name = "baseline"
 url = "http://driver/baseline"
 address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720"
 
-[fee-policies]
-
 [database]
 write-url = "%DB_WRITE_URL"
 read-url = "%DB_READ_URL"

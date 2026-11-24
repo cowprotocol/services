@@ -181,11 +181,7 @@ impl<'a> Services<'a> {
             .collect::<Vec<_>>();
 
         let config = configs::autopilot::Configuration {
-            shared: configs::shared::SharedConfig {
-                volume_fee_bucket_overrides: config.shared.volume_fee_bucket_overrides.clone(),
-                enable_sell_equals_buy_volume_fee: config.shared.enable_sell_equals_buy_volume_fee,
-                ..self.shared_config()
-            },
+            shared: self.shared_config(),
             ethflow: EthflowConfig {
                 contracts: ethflow_contracts,
                 ..config.ethflow
@@ -220,11 +216,7 @@ impl<'a> Services<'a> {
     /// Wait until the service is responsive.
     pub async fn start_api(&self, config: configs::orderbook::Configuration) {
         let config = configs::orderbook::Configuration {
-            shared: configs::shared::SharedConfig {
-                volume_fee_bucket_overrides: config.shared.volume_fee_bucket_overrides.clone(),
-                enable_sell_equals_buy_volume_fee: config.shared.enable_sell_equals_buy_volume_fee,
-                ..self.shared_config()
-            },
+            shared: self.shared_config(),
             ..config
         };
 

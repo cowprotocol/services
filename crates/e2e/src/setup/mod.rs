@@ -31,8 +31,8 @@ pub fn config_tmp_file<C: AsRef<[u8]>>(content: C) -> TempPath {
 }
 
 /// The `[fee-engine]` section of a service config from its TOML.
-pub fn fee_engine_config(toml: &str) -> Option<configs::fee_engine::FeeEngineConfig> {
-    Some(toml::from_str(toml).expect("fee engine section must parse"))
+pub fn fee_engine_config(toml: &str) -> configs::fee_engine::FeeEngineConfig {
+    toml::from_str(toml).expect("fee engine section must parse")
 }
 
 /// Reasonable default timeout for `wait_for_condition`.

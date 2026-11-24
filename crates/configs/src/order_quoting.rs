@@ -60,8 +60,8 @@ pub struct OrderQuoting {
     #[serde(with = "humantime_serde", default = "default_fast_path_quote_validity")]
     pub fast_path_quote_validity: Duration,
 
-    /// Upper bound on the sum of partner volume-fee factors declared in an
-    /// order's app-data. Must mirror the autopilot's
+    /// Deprecated and ignored: `[fee-engine.partner-fees]` caps the partner
+    /// fees. Kept so that a config that still sets it loads.
     #[serde(default)]
     pub max_partner_fee: Option<FeeFactor>,
 }

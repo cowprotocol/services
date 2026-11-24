@@ -5,15 +5,7 @@ use {
         boundary,
         domain::{
             self,
-            fee::{
-                AutopilotFees,
-                Origin,
-                Policy,
-                PolicyWithOrigin,
-                ProtocolFees,
-                Quote,
-                reference_quote,
-            },
+            fee::{Origin, Policy, PolicyWithOrigin, Quote, reference_quote},
         },
     },
     alloy::primitives::Address,
@@ -21,23 +13,7 @@ use {
     configs::{fee_engine::FeeEngineConfig, fee_factor::FeeFactor},
     fee_engine::{Evaluation, Fee, RuleSet},
     shared::fee_engine::load_host_rules,
-    std::sync::Arc,
 };
-
-/// The legacy fee policies without `[fee-engine]`; with it, the rules' ones.
-/// The rules must load.
-pub fn protocol_fees(
-    config: Option<&FeeEngineConfig>,
-    legacy: ProtocolFees,
-    native_token: Address,
-    surplus_capturing_jit_order_owners: &[Address],
-) -> anyhow::Result<Arc<dyn AutopilotFees>> {
-    let Some(config) = config else {
-        return Ok(Arc::new(legacy));
-    };
-    let engine = FeeEngineFees::new(config, native_token, surplus_capturing_jit_order_owners)?;
-    Ok(Arc::new(engine))
-}
 
 /// The list the autopilot sets to the configured surplus capturing JIT order
 /// owners.
@@ -114,19 +90,6 @@ impl FeeEngineFees {
             );
             policies(&self.evaluate(order, in_market, now), &quote)
         })
-    }
-}
-
-impl AutopilotFees for FeeEngineFees {
-    /// The engine reads the configured `jit_owners` list, not the one given.
-    fn auction_fees(
-        &self,
-        order: &boundary::Order,
-        quote: Option<&domain::Quote>,
-        _surplus_capturing_jit_order_owners: &[Address],
-        now: DateTime<Utc>,
-    ) -> Vec<PolicyWithOrigin> {
-        self.auction_fees(order, quote, now)
     }
 }
 

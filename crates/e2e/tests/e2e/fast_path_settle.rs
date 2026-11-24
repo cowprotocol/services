@@ -59,7 +59,7 @@ fn with_fast_path_exclusivity(
 /// the way the autopilot charges them at settle time.
 fn fee_engine_with_partner_fee_room(
     protocol_volume_factor: Option<f64>,
-) -> Option<configs::fee_engine::FeeEngineConfig> {
+) -> configs::fee_engine::FeeEngineConfig {
     let rule = protocol_volume_factor
         .map(|factor| {
             format!(

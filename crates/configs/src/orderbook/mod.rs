@@ -86,12 +86,14 @@ pub struct Configuration {
     /// Configuration for the IPFS gateway, supports token authentication.
     pub ipfs: Option<IpfsConfig>,
 
-    /// Configuration for the volume fee.
+    /// Deprecated and ignored: `fee_engine` decides the fees. Kept so that a
+    /// config that still sets it loads.
     pub volume_fee: Option<VolumeFeeConfig>,
 
-    /// Protocol fee rules. With them, the orderbook ignores the legacy fee
-    /// config; absent, it uses `volume_fee` alone.
-    pub fee_engine: Option<FeeEngineConfig>,
+    /// Protocol fee rules and the partner fee cap. Absent, no quote or
+    /// fast-path order pays a volume fee.
+    #[serde(default)]
+    pub fee_engine: FeeEngineConfig,
 
     /// Maximum allowed size (in bytes) for order app-data.
     #[serde(default = "default_app_data_size_limit")]
@@ -305,7 +307,7 @@ mod tests {
 
         let config: Configuration = toml::from_str(toml).unwrap();
 
-        let fee_engine = config.fee_engine.unwrap();
+        let fee_engine = config.fee_engine;
         assert_eq!(fee_engine.rules.unwrap().as_array().unwrap().len(), 1);
         assert_eq!(
             fee_engine.partner_fees.unwrap()["max-volume-bps"].as_integer(),
@@ -409,7 +411,7 @@ mod tests {
                 factor: Some(0.0002.try_into().unwrap()),
                 effective_from_timestamp: None,
             }),
-            fee_engine: None,
+            fee_engine: Default::default(),
             unsupported_tokens: vec![
                 "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
                     .parse()
