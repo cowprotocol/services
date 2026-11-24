@@ -18,7 +18,7 @@ use {
     },
     price_estimation::{PriceEstimationError, Verification},
     shared::{
-        fee::OrderbookFees,
+        fee_engine::FeeEngineVolumeFees,
         order_quoting::{
             CalculateQuoteError,
             EstimatorKind,
@@ -68,7 +68,7 @@ pub struct QuoteHandler {
     verified_quoter: Arc<dyn OrderQuoting>,
     fast_quoter: Arc<dyn OrderQuoting>,
     app_data: Arc<app_data::Registry>,
-    volume_fees: Arc<dyn OrderbookFees>,
+    volume_fees: Arc<FeeEngineVolumeFees>,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     streaming_quoters: Option<StreamingQuoters>,
 }
@@ -93,7 +93,7 @@ impl QuoteHandler {
         order_validator: Arc<dyn OrderValidating>,
         quoter: Arc<dyn OrderQuoting>,
         app_data: Arc<app_data::Registry>,
-        volume_fees: Arc<dyn OrderbookFees>,
+        volume_fees: Arc<FeeEngineVolumeFees>,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
     ) -> Self {
         Self {
@@ -165,7 +165,6 @@ impl QuoteHandler {
 
         let volume_fee = self.volume_fees.quote_volume_fee(
             &quote_order(request, &quote, valid_to, &app_data),
-            &quote,
             &app_data,
             app_code.as_deref(),
         );
@@ -228,7 +227,6 @@ impl QuoteHandler {
                 };
                 let volume_fee = volume_fees.quote_volume_fee(
                     &quote_order(&request, &quote, valid_to, &app_data),
-                    &quote,
                     &app_data,
                     app_code.as_deref(),
                 );

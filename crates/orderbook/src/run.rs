@@ -3,7 +3,6 @@ use {
         api,
         arguments::Arguments,
         database::Postgres,
-        fee_engine,
         ipfs::Ipfs,
         ipfs_app_data::IpfsAppData,
         orderbook::Orderbook,
@@ -417,30 +416,13 @@ pub async fn run(config: Configuration) {
         "order-simulation-ignore-legacy-checks-for-lenders requires simulation-node-url"
     );
 
-    let volume_fee_bucket_overrides: Vec<shared::arguments::TokenBucketFeeOverride> = config
-        .shared
-        .volume_fee_bucket_overrides
-        .iter()
-        .map(Into::into)
-        .collect();
     // Shared between the fast-path limit-price check in `OrderValidator` and
     // the quote-time volume fee adjustment in `QuoteHandler` so a single
     // configuration change propagates everywhere.
-    let volume_fees = fee_engine::volume_fees(
-        config.fee_engine.as_ref(),
-        shared::fee::LegacyVolumeFees {
-            config: config.volume_fee.clone(),
-            policy: Some(Arc::new(shared::fee::VolumeFeePolicy::new(
-                volume_fee_bucket_overrides,
-                config.volume_fee.as_ref().and_then(|c| c.factor),
-                config.shared.enable_sell_equals_buy_volume_fee,
-                *native_token.address(),
-            ))),
-            max_partner_fee: config.order_quoting.max_partner_fee,
-        },
-        *native_token.address(),
-    )
-    .expect("fee engine rules must load");
+    let volume_fees = Arc::new(
+        shared::fee_engine::FeeEngineVolumeFees::new(&config.fee_engine, *native_token.address())
+            .expect("fee engine rules must load"),
+    );
 
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),

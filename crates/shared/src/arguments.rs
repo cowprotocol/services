@@ -2,12 +2,9 @@
 //! the binaries.
 
 use {
-    alloy::primitives::Address,
-    configs::fee_factor::FeeFactor,
     gas_price_estimation::GasEstimatorType,
     observe::TracingConfig,
     std::{
-        collections::HashSet,
         fmt::{self, Display, Formatter},
         num::NonZeroU32,
         time::Duration,
@@ -110,13 +107,6 @@ pub fn display_option(
     }
 }
 
-/// Helper type for parsing token bucket fee overrides from strings
-#[derive(Debug, Clone)]
-pub struct TokenBucketFeeOverride {
-    pub tokens: HashSet<Address>,
-    pub factor: FeeFactor,
-}
-
 pub fn gas_estimator_type_from_config(
     config: &configs::shared::GasEstimatorType,
 ) -> GasEstimatorType {
@@ -124,14 +114,5 @@ pub fn gas_estimator_type_from_config(
         configs::shared::GasEstimatorType::Web3 => GasEstimatorType::Web3,
         configs::shared::GasEstimatorType::Driver { url } => GasEstimatorType::Driver(url.clone()),
         configs::shared::GasEstimatorType::Alloy => GasEstimatorType::Alloy,
-    }
-}
-
-impl From<&configs::shared::TokenBucketFeeOverride> for TokenBucketFeeOverride {
-    fn from(config: &configs::shared::TokenBucketFeeOverride) -> Self {
-        Self {
-            tokens: config.tokens.clone(),
-            factor: config.factor,
-        }
     }
 }

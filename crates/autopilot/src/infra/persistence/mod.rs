@@ -1212,8 +1212,8 @@ impl Persistence {
 #[derive(Debug)]
 pub struct FastPathOrder {
     /// The order in the raw API model form. Callers pass this to
-    /// `ProtocolFees::apply` and can then convert it to `domain::Order` via
-    /// `boundary::order::to_domain` once the resulting policies are known.
+    /// `FeeEngineFees::auction_fees` and can then convert it to `domain::Order`
+    /// via `boundary::order::to_domain` once the resulting policies are known.
     pub model_order: model::order::Order,
     /// Staged quote competition, when one is available.
     pub staged: Option<StagedFastPathCompetition>,

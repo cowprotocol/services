@@ -504,24 +504,14 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         None => None,
     };
 
-    let protocol_fees = domain::ProtocolFees::new(
-        &config.fee_policies,
-        config
-            .shared
-            .volume_fee_bucket_overrides
-            .iter()
-            .map(Into::into)
-            .collect(),
-        config.shared.enable_sell_equals_buy_volume_fee,
-        *eth.contracts().weth().address(),
+    let protocol_fees = Arc::new(
+        fee_engine::FeeEngineFees::new(
+            &config.fee_engine,
+            *eth.contracts().weth().address(),
+            &config.surplus_capturing_jit_order_owners,
+        )
+        .expect("fee engine rules must load"),
     );
-    let protocol_fees = fee_engine::protocol_fees(
-        config.fee_engine.as_ref(),
-        protocol_fees,
-        *eth.contracts().weth().address(),
-        &config.surplus_capturing_jit_order_owners,
-    )
-    .expect("fee engine rules must load");
     let surplus_capturing_jit_order_owners =
         Arc::new(config.surplus_capturing_jit_order_owners.clone());
 

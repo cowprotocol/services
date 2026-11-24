@@ -91,14 +91,13 @@ pub struct SharedConfig {
     #[serde(default)]
     pub contracts: ContractAddresses,
 
-    /// Custom volume fee factors for token buckets. Orders where both tokens
-    /// are in the bucket will use the custom fee. Useful for
-    /// stablecoin-to-stablecoin trades or specific token pairs.
+    /// Deprecated and ignored: the rules of `[fee-engine]` decide the fee of
+    /// a token pair. Kept so that a config that still sets it loads.
     #[serde(default)]
     pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
 
-    /// Enable volume fees for trades where sell token equals buy token.
-    /// By default, volume fees are NOT applied to same-token trades.
+    /// Deprecated and ignored: the rules of `[fee-engine]` decide the fee of
+    /// a same-token trade. Kept so that a config that still sets it loads.
     #[serde(default)]
     pub enable_sell_equals_buy_volume_fee: bool,
 

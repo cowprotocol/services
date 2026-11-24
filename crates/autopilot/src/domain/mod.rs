@@ -12,7 +12,6 @@ pub use {
         RawAuctionData,
         order::{Order, OrderUid},
     },
-    fee::ProtocolFees,
     quote::Quote,
 };
 
