@@ -4,18 +4,7 @@ use {
         providers::Provider,
     },
     configs::{
-        autopilot::{
-            Configuration,
-            fee_policy::{
-                FeePoliciesConfig,
-                FeePolicy as ConfigFeePolicy,
-                FeePolicyKind as ConfigFeePolicyKind,
-                FeePolicyOrderClass as ConfigFeePolicyOrderClass,
-                UpcomingFeePolicies,
-            },
-            solver::Solver,
-        },
-        fee_factor::FeeFactor,
+        autopilot::{Configuration, solver::Solver},
         orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
@@ -91,20 +80,19 @@ async fn local_node_volume_fee_dropped_on_wrapped_to_native_token() {
 }
 
 async fn combined_protocol_fees(web3: Web3) {
-    let limit_surplus_policy = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Surplus {
-            factor: 0.3.try_into().unwrap(),
-            max_volume_factor: 0.9.try_into().unwrap(),
-        },
-        order_class: ConfigFeePolicyOrderClass::Limit,
-    };
-    let market_price_improvement_policy = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::PriceImprovement {
-            factor: 0.3.try_into().unwrap(),
-            max_volume_factor: 0.9.try_into().unwrap(),
-        },
-        order_class: ConfigFeePolicyOrderClass::Market,
-    };
+    // In-market orders pay 30% of the price improvement, the others 30% of
+    // the surplus, at most 90% of the volume. Partner fees take 2% at most.
+    let fee_engine = fee_engine_config(
+        r#"
+[partner-fees]
+max-volume-bps = 200
+
+[[rule]]
+name = "Default"
+when = "true"
+fee = "order.inMarket ? price_improvement(30, 9000) : surplus(30, 9000)"
+"#,
+    );
     let partner_fee_app_data = OrderCreationAppData::Full {
         full: json!({
             "version": "1.1.0",
@@ -192,11 +180,7 @@ async fn combined_protocol_fees(web3: Web3) {
         .start_protocol_with_args(
             Configuration {
                 drivers: vec![Solver::test("test_solver", solver.address())],
-                fee_policies: FeePoliciesConfig {
-                    policies: vec![limit_surplus_policy, market_price_improvement_policy],
-                    max_partner_fee: 0.02.try_into().unwrap(),
-                    ..Default::default()
-                },
+                fee_engine,
                 ..Configuration::test_no_drivers()
             },
             configs::orderbook::Configuration::test_default(),
@@ -389,8 +373,8 @@ async fn combined_protocol_fees(web3: Web3) {
     let partner_fee_executed_fee_in_buy_token =
         fee_in_buy_token(&partner_fee_order, &partner_fee_quote_after.quote);
     assert!(
-        // see `max-partner-fee` in the `[fee-policies]` autopilot config, which
-        // is 0.02
+        // see `max-volume-bps` in the `[partner-fees]` table of the autopilot's
+        // rules, which is 2%
         partner_fee_executed_fee_in_buy_token
             >= (partner_fee_quote.quote.buy_amount * U256::from(2) / U256::from(100))
     );
@@ -465,9 +449,9 @@ async fn combined_protocol_fees(web3: Web3) {
 
 /// Tests that a partner can provide multiple partner fees and also use
 /// the `Surplus` and `PriceImprovement` fee policies. Also checks that
-/// the partner fees can not exceed the globally defined
-/// `max-partner-fee` config which defines how much of an order's volume
-/// may be captured in total by partner fees.
+/// the partner fees can not exceed `max-volume-bps` of `[partner-fees]`,
+/// which defines how much of an order's volume may be captured in total by
+/// partner fees.
 async fn surplus_partner_fee(web3: Web3) {
     // All these values are unreasonably high but result in easier math
     // when it comes to limiting partner fees to the global volume cap.
@@ -565,10 +549,10 @@ async fn surplus_partner_fee(web3: Web3) {
         .start_protocol_with_args(
             Configuration {
                 drivers: vec![Solver::test("test_solver", solver.address())],
-                fee_policies: FeePoliciesConfig {
-                    max_partner_fee: MAX_PARTNER_VOLUME_FEE.try_into().unwrap(),
-                    ..Default::default()
-                },
+                fee_engine: fee_engine_config(&format!(
+                    "[partner-fees]\nmax-volume-bps = {}\n",
+                    MAX_PARTNER_VOLUME_FEE * 10_000.
+                )),
                 ..Configuration::test_no_drivers()
             },
             configs::orderbook::Configuration::test_default(),
@@ -663,6 +647,14 @@ async fn surplus_partner_fee(web3: Web3) {
         }),
         1. + MAX_PARTNER_VOLUME_FEE
     );
+
+    // No rule charges a protocol fee, so every stored policy is the partner's.
+    let origins: Vec<_> = crate::database::latest_fee_policies_of_order(services.db(), &order_uid)
+        .await
+        .into_iter()
+        .map(|policy| policy.origin)
+        .collect();
+    assert_eq!(origins, [Some(FeePolicyOrigin::Partner); 3]);
 }
 
 async fn get_quote(
@@ -710,21 +702,34 @@ fn sell_order_from_quote(quote: &OrderQuoteResponse) -> OrderCreation {
     }
 }
 
+/// Rules that charge a volume fee of `upcoming_bps` twice from `effective_from`
+/// on, and of `current_bps` twice before that.
+fn time_switched_volume_fees(
+    effective_from: chrono::DateTime<chrono::Utc>,
+    upcoming_bps: u32,
+    current_bps: u32,
+) -> Option<configs::fee_engine::FeeEngineConfig> {
+    fee_engine_config(&format!(
+        r#"
+[[rule]]
+name = "Upcoming"
+when = 'now >= timestamp("{}")'
+fee = "[volume({upcoming_bps}), volume({upcoming_bps})]"
+
+[[rule]]
+name = "Current"
+when = "true"
+fee = "[volume({current_bps}), volume({current_bps})]"
+"#,
+        effective_from.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    ))
+}
+
 async fn volume_fee_buy_order_test(web3: Web3) {
-    let fee_policy = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Volume {
-            factor: 0.1.try_into().unwrap(),
-        },
-        // The order is in-market, but specifying `Any` order class to make sure
-        // it is properly applied
-        order_class: ConfigFeePolicyOrderClass::Any,
-    };
-    let outdated_fee_policy = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Volume {
-            factor: 0.0002.try_into().unwrap(),
-        },
-        order_class: ConfigFeePolicyOrderClass::Any,
-    };
+    // The 10% volume fee is charged twice from 10 minutes ago on, so it
+    // applies; the outdated 2 bps one before that.
+    let fee_engine =
+        time_switched_volume_fees(chrono::Utc::now() - chrono::Duration::minutes(10), 1000, 2);
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -796,25 +801,12 @@ async fn volume_fee_buy_order_test(web3: Web3) {
         .unwrap();
 
     // Place Orders
-    // Protocol fee set twice to test that only one policy will apply if the
-    // autopilot is not configured to support multiple fees
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             Configuration {
                 drivers: vec![Solver::test("test_solver", solver.address())],
-                fee_policies: FeePoliciesConfig {
-                    policies: vec![outdated_fee_policy.clone(), outdated_fee_policy],
-                    upcoming_policies: UpcomingFeePolicies {
-                        policies: vec![fee_policy.clone(), fee_policy],
-                        // Set the effective time to 10 minutes ago to make sure
-                        // the new policy is applied
-                        effective_from_timestamp: Some(
-                            chrono::Utc::now() - chrono::Duration::minutes(10),
-                        ),
-                    },
-                    ..Default::default()
-                },
+                fee_engine,
                 ..Configuration::test_no_drivers()
             },
             configs::orderbook::Configuration::test_default(),
@@ -873,20 +865,10 @@ async fn volume_fee_buy_order_test(web3: Web3) {
 }
 
 async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
-    let fee_policy = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Volume {
-            factor: 0.1.try_into().unwrap(),
-        },
-        // The order is in-market, but specifying `Any` order class to make sure
-        // it is properly applied
-        order_class: ConfigFeePolicyOrderClass::Any,
-    };
-    let future_fee_policy = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Volume {
-            factor: 0.0002.try_into().unwrap(),
-        },
-        order_class: ConfigFeePolicyOrderClass::Any,
-    };
+    // The 2 bps volume fee starts in a day, so it does not apply; the 10%
+    // one, charged twice, does.
+    let fee_engine =
+        time_switched_volume_fees(chrono::Utc::now() + chrono::Duration::days(1), 2, 1000);
 
     let mut onchain = OnchainComponents::deploy(web3.clone()).await;
 
@@ -958,25 +940,12 @@ async fn volume_fee_buy_order_upcoming_future_test(web3: Web3) {
         .unwrap();
 
     // Place Orders
-    // Protocol fee set twice to test that only one policy will apply if the
-    // autopilot is not configured to support multiple fees
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             Configuration {
                 drivers: vec![Solver::test("test_solver", solver.address())],
-                fee_policies: FeePoliciesConfig {
-                    policies: vec![fee_policy.clone(), fee_policy],
-                    upcoming_policies: UpcomingFeePolicies {
-                        policies: vec![future_fee_policy.clone(), future_fee_policy],
-                        // Set the effective time to far in the future to make
-                        // sure the new policy is NOT applied
-                        effective_from_timestamp: Some(
-                            chrono::Utc::now() + chrono::Duration::days(1),
-                        ),
-                    },
-                    ..Default::default()
-                },
+                fee_engine,
                 ..Configuration::test_no_drivers()
             },
             configs::orderbook::Configuration::test_default(),
@@ -1108,60 +1077,46 @@ async fn volume_fee_overrides(web3: Web3) {
             .unwrap();
     }
 
-    // Default volume fee: 1% (0.01)
-    let default_volume_fee = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Volume {
-            factor: 0.01.try_into().unwrap(),
-        },
-        order_class: ConfigFeePolicyOrderClass::Any,
-    };
-
-    // Bucket overrides (checked in order, first match wins):
+    // The first rule that matches decides the volume fee:
     // - 2-token pair: USDC-DAI has 0.05% fee (checked first, has precedence)
     // - Stablecoins: USDC, DAI, USDT have 0% fee (checked second)
-    let volume_fee_bucket_overrides = vec![
-        configs::shared::TokenBucketFeeOverride {
-            tokens: [*token_usdc.address(), *token_dai.address()]
-                .into_iter()
-                .collect(),
-            factor: FeeFactor::new(0.0005),
-        },
-        configs::shared::TokenBucketFeeOverride {
-            tokens: [
-                *token_usdc.address(),
-                *token_dai.address(),
-                *token_usdt.address(),
-            ]
-            .into_iter()
-            .collect(),
-            factor: FeeFactor::new(0.0),
-        },
-    ];
+    // - Default volume fee: 1%
+    let fee_engine = fee_engine_config(&format!(
+        r#"
+[lists]
+usdc_dai = ["{usdc:?}", "{dai:?}"]
+stablecoins = ["{usdc:?}", "{dai:?}", "{usdt:?}"]
+
+[[rule]]
+name = "USDC-DAI"
+when = "order.sellToken in usdc_dai && order.buyToken in usdc_dai"
+fee = "volume(5)"
+
+[[rule]]
+name = "Stablecoins"
+when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
+fee = "volume(0)"
+
+[[rule]]
+name = "Default"
+when = "true"
+fee = "volume(100)"
+"#,
+        usdc = token_usdc.address(),
+        dai = token_dai.address(),
+        usdt = token_usdt.address(),
+    ));
 
     let services = Services::new(&onchain).await;
     services
         .start_protocol_with_args(
             Configuration {
-                shared: configs::shared::SharedConfig {
-                    volume_fee_bucket_overrides: volume_fee_bucket_overrides.clone(),
-                    ..Default::default()
-                },
                 drivers: vec![Solver::test("test_solver", solver.address())],
-                fee_policies: FeePoliciesConfig {
-                    policies: vec![default_volume_fee],
-                    ..Default::default()
-                },
+                fee_engine: fee_engine.clone(),
                 ..Configuration::test_no_drivers()
             },
             configs::orderbook::Configuration {
-                shared: configs::shared::SharedConfig {
-                    volume_fee_bucket_overrides,
-                    ..Default::default()
-                },
-                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
-                    factor: Some(FeeFactor::new(0.01)), // Default 1% volume fee
-                    effective_from_timestamp: None,
-                }),
+                fee_engine,
                 ..configs::orderbook::Configuration::test_default()
             },
             solver,
@@ -1289,10 +1244,9 @@ async fn deploy_with_solver_and_trader(
 }
 
 /// Wraps 50 ETH for `trader` (approved to the vault relayer) and starts the
-/// protocol with a 1% volume fee (effective immediately) and
-/// `SameTokensPolicy::Allow`. `enable_sell_equals_buy` toggles charging the
-/// volume fee on same-token trades on both services (which read the flag
-/// independently).
+/// protocol with a 1% volume fee and `SameTokensPolicy::Allow`. Without
+/// `enable_sell_equals_buy` the rules of both services exempt same-token
+/// trades from the volume fee, as the rules of prod do.
 async fn start_volume_fee_protocol<'a>(
     onchain: &'a OnchainComponents,
     solver: TestAccount,
@@ -1317,36 +1271,39 @@ async fn start_volume_fee_protocol<'a>(
         .await
         .unwrap();
 
+    let same_token_rule = r#"
+[[rule]]
+name = "Same token"
+when = 'order.sellToken == order.buyToken || (order.sellToken in wrapped_native && order.buyToken == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")'
+fee = "no_fee()"
+"#;
     // 1% volume fee (100 bps).
-    let volume_fee_policy = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Volume {
-            factor: 0.01.try_into().unwrap(),
-        },
-        order_class: ConfigFeePolicyOrderClass::Any,
-    };
+    let default_rule = r#"
+[[rule]]
+name = "Default"
+when = "true"
+fee = "volume(100)"
+"#;
+    let fee_engine = fee_engine_config(&if enable_sell_equals_buy {
+        default_rule.to_owned()
+    } else {
+        format!("{same_token_rule}{default_rule}")
+    });
 
-    let mut autopilot = Configuration {
+    let autopilot = Configuration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![volume_fee_policy],
-            ..Default::default()
-        },
+        fee_engine: fee_engine.clone(),
         ..Configuration::test_no_drivers()
     };
-    autopilot.shared.enable_sell_equals_buy_volume_fee = enable_sell_equals_buy;
 
-    let mut orderbook = configs::orderbook::Configuration {
+    let orderbook = configs::orderbook::Configuration {
         order_validation: OrderValidationConfig {
             same_tokens_policy: shared::order_validation::SameTokensPolicy::Allow,
             ..Default::default()
         },
-        volume_fee: Some(configs::orderbook::VolumeFeeConfig {
-            factor: Some(FeeFactor::new(0.01)),
-            effective_from_timestamp: None,
-        }),
+        fee_engine,
         ..configs::orderbook::Configuration::test_default()
     };
-    orderbook.shared.enable_sell_equals_buy_volume_fee = enable_sell_equals_buy;
 
     let services = Services::new(onchain).await;
     services
@@ -1356,10 +1313,9 @@ async fn start_volume_fee_protocol<'a>(
 }
 
 /// Same-token trades (`sell_token == buy_token`) must not be charged the volume
-/// fee under the default config (`enable_sell_equals_buy_volume_fee = false`),
-/// on both the quote (`protocol_fee_bps`) and the settled trade
-/// (`executedProtocolFees`). A different-token order is the contrast proving
-/// the fee is actually configured.
+/// fee when a rule exempts them, on both the quote (`protocol_fee_bps`) and the
+/// settled trade (`executedProtocolFees`). A different-token order is the
+/// contrast proving the fee is actually configured.
 async fn volume_fee_dropped_on_same_token(web3: Web3) {
     let (onchain, solver, trader) = deploy_with_solver_and_trader(web3).await;
     // `token` (with a 1:1 WETH pool) is the different-token contrast.
@@ -1460,10 +1416,10 @@ async fn volume_fee_dropped_on_same_token(web3: Web3) {
     assert_volume_fee(different_token_trade, *token.address(), 0.01, sell_amount);
 }
 
-/// Counterpart to [`volume_fee_dropped_on_same_token`]: with
-/// `enable_sell_equals_buy_volume_fee = true` (set on both the orderbook and
-/// the autopilot, which read it independently) the volume fee *is* charged on a
-/// same-token trade, proving the drop is flag-controlled.
+/// Counterpart to [`volume_fee_dropped_on_same_token`]: without the rule that
+/// exempts them (on both the orderbook and the autopilot, which load their
+/// rules independently) the volume fee *is* charged on a same-token trade,
+/// proving the drop is rule-controlled.
 async fn volume_fee_charged_on_same_token_when_enabled(web3: Web3) {
     let (onchain, solver, trader) = deploy_with_solver_and_trader(web3).await;
     let services = start_volume_fee_protocol(&onchain, solver, &trader, true).await;
@@ -1478,7 +1434,7 @@ async fn volume_fee_charged_on_same_token_when_enabled(web3: Web3) {
     assert_eq!(
         same_token_quote.protocol_fee_bps.as_deref(),
         Some("100"),
-        "with the flag enabled, the same-token quote must carry the 1% (100 bps) volume fee"
+        "without the exempting rule, the same-token quote must carry the 1% (100 bps) volume fee"
     );
 
     // Trade: settled same-token order is charged the fee (10% spread covers
