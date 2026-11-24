@@ -8,7 +8,6 @@ use {
     configs::{
         autopilot::{
             Configuration,
-            fee_policy::{FeePoliciesConfig, FeePolicy, FeePolicyKind},
             run_loop::RunLoopConfig,
             solver::{Account, Solver},
         },
@@ -1106,26 +1105,14 @@ async fn no_liquidity_limit_order(web3: Web3) {
             Configuration {
                 drivers: vec![Solver::test("test_solver", solver.address())],
                 unsupported_tokens: vec![*unsupported.address()],
-                fee_policies: FeePoliciesConfig {
-                    policies: vec![
-                        FeePolicy {
-                            kind: FeePolicyKind::Surplus {
-                                factor: 0.5.try_into().unwrap(),
-                                max_volume_factor: 0.01.try_into().unwrap(),
-                            },
-                            order_class: configs::autopilot::fee_policy::FeePolicyOrderClass::Limit,
-                        },
-                        FeePolicy {
-                            kind: FeePolicyKind::PriceImprovement {
-                                factor: 0.5.try_into().unwrap(),
-                                max_volume_factor: 0.01.try_into().unwrap(),
-                            },
-                            order_class:
-                                configs::autopilot::fee_policy::FeePolicyOrderClass::Market,
-                        },
-                    ],
-                    ..Default::default()
-                },
+                fee_engine: fee_engine_config(
+                    r#"
+[[rule]]
+name = "Default"
+when = "true"
+fee = "order.inMarket ? price_improvement(50, 100) : surplus(50, 100)"
+"#,
+                ),
                 ..Configuration::test_no_drivers()
             },
             configs::orderbook::Configuration::test_default(),
