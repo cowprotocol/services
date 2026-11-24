@@ -42,17 +42,15 @@ use {
 /// test can dial in the exclusivity it needs.
 fn with_fast_path_exclusivity(
     autopilot: AutopilotConfiguration,
-    orderbook: configs::orderbook::Configuration,
     exclusivity: Duration,
-) -> (AutopilotConfiguration, configs::orderbook::Configuration) {
+) -> AutopilotConfiguration {
     // Local anvil advertises the Hardhat chain-id (12s blocks).
     const HARDHAT_BLOCK_SECS: u64 = 12;
     let fast_path_submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
-    let autopilot = AutopilotConfiguration {
+    AutopilotConfiguration {
         fast_path_submission_deadline: Some(fast_path_submission_deadline),
         ..autopilot
-    };
-    (autopilot, orderbook)
+    }
 }
 
 /// `[fee-engine]` with partner fees capped at 5% of the volume and, with
@@ -206,11 +204,11 @@ async fn fast_path_settle(web3: Web3, side: OrderKind) {
     // A long fast-path exclusivity so only the fast path can settle the order
     // within the test window.
     let exclusivity = Duration::from_secs(300);
-    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
+    let autopilot_config = with_fast_path_exclusivity(
         AutopilotConfiguration::test("test_solver", solver.address()),
-        configs::orderbook::Configuration::test_default(),
         exclusivity,
     );
+    let orderbook_config = configs::orderbook::Configuration::test_default();
     // The solver charges a solver fee, which is what makes the quote it
     // publishes conservative. The user signs against that quote below without
     // adding any slippage of their own, so the settlement has no room to take
@@ -370,11 +368,11 @@ async fn fast_path_settle_buy_native_eth(web3: Web3) {
     // test window: an on-chain fill this soon can only have come from the
     // fast-path settle.
     let exclusivity = Duration::from_secs(300);
-    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
+    let autopilot_config = with_fast_path_exclusivity(
         AutopilotConfiguration::test("test_solver", solver.address()),
-        configs::orderbook::Configuration::test_default(),
         exclusivity,
     );
+    let orderbook_config = configs::orderbook::Configuration::test_default();
     services
         .start_protocol_with_args(autopilot_config, orderbook_config, solver)
         .await;
@@ -542,14 +540,11 @@ async fn fast_path_executed_amounts_match_quote(web3: Web3, side: OrderKind) {
         fee_engine: fee_engine_with_partner_fee_room(Some(protocol_volume_factor)),
         ..AutopilotConfiguration::test_no_drivers()
     };
-    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
-        autopilot_config,
-        configs::orderbook::Configuration {
-            fee_engine: fee_engine_with_partner_fee_room(None),
-            ..configs::orderbook::Configuration::test_default()
-        },
-        exclusivity,
-    );
+    let autopilot_config = with_fast_path_exclusivity(autopilot_config, exclusivity);
+    let orderbook_config = configs::orderbook::Configuration {
+        fee_engine: fee_engine_with_partner_fee_room(None),
+        ..configs::orderbook::Configuration::test_default()
+    };
     services
         .start_protocol_with_args_and_solver_fee(
             autopilot_config,
@@ -731,11 +726,8 @@ async fn fast_path_penalty_cap(web3: Web3) {
         fast_path_penalty_cap_enabled: true,
         ..AutopilotConfiguration::test("test_solver", solver.address())
     };
-    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
-        base,
-        configs::orderbook::Configuration::test_default(),
-        exclusivity,
-    );
+    let autopilot_config = with_fast_path_exclusivity(base, exclusivity);
+    let orderbook_config = configs::orderbook::Configuration::test_default();
     services
         .start_protocol_with_args(autopilot_config, orderbook_config, solver)
         .await;
@@ -913,8 +905,7 @@ async fn fast_path_settles_across_split_configs(web3: Web3) {
         order_quoting: OrderQuoting::test_with_drivers(vec![quoter]),
         ..configs::orderbook::Configuration::test_default()
     };
-    let (autopilot_config, orderbook_config) =
-        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+    let autopilot_config = with_fast_path_exclusivity(autopilot_config, exclusivity);
 
     services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
@@ -1087,8 +1078,7 @@ async fn fast_path_regular_auction_fallback(web3: Web3) {
         order_quoting: OrderQuoting::test_with_drivers(vec![quoter_a, quoter_b]),
         ..configs::orderbook::Configuration::test_default()
     };
-    let (autopilot_config, orderbook_config) =
-        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+    let autopilot_config = with_fast_path_exclusivity(autopilot_config, exclusivity);
 
     services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
@@ -1345,8 +1335,7 @@ async fn fast_path_absolute_slippage_cap_binds(web3: Web3) {
         order_quoting: OrderQuoting::test_with_drivers(vec![quoter]),
         ..configs::orderbook::Configuration::test_default()
     };
-    let (autopilot_config, orderbook_config) =
-        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+    let autopilot_config = with_fast_path_exclusivity(autopilot_config, exclusivity);
     services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
 
@@ -1580,8 +1569,7 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
         fee_engine: fee_engine_with_partner_fee_room(Some(protocol_volume_factor)),
         ..configs::orderbook::Configuration::test_default()
     };
-    let (autopilot_config, orderbook_config) =
-        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+    let autopilot_config = with_fast_path_exclusivity(autopilot_config, exclusivity);
 
     services.start_autopilot(autopilot_config).await;
     services.start_api(orderbook_config).await;
@@ -1734,14 +1722,11 @@ async fn fast_path_volume_fees_captured(web3: Web3) {
         fee_engine: fee_engine_with_partner_fee_room(Some(protocol_volume_factor)),
         ..AutopilotConfiguration::test_no_drivers()
     };
-    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
-        autopilot_config,
-        configs::orderbook::Configuration {
-            fee_engine: fee_engine_with_partner_fee_room(None),
-            ..configs::orderbook::Configuration::test_default()
-        },
-        exclusivity,
-    );
+    let autopilot_config = with_fast_path_exclusivity(autopilot_config, exclusivity);
+    let orderbook_config = configs::orderbook::Configuration {
+        fee_engine: fee_engine_with_partner_fee_room(None),
+        ..configs::orderbook::Configuration::test_default()
+    };
     services
         .start_protocol_with_args(autopilot_config, orderbook_config, solver)
         .await;
@@ -1907,11 +1892,11 @@ async fn fast_path_ethflow_settle(web3: Web3) {
     // window; any settlement observed before `valid_from` proves the fast path
     // fired.
     let exclusivity = Duration::from_secs(300);
-    let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
+    let autopilot_config = with_fast_path_exclusivity(
         AutopilotConfiguration::test("test_solver", solver.address()),
-        configs::orderbook::Configuration::test_default(),
         exclusivity,
     );
+    let orderbook_config = configs::orderbook::Configuration::test_default();
     services
         .start_protocol_with_args(autopilot_config, orderbook_config, solver)
         .await;
@@ -2075,8 +2060,7 @@ async fn fast_path_limit_too_tight_rejected(web3: Web3) {
         fee_engine: fee_engine_with_partner_fee_room(None),
         ..AutopilotConfiguration::test("test_solver", solver.address())
     };
-    let (autopilot_config, orderbook_config) =
-        with_fast_path_exclusivity(autopilot_config, orderbook_config, exclusivity);
+    let autopilot_config = with_fast_path_exclusivity(autopilot_config, exclusivity);
     services
         .start_protocol_with_args(autopilot_config, orderbook_config, solver)
         .await;
