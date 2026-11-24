@@ -2,7 +2,6 @@ use {
     crate::{
         autopilot::{
             ethflow::EthflowConfig,
-            fee_policy::FeePoliciesConfig,
             native_price::NativePriceConfig,
             order_events_cleanup::OrderEventsCleanupConfig,
             penalty_cap::PenaltyCapConfig,
@@ -71,11 +70,6 @@ pub struct Configuration {
 
     /// Solver drivers to dispatch auctions to.
     pub drivers: Vec<Solver>,
-
-    /// Deprecated and ignored: `fee_engine` decides the fees. Kept so that a
-    /// config that still sets it loads.
-    #[serde(default)]
-    pub fee_policies: FeePoliciesConfig,
 
     /// Protocol fee rules and the partner fee cap. Absent, no order pays a
     /// fee.
@@ -243,7 +237,6 @@ impl Configuration {
         Self {
             shared: Default::default(),
             drivers: vec![],
-            fee_policies: Default::default(),
             fee_engine: Default::default(),
             penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
@@ -279,7 +272,6 @@ impl Configuration {
         Self {
             shared: Default::default(),
             drivers: vec![Solver::test(name, solver_address)],
-            fee_policies: Default::default(),
             fee_engine: Default::default(),
             penalty_cap: Default::default(),
             trusted_tokens: Default::default(),
@@ -336,10 +328,7 @@ mod tests {
     use {
         super::*,
         crate::{
-            autopilot::{
-                fee_policy::{FeePolicy, FeePolicyKind, FeePolicyOrderClass, UpcomingFeePolicies},
-                solver::Account,
-            },
+            autopilot::solver::Account,
             native_price_estimators::{ExternalSolver, NativePriceEstimator},
         },
         alloy_primitives::address,
@@ -366,24 +355,6 @@ mod tests {
         name = "solver2"
         url = "http://localhost:8081"
         kms = "arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012"
-
-        [fee-policies]
-        max-partner-fee = 0.005
-
-        [[fee-policies.policies]]
-        kind.surplus = { factor = 0.5, max-volume-factor = 0.9 }
-        order-class = "limit"
-
-        [[fee-policies.policies]]
-        kind.volume = { factor = 0.1 }
-        order-class = "any"
-
-        [fee-policies.upcoming-policies]
-        effective-from-timestamp = "2025-06-01T00:00:00Z"
-
-        [[fee-policies.upcoming-policies.policies]]
-        kind.volume = { factor = 0.2 }
-        order-class = "any"
 
         [trusted-tokens]
         url = "https://example.com/tokens.json"
@@ -436,34 +407,6 @@ mod tests {
             Account::Address(address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"))
         );
         assert_eq!(config.drivers[1].name, "solver2");
-
-        assert_eq!(config.fee_policies.max_partner_fee.get(), 0.005);
-        assert_eq!(config.fee_policies.policies.len(), 2);
-        assert!(matches!(
-            config.fee_policies.policies[0].kind,
-            FeePolicyKind::Surplus { .. }
-        ));
-        assert!(matches!(
-            config.fee_policies.policies[0].order_class,
-            FeePolicyOrderClass::Limit
-        ));
-        assert!(matches!(
-            config.fee_policies.policies[1].kind,
-            FeePolicyKind::Volume { .. }
-        ));
-        assert!(matches!(
-            config.fee_policies.policies[1].order_class,
-            FeePolicyOrderClass::Any
-        ));
-
-        assert_eq!(config.fee_policies.upcoming_policies.policies.len(), 1);
-        assert!(
-            config
-                .fee_policies
-                .upcoming_policies
-                .effective_from_timestamp
-                .is_some()
-        );
 
         assert!(config.trusted_tokens.url.is_some());
         assert_eq!(config.trusted_tokens.tokens.len(), 1);
@@ -536,8 +479,6 @@ mod tests {
         url = "http://localhost:8080"
         address = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
 
-        [fee-policies]
-
         [native-price-estimation]
         estimators = [[{type = "CoinGecko"}]]
 
@@ -551,16 +492,6 @@ mod tests {
         assert_eq!(
             config.native_price_estimation.estimators.as_slice().len(),
             1
-        );
-        assert!(config.fee_policies.policies.is_empty());
-        assert_eq!(config.fee_policies.max_partner_fee.get(), 0.01);
-        assert!(config.fee_policies.upcoming_policies.policies.is_empty());
-        assert!(
-            config
-                .fee_policies
-                .upcoming_policies
-                .effective_from_timestamp
-                .is_none()
         );
 
         assert!(config.trusted_tokens.url.is_none());
@@ -600,17 +531,6 @@ mod tests {
                 "solver1",
                 address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
             )],
-            fee_policies: FeePoliciesConfig {
-                policies: vec![FeePolicy {
-                    kind: FeePolicyKind::Surplus {
-                        factor: 0.5.try_into().unwrap(),
-                        max_volume_factor: 0.9.try_into().unwrap(),
-                    },
-                    order_class: FeePolicyOrderClass::Limit,
-                }],
-                max_partner_fee: 0.02.try_into().unwrap(),
-                upcoming_policies: UpcomingFeePolicies::default(),
-            },
             ..Configuration::test_no_drivers()
         };
 
@@ -618,7 +538,5 @@ mod tests {
         let deserialized: Configuration = toml::from_str(&serialized).unwrap();
 
         assert_eq!(deserialized.drivers.len(), 1);
-        assert_eq!(deserialized.fee_policies.policies.len(), 1);
-        assert_eq!(deserialized.fee_policies.max_partner_fee.get(), 0.02);
     }
 }

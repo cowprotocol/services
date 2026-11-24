@@ -1,9 +1,8 @@
 use {
-    crate::fee_factor::FeeFactor,
     alloy_primitives::Address,
     anyhow::ensure,
     serde::{Deserialize, Deserializer, Serialize, de::Unexpected},
-    std::{collections::HashSet, str::FromStr, time::Duration},
+    std::{str::FromStr, time::Duration},
     tracing::Level,
     url::Url,
 };
@@ -47,8 +46,7 @@ const fn default_tracing_exporter_timeout() -> Duration {
 }
 
 /// Configuration shared across all services (orderbook, autopilot, driver,
-/// etc.). Covers node connectivity, gas estimation, logging, tracing, and
-/// protocol-level fee overrides.
+/// etc.). Covers node connectivity, gas estimation, logging and tracing.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
@@ -91,16 +89,6 @@ pub struct SharedConfig {
     #[serde(default)]
     pub contracts: ContractAddresses,
 
-    /// Deprecated and ignored: the rules of `[fee-engine]` decide the fee of
-    /// a token pair. Kept so that a config that still sets it loads.
-    #[serde(default)]
-    pub volume_fee_bucket_overrides: Vec<TokenBucketFeeOverride>,
-
-    /// Deprecated and ignored: the rules of `[fee-engine]` decide the fee of
-    /// a same-token trade. Kept so that a config that still sets it loads.
-    #[serde(default)]
-    pub enable_sell_equals_buy_volume_fee: bool,
-
     /// Enables publishing events to a global events bus.
     pub event_bus: Option<EventBusConfig>,
 }
@@ -128,8 +116,6 @@ impl Default for SharedConfig {
             chain_id: None,
             gas_estimators: default_gas_estimators(),
             contracts: Default::default(),
-            volume_fee_bucket_overrides: Vec::new(),
-            enable_sell_equals_buy_volume_fee: false,
             event_bus: None,
         }
     }
@@ -388,16 +374,6 @@ impl TestDefault for GasEstimatorType {
     }
 }
 
-/// Overrides the volume fee factor for orders where both tokens belong to
-/// the specified set (e.g. stablecoin-to-stablecoin trades).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-#[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
-pub struct TokenBucketFeeOverride {
-    pub tokens: HashSet<Address>,
-    pub factor: FeeFactor,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,8 +386,6 @@ mod tests {
         assert!(config.chain_id.is_none());
         assert_eq!(config.gas_estimators.len(), 1);
         assert!(matches!(config.gas_estimators[0], GasEstimatorType::Web3));
-        assert!(config.volume_fee_bucket_overrides.is_empty());
-        assert!(!config.enable_sell_equals_buy_volume_fee);
     }
 
     #[test]
@@ -419,7 +393,6 @@ mod tests {
         let toml = r#"
         node-url = "http://mainnet.example.com:8545"
         chain-id = 1
-        enable-sell-equals-buy-volume-fee = true
 
         [contracts]
         settlement = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
@@ -451,13 +424,6 @@ mod tests {
         type = "Driver"
         url = "http://localhost:8080"
 
-        [[volume-fee-bucket-overrides]]
-        factor = 0.5
-        tokens = [
-            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-            "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-        ]
-
         [event-bus]
         url = "localhost:4222"
         channel = "main"
@@ -486,9 +452,6 @@ mod tests {
         assert_eq!(config.tracing.exporter_timeout, Duration::from_secs(5));
         assert_eq!(config.gas_estimators.len(), 2);
         assert!(config.contracts.settlement.is_some());
-        assert!(config.enable_sell_equals_buy_volume_fee);
-        assert_eq!(config.volume_fee_bucket_overrides.len(), 1);
-        assert_eq!(config.volume_fee_bucket_overrides[0].tokens.len(), 2);
         assert_eq!(
             config.event_bus.as_ref().unwrap().url,
             "localhost:4222".parse().unwrap()
