@@ -33,6 +33,10 @@ pub struct Config {
     pub hmac_key: String,
     /// Optional API key sent as a Bearer token.
     pub api_key: Option<String>,
+    /// How often the cached addresses are checked again.
+    pub refresh_interval: Duration,
+    /// An address that nobody requested for this long leaves the cache.
+    pub max_idle: Duration,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -208,6 +212,8 @@ mod tests {
                 url: url.parse().unwrap(),
                 hmac_key: "key".to_string(),
                 api_key: None,
+                refresh_interval: Duration::from_secs(5),
+                max_idle: Duration::from_secs(60),
             },
             100,
         )
