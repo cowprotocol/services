@@ -89,8 +89,8 @@ pub struct Configuration {
     /// Configuration for the volume fee.
     pub volume_fee: Option<VolumeFeeConfig>,
 
-    /// Protocol fee rules, compared with `volume_fee`. Absent, the orderbook
-    /// uses `volume_fee` alone.
+    /// Protocol fee rules. With them, the orderbook ignores the legacy fee
+    /// config; absent, it uses `volume_fee` alone.
     pub fee_engine: Option<FeeEngineConfig>,
 
     /// Maximum allowed size (in bytes) for order app-data.
