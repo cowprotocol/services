@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[features]
+test-util = ["dep:contracts", "alloy-provider/anvil-api"]
+
 [lib]
 doctest = false
 name = "ethrpc"
@@ -42,9 +45,6 @@ tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
-
-[features]
-test-util = ["alloy-provider/anvil-api", "dep:contracts"]
 
 [lints]
 workspace = true

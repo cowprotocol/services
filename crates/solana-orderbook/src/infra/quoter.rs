@@ -82,10 +82,30 @@ impl Quote {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+/// The `price_estimates` result of a driver without a route.
+const NO_LIQUIDITY: &str = "no_liquidity";
+
+/// Why no driver quoted.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
-    #[error("no driver returned a quote")]
-    NoQuotes,
+    #[error("no driver has a route")]
+    NoLiquidity,
+    #[error("a driver failed to quote")]
+    DriverFailed,
+}
+
+impl Error {
+    /// The error of a competition whose drivers failed with these
+    /// `price_estimates` results: no liquidity only when every driver has no
+    /// route, as the EVM quote competition ranks any other estimator error
+    /// above a missing route.
+    fn of(failures: &[&'static str]) -> Self {
+        if failures.iter().all(|failure| *failure == NO_LIQUIDITY) {
+            Self::NoLiquidity
+        } else {
+            Self::DriverFailed
+        }
+    }
 }
 
 #[serde_as]
@@ -154,22 +174,27 @@ impl Quoter {
             .map(|endpoint| self.quote_one(endpoint, order))
             .collect();
         let mut quotes = Vec::new();
-        while let Some(quote) = pending.next().await {
-            quotes.extend(quote);
+        let mut failures = Vec::new();
+        while let Some(quoted) = pending.next().await {
+            match quoted {
+                Ok(quote) => quotes.push(quote),
+                Err(failure) => failures.push(failure),
+            }
             if early_return.is_some_and(|required| quotes.len() >= required.get()) {
                 break;
             }
         }
         if quotes.is_empty() {
-            return Err(Error::NoQuotes);
+            return Err(Error::of(&failures));
         }
         Ok(quotes)
     }
 
-    /// Quote `order` on one driver. Failures are logged, counted and
-    /// swallowed: a `QuotingFailed` reply means no route, which is a routine
-    /// outcome, while anything else is that driver misbehaving.
-    async fn quote_one(&self, endpoint: &Url, order: &Order) -> Option<Quote> {
+    /// Quote `order` on one driver. A failure is logged, counted and returned
+    /// as its `price_estimates` result: a `QuotingFailed` reply means no
+    /// route, which is a routine outcome, while anything else is that driver
+    /// misbehaving.
+    async fn quote_one(&self, endpoint: &Url, order: &Order) -> Result<Quote, &'static str> {
         let driver = driver_name(endpoint);
         let start = Instant::now();
         let quoted = self.ask(endpoint, order).await;
@@ -197,7 +222,7 @@ impl Quoter {
             ?order,
             "new price estimate"
         );
-        let quoted = quoted.ok()?;
+        let quoted = quoted?;
         let transaction = quoted.transaction.as_deref().and_then(|bytes| {
             bincode::deserialize(bytes)
                 .inspect_err(|err| {
@@ -205,7 +230,7 @@ impl Quoter {
                 })
                 .ok()
         });
-        Some(Quote {
+        Ok(Quote {
             sell_amount: quoted.sell_amount,
             buy_amount: quoted.buy_amount,
             solver: quoted.solver,
@@ -239,21 +264,21 @@ impl Quoter {
             .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote request failed"))
             .map_err(|_| "estimator_internal_error")?;
         let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            let result = failure(status, &body);
-            if result == "no_liquidity" {
-                tracing::debug!(%endpoint, body, "driver found no quote");
-            } else {
-                tracing::warn!(%endpoint, %status, body, "driver quote failed");
-            }
-            return Err(result);
+        let body = response.text().await.unwrap_or_default();
+        // A driver may answer its error under a success status, so the body
+        // tells a quote from a failure, as on the EVM orderbook.
+        if status.is_success()
+            && let Ok(quote) = serde_json::from_str(&body)
+        {
+            return Ok(quote);
         }
-        response
-            .json()
-            .await
-            .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote response malformed"))
-            .map_err(|_| "estimator_internal_error")
+        let result = failure(status, &body);
+        if result == NO_LIQUIDITY {
+            tracing::debug!(%endpoint, body, "driver found no quote");
+        } else {
+            tracing::warn!(%endpoint, %status, body, "driver quote failed");
+        }
+        Err(result)
     }
 }
 
@@ -268,14 +293,15 @@ fn driver_name(endpoint: &Url) -> String {
         .to_owned()
 }
 
-/// The `price_estimates` result of a driver's error reply: `QuotingFailed`
-/// means no route, 429 rate limiting, anything else a driver fault.
+/// The `price_estimates` result of a driver's answer that is no quote:
+/// `QuotingFailed` means no route, 429 rate limiting, anything else a driver
+/// fault.
 fn failure(status: reqwest::StatusCode, body: &str) -> &'static str {
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         return "rate_limited";
     }
     match serde_json::from_str::<ErrorBody>(body) {
-        Ok(error) if error.kind == "QuotingFailed" => "no_liquidity",
+        Ok(error) if error.kind == "QuotingFailed" => NO_LIQUIDITY,
         _ => "estimator_internal_error",
     }
 }
@@ -331,5 +357,59 @@ mod tests {
             failure(StatusCode::INTERNAL_SERVER_ERROR, "upstream down"),
             "estimator_internal_error"
         );
+    }
+
+    /// A driver stand-in answering every `/quote` with `status` and `body`.
+    async fn driver(status: StatusCode, body: &'static str) -> Url {
+        let app = axum::Router::new().route(
+            "/quote",
+            axum::routing::post(move || async move { (status, body) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}/").parse().unwrap()
+    }
+
+    async fn quotes(drivers: Vec<Url>) -> Result<Vec<Quote>, Error> {
+        let order = Order {
+            sell_token: Pubkey::new_unique(),
+            buy_token: Pubkey::new_unique(),
+            amount: 1_000,
+            kind: Kind::Sell,
+            owner: None,
+        };
+        Quoter::new(drivers, Duration::from_secs(1))
+            .quotes(&order, None)
+            .await
+    }
+
+    /// A driver's `QuotingFailed` is no route under any status, as the EVM
+    /// orderbook reads a driver's error from the body alone. A success
+    /// status with any other body is a driver fault.
+    #[tokio::test]
+    async fn reads_a_drivers_missing_route_whatever_the_status() {
+        let no_route = r#"{"kind":"QuotingFailed","description":"No valid quote found"}"#;
+        for status in [StatusCode::BAD_REQUEST, StatusCode::OK] {
+            let failed = quotes(vec![driver(status, no_route).await]).await;
+            assert_eq!(failed.unwrap_err(), Error::NoLiquidity, "{status}");
+        }
+        let malformed = quotes(vec![driver(StatusCode::OK, r#"{"amount":"1"}"#).await]).await;
+        assert_eq!(malformed.unwrap_err(), Error::DriverFailed);
+    }
+
+    #[test]
+    fn no_quote_is_no_liquidity_only_when_every_driver_lacks_a_route() {
+        assert_eq!(Error::of(&[NO_LIQUIDITY, NO_LIQUIDITY]), Error::NoLiquidity);
+        assert_eq!(
+            Error::of(&[NO_LIQUIDITY, "rate_limited"]),
+            Error::DriverFailed
+        );
+        assert_eq!(
+            Error::of(&["estimator_internal_error"]),
+            Error::DriverFailed
+        );
+        // No driver to ask has no route either.
+        assert_eq!(Error::of(&[]), Error::NoLiquidity);
     }
 }

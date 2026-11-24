@@ -1091,8 +1091,7 @@ pub mod UniswapV3QuoterV2 {
     #[derive(Clone)]
     pub struct WETH9Call;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`WETH9()`](WETH9Call)
-    /// function.
+    ///Container type for the return parameters of the [`WETH9()`](WETH9Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct WETH9Return {
@@ -1226,8 +1225,7 @@ pub mod UniswapV3QuoterV2 {
     #[derive(Clone)]
     pub struct factoryCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`factory()`](factoryCall) function.
+    ///Container type for the return parameters of the [`factory()`](factoryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryReturn {
@@ -1366,8 +1364,7 @@ pub mod UniswapV3QuoterV2 {
         pub amountIn: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`quoteExactInput(bytes,uint256)`](quoteExactInputCall) function.
+    ///Container type for the return parameters of the [`quoteExactInput(bytes,uint256)`](quoteExactInputCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteExactInputReturn {
@@ -1572,9 +1569,7 @@ pub mod UniswapV3QuoterV2 {
         pub params: <IQuoterV2::QuoteExactInputSingleParams as alloy_sol_types::SolType>::RustType,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`quoteExactInputSingle((address,address,uint256,uint24,
-    /// uint160))`](quoteExactInputSingleCall) function.
+    ///Container type for the return parameters of the [`quoteExactInputSingle((address,address,uint256,uint24,uint160))`](quoteExactInputSingleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteExactInputSingleReturn {
@@ -1764,8 +1759,7 @@ pub mod UniswapV3QuoterV2 {
         pub amountOut: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`quoteExactOutput(bytes,uint256)`](quoteExactOutputCall) function.
+    ///Container type for the return parameters of the [`quoteExactOutput(bytes,uint256)`](quoteExactOutputCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteExactOutputReturn {
@@ -1970,9 +1964,7 @@ pub mod UniswapV3QuoterV2 {
         pub params: <IQuoterV2::QuoteExactOutputSingleParams as alloy_sol_types::SolType>::RustType,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`quoteExactOutputSingle((address,address,uint256,uint24,
-    /// uint160))`](quoteExactOutputSingleCall) function.
+    ///Container type for the return parameters of the [`quoteExactOutputSingle((address,address,uint256,uint24,uint160))`](quoteExactOutputSingleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct quoteExactOutputSingleReturn {

@@ -490,8 +490,7 @@ pub mod HooksTrampoline {
         #[allow(missing_docs)]
         pub hooks: alloy_sol_types::private::Vec<<Hook as alloy_sol_types::SolType>::RustType>,
     }
-    ///Container type for the return parameters of the
-    /// [`execute((address,bytes,uint256)[])`](executeCall) function.
+    ///Container type for the return parameters of the [`execute((address,bytes,uint256)[])`](executeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct executeReturn {}
@@ -625,8 +624,7 @@ pub mod HooksTrampoline {
     #[derive(Clone)]
     pub struct settlementCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`settlement()`](settlementCall) function.
+    ///Container type for the return parameters of the [`settlement()`](settlementCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settlementReturn {

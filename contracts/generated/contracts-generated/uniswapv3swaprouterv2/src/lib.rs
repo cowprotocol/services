@@ -580,9 +580,7 @@ pub mod UniswapV3SwapRouterV2 {
         pub params: <IV3SwapRouter::ExactOutputSingleParams as alloy_sol_types::SolType>::RustType,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`exactOutputSingle((address,address,uint24,address,uint256,uint256,
-    /// uint160))`](exactOutputSingleCall) function.
+    ///Container type for the return parameters of the [`exactOutputSingle((address,address,uint24,address,uint256,uint256,uint160))`](exactOutputSingleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct exactOutputSingleReturn {

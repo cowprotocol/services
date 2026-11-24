@@ -1413,8 +1413,7 @@ pub mod Multicall3 {
         pub calls: alloy_sol_types::private::Vec<<Call as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`aggregate((address,bytes)[])`](aggregateCall) function.
+    ///Container type for the return parameters of the [`aggregate((address,bytes)[])`](aggregateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct aggregateReturn {
@@ -1575,8 +1574,7 @@ pub mod Multicall3 {
         pub calls: alloy_sol_types::private::Vec<<Call3 as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`aggregate3((address,bool,bytes)[])`](aggregate3Call) function.
+    ///Container type for the return parameters of the [`aggregate3((address,bool,bytes)[])`](aggregate3Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct aggregate3Return {
@@ -1728,9 +1726,7 @@ pub mod Multicall3 {
             alloy_sol_types::private::Vec<<Call3Value as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`aggregate3Value((address,bool,uint256,bytes)[])`](aggregate3ValueCall)
-    /// function.
+    ///Container type for the return parameters of the [`aggregate3Value((address,bool,uint256,bytes)[])`](aggregate3ValueCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct aggregate3ValueReturn {
@@ -1882,9 +1878,7 @@ pub mod Multicall3 {
         pub calls: alloy_sol_types::private::Vec<<Call as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`blockAndAggregate((address,bytes)[])`](blockAndAggregateCall)
-    /// function.
+    ///Container type for the return parameters of the [`blockAndAggregate((address,bytes)[])`](blockAndAggregateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct blockAndAggregateReturn {
@@ -2054,8 +2048,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getBasefeeCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getBasefee()`](getBasefeeCall) function.
+    ///Container type for the return parameters of the [`getBasefee()`](getBasefeeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getBasefeeReturn {
@@ -2196,8 +2189,7 @@ pub mod Multicall3 {
         pub blockNumber: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getBlockHash(uint256)`](getBlockHashCall) function.
+    ///Container type for the return parameters of the [`getBlockHash(uint256)`](getBlockHashCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getBlockHashReturn {
@@ -2341,8 +2333,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getBlockNumberCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getBlockNumber()`](getBlockNumberCall) function.
+    ///Container type for the return parameters of the [`getBlockNumber()`](getBlockNumberCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getBlockNumberReturn {
@@ -2482,8 +2473,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getChainIdCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getChainId()`](getChainIdCall) function.
+    ///Container type for the return parameters of the [`getChainId()`](getChainIdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getChainIdReturn {
@@ -2621,8 +2611,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getCurrentBlockCoinbaseCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getCurrentBlockCoinbase()`](getCurrentBlockCoinbaseCall) function.
+    ///Container type for the return parameters of the [`getCurrentBlockCoinbase()`](getCurrentBlockCoinbaseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCurrentBlockCoinbaseReturn {
@@ -2756,8 +2745,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getCurrentBlockDifficultyCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getCurrentBlockDifficulty()`](getCurrentBlockDifficultyCall) function.
+    ///Container type for the return parameters of the [`getCurrentBlockDifficulty()`](getCurrentBlockDifficultyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCurrentBlockDifficultyReturn {
@@ -2897,8 +2885,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getCurrentBlockGasLimitCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getCurrentBlockGasLimit()`](getCurrentBlockGasLimitCall) function.
+    ///Container type for the return parameters of the [`getCurrentBlockGasLimit()`](getCurrentBlockGasLimitCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCurrentBlockGasLimitReturn {
@@ -3036,8 +3023,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getCurrentBlockTimestampCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getCurrentBlockTimestamp()`](getCurrentBlockTimestampCall) function.
+    ///Container type for the return parameters of the [`getCurrentBlockTimestamp()`](getCurrentBlockTimestampCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCurrentBlockTimestampReturn {
@@ -3178,8 +3164,7 @@ pub mod Multicall3 {
         pub addr: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getEthBalance(address)`](getEthBalanceCall) function.
+    ///Container type for the return parameters of the [`getEthBalance(address)`](getEthBalanceCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getEthBalanceReturn {
@@ -3321,8 +3306,7 @@ pub mod Multicall3 {
     #[derive(Clone)]
     pub struct getLastBlockHashCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`getLastBlockHash()`](getLastBlockHashCall) function.
+    ///Container type for the return parameters of the [`getLastBlockHash()`](getLastBlockHashCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getLastBlockHashReturn {
@@ -3465,8 +3449,7 @@ pub mod Multicall3 {
         pub calls: alloy_sol_types::private::Vec<<Call as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`tryAggregate(bool,(address,bytes)[])`](tryAggregateCall) function.
+    ///Container type for the return parameters of the [`tryAggregate(bool,(address,bytes)[])`](tryAggregateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct tryAggregateReturn {
@@ -3633,9 +3616,7 @@ pub mod Multicall3 {
         pub calls: alloy_sol_types::private::Vec<<Call as alloy_sol_types::SolType>::RustType>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`tryBlockAndAggregate(bool,(address,
-    /// bytes)[])`](tryBlockAndAggregateCall) function.
+    ///Container type for the return parameters of the [`tryBlockAndAggregate(bool,(address,bytes)[])`](tryBlockAndAggregateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct tryBlockAndAggregateReturn {

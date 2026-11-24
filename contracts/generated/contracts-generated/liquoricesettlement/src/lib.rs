@@ -6393,8 +6393,7 @@ pub mod LiquoriceSettlement {
     #[derive(Clone)]
     pub struct AUTHENTICATORCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`AUTHENTICATOR()`](AUTHENTICATORCall) function.
+    ///Container type for the return parameters of the [`AUTHENTICATOR()`](AUTHENTICATORCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct AUTHENTICATORReturn {
@@ -6528,8 +6527,7 @@ pub mod LiquoriceSettlement {
     #[derive(Clone)]
     pub struct BALANCE_MANAGERCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`BALANCE_MANAGER()`](BALANCE_MANAGERCall) function.
+    ///Container type for the return parameters of the [`BALANCE_MANAGER()`](BALANCE_MANAGERCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct BALANCE_MANAGERReturn {
@@ -6663,8 +6661,7 @@ pub mod LiquoriceSettlement {
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
+    ///Container type for the return parameters of the [`DOMAIN_SEPARATOR()`](DOMAIN_SEPARATORCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct DOMAIN_SEPARATORReturn {
@@ -6805,10 +6802,7 @@ pub mod LiquoriceSettlement {
         pub _order: <ILiquoriceSettlement::Single as alloy_sol_types::SolType>::RustType,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`hashSingleOrder((string,uint256,address,address,address,address,
-    /// uint256,uint256,uint256,uint256,address))`](hashSingleOrderCall)
-    /// function.
+    ///Container type for the return parameters of the [`hashSingleOrder((string,uint256,address,address,address,address,uint256,uint256,uint256,uint256,address))`](hashSingleOrderCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct hashSingleOrderReturn {
@@ -6958,8 +6952,7 @@ pub mod LiquoriceSettlement {
         pub _signature: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
+    ///Container type for the return parameters of the [`isValidSignature(bytes32,bytes)`](isValidSignatureCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignatureReturn {
@@ -7132,12 +7125,7 @@ pub mod LiquoriceSettlement {
         #[allow(missing_docs)]
         pub _takerSignature: <Signature::TypedSignature as alloy_sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the
-    /// [`settle(address,uint256,(address,uint256,string,uint256,address,
-    /// address,uint256,address,uint256,(address,uint256,uint256,uint256,
-    /// uint256),(address,uint256,uint256,uint256,uint256)),(address,uint256,
-    /// bytes)[],((address,uint256,bytes)[],(address,uint256,bytes)[]),(uint8,
-    /// uint8,bytes),(uint8,uint8,bytes))`](settleCall) function.
+    ///Container type for the return parameters of the [`settle(address,uint256,(address,uint256,string,uint256,address,address,uint256,address,uint256,(address,uint256,uint256,uint256,uint256),(address,uint256,uint256,uint256,uint256)),(address,uint256,bytes)[],((address,uint256,bytes)[],(address,uint256,bytes)[]),(uint8,uint8,bytes),(uint8,uint8,bytes))`](settleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settleReturn {}
@@ -7344,10 +7332,7 @@ pub mod LiquoriceSettlement {
         #[allow(missing_docs)]
         pub _takerSignature: <Signature::TypedSignature as alloy_sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the
-    /// [`settleSingle(address,(string,uint256,address,address,address,address,
-    /// uint256,uint256,uint256,uint256,address),(uint8,uint8,bytes),uint256,
-    /// (uint8,uint8,bytes))`](settleSingleCall) function.
+    ///Container type for the return parameters of the [`settleSingle(address,(string,uint256,address,address,address,address,uint256,uint256,uint256,uint256,address),(uint8,uint8,bytes),uint256,(uint8,uint8,bytes))`](settleSingleCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct settleSingleReturn {}

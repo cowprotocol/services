@@ -71,8 +71,7 @@ pub mod IERC4626 {
     #[derive(Clone)]
     pub struct assetCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`asset()`](assetCall)
-    /// function.
+    ///Container type for the return parameters of the [`asset()`](assetCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct assetReturn {
@@ -211,8 +210,7 @@ pub mod IERC4626 {
         pub shares: alloy_sol_types::private::primitives::aliases::U256,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`convertToAssets(uint256)`](convertToAssetsCall) function.
+    ///Container type for the return parameters of the [`convertToAssets(uint256)`](convertToAssetsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct convertToAssetsReturn {

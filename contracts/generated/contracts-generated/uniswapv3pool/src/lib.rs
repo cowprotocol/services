@@ -2181,8 +2181,7 @@ pub mod UniswapV3Pool {
         pub amount: u128,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`burn(int24,int24,uint128)`](burnCall) function.
+    ///Container type for the return parameters of the [`burn(int24,int24,uint128)`](burnCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct burnReturn {
@@ -2372,8 +2371,7 @@ pub mod UniswapV3Pool {
         pub amount1Requested: u128,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`collect(address,int24,int24,uint128,uint128)`](collectCall) function.
+    ///Container type for the return parameters of the [`collect(address,int24,int24,uint128,uint128)`](collectCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct collectReturn {
@@ -2569,8 +2567,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct factoryCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`factory()`](factoryCall) function.
+    ///Container type for the return parameters of the [`factory()`](factoryCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct factoryReturn {
@@ -2704,8 +2701,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct feeCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`fee()`](feeCall)
-    /// function.
+    ///Container type for the return parameters of the [`fee()`](feeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct feeReturn {
@@ -2851,8 +2847,7 @@ pub mod UniswapV3Pool {
         #[allow(missing_docs)]
         pub data: alloy_sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the
-    /// [`flash(address,uint256,uint256,bytes)`](flashCall) function.
+    ///Container type for the return parameters of the [`flash(address,uint256,uint256,bytes)`](flashCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct flashReturn {}
@@ -3016,8 +3011,7 @@ pub mod UniswapV3Pool {
         #[allow(missing_docs)]
         pub sqrtPriceX96: alloy_sol_types::private::primitives::aliases::U160,
     }
-    ///Container type for the return parameters of the
-    /// [`initialize(uint160)`](initializeCall) function.
+    ///Container type for the return parameters of the [`initialize(uint160)`](initializeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeReturn {}
@@ -3152,8 +3146,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct liquidityCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`liquidity()`](liquidityCall) function.
+    ///Container type for the return parameters of the [`liquidity()`](liquidityCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct liquidityReturn {
@@ -3302,8 +3295,7 @@ pub mod UniswapV3Pool {
         pub data: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`mint(address,int24,int24,uint128,bytes)`](mintCall) function.
+    ///Container type for the return parameters of the [`mint(address,int24,int24,uint128,bytes)`](mintCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct mintReturn {
@@ -3502,8 +3494,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct observationsCall(pub alloy_sol_types::private::primitives::aliases::U256);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`observations(uint256)`](observationsCall) function.
+    ///Container type for the return parameters of the [`observations(uint256)`](observationsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct observationsReturn {
@@ -3686,8 +3677,7 @@ pub mod UniswapV3Pool {
         pub secondsAgos: alloy_sol_types::private::Vec<u32>,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`observe(uint32[])`](observeCall) function.
+    ///Container type for the return parameters of the [`observe(uint32[])`](observeCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct observeReturn {
@@ -3855,8 +3845,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct positionsCall(pub alloy_sol_types::private::FixedBytes<32>);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`positions(bytes32)`](positionsCall) function.
+    ///Container type for the return parameters of the [`positions(bytes32)`](positionsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct positionsReturn {
@@ -4046,8 +4035,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct protocolFeesCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`protocolFees()`](protocolFeesCall) function.
+    ///Container type for the return parameters of the [`protocolFees()`](protocolFeesCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct protocolFeesReturn {
@@ -4208,8 +4196,7 @@ pub mod UniswapV3Pool {
         pub data: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`swap(address,bool,int256,uint160,bytes)`](swapCall) function.
+    ///Container type for the return parameters of the [`swap(address,bool,int256,uint160,bytes)`](swapCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct swapReturn {
@@ -4408,8 +4395,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct ticksCall(pub alloy_sol_types::private::primitives::aliases::I24);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`ticks(int24)`](ticksCall) function.
+    ///Container type for the return parameters of the [`ticks(int24)`](ticksCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ticksReturn {
@@ -4629,8 +4615,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct token0Call;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`token0()`](token0Call)
-    /// function.
+    ///Container type for the return parameters of the [`token0()`](token0Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token0Return {
@@ -4764,8 +4749,7 @@ pub mod UniswapV3Pool {
     #[derive(Clone)]
     pub struct token1Call;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`token1()`](token1Call)
-    /// function.
+    ///Container type for the return parameters of the [`token1()`](token1Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct token1Return {

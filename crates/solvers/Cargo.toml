@@ -3,6 +3,9 @@ name = "solvers"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+tokio-console = ["observe/tokio-console"]
+
 [lib]
 doctest = false
 name = "solvers"
@@ -67,9 +70,6 @@ glob = "0.3"
 maplit = { workspace = true }
 tempfile = { workspace = true }
 testlib = { workspace = true }
-
-[features]
-tokio-console = ["observe/tokio-console"]
 
 [lints]
 workspace = true

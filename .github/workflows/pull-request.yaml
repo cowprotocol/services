@@ -80,7 +80,7 @@ jobs:
           just-version: 1.39.0
       - uses: tombi-toml/setup-tombi@f2ae7247d62521245eb2793d653b9df472b9e090 # v1.2.4
         with:
-          version: "1.1.0"
+          version: "1.11.3"
       - run: |
           rustup --version
           rustup show
@@ -457,7 +457,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! just test-e2e forked_node_mainnet_repay_debt_with_collateral_of_safe; then
+            if ! just test-e2e tracking_insufficient_funds; then
               exit 1
             fi
             attempt=$((attempt+1))
@@ -480,7 +480,7 @@ jobs:
           just-version: 1.39.0
       - uses: tombi-toml/setup-tombi@f2ae7247d62521245eb2793d653b9df472b9e090 # v1.2.4
         with:
-          version: "1.1.0"
+          version: "1.11.3"
       - name: Verify the code hasn't been tampered with by generating contracts again and making sure there has been no changes
         run: |
           just generate-contracts

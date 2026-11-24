@@ -7,8 +7,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 alloy-contract = { workspace = true }
-alloy-primitives = { workspace = true }
-async-trait = { workspace = true }
+alloy-primitives = { workspace = true, features = ["serde"] }
 const-hex = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
@@ -19,6 +18,7 @@ observe = { workspace = true }
 prometheus = { workspace = true }
 prometheus-metric-storage = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

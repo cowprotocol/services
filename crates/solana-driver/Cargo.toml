@@ -7,6 +7,9 @@ license = "GPL-3.0-or-later"
 description = "Solana settlement driver for CoW Protocol"
 repository = "https://github.com/cowprotocol/services"
 
+[features]
+default = []
+
 [lib]
 name = "solana_driver"
 path = "src/lib.rs"
@@ -66,9 +69,6 @@ cow-solana-rpc = { workspace = true, features = ["test-util"] }
 solana-fee-structure = { workspace = true }
 solana-testlib = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
-
-[features]
-default = []
 
 [lints]
 workspace = true

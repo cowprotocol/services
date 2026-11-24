@@ -87,8 +87,7 @@ pub mod Spardose {
         #[allow(missing_docs)]
         pub amount: alloy_sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the
-    /// [`requestFunds(address,address,uint256)`](requestFundsCall) function.
+    ///Container type for the return parameters of the [`requestFunds(address,address,uint256)`](requestFundsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct requestFundsReturn {}

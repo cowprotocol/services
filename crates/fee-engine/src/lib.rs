@@ -26,14 +26,7 @@ pub use {
     loader::{LoadError, RulesToml, load_rules_from_str, load_rules_toml},
     order_view::{AppData, OrderView},
     partner_fee::{PartnerFee, PartnerFeeBudget},
-    report::{
-        FeeSource,
-        Mismatch,
-        Outcome,
-        report_comparison,
-        reset_comparison_counters,
-        time_evaluation,
-    },
+    report::time_evaluation,
     rules::{
         CompileError,
         Field,

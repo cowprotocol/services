@@ -215,8 +215,7 @@ pub mod GnosisSafeProxyFactory {
         pub data: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`createProxy(address,bytes)`](createProxyCall) function.
+    ///Container type for the return parameters of the [`createProxy(address,bytes)`](createProxyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct createProxyReturn {

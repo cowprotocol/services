@@ -11,6 +11,7 @@ pub mod listen;
 pub mod observation;
 pub mod observer;
 pub mod order_events;
+pub mod order_execution;
 pub mod prices;
 pub mod provider;
 pub mod sponsor;

@@ -1,41 +1,28 @@
-//! Banned user detection: hardcoded list + optional Hermod (zeroShadow)
-//! behind a cache layer.
+//! Banned user detection: hardcoded list + optional Hermod (zeroShadow).
 
-mod cached;
 mod hermod;
 mod metrics;
 
 pub use hermod::Config as HermodConfig;
-use {
-    self::{
-        cached::{Backend, Cached},
-        hermod::Client as Hermod,
-    },
-    alloy_primitives::Address,
-    std::{collections::HashSet, sync::Arc},
-};
+use {self::hermod::Client as Hermod, alloy_primitives::Address, std::collections::HashSet};
 
 /// A list of banned users and optional registries that can be checked.
 pub struct Users {
     list: HashSet<Address>,
-    remote: Option<Arc<Cached>>,
+    remote: Option<Hermod>,
 }
 
 impl Users {
     /// Builds the validator from a hardcoded list and an optional Hermod
-    /// backend.
+    /// backend. `cache_max_size` caps the cached Hermod address signatures.
     pub fn new(
         hermod: Option<HermodConfig>,
         banned_users: Vec<Address>,
         cache_max_size: u64,
     ) -> Self {
-        let mut backends: Vec<Box<dyn Backend>> = Vec::new();
-        if let Some(config) = hermod {
-            backends.push(Box::new(Hermod::new(config)));
-        }
         Self {
             list: HashSet::from_iter(banned_users),
-            remote: Cached::new(backends, cache_max_size),
+            remote: hermod.map(|config| Hermod::new(config, cache_max_size)),
         }
     }
 
@@ -53,8 +40,8 @@ impl Users {
         Self { list, remote: None }
     }
 
-    /// Returns the subset of `addresses` that are banned. Cache misses hit
-    /// the configured remote sources.
+    /// Returns the subset of `addresses` that are banned. Addresses not in
+    /// the hardcoded list are checked against Hermod.
     pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {
         let mut banned = HashSet::new();
 
@@ -76,8 +63,10 @@ impl Users {
             // Need to collect here to make sure filter gets executed and we insert addresses
             .collect::<HashSet<_>>();
 
-        if let Some(remote) = &self.remote {
-            banned.extend(remote.check(&need_lookup).await);
+        if let Some(remote) = &self.remote
+            && !need_lookup.is_empty()
+        {
+            banned.extend(remote.banned(&need_lookup).await);
         }
 
         banned

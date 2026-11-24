@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+test-util = ["dep:mockall"]
+
 [dependencies]
 alloy = { workspace = true, features = ["providers", "rpc", "rpc-types", "sol-types"] }
 anyhow = { workspace = true }
@@ -64,9 +67,6 @@ testlib = { workspace = true }
 token-info = { workspace = true, features = ["test-util"] }
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
 toml = { workspace = true }
-
-[features]
-test-util = ["dep:mockall"]
 
 [lints]
 workspace = true

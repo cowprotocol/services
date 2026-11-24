@@ -7,6 +7,9 @@ license = "GPL-3.0-or-later"
 description = "Solana orderbook API for CoW Protocol"
 repository = "https://github.com/cowprotocol/services"
 
+[features]
+default = []
+
 [lib]
 name = "solana_orderbook"
 path = "src/lib.rs"
@@ -68,9 +71,6 @@ wincode = { workspace = true }
 cow-settlement-interface = { workspace = true, features = ["test-fixtures"] }
 cow-solana-rpc = { workspace = true, features = ["test-util"] }
 solana-testlib = { workspace = true }
-
-[features]
-default = []
 
 [lints]
 workspace = true

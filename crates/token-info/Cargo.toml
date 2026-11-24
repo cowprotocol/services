@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+test-util = ["dep:mockall"]
+
 [dependencies]
 alloy-primitives = { workspace = true }
 anyhow = { workspace = true }
@@ -20,9 +23,6 @@ tracing = { workspace = true }
 maplit = { workspace = true }
 mockall = { workspace = true }
 tokio = { workspace = true }
-
-[features]
-test-util = ["dep:mockall"]
 
 [lints]
 workspace = true

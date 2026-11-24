@@ -77,8 +77,7 @@ pub mod AnyoneAuthenticator {
     #[derive(Clone)]
     pub struct isSolverCall(pub alloy_sol_types::private::Address);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isSolver(address)`](isSolverCall) function.
+    ///Container type for the return parameters of the [`isSolver(address)`](isSolverCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isSolverReturn {

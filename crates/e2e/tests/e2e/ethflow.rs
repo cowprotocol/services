@@ -7,16 +7,7 @@ use {
     anyhow::bail,
     autopilot::database::onchain_order_events::ethflow_events::WRAP_ALL_SELECTOR,
     configs::{
-        autopilot::{
-            Configuration,
-            fee_policy::{
-                FeePoliciesConfig,
-                FeePolicy as ConfigFeePolicy,
-                FeePolicyKind as ConfigFeePolicyKind,
-                FeePolicyOrderClass as ConfigFeePolicyOrderClass,
-            },
-        },
-        fee_factor::FeeFactor,
+        autopilot::Configuration,
         orderbook::order_validation::OrderValidationConfig,
         test_util::TestDefault,
     },
@@ -31,6 +22,7 @@ use {
         TIMEOUT,
         TRADES_ENDPOINT,
         TestAccount,
+        fee_engine_config,
         run_test,
         wait_for_condition,
     },
@@ -337,21 +329,26 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
     let post_call_data = const_hex::encode_prefixed(increment.calldata());
 
     let services = Services::new(&onchain).await;
-    let volume_fee = ConfigFeePolicy {
-        kind: ConfigFeePolicyKind::Volume {
-            factor: 0.01.try_into().unwrap(),
-        },
-        order_class: ConfigFeePolicyOrderClass::Any,
-    };
+    // A 1% volume fee, but none on same-token trades.
+    let fee_engine = fee_engine_config(
+        r#"
+[[rule]]
+name = "Same token"
+when = 'order.sellToken == order.buyToken || (order.sellToken in wrapped_native && order.buyToken == "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")'
+fee = "no_fee()"
+
+[[rule]]
+name = "Default"
+when = "true"
+fee = "volume(100)"
+"#,
+    );
     // `AllowSell` is required for the same-token (WETH -> native ETH) quote
     // below.
     services
         .start_protocol_with_args(
             Configuration {
-                fee_policies: FeePoliciesConfig {
-                    policies: vec![volume_fee],
-                    ..Default::default()
-                },
+                fee_engine: fee_engine.clone(),
                 ..Configuration::test("test_solver", solver.address())
             },
             configs::orderbook::Configuration {
@@ -359,10 +356,7 @@ async fn eth_flow_native_bridge_post_hook(web3: Web3) {
                     same_tokens_policy: shared::order_validation::SameTokensPolicy::AllowSell,
                     ..Default::default()
                 },
-                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
-                    factor: Some(FeeFactor::new(0.01)),
-                    effective_from_timestamp: None,
-                }),
+                fee_engine,
                 ..configs::orderbook::Configuration::test_default()
             },
             solver.clone(),

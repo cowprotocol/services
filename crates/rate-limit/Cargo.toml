@@ -5,6 +5,9 @@ authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+[features]
+test-util = []
+
 [dependencies]
 anyhow = { workspace = true }
 configs = { workspace = true }
@@ -21,9 +24,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
-
-[features]
-test-util = []
 
 [lints]
 workspace = true

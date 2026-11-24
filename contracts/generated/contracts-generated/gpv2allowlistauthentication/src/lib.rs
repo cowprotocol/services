@@ -528,8 +528,7 @@ pub mod GPv2AllowListAuthentication {
         #[allow(missing_docs)]
         pub solver: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`addSolver(address)`](addSolverCall) function.
+    ///Container type for the return parameters of the [`addSolver(address)`](addSolverCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct addSolverReturn {}
@@ -664,8 +663,7 @@ pub mod GPv2AllowListAuthentication {
         #[allow(missing_docs)]
         pub manager_: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`initializeManager(address)`](initializeManagerCall) function.
+    ///Container type for the return parameters of the [`initializeManager(address)`](initializeManagerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct initializeManagerReturn {}
@@ -803,8 +801,7 @@ pub mod GPv2AllowListAuthentication {
         pub prospectiveSolver: alloy_sol_types::private::Address,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isSolver(address)`](isSolverCall) function.
+    ///Container type for the return parameters of the [`isSolver(address)`](isSolverCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isSolverReturn {
@@ -944,8 +941,7 @@ pub mod GPv2AllowListAuthentication {
     #[derive(Clone)]
     pub struct managerCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`manager()`](managerCall) function.
+    ///Container type for the return parameters of the [`manager()`](managerCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct managerReturn {
@@ -1081,8 +1077,7 @@ pub mod GPv2AllowListAuthentication {
         #[allow(missing_docs)]
         pub solver: alloy_sol_types::private::Address,
     }
-    ///Container type for the return parameters of the
-    /// [`removeSolver(address)`](removeSolverCall) function.
+    ///Container type for the return parameters of the [`removeSolver(address)`](removeSolverCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct removeSolverReturn {}
@@ -1220,9 +1215,7 @@ pub mod GPv2AllowListAuthentication {
         pub calldataPayload: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall)
-    /// function.
+    ///Container type for the return parameters of the [`simulateDelegatecall(address,bytes)`](simulateDelegatecallCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct simulateDelegatecallReturn {
@@ -1366,8 +1359,7 @@ pub mod GPv2AllowListAuthentication {
             }
         }
     };
-    ///Container for all the [`GPv2AllowListAuthentication`](self) function
-    /// calls.
+    ///Container for all the [`GPv2AllowListAuthentication`](self) function calls.
     #[derive(Clone)]
     pub enum GPv2AllowListAuthenticationCalls {
         #[allow(missing_docs)]

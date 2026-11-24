@@ -150,8 +150,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
     #[derive(Clone)]
     pub struct NAMECall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`NAME()`](NAMECall)
-    /// function.
+    ///Container type for the return parameters of the [`NAME()`](NAMECall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NAMEReturn {
@@ -285,8 +284,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
     #[derive(Clone)]
     pub struct VERSIONCall;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`VERSION()`](VERSIONCall) function.
+    ///Container type for the return parameters of the [`VERSION()`](VERSIONCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct VERSIONReturn {
@@ -425,8 +423,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         pub _signature: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isValidSignature(bytes32,bytes)`](isValidSignature_0Call) function.
+    ///Container type for the return parameters of the [`isValidSignature(bytes32,bytes)`](isValidSignature_0Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignature_0Return {
@@ -588,8 +585,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         pub _signature: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`isValidSignature(bytes,bytes)`](isValidSignature_1Call) function.
+    ///Container type for the return parameters of the [`isValidSignature(bytes,bytes)`](isValidSignature_1Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isValidSignature_1Return {
@@ -751,8 +747,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
         pub calldataPayload: alloy_sol_types::private::Bytes,
     }
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the
-    /// [`simulate(address,bytes)`](simulateCall) function.
+    ///Container type for the return parameters of the [`simulate(address,bytes)`](simulateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct simulateReturn {
@@ -896,8 +891,7 @@ pub mod GnosisSafeCompatibilityFallbackHandler {
             }
         }
     };
-    ///Container for all the [`GnosisSafeCompatibilityFallbackHandler`](self)
-    /// function calls.
+    ///Container for all the [`GnosisSafeCompatibilityFallbackHandler`](self) function calls.
     #[derive(Clone)]
     pub enum GnosisSafeCompatibilityFallbackHandlerCalls {
         #[allow(missing_docs)]
