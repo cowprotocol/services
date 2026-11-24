@@ -8,12 +8,6 @@ use {
     configs::{
         autopilot::{
             Configuration as AutopilotConfiguration,
-            fee_policy::{
-                FeePoliciesConfig,
-                FeePolicy as ConfigFeePolicy,
-                FeePolicyKind as ConfigFeePolicyKind,
-                FeePolicyOrderClass as ConfigFeePolicyOrderClass,
-            },
             penalty_cap::PenaltyCapConfig,
             solver::Solver,
         },
@@ -46,39 +40,37 @@ use {
 /// `fast_path_submission_deadline` to the block count that produces the
 /// requested wall-clock window on the local Hardhat chain (12s blocks), so a
 /// test can dial in the exclusivity it needs.
-///
-/// `max_partner_fee` is still mirrored onto the orderbook because its
-/// placement-time limit-price check needs to size partner fees the same
-/// way the autopilot would charge them at settle time.
 fn with_fast_path_exclusivity(
     autopilot: AutopilotConfiguration,
     orderbook: configs::orderbook::Configuration,
     exclusivity: Duration,
 ) -> (AutopilotConfiguration, configs::orderbook::Configuration) {
-    let max_partner_fee = autopilot
-        .order_quoting
-        .max_partner_fee
-        .or(orderbook.order_quoting.max_partner_fee)
-        .or(Some(autopilot.fee_policies.max_partner_fee));
     // Local anvil advertises the Hardhat chain-id (12s blocks).
     const HARDHAT_BLOCK_SECS: u64 = 12;
     let fast_path_submission_deadline = exclusivity.as_secs().div_ceil(HARDHAT_BLOCK_SECS).max(1);
     let autopilot = AutopilotConfiguration {
         fast_path_submission_deadline: Some(fast_path_submission_deadline),
-        order_quoting: OrderQuoting {
-            max_partner_fee,
-            ..autopilot.order_quoting
-        },
         ..autopilot
     };
-    let orderbook = configs::orderbook::Configuration {
-        order_quoting: OrderQuoting {
-            max_partner_fee,
-            ..orderbook.order_quoting
-        },
-        ..orderbook
-    };
     (autopilot, orderbook)
+}
+
+/// `[fee-engine]` with partner fees capped at 5% of the volume and, with
+/// `protocol_volume_factor`, that volume fee on every order. The orderbook
+/// needs the cap too: its placement-time limit-price check sizes partner fees
+/// the way the autopilot charges them at settle time.
+fn fee_engine_with_partner_fee_room(
+    protocol_volume_factor: Option<f64>,
+) -> Option<configs::fee_engine::FeeEngineConfig> {
+    let rule = protocol_volume_factor
+        .map(|factor| {
+            format!(
+                "[[rule]]\nname = 'Default'\nwhen = 'true'\nfee = 'volume({})'\n",
+                factor * 10_000.
+            )
+        })
+        .unwrap_or_default();
+    fee_engine_config(&format!("[partner-fees]\nmax-volume-bps = 500\n{rule}"))
 }
 
 /// Fetches the competition a settlement tx belongs to.
@@ -546,22 +538,16 @@ async fn fast_path_executed_amounts_match_quote(web3: Web3, side: OrderKind) {
 
     let autopilot_config = AutopilotConfiguration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![ConfigFeePolicy {
-                kind: ConfigFeePolicyKind::Volume {
-                    factor: protocol_volume_factor.try_into().unwrap(),
-                },
-                order_class: ConfigFeePolicyOrderClass::Any,
-            }],
-            // Room for the partner factor (2%).
-            max_partner_fee: 0.05.try_into().unwrap(),
-            ..Default::default()
-        },
+        // Room for the partner factor (2%).
+        fee_engine: fee_engine_with_partner_fee_room(Some(protocol_volume_factor)),
         ..AutopilotConfiguration::test_no_drivers()
     };
     let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
         autopilot_config,
-        configs::orderbook::Configuration::test_default(),
+        configs::orderbook::Configuration {
+            fee_engine: fee_engine_with_partner_fee_room(None),
+            ..configs::orderbook::Configuration::test_default()
+        },
         exclusivity,
     );
     services
@@ -1585,25 +1571,13 @@ async fn fast_path_records_filtered_out_solutions(web3: Web3) {
             quoter_good.clone(),
             quoter_bad.clone(),
         ]),
-        fee_policies: FeePoliciesConfig {
-            policies: vec![ConfigFeePolicy {
-                kind: ConfigFeePolicyKind::Volume {
-                    factor: protocol_volume_factor.try_into().unwrap(),
-                },
-                order_class: ConfigFeePolicyOrderClass::Any,
-            }],
-            // Room for the 1% partner factor.
-            max_partner_fee: 0.05.try_into().unwrap(),
-            ..Default::default()
-        },
+        // Room for the 1% partner factor.
+        fee_engine: fee_engine_with_partner_fee_room(Some(protocol_volume_factor)),
         ..AutopilotConfiguration::test_no_drivers()
     };
     let orderbook_config = configs::orderbook::Configuration {
         order_quoting: OrderQuoting::test_with_drivers(vec![quoter_good, quoter_bad]),
-        volume_fee: Some(configs::orderbook::VolumeFeeConfig {
-            factor: Some(protocol_volume_factor.try_into().unwrap()),
-            effective_from_timestamp: None,
-        }),
+        fee_engine: fee_engine_with_partner_fee_room(Some(protocol_volume_factor)),
         ..configs::orderbook::Configuration::test_default()
     };
     let (autopilot_config, orderbook_config) =
@@ -1756,22 +1730,16 @@ async fn fast_path_volume_fees_captured(web3: Web3) {
 
     let autopilot_config = AutopilotConfiguration {
         drivers: vec![Solver::test("test_solver", solver.address())],
-        fee_policies: FeePoliciesConfig {
-            policies: vec![ConfigFeePolicy {
-                kind: ConfigFeePolicyKind::Volume {
-                    factor: protocol_volume_factor.try_into().unwrap(),
-                },
-                order_class: ConfigFeePolicyOrderClass::Any,
-            }],
-            // Room for the partner factor (2%).
-            max_partner_fee: 0.05.try_into().unwrap(),
-            ..Default::default()
-        },
+        // Room for the partner factor (2%).
+        fee_engine: fee_engine_with_partner_fee_room(Some(protocol_volume_factor)),
         ..AutopilotConfiguration::test_no_drivers()
     };
     let (autopilot_config, orderbook_config) = with_fast_path_exclusivity(
         autopilot_config,
-        configs::orderbook::Configuration::test_default(),
+        configs::orderbook::Configuration {
+            fee_engine: fee_engine_with_partner_fee_room(None),
+            ..configs::orderbook::Configuration::test_default()
+        },
         exclusivity,
     );
     services
@@ -2097,19 +2065,14 @@ async fn fast_path_limit_too_tight_rejected(web3: Web3) {
     let services = Services::new(&onchain).await;
     let exclusivity = Duration::from_secs(300);
     let orderbook_config = configs::orderbook::Configuration {
-        volume_fee: Some(configs::orderbook::VolumeFeeConfig {
-            factor: Some(0.01_f64.try_into().unwrap()), // 1% protocol volume fee
-            effective_from_timestamp: None,
-        }),
+        // 1% protocol volume fee
+        fee_engine: fee_engine_with_partner_fee_room(Some(0.01)),
         ..configs::orderbook::Configuration::test_default()
     };
     // 5% max partner fee budget — comfortably above the 2% we'll declare in
     // the partner-fee scenario further down.
     let autopilot_config = AutopilotConfiguration {
-        fee_policies: FeePoliciesConfig {
-            max_partner_fee: 0.05_f64.try_into().unwrap(),
-            ..Default::default()
-        },
+        fee_engine: fee_engine_with_partner_fee_room(None),
         ..AutopilotConfiguration::test("test_solver", solver.address())
     };
     let (autopilot_config, orderbook_config) =

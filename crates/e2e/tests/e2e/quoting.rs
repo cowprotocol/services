@@ -1,7 +1,6 @@
 use {
     configs::{
         autopilot::Configuration,
-        fee_factor::FeeFactor,
         order_quoting::{ExternalSolver, OrderQuoting},
         test_util::TestDefault,
     },
@@ -114,17 +113,20 @@ async fn test(web3: Web3) {
 
     tracing::info!("Starting services.");
     let services = Services::new(&onchain).await;
-    // Start API with 0.02% (2 bps) volume fee
+    // Start API with 0.02% (2 bps) volume fee from a far future time on, to
+    // ensure the fee is not applied
     services
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
-                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
-                    factor: Some(FeeFactor::new(0.0002)),
-                    // Set a far future effective timestamp to ensure the fee is
-                    // not applied
-                    effective_from_timestamp: Some("2099-01-01T10:00:00Z".parse().unwrap()),
-                }),
+                fee_engine: fee_engine_config(
+                    r#"
+[[rule]]
+name = "Upcoming"
+when = 'now >= timestamp("2099-01-01T10:00:00Z")'
+fee = "volume(2)"
+"#,
+                ),
                 ..configs::orderbook::Configuration::test_default()
             },
             solver,
@@ -893,24 +895,26 @@ async fn volume_fee(web3: Web3) {
         .start_protocol_with_args(
             Configuration::test("test_solver", solver.address()),
             configs::orderbook::Configuration {
-                shared: configs::shared::SharedConfig {
-                    volume_fee_bucket_overrides: vec![configs::shared::TokenBucketFeeOverride {
-                        tokens: [
-                            *onchain.contracts().weth.address(),
-                            *override_token.address(),
-                        ]
-                        .into_iter()
-                        .collect(),
-                        factor: FeeFactor::new(0.0005),
-                    }],
-                    ..Default::default()
-                },
-                volume_fee: Some(configs::orderbook::VolumeFeeConfig {
-                    factor: Some(FeeFactor::new(0.0002)),
-                    // Set a past effective timestamp to ensure the fee is
-                    // applied
-                    effective_from_timestamp: Some("2000-01-01T10:00:00Z".parse().unwrap()),
-                }),
+                // The 2 bps fee is effective from a past time on, to ensure
+                // the fee is applied
+                fee_engine: fee_engine_config(&format!(
+                    r#"
+[lists]
+bucket = ["{:?}", "{:?}"]
+
+[[rule]]
+name = "Bucket"
+when = "order.sellToken in bucket && order.buyToken in bucket"
+fee = "volume(5)"
+
+[[rule]]
+name = "Default"
+when = 'now >= timestamp("2000-01-01T10:00:00Z")'
+fee = "volume(2)"
+"#,
+                    onchain.contracts().weth.address(),
+                    override_token.address(),
+                )),
                 ..configs::orderbook::Configuration::test_default()
             },
             solver,
