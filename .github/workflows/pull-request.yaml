@@ -457,7 +457,7 @@ jobs:
           attempt=1
           while true; do
             echo "Running test attempt #$attempt"
-            if ! just test-e2e forked_node_mainnet_repay_debt_with_collateral_of_safe; then
+            if ! just test-e2e tracking_insufficient_funds; then
               exit 1
             fi
             attempt=$((attempt+1))
