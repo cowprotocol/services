@@ -1,6 +1,6 @@
 //! Hermod (zeroShadow) sanctioned-address client. Addresses are sent as
-//! HMAC-SHA256 signatures, at most [`MAX_BATCH_SIZE`] per
-//! `GET /address_batches` request.
+//! HMAC-SHA256 signatures, split over [`CONCURRENT_BATCHES`] concurrent
+//! `GET /address_batches` requests of at most [`MAX_BATCH_SIZE`] each.
 
 use {
     super::metrics::Metrics,
@@ -20,6 +20,9 @@ use {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 /// Hermod rejects batches with more unique signatures than this.
 const MAX_BATCH_SIZE: usize = 1000;
+/// A check is split into this many requests, sent at the same time. More
+/// are sent only if the batches would exceed [`MAX_BATCH_SIZE`].
+const CONCURRENT_BATCHES: usize = 10;
 /// How long a reported threat stays banned while Hermod cannot be reached.
 const BANNED_FALLBACK_TTL: Duration = Duration::from_secs(10 * 60);
 const BANNED_FALLBACK_CAPACITY: u64 = 1000;
@@ -111,7 +114,7 @@ impl Client {
             .collect();
         join_all(
             signed
-                .chunks(MAX_BATCH_SIZE)
+                .chunks(batch_size(signed.len()))
                 .map(|batch| self.banned_in_batch(batch)),
         )
         .await
@@ -195,6 +198,14 @@ impl Client {
     }
 }
 
+/// Size of the batches that split `addresses` signatures into
+/// [`CONCURRENT_BATCHES`] requests.
+fn batch_size(addresses: usize) -> usize {
+    addresses
+        .div_ceil(CONCURRENT_BATCHES)
+        .clamp(1, MAX_BATCH_SIZE)
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -222,6 +233,18 @@ mod tests {
             hermod.sign(address!("dead000000000000000000000000000000000000")),
             b256!("e146f8bc38fe78f9356be67706a02eb3ce386b4b12a14ab1f76d022020b6cef0"),
         );
+    }
+
+    #[test]
+    fn addresses_are_split_into_concurrent_batches() {
+        let batches = |addresses: usize| addresses.div_ceil(batch_size(addresses));
+        // `chunks` panics on a batch size of 0.
+        assert_eq!(batch_size(0), 1);
+        assert_eq!(batches(1), 1);
+        assert_eq!(batches(3), 3);
+        assert_eq!((batch_size(2494), batches(2494)), (499, 5));
+        assert_eq!((batch_size(5000), batches(5000)), (1000, 5));
+        assert_eq!((batch_size(5001), batches(5001)), (1000, 6));
     }
 
     #[test]
