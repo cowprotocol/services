@@ -21,7 +21,8 @@ pub struct BannedUsersConfig {
     #[serde(default)]
     pub addresses: Vec<Address>,
 
-    /// Maximum number of address signatures (HMACs) to cache for Hermod.
+    /// Maximum number of addresses to cache for Hermod: their signatures
+    /// (HMACs) and their verdicts.
     #[serde(default = "default_max_cache_size")]
     pub max_cache_size: NonZeroUsize,
 
