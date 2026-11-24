@@ -2,7 +2,7 @@
 //! the time an evaluation took.
 
 use {
-    crate::Evaluation,
+    crate::{Evaluation, RuleSet},
     std::{
         collections::BTreeMap,
         sync::{Mutex, MutexGuard, Once},
@@ -84,6 +84,19 @@ pub fn time_evaluation<T>(evaluate: impl FnOnce() -> T) -> T {
     evaluate()
 }
 
+impl RuleSet {
+    /// Publishes the skip counter of every rule at zero, so that the first
+    /// skip of a rule shows as an increase.
+    pub fn reset_skipped_rule_counters(&self) {
+        for rule in self.rules() {
+            Metrics::get()
+                .skipped_rules
+                .with_label_values(&[rule.name()])
+                .reset();
+        }
+    }
+}
+
 impl Evaluation<'_> {
     /// Counts the rules the evaluation skipped and logs them, grouped with
     /// the same skips once a second.
@@ -104,7 +117,37 @@ impl Evaluation<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use {
+        super::*,
+        crate::{RuleDefinition, RuleSetDefinition},
+        prometheus::core::Collector,
+    };
+
+    #[test]
+    fn a_rule_that_was_never_skipped_has_a_counter_at_zero() {
+        let name = "report_test_never_skipped";
+        let rules = RuleSet::new(RuleSetDefinition {
+            rules: vec![RuleDefinition {
+                name: name.to_owned(),
+                when: "true".to_owned(),
+                fee: "volume(1)".to_owned(),
+            }],
+            ..Default::default()
+        })
+        .unwrap();
+        // The counter of a rule, if it is published.
+        let published = || {
+            let families = Metrics::get().skipped_rules.collect();
+            let metrics = families.iter().flat_map(|family| family.get_metric());
+            metrics
+                .filter(|metric| metric.get_label().iter().any(|l| l.value() == name))
+                .map(|metric| metric.get_counter().value())
+                .next()
+        };
+        assert_eq!(published(), None);
+        rules.reset_skipped_rule_counters();
+        assert_eq!(published(), Some(0.));
+    }
 
     #[test]
     fn times_every_evaluation() {

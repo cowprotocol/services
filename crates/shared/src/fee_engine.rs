@@ -29,6 +29,7 @@ pub fn load_host_rules(
         tables.add_host_list(name, *values)?;
     }
     let rules = fee_engine::load_rules_toml(tables).context("loading the fee engine rules")?;
+    rules.reset_skipped_rule_counters();
     let names: Vec<_> = rules.rules().iter().map(|rule| rule.name()).collect();
     tracing::info!(rules = ?names, "fee engine rules loaded");
     Ok(rules)
