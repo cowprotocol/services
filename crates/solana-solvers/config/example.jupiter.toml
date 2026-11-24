@@ -1,7 +1,8 @@
 # Example Jupiter solver configuration.
 # Run with: solana-solvers jupiter --config <this file>
 
-# Orders quoted at once. Each quote is one Jupiter request.
+# Orders quoted at once. Each quote is two sequential Jupiter requests with
+# api-version v1, one with v2.
 concurrent-requests = 8
 # Pause after a rate-limited response: min-back-off at first, multiplied by
 # back-off-growth-factor per consecutive one, capped at max-back-off.
@@ -13,12 +14,20 @@ max-back-off = "8s"
 max-batch-size = 4
 
 [dex]
-# Jupiter swap API (v2) base URL. Sell orders only: v2 has no ExactOut.
+# Jupiter swap API base URL: api.jup.ag, or a Triton-hosted endpoint.
 endpoint = "https://api.jup.ag"
-# API key from the Jupiter developer portal. Works without one but heavily
-# rate-limited, set it for production.
+# Jupiter swap API version: "v1" (/quote + /swap-instructions) or "v2"
+# (/build, one request per quote, sell orders only). Defaults to "v1".
+# An instance runs exactly one version. To run both, start two instances,
+# each with its own config file and --addr.
+api-version = "v1"
+# API key from the Jupiter developer portal (or Triton). Works without one but
+# heavily rate-limited, set it for production.
 api-key = "your-jupiter-api-key"
 # Slippage tolerance in basis points, sent to Jupiter as slippageBps. Bids use
 # Jupiter's otherAmountThreshold, so this is how far below its expected output
-# they land. 50 = 0.5%.
+# (sells) or above its expected input (buys) they land. 50 = 0.5%.
 slippage-bps = 50
+# Serve buy orders via ExactOut swaps. Off by default. v1 only: enabling it
+# with api-version "v2" fails at startup.
+enable-buy-orders = false

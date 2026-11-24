@@ -42,8 +42,9 @@ pub enum Side {
 }
 
 /// A priced swap that cannot execute yet: the amounts, plus what the backend
-/// needs to build the swap. A caller that may requote builds only the swap it
-/// keeps.
+/// needs to build the swap. Depending on the backend, building the swap may
+/// take a request of its own, so a caller that may requote builds only the
+/// swap it keeps.
 #[derive(Debug, Clone)]
 pub struct Quote {
     pub in_amount: u64,
@@ -175,6 +176,8 @@ pub enum Error {
     Api { status: u16, body: String },
     #[error("dex error {code}: {message}")]
     Dex { code: i64, message: String },
+    #[error("invalid config: {0}")]
+    InvalidConfig(&'static str),
     #[error("malformed swap response: {0}")]
     BadResponse(String),
     #[error(transparent)]
