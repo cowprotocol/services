@@ -269,6 +269,14 @@ impl IntoResponse for ValidationErrorWrapper {
                 ),
             )
                 .into_response(),
+            ValidationError::WaitForCowPreSignUnsupported => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "WaitForCowPreSignUnsupported",
+                    "appData enableWaitForCow is not supported for presign orders.",
+                ),
+            )
+                .into_response(),
             ValidationError::FastPathLimitTooTight => (
                 StatusCode::BAD_REQUEST,
                 error(

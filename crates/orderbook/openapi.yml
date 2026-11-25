@@ -1433,9 +1433,10 @@ components:
             `enableWaitForCow` flag in its `appData`. Such orders are held back
             until the next canonical batch auction starts to give them a higher
             chance to be matched with a counterparty (a CoW). Omitted when `false`.
-            Mutually exclusive with `enableFastPath` and `validFrom`. Orders
-            and quotes are rejected with `WaitForCowDisabled` when canonical
-            batches are not enabled; see
+            Mutually exclusive with `enableFastPath` and `validFrom`, and not
+            supported for presign orders (`WaitForCowPreSignUnsupported`).
+            Orders and quotes are rejected with `WaitForCowDisabled` when
+            canonical batches are not enabled; see
             `GET /api/v1/canonical_batch_schedule`.
           type: boolean
           default: false
@@ -1920,6 +1921,7 @@ components:
             - OldOrderActivelyBidOn
             - WaitForCowDisabled
             - InsufficientValidToForCanonicalBatch
+            - WaitForCowPreSignUnsupported
         description:
           type: string
       required:

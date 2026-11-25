@@ -338,6 +338,9 @@ pub enum ValidationError {
     /// The order waits for the next canonical batch but expires less than the
     /// minimum validity period after that batch starts.
     InsufficientValidToForCanonicalBatch,
+    /// The order waits for a canonical batch but is signed with a
+    /// presignature, which isn't supported.
+    WaitForCowPreSignUnsupported,
     /// The order opts into the fast path but the signed limit price doesn't
     /// leave room for the configured protocol and partner volume fees.
     /// Applying those fees would push the effective execution price past
@@ -758,44 +761,41 @@ impl OrderValidator {
         }
     }
 
-    fn compute_and_validate_valid_from(
+    /// Validates the order against the execution mode in its app data and
+    /// returns the `valid_from` to store for it.
+    fn validate_execution_mode(
         &self,
         app_data: &OrderAppData,
         order: &OrderData,
+        signing_scheme: SigningScheme,
     ) -> Result<Option<u32>, ValidationError> {
-        if matches!(
-            app_data.inner.protocol.execution_mode,
-            ExecutionMode::FastPath
-        ) {
+        match app_data.inner.protocol.execution_mode {
+            ExecutionMode::RegularAuction => Ok(None),
             // The autopilot's fast-path handler owns `valid_from` for
             // these orders (see `crates/autopilot/src/fast_path.rs`); the
             // orderbook writes `NULL` so the handler can classify the
             // order after placement.
-            return Ok(None);
-        }
-        if matches!(
-            app_data.inner.protocol.execution_mode,
-            ExecutionMode::WaitForCow
-        ) {
+            ExecutionMode::FastPath => Ok(None),
             // The autopilot sets `valid_from` to the canonical batch the
             // order joins when it first sees the order.
-            self.check_valid_through_next_canonical_batch(order, time::now_in_epoch_seconds())?;
-            return Ok(None);
-        }
-
-        // Non-fast-path orders may still declare `valid_from` explicitly
-        // in app-data.
-        let valid_from = match app_data.inner.protocol.execution_mode {
-            ExecutionMode::ValidFrom(valid_from) => Some(valid_from),
-            _ => None,
-        };
-        if let Some(valid_from) = valid_from {
-            let min = self.validity_configuration.min.as_secs();
-            if u64::from(order.valid_to) < u64::from(valid_from) + min {
-                return Err(ValidationError::InvalidValidFrom);
+            ExecutionMode::WaitForCow => {
+                // It does so whether or not the presignature has landed, and
+                // a presignature can take minutes (e.g. a Safe transaction),
+                // so the order would likely miss its batch.
+                if signing_scheme == SigningScheme::PreSign {
+                    return Err(ValidationError::WaitForCowPreSignUnsupported);
+                }
+                self.check_valid_through_next_canonical_batch(order, time::now_in_epoch_seconds())?;
+                Ok(None)
+            }
+            ExecutionMode::ValidFrom(valid_from) => {
+                let min = self.validity_configuration.min.as_secs();
+                if u64::from(order.valid_to) < u64::from(valid_from) + min {
+                    return Err(ValidationError::InvalidValidFrom);
+                }
+                Ok(Some(valid_from))
             }
         }
-        Ok(valid_from)
     }
 
     /// Rejects a wait-for-CoW order placed at `now` when canonical batches
@@ -984,7 +984,7 @@ impl OrderValidating for OrderValidator {
         if !data.fee_amount.is_zero() {
             return Err(ValidationError::NonZeroFee);
         }
-        let valid_from = self.compute_and_validate_valid_from(&app_data, &data)?;
+        let valid_from = self.validate_execution_mode(&app_data, &data, signing_scheme)?;
 
         let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
         self.partial_validate(pre_order)
@@ -2135,6 +2135,24 @@ mod tests {
         std::assert_matches!(
             validate(&validator, now + 59).await,
             Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+
+        // Presign orders can't wait for a batch.
+        let presign = OrderCreation {
+            from: Some(Address::with_last_byte(3)),
+            signature: Signature::PreSign,
+            ..order(now + 100)
+        };
+        std::assert_matches!(
+            validator
+                .validate_and_construct_order(
+                    presign,
+                    &Default::default(),
+                    Default::default(),
+                    None
+                )
+                .await,
+            Err(ValidationError::WaitForCowPreSignUnsupported)
         );
 
         // Passes the other cheap checks, so the rejection must come before
