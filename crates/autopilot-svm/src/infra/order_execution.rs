@@ -65,6 +65,14 @@ struct PolicyRow {
     volume_factor: Option<f64>,
 }
 
+/// A trade's `solana.order_execution` row.
+struct Execution<'a> {
+    trade: &'a TradeRow,
+    protocol_fee_tokens: Vec<Vec<u8>>,
+    protocol_fee_amounts: Vec<BigDecimal>,
+    executed_fee: Option<BigDecimal>,
+}
+
 /// Sweeps every [`SWEEP_INTERVAL`], starting right away. A failed sweep is
 /// logged and retried on the next tick.
 pub fn spawn(pool: PgPool) {
@@ -87,6 +95,48 @@ pub fn spawn(pool: PgPool) {
 /// swept once.
 async fn record(pool: &PgPool) -> Result<()> {
     let _timer = db::query_timer("record_order_executions");
+    let trades = unrecorded_trades(pool).await?;
+    if trades.is_empty() {
+        return Ok(());
+    }
+    let policies = fee_policies(pool, &trades).await?;
+    let executions = trades
+        .iter()
+        .map(|trade| {
+            let policies = policies
+                .get(&(trade.auction_id, trade.order_uid))
+                .map_or(&[][..], Vec::as_slice);
+            let breakdown = fees(trade, policies).and_then(|fees| Ok((fees, executed_fee(trade)?)));
+            let (fees, executed_fee) = breakdown.unwrap_or_else(|err| {
+                tracing::warn!(
+                    ?err,
+                    auction_id = trade.auction_id,
+                    trade = %IntentHash(trade.order_uid.0),
+                    "possible incomplete fee breakdown calculation",
+                );
+                metrics()
+                    .settlement_math_errors
+                    .with_label_values(&["fee_breakdown"])
+                    .inc();
+                (Vec::new(), None)
+            });
+            let (protocol_fee_tokens, protocol_fee_amounts) = fees
+                .into_iter()
+                .map(|(token, amount)| (token.0.to_vec(), BigDecimal::from(amount)))
+                .unzip();
+            Execution {
+                trade,
+                protocol_fee_tokens,
+                protocol_fee_amounts,
+                executed_fee: executed_fee.map(BigDecimal::from),
+            }
+        })
+        .collect();
+    store(pool, executions).await
+}
+
+/// Up to [`SWEEP_LIMIT`] unrecorded final trades, oldest first.
+async fn unrecorded_trades(pool: &PgPool) -> Result<Vec<TradeRow>> {
     const TRADES: &str = r#"
 SELECT t.tx_signature, t.instruction_index, t.order_uid, s.auction_id,
        o.kind, o.sell_token, o.buy_token,
@@ -115,15 +165,19 @@ WHERE NOT t.fees_recorded
 ORDER BY t.slot
 LIMIT $1
     "#;
-    let trades: Vec<TradeRow> = sqlx::query_as(TRADES)
+    sqlx::query_as(TRADES)
         .bind(SWEEP_LIMIT)
         .fetch_all(pool)
         .await
-        .context("read the unrecorded trades")?;
-    if trades.is_empty() {
-        return Ok(());
-    }
+        .context("read the unrecorded trades")
+}
 
+/// The trades' fee policies by `(auction id, order uid)`, each order's in
+/// application order.
+async fn fee_policies(
+    pool: &PgPool,
+    trades: &[TradeRow],
+) -> Result<HashMap<(i64, ByteArray<32>), Vec<PolicyRow>>> {
     const POLICIES: &str = r#"
 SELECT auction_id, order_uid, kind, surplus_factor, surplus_max_volume_factor,
        price_improvement_factor, price_improvement_max_volume_factor, volume_factor
@@ -148,51 +202,37 @@ ORDER BY application_order
             .or_default()
             .push(row);
     }
+    Ok(policies)
+}
 
-    let executions: Vec<_> = trades
+/// Inserts the executions and flags their trades recorded. One transaction,
+/// so a trade is flagged only with its row written.
+async fn store(pool: &PgPool, executions: Vec<Execution<'_>>) -> Result<()> {
+    let ((signatures, indexes), uids): ((Vec<_>, Vec<_>), Vec<_>) = executions
         .iter()
-        .map(|trade| {
-            let policies = policies
-                .get(&(trade.auction_id, trade.order_uid))
-                .map_or(&[][..], Vec::as_slice);
-            let breakdown = fees(trade, policies).and_then(|fees| Ok((fees, executed_fee(trade)?)));
-            let (fees, executed_fee) = breakdown.unwrap_or_else(|err| {
-                tracing::warn!(
-                    ?err,
-                    auction_id = trade.auction_id,
-                    trade = %IntentHash(trade.order_uid.0),
-                    "possible incomplete fee breakdown calculation",
-                );
-                metrics()
-                    .settlement_math_errors
-                    .with_label_values(&["fee_breakdown"])
-                    .inc();
-                (Vec::new(), None)
-            });
-            let (tokens, amounts): (Vec<_>, Vec<_>) = fees
-                .into_iter()
-                .map(|(token, amount)| (token.0.to_vec(), BigDecimal::from(amount)))
-                .unzip();
-            (trade, tokens, amounts, executed_fee.map(BigDecimal::from))
+        .map(|execution| {
+            (
+                (
+                    execution.trade.tx_signature,
+                    execution.trade.instruction_index,
+                ),
+                execution.trade.order_uid,
+            )
         })
-        .collect();
+        .unzip();
     let mut insert = QueryBuilder::<Postgres>::new(
         "INSERT INTO solana.order_execution (order_uid, auction_id, protocol_fee_tokens, \
          protocol_fee_amounts, executed_fee) ",
     );
-    insert.push_values(
-        executions,
-        |mut row, (trade, tokens, amounts, executed_fee)| {
-            row.push_bind(trade.order_uid)
-                .push_bind(trade.auction_id)
-                .push_bind(tokens)
-                .push_bind(amounts)
-                .push_bind(executed_fee);
-        },
-    );
+    insert.push_values(executions, |mut row, execution| {
+        row.push_bind(execution.trade.order_uid)
+            .push_bind(execution.trade.auction_id)
+            .push_bind(execution.protocol_fee_tokens)
+            .push_bind(execution.protocol_fee_amounts)
+            .push_bind(execution.executed_fee);
+    });
     // A concurrent sweep may have recorded the same trade already.
     insert.push(" ON CONFLICT DO NOTHING");
-    // One transaction, so a trade is flagged only with its row written.
     let mut tx = pool.begin().await.context("begin the transaction")?;
     insert
         .build()
@@ -204,15 +244,6 @@ UPDATE solana.trades SET fees_recorded = true
 WHERE (tx_signature, instruction_index, order_uid)
     IN (SELECT * FROM UNNEST($1::bytea[], $2::integer[], $3::bytea[]))
     "#;
-    let ((signatures, indexes), uids): ((Vec<_>, Vec<_>), Vec<_>) = trades
-        .iter()
-        .map(|trade| {
-            (
-                (trade.tx_signature, trade.instruction_index),
-                trade.order_uid,
-            )
-        })
-        .unzip();
     sqlx::query(FLAG)
         .bind(signatures)
         .bind(indexes)
