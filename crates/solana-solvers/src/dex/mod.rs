@@ -48,6 +48,9 @@ pub enum Side {
 pub struct Quote {
     pub in_amount: u64,
     pub out_amount: u64,
+    /// The output the backend expects the swap to deliver. At least
+    /// `out_amount`, which the swap guarantees.
+    pub expected_out_amount: u64,
     /// Where the swap sends its output, the quoted order's
     /// `buy_destination`.
     pub destination: Pubkey,

@@ -13,7 +13,7 @@ use {
     futures::{Stream, StreamExt, future, stream},
     rate_limit::RateLimiter,
     solana_sdk::pubkey::Pubkey,
-    std::{cmp::Ordering, collections::HashMap, future::Future, num::NonZeroUsize},
+    std::{cmp::Ordering, collections::HashMap, future::Future, num::NonZeroUsize, sync::Mutex},
     tracing::Instrument,
 };
 
@@ -86,6 +86,9 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     /// dropped and the rest requoted, so a batch clears, trims down to a
     /// single order, or yields nothing. Every batch that clears is a
     /// solution; which of a pair's batches wins is the arbitrator's call.
+    /// A sell bids above what its swap guarantees, up to the expected
+    /// output, by what the buffer it pays into holds and no other batch
+    /// counts on.
     /// Buys (when disabled) and orders the aggregator cannot route yield no
     /// candidate; the rest of the auction still proceeds. At most
     /// `concurrent_requests` quotes run at a time, pausing after a
@@ -95,9 +98,10 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     /// the swap undercuts the limit, like the EVM engine's `Fills`. The
     /// wire's `partiallyFillable` is ignored until then.
     pub async fn solve(&self, auction: &Auction) -> Vec<Solution> {
+        let buffers = Mutex::new(auction.buffer_balances.clone());
         let mut solutions = Vec::new();
         let solve_orders = async {
-            let mut stream = self.solution_stream(auction);
+            let mut stream = self.solution_stream(auction, &buffers);
             while let Some(solution) = stream.next().await {
                 solutions.push(solution);
             }
@@ -112,7 +116,11 @@ impl<Q: Aggregator + Sync> Solver<Q> {
         solutions
     }
 
-    fn solution_stream<'a>(&'a self, auction: &'a Auction) -> impl Stream<Item = Solution> + 'a {
+    fn solution_stream<'a>(
+        &'a self,
+        auction: &'a Auction,
+        buffers: &'a Mutex<HashMap<Pubkey, u64>>,
+    ) -> impl Stream<Item = Solution> + 'a {
         // A batch's index is its solution's id, unique within one response.
         stream::iter(self.batches(auction).into_iter().enumerate())
             .map(|(id, orders)| {
@@ -122,7 +130,7 @@ impl<Q: Aggregator + Sync> Solver<Q> {
                     batch = id,
                     orders = ?orders.iter().map(|order| order.uid).collect::<Vec<_>>()
                 );
-                self.solve_batch(id as u64, orders, auction)
+                self.solve_batch(id as u64, orders, auction, buffers)
                     .instrument(span)
             })
             .buffer_unordered(self.concurrent_requests.get())
@@ -201,31 +209,50 @@ impl<Q: Aggregator + Sync> Solver<Q> {
     }
 
     /// The solution for one batch, see [`Solver::solve`]. Rounds only price
-    /// the batch; the swap is built once it clears.
+    /// the batch, and the swap is built once it clears. `buffers` holds what
+    /// each buffer has left to raise bids by.
     async fn solve_batch(
         &self,
         id: u64,
         mut orders: Vec<&auction::Order>,
         auction: &Auction,
+        buffers: &Mutex<HashMap<Pubkey, u64>>,
     ) -> Option<Solution> {
         while !orders.is_empty() {
             let batch = batch_order(&orders)?;
-            let quote = self
+            let mut quote = self
                 .limited("quote", self.quoter.quote(&batch, &auction.taker))
                 .await?;
             // The limits are checked at the rate the solution's prices will
             // encode, which for a batch of buys is a little worse than the
             // swap's own.
             let (in_amount, out_amount) = quote.clearing_rate(batch.side, orders.len())?;
+            // The settlement pays the raise out of the buffer when the swap
+            // delivers less than the bid.
+            let raise = take(
+                buffers,
+                &batch.buy_destination,
+                quote.expected_out_amount.saturating_sub(quote.out_amount),
+            );
+            let out_amount = out_amount + raise;
             if orders
                 .iter()
                 .all(|order| dex::satisfies(&order.to_dex_order(), in_amount, out_amount))
             {
-                let swap = self
+                if raise > 0 {
+                    tracing::debug!(raise, "bid raised by buffer tokens");
+                }
+                quote.out_amount += raise;
+                let solution = self
                     .limited("swap", self.quoter.swap(&quote, &auction.taker))
-                    .await?;
-                return assemble(id, &orders, swap);
+                    .await
+                    .and_then(|swap| assemble(id, &orders, swap));
+                if solution.is_none() {
+                    give_back(buffers, &batch.buy_destination, raise);
+                }
+                return solution;
             }
+            give_back(buffers, &batch.buy_destination, raise);
             // The orders are sorted most to least permissive. Removing only
             // the tail matters because price impact can make orders that fail
             // at this size clear once the batch is smaller.
@@ -352,6 +379,24 @@ fn split<'a>(
     batches
 }
 
+/// Takes up to `wanted` out of what `buffers` has left for `destination`.
+fn take(buffers: &Mutex<HashMap<Pubkey, u64>>, destination: &Pubkey, wanted: u64) -> u64 {
+    let mut buffers = buffers.lock().unwrap();
+    let Some(left) = buffers.get_mut(destination) else {
+        return 0;
+    };
+    let taken = wanted.min(*left);
+    *left -= taken;
+    taken
+}
+
+/// Returns `amount` that [`take`] took for `destination` to `buffers`.
+fn give_back(buffers: &Mutex<HashMap<Pubkey, u64>>, destination: &Pubkey, amount: u64) {
+    if let Some(left) = buffers.lock().unwrap().get_mut(destination) {
+        *left += amount;
+    }
+}
+
 /// The swap to quote for `orders`, orders of one side on one pair: their
 /// mints, destination and side, over their totals. `None` for no orders or
 /// when the quoted amount overflows. The other leg is a limit the batch
@@ -401,6 +446,7 @@ mod tests {
     const SLOW: u8 = 0xfd;
     const IMPACT: u8 = 0xfc;
     const ROUTES_BUYS: u8 = 0xfb;
+    const NO_SWAP: u8 = 0xfa;
 
     fn pubkey(byte: u8) -> Pubkey {
         Pubkey::new_from_array([byte; 32])
@@ -420,6 +466,7 @@ mod tests {
             orders,
             deadline: chrono::Utc::now() + deadline_in,
             tokens: tokens(&prices),
+            buffer_balances: HashMap::new(),
         }
     }
 
@@ -487,7 +534,9 @@ mod tests {
     /// unit, and buys on the `ROUTES_BUYS` mint at the same rate, except the
     /// `NO_ROUTE` mint (no route), the `RATE_LIMITED` mint (429), the
     /// `SLOW` mint (ten seconds) and the `IMPACT` mint, whose rate worsens
-    /// with size: `in + 1000` out. Rejects other buys. Records when
+    /// with size: `in + 1000` out. The `NO_SWAP` mint quotes but fails to
+    /// build its swap. Expects every sell's route to deliver
+    /// 100 more than it guarantees. Rejects other buys. Records when
     /// each quote started, the amounts quoted in that order, the most that
     /// ran at once, and the input of every swap built.
     #[derive(Default)]
@@ -503,6 +552,7 @@ mod tests {
         dex::Quote {
             in_amount,
             out_amount,
+            expected_out_amount: out_amount,
             destination: pubkey(3),
             raw: serde_json::Value::Null,
         }
@@ -515,12 +565,15 @@ mod tests {
             _taker: &Pubkey,
         ) -> impl Future<Output = Result<dex::Swap, dex::Error>> + Send {
             self.swaps.lock().unwrap().push(quote.in_amount);
-            let swap = dex::Swap {
-                in_amount: quote.in_amount,
-                out_amount: quote.out_amount,
-                instructions: vec![],
+            let swap = match quote.raw {
+                serde_json::Value::Bool(true) => Err(dex::Error::NotFound),
+                _ => Ok(dex::Swap {
+                    in_amount: quote.in_amount,
+                    out_amount: quote.out_amount,
+                    instructions: vec![],
+                }),
             };
-            async move { Ok(swap) }
+            async move { swap }
         }
 
         fn quote(
@@ -558,7 +611,11 @@ mod tests {
                         } else {
                             amount.saturating_mul(2)
                         };
-                        Ok(quote_of(amount, out_amount))
+                        Ok(dex::Quote {
+                            expected_out_amount: out_amount.saturating_add(100),
+                            raw: serde_json::Value::Bool(sell_mint == pubkey(NO_SWAP)),
+                            ..quote_of(amount, out_amount)
+                        })
                     }
                 };
                 self.in_flight.fetch_sub(1, Ordering::SeqCst);
@@ -599,6 +656,129 @@ mod tests {
 
         assert_eq!(solutions.len(), 1);
         assert_eq!(solutions[0].trades[0].order_uid, OrderUid([0x02; 32]));
+    }
+
+    fn with_buffer(mut auction: Auction, balance: u64) -> Auction {
+        auction.buffer_balances = HashMap::from([(pubkey(3), balance)]);
+        auction
+    }
+
+    /// The swap guarantees 2000 and is expected to deliver 2100, so the bid
+    /// rises by the buffer's balance up to 2100.
+    #[tokio::test]
+    async fn raises_a_sell_bid_by_the_buffer_balance() {
+        for (balance, bid) in [(0, 2_000), (40, 2_040), (100, 2_100), (1_000, 2_100)] {
+            let auction = with_buffer(auction(vec![sell(0x01)], Duration::from_secs(60)), balance);
+
+            let solutions = solver(1, Duration::ZERO).solve(&auction).await;
+
+            assert_eq!(solutions[0].prices[&pubkey(0x10)], bid);
+            assert_eq!(solutions[0].prices[&pubkey(2)], 1_000);
+        }
+    }
+
+    /// Two pairs paying into one buffer of 150 want 100 each: the first
+    /// quoted takes 100, the second the 50 left.
+    #[tokio::test]
+    async fn pairs_paying_into_one_buffer_share_its_balance() {
+        let auction = with_buffer(
+            auction(
+                vec![sell(0x01), order(0x02, dex::Side::Sell, pubkey(0x11))],
+                Duration::from_secs(60),
+            ),
+            150,
+        );
+
+        let mut solutions = solver(1, Duration::ZERO).solve(&auction).await;
+
+        solutions.sort_by_key(|solution| solution.id);
+        assert_eq!(solutions[0].prices[&pubkey(0x10)], 2_100);
+        assert_eq!(solutions[1].prices[&pubkey(0x11)], 2_050);
+    }
+
+    /// A limit of 2050 for 1000 sits above the 2000 the swap guarantees, so
+    /// the order fills only once the buffer covers the gap.
+    #[tokio::test]
+    async fn fills_a_limit_only_the_buffer_clears() {
+        for (balance, solutions) in [(49, 0), (50, 1)] {
+            let auction = with_buffer(
+                auction(
+                    vec![sell_with_limit(0x01, pubkey(0x10), 2_050)],
+                    Duration::from_secs(60),
+                ),
+                balance,
+            );
+
+            assert_eq!(
+                solver(1, Duration::ZERO).solve(&auction).await.len(),
+                solutions
+            );
+        }
+    }
+
+    /// The first pair's limit of 3000 is out of reach even with the buffer,
+    /// so the second pair, quoted after it, still raises its bid by all 100.
+    #[tokio::test]
+    async fn a_batch_that_does_not_clear_leaves_the_buffer() {
+        let auction = with_buffer(
+            auction(
+                vec![
+                    sell_with_limit(0x01, pubkey(0x10), 3_000),
+                    sell_of(0x02, pubkey(IMPACT), 100, 400),
+                ],
+                Duration::from_secs(60),
+            ),
+            100,
+        );
+
+        let solutions = solver(1, Duration::ZERO).solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solutions[0].prices[&pubkey(IMPACT)], 1_200);
+    }
+
+    /// The first pair's swap fails to build, so the second pair, quoted
+    /// after it, still raises its bid by all 100.
+    #[tokio::test]
+    async fn a_batch_whose_swap_fails_leaves_the_buffer() {
+        let auction = with_buffer(
+            auction(
+                vec![
+                    order(0x01, dex::Side::Sell, pubkey(NO_SWAP)),
+                    sell_of(0x02, pubkey(IMPACT), 100, 400),
+                ],
+                Duration::from_secs(60),
+            ),
+            100,
+        );
+
+        let solutions = solver(1, Duration::ZERO).solve(&auction).await;
+
+        assert_eq!(solutions.len(), 1);
+        assert_eq!(solutions[0].prices[&pubkey(IMPACT)], 1_200);
+    }
+
+    /// However much the batches want, together they take at most the
+    /// balance and each at most what it wants.
+    #[test]
+    fn takes_at_most_the_buffer_balance() {
+        for balance in [0, 1, 99, 100, 101, u64::MAX] {
+            for wanted in [[0, 0], [1, 100], [100, 100], [u64::MAX, 1], [u64::MAX; 2]] {
+                let buffers = Mutex::new(HashMap::from([(pubkey(3), balance)]));
+
+                let taken = wanted.map(|wanted| take(&buffers, &pubkey(3), wanted));
+
+                assert!(
+                    taken
+                        .iter()
+                        .zip(wanted)
+                        .all(|(&taken, wanted)| taken <= wanted)
+                );
+                let total = |amounts: [u64; 2]| amounts.map(u128::from).iter().sum::<u128>();
+                assert_eq!(total(taken), total(wanted).min(balance.into()));
+            }
+        }
+        assert_eq!(take(&Mutex::default(), &pubkey(3), 100), 0);
     }
 
     #[tokio::test]

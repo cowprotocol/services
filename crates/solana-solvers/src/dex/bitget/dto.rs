@@ -108,6 +108,7 @@ impl SwapResponse {
         Quote {
             in_amount: order.sell_amount,
             out_amount: self.min_amount,
+            expected_out_amount: self.min_amount,
             destination: order.buy_destination,
             raw: serde_json::to_value(Quoted {
                 buy_mint: order.buy_mint,

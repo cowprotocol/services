@@ -3,6 +3,7 @@
 use {
     super::{auction::Id, order_uid::OrderUid},
     moka::future::Cache,
+    solana_sdk::pubkey::Pubkey,
     std::{
         collections::{HashMap, HashSet},
         future::Future,
@@ -27,6 +28,9 @@ pub struct BuyTokenAccounts {
     /// Orders whose account can neither receive the payout nor be created by
     /// the settlement: their settlement would revert at `FinalizeSettle`.
     pub unreceivable: HashSet<OrderUid>,
+    /// The token balance of each token buy's buy-mint buffer, by buffer
+    /// address. A buffer missing on chain holds nothing.
+    pub buffer_balances: HashMap<Pubkey, u64>,
 }
 
 /// Each auction's [`BuyTokenAccounts`], shared by every solver engine this

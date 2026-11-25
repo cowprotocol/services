@@ -15,11 +15,16 @@ use {
     },
     cow_settlement_interface::{
         data::intent::ENCODED_NATIVE_SOL_TRANSFER,
+        pda::buffer::find_buffer_pda,
         token_program::TokenProgram,
     },
     serde::Serialize,
     solana_sdk::{pubkey::Pubkey, sysvar, transaction::VersionedTransaction},
-    std::{collections::HashMap, fmt, sync::Arc},
+    std::{
+        collections::{BTreeSet, HashMap},
+        fmt,
+        sync::Arc,
+    },
 };
 
 /// The autopilot-assigned identifier of an auction.
@@ -108,6 +113,7 @@ impl Auction {
     /// destination, against the chain, and price the creation of the missing
     /// ones at the cluster's rent. A native SOL buy pays out to a wallet,
     /// which the payout creates when it is missing, so it needs no lookup.
+    /// The same fetch reads the balance of every token buy's buy-mint buffer.
     ///
     /// An order whose buy mint is missing or not a mint is unreceivable: no
     /// settlement can pay it out.
@@ -119,15 +125,26 @@ impl Auction {
         let mints = blockchain
             .mints(token_buys().map(|order| order.buy_token))
             .await?;
+        let program_id = blockchain.program_id();
+        let buffers: BTreeSet<Pubkey> = token_buys()
+            .map(|order| find_buffer_pda(&program_id, &order.buy_token).0)
+            .collect();
         let snapshot = blockchain
             .accounts_snapshot(
                 token_buys()
                     .map(|order| order.buy_token_account)
-                    .chain([sysvar::rent::ID]),
+                    .chain([sysvar::rent::ID])
+                    .chain(buffers.iter().copied()),
             )
             .await?;
         let rent = snapshot.rent();
-        let mut resolved = BuyTokenAccounts::default();
+        let mut resolved = BuyTokenAccounts {
+            buffer_balances: buffers
+                .into_iter()
+                .map(|buffer| (buffer, snapshot.token_balance(&buffer)))
+                .collect(),
+            ..Default::default()
+        };
         for order in token_buys() {
             // Every token buy's mint was fetched, so a missing entry only
             // guards a bug and drops the order like an invalid mint.
@@ -399,7 +416,7 @@ mod tests {
         base64::{Engine, prelude::BASE64_STANDARD},
         cow_solana_rpc::{MocksMap, RpcRequest, SolanaRPC},
         serde_json::{Value, json},
-        solana_sdk::rent::Rent,
+        solana_sdk::{account::Account, program_pack::Pack, rent::Rent},
         solana_testlib::{
             account_json,
             mint_account_json,
@@ -407,6 +424,7 @@ mod tests {
             token_2022_mint,
             token_account_json,
         },
+        spl_token_interface::state::{Account as TokenAccount, AccountState},
     };
 
     fn pubkey(byte: u8) -> Pubkey {
@@ -454,8 +472,9 @@ mod tests {
 
     /// Answers the classification's two `getMultipleAccounts` lookups in
     /// order: `mints` for the token buys' buy mints, then `accounts` for their
-    /// buy token accounts, each in auction order, with the rent sysvar asked
-    /// for last and left unanswered unless `accounts` goes on to it.
+    /// buy token accounts, each in auction order, with the rent sysvar and
+    /// then the buy mints' buffers asked for after them and left unanswered
+    /// unless `accounts` goes on to them.
     fn blockchain(
         mints: impl IntoIterator<Item = Value>,
         accounts: impl IntoIterator<Item = Value>,
@@ -520,6 +539,49 @@ mod tests {
 
         assert_eq!(uids(resolved.missing.keys()), [2]);
         assert_eq!(uids(&resolved.unreceivable), [3, 4]);
+    }
+
+    /// Two orders buying one mint read its buffer once, after their buy token
+    /// accounts and the rent sysvar.
+    #[tokio::test]
+    async fn reads_the_buy_mints_buffer_balance() {
+        let mut data = vec![0; TokenAccount::LEN];
+        TokenAccount {
+            mint: pubkey(0x44),
+            owner: pubkey(0x99),
+            amount: 5_000,
+            state: AccountState::Initialized,
+            ..TokenAccount::default()
+        }
+        .pack_into_slice(&mut data);
+        let buffer = account_json(&Account {
+            owner: spl_token_interface::ID,
+            data,
+            ..Account::default()
+        });
+        let blockchain = blockchain(
+            [mint_account_json()],
+            [
+                token_account_json(&pubkey(0x44), &pubkey(0x22)),
+                token_account_json(&pubkey(0x44), &pubkey(0x22)),
+                Value::Null,
+                buffer,
+            ],
+        );
+
+        let resolved = auction(vec![order(1, pubkey(0x66)), order(2, pubkey(0x67))])
+            .resolve_buy_token_accounts(
+                Id::new(1).unwrap(),
+                &blockchain,
+                &BuyTokenAccountCache::default(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            resolved.buffer_balances,
+            HashMap::from([(find_buffer_pda(&pubkey(0xaa), &pubkey(0x44)).0, 5_000)])
+        );
     }
 
     /// The missing SPL Token account is priced at the fetched rent sysvar's
