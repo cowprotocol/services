@@ -139,8 +139,8 @@ struct ResponseBody {
     #[serde_as(as = "Option<DisplayFromStr>")]
     #[serde(default)]
     network_fee: Option<u64>,
-    /// The bincode-serialized settlement, absent from a driver that answers
-    /// none.
+    /// The settlement, bincode-serialized or in the wire format (the two
+    /// differ for a v1 message). Absent from a driver that answers none.
     #[serde_as(as = "Option<Base64>")]
     #[serde(default)]
     transaction: Option<Vec<u8>>,
@@ -225,6 +225,7 @@ impl Quoter {
         let quoted = quoted?;
         let transaction = quoted.transaction.as_deref().and_then(|bytes| {
             bincode::deserialize(bytes)
+                .or_else(|_| wincode::deserialize(bytes))
                 .inspect_err(|err| {
                     tracing::warn!(driver, ?err, "driver quote transaction malformed")
                 })
@@ -325,7 +326,17 @@ fn metrics() -> &'static Metrics {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, reqwest::StatusCode};
+    use {
+        super::*,
+        base64::{Engine, prelude::BASE64_STANDARD},
+        reqwest::StatusCode,
+        solana_sdk::{
+            hash::Hash,
+            instruction::{AccountMeta, Instruction},
+            message::{VersionedMessage, v1},
+            signature::Signature,
+        },
+    };
 
     #[test]
     fn labels_drivers_by_their_last_path_segment() {
@@ -396,6 +407,52 @@ mod tests {
         }
         let malformed = quotes(vec![driver(StatusCode::OK, r#"{"amount":"1"}"#).await]).await;
         assert_eq!(malformed.unwrap_err(), Error::DriverFailed);
+    }
+
+    /// Bincode and the wire format encode a v1 message differently, and
+    /// drivers send either.
+    #[tokio::test]
+    async fn reads_a_drivers_settlement_in_bincode_or_wire_format() {
+        let payer = Pubkey::new_unique();
+        let instruction = Instruction::new_with_bytes(
+            Pubkey::new_unique(),
+            &[1, 2, 3],
+            vec![AccountMeta::new(payer, true)],
+        );
+        let config = v1::TransactionConfig {
+            priority_fee: Some(5_000),
+            compute_unit_limit: Some(1_400_000),
+            loaded_accounts_data_size_limit: Some(64 * 1024 * 1024),
+            heap_size: None,
+        };
+        let message = v1::Message::try_compile_with_config(
+            &payer,
+            &[instruction],
+            Hash::new_unique(),
+            config,
+        )
+        .unwrap();
+        let settlement = VersionedTransaction {
+            signatures: vec![Signature::default()],
+            message: VersionedMessage::V1(message),
+        };
+        for (encoding, bytes) in [
+            ("bincode", bincode::serialize(&settlement).unwrap()),
+            ("wire", wincode::serialize(&settlement).unwrap()),
+        ] {
+            let body = serde_json::json!({
+                "sellAmount": "1000",
+                "buyAmount": "900",
+                "solver": payer.to_string(),
+                "transaction": BASE64_STANDARD.encode(bytes),
+            });
+            let quoted = quotes(vec![driver(StatusCode::OK, body.to_string().leak()).await]).await;
+            assert_eq!(
+                quoted.unwrap()[0].transaction,
+                Some(settlement.clone()),
+                "{encoding}"
+            );
+        }
     }
 
     #[test]
