@@ -41,6 +41,8 @@ use {
 };
 
 const SOLUTION_CACHE_TTL: Duration = Duration::from_secs(60);
+/// The pause before a co-sign the engine failed transiently is retried.
+const COSIGN_RETRY_PAUSE: Duration = Duration::from_millis(500);
 /// The runtime's per-transaction account lock limit, counting static keys and
 /// lookup-table loaded addresses. The SDK's `MAX_TX_ACCOUNT_LOCKS` (128)
 /// applies only under the `increase_tx_account_lock_limit` feature, inactive
@@ -407,7 +409,12 @@ impl Competition {
             .with_max_native_shortfall(self.solver.max_native_shortfall());
         // The simulation skips signature checks and replaces every blockhash,
         // so an unsigned transaction saves the signing and the fetch.
-        bundle.push(resolved.unsigned()?);
+        let transaction = resolved.unsigned()?;
+        let signers = transaction.message.header().num_required_signatures;
+        if signers > 1 && !self.solver.cosigns() {
+            return Err(Error::NeedsCosigner { signers });
+        }
+        bundle.push(transaction);
         bundle.iter().try_for_each(check_size)?;
         if let Some(accounts) = bundle
             .iter()
@@ -803,6 +810,17 @@ impl Competition {
             return Err(Error::DeadlineExceeded);
         }
 
+        // Other signers sign the final message, so only now. Nothing has been
+        // sent when this fails, so the autopilot can re-auction the orders.
+        let transaction = if transaction.message.header().num_required_signatures > 1 {
+            self.blockchain
+                .until_slot(submission_deadline_slot, self.cosign(&transaction))
+                .await
+                .ok_or(Error::DeadlineExceeded)??
+        } else {
+            transaction
+        };
+
         // Consume the entry only now, when the transaction is about to reach
         // the network. One atomic removal takes the chosen solution. A
         // concurrent `/settle` for it then observes a missing entry and
@@ -853,6 +871,26 @@ impl Competition {
         }
 
         Ok(signature)
+    }
+
+    /// Co-sign `transaction` through the engine, retrying while it answers
+    /// 429 or 502: its upstream rate limited it or failed. The caller bounds
+    /// the retries by the deadline.
+    async fn cosign(
+        &self,
+        transaction: &VersionedTransaction,
+    ) -> Result<VersionedTransaction, Error> {
+        loop {
+            match self.solver.cosign(transaction).await {
+                Err(crate::infra::solver::Error::HttpStatus { status, .. })
+                    if matches!(status.as_u16(), 429 | 502) =>
+                {
+                    tracing::warn!(%status, "co-sign failed transiently, retrying");
+                    tokio::time::sleep(COSIGN_RETRY_PAUSE).await;
+                }
+                result => return result.map_err(Error::Cosign),
+            }
+        }
     }
 
     /// Land the sponsored creation transactions before the node reaches
@@ -1069,6 +1107,9 @@ fn orders_with_trades(orders: Vec<Order>, solution: &Solution) -> Vec<Order> {
 pub(crate) enum Error {
     #[error("solver engine failed: {0}")]
     Solver(#[from] crate::infra::solver::Error),
+    /// The engine failed to co-sign the settlement; nothing was sent.
+    #[error("co-signing failed: {0}")]
+    Cosign(#[source] crate::infra::solver::Error),
     /// Never solved, or already settled.
     #[error("solution not available")]
     SolutionNotAvailable,
@@ -1125,6 +1166,10 @@ pub(crate) enum Error {
     /// sent.
     #[error("transaction locks {accounts} accounts, over the {MAX_TRANSACTION_ACCOUNTS} limit")]
     TooManyAccounts { accounts: usize },
+    /// The settlement needs signers besides the solver, and the solver's
+    /// engine doesn't co-sign. Nothing was sent.
+    #[error("settlement needs {signers} signers and the solver doesn't co-sign")]
+    NeedsCosigner { signers: u8 },
     #[error("failed to resolve settlement accounts: {0}")]
     Resolve(#[from] super::settlement::ResolveError),
     #[error("failed to encode settlement: {0}")]
@@ -1247,7 +1292,8 @@ fn proves_failure(error: &Error) -> bool {
         Error::Settlement(_)
         | Error::SimulationFailed { .. }
         | Error::TransactionTooLarge { .. }
-        | Error::TooManyAccounts { .. } => true,
+        | Error::TooManyAccounts { .. }
+        | Error::NeedsCosigner { .. } => true,
         Error::Resolve(error) => !matches!(error, ResolveError::Rpc(_)),
         _ => false,
     }
@@ -1261,6 +1307,7 @@ fn outcome_label(result: &Result<Signature, Error>) -> &'static str {
 fn error_label(error: &Error) -> &'static str {
     match error {
         Error::Solver(_) => "solver_failed",
+        Error::Cosign(_) => "cosign_failed",
         Error::SolutionNotAvailable => "solution_unavailable",
         Error::DeadlineExceeded => "deadline_exceeded",
         Error::TooManyPendingSettlements => "throttled",
@@ -1275,6 +1322,7 @@ fn error_label(error: &Error) -> &'static str {
         Error::TransactionTooLarge { .. } => "transaction_too_large",
         Error::PriorityFeeTooHigh(_) => "priority_fee_too_high",
         Error::TooManyAccounts { .. } => "too_many_accounts",
+        Error::NeedsCosigner { .. } => "needs_cosigner",
         Error::Resolve(_) => "resolve_failed",
         // v1 compilation refuses more than 64 addresses, the account lock
         // limit, before the bundle's count runs.

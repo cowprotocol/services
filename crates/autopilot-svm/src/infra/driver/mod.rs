@@ -54,6 +54,7 @@ struct ErrorBody {
 enum Kind {
     InvalidAuctionId,
     SolverFailed,
+    CosignFailed,
     SolutionNotAvailable,
     DeadlineExceeded,
     TooManyPendingSettlements,
@@ -98,6 +99,7 @@ impl Error {
                     | Kind::SimulationFailed
                     | Kind::TransactionTooLarge
                     | Kind::PriorityFeeTooHigh
+                    | Kind::CosignFailed
             )
         )
     }
@@ -171,6 +173,7 @@ mod tests {
         assert!(status("SolutionNotAvailable").settlement_provably_unsent());
         assert!(status("TransactionTooLarge").settlement_provably_unsent());
         assert!(status("PriorityFeeTooHigh").settlement_provably_unsent());
+        assert!(status("CosignFailed").settlement_provably_unsent());
         // The driver answers this both before and after the send.
         assert!(!status("DeadlineExceeded").settlement_provably_unsent());
         assert!(!status("FailedToSubmit").settlement_provably_unsent());
