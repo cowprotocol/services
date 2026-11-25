@@ -190,7 +190,11 @@ impl Client {
         if let Some(api_key) = &self.api_key {
             request = request.bearer_auth(api_key);
         }
-        let response = request.send().await?;
+        let response = request
+            .send()
+            .await
+            .inspect_err(|_| Metrics::response_status("no_response"))?;
+        Metrics::response_status(response.status().as_str());
         match response.status() {
             reqwest::StatusCode::OK => Ok(response.json().await?),
             reqwest::StatusCode::NOT_FOUND => Ok(Vec::new()),

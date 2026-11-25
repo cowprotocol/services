@@ -26,6 +26,11 @@ pub(super) struct Metrics {
     /// Address checks by cache result: hit, or miss (forwarded to Hermod).
     #[metric(labels("result"))]
     cache: IntCounterVec,
+
+    /// Batch requests by HTTP status of the response. The status is
+    /// `no_response` if the request failed before a response arrived.
+    #[metric(labels("backend", "status"))]
+    responses: IntCounterVec,
 }
 
 impl Metrics {
@@ -43,6 +48,14 @@ impl Metrics {
             .cache
             .with_label_values(&["miss"])
             .inc_by(misses as u64);
+    }
+
+    /// Records the HTTP status of one batch request.
+    pub(super) fn response_status(status: &str) {
+        Self::get()
+            .responses
+            .with_label_values(&[BACKEND, status])
+            .inc();
     }
 
     /// Records one batch request of `size` addresses. `hits` is `None` when
