@@ -57,6 +57,7 @@ impl From<EthrpcConfig> for ethrpc::Config {
                 .max_concurrent_requests
                 .unwrap_or(defaults.ethrpc_max_concurrent_requests),
             ethrpc_batch_delay: config.batch_delay.unwrap_or(defaults.ethrpc_batch_delay),
+            ..defaults
         }
     }
 }
