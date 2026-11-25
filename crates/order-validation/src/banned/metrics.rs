@@ -1,4 +1,5 @@
-//! Instrumentation of the Hermod batch lookups.
+//! Instrumentation of the Hermod batch lookups and of the cache in front of
+//! them.
 
 use {
     prometheus::{HistogramVec, IntCounterVec},
@@ -21,11 +22,27 @@ pub(super) struct Metrics {
         buckets(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
     )]
     lookup_seconds: HistogramVec,
+
+    /// Address checks by cache result: hit, or miss (forwarded to Hermod).
+    #[metric(labels("result"))]
+    cache: IntCounterVec,
 }
 
 impl Metrics {
     fn get() -> &'static Self {
         Self::instance(observe::metrics::get_storage_registry()).unwrap()
+    }
+
+    pub(super) fn cache(hits: usize, misses: usize) {
+        let metrics = Self::get();
+        metrics
+            .cache
+            .with_label_values(&["hit"])
+            .inc_by(hits as u64);
+        metrics
+            .cache
+            .with_label_values(&["miss"])
+            .inc_by(misses as u64);
     }
 
     /// Records one batch request of `size` addresses. `hits` is `None` when

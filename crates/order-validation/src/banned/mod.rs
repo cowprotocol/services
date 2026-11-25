@@ -1,20 +1,27 @@
-//! Banned user detection: hardcoded list + optional Hermod (zeroShadow).
+//! Banned user detection: hardcoded list + optional Hermod (zeroShadow)
+//! behind a cache layer.
 
+mod cached;
 mod hermod;
 mod metrics;
 
 pub use hermod::Config as HermodConfig;
-use {self::hermod::Client as Hermod, alloy_primitives::Address, std::collections::HashSet};
+use {
+    self::{cached::Cached, hermod::Client as Hermod},
+    alloy_primitives::Address,
+    std::{collections::HashSet, sync::Arc},
+};
 
 /// A list of banned users and optional registries that can be checked.
 pub struct Users {
     list: HashSet<Address>,
-    remote: Option<Hermod>,
+    remote: Option<Arc<Cached>>,
 }
 
 impl Users {
     /// Builds the validator from a hardcoded list and an optional Hermod
-    /// backend. `cache_max_size` caps the cached Hermod address signatures.
+    /// backend. `cache_max_size` caps the cached Hermod address signatures
+    /// and the cached verdicts.
     pub fn new(
         hermod: Option<HermodConfig>,
         banned_users: Vec<Address>,
@@ -22,7 +29,15 @@ impl Users {
     ) -> Self {
         Self {
             list: HashSet::from_iter(banned_users),
-            remote: hermod.map(|config| Hermod::new(config, cache_max_size)),
+            remote: hermod.map(|config| {
+                let (refresh_interval, max_idle) = (config.refresh_interval, config.max_idle);
+                Cached::new(
+                    Hermod::new(config, cache_max_size),
+                    cache_max_size,
+                    refresh_interval,
+                    max_idle,
+                )
+            }),
         }
     }
 
@@ -41,7 +56,7 @@ impl Users {
     }
 
     /// Returns the subset of `addresses` that are banned. Addresses not in
-    /// the hardcoded list are checked against Hermod.
+    /// the hardcoded list are checked against the cached Hermod verdicts.
     pub async fn banned(&self, addresses: impl IntoIterator<Item = Address>) -> HashSet<Address> {
         let mut banned = HashSet::new();
 
