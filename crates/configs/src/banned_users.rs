@@ -2,9 +2,17 @@ use {
     crate::deserialize_env::{deserialize_optional_string_from_env, deserialize_string_from_env},
     alloy_primitives::Address,
     serde::Deserialize,
-    std::{fmt::Debug, num::NonZeroUsize},
+    std::{fmt::Debug, num::NonZeroUsize, time::Duration},
     url::Url,
 };
+
+fn default_refresh_interval() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_max_idle() -> Duration {
+    Duration::from_secs(60)
+}
 
 fn default_max_cache_size() -> NonZeroUsize {
     // Note that this default value does not apply to both the orderbook and
@@ -21,7 +29,8 @@ pub struct BannedUsersConfig {
     #[serde(default)]
     pub addresses: Vec<Address>,
 
-    /// Maximum number of address signatures (HMACs) to cache for Hermod.
+    /// Maximum number of addresses to cache for Hermod: their signatures
+    /// (HMACs) and their verdicts.
     #[serde(default = "default_max_cache_size")]
     pub max_cache_size: NonZeroUsize,
 
@@ -58,6 +67,14 @@ pub struct HermodConfig {
     /// with `API_KEY` set.
     #[serde(default, deserialize_with = "deserialize_optional_string_from_env")]
     pub api_key: Option<String>,
+
+    /// How often the cached addresses are checked again.
+    #[serde(with = "humantime_serde", default = "default_refresh_interval")]
+    pub refresh_interval: Duration,
+
+    /// An address that nobody requested for this long leaves the cache.
+    #[serde(with = "humantime_serde", default = "default_max_idle")]
+    pub max_idle: Duration,
 }
 
 impl Debug for HermodConfig {
@@ -66,6 +83,8 @@ impl Debug for HermodConfig {
             .field("url", &self.url)
             .field("hmac_key", &"<REDACTED>")
             .field("api_key", &self.api_key.as_ref().map(|_| "<REDACTED>"))
+            .field("refresh_interval", &self.refresh_interval)
+            .field("max_idle", &self.max_idle)
             .finish()
     }
 }
@@ -111,6 +130,23 @@ mod tests {
         assert_eq!(hermod.url.as_str(), "http://hermod:3000/");
         assert_eq!(hermod.hmac_key, "key");
         assert_eq!(hermod.api_key.as_deref(), Some("secret"));
+        assert_eq!(hermod.refresh_interval, Duration::from_secs(5));
+        assert_eq!(hermod.max_idle, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn deserialize_hermod_cache_timing() {
+        let toml = r#"
+        [hermod]
+        url = "http://hermod:3000"
+        hmac-key = "key"
+        refresh-interval = "12s"
+        max-idle = "2m"
+        "#;
+        let config: BannedUsersConfig = toml::from_str(toml).unwrap();
+        let hermod = config.hermod.unwrap();
+        assert_eq!(hermod.refresh_interval, Duration::from_secs(12));
+        assert_eq!(hermod.max_idle, Duration::from_secs(120));
     }
 
     #[test]
@@ -119,6 +155,8 @@ mod tests {
             url: "http://hermod:3000".parse().unwrap(),
             hmac_key: "hmac-secret-value".to_string(),
             api_key: Some("api-secret-value".to_string()),
+            refresh_interval: default_refresh_interval(),
+            max_idle: default_max_idle(),
         };
         let debug = format!("{:?}", config);
         assert!(debug.contains(r#"hmac_key: "<REDACTED>""#));

@@ -450,6 +450,8 @@ pub async fn run(config: Configuration) {
                     url: hermod.url,
                     hmac_key: hermod.hmac_key,
                     api_key: hermod.api_key,
+                    refresh_interval: hermod.refresh_interval,
+                    max_idle: hermod.max_idle,
                 }
             }),
             config.banned_users.addresses,
