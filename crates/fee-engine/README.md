@@ -250,7 +250,9 @@ check it: the host must pass false when the order has no quote.
 
 `fastPath` and `waitForCow` are the execution modes the order asks for with
 the `enableFastPath` and `enableWaitForCow` app-data flags; at most one is
-true.
+true. `waitForCow` is also false while the host runs no canonical batches
+(`OrderView::canonical_batches`): such an order then trades as a regular
+order, so it pays the fee of one.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,

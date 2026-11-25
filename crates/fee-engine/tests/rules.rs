@@ -104,6 +104,7 @@ fn reports_the_matching_rules_per_order() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        canonical_batches: false,
     }));
     assert_eq!(
         rule,
@@ -122,6 +123,7 @@ fn reports_the_matching_rules_per_order() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        canonical_batches: false,
     }));
     assert_eq!(rule, ["Stablecoin swaps", "Default"]);
     assert_eq!(
@@ -136,6 +138,7 @@ fn reports_the_matching_rules_per_order() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        canonical_batches: false,
     }));
     assert_eq!(rule, ["Default"]);
     assert_eq!(
@@ -151,6 +154,7 @@ fn reports_the_matching_rules_per_order() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        canonical_batches: false,
     }));
     assert_eq!(rule, ["JIT makers", "Stablecoin swaps", "Default"]);
     assert_eq!(fees, vec![]);
@@ -170,7 +174,8 @@ fn no_matching_rule_means_no_fee() {
                 order: &Order::default(),
                 app_data: &AppData::default(),
                 partner_fees: &[],
-                in_market: false
+                in_market: false,
+                canonical_batches: false,
             })
             .matched
             .is_empty()

@@ -420,8 +420,12 @@ pub async fn run(config: Configuration) {
     // the quote-time volume fee adjustment in `QuoteHandler` so a single
     // configuration change propagates everywhere.
     let volume_fees = Arc::new(
-        shared::fee_engine::FeeEngineVolumeFees::new(&config.fee_engine, *native_token.address())
-            .expect("fee engine rules must load"),
+        shared::fee_engine::FeeEngineVolumeFees::new(
+            &config.fee_engine,
+            *native_token.address(),
+            config.order_validation.canonical_batch_interval.is_some(),
+        )
+        .expect("fee engine rules must load"),
     );
 
     let order_validator = OrderValidator::new(

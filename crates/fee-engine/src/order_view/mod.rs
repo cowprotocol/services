@@ -36,6 +36,9 @@ pub struct OrderView<'a> {
     /// Whether the limit price is inside the market price of the order's quote;
     /// false when the order has no quote. The engine trusts it as given.
     pub in_market: bool,
+    /// Whether the host runs canonical batches. Without them a wait-for-CoW
+    /// order trades as a regular order, so rules see its `waitForCow` false.
+    pub canonical_batches: bool,
 }
 
 /// The order as rules see it: every field a rule can read, with amounts as
@@ -47,6 +50,7 @@ pub(crate) fn order_view(
         order,
         app_data,
         in_market,
+        canonical_batches,
         ..
     }: OrderView,
 ) -> Box<dyn Val> {
@@ -66,7 +70,10 @@ pub(crate) fn order_view(
         ("validFrom", serialized(meta.valid_from)),
         ("appData", Some(app_data_view(app_data))),
         ("fastPath", serialized(meta.fast_path)),
-        ("waitForCow", serialized(meta.wait_for_cow)),
+        (
+            "waitForCow",
+            serialized(meta.wait_for_cow && canonical_batches),
+        ),
         ("inMarket", serialized(in_market)),
         (
             "ethflowData",
@@ -215,6 +222,7 @@ mod tests {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
+            canonical_batches: false,
         });
 
         assert_eq!(view["owner"], "0xabcdef0000000000000000000000000000000001");
@@ -226,6 +234,30 @@ mod tests {
         assert_eq!(view["fastPath"], false);
         assert_eq!(view["waitForCow"], false);
         assert!(view.get("quote").is_none());
+    }
+
+    #[test]
+    fn wait_for_cow_needs_canonical_batches() {
+        let wait_for_cow = |flag, canonical_batches| {
+            let order = model::order::Order {
+                metadata: OrderMetadata {
+                    wait_for_cow: flag,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            order_view(OrderView {
+                order: &order,
+                app_data: &AppData::default(),
+                partner_fees: &[],
+                in_market: false,
+                canonical_batches,
+            })["waitForCow"]
+                .clone()
+        };
+        assert_eq!(wait_for_cow(true, true), true);
+        assert_eq!(wait_for_cow(true, false), false);
+        assert_eq!(wait_for_cow(false, true), false);
     }
 
     /// An order with every option set, the view's fields at their fullest.
@@ -289,8 +321,8 @@ mod tests {
     }
 
     /// Every view field is the API field of the same name, so a rule author
-    /// can read the API docs. The API lacks `inMarket`, and its `appData` is
-    /// the hash, not the document.
+    /// can read the API docs. The API lacks `inMarket`, its `appData` is the
+    /// hash, not the document, and its `waitForCow` ignores canonical batches.
     #[test]
     fn view_matches_the_api_json() {
         let order = fully_set_order();
@@ -299,6 +331,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            canonical_batches: true,
         });
         let fields = view.as_object_mut().unwrap();
         fields.remove("inMarket");
@@ -332,6 +365,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            canonical_batches: true,
         });
 
         let fields: BTreeSet<&str> = view
@@ -377,6 +411,7 @@ mod tests {
                 app_data: &crate::rules::sample_app_data(),
                 partner_fees: &[],
                 in_market: false,
+                canonical_batches: false,
             })
         };
         assert_eq!(
@@ -399,6 +434,7 @@ mod tests {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
+            canonical_batches: false,
         });
 
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 0 }));
@@ -411,6 +447,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            canonical_batches: true,
         });
         // An array and a negative number, which the view has none of.
         let view = json!({ "order": view, "others": [-1, null] });
@@ -432,6 +469,7 @@ mod tests {
             app_data: &crate::rules::sample_app_data(),
             partner_fees: &[],
             in_market: true,
+            canonical_batches: true,
         });
         assert_eq!(field_paths(&sample), field_paths(&view));
     }

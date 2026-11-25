@@ -74,6 +74,7 @@ fn mainnet_sample_lists_reach_the_rules() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        canonical_batches: false,
     });
     assert!(evaluation.skipped.is_empty());
     let Match { rule, fees } = evaluation.matched.first().unwrap();
@@ -90,6 +91,7 @@ fn mainnet_sample_lists_reach_the_rules() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: true,
+        canonical_batches: false,
     });
     let Match { fees, .. } = evaluation.matched.first().unwrap();
     assert!(matches!(
@@ -102,16 +104,17 @@ fn mainnet_sample_lists_reach_the_rules() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        canonical_batches: false,
     });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
 }
 
 #[test]
-fn mainnet_sample_waives_only_the_volume_fee_of_wait_for_cow_orders() {
+fn mainnet_sample_waives_only_the_volume_fee_of_wait_for_cow_orders_in_canonical_batches() {
     let rules = load_rules_from_str(RULES).unwrap();
     let evaluator = rules.evaluator(Utc::now());
-    let fees = |sell, buy, wait_for_cow| {
+    let fees = |sell, buy, wait_for_cow, canonical_batches| {
         let mut order = order(sell, buy);
         order.metadata.wait_for_cow = wait_for_cow;
         let evaluation = evaluator.evaluate(OrderView {
@@ -119,6 +122,7 @@ fn mainnet_sample_waives_only_the_volume_fee_of_wait_for_cow_orders() {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
+            canonical_batches,
         });
         assert!(evaluation.skipped.is_empty());
         evaluation.matched.into_iter().next().unwrap().fees
@@ -138,8 +142,15 @@ fn mainnet_sample_waives_only_the_volume_fee_of_wait_for_cow_orders() {
         (WETH, USDC, vec![surplus, volume(0.0002)]),
         (WETH, WETH, vec![surplus]),
     ] {
-        assert_eq!(fees(sell, buy, false), regular, "{sell} -> {buy}");
-        assert_eq!(fees(sell, buy, true), [surplus], "{sell} -> {buy}");
+        for canonical_batches in [false, true] {
+            assert_eq!(
+                fees(sell, buy, false, canonical_batches),
+                regular,
+                "{sell} -> {buy}"
+            );
+        }
+        assert_eq!(fees(sell, buy, true, false), regular, "{sell} -> {buy}");
+        assert_eq!(fees(sell, buy, true, true), [surplus], "{sell} -> {buy}");
     }
 }
 
@@ -153,6 +164,7 @@ fn partner_fee_under(source: &str) -> Vec<Fee> {
             app_data: &AppData::default(),
             partner_fees: &[PartnerFee::Volume { bps: 200 }],
             in_market: false,
+            canonical_batches: false,
         })
         .partner_fees
 }
@@ -224,6 +236,7 @@ fn a_host_list_reaches_the_rules_and_may_not_be_defined() {
         app_data: &AppData::default(),
         partner_fees: &[],
         in_market: false,
+        canonical_batches: false,
     });
     assert_eq!(evaluation.matched.len(), 1);
     assert!(matches!(

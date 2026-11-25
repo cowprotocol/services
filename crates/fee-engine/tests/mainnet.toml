@@ -34,7 +34,8 @@ fee = "order.inMarket ? price_improvement(50, 98) : surplus(50, 98)"
 
 # Every bucket below charges this same fee before its volume fee, so a
 # wait-for-CoW order pays its bucket's fee without the volume fee. No rule
-# with a volume fee may come before this one.
+# with a volume fee may come before this one. Without canonical batches the
+# host shows no order as wait-for-CoW, so they all pay their bucket's fee.
 [[rule]]
 name = "Wait for CoW: no volume fee"
 when = "order.waitForCow"
