@@ -3,11 +3,15 @@
 //! configuration file. Since the token does not contain `%` this is a
 //! workaround to allow the token to be read from the environment.
 //!
-//! Due to handling several kinds of types
+//! [`Env`] does this for all types that implement [`FromStr`]. The functions
+//! are the older, per-type form for `#[serde(deserialize_with = "...")]`.
 
 use {
     serde::{Deserialize, Deserializer},
-    std::str::FromStr,
+    std::{
+        fmt::{self, Debug, Display},
+        str::FromStr,
+    },
     url::{ParseError, Url},
 };
 
@@ -29,6 +33,55 @@ fn invalid_value_unable_to_parse_url<E: serde::de::Error>(err: ParseError) -> E 
         serde::de::Unexpected::Other(err.to_string().as_str()),
         &"expected environment variable contents or passed field value to be a valid URL",
     )
+}
+
+/// A `T` parsed from *either* an environment variable — with the format
+/// `%<ENV_VAR_NAME>` — or the field value. The field value must be a string.
+/// `Env<T, true>` keeps the value out of the [`Debug`] output.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Env<T, const REDACTED: bool = false>(pub T);
+
+impl<T, const REDACTED: bool> Env<T, REDACTED> {
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T: Debug, const REDACTED: bool> Debug for Env<T, REDACTED> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match REDACTED {
+            true => Debug::fmt("<REDACTED>", f),
+            false => self.0.fmt(f),
+        }
+    }
+}
+
+impl<'de, T, const REDACTED: bool> Deserialize<'de> for Env<T, REDACTED>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        let value = match value.strip_prefix(ENV_VAR_PREFIX) {
+            Some(env_var_name) => std::env::var(env_var_name)
+                .inspect_err(|err| {
+                    tracing::error!(%err, %env_var_name, "failed to load env var");
+                })
+                .map_err(|_| invalid_value_env_var_missing(env_var_name))?,
+            None => value,
+        };
+        value.parse().map(Self).map_err(|err: T::Err| {
+            serde::de::Error::custom(format_args!(
+                "expected environment variable contents or passed field value to be a valid {}: \
+                 {err}",
+                std::any::type_name::<T>(),
+            ))
+        })
+    }
 }
 
 /// Deserializes an URL from *either* an environment variable — with the format
@@ -113,7 +166,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use {serde::Deserialize, url::Url};
+    use {super::Env, serde::Deserialize, url::Url};
 
     #[derive(Deserialize)]
     struct Required {
@@ -125,6 +178,61 @@ mod tests {
     struct Optional {
         #[serde(default, deserialize_with = "super::deserialize_optional_url_from_env")]
         url: Option<Url>,
+    }
+
+    #[derive(Deserialize)]
+    struct Wrapped {
+        urls: Vec<Env<Url>>,
+        retries: Env<u32>,
+    }
+
+    #[test]
+    fn wrapped_direct_and_from_env_var() {
+        let url_var = "TEST_DESER_WRAPPED_URL_FROM_ENV";
+        let retries_var = "TEST_DESER_WRAPPED_RETRIES_FROM_ENV";
+        // Safety: test-only, using unique env var names to avoid conflicts
+        unsafe { std::env::set_var(url_var, "http://example.com") };
+        unsafe { std::env::set_var(retries_var, "3") };
+        let json = format!(
+            r#"{{"urls": ["http://localhost:8080", "%{url_var}"], "retries": "%{retries_var}"}}"#
+        );
+        let parsed: Wrapped = serde_json::from_str(&json).unwrap();
+        let urls: Vec<_> = parsed.urls.iter().map(|url| url.0.as_str()).collect();
+        assert_eq!(urls, ["http://localhost:8080/", "http://example.com/"]);
+        assert_eq!(parsed.retries.into_inner(), 3);
+        unsafe { std::env::remove_var(url_var) };
+        unsafe { std::env::remove_var(retries_var) };
+    }
+
+    #[test]
+    fn wrapped_debug_redacts_on_request() {
+        #[derive(Debug, Deserialize)]
+        #[expect(dead_code)]
+        struct Secrets {
+            plain: Env<String>,
+            secret: Env<String, true>,
+            optional: Option<Env<Url, true>>,
+        }
+
+        let json = r#"{"plain": "visible", "secret": "hidden", "optional": "http://hidden"}"#;
+        let parsed: Secrets = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            format!("{parsed:?}"),
+            r#"Secrets { plain: "visible", secret: "<REDACTED>", optional: Some("<REDACTED>") }"#
+        );
+    }
+
+    #[test]
+    fn wrapped_missing_env_var_is_error() {
+        let json = r#"{"urls": ["%NONEXISTENT_WRAPPED_TEST_VAR_12345"], "retries": "1"}"#;
+        assert!(serde_json::from_str::<Wrapped>(json).is_err());
+    }
+
+    #[test]
+    fn wrapped_invalid_value_is_error() {
+        let json = r#"{"urls": [], "retries": "many"}"#;
+        let err = serde_json::from_str::<Wrapped>(json).err().unwrap();
+        assert!(err.to_string().contains("valid u32"), "{err}");
     }
 
     #[test]
