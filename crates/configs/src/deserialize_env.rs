@@ -8,7 +8,10 @@
 
 use {
     serde::{Deserialize, Deserializer},
-    std::{fmt::Display, str::FromStr},
+    std::{
+        fmt::{self, Debug, Display},
+        str::FromStr,
+    },
     url::{ParseError, Url},
 };
 
@@ -34,16 +37,26 @@ fn invalid_value_unable_to_parse_url<E: serde::de::Error>(err: ParseError) -> E 
 
 /// A `T` parsed from *either* an environment variable — with the format
 /// `%<ENV_VAR_NAME>` — or the field value. The field value must be a string.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Env<T>(pub T);
+/// `Env<T, true>` keeps the value out of the [`Debug`] output.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Env<T, const REDACTED: bool = false>(pub T);
 
-impl<T> Env<T> {
+impl<T, const REDACTED: bool> Env<T, REDACTED> {
     pub fn into_inner(self) -> T {
         self.0
     }
 }
 
-impl<'de, T> Deserialize<'de> for Env<T>
+impl<T: Debug, const REDACTED: bool> Debug for Env<T, REDACTED> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match REDACTED {
+            true => Debug::fmt("<REDACTED>", f),
+            false => self.0.fmt(f),
+        }
+    }
+}
+
+impl<'de, T, const REDACTED: bool> Deserialize<'de> for Env<T, REDACTED>
 where
     T: FromStr,
     T::Err: Display,
@@ -189,6 +202,24 @@ mod tests {
         assert_eq!(parsed.retries.into_inner(), 3);
         unsafe { std::env::remove_var(url_var) };
         unsafe { std::env::remove_var(retries_var) };
+    }
+
+    #[test]
+    fn wrapped_debug_redacts_on_request() {
+        #[derive(Debug, Deserialize)]
+        #[expect(dead_code)]
+        struct Secrets {
+            plain: Env<String>,
+            secret: Env<String, true>,
+            optional: Option<Env<Url, true>>,
+        }
+
+        let json = r#"{"plain": "visible", "secret": "hidden", "optional": "http://hidden"}"#;
+        let parsed: Secrets = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            format!("{parsed:?}"),
+            r#"Secrets { plain: "visible", secret: "<REDACTED>", optional: Some("<REDACTED>") }"#
+        );
     }
 
     #[test]

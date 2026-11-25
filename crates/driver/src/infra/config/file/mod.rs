@@ -250,7 +250,7 @@ enum Receiver {
         /// A value like `%NODE_URL` reads the URL from that environment
         /// variable.
         #[serde(deserialize_with = "serde_ext::deserialize_nonempty_vec")]
-        urls: Vec<Env<Url>>,
+        urls: Vec<Env<Url, true>>,
     },
     /// A private relay like MEV Blocker.
     PrivateRelay {
