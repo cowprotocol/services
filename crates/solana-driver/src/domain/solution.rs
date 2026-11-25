@@ -40,20 +40,20 @@ pub struct Trade {
     pub executed_sell: u64,
     /// Buy-token units executed.
     pub executed_buy: u64,
-    /// Solver fee units retained, in the buy mint for a sell order and the
-    /// sell mint for a buy order. Zero when the solver charges no fee.
+    /// Solver fee units retained, in the buy token for a sell order and the
+    /// sell token for a buy order. Zero when the solver charges no fee.
     pub solver_fee: u64,
-    /// Protocol fee units taken, in the buy mint for a sell order and the
-    /// sell mint for a buy order. Zero when the order carries no policy.
+    /// Protocol fee units taken, in the buy token for a sell order and the
+    /// sell token for a buy order. Zero when the order carries no policy.
     pub protocol_fee: u64,
-    /// Execution cost units cut, in the buy mint for a sell order and the
-    /// sell mint for a buy order. Zero when the engine prices the costs.
+    /// Execution cost units cut, in the buy token for a sell order and the
+    /// sell token for a buy order. Zero when the engine prices the costs.
     pub execution_cost: u64,
 }
 
 impl Trade {
-    /// Units the driver took from the fill, in the buy mint for a sell order
-    /// and the sell mint for a buy order: the execution cost, the solver fee
+    /// Units the driver took from the fill, in the buy token for a sell order
+    /// and the sell token for a buy order: the execution cost, the solver fee
     /// and the protocol fee.
     pub fn fee(&self) -> u64 {
         self.execution_cost

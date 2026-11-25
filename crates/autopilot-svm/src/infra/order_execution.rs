@@ -98,9 +98,12 @@ SELECT t.tx_signature, t.instruction_index, t.order_uid, s.auction_id,
         FROM solana.proposed_solutions ps
         JOIN solana.proposed_trade_executions pte
           ON pte.auction_id = ps.auction_id AND pte.solution_uid = ps.uid
-        WHERE ps.auction_id = s.auction_id AND ps.solver = s.solver AND ps.is_winner
+        WHERE ps.auction_id = s.auction_id
+          AND ps.solver = s.solver
+          AND ps.is_winner
           AND pte.order_uid = t.order_uid
-          AND pte.executed_sell = t.sell_amount AND pte.executed_buy = t.buy_amount
+          AND pte.executed_sell = t.sell_amount
+          AND pte.executed_buy = t.buy_amount
         LIMIT 1) AS proposed_fee
 FROM solana.trades t
 JOIN solana.settlements s

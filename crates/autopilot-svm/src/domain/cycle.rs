@@ -32,8 +32,9 @@ pub struct Solution {
     /// Index into the configured driver list.
     pub driver_index: usize,
     pub inner: solution::Solution<Unscored, Solana>,
-    /// What the driver took from each fill, by order, in the order's surplus
-    /// token. An order the driver reported no fee for is absent.
+    /// What the driver took from each fill, by order (intent hash), in the
+    /// order's surplus token. An order the driver reported no fee for is
+    /// absent.
     pub fees: HashMap<IntentHash, u64>,
 }
 
@@ -48,7 +49,7 @@ pub struct Ranking {
     pub inner: winner_selection::Ranking<Solana>,
     /// Driver index per solution, keyed by `(solver, solution id)`.
     pub drivers: HashMap<SolutionKey, usize>,
-    /// [`Solution::fees`] per solution, keyed like `drivers`.
+    /// [`Solution::fees`] per solution, keyed by `(solver, solution id)`.
     pub fees: HashMap<SolutionKey, HashMap<IntentHash, u64>>,
     /// Per winning solver, the winners' total score with that solver's
     /// solutions removed: the rewards baseline.

@@ -87,10 +87,14 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
         if let Err(err) = self.windows.expire_past_deadline(*tip).await {
             tracing::error!(?err, "failed to flag expired settlement windows");
         }
+        let no_fees = HashMap::new();
         let solutions = ranking
             .enumerated()
             .map(|(uid, solution)| {
-                let fees = ranking.fees.get(&(solution.solver(), solution.id()));
+                let fees = ranking
+                    .fees
+                    .get(&(solution.solver(), solution.id()))
+                    .unwrap_or(&no_fees);
                 db::ProposedSolution {
                     uid,
                     id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
@@ -105,9 +109,7 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
                             order_uid: ByteArray(order.uid.0),
                             executed_sell: BigDecimal::from(order.executed_sell),
                             executed_buy: BigDecimal::from(order.executed_buy),
-                            fee: fees
-                                .and_then(|fees| fees.get(&order.uid))
-                                .map(|fee| BigDecimal::from(*fee)),
+                            fee: fees.get(&order.uid).copied().map(BigDecimal::from),
                         })
                         .collect(),
                 }
