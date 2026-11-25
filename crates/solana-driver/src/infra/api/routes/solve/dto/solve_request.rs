@@ -240,7 +240,7 @@ impl SolveRequest {
         let mut fee_policies = HashMap::new();
         for order in &self.orders {
             if let Some(bytes) = &order.creation {
-                let creation = bincode::deserialize(bytes).map_err(|_| Error::InvalidCreation)?;
+                let creation = wincode::deserialize(bytes).map_err(|_| Error::InvalidCreation)?;
                 creations.insert(order.uid, creation);
             }
             if !order.protocol_fees.is_empty() {
@@ -478,7 +478,7 @@ mod tests {
             id: 7,
             deadline: "2026-01-01T00:00:00Z".parse().unwrap(),
             orders: vec![Order {
-                creation: Some(bincode::serialize(&transaction).unwrap()),
+                creation: Some(wincode::serialize(&transaction).unwrap()),
                 ..order()
             }],
             tokens: HashMap::new(),

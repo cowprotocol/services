@@ -9,6 +9,7 @@ use {
     database::solana::OrderEventLabel,
     solana_sdk::{
         account::Account,
+        message::VersionedMessage,
         pubkey::Pubkey,
         signature::Signature,
         transaction::{TransactionError, VersionedTransaction},
@@ -127,7 +128,7 @@ impl Sponsor {
         };
         let pending = pending
             .into_iter()
-            .filter_map(|stored| match bincode::deserialize(&stored.transaction) {
+            .filter_map(|stored| match wincode::deserialize(&stored.transaction) {
                 Ok(transaction) => Some(PendingCreation {
                     uid: IntentHash(stored.uid.0),
                     owner: Pubkey::new_from_array(stored.owner.0),
@@ -204,7 +205,7 @@ impl Sponsor {
                     continue;
                 }
             };
-            let transaction: VersionedTransaction = match bincode::deserialize(&signed) {
+            let transaction: VersionedTransaction = match wincode::deserialize(&signed) {
                 Ok(transaction) => transaction,
                 Err(err) => {
                     tracing::warn!(%order_uid, ?err, "countersigned creation does not decode");
@@ -297,7 +298,13 @@ impl Sponsor {
     /// signature belongs in the first slot.
     async fn countersign(&self, bytes: &[u8]) -> Result<Vec<u8>> {
         let mut transaction: VersionedTransaction =
-            bincode::deserialize(bytes).context("stored creation does not decode")?;
+            wincode::deserialize(bytes).context("stored creation does not decode")?;
+        // A v1 config sets a priority fee the funder would pay, and placement
+        // only prices legacy and v0 creations.
+        ensure!(
+            !matches!(transaction.message, VersionedMessage::V1(_)),
+            "stored creation is a v1 message"
+        );
         ensure!(
             transaction.message.static_account_keys().first() == Some(&self.signer.pubkey()),
             "stored creation does not name the funder as fee payer"
@@ -317,7 +324,7 @@ impl Sponsor {
             Some(slot) => *slot = signature,
             None => anyhow::bail!("stored creation carries no signature slots"),
         }
-        bincode::serialize(&transaction).context("serialize countersigned creation")
+        wincode::serialize(&transaction).context("serialize countersigned creation")
     }
 }
 
@@ -372,7 +379,7 @@ mod tests {
         cow_solana_rpc::{Mocks, MocksMap, RpcRequest},
         solana_sdk::{
             hash::Hash,
-            message::Message,
+            message::{Message, VersionedMessage, v1},
             pubkey::Pubkey,
             signature::Signature,
             signer::{Signer as _, keypair::Keypair},
@@ -402,7 +409,7 @@ mod tests {
             uid: IntentHash(order_pda.to_bytes()),
             owner,
             order_pda,
-            bytes: bincode::serialize(&transaction).unwrap(),
+            bytes: wincode::serialize(&transaction).unwrap(),
             transaction,
         }
     }
@@ -482,10 +489,10 @@ mod tests {
             0,
         );
         let signed = sponsor
-            .countersign(&bincode::serialize(&transaction).unwrap())
+            .countersign(&wincode::serialize(&transaction).unwrap())
             .await
             .unwrap();
-        let signed: VersionedTransaction = bincode::deserialize(&signed).unwrap();
+        let signed: VersionedTransaction = wincode::deserialize(&signed).unwrap();
         assert!(signed.signatures[0].verify(funder.pubkey().as_ref(), &serialized));
         assert!(signed.signatures[1].verify(owner.pubkey().as_ref(), &serialized));
     }
@@ -762,9 +769,52 @@ mod tests {
             0,
         );
         let result = sponsor
-            .countersign(&bincode::serialize(&transaction).unwrap())
+            .countersign(&wincode::serialize(&transaction).unwrap())
             .await;
         assert!(result.unwrap_err().to_string().contains("expired"));
+    }
+
+    /// A v1 creation is never countersigned.
+    #[tokio::test]
+    async fn countersign_refuses_a_v1_creation() {
+        let funder = Keypair::new();
+        let message = v1::Message::try_compile_with_config(
+            &funder.pubkey(),
+            &[solana_sdk::instruction::Instruction::new_with_bytes(
+                Pubkey::new_unique(),
+                &[],
+                vec![solana_sdk::instruction::AccountMeta::new(
+                    funder.pubkey(),
+                    true,
+                )],
+            )],
+            Hash::new_unique(),
+            v1::TransactionConfig::empty().with_priority_fee(5_000_000_000),
+        )
+        .unwrap();
+        let transaction = VersionedTransaction {
+            signatures: vec![Signature::default()],
+            message: VersionedMessage::V1(message),
+        };
+        let sponsor = Sponsor::new(
+            Signer::Keypair(funder.insecure_clone()),
+            SolanaRPC::new_mock_with_mocks(Mocks::from([(
+                RpcRequest::IsBlockhashValid,
+                serde_json::json!({
+                    "context": {"slot": 1u64, "apiVersion": "2.0.0"},
+                    "value": true,
+                }),
+            )])),
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            0,
+        );
+        let result = sponsor
+            .countersign(&wincode::serialize(&transaction).unwrap())
+            .await;
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "stored creation is a v1 message"
+        );
     }
 
     /// A dead blockhash pulls the order's stored creation deadline below the
@@ -788,7 +838,7 @@ mod tests {
             Some(&funder.pubkey()),
             &Hash::new_unique(),
         );
-        let creation = bincode::serialize(&VersionedTransaction {
+        let creation = wincode::serialize(&VersionedTransaction {
             signatures: vec![Signature::default()],
             message: solana_sdk::message::VersionedMessage::Legacy(message),
         })

@@ -845,7 +845,7 @@ fn settling_driver_answer(
         "solver": signers[0].to_string(),
         "networkFee": "0",
         "transaction": base64::engine::general_purpose::STANDARD
-            .encode(bincode::serialize(&transaction).unwrap()),
+            .encode(wincode::serialize(&transaction).unwrap()),
     })
 }
 
@@ -2167,7 +2167,7 @@ fn signed_creation_tx(
         signatures,
         message: solana_sdk::message::VersionedMessage::Legacy(message),
     };
-    base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
+    base64::prelude::BASE64_STANDARD.encode(wincode::serialize(&tx).unwrap())
 }
 
 /// The buy-account creation step for the intent.
@@ -2264,7 +2264,7 @@ fn v1_creation_tx(
         signatures,
         message,
     };
-    base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap())
+    base64::prelude::BASE64_STANDARD.encode(wincode::serialize(&tx).unwrap())
 }
 
 /// A Lighthouse instruction over one account, the shape Phantom injects.
@@ -2436,6 +2436,26 @@ async fn create_order_rejects_invalid_submissions() {
     assert_eq!(
         (status, kind.as_str()),
         (reqwest::StatusCode::BAD_REQUEST, "BlockhashExpired")
+    );
+}
+
+/// A client's v1 creation in the wire format fails the version check.
+#[tokio::test]
+async fn create_order_refuses_a_v1_creation_for_its_version() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let addr =
+        spawn_sponsored_server(PgPool::connect_lazy("postgresql://").unwrap(), funder, true).await;
+    let response = reqwest::Client::new()
+        .post(format!("http://{addr}/api/v1/orders"))
+        .json(&serde_json::json!({ "partiallySignedTx": v1_creation_tx(funder, &owner) }))
+        .send()
+        .await
+        .unwrap();
+    let json: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(
+        json["description"],
+        "a creation transaction must be legacy or v0"
     );
 }
 
@@ -2837,7 +2857,7 @@ async fn create_order_requires_the_owner_as_signer() {
         signatures: vec![solana_sdk::signature::Signature::default()],
         message: solana_sdk::message::VersionedMessage::Legacy(message),
     };
-    let transaction = base64::prelude::BASE64_STANDARD.encode(bincode::serialize(&tx).unwrap());
+    let transaction = base64::prelude::BASE64_STANDARD.encode(wincode::serialize(&tx).unwrap());
     let (status, kind) = post_order(addr, transaction).await;
     assert_eq!(
         (status, kind.as_str()),

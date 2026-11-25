@@ -226,7 +226,7 @@ async fn place(
     let Some(sponsoring) = state.sponsoring() else {
         return Err(PlacementError::SponsoringDisabled.into());
     };
-    let transaction: VersionedTransaction = bincode::deserialize(&params.partially_signed_tx)
+    let transaction: VersionedTransaction = wincode::deserialize(&params.partially_signed_tx)
         .map_err(|_| {
             PlacementError::InvalidTransaction("the bytes do not decode to a transaction")
         })?;
