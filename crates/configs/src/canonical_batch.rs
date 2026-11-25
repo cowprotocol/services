@@ -1,3 +1,8 @@
+//! Canonical batches are auctions that start at fixed times. Orders placed
+//! with `enableWaitForCow` stay out of auctions until the next canonical
+//! batch, so that the orders waiting for the same batch get a chance to be
+//! matched with each other.
+
 use {
     anyhow::{Context, ensure},
     serde::{Deserialize, Deserializer, Serialize, Serializer},
@@ -5,7 +10,8 @@ use {
 };
 
 /// Time between two canonical batches. Canonical batches start at the Unix
-/// times that are a multiple of this interval.
+/// times that are a multiple of this interval, so every service computes the
+/// same times without coordinating.
 ///
 /// Configured as a duration like `"5m"`. It must be a whole number of seconds,
 /// greater than zero and at most `u32::MAX` seconds.
@@ -13,8 +19,21 @@ use {
 pub struct CanonicalBatchInterval(NonZeroU32);
 
 impl CanonicalBatchInterval {
-    pub fn seconds(self) -> NonZeroU32 {
-        self.0
+    /// Seconds between two batch times.
+    pub fn seconds(self) -> u32 {
+        self.0.get()
+    }
+
+    /// The first batch time at or after `time`, in Unix seconds. Saturates at
+    /// `u32::MAX`. Computed as modulo of the interval over the epoch so any
+    /// component with a clock can calculate it without resorting to a
+    /// centralised scheduler.
+    pub fn next_batch(self, time: u32) -> u32 {
+        let interval = self.0.get();
+        match time % interval {
+            0 => time,
+            remainder => time.saturating_add(interval - remainder),
+        }
     }
 }
 
@@ -66,9 +85,9 @@ mod tests {
 
     #[test]
     fn accepts_whole_seconds() {
-        assert_eq!(parse("1s").unwrap().seconds().get(), 1);
-        assert_eq!(parse("5m").unwrap().seconds().get(), 300);
-        assert_eq!(parse("4294967295s").unwrap().seconds().get(), u32::MAX);
+        assert_eq!(parse("1s").unwrap().seconds(), 1);
+        assert_eq!(parse("5m").unwrap().seconds(), 300);
+        assert_eq!(parse("4294967295s").unwrap().seconds(), u32::MAX);
     }
 
     #[test]
@@ -76,6 +95,33 @@ mod tests {
         for interval in ["0s", "1500ms", "4294967296s", "five minutes"] {
             assert!(parse(interval).is_err(), "{interval}");
         }
+    }
+
+    fn interval(seconds: u64) -> CanonicalBatchInterval {
+        Duration::from_secs(seconds).try_into().unwrap()
+    }
+
+    #[test]
+    fn next_batch_is_the_first_multiple_of_the_interval_at_or_after_time() {
+        let interval = interval(60);
+        assert_eq!(interval.next_batch(0), 0);
+        assert_eq!(interval.next_batch(1), 60);
+        assert_eq!(interval.next_batch(59), 60);
+        assert_eq!(interval.next_batch(60), 60);
+        assert_eq!(interval.next_batch(61), 120);
+    }
+
+    #[test]
+    fn every_second_is_a_batch_time_with_an_interval_of_one() {
+        let interval = interval(1);
+        assert_eq!(interval.next_batch(0), 0);
+        assert_eq!(interval.next_batch(1_700_000_001), 1_700_000_001);
+    }
+
+    #[test]
+    fn next_batch_saturates_instead_of_overflowing() {
+        assert_eq!(interval(60).next_batch(u32::MAX), u32::MAX);
+        assert_eq!(interval(u32::MAX.into()).next_batch(1), u32::MAX);
     }
 
     #[test]

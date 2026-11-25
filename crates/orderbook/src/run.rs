@@ -14,7 +14,7 @@ use {
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    configs::orderbook::Configuration,
+    configs::{canonical_batch::CanonicalBatchInterval, orderbook::Configuration},
     contracts::{
         FlashLoanRouter,
         GPv2AllowListAuthentication,
@@ -39,7 +39,6 @@ use {
         native::{FallbackNativePriceEstimator, NativePriceEstimating},
     },
     shared::{
-        canonical_batch::Schedule,
         order_quoting::{self, OrderQuoter},
         order_validation::{OrderSimulator, OrderValidPeriodConfiguration, OrderValidator},
     },
@@ -425,10 +424,6 @@ pub async fn run(config: Configuration) {
             .expect("fee engine rules must load"),
     );
 
-    let canonical_batch_schedule = config
-        .order_validation
-        .canonical_batch_interval
-        .map(Schedule::from);
     let order_validator = OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
@@ -458,7 +453,7 @@ pub async fn run(config: Configuration) {
         volume_fees.clone(),
         order_validation::wrappers::Validator::new(authenticator, *settlement_contract.address()),
     )
-    .with_canonical_batch_schedule(canonical_batch_schedule);
+    .with_canonical_batch_interval(config.order_validation.canonical_batch_interval);
     let order_validator = Arc::new(order_validator);
     let ipfs = config
         .ipfs
@@ -514,7 +509,7 @@ pub async fn run(config: Configuration) {
         config.price_estimation.quote_timeout,
         current_block_stream,
         config.hide_competition_before_deadline,
-        canonical_batch_schedule,
+        config.order_validation.canonical_batch_interval,
         config.order_validation.min_order_validity_period,
     );
 
@@ -563,7 +558,7 @@ fn serve_api(
     quote_timeout: Duration,
     current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
-    canonical_batch_schedule: Option<Schedule>,
+    canonical_batch_interval: Option<CanonicalBatchInterval>,
     min_order_validity_period: Duration,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
@@ -576,7 +571,7 @@ fn serve_api(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
-        canonical_batch_schedule,
+        canonical_batch_interval,
         min_order_validity_period,
     );
     tracing::info!(%address, "serving order book");

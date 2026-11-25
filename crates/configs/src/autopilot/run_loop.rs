@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(
             config
                 .canonical_batch_interval
-                .map(|interval| interval.seconds().get()),
+                .map(|interval| interval.seconds()),
             Some(300)
         );
         assert_eq!(

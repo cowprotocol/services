@@ -1,6 +1,5 @@
 use {
     crate::{
-        canonical_batch::Schedule,
         fee_engine::FeeEngineVolumeFees,
         order_creation_simulation::{OrderSimulating, OrderSimulationError, SimulationSuccess},
         order_quoting::{
@@ -18,6 +17,7 @@ use {
     app_data::{AppDataHash, ExecutionMode, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     balance_overrides::BalanceOverrideRequest,
+    configs::canonical_batch::CanonicalBatchInterval,
     contracts::{HooksTrampoline, WETH9},
     eth_domain_types::Receiver,
     futures::future::OptionFuture,
@@ -460,7 +460,7 @@ pub struct OrderValidator {
     volume_fees: Arc<FeeEngineVolumeFees>,
     wrapper_validator: order_validation::wrappers::Validator,
     /// `None` when canonical batches are off.
-    canonical_batch_schedule: Option<Schedule>,
+    canonical_batch_interval: Option<CanonicalBatchInterval>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -542,12 +542,15 @@ impl OrderValidator {
             same_tokens_policy,
             volume_fees,
             wrapper_validator,
-            canonical_batch_schedule: None,
+            canonical_batch_interval: None,
         }
     }
 
-    pub fn with_canonical_batch_schedule(mut self, schedule: Option<Schedule>) -> Self {
-        self.canonical_batch_schedule = schedule;
+    pub fn with_canonical_batch_interval(
+        mut self,
+        interval: Option<CanonicalBatchInterval>,
+    ) -> Self {
+        self.canonical_batch_interval = interval;
         self
     }
 
@@ -805,10 +808,10 @@ impl OrderValidator {
         order: &OrderData,
         now: u32,
     ) -> Result<(), ValidationError> {
-        let schedule = self
-            .canonical_batch_schedule
+        let interval = self
+            .canonical_batch_interval
             .ok_or(ValidationError::WaitForCowDisabled)?;
-        let next_batch = schedule.next_batch(now);
+        let next_batch = interval.next_batch(now);
         let min = self.validity_configuration.min.as_secs();
         if u64::from(order.valid_to) < u64::from(next_batch) + min {
             return Err(ValidationError::InsufficientValidToForCanonicalBatch);
@@ -1424,7 +1427,6 @@ mod tests {
         number::nonzero::NonZeroU256,
         serde_json::json,
         signature_validator::MockSignatureValidating,
-        std::num::NonZeroU32,
     };
 
     /// Volume fees from no rules: no order pays one.
@@ -1924,7 +1926,7 @@ mod tests {
             no_volume_fees(),
             wrapper_validator(),
         )
-        .with_canonical_batch_schedule(Some(Schedule::new(NonZeroU32::new(60).unwrap())));
+        .with_canonical_batch_interval(Some(Duration::from_secs(60).try_into().unwrap()));
 
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
@@ -2050,7 +2052,7 @@ mod tests {
         }
 
         // Without canonical batches, wait-for-CoW orders are rejected.
-        let without_batches = validator.with_canonical_batch_schedule(None);
+        let without_batches = validator.with_canonical_batch_interval(None);
         std::assert_matches!(
             without_batches
                 .validate_and_construct_order(

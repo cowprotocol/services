@@ -25,6 +25,7 @@ use {
     alloy::primitives::B256,
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
+    configs::canonical_batch::CanonicalBatchInterval,
     database::order_events::OrderEventLabel,
     eth_domain_types::Address,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
@@ -33,10 +34,7 @@ use {
     leader_lock::LeaderLockTracker,
     num::ToPrimitive,
     rand::seq::SliceRandom,
-    shared::{
-        canonical_batch::Schedule as CanonicalBatchSchedule,
-        token_list::AutoUpdatingTokenList,
-    },
+    shared::token_list::AutoUpdatingTokenList,
     std::{
         collections::{HashMap, HashSet},
         num::NonZeroUsize,
@@ -63,7 +61,7 @@ pub struct Config {
     pub enable_leader_lock: bool,
     pub auction_delta_checkpoint_interval: Duration,
     /// `None` when canonical batches are off.
-    pub canonical_batch_schedule: Option<CanonicalBatchSchedule>,
+    pub canonical_batch_interval: Option<CanonicalBatchInterval>,
 }
 
 impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
@@ -77,9 +75,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
-            canonical_batch_schedule: value
-                .canonical_batch_interval
-                .map(CanonicalBatchSchedule::from),
+            canonical_batch_interval: value.canonical_batch_interval,
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
                     slot_length: cfg.slot_length,
@@ -402,8 +398,8 @@ impl RunLoop {
     /// an order first seen after the batch was built waits for the next one.
     async fn schedule_wait_for_cow_orders(&self) {
         let now = model::time::now_in_epoch_seconds();
-        let (valid_from, schedule) = match self.config.canonical_batch_schedule {
-            Some(schedule) => (schedule.next_batch(now), "canonical_batch"),
+        let (valid_from, schedule) = match self.config.canonical_batch_interval {
+            Some(interval) => (interval.next_batch(now), "canonical_batch"),
             None => (now, "immediate"),
         };
         match self

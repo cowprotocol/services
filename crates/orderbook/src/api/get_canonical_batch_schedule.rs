@@ -11,9 +11,9 @@ use {
         http::StatusCode,
         response::{IntoResponse, Json, Response},
     },
+    configs::canonical_batch::CanonicalBatchInterval,
     model::time::now_in_epoch_seconds,
     serde::Serialize,
-    shared::canonical_batch::Schedule,
     std::{sync::Arc, time::Duration},
 };
 
@@ -33,22 +33,26 @@ struct CanonicalBatchSchedule {
 }
 
 impl CanonicalBatchSchedule {
-    fn new(schedule: &Schedule, min_order_validity_period: Duration, now: u32) -> Self {
-        let next_batch = schedule.next_batch(now);
+    fn new(
+        interval: CanonicalBatchInterval,
+        min_order_validity_period: Duration,
+        now: u32,
+    ) -> Self {
+        let next_batch = interval.next_batch(now);
         let min_validity = u32::try_from(min_order_validity_period.as_secs()).unwrap_or(u32::MAX);
         Self {
-            interval_seconds: schedule.interval(),
+            interval_seconds: interval.seconds(),
             next_batch,
             seconds_until_next_batch: next_batch - now,
             next_batch_valid_to: next_batch
-                .saturating_add(schedule.interval())
+                .saturating_add(interval.seconds())
                 .saturating_add(min_validity),
         }
     }
 }
 
 pub async fn get_canonical_batch_schedule_handler(State(state): State<Arc<AppState>>) -> Response {
-    let Some(schedule) = &state.canonical_batch_schedule else {
+    let Some(interval) = state.canonical_batch_interval else {
         return (
             StatusCode::NOT_FOUND,
             super::error("NotFound", "canonical batches are not enabled"),
@@ -56,7 +60,7 @@ pub async fn get_canonical_batch_schedule_handler(State(state): State<Arc<AppSta
             .into_response();
     };
     Json(CanonicalBatchSchedule::new(
-        schedule,
+        interval,
         state.min_order_validity_period,
         now_in_epoch_seconds(),
     ))
@@ -65,16 +69,18 @@ pub async fn get_canonical_batch_schedule_handler(State(state): State<Arc<AppSta
 
 #[cfg(test)]
 mod tests {
-    use {super::*, std::num::NonZeroU32};
+    use super::*;
 
     const MIN_VALIDITY: Duration = Duration::from_secs(90);
 
+    fn interval() -> CanonicalBatchInterval {
+        Duration::from_secs(60).try_into().unwrap()
+    }
+
     #[test]
     fn reports_the_next_batch() {
-        let schedule = Schedule::new(NonZeroU32::new(60).unwrap());
-
         assert_eq!(
-            CanonicalBatchSchedule::new(&schedule, MIN_VALIDITY, 125),
+            CanonicalBatchSchedule::new(interval(), MIN_VALIDITY, 125),
             CanonicalBatchSchedule {
                 interval_seconds: 60,
                 next_batch: 180,
@@ -83,7 +89,7 @@ mod tests {
             }
         );
         assert_eq!(
-            CanonicalBatchSchedule::new(&schedule, MIN_VALIDITY, 180),
+            CanonicalBatchSchedule::new(interval(), MIN_VALIDITY, 180),
             CanonicalBatchSchedule {
                 interval_seconds: 60,
                 next_batch: 180,
@@ -95,18 +101,16 @@ mod tests {
 
     #[test]
     fn saturates_next_batch_valid_to() {
-        let schedule = Schedule::new(NonZeroU32::new(60).unwrap());
         assert_eq!(
-            CanonicalBatchSchedule::new(&schedule, Duration::MAX, 125).next_batch_valid_to,
+            CanonicalBatchSchedule::new(interval(), Duration::MAX, 125).next_batch_valid_to,
             u32::MAX
         );
     }
 
     #[test]
     fn serializes_camel_case() {
-        let schedule = Schedule::new(NonZeroU32::new(60).unwrap());
         assert_eq!(
-            serde_json::to_value(CanonicalBatchSchedule::new(&schedule, MIN_VALIDITY, 125))
+            serde_json::to_value(CanonicalBatchSchedule::new(interval(), MIN_VALIDITY, 125))
                 .unwrap(),
             serde_json::json!({
                 "intervalSeconds": 60,

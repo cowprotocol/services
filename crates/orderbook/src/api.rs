@@ -14,11 +14,11 @@ use {
         response::{IntoResponse, Json, Response},
         routing::{delete, get, post, put},
     },
+    configs::canonical_batch::CanonicalBatchInterval,
     ethrpc::block_stream::CurrentBlockWatcher,
     observe::tracing::distributed::axum::{make_span, record_trace_id},
     price_estimation::{PriceEstimationError, native::NativePriceEstimating},
     serde::{Deserialize, Serialize},
-    shared::canonical_batch::Schedule,
     std::{
         borrow::Cow,
         fmt::Debug,
@@ -74,8 +74,10 @@ pub struct AppState {
     pub quote_timeout: Duration,
     pub current_block_stream: CurrentBlockWatcher,
     pub hide_competition_before_deadline: bool,
-    /// `None` when canonical batches are off.
-    pub canonical_batch_schedule: Option<Schedule>,
+    /// `None` when canonical batches are off. Optional to facilitate deployment
+    /// and a potential quick reversal if needed. May be removed in a later PR
+    /// once the feature is stable.
+    pub canonical_batch_interval: Option<CanonicalBatchInterval>,
     /// How long an order must stay valid after it can first trade.
     pub min_order_validity_period: Duration,
 }
@@ -173,7 +175,7 @@ pub fn handle_all_routes(
     quote_timeout: Duration,
     current_block_stream: CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
-    canonical_batch_schedule: Option<Schedule>,
+    canonical_batch_interval: Option<CanonicalBatchInterval>,
     min_order_validity_period: Duration,
 ) -> Router {
     let app_data_size_limit = app_data.size_limit();
@@ -188,7 +190,7 @@ pub fn handle_all_routes(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
-        canonical_batch_schedule,
+        canonical_batch_interval,
         min_order_validity_period,
     });
 

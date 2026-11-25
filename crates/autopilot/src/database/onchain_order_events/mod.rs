@@ -723,8 +723,8 @@ fn extract_order_data_from_onchain_order_placement_event(
 ///
 /// * `enableFastPath` sets `fast_path`
 /// * `enableWaitForCow` sets `wait_for_cow`
-/// * `validFrom` sets `valid_from` only when both above are false, as validated
-///   in orderbook
+/// * `validFrom` sets `valid_from`. At most one of the three flags is set:
+///   `app_data::parse` fails otherwise, which marks the order invalid.
 /// * indexes pre/post hook interactions
 ///
 /// For fast-path orders `valid_from` is intentionally left `NULL`: the
