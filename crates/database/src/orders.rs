@@ -2339,6 +2339,24 @@ mod tests {
                 .await
                 .unwrap()
         }
+        // Only the crossing branch: no uids, and a checkpoint after the
+        // order's creation.
+        async fn crossing_uids(
+            ex: &mut PgConnection,
+            checkpoint: i64,
+            now: i64,
+        ) -> HashSet<OrderUid> {
+            open_orders_by_time_or_uids(
+                ex,
+                &[],
+                DateTime::from_timestamp(checkpoint, 0).unwrap(),
+                now,
+            )
+            .map_ok(|o| o.uid)
+            .try_collect()
+            .await
+            .unwrap()
+        }
 
         let waiting = Order {
             uid: ByteArray([1u8; 56]),
@@ -2354,6 +2372,7 @@ mod tests {
         // Without `valid_from`, the order is never solvable.
         assert!(solvable_uids(&mut db, 5_000).await.is_empty());
         assert!(incremental_uids(&mut db, 5_000).await.is_empty());
+        assert!(crossing_uids(&mut db, 900, 5_000).await.is_empty());
 
         // `valid_from` is written once.
         assert_eq!(
@@ -2379,6 +2398,17 @@ mod tests {
             incremental_uids(&mut db, 1_000).await,
             hashset![waiting.uid]
         );
+
+        // An order placed long before its batch isn't changed when it becomes
+        // valid, so the incremental update picks it up through `valid_from`
+        // crossing the checkpoint...
+        assert!(crossing_uids(&mut db, 900, 999).await.is_empty());
+        assert_eq!(
+            crossing_uids(&mut db, 900, 1_000).await,
+            hashset![waiting.uid]
+        );
+        // ...and only once: later updates start after `valid_from`.
+        assert!(crossing_uids(&mut db, 1_000, 1_500).await.is_empty());
     }
 
     #[tokio::test]

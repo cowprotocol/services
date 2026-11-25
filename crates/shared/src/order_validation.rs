@@ -302,6 +302,9 @@ pub enum AppDataValidationError {
         actual: AppDataHash,
     },
     Invalid(anyhow::Error),
+    /// The app data asks to wait for a canonical batch, but canonical batches
+    /// aren't configured.
+    WaitForCowDisabled,
 }
 
 #[derive(Debug)]
@@ -332,9 +335,6 @@ pub enum ValidationError {
     /// `valid_from` leaves too small a window before `valid_to` for the order
     /// to be settled.
     InvalidValidFrom,
-    /// The order asks to wait for a canonical batch, but canonical batches
-    /// aren't configured.
-    WaitForCowDisabled,
     /// The order waits for the next canonical batch but expires less than the
     /// minimum validity period after that batch starts.
     InsufficientValidToForCanonicalBatch,
@@ -810,7 +810,9 @@ impl OrderValidator {
     ) -> Result<(), ValidationError> {
         let interval = self
             .canonical_batch_interval
-            .ok_or(ValidationError::WaitForCowDisabled)?;
+            .ok_or(ValidationError::AppData(
+                AppDataValidationError::WaitForCowDisabled,
+            ))?;
         let next_batch = interval.next_batch(now);
         let min = self.validity_configuration.min.as_secs();
         if u64::from(order.valid_to) < u64::from(next_batch) + min {
@@ -930,6 +932,11 @@ impl OrderValidating for OrderValidator {
             }
             OrderCreationAppData::Full { full } => validate(full)?,
         };
+        if matches!(app_data.protocol.execution_mode, ExecutionMode::WaitForCow)
+            && self.canonical_batch_interval.is_none()
+        {
+            return Err(AppDataValidationError::WaitForCowDisabled);
+        }
 
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
@@ -977,6 +984,7 @@ impl OrderValidating for OrderValidator {
         if !data.fee_amount.is_zero() {
             return Err(ValidationError::NonZeroFee);
         }
+        let valid_from = self.compute_and_validate_valid_from(&app_data, &data)?;
 
         let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
         self.partial_validate(pre_order)
@@ -1157,7 +1165,6 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        let valid_from = self.compute_and_validate_valid_from(&app_data, &data)?;
         let fast_path = matches!(
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
@@ -2062,7 +2069,89 @@ mod tests {
                     None,
                 )
                 .await,
-            Err(ValidationError::WaitForCowDisabled)
+            Err(ValidationError::AppData(
+                AppDataValidationError::WaitForCowDisabled
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_wait_for_cow_orders_before_simulating_or_quoting() {
+        // The mocks have no expectations, so any call to them fails the test.
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(60),
+                max: Duration::from_secs(200),
+            },
+            false,
+            Default::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(MockLimitOrderCounting::new()),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+            no_volume_fees(),
+            wrapper_validator(),
+        )
+        .with_canonical_batch_interval(Some(Duration::from_secs(60).try_into().unwrap()));
+        let now = time::now_in_epoch_seconds();
+        let order = |valid_to| OrderCreation {
+            valid_to,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableWaitForCow": true } }).to_string(),
+            },
+            ..Default::default()
+        };
+        let validate = async |validator: &OrderValidator, valid_to| {
+            validator
+                .validate_and_construct_order(
+                    order(valid_to),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+
+        // Expires before the minimum validity after any next batch.
+        std::assert_matches!(
+            validate(&validator, now + 59).await,
+            Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+
+        // Passes the other cheap checks, so the rejection must come before
+        // the expensive ones.
+        let without_batches = validator.with_canonical_batch_interval(None);
+        std::assert_matches!(
+            validate(&without_batches, now + 100).await,
+            Err(ValidationError::AppData(
+                AppDataValidationError::WaitForCowDisabled
+            ))
+        );
+        // Quote requests only validate the app data, so they are rejected too.
+        std::assert_matches!(
+            without_batches
+                .validate_app_data(&order(now + 100).app_data, &None)
+                .err(),
+            Some(AppDataValidationError::WaitForCowDisabled)
         );
     }
 

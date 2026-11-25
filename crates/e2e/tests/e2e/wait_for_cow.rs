@@ -12,6 +12,7 @@ use {
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
+        DomainSeparator,
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
         signature::EcdsaSigningScheme,
         time::now_in_epoch_seconds,
@@ -27,6 +28,31 @@ use {
 const INTERVAL: u32 = 20;
 
 const WAIT_FOR_COW: &str = r#"{"metadata":{"enableWaitForCow":true}}"#;
+
+/// Signs an order selling 2 units of `sell_token`.
+fn order(
+    domain_separator: &DomainSeparator,
+    trader: &TestAccount,
+    sell_token: Address,
+    buy_token: Address,
+    buy_amount: U256,
+    valid_to: u32,
+    app_data: &str,
+) -> OrderCreation {
+    OrderCreation {
+        sell_token,
+        sell_amount: 2u64.eth(),
+        buy_token,
+        buy_amount,
+        valid_to,
+        kind: OrderKind::Sell,
+        app_data: OrderCreationAppData::Full {
+            full: app_data.to_string(),
+        },
+        ..Default::default()
+    }
+    .sign(EcdsaSigningScheme::Eip712, domain_separator, &trader.signer)
+}
 
 #[tokio::test]
 #[ignore]
@@ -94,44 +120,25 @@ async fn wait_for_cow_test(web3: Web3) {
         schedule["nextBatch"].as_u64().unwrap() + u64::from(INTERVAL) + min_validity
     );
 
-    let order = |trader: &TestAccount,
-                 sell_token: Address,
-                 buy_token: Address,
-                 buy_amount: U256,
-                 valid_to: u32,
-                 app_data: &str| {
-        OrderCreation {
-            sell_token,
-            sell_amount: 2u64.eth(),
-            buy_token,
-            buy_amount,
-            valid_to,
-            kind: OrderKind::Sell,
-            app_data: OrderCreationAppData::Full {
-                full: app_data.to_string(),
-            },
-            ..Default::default()
-        }
-        .sign(
-            EcdsaSigningScheme::Eip712,
-            &onchain.contracts().domain_separator,
-            &trader.signer,
-        )
-    };
+    let domain_separator = &onchain.contracts().domain_separator;
     let (token_a, token_b) = (*token_a.address(), *token_b.address());
 
     tracing::info!("Waiting until right after a batch time.");
-    while now_in_epoch_seconds() % INTERVAL != 1 {
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    // The rest of the test relies on starting early in an interval. Sleeping
+    // whole seconds from inside the current second wakes up inside the second
+    // right after a batch time.
+    let now = now_in_epoch_seconds();
+    let after_batch = interval.next_batch(now - 1) + 1;
+    tokio::time::sleep(Duration::from_secs((after_batch - now).into())).await;
     let placed_at = now_in_epoch_seconds();
-    let batch = placed_at - placed_at % INTERVAL + INTERVAL;
+    let batch = placed_at - (placed_at % INTERVAL) + INTERVAL;
 
     tracing::info!("A wait-for-CoW order that would expire before its batch is rejected.");
     // Valid for longer than the minimum validity (60s) from now, but not from
     // the next batch time, which is almost a whole interval away.
     let (status, body) = services
         .create_order(&order(
+            domain_separator,
             &trader_a,
             token_a,
             token_b,
@@ -151,6 +158,7 @@ async fn wait_for_cow_test(web3: Web3) {
     let valid_to = placed_at + 600;
     let cow_a = services
         .create_order(&order(
+            domain_separator,
             &trader_a,
             token_a,
             token_b,
@@ -162,6 +170,7 @@ async fn wait_for_cow_test(web3: Web3) {
         .unwrap();
     let cow_b = services
         .create_order(&order(
+            domain_separator,
             &trader_b,
             token_b,
             token_a,
@@ -174,6 +183,7 @@ async fn wait_for_cow_test(web3: Web3) {
     // Asks for far more than the pools can give.
     let unfillable = services
         .create_order(&order(
+            domain_separator,
             &trader_a,
             token_a,
             token_b,
@@ -185,6 +195,7 @@ async fn wait_for_cow_test(web3: Web3) {
         .unwrap();
     let regular = services
         .create_order(&order(
+            domain_separator,
             &trader_b,
             token_b,
             token_a,
@@ -249,7 +260,9 @@ async fn wait_for_cow_test(web3: Web3) {
     }
 
     tracing::info!("At the batch, the wait-for-CoW orders that can trade do.");
-    wait_for_condition(Duration::from_secs(INTERVAL.into()) + TIMEOUT, || async {
+    // The batch is up to an interval away.
+    let until_after_batch = Duration::from_secs(INTERVAL.into()) + TIMEOUT;
+    wait_for_condition(until_after_batch, || async {
         onchain.mint_block().await;
         if now_in_epoch_seconds() < batch {
             assert!(

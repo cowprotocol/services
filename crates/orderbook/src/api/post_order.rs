@@ -126,6 +126,14 @@ impl IntoResponse for AppDataValidationErrorWrapper {
                 ),
             )
                 .into_response(),
+            AppDataValidationError::WaitForCowDisabled => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "WaitForCowDisabled",
+                    "appData enableWaitForCow is not supported on this network.",
+                ),
+            )
+                .into_response(),
         }
     }
 }
@@ -248,14 +256,6 @@ impl IntoResponse for ValidationErrorWrapper {
                 error(
                     "InvalidValidFrom",
                     "appData validFrom must be earlier than the order's validTo.",
-                ),
-            )
-                .into_response(),
-            ValidationError::WaitForCowDisabled => (
-                StatusCode::BAD_REQUEST,
-                error(
-                    "WaitForCowDisabled",
-                    "appData enableWaitForCow is not supported on this network.",
                 ),
             )
                 .into_response(),
