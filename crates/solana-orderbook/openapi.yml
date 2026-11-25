@@ -382,7 +382,9 @@ paths:
             (`SameBuyAndSellToken`), a zero amount (`ZeroAmount`), a native
             SOL buy paying an account the System Program does not own, or
             whose payout can leave the wallet under its rent-exempt minimum,
-            890880 lamports for an empty wallet (`InvalidNativeBuy`), a
+            890880 lamports for an empty wallet (`InvalidNativeBuy`), an
+            existing sell token account other than the owner's account of
+            the sell mint (`InvalidSellTokenAccount`), a
             `receiver` the buy token account does not belong to
             (`InvalidBuyTokenAccount`), a missing
             owner signature (`InvalidSignature`), a validTo below the minimum

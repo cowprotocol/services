@@ -2689,6 +2689,136 @@ async fn create_order_checks_the_buy_token_account() {
     }
 }
 
+/// An existing sell token account must be the owner's account of the sell
+/// mint. A missing one, or a system account holding only lamports, passes.
+/// The lookup answers the sell and buy mints, the Clock sysvar, the buy token
+/// account, then the sell token account.
+#[tokio::test]
+async fn create_order_checks_the_sell_token_account() {
+    const MISSING: serde_json::Value = serde_json::Value::Null;
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let stranger = solana_sdk::pubkey::Pubkey::new_unique();
+    let receiver = solana_sdk::pubkey::Pubkey::new_unique();
+
+    let wrapped = sponsored_intent(owner.pubkey(), true);
+    let wrap = creation_tx(
+        funder,
+        &owner,
+        &wrapped,
+        full_preparations(owner.pubkey(), &wrapped),
+        true,
+    );
+    let token = sponsored_intent(owner.pubkey(), false);
+    let sell = creation_tx(funder, &owner, &token, vec![], true);
+    let mint = buy_mint(&token);
+    let mut received = sponsored_intent(owner.pubkey(), false);
+    received.buy = cow_settlement_interface::data::intent::Asset::TokenProgram(
+        cow_settlement_interface::data::intent::TokenAsset {
+            mint,
+            token_account: ata(receiver, mint),
+        },
+    );
+    let pay_receiver = creation_tx(funder, &owner, &received, vec![], true);
+
+    let wsol = spl_token_interface::native_mint::ID;
+    let account = solana_testlib::token_account_json;
+    let lamports_only = solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 1_000_000,
+        owner: solana_system_interface::program::ID,
+        ..Default::default()
+    });
+    let lookup = |buy_account: serde_json::Value, sell_account: serde_json::Value| {
+        let mint = solana_testlib::account_json(&mint_account(spl_token_interface::ID));
+        solana_testlib::multiple_accounts_json([
+            mint.clone(),
+            mint,
+            serde_json::Value::Null,
+            buy_account,
+            sell_account,
+        ])
+    };
+
+    for (name, transaction, receiver, accounts, expected) in [
+        (
+            "wSOL account handed to another owner",
+            &wrap,
+            None,
+            lookup(MISSING, account(&wsol, &stranger)),
+            "InvalidSellTokenAccount",
+        ),
+        (
+            "missing wSOL account: the wrap creates it",
+            &wrap,
+            None,
+            lookup(MISSING, MISSING),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "wSOL address holding only lamports: the wrap allocates over it",
+            &wrap,
+            None,
+            lookup(MISSING, lamports_only),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "the owner's wSOL account",
+            &wrap,
+            None,
+            lookup(MISSING, account(&wsol, &owner.pubkey())),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "token account of another owner",
+            &sell,
+            None,
+            lookup(MISSING, account(&token.sell.mint, &stranger)),
+            "InvalidSellTokenAccount",
+        ),
+        (
+            "the owner's token account of another mint",
+            &sell,
+            None,
+            lookup(MISSING, account(&mint, &owner.pubkey())),
+            "InvalidSellTokenAccount",
+        ),
+        (
+            "the owner's token account",
+            &sell,
+            None,
+            lookup(MISSING, account(&token.sell.mint, &owner.pubkey())),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+        (
+            "paying a custom receiver from the owner's token account",
+            &pay_receiver,
+            Some(receiver.to_string()),
+            lookup(
+                account(&mint, &receiver),
+                account(&token.sell.mint, &owner.pubkey()),
+            ),
+            PASSED_ACCOUNT_CHECKS,
+        ),
+    ] {
+        let addr = spawn_sponsored_server_with(
+            PgPool::connect_lazy("postgresql://").unwrap(),
+            funder,
+            sponsored_mocks(false, accounts),
+        )
+        .await;
+        let (status, kind) = post_order_body(
+            addr,
+            serde_json::json!({ "partiallySignedTx": transaction, "receiver": receiver }),
+        )
+        .await;
+        assert_eq!(
+            (status, kind.as_str()),
+            (reqwest::StatusCode::BAD_REQUEST, expected),
+            "{name}"
+        );
+    }
+}
+
 /// A bundle that creates the buy token account is rejected, whoever pays
 /// for it, whichever creation variant and token program it uses, whoever
 /// owns the account, and wherever it sits in the template. Validation
