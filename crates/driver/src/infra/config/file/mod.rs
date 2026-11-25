@@ -3,7 +3,10 @@ use {
     crate::{infra, infra::mempool::RevertProtection},
     alloy::{eips::BlockNumberOrTag, primitives::Address},
     anyhow::Context,
-    configs::gas_price_estimation::{default_past_blocks, default_reward_percentile},
+    configs::{
+        deserialize_env::Env,
+        gas_price_estimation::{default_past_blocks, default_reward_percentile},
+    },
     eth_domain_types as eth,
     number::serialization::HexOrDecimalU256,
     reqwest::Url,
@@ -180,7 +183,7 @@ impl SubmissionConfig {
         match &self.receiver {
             Receiver::PublicMempool { urls } => infra::config::Receiver::Mempools(
                 urls.iter()
-                    .map(|url| mempool(host(url), url.clone(), RevertProtection::Disabled))
+                    .map(|Env(url)| mempool(host(url), url.clone(), RevertProtection::Disabled))
                     .collect(),
             ),
             Receiver::PrivateRelay {
@@ -244,8 +247,10 @@ enum Receiver {
     /// Nodes that forward settlement transactions to the public mempool.
     PublicMempool {
         /// The RPC URLs of the nodes. The driver submits to all of them.
+        /// A value like `%NODE_URL` reads the URL from that environment
+        /// variable.
         #[serde(deserialize_with = "serde_ext::deserialize_nonempty_vec")]
-        urls: Vec<Url>,
+        urls: Vec<Env<Url>>,
     },
     /// A private relay like MEV Blocker.
     PrivateRelay {
