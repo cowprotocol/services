@@ -37,18 +37,21 @@ pub struct Measurements {
 }
 
 /// Serializes `value` to JSON on a blocking thread, streaming it into the
-/// returned reqwest body. Backpressure from the body channel caps memory.
-pub fn stream_body<T>(value: T) -> (reqwest::Body, oneshot::Receiver<Measurements>)
+/// returned reqwest body, brotli-compressed if `compress` is set. Backpressure
+/// from the body channel caps memory.
+pub fn stream_body<T>(value: T, compress: bool) -> (reqwest::Body, oneshot::Receiver<Measurements>)
 where
     T: serde::Serialize + Send + 'static,
 {
-    stream_into(value, std::io::sink())
+    stream_into(value, compress, std::io::sink())
 }
 
 /// Like [`stream_body`], but also gzips the same serialization in one pass. The
-/// first receiver yields the compressed bytes once serialization finishes.
+/// first receiver yields the compressed bytes once serialization finishes. The
+/// archive is always the plain JSON, regardless of `compress`.
 pub fn stream_body_and_gzip<T>(
     value: T,
+    compress: bool,
 ) -> (
     reqwest::Body,
     oneshot::Receiver<Bytes>,
@@ -58,7 +61,7 @@ where
     T: serde::Serialize + Send + 'static,
 {
     let (gzip, compressed) = GzipCapture::new();
-    let (body, measurements) = stream_into(value, gzip);
+    let (body, measurements) = stream_into(value, compress, gzip);
     (body, compressed, measurements)
 }
 
@@ -67,7 +70,11 @@ where
 /// completion even if the request receiver drops, so the secondary sink (the
 /// gzip archive) is captured regardless of the request outcome. The returned
 /// receiver reports the timing [`Measurements`] once serialization finishes.
-fn stream_into<T, S>(value: T, secondary: S) -> (reqwest::Body, oneshot::Receiver<Measurements>)
+fn stream_into<T, S>(
+    value: T,
+    compress: bool,
+    secondary: S,
+) -> (reqwest::Body, oneshot::Receiver<Measurements>)
 where
     T: serde::Serialize + Send + 'static,
     S: Write + Finalize + Send + 'static,
@@ -86,7 +93,7 @@ where
         let start = std::time::Instant::now();
 
         // If sending to solvers fails, we should still be able to upload to S3
-        let channel = BestEffortSink::new(ChannelWriter(tx));
+        let channel = BestEffortSink::new(BodyWriter::new(ChannelWriter(tx), compress));
         // Note that `channel` writes to the solver, while secondary to the gzip
         // (in-memory) as such, writing delays *should* mostly be due to the
         // solver network transfer and not really the gzip; this will have the
@@ -157,6 +164,53 @@ impl Finalize for ChannelWriter {
     fn finalize(self) {}
 }
 
+/// The request body as sent to the solver engine: the plain JSON, or its
+/// brotli compression for engines that accept `content-encoding: br`.
+enum BodyWriter {
+    Plain(ChannelWriter),
+    Brotli(Box<brotli::CompressorWriter<ChannelWriter>>),
+}
+
+impl BodyWriter {
+    fn new(channel: ChannelWriter, compress: bool) -> Self {
+        if compress {
+            // Same quality and window as the autopilot's `/solve` compression.
+            Self::Brotli(Box::new(brotli::CompressorWriter::new(
+                channel, CHUNK_SIZE, 1, 22,
+            )))
+        } else {
+            Self::Plain(channel)
+        }
+    }
+}
+
+impl Write for BodyWriter {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Plain(writer) => writer.write(data),
+            Self::Brotli(writer) => writer.write(data),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Plain(writer) => writer.flush(),
+            Self::Brotli(writer) => writer.flush(),
+        }
+    }
+}
+
+impl Finalize for BodyWriter {
+    /// Finishes the brotli stream, so its last block is sent before the
+    /// channel closes.
+    fn finalize(self) {
+        match self {
+            Self::Plain(writer) => writer.finalize(),
+            Self::Brotli(writer) => writer.into_inner().finalize(),
+        }
+    }
+}
+
 /// A [`Write`] sink that gzips into memory and delivers the bytes over a
 /// oneshot when finalized.
 struct GzipCapture {
@@ -224,11 +278,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn brotli_body_writer_round_trips() {
+        let data = b"{\"a\":1,\"b\":[1,2,3],\"c\":\"hello\"}".repeat(10_000);
+        let (tx, mut rx) = mpsc::channel::<Bytes>(CHANNEL_CAPACITY);
+        let expected = data.clone();
+        let writer = tokio::task::spawn_blocking(move || {
+            let mut writer =
+                BufWriter::with_capacity(CHUNK_SIZE, BodyWriter::new(ChannelWriter(tx), true));
+            writer.write_all(&data).unwrap();
+            writer
+                .into_inner()
+                .map_err(std::io::IntoInnerError::into_error)
+                .unwrap()
+                .finalize();
+        });
+
+        let mut compressed = Vec::new();
+        while let Some(chunk) = rx.recv().await {
+            compressed.extend_from_slice(&chunk);
+        }
+        writer.await.unwrap();
+
+        assert!(compressed.len() < expected.len());
+        let mut decompressed = Vec::new();
+        brotli::BrotliDecompress(&mut compressed.as_slice(), &mut decompressed).unwrap();
+        assert_eq!(decompressed, expected);
+    }
+
+    #[tokio::test]
     async fn gzip_capture_matches_serialized_value() {
         let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
         // Keep `body` alive: dropping its receiver would abort serialization
         // before the gzip is captured.
-        let (_body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone());
+        let (_body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone(), false);
+
+        let compressed = gzip_rx.await.unwrap();
+        let mut decoded = Vec::new();
+        GzDecoder::new(&compressed[..])
+            .read_to_end(&mut decoded)
+            .unwrap();
+        assert_eq!(decoded, serde_json::to_vec(&value).unwrap());
+    }
+
+    #[tokio::test]
+    async fn gzip_capture_is_plain_json_when_body_is_compressed() {
+        let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
+        let (_body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone(), true);
 
         let compressed = gzip_rx.await.unwrap();
         let mut decoded = Vec::new();
@@ -241,7 +336,7 @@ mod tests {
     #[tokio::test]
     async fn gzip_captured_even_if_request_body_dropped() {
         let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
-        let (body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone());
+        let (body, gzip_rx, _measurements) = stream_body_and_gzip(value.clone(), false);
         // The solver connection going away mid-stream must not skip the
         // archive.
         drop(body);
@@ -258,7 +353,7 @@ mod tests {
     async fn reports_measurements_once_serialization_finishes() {
         let value = json!({ "a": 1, "b": [1, 2, 3], "c": "hello" });
         // Keep `body` alive so serialization runs to completion.
-        let (_body, measurements) = stream_body(value);
+        let (_body, measurements) = stream_body(value, false);
         // The receiver resolves, confirming the caller can pick up the timings.
         measurements.await.unwrap();
     }
