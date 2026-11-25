@@ -40,6 +40,15 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
                 )
             })
             .collect();
+        let fees = solutions
+            .iter()
+            .map(|solution| {
+                (
+                    (solution.inner.solver(), solution.inner.id()),
+                    solution.fees.clone(),
+                )
+            })
+            .collect();
 
         // Every auction order gets an entry, an empty one when no policy
         // applies: the arbitrator scores only orders it finds here.
@@ -71,6 +80,7 @@ impl WinnerSelection<SolanaCycle> for SolanaArbitrator {
         Ranking {
             inner,
             drivers,
+            fees,
             reference_scores,
         }
     }

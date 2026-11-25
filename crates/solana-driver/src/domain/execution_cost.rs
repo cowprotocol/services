@@ -190,6 +190,7 @@ impl ExecutionCost<'_> {
 /// to cut leaves the trade as the engine reported it.
 fn cut_trade(trade: &Trade, order: &Order, cut: u64) -> Result<Trade, Rejected> {
     let mut trade = trade.clone();
+    trade.execution_cost = cut;
     if cut == 0 {
         return Ok(trade);
     }
@@ -254,6 +255,7 @@ mod tests {
             executed_buy,
             solver_fee: 7,
             protocol_fee: 0,
+            execution_cost: 0,
         }
     }
 
@@ -340,8 +342,8 @@ mod tests {
     }
 
     /// 1000 lamports come off the 3000 buy leg as 2000 atoms and go onto the
-    /// 1000 sell leg as 500. The trade's solver fee is left alone. Nothing to
-    /// cut leaves the fill as the engine reported it.
+    /// 1000 sell leg as 500. The trade records the cut and keeps its solver
+    /// fee. Nothing to cut leaves the fill as the engine reported it.
     #[test]
     fn the_cut_comes_off_the_limit_leg() {
         let (rent, prices) = (HashMap::new(), prices());
@@ -353,17 +355,20 @@ mod tests {
         assert_eq!(sol.trades[0].executed_sell, 1_000);
         assert_eq!(sol.trades[0].executed_buy, 1_000);
         assert_eq!(sol.trades[0].solver_fee, 7);
+        assert_eq!(sol.trades[0].execution_cost, 2_000);
 
         let orders = [order(1, Side::Buy, 2_000, 1_000)];
         let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
         cost.apply(&mut sol, &self::orders(&orders), 1_000).unwrap();
         assert_eq!(sol.trades[0].executed_sell, 1_500);
         assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(sol.trades[0].execution_cost, 500);
 
         let orders = [order(1, Side::Sell, 1_000, 1_000)];
         let mut sol = solution(vec![trade(1, 1_000, 1_000)]);
         cost.apply(&mut sol, &self::orders(&orders), 0).unwrap();
         assert_eq!(sol.trades[0].executed_buy, 1_000);
+        assert_eq!(sol.trades[0].execution_cost, 0);
     }
 
     /// Two trades share the 1001 lamport fee as 501 lamports each, and only

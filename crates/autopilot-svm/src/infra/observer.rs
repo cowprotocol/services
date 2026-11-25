@@ -87,24 +87,32 @@ impl SettlementObserver<crate::domain::cycle::SolanaCycle> for CompetitionObserv
         if let Err(err) = self.windows.expire_past_deadline(*tip).await {
             tracing::error!(?err, "failed to flag expired settlement windows");
         }
+        let no_fees = HashMap::new();
         let solutions = ranking
             .enumerated()
-            .map(|(uid, solution)| db::ProposedSolution {
-                uid,
-                id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
-                solver: ByteArray(solution.solver().0),
-                is_winner: solution.is_winner(),
-                filtered_out: solution.is_filtered_out(),
-                score: BigDecimal::from(solution.score()),
-                trades: solution
-                    .orders()
-                    .iter()
-                    .map(|order| db::ProposedTrade {
-                        order_uid: ByteArray(order.uid.0),
-                        executed_sell: BigDecimal::from(order.executed_sell),
-                        executed_buy: BigDecimal::from(order.executed_buy),
-                    })
-                    .collect(),
+            .map(|(uid, solution)| {
+                let fees = ranking
+                    .fees
+                    .get(&(solution.solver(), solution.id()))
+                    .unwrap_or(&no_fees);
+                db::ProposedSolution {
+                    uid,
+                    id: i64::try_from(solution.id()).unwrap_or(i64::MAX),
+                    solver: ByteArray(solution.solver().0),
+                    is_winner: solution.is_winner(),
+                    filtered_out: solution.is_filtered_out(),
+                    score: BigDecimal::from(solution.score()),
+                    trades: solution
+                        .orders()
+                        .iter()
+                        .map(|order| db::ProposedTrade {
+                            order_uid: ByteArray(order.uid.0),
+                            executed_sell: BigDecimal::from(order.executed_sell),
+                            executed_buy: BigDecimal::from(order.executed_buy),
+                            fee: fees.get(&order.uid).copied().map(BigDecimal::from),
+                        })
+                        .collect(),
+                }
             })
             .collect();
         // The policies of every order a ranked solution trades, once per

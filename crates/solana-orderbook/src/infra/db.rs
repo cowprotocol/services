@@ -34,6 +34,8 @@ pub struct OrderRow {
     pub order_pda: ByteArray<32>,
     pub amount_withdrawn: BigDecimal,
     pub amount_received: BigDecimal,
+    /// The fee the order paid across its settlements, in the sell token.
+    pub executed_fee: BigDecimal,
     pub cancellation_timestamp: Option<DateTime<Utc>>,
     /// The transaction that created the order PDA, once indexed.
     pub created_by_tx: Option<ByteArray<64>>,
@@ -56,6 +58,8 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
+       COALESCE((SELECT SUM(e.executed_fee) FROM solana.order_execution e
+                 WHERE e.order_uid = o.uid), 0) AS executed_fee,
        p.cancellation_timestamp, p.created_by_tx, p.cancelled_by_tx,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
             THEN o.last_valid_block_height END AS last_valid_block_height
@@ -87,6 +91,8 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
        o.creation_timestamp, o.order_pda,
        COALESCE(p.amount_withdrawn, 0) AS amount_withdrawn,
        COALESCE(p.amount_received, 0) AS amount_received,
+       COALESCE((SELECT SUM(e.executed_fee) FROM solana.order_execution e
+                 WHERE e.order_uid = o.uid), 0) AS executed_fee,
        p.cancellation_timestamp, p.created_by_tx, p.cancelled_by_tx,
        CASE WHEN o.presigned_transaction IS NOT NULL AND p.order_uid IS NULL
             THEN o.last_valid_block_height END AS last_valid_block_height
@@ -1219,6 +1225,35 @@ VALUES ($1, $2, $2, $2, $2, $2, 1000, 500, $3, 'sell'::solana.OrderKind,
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// An order's executed fee sums its executions, an execution recorded
+    /// without a fee counting as zero.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_sums_an_orders_executed_fees() {
+        let pool = PgPool::connect("postgresql://").await.unwrap();
+        let uid = [0x11; 32];
+        seed(&pool, uid, false).await;
+        sqlx::query("TRUNCATE solana.order_execution")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let read = async || find_order_by_uid(&pool, uid).await.unwrap().unwrap();
+        assert_eq!(read().await.executed_fee, BigDecimal::from(0));
+
+        sqlx::query(
+            "INSERT INTO solana.order_execution (order_uid, auction_id, protocol_fee_tokens, \
+             protocol_fee_amounts, executed_fee) VALUES ($1, 7, '{}', '{}', 5), ($1, 8, '{}', \
+             '{}', NULL), ($1, 9, '{}', '{}', 2)",
+        )
+        .bind(ByteArray(uid))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(read().await.executed_fee, BigDecimal::from(7));
+        let by_owner = get_orders_by_owner(&pool, [0xAA; 32], 0, 10).await.unwrap();
+        assert_eq!(by_owner[0].executed_fee, BigDecimal::from(7));
     }
 
     /// An execution's fees pair with the auction's policies in application
