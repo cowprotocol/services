@@ -1432,12 +1432,12 @@ components:
             Whether the order requested the wait-for-CoW execution mode via the
             `enableWaitForCow` flag in its `appData`. Such orders are held back
             until the next canonical batch auction starts to give them a higher
-            chance to be matched with a counterparty (a CoW). Omitted when `false`.
-            Mutually exclusive with `enableFastPath` and `validFrom`, and not
-            supported for presign orders (`WaitForCowPreSignUnsupported`).
-            Orders and quotes are rejected with `WaitForCowDisabled` when
-            canonical batches are not enabled; see
-            `GET /api/v1/canonical_batch_schedule`.
+            chance to be matched with a counterparty (a CoW). Different protocol
+            fees may apply, e.g. no volume fee. Omitted when `false`. Mutually
+            exclusive with `enableFastPath` and `validFrom`, and not supported
+            for presign orders (`WaitForCowPreSignUnsupported`). Orders and
+            quotes are rejected with `WaitForCowDisabled` when canonical batches
+            are not enabled; see `GET /api/v1/canonical_batch_schedule`.
           type: boolean
           default: false
         settlementContract:
@@ -2213,7 +2213,9 @@ components:
         protocolFeeBps:
           description: >
             Protocol fee in basis points (e.g., "2" for 0.02%). This represents
-            the volume-based fee policy. Only present when a volume fee is configured.
+            the volume-based fee policy. Only present when the quoted order pays
+            a volume fee, which can depend on its `appData` (e.g.
+            `enableWaitForCow`).
           type: string
           example: "2"
       required:

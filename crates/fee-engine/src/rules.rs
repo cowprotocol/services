@@ -400,6 +400,7 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
         onchain_user: Some(Default::default()),
         valid_from: Some(now.timestamp() as u32),
         fast_path: true,
+        wait_for_cow: true,
         ..order.metadata
     };
     order

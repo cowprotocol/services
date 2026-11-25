@@ -66,6 +66,7 @@ pub(crate) fn order_view(
         ("validFrom", serialized(meta.valid_from)),
         ("appData", Some(app_data_view(app_data))),
         ("fastPath", serialized(meta.fast_path)),
+        ("waitForCow", serialized(meta.wait_for_cow)),
         ("inMarket", serialized(in_market)),
         (
             "ethflowData",
@@ -223,6 +224,7 @@ mod tests {
         assert!(view.get("class").is_none());
         assert_eq!(view["signingScheme"], "eip712");
         assert_eq!(view["fastPath"], false);
+        assert_eq!(view["waitForCow"], false);
         assert!(view.get("quote").is_none());
     }
 
@@ -254,6 +256,7 @@ mod tests {
                 onchain_user: Some(address!("0x00000000000000000000000000000000000000Ef")),
                 valid_from: Some(4),
                 fast_path: true,
+                wait_for_cow: true,
                 ..Default::default()
             },
             data: OrderData {
@@ -354,10 +357,12 @@ mod tests {
                 "validFrom",
                 "appData",
                 "fastPath",
+                "waitForCow",
                 "inMarket",
                 "ethflowData",
             ])
         );
+        assert_eq!(view["waitForCow"], true);
         assert_eq!(view["ethflowData"], json!({ "userValidTo": 5 }));
         assert_eq!(view["validFrom"], 4);
     }

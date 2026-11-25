@@ -27,6 +27,7 @@ const RULES: &str = include_str!("mainnet.toml");
 const USDC: Address = address!("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48");
 const USDT: Address = address!("0xdAC17F958D2ee523a2206206994597C13D831ec7");
 const WETH: Address = address!("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2");
+const STETH: Address = address!("0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84");
 
 fn order(sell: Address, buy: Address) -> Order {
     Order {
@@ -55,6 +56,7 @@ fn mainnet_sample_loads_in_file_order() {
         [
             "JIT makers pay no protocol fee",
             "Same token (incl. WETH -> ETH): no volume fee",
+            "Wait for CoW: no volume fee",
             "Stablecoin bucket: 0.3 bps",
             "ETH-correlated bucket: 0.3 bps",
             "Default: 2 bps",
@@ -103,6 +105,42 @@ fn mainnet_sample_lists_reach_the_rules() {
     });
     let Match { rule, .. } = evaluation.matched.first().unwrap();
     assert_eq!(rule.name(), "Default: 2 bps");
+}
+
+#[test]
+fn mainnet_sample_waives_only_the_volume_fee_of_wait_for_cow_orders() {
+    let rules = load_rules_from_str(RULES).unwrap();
+    let evaluator = rules.evaluator(Utc::now());
+    let fees = |sell, buy, wait_for_cow| {
+        let mut order = order(sell, buy);
+        order.metadata.wait_for_cow = wait_for_cow;
+        let evaluation = evaluator.evaluate(OrderView {
+            order: &order,
+            app_data: &AppData::default(),
+            partner_fees: &[],
+            in_market: false,
+        });
+        assert!(evaluation.skipped.is_empty());
+        evaluation.matched.into_iter().next().unwrap().fees
+    };
+    let factor = |value: f64| FeeFactor::try_from(value).unwrap();
+    let surplus = Fee::Surplus {
+        factor: factor(0.5),
+        max_volume_factor: factor(0.0098),
+    };
+    let volume = |value| Fee::Volume {
+        factor: factor(value),
+    };
+
+    for (sell, buy, regular) in [
+        (USDC, USDT, vec![surplus, volume(0.00003)]),
+        (WETH, STETH, vec![surplus, volume(0.00003)]),
+        (WETH, USDC, vec![surplus, volume(0.0002)]),
+        (WETH, WETH, vec![surplus]),
+    ] {
+        assert_eq!(fees(sell, buy, false), regular, "{sell} -> {buy}");
+        assert_eq!(fees(sell, buy, true), [surplus], "{sell} -> {buy}");
+    }
 }
 
 /// The partner fees of an order asking for one 2% volume fee, under `source`.
