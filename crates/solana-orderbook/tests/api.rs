@@ -22,7 +22,11 @@ use {
         transfer_fee::TransferFeeConfig,
     },
     sqlx::PgPool,
-    std::{net::SocketAddr, num::NonZero, time::Duration},
+    std::{
+        net::SocketAddr,
+        num::NonZero,
+        time::{Duration, Instant},
+    },
     tokio_util::sync::CancellationToken,
 };
 
@@ -821,6 +825,47 @@ async fn quote_fast_answers_from_the_first_drivers() {
     let (status, json) = quote_json(addr, body).await;
     assert_eq!(status, reqwest::StatusCode::OK);
     assert_eq!(json["quote"]["buyAmount"], "6779760");
+}
+
+/// Once a hanging driver has timed out on three quotes, quotes stop waiting
+/// for it.
+#[tokio::test]
+async fn quote_stops_waiting_on_a_hanging_driver() {
+    let answer = serde_json::json!({
+        "sellAmount": "10000000",
+        "buyAmount": "5000000",
+        "solver": "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB",
+    });
+    let healthy = spawn_mock_driver(answer.clone()).await;
+    let hanging = spawn_mock_driver_after(Duration::from_secs(60), answer).await;
+    let timeout = Duration::from_secs(1);
+    let api = Api {
+        quoter: Quoter::new(
+            [healthy, hanging]
+                .iter()
+                .map(|driver| format!("http://{driver}/").parse().unwrap())
+                .collect(),
+            timeout,
+        ),
+        // Fails the quote insert fast, so it stays out of the timings.
+        pool: sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(100))
+            .connect_lazy("postgresql://127.0.0.1:1/")
+            .unwrap(),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    tokio::spawn(async move { api.serve(listener, CancellationToken::new()).await.unwrap() });
+
+    let mut elapsed = Vec::new();
+    for _ in 0..4 {
+        let start = Instant::now();
+        let (status, _) = quote_json(addr, quote_body(serde_json::json!({"validFor": 1800}))).await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+        elapsed.push(start.elapsed());
+    }
+    assert!(elapsed[..3].iter().all(|e| *e >= timeout), "{elapsed:?}");
+    assert!(elapsed[3] < timeout / 2, "{elapsed:?}");
 }
 
 /// A driver answer for the `quote_body` sell, settling it for `buy_amount`

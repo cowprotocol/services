@@ -8,6 +8,7 @@ use {
     solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction},
     std::{
         num::NonZero,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     },
     url::Url,
@@ -19,16 +20,81 @@ use {
 /// this client's own timeout.
 const RESPONSE_RESERVE: Duration = Duration::from_millis(500);
 
+/// Failures in a row after which quotes skip a driver.
+const FAILURES_TO_SKIP: u32 = 3;
+
+/// How long quotes skip a failing driver before one quote probes it again.
+const PROBE_INTERVAL: Duration = Duration::from_secs(30);
+
 /// Asks every configured driver to quote an order.
 #[derive(Clone, Debug)]
 pub struct Quoter {
     client: Client,
-    endpoints: Vec<Url>,
+    drivers: Arc<[Driver]>,
     timeout: Duration,
+    probe_interval: Duration,
+}
+
+#[derive(Debug)]
+struct Driver {
+    endpoint: Url,
+    name: String,
+    health: Mutex<Health>,
+}
+
+#[derive(Debug, Default)]
+struct Health {
+    /// Failures in a row.
+    failures: u32,
+    skipped_until: Option<Instant>,
+}
+
+enum Action {
+    Ask,
+    Skip,
+    /// Skip the driver, and probe it in the background.
+    Probe,
+}
+
+impl Driver {
+    fn next_action(&self, probe_interval: Duration) -> Action {
+        let mut health = self.health.lock().unwrap();
+        let now = Instant::now();
+        match health.skipped_until {
+            None => Action::Ask,
+            Some(until) if now < until => Action::Skip,
+            Some(_) => {
+                // Concurrent quotes keep skipping while this one probes.
+                health.skipped_until = Some(now + probe_interval);
+                Action::Probe
+            }
+        }
+    }
+
+    fn record(&self, answered: bool, probe_interval: Duration) {
+        let mut health = self.health.lock().unwrap();
+        if answered {
+            health.failures = 0;
+            if health.skipped_until.take().is_some() {
+                tracing::info!(endpoint = %self.endpoint, "driver answers again, quoting with it");
+            }
+            return;
+        }
+        health.failures = health.failures.saturating_add(1);
+        if health.failures >= FAILURES_TO_SKIP && health.skipped_until.is_none() {
+            health.skipped_until = Some(Instant::now() + probe_interval);
+            tracing::info!(
+                endpoint = %self.endpoint,
+                failures = health.failures,
+                ?probe_interval,
+                "driver keeps failing, skipping it"
+            );
+        }
+    }
 }
 
 /// The order to quote.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Order {
     pub sell_token: Pubkey,
     pub buy_token: Pubkey,
@@ -84,6 +150,9 @@ impl Quote {
 
 /// The `price_estimates` result of a driver without a route.
 const NO_LIQUIDITY: &str = "no_liquidity";
+
+/// The `price_estimates` result of a driver skipped as failing.
+const SKIPPED: &str = "skipped";
 
 /// Why no driver quoted.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -155,26 +224,51 @@ impl Quoter {
     pub fn new(endpoints: Vec<Url>, timeout: Duration) -> Self {
         Self {
             client: Client::new(),
-            endpoints,
+            drivers: endpoints
+                .into_iter()
+                .map(|endpoint| Driver {
+                    name: driver_name(&endpoint),
+                    endpoint,
+                    health: Mutex::default(),
+                })
+                .collect(),
             timeout,
+            probe_interval: PROBE_INTERVAL,
         }
     }
 
     /// Quote `order` on every driver concurrently and return every answer.
     /// With `early_return`, return as soon as that many drivers answered and
-    /// cancel the requests still running.
+    /// cancel the requests still running. A driver that keeps failing is
+    /// skipped until a background probe gets an answer from it.
     pub async fn quotes(
         &self,
         order: &Order,
         early_return: Option<NonZero<usize>>,
     ) -> Result<Vec<Quote>, Error> {
-        let mut pending: FuturesUnordered<_> = self
-            .endpoints
-            .iter()
-            .map(|endpoint| self.quote_one(endpoint, order))
-            .collect();
-        let mut quotes = Vec::new();
+        let mut pending = FuturesUnordered::new();
         let mut failures = Vec::new();
+        for (index, driver) in self.drivers.iter().enumerate() {
+            match driver.next_action(self.probe_interval) {
+                Action::Ask => {
+                    pending.push(self.quote_one(driver, order));
+                    continue;
+                }
+                Action::Skip => {}
+                Action::Probe => {
+                    let (quoter, order) = (self.clone(), order.clone());
+                    tokio::spawn(
+                        async move { quoter.quote_one(&quoter.drivers[index], &order).await },
+                    );
+                }
+            }
+            metrics()
+                .price_estimates
+                .with_label_values(&[driver.name.as_str(), SKIPPED])
+                .inc();
+            failures.push(SKIPPED);
+        }
+        let mut quotes = Vec::new();
         while let Some(quoted) = pending.next().await {
             match quoted {
                 Ok(quote) => quotes.push(quote),
@@ -194,11 +288,11 @@ impl Quoter {
     /// as its `price_estimates` result: a `QuotingFailed` reply means no
     /// route, which is a routine outcome, while anything else is that driver
     /// misbehaving.
-    async fn quote_one(&self, endpoint: &Url, order: &Order) -> Result<Quote, &'static str> {
-        let driver = driver_name(endpoint);
+    async fn quote_one(&self, driver: &Driver, order: &Order) -> Result<Quote, &'static str> {
         let start = Instant::now();
-        let quoted = self.ask(endpoint, order).await;
+        let quoted = self.ask(driver, order).await;
         let elapsed = start.elapsed();
+        let driver = &driver.name;
         let metrics = metrics();
         metrics
             .price_estimation_times
@@ -237,14 +331,15 @@ impl Quoter {
             network_fee: quoted.network_fee.unwrap_or(0),
             transaction,
             verified: false,
-            driver,
+            driver: driver.clone(),
             elapsed,
         })
     }
 
     /// Ask one driver to quote `order`. An error is the `price_estimates`
     /// result the failure counts as.
-    async fn ask(&self, endpoint: &Url, order: &Order) -> Result<ResponseBody, &'static str> {
+    async fn ask(&self, driver: &Driver, order: &Order) -> Result<ResponseBody, &'static str> {
+        let endpoint = &driver.endpoint;
         let url = endpoint.join("quote").expect("valid /quote path");
         let body = RequestBody {
             sell_token: order.sell_token,
@@ -254,17 +349,27 @@ impl Quoter {
             deadline: chrono::Utc::now() + self.timeout.saturating_sub(RESPONSE_RESERVE),
             owner: order.owner,
         };
-        let response = self
-            .client
-            .post(url)
-            .json(&body)
-            .timeout(self.timeout)
-            .send()
-            .await
-            .inspect_err(|err| tracing::warn!(%endpoint, ?err, "driver quote request failed"))
-            .map_err(|_| "estimator_internal_error")?;
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let (status, body) = async {
+            let response = self
+                .client
+                .post(url)
+                .json(&body)
+                .timeout(self.timeout)
+                .send()
+                .await?;
+            let status = response.status();
+            Ok::<_, reqwest::Error>((status, response.text().await?))
+        }
+        .await
+        .inspect_err(|err| {
+            tracing::warn!(%endpoint, ?err, "driver quote request failed");
+            driver.record(false, self.probe_interval);
+        })
+        .map_err(|_| "estimator_internal_error")?;
+        driver.record(
+            !(status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS),
+            self.probe_interval,
+        );
         // A driver may answer its error under a success status, so the body
         // tells a quote from a failure, as on the EVM orderbook.
         if status.is_success()
@@ -325,7 +430,11 @@ fn metrics() -> &'static Metrics {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, reqwest::StatusCode};
+    use {
+        super::*,
+        reqwest::StatusCode,
+        std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
+    };
 
     #[test]
     fn labels_drivers_by_their_last_path_segment() {
@@ -359,29 +468,124 @@ mod tests {
         );
     }
 
-    /// A driver stand-in answering every `/quote` with `status` and `body`.
-    async fn driver(status: StatusCode, body: &'static str) -> Url {
-        let app = axum::Router::new().route(
-            "/quote",
-            axum::routing::post(move || async move { (status, body) }),
-        );
+    async fn serve(app: axum::Router) -> Url {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         format!("http://{addr}/").parse().unwrap()
     }
 
-    async fn quotes(drivers: Vec<Url>) -> Result<Vec<Quote>, Error> {
-        let order = Order {
+    /// A driver stand-in answering every `/quote` with `status` and `body`.
+    async fn driver(status: StatusCode, body: &'static str) -> Url {
+        serve(axum::Router::new().route(
+            "/quote",
+            axum::routing::post(move || async move { (status, body) }),
+        ))
+        .await
+    }
+
+    /// A driver stand-in that quotes while the returned flag is set, otherwise
+    /// answers `failure` or hangs on `None`, and counts its requests.
+    async fn flaky_driver(failure: Option<StatusCode>) -> (Url, Arc<AtomicBool>, Arc<AtomicUsize>) {
+        let (up, hits) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicUsize::new(0)),
+        );
+        let (is_up, hit) = (up.clone(), hits.clone());
+        let quote =
+            r#"{"sellAmount":"1000","buyAmount":"1","solver":"11111111111111111111111111111111"}"#;
+        let app = axum::Router::new().route(
+            "/quote",
+            axum::routing::post(move || {
+                hit.fetch_add(1, SeqCst);
+                let up = is_up.load(SeqCst);
+                async move {
+                    match (up, failure) {
+                        (true, _) => (StatusCode::OK, quote),
+                        (false, Some(status)) => (status, ""),
+                        (false, None) => std::future::pending().await,
+                    }
+                }
+            }),
+        );
+        (serve(app).await, up, hits)
+    }
+
+    fn order() -> Order {
+        Order {
             sell_token: Pubkey::new_unique(),
             buy_token: Pubkey::new_unique(),
             amount: 1_000,
             kind: Kind::Sell,
             owner: None,
-        };
+        }
+    }
+
+    async fn quotes(drivers: Vec<Url>) -> Result<Vec<Quote>, Error> {
         Quoter::new(drivers, Duration::from_secs(1))
-            .quotes(&order, None)
+            .quotes(&order(), None)
             .await
+    }
+
+    #[tokio::test]
+    async fn skips_a_driver_that_keeps_failing() {
+        let failures = [
+            None,
+            Some(StatusCode::SERVICE_UNAVAILABLE),
+            Some(StatusCode::TOO_MANY_REQUESTS),
+        ];
+        for failure in failures {
+            let (url, _, hits) = flaky_driver(failure).await;
+            let quoter = Quoter::new(vec![url], Duration::from_millis(200));
+            for _ in 0..FAILURES_TO_SKIP + 2 {
+                let failed = quoter.quotes(&order(), None).await;
+                assert_eq!(failed.unwrap_err(), Error::DriverFailed, "{failure:?}");
+            }
+            assert_eq!(hits.load(SeqCst), FAILURES_TO_SKIP as usize, "{failure:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn asks_a_recovered_driver_again() {
+        let (url, up, _) = flaky_driver(None).await;
+        let mut quoter = Quoter::new(vec![url], Duration::from_millis(200));
+        quoter.probe_interval = Duration::ZERO;
+        for _ in 0..FAILURES_TO_SKIP {
+            assert!(quoter.quotes(&order(), None).await.is_err());
+        }
+        up.store(true, SeqCst);
+        // The quote that probes the driver still skips it.
+        let probing = quoter.quotes(&order(), None).await;
+        assert_eq!(probing.unwrap_err(), Error::DriverFailed);
+        let quoted = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Ok(quotes) = quoter.quotes(&order(), None).await {
+                    break quotes;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the recovered driver is asked again");
+        assert_eq!(quoted[0].buy_amount, 1);
+    }
+
+    /// A driver that answers, even with an error, is not down.
+    #[tokio::test]
+    async fn answers_do_not_count_as_failures() {
+        let no_route = r#"{"kind":"QuotingFailed","description":"No valid quote found"}"#;
+        let routeless = Quoter::new(
+            vec![driver(StatusCode::BAD_REQUEST, no_route).await],
+            Duration::from_secs(1),
+        );
+        let (url, _, hits) = flaky_driver(Some(StatusCode::BAD_REQUEST)).await;
+        let refusing = Quoter::new(vec![url], Duration::from_secs(1));
+        for _ in 0..FAILURES_TO_SKIP + 2 {
+            let failed = routeless.quotes(&order(), None).await;
+            assert_eq!(failed.unwrap_err(), Error::NoLiquidity);
+            assert!(refusing.quotes(&order(), None).await.is_err());
+        }
+        assert_eq!(hits.load(SeqCst), FAILURES_TO_SKIP as usize + 2);
     }
 
     /// A driver's `QuotingFailed` is no route under any status, as the EVM
