@@ -12,7 +12,7 @@ const BACKEND: &str = "hermod";
 #[metric(subsystem = "banned_users")]
 pub(super) struct Metrics {
     /// Checked addresses by outcome: banned, not_banned or error (the batch
-    /// request failed; only the local cache was used).
+    /// request failed).
     #[metric(labels("backend", "result"))]
     lookups: IntCounterVec,
 
