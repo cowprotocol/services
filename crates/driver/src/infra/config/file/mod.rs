@@ -381,6 +381,11 @@ struct SolverConfig {
     #[serde(default)]
     request_headers: HashMap<String, String>,
 
+    /// Whether the solver engine accepts brotli-compressed `/solve` request
+    /// bodies (`content-encoding: br`).
+    #[serde(default)]
+    supports_compression: bool,
+
     /// Whether this solver supports fast-path (out-of-competition) execution.
     #[serde(default)]
     fast_path_enabled: bool,

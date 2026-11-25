@@ -199,6 +199,8 @@ pub struct Config {
     pub timeouts: Timeouts,
     /// HTTP headers that should be added to every request.
     pub request_headers: HashMap<String, String>,
+    /// Whether `/solve` request bodies are sent brotli-compressed.
+    pub supports_compression: bool,
     /// Whether this solver supports fast-path (out-of-competition) execution.
     pub fast_path_enabled: bool,
     pub merge_solutions: SolutionMerging,
@@ -429,15 +431,17 @@ impl Solver {
             .archives_enabled()
             .then(|| auction.auction_id())
             .flatten();
+        let compress = self.config.supports_compression;
         let (body, measurements) = match archive_id {
             // Stream the request body while capturing a gzipped copy for S3, so
             // neither the request nor the archive holds the full JSON at once.
             Some(id) => {
-                let (body, compressed, measurements) = streaming::stream_body_and_gzip(auction_dto);
+                let (body, compressed, measurements) =
+                    streaming::stream_body_and_gzip(auction_dto, compress);
                 self.persistence.archive_auction_gzipped(id, compressed);
                 (body, measurements)
             }
-            None => streaming::stream_body(auction_dto),
+            None => streaming::stream_body(auction_dto, compress),
         };
 
         // Record the serialization overhead for real auctions only; quotes go
@@ -485,6 +489,9 @@ impl Solver {
             // produce the same result (no solution).
             .timeout(driver_timeout);
 
+        if compress {
+            req = req.header(reqwest::header::CONTENT_ENCODING, "br");
+        }
         if let Some(id) = observe::tracing::distributed::request_id::from_current_span() {
             req = req.header("X-REQUEST-ID", id);
         }
@@ -640,6 +647,7 @@ mod tests {
                 solving_share_of_deadline: 1.0.try_into().unwrap(),
             },
             request_headers: Default::default(),
+            supports_compression: false,
             fast_path_enabled: false,
             merge_solutions: SolutionMerging::Forbidden,
             s3: None,
