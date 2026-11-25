@@ -86,10 +86,6 @@ pub struct Configuration {
     /// Configuration for the IPFS gateway, supports token authentication.
     pub ipfs: Option<IpfsConfig>,
 
-    /// Deprecated and ignored: `fee_engine` decides the fees. Kept so that a
-    /// config that still sets it loads.
-    pub volume_fee: Option<VolumeFeeConfig>,
-
     /// Protocol fee rules and the partner fee cap. Absent, no quote or
     /// fast-path order pays a volume fee.
     #[serde(default)]
@@ -225,7 +221,6 @@ pub mod test_util {
                 order_validation: Default::default(),
                 banned_users: Default::default(),
                 ipfs: Default::default(),
-                volume_fee: Default::default(),
                 fee_engine: Default::default(),
                 app_data_size_limit: default_app_data_size_limit(),
                 app_data_cache_max_bytes: default_app_data_cache_max_bytes(),
@@ -286,10 +281,6 @@ mod tests {
         gateway = "https://gateway.pinata.cloud/ipfs/"
         auth-token = "my-secret-key"
 
-        [volume-fee]
-        factor = 0.0002
-        effective-from-timestamp = "2025-06-01T00:00:00Z"
-
         [native-price-estimation]
         estimators = [[{type = "CoinGecko"}]]
 
@@ -345,10 +336,6 @@ mod tests {
         let ipfs = config.ipfs.unwrap();
         assert_eq!(ipfs.gateway.as_str(), "https://gateway.pinata.cloud/ipfs/");
         assert_eq!(ipfs.auth_token.unwrap(), "my-secret-key");
-
-        let vol_fee = config.volume_fee.unwrap();
-        assert_eq!(vol_fee.factor.unwrap().get(), 0.0002);
-        assert!(vol_fee.effective_from_timestamp.is_some());
     }
 
     #[test]
@@ -376,7 +363,6 @@ mod tests {
         );
 
         assert!(config.ipfs.is_none());
-        assert!(config.volume_fee.is_none());
         assert!(config.unsupported_tokens.is_empty());
         assert!(config.banned_users.addresses.is_empty());
         assert!(!config.eip1271_skip_creation_validation);
@@ -407,10 +393,6 @@ mod tests {
             app_data_size_limit: 4096,
             app_data_cache_max_bytes: 1_048_576,
             active_order_competition_threshold: 10,
-            volume_fee: Some(VolumeFeeConfig {
-                factor: Some(0.0002.try_into().unwrap()),
-                effective_from_timestamp: None,
-            }),
             fee_engine: Default::default(),
             unsupported_tokens: vec![
                 "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
@@ -442,17 +424,6 @@ mod tests {
         assert_eq!(
             config.active_order_competition_threshold,
             deserialized.active_order_competition_threshold
-        );
-        assert!(deserialized.volume_fee.is_some());
-        assert_eq!(
-            config.volume_fee.as_ref().unwrap().factor.unwrap().get(),
-            deserialized
-                .volume_fee
-                .as_ref()
-                .unwrap()
-                .factor
-                .unwrap()
-                .get()
         );
         assert_eq!(config.unsupported_tokens, deserialized.unsupported_tokens);
         assert_eq!(

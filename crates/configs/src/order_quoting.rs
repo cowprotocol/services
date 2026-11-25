@@ -1,4 +1,4 @@
-use {crate::fee_factor::FeeFactor, serde::Deserialize, std::time::Duration, url::Url};
+use {serde::Deserialize, std::time::Duration, url::Url};
 
 const fn default_eip1271_onchain_quote_validity() -> Duration {
     Duration::from_mins(10)
@@ -59,11 +59,6 @@ pub struct OrderQuoting {
     /// forcing the solver to execute at the advantageous price.
     #[serde(with = "humantime_serde", default = "default_fast_path_quote_validity")]
     pub fast_path_quote_validity: Duration,
-
-    /// Deprecated and ignored: `[fee-engine.partner-fees]` caps the partner
-    /// fees. Kept so that a config that still sets it loads.
-    #[serde(default)]
-    pub max_partner_fee: Option<FeeFactor>,
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -95,7 +90,6 @@ impl crate::test_util::TestDefault for OrderQuoting {
             presign_onchain_quote_validity: default_presign_onchain_quote_validity(),
             standard_offchain_quote_validity: default_standard_offchain_quote_validity(),
             fast_path_quote_validity: default_fast_path_quote_validity(),
-            max_partner_fee: None,
         }
     }
 }
@@ -124,7 +118,6 @@ mod tests {
             Duration::from_mins(1)
         );
         assert_eq!(config.fast_path_quote_validity, Duration::from_secs(30));
-        assert!(config.max_partner_fee.is_none());
     }
 
     #[test]
@@ -134,7 +127,6 @@ mod tests {
         presign-onchain-quote-validity = "20m"
         standard-offchain-quote-validity = "30s"
         fast-path-quote-validity = "3s"
-        max-partner-fee = 0.01
 
         [[price-estimation-drivers]]
         name = "test-solver"
@@ -160,7 +152,6 @@ mod tests {
             Duration::from_secs(30)
         );
         assert_eq!(config.fast_path_quote_validity, Duration::from_secs(3));
-        assert_eq!(config.max_partner_fee.map(|f| f.get()), Some(0.01));
     }
 
     #[test]
@@ -198,7 +189,6 @@ mod tests {
             presign_onchain_quote_validity: Duration::from_secs(600),
             standard_offchain_quote_validity: Duration::from_secs(60),
             fast_path_quote_validity: Duration::from_secs(5),
-            max_partner_fee: Some(FeeFactor::try_from(0.01).unwrap()),
         };
         let serialized = toml::to_string(&config).unwrap();
         let deserialized: OrderQuoting = toml::from_str(&serialized).unwrap();
