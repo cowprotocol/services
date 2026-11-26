@@ -845,7 +845,7 @@ fn settling_driver_answer(
         "solver": signers[0].to_string(),
         "networkFee": "0",
         "transaction": base64::engine::general_purpose::STANDARD
-            .encode(bincode::serialize(&transaction).unwrap()),
+            .encode(wincode::serialize(&transaction).unwrap()),
     })
 }
 
