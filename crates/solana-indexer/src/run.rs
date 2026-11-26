@@ -233,7 +233,12 @@ fn mark_started(startup: &Option<AtomicBool>) {
 /// Retries the yellowstone connection until it succeeds.
 async fn connect_yellowstone(config: &config::Yellowstone) -> GeyserGrpcClient {
     loop {
-        match yellowstone::connect(config.endpoint.clone(), config.x_token.clone()).await {
+        match yellowstone::connect(
+            config.endpoint.clone(),
+            config.x_token.clone().map(serde_ext::Env::into_inner),
+        )
+        .await
+        {
             Ok(client) => return client,
             Err(err) => {
                 tracing::error!(?err, "yellowstone connection failed");

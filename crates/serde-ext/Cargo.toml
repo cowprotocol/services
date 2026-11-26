@@ -18,6 +18,7 @@ url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 serde-ext = { path = ".", features = ["solana"] }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

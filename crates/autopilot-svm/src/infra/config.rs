@@ -4,12 +4,11 @@ use {
     configs::{
         autopilot::fee_policy::FeePoliciesConfig,
         database::DatabasePoolConfig,
-        deserialize_env::deserialize_string_from_env,
         shared::LoggingConfig,
     },
     cow_settlement_interface::pda::state::STATE_PDA_SEEDS,
     serde::Deserialize,
-    serde_ext::{deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
+    serde_ext::{Env, deserialize_nonempty_vec, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
     std::{net::SocketAddr, num::NonZero, path::Path, time::Duration},
     tokio::fs,
@@ -161,8 +160,7 @@ pub struct CoinGecko {
     /// header. Empty sends none. A value like `%COIN_GECKO_API_KEY` reads
     /// the key from that environment variable, keeping the literal out of
     /// the config file, and fails the load when the variable is unset.
-    #[serde(deserialize_with = "deserialize_string_from_env")]
-    pub api_key: String,
+    pub api_key: Env<String, true>,
     /// Age past which a price is stale and its token counts as unpriced by
     /// CoinGecko, which keeps answering with the last price of a token whose
     /// market data stopped updating.
@@ -175,7 +173,7 @@ impl Default for CoinGecko {
         Self {
             url: url::Url::parse("https://api.coingecko.com/api/v3/simple/token_price")
                 .expect("valid URL"),
-            api_key: String::new(),
+            api_key: Env(String::new()),
             max_price_age: Duration::from_hours(1),
         }
     }
@@ -418,7 +416,7 @@ mod tests {
         ))
         .unwrap();
         unsafe { std::env::remove_var(var) };
-        assert_eq!(prices.coin_gecko.api_key, "secret");
+        assert_eq!(prices.coin_gecko.api_key.into_inner(), "secret");
         assert_eq!(prices.coin_gecko.max_price_age, Duration::from_mins(10));
         assert!(matches!(
             &prices.estimators[0][..],

@@ -219,7 +219,8 @@ impl NativePrices {
             config::NativePriceEstimator::CoinGecko => Source::CoinGecko {
                 client: client.clone(),
                 endpoint: config.coin_gecko.url.clone(),
-                api_key: Some(config.coin_gecko.api_key.clone()).filter(|key| !key.is_empty()),
+                api_key: Some(config.coin_gecko.api_key.clone().into_inner())
+                    .filter(|key| !key.is_empty()),
                 max_price_age: config.coin_gecko.max_price_age,
             },
             config::NativePriceEstimator::Driver { name, url } => Source::Driver {

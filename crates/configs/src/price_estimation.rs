@@ -3,6 +3,7 @@ use {
     alloy_primitives::{Address, U256, map::HashSet},
     bigdecimal::BigDecimal,
     serde::Deserialize,
+    serde_ext::Env,
     std::{str::FromStr, time::Duration},
     url::Url,
 };
@@ -169,16 +170,13 @@ const fn default_coin_gecko_max_price_age() -> Duration {
     Duration::from_hours(1)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct CoinGeckoConfig {
     /// The API key for the CoinGecko API.
-    #[serde(
-        default,
-        deserialize_with = "crate::deserialize_env::deserialize_string_from_env"
-    )]
-    pub api_key: String,
+    #[serde(default)]
+    pub api_key: Env<String, true>,
 
     /// The base URL for the CoinGecko API.
     #[serde(default = "default_coin_gecko_url")]
@@ -193,22 +191,11 @@ pub struct CoinGeckoConfig {
     pub buffered: Option<CoinGeckoBufferedConfig>,
 }
 
-impl std::fmt::Debug for CoinGeckoConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CoinGeckoConfig")
-            .field("api_key", &"<REDACTED>")
-            .field("url", &self.url)
-            .field("max_price_age", &self.max_price_age)
-            .field("buffered", &self.buffered)
-            .finish()
-    }
-}
-
 #[cfg(any(test, feature = "test-util"))]
 impl crate::test_util::TestDefault for CoinGeckoConfig {
     fn test_default() -> Self {
         Self {
-            api_key: "test-api-key".to_string(),
+            api_key: Env("test-api-key".to_string()),
             url: default_coin_gecko_url(),
             max_price_age: default_coin_gecko_max_price_age(),
             buffered: None,
@@ -385,7 +372,7 @@ mod tests {
         let tenderly = config.tenderly.as_ref().unwrap();
         assert_eq!(tenderly.user, "my-user");
         assert_eq!(tenderly.project, "my-project");
-        assert_eq!(tenderly.api_key, "my-tenderly-key");
+        assert_eq!(*tenderly.api_key, "my-tenderly-key");
         assert!(config.price_estimation_rate_limiter.is_some());
         assert_eq!(
             config.amount_to_estimate_prices_with,
@@ -395,7 +382,7 @@ mod tests {
         assert_eq!(one_inch.api_key, "my-1inch-key");
         assert_eq!(one_inch.url.as_str(), "https://custom.1inch.dev/");
         let coin_gecko = config.coin_gecko.as_ref().unwrap();
-        assert_eq!(coin_gecko.api_key, "my-cg-key");
+        assert_eq!(*coin_gecko.api_key, "my-cg-key");
         assert_eq!(
             coin_gecko.url.as_str(),
             "https://pro-api.coingecko.com/api/v3/simple/token_price"
@@ -442,11 +429,11 @@ mod tests {
                 ..TestDefault::test_default()
             }),
             coin_gecko: Some(CoinGeckoConfig {
-                api_key: "secret".to_string(),
+                api_key: Env("secret".to_string()),
                 ..TestDefault::test_default()
             }),
             tenderly: Some(crate::simulator::TenderlyConfig {
-                api_key: "secret".to_string(),
+                api_key: Env("secret".to_string()),
                 ..TestDefault::test_default()
             }),
             ..Default::default()

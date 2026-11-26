@@ -430,8 +430,8 @@ pub async fn run(config: Configuration) {
             config.banned_users.hermod.clone().map(|hermod| {
                 order_validation::banned::HermodConfig {
                     url: hermod.url,
-                    hmac_key: hermod.hmac_key,
-                    api_key: hermod.api_key,
+                    hmac_key: hermod.hmac_key.into_inner(),
+                    api_key: hermod.api_key.map(|key| key.into_inner()),
                     refresh_interval: hermod.refresh_interval,
                     max_idle: hermod.max_idle,
                 }
@@ -460,7 +460,7 @@ pub async fn run(config: Configuration) {
         .map(|ipfs| {
             let pinata_query = ipfs
                 .auth_token
-                .map(|auth| format!("pinataGatewayToken={auth}"));
+                .map(|auth| format!("pinataGatewayToken={}", *auth));
             Ipfs::new(http_factory.builder(), ipfs.gateway, pinata_query)
         })
         .map(IpfsAppData::new);

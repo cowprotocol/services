@@ -2,6 +2,7 @@ use {
     crate::gas_price_estimation::{default_past_blocks, default_reward_percentile},
     alloy_primitives::Address,
     serde::{Deserialize, Serialize},
+    serde_ext::Env,
     std::time::Duration,
     url::Url,
 };
@@ -74,7 +75,7 @@ pub enum SimulatorKind {
 }
 
 /// Tenderly API arguments.
-#[derive(Default, Clone, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct TenderlyConfig {
     /// The Tenderly user associated with the API key.
@@ -89,11 +90,8 @@ pub struct TenderlyConfig {
     /// skipped in access lists estimators.
     /// Supports reading from an environment variable with the `%ENV_VAR`
     /// format.
-    #[serde(
-        default,
-        deserialize_with = "crate::deserialize_env::deserialize_string_from_env"
-    )]
-    pub api_key: String,
+    #[serde(default)]
+    pub api_key: Env<String, true>,
 
     /// The URL of the Tenderly API.
     #[serde(default)]
@@ -111,20 +109,6 @@ pub struct TenderlyConfig {
     /// Save the transaction even in the case of failure.
     #[serde(default)]
     pub save_if_fails: bool,
-}
-
-impl std::fmt::Debug for TenderlyConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TenderlyConfig")
-            .field("user", &self.user)
-            .field("project", &self.project)
-            .field("api_key", &"<REDACTED>")
-            .field("url", &self.url)
-            .field("dashboard", &self.dashboard)
-            .field("save", &self.save)
-            .field("save_if_fails", &self.save_if_fails)
-            .finish()
-    }
 }
 
 #[cfg(any(test, feature = "test-util"))]
@@ -195,7 +179,7 @@ mod tests {
             SimulatorKind::Tenderly(tenderly) => {
                 assert_eq!(tenderly.user, "test-user");
                 assert_eq!(tenderly.project, "test-project");
-                assert_eq!(tenderly.api_key, "test-api-key");
+                assert_eq!(*tenderly.api_key, "test-api-key");
             }
             _ => panic!("Config should be of type Tenderly"),
         };
@@ -225,7 +209,7 @@ mod tests {
         match config.simulator.kind {
             SimulatorKind::Tenderly(tenderly) => {
                 assert_eq!(tenderly.user, "test-user");
-                assert_eq!(tenderly.api_key, "test-api-key");
+                assert_eq!(*tenderly.api_key, "test-api-key");
             }
             _ => panic!("Config should be of type Tenderly"),
         };

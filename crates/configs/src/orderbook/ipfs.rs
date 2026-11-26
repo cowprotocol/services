@@ -1,53 +1,19 @@
 use {
-    serde::{Deserialize, Deserializer, Serialize},
-    std::fmt::Debug,
+    serde::{Deserialize, Serialize},
+    serde_ext::Env,
     url::Url,
 };
 
-/// The IPFS authentication token is injected by 1Password directly into the
-/// Pod's environment, completely bypassing Pulumi and making it unusable in the
-/// configuration file. Since the token does not contain `%` this is a
-/// workaround to allow the token to be read from the environment.
-fn deserialize_auth_token<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let Some(raw_auth_token) = Option::<String>::deserialize(deserializer)? else {
-        return Ok(None);
-    };
-    if let Some(env_var_name) = raw_auth_token.strip_prefix("%") {
-        let env_var_contents = std::env::var(env_var_name).map_err(|err| {
-            tracing::error!(%err, %env_var_name, "failed to load env var");
-            serde::de::Error::invalid_value(
-                serde::de::Unexpected::Str(env_var_name),
-                &"expected environment variable to be available",
-            )
-        })?;
-        Ok(Some(env_var_contents))
-    } else {
-        Ok(Some(raw_auth_token))
-    }
-}
-
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct IpfsConfig {
     /// IPFS gateway to fetch full app data for orders that only specify the
     /// contract app data hash.
     pub gateway: Url,
 
-    /// Authentication key for Pinata IPFS gateway.
-    #[serde(deserialize_with = "deserialize_auth_token")]
-    pub auth_token: Option<String>,
-}
-
-impl Debug for IpfsConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IpfsConfig")
-            .field("gateway", &self.gateway)
-            .field("auth_token", &"<REDACTED>")
-            .finish()
-    }
+    /// Authentication key for Pinata IPFS gateway. A value like
+    /// `%IPFS_PINATA_AUTH` reads the key from that environment variable.
+    pub auth_token: Option<Env<String, true>>,
 }
 
 #[cfg(test)]
@@ -58,15 +24,9 @@ mod tests {
     fn auth_token_is_redacted() {
         let config = IpfsConfig {
             gateway: Url::parse("https://google.com").unwrap(),
-            auth_token: None,
+            auth_token: Some(Env("SOME_TOKEN".to_string())),
         };
-        assert!(format!("{:?}", config).contains(r#"auth_token: "<REDACTED>""#));
-
-        let config = IpfsConfig {
-            gateway: Url::parse("https://google.com").unwrap(),
-            auth_token: Some("SOME_TOKEN".to_string()),
-        };
-        assert!(format!("{:?}", config).contains(r#"auth_token: "<REDACTED>""#));
+        assert!(format!("{:?}", config).contains(r#"auth_token: Some("<REDACTED>")"#));
     }
 
     #[test]
@@ -80,7 +40,7 @@ mod tests {
             config.gateway.as_str(),
             "https://gateway.pinata.cloud/ipfs/"
         );
-        assert_eq!(config.auth_token.unwrap(), "my-secret-key");
+        assert_eq!(config.auth_token.unwrap().into_inner(), "my-secret-key");
     }
 
     #[test]
@@ -97,7 +57,7 @@ mod tests {
             "#,
         );
         let config: IpfsConfig = toml::from_str(&toml).unwrap();
-        assert_eq!(config.auth_token.as_deref(), Some(env_var_value));
+        assert_eq!(config.auth_token.unwrap().into_inner(), env_var_value);
 
         // SAFETY: no other threads access this env var.
         unsafe { std::env::remove_var(env_var_name) };
@@ -107,7 +67,7 @@ mod tests {
     fn roundtrip_serialization() {
         let config = IpfsConfig {
             gateway: "https://gateway.pinata.cloud/ipfs/".parse().unwrap(),
-            auth_token: Some("my-secret-key".to_string()),
+            auth_token: Some(Env("my-secret-key".to_string())),
         };
 
         let serialized = toml::to_string_pretty(&config).unwrap();
