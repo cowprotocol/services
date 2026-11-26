@@ -460,9 +460,36 @@ pub fn invalid_dto(err: &impl std::error::Error, dto: &str) {
     tracing::warn!(?err, ?dto, "received invalid dto");
 }
 
-/// Observe that the quoting process is about to start.
-pub fn quoting(order: &quote::Order) {
+/// Observe that the quoting process is about to start. The returned guard must
+/// be held for the lifetime of the request; dropping it counts the request out
+/// of the in-flight gauge.
+#[must_use]
+pub fn quoting(solver: &solver::Name, order: &quote::Order) -> QuoteInFlight {
     tracing::trace!(?order, "quoting");
+    let remaining = (order.deadline - chrono::Utc::now()).num_milliseconds();
+    let metrics = metrics::get();
+    metrics
+        .quote_deadline_remaining_on_arrival
+        .with_label_values(&[solver.as_str()])
+        .observe(remaining.max(0) as f64 / 1000.);
+    metrics
+        .quote_in_flight
+        .with_label_values(&[solver.as_str()])
+        .inc();
+    QuoteInFlight(solver.as_str().to_owned())
+}
+
+/// Decrements the in-flight gauge on drop, so early returns and cancelled
+/// requests are counted out too.
+pub struct QuoteInFlight(String);
+
+impl Drop for QuoteInFlight {
+    fn drop(&mut self) {
+        metrics::get()
+            .quote_in_flight
+            .with_label_values(&[self.0.as_str()])
+            .dec();
+    }
 }
 
 fn competition_error(err: &competition::Error) -> &'static str {
