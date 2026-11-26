@@ -48,7 +48,7 @@ pub struct QuoteResponse {
     #[serde_as(as = "DisplayFromStr")]
     pub network_fee: u64,
     /// The unsigned settlement of the `owner`'s quoted order (see
-    /// `solana_token::quote::QuoteOrder`), bincode-serialized. Absent without
+    /// `solana_token::quote::QuoteOrder`), in the wire format. Absent without
     /// an `owner` or when it could not be built.
     #[serde_as(as = "Option<Base64>")]
     #[serde(skip_serializing_if = "Option::is_none")]
