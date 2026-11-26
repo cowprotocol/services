@@ -11,7 +11,7 @@ use {
     serde::Deserialize,
     sha2::Sha256,
     std::{
-        collections::HashSet,
+        collections::{HashMap, HashSet},
         time::{Duration, Instant},
     },
     url::Url,
@@ -20,9 +20,6 @@ use {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 /// Hermod rejects batches with more unique signatures than this.
 const MAX_BATCH_SIZE: usize = 1000;
-/// How long a reported threat stays banned while Hermod cannot be reached.
-const BANNED_FALLBACK_TTL: Duration = Duration::from_secs(10 * 60);
-const BANNED_FALLBACK_CAPACITY: u64 = 1000;
 
 /// Configuration for the Hermod (zeroShadow) sanctioned-address checker.
 #[derive(Debug, Clone)]
@@ -53,6 +50,15 @@ struct Hit {
     hashed_address: B256,
 }
 
+/// What Hermod reports for an address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Status {
+    Banned,
+    NotBanned,
+    /// The request failed, so Hermod gave no verdict.
+    Unknown,
+}
+
 pub(super) struct Client {
     client: reqwest::Client,
     endpoint: Url,
@@ -61,8 +67,6 @@ pub(super) struct Client {
     /// HMAC signature of each recently checked address, so repeated checks
     /// do not compute it again.
     signatures: Cache<Address, B256>,
-    /// Recent threats, used only when a batch request fails.
-    recently_banned: Cache<Address, ()>,
 }
 
 impl Client {
@@ -88,10 +92,6 @@ impl Client {
                 .max_capacity(max_cached_signatures)
                 .eviction_policy(EvictionPolicy::lru())
                 .build(),
-            recently_banned: Cache::builder()
-                .max_capacity(BANNED_FALLBACK_CAPACITY)
-                .time_to_live(BANNED_FALLBACK_TTL)
-                .build(),
         }
     }
 
@@ -105,10 +105,12 @@ impl Client {
         })
     }
 
-    /// Returns the subset of `addresses` that Hermod reports as threats.
-    /// If a batch request fails, its addresses that Hermod reported in the
-    /// last [`BANNED_FALLBACK_TTL`] stay banned; the others pass.
-    pub(super) async fn banned(&self, addresses: &HashSet<Address>) -> HashSet<Address> {
+    /// Returns the status of each address. The addresses of a failed batch
+    /// request are [`Status::Unknown`].
+    pub(super) async fn fetch_statuses(
+        &self,
+        addresses: &HashSet<Address>,
+    ) -> HashMap<Address, Status> {
         let signed: Vec<(B256, Address)> = addresses
             .iter()
             .map(|address| (self.sign(*address), *address))
@@ -116,7 +118,7 @@ impl Client {
         join_all(
             signed
                 .chunks(MAX_BATCH_SIZE)
-                .map(|batch| self.banned_in_batch(batch)),
+                .map(|batch| self.fetch_batch_statuses(batch)),
         )
         .await
         .into_iter()
@@ -126,7 +128,7 @@ impl Client {
 
     /// Checks `batch` with one request. Requires `batch` to have at most
     /// [`MAX_BATCH_SIZE`] items; extra items are not checked.
-    async fn banned_in_batch(&self, batch: &[(B256, Address)]) -> Vec<Address> {
+    async fn fetch_batch_statuses(&self, batch: &[(B256, Address)]) -> Vec<(Address, Status)> {
         let batch = &batch[..batch.len().min(MAX_BATCH_SIZE)];
         let start = Instant::now();
         let result = self.request_batch(batch).await;
@@ -135,48 +137,10 @@ impl Client {
             result.as_ref().ok().map(Vec::len),
             start.elapsed(),
         );
-
-        match result {
-            Ok(hits) => self.map_hits_to_addresses(hits, batch),
-            Err(err) => self.fall_back_to_local_cache(batch, err),
+        if let Err(err) = &result {
+            tracing::warn!(?err, size = batch.len(), "failed to fetch banned status");
         }
-    }
-
-    /// Maps the reported signatures back to their addresses and records them
-    /// in the local cache.
-    fn map_hits_to_addresses(&self, hits: Vec<Hit>, batch: &[(B256, Address)]) -> Vec<Address> {
-        hits.into_iter()
-            .filter_map(|Hit { hashed_address }| {
-                // Linear scan: hits are rare (~10 per mainnet update), and
-                // below ~50 hits per 1000 addresses it beats a HashMap.
-                let Some((_, address)) = batch
-                    .iter()
-                    .find(|(signature, _)| *signature == hashed_address)
-                else {
-                    tracing::warn!(%hashed_address, "hermod returned an unrequested signature");
-                    return None;
-                };
-                self.recently_banned.insert(*address, ());
-                Some(*address)
-            })
-            .collect()
-    }
-
-    /// Addresses in `batch` that Hermod reported in the last
-    /// [`BANNED_FALLBACK_TTL`].
-    fn fall_back_to_local_cache(&self, batch: &[(B256, Address)], err: Error) -> Vec<Address> {
-        let banned: Vec<Address> = batch
-            .iter()
-            .map(|(_, address)| *address)
-            .filter(|address| self.recently_banned.contains_key(address))
-            .collect();
-        tracing::warn!(
-            ?err,
-            size = batch.len(),
-            recently_banned = banned.len(),
-            "failed to fetch banned status, falling back to local cache",
-        );
-        banned
+        statuses_of_batch(batch, result.as_deref().ok())
     }
 
     async fn request_batch(&self, batch: &[(B256, Address)]) -> Result<Vec<Hit>, Error> {
@@ -201,6 +165,25 @@ impl Client {
             status => Err(Error::UnexpectedStatus(status)),
         }
     }
+}
+
+/// Returns the status of each address in `batch`. `hits` are the threats that
+/// Hermod reported for the batch, or `None` if the request failed.
+fn statuses_of_batch(batch: &[(B256, Address)], hits: Option<&[Hit]>) -> Vec<(Address, Status)> {
+    batch
+        .iter()
+        .map(|(signature, address)| {
+            let status = match hits {
+                // Linear scan: hits are rare (~10 per mainnet update).
+                Some(hits) if hits.iter().any(|hit| hit.hashed_address == *signature) => {
+                    Status::Banned
+                }
+                Some(_) => Status::NotBanned,
+                None => Status::Unknown,
+            };
+            (*address, status)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -231,6 +214,24 @@ mod tests {
         assert_eq!(
             hermod.sign(address!("dead000000000000000000000000000000000000")),
             b256!("e146f8bc38fe78f9356be67706a02eb3ce386b4b12a14ab1f76d022020b6cef0"),
+        );
+    }
+
+    #[test]
+    fn batch_statuses_follow_the_response() {
+        let (safe, threat) = (Address::repeat_byte(1), Address::repeat_byte(2));
+        let batch = [(B256::repeat_byte(1), safe), (B256::repeat_byte(2), threat)];
+        let hits = [Hit {
+            hashed_address: B256::repeat_byte(2),
+        }];
+
+        assert_eq!(
+            statuses_of_batch(&batch, Some(&hits)),
+            [(safe, Status::NotBanned), (threat, Status::Banned)],
+        );
+        assert_eq!(
+            statuses_of_batch(&batch, None),
+            [(safe, Status::Unknown), (threat, Status::Unknown)],
         );
     }
 
