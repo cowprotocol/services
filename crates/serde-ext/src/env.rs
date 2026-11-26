@@ -99,6 +99,12 @@ where
         let value = String::deserialize(deserializer)?;
         let value = match value.strip_prefix(ENV_VAR_PREFIX) {
             Some(env_var_name) => std::env::var(env_var_name).map_err(|err| {
+                if let (std::env::VarError::NotUnicode(_), true) = (&err, REDACTED) {
+                    return serde::de::Error::custom(format_args!(
+                        "failed to load environment variable {env_var_name}: full error was \
+                         redacted, variable contents are not unicode"
+                    ));
+                }
                 serde::de::Error::custom(format_args!(
                     "failed to load environment variable {env_var_name}: {err}"
                 ))
