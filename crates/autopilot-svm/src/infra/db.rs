@@ -191,7 +191,7 @@ pub struct StoredCreation {
     pub owner: ByteArray<32>,
     /// The order account the creation opens.
     pub order_pda: ByteArray<32>,
-    /// The owner-signed creation transaction, bincode-encoded.
+    /// The owner-signed creation transaction in the wire format.
     pub transaction: Vec<u8>,
 }
 

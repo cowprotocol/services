@@ -120,7 +120,7 @@ components:
       type: string
       example: "0x0000000000000000000000000000000000000000000000000000000000000000"
     Transaction:
-      description: A serialized Solana transaction, base64 encoded.
+      description: A Solana transaction in the wire format, base64 encoded.
       type: string
     DateTime:
       description: An ISO 8601 UTC date time string.
