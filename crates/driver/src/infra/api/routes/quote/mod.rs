@@ -21,7 +21,7 @@ async fn route(
     let order = order.into_domain();
     let quote_id = order.quote_id.0;
     let handle_request = async {
-        observe::quoting(&order);
+        let _in_flight = observe::quoting(state.solver().name(), &order);
         let result = order
             .quote(
                 state.eth(),
