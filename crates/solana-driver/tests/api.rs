@@ -378,7 +378,7 @@ fn response_ids(body: &serde_json::Value) -> Vec<u64> {
 fn sponsored_solve_request() -> serde_json::Value {
     let mut request = solve_request();
     request["orders"][0]["creation"] = base64::engine::general_purpose::STANDARD
-        .encode(bincode::serialize(&VersionedTransaction::default()).unwrap())
+        .encode(wincode::serialize(&VersionedTransaction::default()).unwrap())
         .into();
     request
 }

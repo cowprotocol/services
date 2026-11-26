@@ -24,7 +24,7 @@ pub(crate) async fn settle(
     let creations: Vec<VersionedTransaction> = request
         .creations
         .iter()
-        .map(|bytes| bincode::deserialize(bytes))
+        .map(|bytes| wincode::deserialize(bytes))
         .collect::<Result<_, _>>()
         .map_err(|_| <(StatusCode, Json<Error>)>::from(Kind::InvalidCreation))?;
     state
