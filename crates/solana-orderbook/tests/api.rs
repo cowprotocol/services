@@ -2689,8 +2689,8 @@ async fn create_order_checks_the_buy_token_account() {
     }
 }
 
-/// An existing sell token account must be the owner's account of the sell
-/// mint. A missing one, or a system account holding only lamports, passes.
+/// An existing sell token account must be the owner's unfrozen account of the
+/// sell mint. A missing one, or a system account holding only lamports, passes.
 /// The lookup answers the sell and buy mints, the Clock sysvar, the buy token
 /// account, then the sell token account.
 #[tokio::test]
@@ -2726,6 +2726,20 @@ async fn create_order_checks_the_sell_token_account() {
     let lamports_only = solana_testlib::account_json(&solana_sdk::account::Account {
         lamports: 1_000_000,
         owner: solana_system_interface::program::ID,
+        ..Default::default()
+    });
+    let mut frozen = vec![0; spl_token_interface::state::Account::LEN];
+    spl_token_interface::state::Account {
+        mint: token.sell.mint,
+        owner: owner.pubkey(),
+        state: spl_token_interface::state::AccountState::Frozen,
+        ..Default::default()
+    }
+    .pack_into_slice(&mut frozen);
+    let frozen = solana_testlib::account_json(&solana_sdk::account::Account {
+        lamports: 2_039_280,
+        owner: spl_token_interface::ID,
+        data: frozen,
         ..Default::default()
     });
     let lookup = |buy_account: serde_json::Value, sell_account: serde_json::Value| {
@@ -2780,6 +2794,13 @@ async fn create_order_checks_the_sell_token_account() {
             &sell,
             None,
             lookup(MISSING, account(&mint, &owner.pubkey())),
+            "InvalidSellTokenAccount",
+        ),
+        (
+            "the owner's frozen token account",
+            &sell,
+            None,
+            lookup(MISSING, frozen),
             "InvalidSellTokenAccount",
         ),
         (
