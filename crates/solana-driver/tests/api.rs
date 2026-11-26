@@ -1626,7 +1626,7 @@ async fn quote_with_an_owner_answers_the_settlement_transaction() {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(json["transaction"].as_str().unwrap())
         .unwrap();
-    let transaction: VersionedTransaction = bincode::deserialize(&bytes).unwrap();
+    let transaction: VersionedTransaction = wincode::deserialize(&bytes).unwrap();
     let keys = transaction.message.static_account_keys();
     assert_eq!(transaction.message.header().num_required_signatures, 1);
     assert_eq!(keys[0], account);
@@ -1676,7 +1676,7 @@ async fn quote_settlement_declares_the_compute_unit_ceiling() {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(json["transaction"].as_str().unwrap())
         .unwrap();
-    let transaction: VersionedTransaction = bincode::deserialize(&bytes).unwrap();
+    let transaction: VersionedTransaction = wincode::deserialize(&bytes).unwrap();
     let VersionedMessage::V1(message) = transaction.message else {
         panic!("quote settlements are v1 messages");
     };

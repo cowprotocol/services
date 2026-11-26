@@ -77,7 +77,7 @@ pub(crate) async fn quote(
                 )
             })
             .ok()
-            .and_then(|transaction| bincode::serialize(&transaction).ok()),
+            .and_then(|transaction| wincode::serialize(&transaction).ok()),
         _ => None,
     };
 

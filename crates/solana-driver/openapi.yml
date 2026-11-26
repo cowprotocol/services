@@ -184,7 +184,7 @@ components:
             - $ref: "#/components/schemas/TokenAmount"
         transaction:
           description: >-
-            The unsigned settlement of the quote, bincode-serialized and
+            The unsigned settlement of the quote, in the wire format and
             base64-encoded. It fills a fill-or-kill order of the quoted
             amounts that the request's `owner` trades through its associated
             token accounts (or its wallet for a native SOL buy), never
