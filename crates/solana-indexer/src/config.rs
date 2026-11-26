@@ -1,13 +1,9 @@
 //! Configuration of the indexer's external endpoints.
 
 use {
-    configs::{
-        database::DatabasePoolConfig,
-        deserialize_env::deserialize_optional_string_from_env,
-        shared::LoggingConfig,
-    },
+    configs::{database::DatabasePoolConfig, shared::LoggingConfig},
     serde::Deserialize,
-    serde_ext::{deserialize_optional_solana_pubkey_b58, deserialize_solana_pubkey_b58},
+    serde_ext::{Env, deserialize_optional_solana_pubkey_b58, deserialize_solana_pubkey_b58},
     solana_sdk::pubkey::Pubkey,
     std::{path::Path, time::Duration},
     tokio::fs,
@@ -87,7 +83,7 @@ pub struct Chain {
 }
 
 /// Yellowstone gRPC stream configuration.
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Yellowstone {
     /// gRPC endpoint, `https` endpoints get TLS.
@@ -95,18 +91,7 @@ pub struct Yellowstone {
     /// Provider authentication token, sent as the x-token header. A value
     /// like `%YELLOWSTONE_X_TOKEN` reads the token from that environment
     /// variable, keeping the literal out of the config file.
-    #[serde(default, deserialize_with = "deserialize_optional_string_from_env")]
-    pub x_token: Option<String>,
-}
-
-/// The manual impl keeps the authentication token out of config logs.
-impl std::fmt::Debug for Yellowstone {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Yellowstone")
-            .field("endpoint", &self.endpoint)
-            .field("x_token", &"REDACTED")
-            .finish()
-    }
+    pub x_token: Option<Env<String, true>>,
 }
 
 /// JSON-RPC client configuration.
@@ -142,7 +127,7 @@ mod tests {
         let toml =
             format!("endpoint = \"https://yellowstone.example.com\"\nx-token = \"%{var}\"\n");
         let parsed: super::Yellowstone = toml::de::from_str(&toml).unwrap();
-        assert_eq!(parsed.x_token.as_deref(), Some("token-value"));
+        assert_eq!(parsed.x_token.unwrap().into_inner(), "token-value");
         unsafe { std::env::remove_var(var) };
     }
 }

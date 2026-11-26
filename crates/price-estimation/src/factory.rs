@@ -282,7 +282,7 @@ impl<'a> PriceEstimatorFactory<'a> {
                 let coin_gecko = native::CoinGecko::new(
                     self.components.http_factory.create(),
                     coin_gecko_config.url.clone(),
-                    Some(coin_gecko_config.api_key.clone()),
+                    Some(coin_gecko_config.api_key.clone().into_inner()),
                     coin_gecko_config.max_price_age,
                     &self.network.chain,
                     *weth.address(),

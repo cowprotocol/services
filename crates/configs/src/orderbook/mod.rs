@@ -335,7 +335,7 @@ mod tests {
 
         let ipfs = config.ipfs.unwrap();
         assert_eq!(ipfs.gateway.as_str(), "https://gateway.pinata.cloud/ipfs/");
-        assert_eq!(ipfs.auth_token.unwrap(), "my-secret-key");
+        assert_eq!(ipfs.auth_token.unwrap().into_inner(), "my-secret-key");
     }
 
     #[test]
@@ -388,7 +388,7 @@ mod tests {
             },
             ipfs: Some(IpfsConfig {
                 gateway: "https://gateway.pinata.cloud/ipfs/".parse().unwrap(),
-                auth_token: Some("secret".to_string()),
+                auth_token: Some(serde_ext::Env("secret".to_string())),
             }),
             app_data_size_limit: 4096,
             app_data_cache_max_bytes: 1_048_576,

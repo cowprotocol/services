@@ -197,13 +197,13 @@ fn pool_indexer_config(
 ) -> Configuration {
     Configuration {
         database: DatabaseConfig {
-            url: POOL_INDEXER_DB_URL.parse().unwrap(),
+            url: url::Url::parse(POOL_INDEXER_DB_URL).unwrap().into(),
             max_connections: NonZeroU32::new(5).unwrap(),
         },
         network: NetworkConfig {
             name: NetworkName::new("mainnet"),
             chain_id: 1,
-            rpc_url: "http://127.0.0.1:8545".parse().unwrap(),
+            rpc_url: url::Url::parse("http://127.0.0.1:8545").unwrap().into(),
             factories: factories
                 .into_iter()
                 .map(|address| FactoryConfig {

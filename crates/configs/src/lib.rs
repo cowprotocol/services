@@ -2,7 +2,6 @@ pub mod autopilot;
 pub mod balance_cache;
 pub mod banned_users;
 pub mod database;
-pub mod deserialize_env;
 pub mod fee_engine;
 pub mod fee_factor;
 pub mod gas_price_estimation;

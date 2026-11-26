@@ -472,8 +472,8 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
             config.banned_users.hermod.clone().map(|hermod| {
                 order_validation::banned::HermodConfig {
                     url: hermod.url,
-                    hmac_key: hermod.hmac_key,
-                    api_key: hermod.api_key,
+                    hmac_key: hermod.hmac_key.into_inner(),
+                    api_key: hermod.api_key.map(|key| key.into_inner()),
                     refresh_interval: hermod.refresh_interval,
                     max_idle: hermod.max_idle,
                 }

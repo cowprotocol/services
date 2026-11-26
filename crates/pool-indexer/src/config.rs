@@ -2,6 +2,7 @@ use {
     alloy_primitives::Address,
     anyhow::{Context, Result},
     serde::Deserialize,
+    serde_ext::Env,
     std::{
         fmt,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
@@ -69,8 +70,7 @@ impl fmt::Display for NetworkName {
 pub struct DatabaseConfig {
     /// Postgres connection URL. Accepts `%ENV_VAR` to pull from the
     /// environment.
-    #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
-    pub url: Url,
+    pub url: Env<Url, true>,
     #[serde(default = "default_max_connections")]
     pub max_connections: NonZeroU32,
 }
@@ -80,8 +80,8 @@ pub struct DatabaseConfig {
 pub struct NetworkConfig {
     pub name: NetworkName,
     pub chain_id: u64,
-    #[serde(deserialize_with = "configs::deserialize_env::deserialize_url_from_env")]
-    pub rpc_url: Url,
+    /// RPC node URL. Accepts `%ENV_VAR` to pull from the environment.
+    pub rpc_url: Env<Url, true>,
     /// Uniswap V3 factories to index; non-empty and unique, enforced at parse.
     #[serde(deserialize_with = "serde_ext::deserialize_nonempty_unique_vec")]
     pub factories: Vec<FactoryConfig>,
