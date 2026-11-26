@@ -19,10 +19,17 @@ use {
         infra::metrics,
     },
     alloy::primitives::U256,
+    moka::future::Cache,
     reqwest::Url,
-    std::{cmp, collections::HashSet, sync::Arc},
+    std::{cmp, collections::HashSet, sync::Arc, time::Duration},
     tracing::Instrument,
 };
+
+/// How long a native price derived from a route search stays reusable.
+const NATIVE_PRICE_TTL: Duration = Duration::from_secs(300);
+
+/// Max number of distinct sell tokens whose native price is kept.
+const MAX_CACHED_NATIVE_PRICES: u64 = 1000;
 
 pub struct Solver(Arc<Inner>);
 
@@ -94,6 +101,10 @@ struct Inner {
 
     /// If provided, the solver can rely on Uniswap V3 LPs
     uni_v3_quoter_v2: Option<Arc<contracts::UniswapV3QuoterV2::Instance>>,
+
+    /// Native prices derived from a route search, keyed by sell token. That
+    /// search is a second full path-find on top of the one solving the order.
+    native_prices: Cache<eth::TokenAddress, auction::Price>,
 }
 
 impl Solver {
@@ -121,6 +132,10 @@ impl Solver {
             solution_gas_offset: config.solution_gas_offset,
             native_token_price_estimation_amount: config.native_token_price_estimation_amount,
             uni_v3_quoter_v2,
+            native_prices: Cache::builder()
+                .max_capacity(MAX_CACHED_NATIVE_PRICES)
+                .time_to_live(NATIVE_PRICE_TTL)
+                .build(),
         }))
     }
 
@@ -181,31 +196,38 @@ impl Inner {
                     auction::Price(eth::Ether(eth::U256::from(10).pow(eth::U256::from(18))))
                 }
                 None => {
-                    // Estimate the price of the sell token in the native token
-                    let native_price_request = self.native_price_request(&order);
-                    match boundary_solver
-                        .route(native_price_request, self.max_hops)
-                        .await
-                    {
-                        Some(route) => {
-                            // how many units of buy_token are bought for one
-                            // unit of sell_token
-                            // (buy_amount / sell_amount).
-                            let price = f64::from(self.native_token_price_estimation_amount)
-                                / f64::from(route.input().amount);
-                            let Some(price) = to_normalized_price(price) else {
-                                continue;
-                            };
-
-                            auction::Price(eth::Ether(price))
-                        }
-                        _ => {
-                            // This is to allow quotes to be generated for
-                            // tokens for which the sell
-                            // token price is not available, so we default to
-                            // fee=0
-                            auction::Price(eth::Ether(eth::U256::MAX))
-                        }
+                    let cached = self
+                        .native_prices
+                        .optionally_get_with(sell_token, async {
+                            // Estimate the price of the sell token in the native token
+                            let native_price_request = self.native_price_request(&order);
+                            match boundary_solver
+                                .route(native_price_request, self.max_hops)
+                                .await
+                            {
+                                Some(route) => {
+                                    // how many units of buy_token are bought for one
+                                    // unit of sell_token
+                                    // (buy_amount / sell_amount).
+                                    let price =
+                                        f64::from(self.native_token_price_estimation_amount)
+                                            / f64::from(route.input().amount);
+                                    to_normalized_price(price)
+                                        .map(|price| auction::Price(eth::Ether(price)))
+                                }
+                                _ => {
+                                    // This is to allow quotes to be generated for
+                                    // tokens for which the sell
+                                    // token price is not available, so we default to
+                                    // fee=0
+                                    Some(auction::Price(eth::Ether(eth::U256::MAX)))
+                                }
+                            }
+                        })
+                        .await;
+                    match cached {
+                        Some(price) => price,
+                        None => continue,
                     }
                 }
             };
