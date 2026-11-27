@@ -78,7 +78,7 @@ pub struct Config {
     /// decide its quote before a cut takes it without one. Zero holds no
     /// order, which suits an orderbook that does not quote such orders.
     #[serde(with = "humantime_serde", default)]
-    pub quote_link_grace: Duration,
+    pub quote_link_grace_period: Duration,
     /// Take a leader lock in the database, so several instances can run and
     /// only the one holding it cuts auctions.
     #[serde(default)]
@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(config.max_auction_age, Duration::from_secs(5 * 60));
         assert_eq!(config.min_auction_interval, Duration::from_secs(2));
         assert_eq!(config.max_indexer_lag_slots, 150);
-        assert_eq!(config.quote_link_grace, Duration::from_secs(10));
+        assert_eq!(config.quote_link_grace_period, Duration::from_secs(10));
         assert!(config.enable_leader_lock);
         assert_eq!(config.db_cleanup.cleanup_interval, Duration::from_hours(24));
         assert_eq!(
@@ -411,12 +411,12 @@ mod tests {
 
     /// A config without the key holds no order for its quote.
     #[test]
-    fn quote_link_grace_defaults_to_zero() {
+    fn quote_link_grace_period_defaults_to_zero() {
         let example = std::fs::read_to_string("example.toml").unwrap();
-        let without = example.replace("quote-link-grace = \"10s\"\n", "");
+        let without = example.replace("quote-link-grace-period = \"10s\"\n", "");
         assert_ne!(without, example);
         let config: Config = toml::de::from_str(&without).unwrap();
-        assert_eq!(config.quote_link_grace, Duration::ZERO);
+        assert_eq!(config.quote_link_grace_period, Duration::ZERO);
     }
 
     #[test]

@@ -190,7 +190,7 @@ async fn run(config: Config) {
                 "auction_provider",
             ),
             config.max_indexer_lag_slots,
-            config.quote_link_grace,
+            config.quote_link_grace_period,
             prices,
             config.contracts.state_pda(),
             ProtocolFees::new(config.fee_policies.clone()),

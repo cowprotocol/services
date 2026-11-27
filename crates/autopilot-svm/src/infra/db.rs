@@ -237,10 +237,11 @@ WHERE uid = $1 AND last_valid_block_height IS NOT NULL
     Ok(())
 }
 
-/// Stop waiting for the quote decision of every order that waited `grace`
-/// or longer, answering how many. A row another transaction holds is left
-/// for a later call: its writer may be linking the quote.
-pub async fn time_out_quote_holds(ex: impl PgExecutor<'_>, grace: Duration) -> Result<u64> {
+/// Clears `quote_pending` on every order created at least `grace_period` ago,
+/// so the next cut takes it without a quote. Returns how many it cleared. A
+/// row locked by another transaction is skipped, since the orderbook may be
+/// linking its quote.
+pub async fn time_out_quote_holds(ex: impl PgExecutor<'_>, grace_period: Duration) -> Result<u64> {
     let _timer = query_timer("time_out_quote_holds");
     const QUERY: &str = r#"
 UPDATE solana.orders SET quote_pending = false
@@ -250,10 +251,10 @@ WHERE uid IN (
     FOR UPDATE SKIP LOCKED)
     "#;
     let result = sqlx::query(QUERY)
-        .bind(grace.as_secs_f64())
+        .bind(grace_period.as_secs_f64())
         .execute(ex)
         .await
-        .context("time out solana.orders quote holds")?;
+        .context("clear solana.orders.quote_pending after the grace period")?;
     Ok(result.rows_affected())
 }
 
@@ -1373,7 +1374,7 @@ WHERE uid = $1
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1]);
 
-        // The order waited less than the grace.
+        // The order waited less than the grace period.
         let timed_out = time_out_quote_holds(&mut *tx, Duration::from_secs(10))
             .await
             .unwrap();
@@ -1381,7 +1382,7 @@ WHERE uid = $1
         let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
         assert_eq!(uids(orders), vec![1]);
 
-        // A zero grace releases an order stamped in the same instant.
+        // A zero grace period releases an order stamped in the same instant.
         let timed_out = time_out_quote_holds(&mut *tx, Duration::ZERO)
             .await
             .unwrap();

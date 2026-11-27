@@ -43,7 +43,7 @@ pub struct DbAuctionProvider {
     last_block_height: Mutex<Option<i64>>,
     /// How long an order may wait for its quote decision before a cut takes
     /// it without one.
-    quote_link_grace: Duration,
+    quote_link_grace_period: Duration,
 }
 
 impl DbAuctionProvider {
@@ -51,7 +51,7 @@ impl DbAuctionProvider {
         pool: PgPool,
         rpc: SolanaRPC,
         max_indexer_lag: u64,
-        quote_link_grace: Duration,
+        quote_link_grace_period: Duration,
         prices: NativePrices,
         state_pda: Pubkey,
         protocol_fees: ProtocolFees,
@@ -65,7 +65,7 @@ impl DbAuctionProvider {
             protocol_fees,
             mints: MintVerdicts::default(),
             last_block_height: Mutex::default(),
-            quote_link_grace,
+            quote_link_grace_period,
         }
     }
 
@@ -303,10 +303,10 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         // cut drops the dead ones.
         let block_height = self.block_height().await;
         // An order waiting for its quote decision stays out of the cut. One
-        // that waited out the grace is released right before the orders are
-        // read and goes in without a quote. A failed release leaves the
+        // that waited out the grace period is released right before the orders
+        // are read and goes in without a quote. A failed release leaves the
         // waiting orders out and the cut goes on.
-        match db::time_out_quote_holds(&self.pool, self.quote_link_grace).await {
+        match db::time_out_quote_holds(&self.pool, self.quote_link_grace_period).await {
             Ok(timed_out) => metrics().quote_holds_timed_out.inc_by(timed_out),
             Err(err) => tracing::warn!(?err, "failed to time out the quote holds"),
         }
@@ -456,7 +456,7 @@ struct Metrics {
     /// counter is the alerting signal for a stalled indexer.
     lag_skipped_cuts: prometheus::IntCounter,
     /// Orders released into the cuts without a quote decision, because they
-    /// waited for it longer than the grace.
+    /// waited for it longer than the grace period.
     quote_holds_timed_out: prometheus::IntCounter,
 }
 
