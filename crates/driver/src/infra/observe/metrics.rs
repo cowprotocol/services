@@ -78,6 +78,21 @@ pub struct Metrics {
         buckets(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5)
     )]
     pub solve_request_body_time: prometheus::HistogramVec,
+
+    /// Quote requests currently in the handler. Nothing bounds this, so it is
+    /// also the queue depth.
+    #[metric(labels("solver"))]
+    pub quote_in_flight: prometheus::IntGaugeVec,
+
+    /// Time left against the quote deadline when the request reached the
+    /// handler. The gap to the full deadline is what was spent upstream of the
+    /// driver; the gap to `remaining_solve_time` is what the driver spends
+    /// before solving.
+    #[metric(
+        labels("solver"),
+        buckets(0., 0.25, 0.5, 0.75, 1., 1.25, 1.5, 1.75, 2., 2.5, 3., 3.5)
+    )]
+    pub quote_deadline_remaining_on_arrival: prometheus::HistogramVec,
 }
 
 impl Metrics {
