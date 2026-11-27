@@ -264,6 +264,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             pool.clone(),
             mock_rpc(),
             150,
+            Duration::ZERO,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
             fees.clone(),
@@ -297,6 +298,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             pool.clone(),
             mock_rpc(),
             150,
+            Duration::ZERO,
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
             fees.clone(),
@@ -414,6 +416,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         pool.clone(),
         mock_rpc(),
         u64::MAX,
+        Duration::ZERO,
         NativePrices::seeded(test_prices()),
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
         fees,
@@ -477,4 +480,46 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
     .await
     .expect("order events written before the timeout");
     assert_eq!(events, ["executing", "filtered", "ready"]);
+}
+
+/// A cut leaves out an order waiting for its quote decision and takes it
+/// once the order waited out the grace period.
+#[tokio::test]
+#[ignore = "needs the solana.* schema applied to the local database"]
+async fn solana_db_cut_holds_an_order_until_its_quote_grace_period_passes() {
+    let pool = crate::test_db::pool().await;
+    let tip = 500_u64;
+    seed_open_order(&pool, [0x11; 32], i64::try_from(tip).unwrap()).await;
+    sqlx::query(
+        "UPDATE solana.orders SET quote_pending = true, creation_timestamp = now() - interval '5 \
+         seconds'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let provider = |grace_period| {
+        DbAuctionProvider::new(
+            pool.clone(),
+            mock_rpc(),
+            150,
+            grace_period,
+            NativePrices::seeded(test_prices()),
+            solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
+            ProtocolFees::default(),
+        )
+    };
+    assert!(
+        matches!(
+            provider(Duration::from_secs(60)).cut_auction(&tip).await,
+            NextAuction::Empty
+        ),
+        "order held within the grace period"
+    );
+    assert!(
+        matches!(
+            provider(Duration::from_secs(1)).cut_auction(&tip).await,
+            NextAuction::Auction(_)
+        ),
+        "order cut once the grace period passed"
+    );
 }

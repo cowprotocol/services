@@ -105,6 +105,7 @@ FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 LEFT JOIN solana.order_quotes q ON q.order_uid = o.uid
 WHERE o.valid_to >= $1
+  AND NOT o.quote_pending
   AND NOT COALESCE(p.is_reorged, false)
   AND (o.valid_from IS NULL OR o.valid_from <= $1)
   AND (o.intent_signature IS NOT NULL
@@ -234,6 +235,27 @@ WHERE uid = $1 AND last_valid_block_height IS NOT NULL
         .await
         .context("expire the solana.orders creation")?;
     Ok(())
+}
+
+/// Clears `quote_pending` on every order created at least `grace_period` ago,
+/// so the next cut takes it without a quote. Returns how many it cleared. A
+/// row locked by another transaction is skipped, since the orderbook may be
+/// linking its quote.
+pub async fn time_out_quote_holds(ex: impl PgExecutor<'_>, grace_period: Duration) -> Result<u64> {
+    let _timer = query_timer("time_out_quote_holds");
+    const QUERY: &str = r#"
+UPDATE solana.orders SET quote_pending = false
+WHERE uid IN (
+    SELECT uid FROM solana.orders
+    WHERE quote_pending AND creation_timestamp <= now() - make_interval(secs => $1)
+    FOR UPDATE SKIP LOCKED)
+    "#;
+    let result = sqlx::query(QUERY)
+        .bind(grace_period.as_secs_f64())
+        .execute(ex)
+        .await
+        .context("clear solana.orders.quote_pending after the grace period")?;
+    Ok(result.rows_affected())
 }
 
 /// Open a settlement-execution window for a dispatched settlement.
@@ -903,6 +925,7 @@ mod tests {
             remove_expired_quotes,
             revert_settlement_window,
             skip_settlement_window,
+            time_out_quote_holds,
             unrecorded_dead_creations,
         },
         bigdecimal::{BigDecimal, ToPrimitive},
@@ -910,6 +933,7 @@ mod tests {
         chrono::Utc,
         database::byte_array::ByteArray,
         sqlx::PgTransaction,
+        std::time::Duration,
     };
 
     fn conversion_row() -> super::OrderRow {
@@ -1320,6 +1344,80 @@ WHERE uid = $1
         assert_eq!(uids(orders), vec![1, 5, 6, 10, 11]);
         let orders = open_orders(&mut *tx, 1_000, Some(151)).await.unwrap();
         assert_eq!(uids(orders), vec![1, 5, 6, 11]);
+    }
+
+    /// An order waiting for its quote decision stays out of the cut until the
+    /// wait is timed out.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_open_orders_skip_orders_awaiting_a_quote() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+
+        for table in ["trades", "order_pda", "order_quotes", "orders"] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
+        insert_order(&mut tx, 2, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query("UPDATE solana.orders SET quote_pending = true WHERE uid = $1")
+            .bind(ByteArray([2u8; 32]))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+
+        let uids = |orders: Vec<super::OrderRow>| -> Vec<u8> {
+            orders.iter().map(|order| order.uid.0[0]).collect()
+        };
+        let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
+        assert_eq!(uids(orders), vec![1]);
+
+        // The order waited less than the grace period.
+        let timed_out = time_out_quote_holds(&mut *tx, Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(timed_out, 0);
+        let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
+        assert_eq!(uids(orders), vec![1]);
+
+        // A zero grace period releases an order stamped in the same instant.
+        let timed_out = time_out_quote_holds(&mut *tx, Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(timed_out, 1);
+        let orders = open_orders(&mut *tx, 1_000, None).await.unwrap();
+        assert_eq!(uids(orders), vec![1, 2]);
+    }
+
+    /// The timeout leaves a waiting order whose row another transaction
+    /// holds, the writer about to link its quote.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_quote_hold_timeout_skips_a_locked_row() {
+        let pool = crate::test_db::pool().await;
+        crate::test_db::wipe(&pool).await;
+        let mut tx = pool.begin().await.unwrap();
+        insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
+        sqlx::query("UPDATE solana.orders SET quote_pending = true")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        let mut linking = pool.begin().await.unwrap();
+        sqlx::query("SELECT 1 FROM solana.orders WHERE uid = $1 FOR UPDATE")
+            .bind(ByteArray([1u8; 32]))
+            .execute(&mut *linking)
+            .await
+            .unwrap();
+        let timed_out = time_out_quote_holds(&pool, Duration::ZERO).await.unwrap();
+        assert_eq!(timed_out, 0);
+
+        linking.rollback().await.unwrap();
+        let timed_out = time_out_quote_holds(&pool, Duration::ZERO).await.unwrap();
+        assert_eq!(timed_out, 1);
     }
 
     /// A pending sponsored order counts once the chain passes its stored

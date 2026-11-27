@@ -11,6 +11,9 @@ max-auction-age = "5m"
 min-auction-interval = "2s"
 # Slots the indexer may lag behind the tip before auction cuts are skipped.
 max-indexer-lag-slots = 150
+# How long an order created on chain may wait for the orderbook to decide its
+# quote before a cut takes it without one. Zero, the default, holds no order.
+quote-link-grace-period = "10s"
 # Lets several instances run at once: only the one holding a lock in the
 # database cuts auctions. Off by default.
 enable-leader-lock = true
