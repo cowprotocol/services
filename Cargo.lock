@@ -10037,6 +10037,7 @@ dependencies = [
  "database",
  "futures",
  "humantime-serde",
+ "leader-lock",
  "moka",
  "observe",
  "prometheus",

@@ -151,6 +151,10 @@ pub async fn run(args: Args) {
         sponsoring,
         verifier,
         app_data_size_limit: config.app_data_size_limit,
+        on_chain_quote_interval: config
+            .on_chain_quotes
+            .as_ref()
+            .map(|quotes| quotes.poll_interval),
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());
