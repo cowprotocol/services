@@ -107,6 +107,9 @@ pub async fn quote(
         None => now_secs.saturating_add(DEFAULT_VALIDITY.as_secs() as u32),
     };
     validate(&request, valid_to, now_secs, &state.validation())?;
+    state
+        .refuse_banned_users(std::iter::once(request.from).chain(request.receiver))
+        .await?;
     let stored = match &request.app_data {
         OrderCreationAppData::Hash { hash } => super::app_data::find(state.pool(), *hash)
             .await

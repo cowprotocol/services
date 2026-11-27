@@ -398,6 +398,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: |
+            The order owner or the `receiver` is deny-listed (`Forbidden`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: |
             A driver or the native price lookup failed while quoting the
@@ -447,6 +454,13 @@ paths:
             frozen, another mint's, or refusing plain credits
             (`InvalidBuyTokenAccount`), or no quoted amount covers the
             execution cost (`SellAmountDoesNotCoverFee`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: |
+            The `from` account or the `receiver` is deny-listed (`Forbidden`).
           content:
             application/json:
               schema:

@@ -193,6 +193,7 @@ async fn run(config: Config) {
             prices,
             config.contracts.state_pda(),
             ProtocolFees::new(config.fee_policies.clone()),
+            Arc::new(banned_users::Users::new(config.banned_users.clone())),
         )),
         Box::new(DriverCompetition::new(
             drivers.clone(),

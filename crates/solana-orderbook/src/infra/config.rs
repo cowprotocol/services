@@ -63,6 +63,9 @@ pub struct Config {
     /// Most bytes an app data document may have.
     #[serde(default = "default_app_data_size_limit")]
     pub app_data_size_limit: usize,
+    /// Accounts refused a quote and a sponsored placement.
+    #[serde(default)]
+    pub banned_users: banned_users::Config<Pubkey>,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -294,6 +297,21 @@ mod tests {
         assert_eq!(config.quoting.quote_expiry, Duration::from_secs(60));
         assert_eq!(config.quoting.fast_results_required.get(), 2);
         assert_eq!(config.app_data_size_limit, 8192);
+        assert!(config.banned_users.addresses.is_empty());
+        assert!(config.banned_users.hermod.is_none());
+    }
+
+    #[test]
+    fn banned_users_addresses_are_base58() {
+        let config: banned_users::Config<Pubkey> =
+            toml::from_str(r#"addresses = ["9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"]"#)
+                .unwrap();
+        assert_eq!(
+            config.addresses,
+            [Pubkey::from_str_const(
+                "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
+            )]
+        );
     }
 
     #[test]

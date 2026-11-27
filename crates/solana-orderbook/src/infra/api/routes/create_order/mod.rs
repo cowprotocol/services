@@ -237,6 +237,13 @@ async fn place(
         .receiver
         .filter(|receiver| receiver.to_bytes() != order.owner.0)
         .map(|receiver| ByteArray(receiver.to_bytes()));
+    let traders = std::iter::once(order.owner)
+        .chain(order.receiver)
+        .map(|account| Pubkey::new_from_array(account.0));
+    state
+        .refuse_banned_users(traders)
+        .await
+        .map_err(Failure::Replied)?;
     // The intent signed the hash, so whatever the request names must agree
     // with it, and the hash alone needs its document registered already.
     let intent = AppDataHash(order.app_data.0);

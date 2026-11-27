@@ -17,6 +17,7 @@ test = false
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
+banned-users = { workspace = true }
 bigdecimal = { workspace = true }
 chain-types = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }

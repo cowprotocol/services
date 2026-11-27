@@ -91,6 +91,9 @@ pub struct Config {
     /// Periodic deletion of expired quotes and old order events.
     #[serde(default)]
     pub db_cleanup: DbCleanup,
+    /// Accounts whose orders stay out of every auction.
+    #[serde(default)]
+    pub banned_users: banned_users::Config<Pubkey>,
     /// Logging configuration.
     #[serde(default)]
     pub logging: LoggingConfig,
@@ -333,6 +336,19 @@ pub struct Driver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn banned_users_addresses_are_base58() {
+        let config: banned_users::Config<Pubkey> =
+            toml::from_str(r#"addresses = ["9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"]"#)
+                .unwrap();
+        assert_eq!(
+            config.addresses,
+            [Pubkey::from_str_const(
+                "9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"
+            )]
+        );
+    }
 
     #[test]
     fn contracts_default_to_the_interface_program_id() {

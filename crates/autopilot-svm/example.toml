@@ -97,3 +97,25 @@ filter = "info,autopilot_svm=debug"
 # only in losing solutions, at most one per owner. The funder pays for each,
 # and the order may never fill. Zero, the default, sends none.
 # max-displaced-creations = 10
+
+# Banned users. An order whose owner or receiver is banned stays out of every
+# auction. Omit the section to ban no account.
+# [banned-users]
+# Accounts that are always banned.
+# addresses = ["9VXC6LH9eXMBpXLQnxMYAGkjs59Zon2ACciJwQ6iMzNB"]
+# Most addresses cached for Hermod. Defaults to 10000.
+# max-cache-size = 10000
+# Hermod (zeroShadow) sanctioned address checker. Omit the section to ban
+# only the accounts in the list.
+# [banned-users.hermod]
+# url = "http://hermod:3000"
+# Per-customer key that hides the addresses sent to Hermod. A value that
+# starts with % is read from that environment variable.
+# hmac-key = "%HERMOD_HMAC_KEY"
+# Bearer token, if the Hermod agent was started with API_KEY set.
+# api-key = "%HERMOD_API_KEY"
+# How often the cached addresses are checked again. Defaults to 5s.
+# refresh-interval = "5s"
+# An address that nobody requested for this long leaves the cache. Defaults
+# to 1m.
+# max-idle = "1m"
