@@ -444,8 +444,106 @@ fn create_order_parts() -> (solana_sdk::instruction::Instruction, CreatedOrder) 
         kind: OrderKind::Sell,
         partially_fillable: false,
         app_data: [0x44; 32],
+        quote_id: None,
     };
     (instruction, expected)
+}
+
+/// A creation transaction names its quote in a memo, `cow:quote:<id>`. The
+/// id reaches the created order when the transaction holds one creation and
+/// one such memo carrying a decimal id. Any other memo leaves the order
+/// without an id and the decode intact.
+#[tokio::test]
+async fn decode_reads_the_quote_id_from_the_creation_memo() {
+    let (settlement, solflow) = (pubkey(1), pubkey(2));
+    let decoder = pure_decoder(settlement, solflow);
+    let instruction = |program_id, data: &[u8]| solana_sdk::instruction::Instruction {
+        program_id,
+        accounts: vec![],
+        data: data.to_vec(),
+    };
+    let quote_ids = |tx: SubscribeUpdateTransactionInfo| -> Vec<Option<i64>> {
+        decoder
+            .decode(tx, Slot(5), signature(6))
+            .expect("a memo never fails the decode")
+            .into_iter()
+            .map(|event| match event {
+                DecodedEvent::Settlement(SettlementEvent::OrderCreated(created)) => {
+                    created.quote_id
+                }
+                other => panic!("unexpected event {other:?}"),
+            })
+            .collect()
+    };
+    let with_memos = |memos: &[&[u8]]| {
+        let mut instructions: Vec<_> = memos
+            .iter()
+            .map(|memo| instruction(super::MEMO_PROGRAM, memo))
+            .collect();
+        instructions.push(create_order_parts().0);
+        tx_from_instructions(pubkey(9), &instructions)
+    };
+
+    assert_eq!(quote_ids(with_memos(&[b"cow:quote:42"])), [Some(42)]);
+    assert_eq!(
+        quote_ids(with_memos(&[b"gm", &[0xFF, 0xFE], b"cow:quote:42"])),
+        [Some(42)]
+    );
+    let ignored: [&[&[u8]]; 9] = [
+        &[],
+        &[b"cow:quote:"],
+        &[b"cow:quote:abc"],
+        &[b"cow:quote:-1"],
+        &[b"cow:quote:+1"],
+        &[b"cow:quote:42 "],
+        &[b"cow:quote:99999999999999999999"],
+        &[b"cow:quote:42", b"cow:quote:43"],
+        &[b"cow:quote:42", b"cow:quote:abc"],
+    ];
+    for memos in ignored {
+        assert_eq!(quote_ids(with_memos(memos)), [None], "{memos:?}");
+    }
+
+    // The same text under another program is no memo.
+    let foreign = tx_from_instructions(
+        pubkey(9),
+        &[
+            instruction(pubkey(7), b"cow:quote:42"),
+            create_order_parts().0,
+        ],
+    );
+    assert_eq!(quote_ids(foreign), [None]);
+
+    // A memo a program emits through a CPI counts like a top-level one.
+    let mut nested = with_memos(&[b"gm"]);
+    nested.meta.as_mut().unwrap().inner_instructions = vec![InnerInstructions {
+        index: 1,
+        instructions: vec![inner(1, vec![], b"cow:quote:7".to_vec(), Some(2))],
+    }];
+    assert_eq!(quote_ids(nested), [Some(7)]);
+
+    // Two creations: the memo cannot tell which order it names.
+    let other_intent = OrderIntent {
+        valid_to: 43,
+        ..sample_intent()
+    };
+    let other: solana_sdk::instruction::Instruction =
+        cow_settlement_client::instruction::CreateOrder {
+            program_id: settlement,
+            owner: pubkey(11),
+            created_by: pubkey(12),
+            intent: &other_intent,
+        }
+        .into();
+    let two = tx_from_instructions(
+        pubkey(9),
+        &[
+            instruction(super::MEMO_PROGRAM, b"cow:quote:42"),
+            create_order_parts().0,
+            other,
+        ],
+    );
+    assert_eq!(quote_ids(two), [None, None]);
 }
 
 /// `CancelOrder` carrying intent bytes created the order cancelled, so it

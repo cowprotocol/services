@@ -333,6 +333,8 @@ pub struct PendingOrder {
     pub order: UnquotedOrder,
     /// When the indexer stored the order.
     pub created: DateTime<Utc>,
+    /// The quote the order's creation transaction names in its memo.
+    pub quote_id: Option<i64>,
 }
 
 /// Whether an order with this uid is already stored.
@@ -439,7 +441,7 @@ pub async fn quote_pending_orders(
     let _timer = query_timer("quote_pending_orders");
     const QUERY: &str = r#"
 SELECT o.uid, o.owner, o.sell_token, o.buy_token, o.buy_token_account, o.sell_amount,
-       o.buy_amount, o.kind, o.app_data, o.creation_timestamp
+       o.buy_amount, o.kind, o.app_data, o.creation_timestamp, pda.quote_id
 FROM solana.orders o
 LEFT JOIN solana.order_pda pda ON pda.order_uid = o.uid
 WHERE o.quote_pending AND o.valid_to >= $1 AND o.uid <> ALL($2)
@@ -460,6 +462,7 @@ LIMIT $3
         kind: OrderKind,
         app_data: ByteArray<32>,
         creation_timestamp: DateTime<Utc>,
+        quote_id: Option<i64>,
     }
     let rows: Vec<Row> = sqlx::query_as(QUERY)
         .bind(now_unix)
@@ -490,6 +493,7 @@ LIMIT $3
                     app_data: row.app_data,
                 },
                 created: row.creation_timestamp,
+                quote_id: row.quote_id,
             })
         })
         .collect())
