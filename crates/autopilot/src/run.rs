@@ -38,7 +38,6 @@ use {
     futures::channel::mpsc,
     http_client::HttpClientFactory,
     model::DomainSeparator,
-    num::ToPrimitive,
     observe::{config::EventBusConfig, metrics::LivenessChecking},
     price_estimation::{
         config::price_estimation::BalanceOverridesConfigExt,
@@ -467,20 +466,7 @@ pub async fn run(config: Configuration, shutdown_controller: ShutdownController)
         config.price_estimation.max_quote_timeout,
     ));
 
-    let banned_users =
-        Arc::new(order_validation::banned::Users::new(
-            config.banned_users.hermod.clone().map(|hermod| {
-                order_validation::banned::HermodConfig {
-                    url: hermod.url,
-                    hmac_key: hermod.hmac_key.into_inner(),
-                    api_key: hermod.api_key.map(|key| key.into_inner()),
-                    refresh_interval: hermod.refresh_interval,
-                    max_idle: hermod.max_idle,
-                }
-            }),
-            config.banned_users.addresses,
-            config.banned_users.max_cache_size.get().to_u64().unwrap(),
-        ));
+    let banned_users = Arc::new(order_validation::banned::Users::new(config.banned_users));
 
     // New-order notifications from the DB fan out to two subscribers: the run
     // loop wakes on any new order to consider it for the next auction cycle,

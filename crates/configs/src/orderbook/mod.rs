@@ -1,6 +1,5 @@
 use {
     crate::{
-        banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
         fee_engine::FeeEngineConfig,
         fee_factor::FeeFactor,
@@ -81,7 +80,7 @@ pub struct Configuration {
     /// Configuration for the banned users mechanism,
     /// such as their addresses and the size of the banned user's cache.
     #[serde(default)]
-    pub banned_users: BannedUsersConfig,
+    pub banned_users: banned_users::Config<Address>,
 
     /// Configuration for the IPFS gateway, supports token authentication.
     pub ipfs: Option<IpfsConfig>,
