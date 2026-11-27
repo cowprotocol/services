@@ -37,7 +37,8 @@ impl Api {
             .with_state(Arc::new(self.solver))
             // axum's default body limit needs to be disabled to not have the default limit on top
             // of our custom limit
-            .layer(axum::extract::DefaultBodyLimit::disable());
+            .layer(axum::extract::DefaultBodyLimit::disable())
+            .layer(tower_http::decompression::RequestDecompressionLayer::new());
 
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
         if let Some(bind) = bind {
