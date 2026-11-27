@@ -9,7 +9,7 @@ use {
         solana::{OrderEventLabel, OrderKind},
     },
     solana_orderbook::infra::{
-        api::Api,
+        api::{Api, BannedUsers},
         db,
         prices::NativePrices,
         quoter::Quoter,
@@ -22,7 +22,7 @@ use {
         transfer_fee::TransferFeeConfig,
     },
     sqlx::PgPool,
-    std::{net::SocketAddr, num::NonZero, time::Duration},
+    std::{net::SocketAddr, num::NonZero, sync::Arc, time::Duration},
     tokio_util::sync::CancellationToken,
 };
 
@@ -41,6 +41,7 @@ async fn mock_api() -> Api {
         sponsoring: None,
         verifier: None,
         app_data_size_limit: 8192,
+        banned_users: Arc::new(BannedUsers::none()),
     }
 }
 
@@ -2324,6 +2325,46 @@ async fn post_order_body(
         status,
         json["errorType"].as_str().unwrap_or_default().to_owned(),
     )
+}
+
+/// A banned account gets no quote and no sponsored placement, as the owner
+/// and as the receiver. The check runs before any database access.
+#[tokio::test]
+async fn banned_accounts_are_refused() {
+    let funder = solana_sdk::pubkey::Pubkey::new_unique();
+    let owner = solana_sdk::signer::keypair::Keypair::new();
+    let banned = solana_sdk::signer::keypair::Keypair::new();
+    let api = Api {
+        sponsoring: Some(solana_orderbook::infra::api::Sponsoring {
+            funder,
+            settlement_program: program_id(),
+            rpc: SolanaRPC::new_mock_with_mocks(sponsored_mocks(true, classic_mints())),
+            max_priority_fee_lamports: 100_000,
+            mints: Default::default(),
+            blockhash_catch_up: Duration::ZERO,
+        }),
+        banned_users: Arc::new(BannedUsers::from_set([banned.pubkey()].into())),
+        ..mock_api().await
+    };
+    let (listener, addr) = api.bind().await.unwrap();
+    let shutdown = CancellationToken::new();
+    tokio::spawn(async move { api.serve(listener, shutdown).await.unwrap() });
+    let forbidden = (reqwest::StatusCode::FORBIDDEN, "Forbidden".to_owned());
+
+    let mut banned_from = quote_body(serde_json::json!({"validFor": 1800}));
+    banned_from["from"] = serde_json::json!(banned.pubkey().to_string());
+    assert_eq!(post_quote(addr, banned_from).await, forbidden);
+    let mut banned_receiver = quote_body(serde_json::json!({"validFor": 1800}));
+    banned_receiver["receiver"] = serde_json::json!(banned.pubkey().to_string());
+    assert_eq!(post_quote(addr, banned_receiver).await, forbidden);
+
+    let banned_owner = sponsored_creation_tx(funder, &banned, true);
+    assert_eq!(post_order(addr, banned_owner).await, forbidden);
+    let banned_receiver = serde_json::json!({
+        "partiallySignedTx": sponsored_creation_tx(funder, &owner, true),
+        "receiver": banned.pubkey().to_string(),
+    });
+    assert_eq!(post_order_body(addr, banned_receiver).await, forbidden);
 }
 
 /// Placement validation runs before any database access: every rejection

@@ -11,7 +11,7 @@ use {
             observation::SettlementWindows,
             observer::CompetitionObserver,
             prices::NativePrices,
-            provider::DbAuctionProvider,
+            provider::{BannedUsers, DbAuctionProvider},
         },
         run::Liveness,
         run_loop::{
@@ -267,6 +267,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
             fees.clone(),
+            Arc::new(BannedUsers::none()),
         );
         let NextAuction::Auction(auction) = provider.cut_auction(&tip).await else {
             panic!("auction cut");
@@ -300,6 +301,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             NativePrices::seeded(test_prices()),
             solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
             fees.clone(),
+            Arc::new(BannedUsers::none()),
         )),
         Box::new(DriverCompetition::new(
             vec![Arc::clone(&driver)],
@@ -417,6 +419,7 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
         NativePrices::seeded(test_prices()),
         solana_sdk::pubkey::Pubkey::new_from_array(STATE_PDA),
         fees,
+        Arc::new(BannedUsers::none()),
     );
     assert!(
         matches!(

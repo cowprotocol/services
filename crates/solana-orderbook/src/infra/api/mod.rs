@@ -1,6 +1,7 @@
 //! HTTP API server.
 
 use {
+    self::error::Reply,
     super::{prices::NativePrices, quoter::Quoter, verifier::Verifier},
     axum::{
         Router,
@@ -40,6 +41,9 @@ pub mod routes;
 /// the height itself moves.
 const BLOCK_HEIGHT_TTL: Duration = Duration::from_secs(2);
 
+/// The accounts banned from trading.
+pub type BannedUsers = banned_users::Users<solana_sdk::pubkey::Pubkey>;
+
 /// The Solana orderbook HTTP API server.
 pub struct Api {
     /// Address the server binds to and listens on.
@@ -64,6 +68,8 @@ pub struct Api {
     pub verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     pub app_data_size_limit: usize,
+    /// The accounts refused a quote and a sponsored placement.
+    pub banned_users: Arc<BannedUsers>,
 }
 
 /// Bounds on an order's `validTo`, for quotes and sponsored placement
@@ -125,6 +131,7 @@ impl Api {
             self.sponsoring,
             self.verifier,
             self.app_data_size_limit,
+            self.banned_users,
         );
 
         // Browsers call this API directly, so it answers cross-origin
@@ -240,6 +247,7 @@ impl State {
         sponsoring: Option<Sponsoring>,
         verifier: Option<Verifier>,
         app_data_size_limit: usize,
+        banned_users: Arc<BannedUsers>,
     ) -> Self {
         Self(Arc::new(Inner {
             pool,
@@ -252,6 +260,7 @@ impl State {
             sponsoring,
             verifier,
             app_data_size_limit,
+            banned_users,
             block_height: Mutex::default(),
         }))
     }
@@ -312,6 +321,21 @@ impl State {
         self.0.app_data_size_limit
     }
 
+    /// Returns the `Forbidden` reply if one of `accounts` is banned.
+    pub async fn refuse_banned_users(
+        &self,
+        accounts: impl IntoIterator<Item = solana_sdk::pubkey::Pubkey>,
+    ) -> Result<(), Reply> {
+        if self.0.banned_users.banned(accounts).await.is_empty() {
+            return Ok(());
+        }
+        Err(error::reply(
+            StatusCode::FORBIDDEN,
+            "Forbidden",
+            "Forbidden",
+        ))
+    }
+
     /// The chain's block height, which decides whether a pending sponsored
     /// creation can still land, read at most once per `BLOCK_HEIGHT_TTL`.
     /// `None` without sponsoring, which stores no creation deadlines, or
@@ -364,6 +388,8 @@ struct Inner {
     verifier: Option<Verifier>,
     /// Most bytes an app data document may have.
     app_data_size_limit: usize,
+    /// The accounts refused a quote and a sponsored placement.
+    banned_users: Arc<BannedUsers>,
     /// The last block height read and when, see [`State::block_height`].
     block_height: Mutex<Option<(Instant, i64)>>,
 }
@@ -437,6 +463,7 @@ impl ApiMetrics {
         StatusCode::OK,
         StatusCode::CREATED,
         StatusCode::BAD_REQUEST,
+        StatusCode::FORBIDDEN,
         StatusCode::NOT_FOUND,
         StatusCode::TOO_MANY_REQUESTS,
         StatusCode::INTERNAL_SERVER_ERROR,

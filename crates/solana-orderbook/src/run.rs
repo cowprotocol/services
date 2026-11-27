@@ -151,6 +151,7 @@ pub async fn run(args: Args) {
         sponsoring,
         verifier,
         app_data_size_limit: config.app_data_size_limit,
+        banned_users: Arc::new(banned_users::Users::new(config.banned_users)),
     };
     let (listener, _addr) = api.bind().await.expect("failed to bind HTTP server");
     let serve = api.serve(listener, shutdown_token.clone());

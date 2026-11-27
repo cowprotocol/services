@@ -20,10 +20,13 @@ use {
     sqlx::PgPool,
     std::{
         collections::{HashMap, HashSet},
-        sync::Mutex,
+        sync::{Arc, Mutex},
         time::{SystemTime, UNIX_EPOCH},
     },
 };
+
+/// The accounts banned from trading.
+pub type BannedUsers = banned_users::Users<Pubkey>;
 
 /// Cuts auctions from the open orders the indexer persisted.
 pub struct DbAuctionProvider {
@@ -39,6 +42,8 @@ pub struct DbAuctionProvider {
     protocol_fees: ProtocolFees,
     /// The verdicts on the mints the cuts read so far.
     mints: MintVerdicts,
+    /// The accounts whose orders stay out of every auction.
+    banned_users: Arc<BannedUsers>,
     /// Block height of the last successful lookup.
     last_block_height: Mutex<Option<i64>>,
 }
@@ -51,6 +56,7 @@ impl DbAuctionProvider {
         prices: NativePrices,
         state_pda: Pubkey,
         protocol_fees: ProtocolFees,
+        banned_users: Arc<BannedUsers>,
     ) -> Self {
         Self {
             pool,
@@ -60,6 +66,7 @@ impl DbAuctionProvider {
             state_pda,
             protocol_fees,
             mints: MintVerdicts::default(),
+            banned_users,
             last_block_height: Mutex::default(),
         }
     }
@@ -318,6 +325,8 @@ impl AuctionProvider<SolanaCycle> for DbAuctionProvider {
         self.track_filtered_orders(OrderFilterReason::ZeroRemainingLeg, unfillable);
         let (orders, unpayable) = payable_orders(orders);
         self.track_filtered_orders(OrderFilterReason::UnpayableNativeBuy, unpayable);
+        let (orders, banned) = orders_of_unbanned_users(orders, &self.banned_users).await;
+        self.track_filtered_orders(OrderFilterReason::BannedUser, banned);
         let (orders, unsettleable, unreceivable, unfunded) = self.checked_orders(orders).await;
         self.track_filtered_orders(OrderFilterReason::UnsettleableMint, unsettleable);
         self.track_filtered_orders(OrderFilterReason::UnreceivableBuyTokenAccount, unreceivable);
@@ -404,6 +413,8 @@ fn auction_snapshot(tip: u64, auction: &crate::domain::auction::Auction) -> serd
 enum OrderFilterReason {
     /// A settlement from an earlier auction can still land.
     InFlight,
+    /// The owner or the receiver is banned.
+    BannedUser,
     /// A prior fill scaled a remaining leg down to zero.
     ZeroRemainingLeg,
     /// The settlement cannot pay out the native SOL buy.
@@ -422,6 +433,7 @@ impl OrderFilterReason {
     fn as_str(self) -> &'static str {
         match self {
             Self::InFlight => "in_flight",
+            Self::BannedUser => "banned_user",
             Self::ZeroRemainingLeg => "zero_remaining_leg",
             Self::UnpayableNativeBuy => "unpayable_native_buy",
             Self::UnsettleableMint => "unsettleable_mint",
@@ -446,6 +458,30 @@ struct Metrics {
 
 fn metrics() -> &'static Metrics {
     Metrics::instance(observe::metrics::get_storage_registry()).unwrap()
+}
+
+/// Drop orders whose owner or receiver is banned. Returns the kept orders and
+/// the uids of the dropped ones.
+async fn orders_of_unbanned_users(
+    orders: Vec<Order>,
+    banned_users: &BannedUsers,
+) -> (Vec<Order>, Vec<IntentHash>) {
+    fn order_addresses(order: &Order) -> Vec<Pubkey> {
+        std::iter::once(order.owner)
+            .chain(order.receiver)
+            .map(|address| Pubkey::new_from_array(address.0))
+            .collect()
+    }
+    let banned_addresses = banned_users
+        .banned(orders.iter().map(order_addresses).flatten())
+        .await;
+    let (orders, dropped): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+        order_addresses(order)
+            .iter()
+            .any(|address| banned_addresses.contains(address))
+    });
+
+    (orders, dropped.into_iter().map(|order| order.uid).collect())
 }
 
 /// Whether the indexer's processed slot trails the tip beyond the allowed
@@ -639,6 +675,7 @@ mod tests {
             NativePrices::seeded([]),
             Pubkey::new_from_array(crate::tests::STATE_PDA),
             ProtocolFees::default(),
+            Arc::new(BannedUsers::none()),
         )
     }
 
@@ -894,6 +931,31 @@ mod tests {
                 "{wallet:?} {order:?}"
             );
         }
+    }
+
+    /// An order stays out when its owner or its receiver is banned.
+    #[tokio::test]
+    async fn drops_orders_of_banned_users() {
+        let banned = ChainPubkey([0x99; 32]);
+        let banned_users = BannedUsers::from_set(HashSet::from([Pubkey::new_from_array(banned.0)]));
+        let kept = order([0x01; 32], true);
+        let banned_owner = Order {
+            owner: banned,
+            ..order([0x02; 32], true)
+        };
+        let banned_receiver = Order {
+            receiver: Some(banned),
+            ..order([0x03; 32], true)
+        };
+
+        let (orders, dropped) = orders_of_unbanned_users(
+            vec![kept.clone(), banned_owner.clone(), banned_receiver.clone()],
+            &banned_users,
+        )
+        .await;
+
+        assert_eq!(orders, vec![kept]);
+        assert_eq!(dropped, vec![banned_owner.uid, banned_receiver.uid]);
     }
 
     /// The gauge reads the last cut's count, zero once the reason clears.
