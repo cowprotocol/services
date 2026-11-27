@@ -93,9 +93,26 @@ pub struct JupiterConfig {
     /// mint's buffer holds. 50 = 0.5%.
     pub slippage_bps: u16,
 
-    /// Serve buy orders via ExactOut swaps. Off by default.
+    /// Serve buy orders via ExactOut swaps. Off by default. v1 only: v2 has
+    /// no ExactOut, so enabling it with v2 fails at startup.
     #[serde(default)]
     pub enable_buy_orders: bool,
+
+    /// Which Jupiter swap API to call. Defaults to v1.
+    #[serde(default)]
+    pub api_version: JupiterApiVersion,
+}
+
+/// The Jupiter swap API version the adapter talks to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum JupiterApiVersion {
+    /// `/swap/v1/quote` + `/swap/v1/swap-instructions`: two requests per
+    /// swap, sells and (optionally) buys.
+    #[default]
+    V1,
+    /// `/swap/v2/build`: one request per swap, sells only.
+    V2,
 }
 
 /// The `[dex]` table for the Bitget backend. No `Debug`: it holds the secret.
@@ -156,6 +173,7 @@ mod tests {
         assert_eq!(config.dex.slippage_bps, 50);
         assert!(config.dex.api_key.is_some());
         assert!(!config.dex.enable_buy_orders);
+        assert_eq!(config.dex.api_version, JupiterApiVersion::V1);
         assert_eq!(config.concurrent_requests.get(), 8);
         assert_eq!(config.max_batch_size.get(), 4);
         let strategy = config.rate_limiting();
@@ -174,6 +192,8 @@ slippage-bps = 50
         let config: Config<JupiterConfig> = toml::from_str(toml).unwrap();
         assert_eq!(config.concurrent_requests.get(), 8);
         assert_eq!(config.max_batch_size.get(), 1);
+        assert!(!config.dex.enable_buy_orders);
+        assert_eq!(config.dex.api_version, JupiterApiVersion::V1);
         let strategy = config.rate_limiting();
         assert_eq!(strategy.back_off_growth_factor, 2.0);
         assert_eq!(strategy.min_back_off, Duration::from_secs(1));
@@ -187,6 +207,29 @@ slippage-bps = 50
 endpoint = "https://api.jup.ag"
 slippage-bps = 50
 bogus = true
+"#;
+        assert!(toml::from_str::<Config<JupiterConfig>>(toml).is_err());
+    }
+
+    #[test]
+    fn parses_the_jupiter_api_version() {
+        for (value, expected) in [("v1", JupiterApiVersion::V1), ("v2", JupiterApiVersion::V2)] {
+            let toml = format!(
+                r#"
+[dex]
+endpoint = "https://api.jup.ag"
+slippage-bps = 50
+api-version = "{value}"
+"#
+            );
+            let config: Config<JupiterConfig> = toml::from_str(&toml).unwrap();
+            assert_eq!(config.dex.api_version, expected);
+        }
+        let toml = r#"
+[dex]
+endpoint = "https://api.jup.ag"
+slippage-bps = 50
+api-version = "v3"
 "#;
         assert!(toml::from_str::<Config<JupiterConfig>>(toml).is_err());
     }
