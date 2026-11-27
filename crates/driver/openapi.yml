@@ -380,6 +380,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        protocolFeeOrigins:
+          description: |-
+            Who benefits from each entry of `protocolFees`, index-aligned: the
+            entry at index `i` of both lists describes the same fee. Missing or
+            empty means every entry is `protocol`. The solver's own fee is not
+            part of this list.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeeOrigin"
         quote:
           allOf:
             - description: A winning quote.
@@ -715,6 +724,14 @@ components:
       properties:
         calldata:
           $ref: "#/components/schemas/Calldata"
+    FeeOrigin:
+      description: >
+        Who a protocol fee benefits. The solver's own fee is not part of this
+        list.
+      type: string
+      enum:
+        - protocol
+        - partner
     FeePolicy:
       description: >
         A fee policy that applies to an order.

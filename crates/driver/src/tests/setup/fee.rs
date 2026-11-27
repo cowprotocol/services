@@ -5,6 +5,22 @@ use {
     serde_with::serde_as,
 };
 
+/// Who a fee benefits, as sent in `protocolFeeOrigins`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    Protocol,
+    Partner,
+}
+
+impl Origin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Origin::Protocol => "protocol",
+            Origin::Partner => "partner",
+        }
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]

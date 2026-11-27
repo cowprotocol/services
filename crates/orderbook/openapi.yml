@@ -1553,6 +1553,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FeePolicy"
+        protocolFeeOrigins:
+          description: >
+            Who benefits from each entry of `protocolFees`, index-aligned: the
+            entry at index `i` of both lists describes the same fee. Missing or
+            empty means every entry is `protocol`.
+          type: array
+          items:
+            $ref: "#/components/schemas/FeeOrigin"
         quote:
           description: |
             A winning quote.
@@ -2438,6 +2446,14 @@ components:
         - factor
         - maxVolumeFactor
         - quote
+    FeeOrigin:
+      description: >
+        Who a protocol fee benefits. The solver's own fee is not part of this
+        list.
+      type: string
+      enum:
+        - protocol
+        - partner
     FeePolicy:
       description: >
         Defines the ways to calculate the protocol fee.

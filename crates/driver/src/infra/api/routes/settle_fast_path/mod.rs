@@ -33,7 +33,7 @@ async fn route(
 
     async move {
         observe::settling();
-        let order = req.order.into_domain(None);
+        let order = req.order.into_domain(None)?;
         let limit_prices = solution::LimitPrices {
             sell: req.limit_prices.sell,
             buy: req.limit_prices.buy,

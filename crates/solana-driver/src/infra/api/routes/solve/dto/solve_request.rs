@@ -119,6 +119,18 @@ pub struct Order {
     /// in order. Missing means none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     protocol_fees: Vec<FeePolicy>,
+    /// Who benefits from each entry of `protocol_fees`, index-aligned. Missing
+    /// means all `protocol`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    protocol_fee_origins: Vec<Origin>,
+}
+
+/// Who benefits from a protocol fee, in the EVM driver's wire shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Origin {
+    Protocol,
+    Partner,
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
@@ -224,6 +236,8 @@ pub enum Error {
     InvalidCreation,
     #[error("a fee policy factor is outside [0, 1)")]
     InvalidFeePolicy,
+    #[error("protocol fee origins do not match protocol fees")]
+    InvalidProtocolFeeOrigins,
 }
 
 impl From<domain::auction::InvalidAuctionId> for Error {
@@ -242,6 +256,11 @@ impl SolveRequest {
             if let Some(bytes) = &order.creation {
                 let creation = wincode::deserialize(bytes).map_err(|_| Error::InvalidCreation)?;
                 creations.insert(order.uid, creation);
+            }
+            if !order.protocol_fee_origins.is_empty()
+                && order.protocol_fee_origins.len() != order.protocol_fees.len()
+            {
+                return Err(Error::InvalidProtocolFeeOrigins);
             }
             if !order.protocol_fees.is_empty() {
                 let policies = order
@@ -298,6 +317,7 @@ mod tests {
             creation: Some(vec![1, 2, 3]),
             sell_balance: Some(500),
             protocol_fees: Vec::new(),
+            protocol_fee_origins: Vec::new(),
         }
     }
 
@@ -355,6 +375,26 @@ mod tests {
                 protocol_fee::FeePolicy::Volume { factor: 0.001 },
             ]
         );
+    }
+
+    #[test]
+    fn origins_must_match_protocol_fees_by_index() {
+        let mut request = request_with_policies(serde_json::json!([
+            {"volume": {"factor": 0.001}},
+            {"volume": {"factor": 0.002}},
+        ]));
+        request.orders[0].protocol_fee_origins = vec![Origin::Protocol];
+        assert!(matches!(
+            request.into_domain(),
+            Err(Error::InvalidProtocolFeeOrigins)
+        ));
+
+        let mut request = request_with_policies(serde_json::json!([
+            {"volume": {"factor": 0.001}},
+            {"volume": {"factor": 0.002}},
+        ]));
+        request.orders[0].protocol_fee_origins = vec![Origin::Protocol, Origin::Partner];
+        assert!(request.into_domain().is_ok());
     }
 
     #[test]

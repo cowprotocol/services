@@ -285,6 +285,11 @@ async fn solana_db_mock_cycle_dispatches_the_settlement() {
             }],
             "policy forwarded to the driver"
         );
+        assert_eq!(
+            solve.orders[0].protocol_fee_origins,
+            vec![dto::Origin::Protocol],
+            "origin forwarded to the driver"
+        );
         let ranking = SolanaArbitrator::new(1, wrapped_native).arbitrate(solutions, &auction);
         assert_eq!(ranking.winner_count(), 1, "solution won");
     }

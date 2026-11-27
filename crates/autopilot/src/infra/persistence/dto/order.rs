@@ -24,6 +24,10 @@ pub struct Order {
     #[serde_as(as = "HexOrDecimalU256")]
     pub buy_amount: U256,
     pub protocol_fees: Vec<FeePolicy>,
+    /// Origin of each entry in `protocol_fees`, matched by index. Omitted when
+    /// there are no fees. Older payloads without it are read as all protocol.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocol_fee_origins: Vec<Origin>,
     pub created: u32,
     pub valid_to: u32,
     pub kind: boundary::OrderKind,
@@ -68,6 +72,11 @@ pub fn from_domain(order: &domain::Order) -> Order {
             .iter()
             .map(|fee| FeePolicy::from_domain(fee.policy))
             .collect(),
+        protocol_fee_origins: order
+            .protocol_fees
+            .iter()
+            .map(|fee| fee.origin.into())
+            .collect(),
         created: order.created,
         valid_to: order.valid_to,
         kind: order.side.into(),
@@ -108,16 +117,22 @@ pub fn to_domain(order: Order) -> domain::Order {
             token: order.buy_token.into(),
             amount: order.buy_amount.into(),
         },
-        protocol_fees: order
-            .protocol_fees
-            .into_iter()
-            .map(|fee| domain::fee::PolicyWithOrigin {
-                policy: fee.into_domain(),
-                // The wire format doesn't distinguish protocol from partner
-                // fees, so the origin can't be recovered here.
-                origin: domain::fee::Origin::Protocol,
-            })
-            .collect(),
+        protocol_fees: {
+            let origins = order.protocol_fee_origins;
+            order
+                .protocol_fees
+                .into_iter()
+                .enumerate()
+                .map(|(index, policy)| domain::fee::PolicyWithOrigin {
+                    policy: policy.into_domain(),
+                    origin: origins
+                        .get(index)
+                        .copied()
+                        .unwrap_or(Origin::Protocol)
+                        .into(),
+                })
+                .collect()
+        },
         created: order.created,
         valid_to: order.valid_to,
         side: order.kind.into(),
@@ -282,6 +297,33 @@ impl From<boundary::EcdsaSignature> for domain::auction::order::EcdsaSignature {
     }
 }
 
+/// Who a protocol fee benefits. Solver fees are added by the driver and
+/// never appear here.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Origin {
+    Protocol,
+    Partner,
+}
+
+impl From<domain::fee::Origin> for Origin {
+    fn from(origin: domain::fee::Origin) -> Self {
+        match origin {
+            domain::fee::Origin::Protocol => Self::Protocol,
+            domain::fee::Origin::Partner => Self::Partner,
+        }
+    }
+}
+
+impl From<Origin> for domain::fee::Origin {
+    fn from(origin: Origin) -> Self {
+        match origin {
+            Origin::Protocol => Self::Protocol,
+            Origin::Partner => Self::Partner,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FeePolicy {
@@ -397,5 +439,80 @@ impl From<domain::auction::order::Side> for database::orders::OrderKind {
             domain::auction::order::Side::Buy => Self::Buy,
             domain::auction::order::Side::Sell => Self::Sell,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn order_json(extra: serde_json::Value) -> serde_json::Value {
+        let mut json = serde_json::json!({
+            "uid": format!("0x{}", "11".repeat(56)),
+            "sellToken": "0x2222222222222222222222222222222222222222",
+            "buyToken": "0x3333333333333333333333333333333333333333",
+            "sellAmount": "1000",
+            "buyAmount": "2000",
+            "protocolFees": [
+                {"volume": {"factor": 0.1}},
+                {"volume": {"factor": 0.2}},
+            ],
+            "created": 1,
+            "validTo": 2,
+            "kind": "sell",
+            "receiver": "0x0000000000000000000000000000000000000000",
+            "owner": "0x4444444444444444444444444444444444444444",
+            "partiallyFillable": true,
+            "executed": "0",
+            "preInteractions": [],
+            "postInteractions": [],
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "class": "limit",
+            "appData": format!("0x{}", "00".repeat(32)),
+            "signingScheme": "eip712",
+            "signature": format!("0x{}1c", "01".repeat(64)),
+            "quote": null,
+        });
+        json.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        json
+    }
+
+    #[test]
+    fn payload_without_origins_reads_all_fees_as_protocol() {
+        let order: Order = serde_json::from_value(order_json(serde_json::json!({}))).unwrap();
+        let order = to_domain(order);
+        assert!(
+            order
+                .protocol_fees
+                .iter()
+                .all(|fee| matches!(fee.origin, domain::fee::Origin::Protocol))
+        );
+        assert_eq!(order.protocol_fees.len(), 2);
+    }
+
+    #[test]
+    fn protocol_fee_origins_round_trip_by_index() {
+        let json = order_json(serde_json::json!({
+            "protocolFeeOrigins": ["protocol", "partner"],
+        }));
+        let order = to_domain(serde_json::from_value(json.clone()).unwrap());
+        assert!(matches!(
+            order.protocol_fees[1].origin,
+            domain::fee::Origin::Partner
+        ));
+        let serialized = serde_json::to_value(from_domain(&order)).unwrap();
+        assert_eq!(serialized["protocolFees"], json["protocolFees"]);
+        assert_eq!(serialized["protocolFeeOrigins"], json["protocolFeeOrigins"]);
+    }
+
+    #[test]
+    fn origins_are_omitted_when_there_are_no_fees() {
+        let json = order_json(serde_json::json!({"protocolFees": []}));
+        let order = to_domain(serde_json::from_value(json).unwrap());
+        let serialized = serde_json::to_value(from_domain(&order)).unwrap();
+        assert!(serialized.get("protocolFeeOrigins").is_none());
     }
 }

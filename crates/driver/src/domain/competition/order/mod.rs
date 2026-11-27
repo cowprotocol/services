@@ -11,7 +11,10 @@ use {
     number::u256_ext::U256Ext,
     std::sync::Arc,
 };
-pub use {fees::FeePolicy, signature::Signature};
+pub use {
+    fees::{FeePolicy, Origin, ProtocolFee},
+    signature::Signature,
+};
 
 pub mod app_data;
 pub mod fees;
@@ -46,7 +49,7 @@ pub struct OrderData {
     /// The types of fees the protocol collects from the winning solver.
     /// Unless otherwise configured, the driver modifies solutions to take
     /// sufficient fee in the form of positive slippage.
-    pub protocol_fees: Vec<FeePolicy>,
+    pub protocol_fees: Vec<ProtocolFee>,
     /// The winning quote.
     pub quote: Option<Quote>,
     /// Cap on the penalty a solver can incur for winning this order but

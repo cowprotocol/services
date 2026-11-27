@@ -86,10 +86,20 @@ pub struct Order {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DisplayFromStr>")]
     pub sell_balance: Option<u64>,
-    /// The protocol fee policies the driver takes from the order's fills,
-    /// in order. An empty list is omitted.
+    /// The protocol fees the driver takes from the order's fills, in order.
+    /// An empty list is omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub protocol_fees: Vec<FeePolicy>,
+    /// Who each entry in `protocol_fees` benefits, matched by index.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub protocol_fee_origins: Vec<Origin>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Origin {
+    Protocol,
+    Partner,
 }
 
 /// A protocol fee policy, in the EVM driver's wire shape.
@@ -184,6 +194,13 @@ impl From<&auction::Order> for Order {
             creation: order.creation.clone(),
             sell_balance: order.sell_balance,
             protocol_fees: order.protocol_fees.iter().map(FeePolicy::from).collect(),
+            // Solana orders carry no partner fee (see `max-partner-fee` in config.rs),
+            // so every origin is protocol.
+            protocol_fee_origins: order
+                .protocol_fees
+                .iter()
+                .map(|_| Origin::Protocol)
+                .collect(),
         }
     }
 }
@@ -400,6 +417,10 @@ mod tests {
                 }},
                 {"volume": {"factor": 0.001}},
             ])
+        );
+        assert_eq!(
+            json["orders"][0]["protocolFeeOrigins"],
+            serde_json::json!(["protocol", "protocol", "protocol"])
         );
         assert_eq!(
             serde_json::from_value::<SolveRequest>(json).unwrap(),

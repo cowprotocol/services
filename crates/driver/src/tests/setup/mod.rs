@@ -142,6 +142,9 @@ pub struct Order {
     /// order? True by default.
     pub funded: bool,
     pub fee_policy: Vec<fee::Policy>,
+    /// Sent as `protocolFeeOrigins` when non-empty. Left empty, the field is
+    /// omitted, so the driver must treat every fee as protocol.
+    pub fee_origins: Vec<fee::Origin>,
     pub owner: eth::Address,
     pub receiver: eth::Receiver,
     pub fee_amount: eth::U256,
@@ -221,6 +224,13 @@ impl Order {
 
     pub fn fee_policy(self, fee_policy: Vec<fee::Policy>) -> Self {
         Self { fee_policy, ..self }
+    }
+
+    pub fn fee_origins(self, fee_origins: Vec<fee::Origin>) -> Self {
+        Self {
+            fee_origins,
+            ..self
+        }
     }
 
     pub fn expected_amounts(self, expected_amounts: ExpectedOrderAmounts) -> Self {
@@ -313,6 +323,7 @@ impl Default for Order {
                 factor: 0.0,
                 max_volume_factor: 0.06,
             }],
+            fee_origins: Default::default(),
             owner: TRADER_ADDRESS,
             receiver: Default::default(),
             fee_amount: Default::default(),

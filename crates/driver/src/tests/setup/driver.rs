@@ -103,6 +103,16 @@ pub fn order_json(test: &Test, quote: &super::blockchain::QuotedOrder) -> serde_
             const_hex::encode(quote.order.receiver.raw_bytes())
         ));
     }
+    if !quote.order.fee_origins.is_empty() {
+        order["protocolFeeOrigins"] = json!(
+            quote
+                .order
+                .fee_origins
+                .iter()
+                .map(|origin| origin.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
     order
 }
 
