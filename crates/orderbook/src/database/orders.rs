@@ -184,6 +184,7 @@ async fn insert_order(
         cancellation_timestamp: None,
         valid_from: order.metadata.valid_from.map(i64::from),
         fast_path: order.metadata.fast_path,
+        wait_for_cow: order.metadata.wait_for_cow,
     };
 
     database::orders::insert_order(ex, &db_order)
@@ -652,6 +653,7 @@ fn full_order_with_quote_into_model_order(
             .transpose()
             .context("valid_from is not u32")?,
         fast_path: order.fast_path,
+        wait_for_cow: order.wait_for_cow,
         quote: quote.map(order_quote_into_model).transpose()?,
     };
     let data = OrderData {
@@ -737,6 +739,7 @@ mod tests {
             valid_to: valid_to_timestamp.timestamp(),
             valid_from: None,
             fast_path: false,
+            wait_for_cow: false,
             app_data: ByteArray([0; 32]),
             fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,

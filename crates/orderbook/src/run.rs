@@ -14,7 +14,7 @@ use {
     app_data::Validator,
     chain::Chain,
     clap::Parser,
-    configs::orderbook::Configuration,
+    configs::{canonical_batch::CanonicalBatchInterval, orderbook::Configuration},
     contracts::{
         FlashLoanRouter,
         GPv2AllowListAuthentication,
@@ -424,7 +424,7 @@ pub async fn run(config: Configuration) {
             .expect("fee engine rules must load"),
     );
 
-    let order_validator = Arc::new(OrderValidator::new(
+    let order_validator = OrderValidator::new(
         native_token.clone(),
         Arc::new(order_validation::banned::Users::new(
             config.banned_users.hermod.clone().map(|hermod| {
@@ -454,7 +454,9 @@ pub async fn run(config: Configuration) {
         config.order_validation.same_tokens_policy,
         volume_fees.clone(),
         order_validation::wrappers::Validator::new(authenticator, *settlement_contract.address()),
-    ));
+    )
+    .with_canonical_batch_interval(config.order_validation.canonical_batch_interval);
+    let order_validator = Arc::new(order_validator);
     let ipfs = config
         .ipfs
         .map(|ipfs| {
@@ -509,6 +511,8 @@ pub async fn run(config: Configuration) {
         config.price_estimation.quote_timeout,
         current_block_stream,
         config.hide_competition_before_deadline,
+        config.order_validation.canonical_batch_interval,
+        config.order_validation.min_order_validity_period,
     );
 
     let mut metrics_address = config.bind_address;
@@ -556,6 +560,8 @@ fn serve_api(
     quote_timeout: Duration,
     current_block_stream: ethrpc::block_stream::CurrentBlockWatcher,
     hide_competition_before_deadline: bool,
+    canonical_batch_interval: Option<CanonicalBatchInterval>,
+    min_order_validity_period: Duration,
 ) -> JoinHandle<()> {
     let app = api::handle_all_routes(
         database,
@@ -567,6 +573,8 @@ fn serve_api(
         quote_timeout,
         current_block_stream,
         hide_competition_before_deadline,
+        canonical_batch_interval,
+        min_order_validity_period,
     );
     tracing::info!(%address, "serving order book");
 

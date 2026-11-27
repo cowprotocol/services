@@ -1090,6 +1090,23 @@ impl Persistence {
         Ok(database::orders::flush_pending_fast_path_backlog(&mut ex, now).await?)
     }
 
+    /// Sets `valid_from` of every wait-for-CoW order that doesn't have one
+    /// yet. Returns the number of orders updated.
+    pub async fn set_valid_from_of_pending_wait_for_cow_orders(
+        &self,
+        valid_from: u32,
+    ) -> anyhow::Result<u64> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["set_valid_from_of_pending_wait_for_cow_orders"])
+            .start_timer();
+        let mut ex = self.postgres.pool.acquire().await.context("acquire")?;
+        Ok(
+            database::orders::set_valid_from_of_pending_wait_for_cow_orders(&mut ex, valid_from)
+                .await?,
+        )
+    }
+
     /// Returns the order iff it is a fast-path order the handler still
     /// owes a `valid_from` write to. Callers use `Some` as the "we own
     /// this order" signal — non-fast-path orders (or ones the handler

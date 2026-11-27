@@ -17,6 +17,7 @@ use {
     app_data::{AppDataHash, ExecutionMode, Hook, Hooks, ValidatedAppData, Validator},
     async_trait::async_trait,
     balance_overrides::BalanceOverrideRequest,
+    configs::canonical_batch::CanonicalBatchInterval,
     contracts::{HooksTrampoline, WETH9},
     eth_domain_types::Receiver,
     futures::future::OptionFuture,
@@ -301,6 +302,9 @@ pub enum AppDataValidationError {
         actual: AppDataHash,
     },
     Invalid(anyhow::Error),
+    /// The app data asks to wait for a canonical batch, but canonical batches
+    /// aren't configured.
+    WaitForCowDisabled,
 }
 
 #[derive(Debug)]
@@ -331,6 +335,12 @@ pub enum ValidationError {
     /// `valid_from` leaves too small a window before `valid_to` for the order
     /// to be settled.
     InvalidValidFrom,
+    /// The order waits for the next canonical batch but expires less than the
+    /// minimum validity period after that batch starts.
+    InsufficientValidToForCanonicalBatch,
+    /// The order waits for a canonical batch but is signed with a
+    /// presignature, which isn't supported.
+    WaitForCowPreSignUnsupported,
     /// The order opts into the fast path but the signed limit price doesn't
     /// leave room for the configured protocol and partner volume fees.
     /// Applying those fees would push the effective execution price past
@@ -452,6 +462,8 @@ pub struct OrderValidator {
     /// The volume fees the fast-path limit-price check leaves room for.
     volume_fees: Arc<FeeEngineVolumeFees>,
     wrapper_validator: order_validation::wrappers::Validator,
+    /// `None` when canonical batches are off.
+    canonical_batch_interval: Option<CanonicalBatchInterval>,
 }
 
 #[derive(Debug, Eq, PartialEq, Default)]
@@ -533,7 +545,16 @@ impl OrderValidator {
             same_tokens_policy,
             volume_fees,
             wrapper_validator,
+            canonical_batch_interval: None,
         }
+    }
+
+    pub fn with_canonical_batch_interval(
+        mut self,
+        interval: Option<CanonicalBatchInterval>,
+    ) -> Self {
+        self.canonical_batch_interval = interval;
+        self
     }
 
     /// Validates that a fast-path order's signed sell/buy amounts leave
@@ -740,35 +761,64 @@ impl OrderValidator {
         }
     }
 
-    fn compute_and_validate_valid_from(
+    /// Validates the order against the execution mode in its app data and
+    /// returns the `valid_from` to store for it.
+    fn validate_execution_mode(
         &self,
         app_data: &OrderAppData,
         order: &OrderData,
+        signing_scheme: SigningScheme,
     ) -> Result<Option<u32>, ValidationError> {
-        if matches!(
-            app_data.inner.protocol.execution_mode,
-            ExecutionMode::FastPath
-        ) {
+        match app_data.inner.protocol.execution_mode {
+            ExecutionMode::RegularAuction => Ok(None),
             // The autopilot's fast-path handler owns `valid_from` for
             // these orders (see `crates/autopilot/src/fast_path.rs`); the
             // orderbook writes `NULL` so the handler can classify the
             // order after placement.
-            return Ok(None);
-        }
-
-        // Non-fast-path orders may still declare `valid_from` explicitly
-        // in app-data.
-        let valid_from = match app_data.inner.protocol.execution_mode {
-            ExecutionMode::ValidFrom(valid_from) => Some(valid_from),
-            _ => None,
-        };
-        if let Some(valid_from) = valid_from {
-            let min = self.validity_configuration.min.as_secs();
-            if u64::from(order.valid_to) < u64::from(valid_from) + min {
-                return Err(ValidationError::InvalidValidFrom);
+            ExecutionMode::FastPath => Ok(None),
+            // The autopilot sets `valid_from` to the canonical batch the
+            // order joins when it first sees the order.
+            ExecutionMode::WaitForCow => {
+                // It does so whether or not the presignature has landed, and
+                // a presignature can take minutes (e.g. a Safe transaction),
+                // so the order would likely miss its batch.
+                if signing_scheme == SigningScheme::PreSign {
+                    return Err(ValidationError::WaitForCowPreSignUnsupported);
+                }
+                self.check_valid_through_next_canonical_batch(order, time::now_in_epoch_seconds())?;
+                Ok(None)
+            }
+            ExecutionMode::ValidFrom(valid_from) => {
+                let min = self.validity_configuration.min.as_secs();
+                if u64::from(order.valid_to) < u64::from(valid_from) + min {
+                    return Err(ValidationError::InvalidValidFrom);
+                }
+                Ok(Some(valid_from))
             }
         }
-        Ok(valid_from)
+    }
+
+    /// Rejects a wait-for-CoW order placed at `now` when canonical batches
+    /// are off, or when the order expires less than the minimum validity
+    /// period after the next batch starts. The autopilot leaves out orders
+    /// that are about to expire, so such an order couldn't trade in its
+    /// batch.
+    fn check_valid_through_next_canonical_batch(
+        &self,
+        order: &OrderData,
+        now: u32,
+    ) -> Result<(), ValidationError> {
+        let interval = self
+            .canonical_batch_interval
+            .ok_or(ValidationError::AppData(
+                AppDataValidationError::WaitForCowDisabled,
+            ))?;
+        let next_batch = interval.next_batch(now);
+        let min = self.validity_configuration.min.as_secs();
+        if u64::from(order.valid_to) < u64::from(next_batch) + min {
+            return Err(ValidationError::InsufficientValidToForCanonicalBatch);
+        }
+        Ok(())
     }
 }
 
@@ -882,6 +932,11 @@ impl OrderValidating for OrderValidator {
             }
             OrderCreationAppData::Full { full } => validate(full)?,
         };
+        if matches!(app_data.protocol.execution_mode, ExecutionMode::WaitForCow)
+            && self.canonical_batch_interval.is_none()
+        {
+            return Err(AppDataValidationError::WaitForCowDisabled);
+        }
 
         let interactions = self.custom_interactions(&app_data.protocol.hooks);
 
@@ -929,6 +984,7 @@ impl OrderValidating for OrderValidator {
         if !data.fee_amount.is_zero() {
             return Err(ValidationError::NonZeroFee);
         }
+        let valid_from = self.validate_execution_mode(&app_data, &data, signing_scheme)?;
 
         let pre_order = PreOrderData::from_order_creation(owner, &data, signing_scheme);
         self.partial_validate(pre_order)
@@ -1109,10 +1165,13 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::TooMuchGas);
         }
 
-        let valid_from = self.compute_and_validate_valid_from(&app_data, &data)?;
         let fast_path = matches!(
             app_data.inner.protocol.execution_mode,
             ExecutionMode::FastPath
+        );
+        let wait_for_cow = matches!(
+            app_data.inner.protocol.execution_mode,
+            ExecutionMode::WaitForCow
         );
 
         let order = Order {
@@ -1133,6 +1192,7 @@ impl OrderValidating for OrderValidator {
                     .map_err(ValidationError::Other)?,
                 valid_from,
                 fast_path,
+                wait_for_cow,
                 ..Default::default()
             },
             signature: order.signature.clone(),
@@ -1872,7 +1932,8 @@ mod tests {
             SameTokensPolicy::Disallow,
             no_volume_fees(),
             wrapper_validator(),
-        );
+        )
+        .with_canonical_batch_interval(Some(Duration::from_secs(60).try_into().unwrap()));
 
         let now = time::now_in_epoch_seconds();
         let plain = |valid_to: u32| OrderCreation {
@@ -1936,6 +1997,7 @@ mod tests {
         let (order, _) = validate(fast_path).await.unwrap();
         assert!(order.metadata.valid_from.is_none());
         assert!(order.metadata.fast_path);
+        assert!(!order.metadata.wait_for_cow);
 
         let both = OrderCreation {
             app_data: OrderCreationAppData::Full {
@@ -1947,6 +2009,167 @@ mod tests {
         std::assert_matches!(
             validate(both).await,
             Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+        );
+
+        // Wait-for-CoW orders are flagged as such, with no `valid_from` and
+        // not fast-path. The next batch starts within 60s, so a `valid_to`
+        // 150s from now leaves the 60s minimum validity after it.
+        let with_metadata = |metadata: serde_json::Value| OrderCreation {
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": metadata }).to_string(),
+            },
+            ..plain(now + 150)
+        };
+        let (order, _) = validate(with_metadata(json!({ "enableWaitForCow": true })))
+            .await
+            .unwrap();
+        assert!(order.metadata.valid_from.is_none());
+        assert!(!order.metadata.fast_path);
+        assert!(order.metadata.wait_for_cow);
+
+        // The order must stay valid for the minimum validity period after the
+        // next batch starts.
+        let valid_until = |valid_to: u32| OrderData {
+            valid_to,
+            ..Default::default()
+        };
+        let between_batches = 6_010;
+        std::assert_matches!(
+            validator
+                .check_valid_through_next_canonical_batch(&valid_until(6_119), between_batches),
+            Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+        validator
+            .check_valid_through_next_canonical_batch(&valid_until(6_120), between_batches)
+            .unwrap();
+        // Placed exactly at a batch time, the order can join that batch.
+        validator
+            .check_valid_through_next_canonical_batch(&valid_until(6_120), 6_060)
+            .unwrap();
+
+        // ...and are mutually exclusive with the other execution modes.
+        for conflicting in [
+            json!({ "enableWaitForCow": true, "enableFastPath": true }),
+            json!({ "enableWaitForCow": true, "validFrom": now + 50 }),
+        ] {
+            std::assert_matches!(
+                validate(with_metadata(conflicting)).await,
+                Err(ValidationError::AppData(AppDataValidationError::Invalid(_)))
+            );
+        }
+
+        // Without canonical batches, wait-for-CoW orders are rejected.
+        let without_batches = validator.with_canonical_batch_interval(None);
+        std::assert_matches!(
+            without_batches
+                .validate_and_construct_order(
+                    with_metadata(json!({ "enableWaitForCow": true })),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await,
+            Err(ValidationError::AppData(
+                AppDataValidationError::WaitForCowDisabled
+            ))
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_wait_for_cow_orders_before_simulating_or_quoting() {
+        // The mocks have no expectations, so any call to them fails the test.
+        let native_token = WETH9::Instance::new([0xef; 20].into(), ethrpc::mock::web3().provider);
+        let validator = OrderValidator::new(
+            native_token,
+            Arc::new(order_validation::banned::Users::none()),
+            OrderValidPeriodConfiguration {
+                min: Duration::from_secs(60),
+                max: Duration::from_secs(200),
+            },
+            false,
+            Default::default(),
+            HooksTrampoline::Instance::new(
+                Address::repeat_byte(0xcf),
+                ProviderBuilder::new()
+                    .connect_mocked_client(Asserter::new())
+                    .erased(),
+            ),
+            Arc::new(MockOrderQuoting::new()),
+            Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
+            None,
+            Arc::new(MockLimitOrderCounting::new()),
+            0,
+            Default::default(),
+            u64::MAX,
+            SameTokensPolicy::Disallow,
+            no_volume_fees(),
+            wrapper_validator(),
+        )
+        .with_canonical_batch_interval(Some(Duration::from_secs(60).try_into().unwrap()));
+        let now = time::now_in_epoch_seconds();
+        let order = |valid_to| OrderCreation {
+            valid_to,
+            sell_token: Address::with_last_byte(1),
+            buy_token: Address::with_last_byte(2),
+            buy_amount: alloy::primitives::U256::from(1),
+            sell_amount: alloy::primitives::U256::from(1),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            app_data: OrderCreationAppData::Full {
+                full: json!({ "metadata": { "enableWaitForCow": true } }).to_string(),
+            },
+            ..Default::default()
+        };
+        let validate = async |validator: &OrderValidator, valid_to| {
+            validator
+                .validate_and_construct_order(
+                    order(valid_to),
+                    &Default::default(),
+                    Default::default(),
+                    None,
+                )
+                .await
+        };
+
+        // Expires before the minimum validity after any next batch.
+        std::assert_matches!(
+            validate(&validator, now + 59).await,
+            Err(ValidationError::InsufficientValidToForCanonicalBatch)
+        );
+
+        // Presign orders can't wait for a batch.
+        let presign = OrderCreation {
+            from: Some(Address::with_last_byte(3)),
+            signature: Signature::PreSign,
+            ..order(now + 100)
+        };
+        std::assert_matches!(
+            validator
+                .validate_and_construct_order(
+                    presign,
+                    &Default::default(),
+                    Default::default(),
+                    None
+                )
+                .await,
+            Err(ValidationError::WaitForCowPreSignUnsupported)
+        );
+
+        // Passes the other cheap checks, so the rejection must come before
+        // the expensive ones.
+        let without_batches = validator.with_canonical_batch_interval(None);
+        std::assert_matches!(
+            validate(&without_batches, now + 100).await,
+            Err(ValidationError::AppData(
+                AppDataValidationError::WaitForCowDisabled
+            ))
+        );
+        // Quote requests only validate the app data, so they are rejected too.
+        std::assert_matches!(
+            without_batches
+                .validate_app_data(&order(now + 100).app_data, &None)
+                .err(),
+            Some(AppDataValidationError::WaitForCowDisabled)
         );
     }
 

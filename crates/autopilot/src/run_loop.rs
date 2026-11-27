@@ -25,6 +25,7 @@ use {
     alloy::primitives::B256,
     anyhow::{Context, Result},
     chrono::{DateTime, Utc},
+    configs::canonical_batch::CanonicalBatchInterval,
     database::order_events::OrderEventLabel,
     eth_domain_types::Address,
     ethrpc::block_stream::{BlockInfo, CurrentBlockWatcher},
@@ -59,6 +60,8 @@ pub struct Config {
     pub max_solutions_per_solver: NonZeroUsize,
     pub enable_leader_lock: bool,
     pub auction_delta_checkpoint_interval: Duration,
+    /// `None` when canonical batches are off.
+    pub canonical_batch_interval: Option<CanonicalBatchInterval>,
 }
 
 impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
@@ -72,6 +75,7 @@ impl From<configs::autopilot::run_loop::RunLoopConfig> for Config {
             max_solutions_per_solver: value.max_solutions_per_solver,
             enable_leader_lock: value.enable_leader_lock,
             auction_delta_checkpoint_interval: value.auction_delta_checkpoint_interval,
+            canonical_batch_interval: value.canonical_batch_interval,
             sync_solve_deadline_to_blockchain: value.sync_solve_deadline_to_blockchain.map(|cfg| {
                 SlotConfig {
                     slot_length: cfg.slot_length,
@@ -364,6 +368,10 @@ impl RunLoop {
                 .await;
         }
 
+        if is_leader {
+            self.schedule_wait_for_cow_orders().await;
+        }
+
         match self
             .solvable_orders_cache
             .update(auction_block.number, is_leader)
@@ -377,6 +385,42 @@ impl RunLoop {
                 self.solvable_orders_cache.track_auction_update("failure");
                 tracing::warn!(?err, "failed to update auction");
             }
+        }
+    }
+
+    /// Sets `valid_from` of the wait-for-CoW orders this instance sees for the
+    /// first time: to the next canonical batch, or to now when canonical
+    /// batches are off.
+    ///
+    /// It runs right before the solvable orders are read, on the same clock.
+    /// So an order seen before a batch time is in the first auction built
+    /// after it, together with every other order waiting for that batch, and
+    /// an order first seen after the batch was built waits for the next one.
+    async fn schedule_wait_for_cow_orders(&self) {
+        let now = model::time::now_in_epoch_seconds();
+        let (valid_from, schedule) = match self.config.canonical_batch_interval {
+            Some(interval) => (interval.next_batch(now), "canonical_batch"),
+            None => (now, "immediate"),
+        };
+        match self
+            .persistence
+            .set_valid_from_of_pending_wait_for_cow_orders(valid_from)
+            .await
+        {
+            Ok(0) => {}
+            Ok(orders) => {
+                tracing::info!(
+                    orders,
+                    valid_from,
+                    schedule,
+                    "scheduled wait-for-CoW orders"
+                );
+                Metrics::get()
+                    .wait_for_cow_orders_scheduled
+                    .with_label_values(&[schedule])
+                    .inc_by(orders);
+            }
+            Err(err) => tracing::warn!(?err, "failed to schedule wait-for-CoW orders"),
         }
     }
 
@@ -1025,6 +1069,12 @@ struct Metrics {
         )
     )]
     solve_request_body_size: prometheus::HistogramVec,
+
+    /// Tracks the wait-for-CoW orders that got their `valid_from`. The
+    /// `schedule` label is `canonical_batch` when they wait for the next
+    /// canonical batch, and `immediate` when canonical batches are off.
+    #[metric(labels("schedule"))]
+    wait_for_cow_orders_scheduled: prometheus::IntCounterVec,
 }
 
 impl Metrics {

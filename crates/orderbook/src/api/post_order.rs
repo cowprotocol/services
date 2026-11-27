@@ -126,6 +126,14 @@ impl IntoResponse for AppDataValidationErrorWrapper {
                 ),
             )
                 .into_response(),
+            AppDataValidationError::WaitForCowDisabled => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "WaitForCowDisabled",
+                    "appData enableWaitForCow is not supported on this network.",
+                ),
+            )
+                .into_response(),
         }
     }
 }
@@ -248,6 +256,24 @@ impl IntoResponse for ValidationErrorWrapper {
                 error(
                     "InvalidValidFrom",
                     "appData validFrom must be earlier than the order's validTo.",
+                ),
+            )
+                .into_response(),
+            ValidationError::InsufficientValidToForCanonicalBatch => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "InsufficientValidToForCanonicalBatch",
+                    "orders with appData enableWaitForCow wait for the next canonical batch; \
+                     validTo must leave the minimum order validity after that batch starts. See \
+                     /api/v1/canonical_batch_schedule.",
+                ),
+            )
+                .into_response(),
+            ValidationError::WaitForCowPreSignUnsupported => (
+                StatusCode::BAD_REQUEST,
+                error(
+                    "WaitForCowPreSignUnsupported",
+                    "appData enableWaitForCow is not supported for presign orders.",
                 ),
             )
                 .into_response(),
