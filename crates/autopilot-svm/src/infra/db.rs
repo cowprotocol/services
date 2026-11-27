@@ -65,6 +65,7 @@ pub struct OrderRow {
     pub partially_fillable: bool,
     pub order_pda: ByteArray<32>,
     pub app_data: ByteArray<32>,
+    pub full_app_data: Option<String>,
     pub created_on_chain: bool,
     pub executed: BigDecimal,
     pub creation: Option<Vec<u8>>,
@@ -91,6 +92,7 @@ pub async fn open_orders(
 SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_account,
        o.buy_token_account, o.sell_amount, o.buy_amount, o.valid_to,
        o.kind, o.partially_fillable, o.order_pda, o.app_data,
+       convert_from(a.full_app_data, 'UTF8') AS full_app_data,
        p.order_uid IS NOT NULL AS created_on_chain,
        CASE o.kind
            WHEN 'sell' THEN COALESCE(p.amount_withdrawn, 0)
@@ -104,6 +106,7 @@ SELECT o.uid, o.owner, o.receiver, o.sell_token, o.buy_token, o.sell_token_accou
 FROM solana.orders o
 LEFT JOIN solana.order_pda p ON p.order_uid = o.uid
 LEFT JOIN solana.order_quotes q ON q.order_uid = o.uid
+LEFT JOIN solana.app_data a ON a.contract_app_data = o.app_data
 WHERE o.valid_to >= $1
   AND NOT COALESCE(p.is_reorged, false)
   AND (o.valid_from IS NULL OR o.valid_from <= $1)
@@ -744,6 +747,7 @@ impl TryFrom<OrderRow> for Order {
             partially_fillable: row.partially_fillable,
             order_pda: Pubkey(row.order_pda.0),
             app_data: AppData(row.app_data.0),
+            full_app_data: row.full_app_data,
             created_on_chain: row.created_on_chain,
             executed: to_amount(&row.executed).context("executed")?,
             creation: row.creation,
@@ -928,6 +932,7 @@ mod tests {
             partially_fillable: false,
             order_pda: ByteArray([7; 32]),
             app_data: ByteArray([0; 32]),
+            full_app_data: Some("{}".to_owned()),
             created_on_chain: true,
             executed: BigDecimal::from(0u64),
             creation: None,
@@ -1004,6 +1009,7 @@ mod tests {
     fn converts_a_row_and_rejects_out_of_range_values() {
         let order = super::Order::try_from(conversion_row()).unwrap();
         assert_eq!(order.sell_amount, u64::MAX);
+        assert_eq!(order.full_app_data.as_deref(), Some("{}"));
         assert_eq!(order.kind, crate::domain::auction::OrderKind::Sell);
 
         let mut too_big = conversion_row();
@@ -1198,6 +1204,39 @@ VALUES ($1, $2, CASE WHEN $3 THEN now() END, $4, $5)
                 ),
             ]
         );
+    }
+
+    /// An open order carries the document its `app_data` hash names once it
+    /// is registered, and none before.
+    #[tokio::test]
+    #[ignore = "needs the solana.* schema applied to the local database"]
+    async fn solana_db_open_orders_carry_the_registered_app_data() {
+        let pool = crate::test_db::pool().await;
+        let mut tx = pool.begin().await.unwrap();
+        for table in ["trades", "order_pda", "order_quotes", "orders", "app_data"] {
+            sqlx::query(&format!("DELETE FROM solana.{table}"))
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        // `insert_order` sets `app_data` to `[0xAA; 32]`.
+        insert_order(&mut tx, 1, 2_000, true, database::solana::OrderKind::Sell).await;
+        let rows = open_orders(&mut *tx, 1_000, None).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].full_app_data, None);
+
+        let document = r#"{"metadata":{"hooks":{"post":[]}}}"#;
+        sqlx::query(
+            "INSERT INTO solana.app_data (contract_app_data, full_app_data) VALUES ($1, $2)",
+        )
+        .bind(ByteArray([0xAA; 32]))
+        .bind(document.as_bytes())
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let rows = open_orders(&mut *tx, 1_000, None).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].full_app_data.as_deref(), Some(document));
     }
 
     #[tokio::test]

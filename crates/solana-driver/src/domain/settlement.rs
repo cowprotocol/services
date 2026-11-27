@@ -5,6 +5,7 @@ use {
         Order,
         Side,
         auction::Id,
+        hooks::{HookInstructions, InvalidHook},
         order_uid::OrderUid,
         priority_fee::{Estimate, MAX_COMPUTE_UNIT_LIMIT},
         solution::Solution,
@@ -44,7 +45,7 @@ use {
     solana_system_interface::{instruction::transfer, program::ID as SYSTEM_PROGRAM_ID},
     spl_token_interface::native_mint,
     std::{
-        collections::{HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         num::NonZeroU64,
     },
 };
@@ -93,6 +94,9 @@ pub(crate) struct ResolvedSettlement {
     /// whenever the settlement uses it. Sorted and deduplicated.
     missing_atas: Vec<Ata>,
     token_programs: TokenPrograms,
+    /// Each order's hook instructions for this fill, checked against `payer`
+    /// and keyed by order PDA, the order `BeginSettle` takes the orders in.
+    hooks: BTreeMap<Pubkey, HookInstructions>,
     /// The largest share of the native SOL payouts that the payer's own SOL
     /// covers when the swap output falls short. `None` covers nothing.
     max_native_shortfall: Option<MaxNativeShortfall>,
@@ -143,6 +147,7 @@ impl Settlement {
         blockchain: &Solana,
         payer: Pubkey,
     ) -> Result<ResolvedSettlement, ResolveError> {
+        let hooks = hook_instructions(&self.orders, &payer)?;
         // ATA addresses derive from the mint's token program, so the mints are
         // read before the accounts derived from them.
         let token_programs = blockchain
@@ -182,6 +187,7 @@ impl Settlement {
         Ok(ResolvedSettlement {
             settlement: self,
             payer,
+            hooks,
             missing_buffers,
             missing_atas,
             token_programs,
@@ -334,6 +340,10 @@ impl ResolvedSettlement {
             ));
         }
 
+        // The orders' pre-hooks run before `BeginSettle` pulls their sell
+        // tokens, so they can prepare what it pulls.
+        instructions.extend(self.hooks.values().flat_map(|i| &i.pre).cloned());
+
         // BeginSettle and FinalizeSettle reference each other by index, so
         // compute their positions before pushing them.
         let begin_ix_index =
@@ -359,6 +369,8 @@ impl ResolvedSettlement {
             begin_ix_index,
             &settlement_orders,
         ));
+        // The orders' post-hooks run after `FinalizeSettle` paid them out.
+        instructions.extend(self.hooks.values().flat_map(|i| &i.post).cloned());
 
         Ok(instructions)
     }
@@ -422,6 +434,22 @@ impl ResolvedSettlement {
             message,
         })
     }
+}
+
+/// Each order's hook instructions for its fill in a settlement `payer` signs,
+/// keyed by order PDA. Fails on the first order with a hook invalid for
+/// `payer`.
+fn hook_instructions(
+    orders: &[Order],
+    payer: &Pubkey,
+) -> Result<BTreeMap<Pubkey, HookInstructions>, InvalidHook> {
+    orders
+        .iter()
+        .map(|order| {
+            let instructions = order.hooks.instructions(payer, order.executed)?;
+            Ok((order.order_pda, instructions))
+        })
+        .collect()
 }
 
 /// v0's implicit loaded accounts data limit, which v1 has to request: its
@@ -612,6 +640,9 @@ pub(crate) enum ResolveError {
     },
     #[error(transparent)]
     UnresolvedMint(#[from] UnresolvedMint),
+    /// An order's hook may not run in a settlement paid by this payer.
+    #[error(transparent)]
+    InvalidHook(#[from] InvalidHook),
 }
 
 impl TryFrom<&Order> for OrderIntent {
@@ -1107,6 +1138,7 @@ mod tests {
             partially_fillable: false,
             order_pda: Pubkey::default(), // re-derived below
             app_data: [0x77; 32],
+            hooks: Default::default(),
             executed: 0,
             sell_balance: None,
         };
@@ -1204,6 +1236,7 @@ mod tests {
     fn resolve_for_test(settlement: Settlement, payer: Pubkey) -> ResolvedSettlement {
         ResolvedSettlement {
             token_programs: spl_token_programs(&settlement),
+            hooks: hook_instructions(&settlement.orders, &payer).unwrap(),
             settlement,
             payer,
             missing_buffers: Vec::new(),
@@ -2072,6 +2105,7 @@ mod tests {
         .unwrap();
         let resolved = ResolvedSettlement {
             token_programs: spl_token_programs(&settlement),
+            hooks: hook_instructions(&settlement.orders, &payer).unwrap(),
             settlement,
             payer,
             missing_buffers,
@@ -2184,6 +2218,7 @@ mod tests {
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
         let resolved = ResolvedSettlement {
             token_programs: spl_token_programs(&settlement),
+            hooks: hook_instructions(&settlement.orders, &payer).unwrap(),
             settlement,
             payer,
             missing_buffers: Vec::new(),
@@ -2493,6 +2528,7 @@ mod tests {
         )
         .unwrap();
         let resolved = ResolvedSettlement {
+            hooks: hook_instructions(&settlement.orders, &payer).unwrap(),
             settlement,
             payer,
             missing_buffers: vec![spl.buy_token, token_2022.buy_token],
@@ -2611,6 +2647,7 @@ mod tests {
         let settlement =
             test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
         let resolved = ResolvedSettlement {
+            hooks: hook_instructions(&settlement.orders, &payer).unwrap(),
             settlement,
             payer,
             missing_buffers: Vec::new(),
@@ -2780,5 +2817,181 @@ mod tests {
             base.uid, with_other_buy_account.uid,
             "orders that differ only in the buy token account must have different uids"
         );
+    }
+
+    fn hook(program: u8, account: u8) -> crate::domain::hooks::Hook {
+        crate::domain::hooks::Hook {
+            program_id: pubkey(program),
+            accounts: vec![crate::domain::hooks::HookAccount {
+                pubkey: pubkey(account),
+                is_writable: true,
+            }],
+            data: vec![program],
+        }
+    }
+
+    /// The instruction `hook(program, account)` encodes to: its one account
+    /// writable and not signing.
+    fn hook_instruction(program: u8, account: u8) -> Instruction {
+        Instruction {
+            program_id: pubkey(program),
+            accounts: vec![solana_sdk::instruction::AccountMeta::new(
+                pubkey(account),
+                false,
+            )],
+            data: vec![program],
+        }
+    }
+
+    fn hooks(pre: &[u8], post: &[u8]) -> crate::domain::hooks::Hooks {
+        crate::domain::hooks::Hooks {
+            pre: pre.iter().map(|&program| hook(program, 0x01)).collect(),
+            post: post.iter().map(|&program| hook(program, 0x01)).collect(),
+        }
+    }
+
+    /// The pre-hooks run before `BeginSettle` and the post-hooks after
+    /// `FinalizeSettle`, each as a plain instruction signing nothing, and the
+    /// reciprocal indices count them.
+    #[test]
+    fn hooks_wrap_the_settle_pair() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order_with(&program_id, |order| {
+            order.hooks = hooks(&[0xc1, 0xc2], &[0xc3])
+        });
+        let mut solution = solution(vec![trade(order.uid, 1_000, 2_000)]);
+        let interaction = hook_instruction(0xd1, 0x02);
+        solution.interactions = vec![interaction.clone()];
+        let settlement =
+            Settlement::new(program_id, Some(Id::new(7).unwrap()), vec![order], solution).unwrap();
+
+        let instructions = resolve_for_test(settlement, payer).instructions().unwrap();
+
+        // [pre, pre, BeginSettle, interaction, FinalizeSettle, post].
+        let programs: Vec<Pubkey> = instructions.iter().map(|ix| ix.program_id).collect();
+        assert_eq!(
+            programs,
+            vec![
+                pubkey(0xc1),
+                pubkey(0xc2),
+                program_id,
+                pubkey(0xd1),
+                program_id,
+                pubkey(0xc3),
+            ]
+        );
+        assert_eq!(instructions[0], hook_instruction(0xc1, 0x01));
+        assert_eq!(instructions[3], interaction);
+        assert_eq!(instructions[5], hook_instruction(0xc3, 0x01));
+        assert!(
+            [&instructions[0], &instructions[1], &instructions[5]]
+                .iter()
+                .flat_map(|ix| &ix.accounts)
+                .all(|meta| !meta.is_signer)
+        );
+
+        let begin = &instructions[2];
+        let begin_accounts: Vec<Pubkey> = begin.accounts.iter().map(|m| m.pubkey).collect();
+        let begin_input = BeginSettleInput::parse(&begin.data, &begin_accounts).unwrap();
+        assert_eq!(begin_input.finalize_ix_index, 4);
+        let finalize = &instructions[4];
+        let finalize_accounts: Vec<Pubkey> = finalize.accounts.iter().map(|m| m.pubkey).collect();
+        let finalize_input =
+            FinalizeSettleInput::parse(&finalize.data, &finalize_accounts).unwrap();
+        assert_eq!(finalize_input.begin_ix_index, 2);
+    }
+
+    /// Like on EVM, only an order's first fill runs its pre-hooks; every fill
+    /// runs its post-hooks.
+    #[test]
+    fn a_later_fill_skips_the_pre_hooks() {
+        let program_id = pubkey(0xaa);
+        let order = test_order_with(&program_id, |order| {
+            order.partially_fillable = true;
+            order.executed = 100;
+            order.hooks = hooks(&[0xc1], &[0xc3]);
+        });
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 900, 1_800)]).unwrap();
+
+        let instructions = resolve_for_test(settlement, pubkey(0xbb))
+            .instructions()
+            .unwrap();
+
+        let programs: Vec<Pubkey> = instructions.iter().map(|ix| ix.program_id).collect();
+        assert_eq!(programs, vec![program_id, program_id, pubkey(0xc3)]);
+    }
+
+    /// The hooks of several orders run in the order `BeginSettle` takes the
+    /// orders: increasing by order PDA.
+    #[test]
+    fn hooks_follow_the_order_pda_order() {
+        let program_id = pubkey(0xaa);
+        let first = test_order_with(&program_id, |order| order.hooks = hooks(&[0xc1], &[0xc3]));
+        let second = test_order_with(&program_id, |order| {
+            order.owner = pubkey(0x23);
+            order.hooks = hooks(&[0xc2], &[0xc4]);
+        });
+        let (low, high) = if first.order_pda < second.order_pda {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let settlement = test_settlement(
+            // Passed in the opposite order.
+            &[high.clone(), low.clone()],
+            &[trade(high.uid, 1_000, 2_000), trade(low.uid, 1_000, 2_000)],
+        )
+        .unwrap();
+
+        let instructions = resolve_for_test(settlement, pubkey(0xbb))
+            .instructions()
+            .unwrap();
+
+        let programs: Vec<Pubkey> = instructions.iter().map(|ix| ix.program_id).collect();
+        let program = |order: &Order, pre: bool| {
+            let hooks = if pre {
+                &order.hooks.pre
+            } else {
+                &order.hooks.post
+            };
+            hooks[0].program_id
+        };
+        assert_eq!(
+            programs,
+            vec![
+                program(&low, true),
+                program(&high, true),
+                program_id,
+                program_id,
+                program(&low, false),
+                program(&high, false),
+            ]
+        );
+    }
+
+    /// A hook consuming the payer, the settlement's signer, fails resolution
+    /// before any account is fetched.
+    #[tokio::test]
+    async fn resolving_rejects_a_hook_consuming_the_payer() {
+        let program_id = pubkey(0xaa);
+        let payer = pubkey(0xbb);
+        let order = test_order_with(&program_id, |order| {
+            order.hooks.post = vec![hook(0xc3, 0xbb)];
+        });
+        let settlement =
+            test_settlement(slice::from_ref(&order), &[trade(order.uid, 1_000, 2_000)]).unwrap();
+
+        let result = settlement
+            .resolve_accounts(&blockchain([], []), payer)
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(ResolveError::InvalidHook(
+                InvalidHook::ConsumesSolverSigner { .. }
+            ))
+        ));
     }
 }

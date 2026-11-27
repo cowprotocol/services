@@ -262,6 +262,11 @@ components:
             - $ref: "#/components/schemas/Address"
         appData:
           $ref: "#/components/schemas/AppData"
+        fullAppData:
+          description: |-
+            The JSON document `appData` is the keccak256 of, when one is
+            registered.
+          type: string
         executed:
           description: |-
             The cumulative fill on the order's own side from earlier

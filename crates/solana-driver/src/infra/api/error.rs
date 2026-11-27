@@ -128,7 +128,9 @@ impl From<competition::Error> for (axum::http::StatusCode, axum::Json<Error>) {
                 settlement::ResolveError::Rpc(_)
                 | settlement::ResolveError::UnexpectedSetupAccount { .. }
                 | settlement::ResolveError::InvalidMint { .. }
-                | settlement::ResolveError::UnresolvedMint(_) => Kind::Unknown,
+                | settlement::ResolveError::UnresolvedMint(_)
+                // The user wrote the hook, and receipt drops such orders.
+                | settlement::ResolveError::InvalidHook(_) => Kind::Unknown,
             },
         }
         .into()
