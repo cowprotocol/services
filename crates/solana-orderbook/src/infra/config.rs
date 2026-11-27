@@ -61,8 +61,8 @@ pub struct Config {
     /// Quote verification. Absent, every quote is unverified.
     pub quote_verification: Option<QuoteVerification>,
     /// Quotes for orders created on chain. Absent, such an order gets none.
-    /// To be set only next to an autopilot whose `quote-link-grace` holds
-    /// these orders: an order the autopilot cuts first gets no quote.
+    /// To be set only next to an autopilot whose `quote-link-grace-period`
+    /// holds these orders: an order the autopilot cuts first gets no quote.
     pub on_chain_quotes: Option<OnChainQuotes>,
     /// Most bytes an app data document may have.
     #[serde(default = "default_app_data_size_limit")]
