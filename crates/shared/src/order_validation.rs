@@ -1438,7 +1438,7 @@ mod tests {
 
     /// Volume fees from no rules: no order pays one.
     fn no_volume_fees() -> Arc<FeeEngineVolumeFees> {
-        Arc::new(FeeEngineVolumeFees::new(&Default::default(), Address::ZERO).unwrap())
+        Arc::new(FeeEngineVolumeFees::new(&Default::default(), Address::ZERO, false).unwrap())
     }
 
     const DEFAULT_ORDER_SIM_TIMEOUT: Duration = Duration::from_secs(2);

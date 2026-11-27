@@ -323,6 +323,7 @@ impl RuleSet {
                 app_data: &sample_app_data(),
                 partner_fees: &[],
                 in_market: false,
+                canonical_batches: true,
             })
             .into_iter()
             .map(error(Sample::Full))
@@ -333,6 +334,7 @@ impl RuleSet {
                 app_data: &AppData::default(),
                 partner_fees: &[],
                 in_market: false,
+                canonical_batches: false,
             })
             .skipped
             .into_iter()
@@ -400,6 +402,7 @@ pub(crate) fn full_sample_order(now: DateTime<Utc>) -> Order {
         onchain_user: Some(Default::default()),
         valid_from: Some(now.timestamp() as u32),
         fast_path: true,
+        wait_for_cow: true,
         ..order.metadata
     };
     order
@@ -488,6 +491,7 @@ mod tests {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
+            canonical_batches: false,
         });
         assert_eq!(evaluation.matched.len(), 1);
     }
@@ -525,6 +529,7 @@ mod tests {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market: false,
+            canonical_batches: false,
         });
         assert_eq!(evaluation.matched[0].fees, fees);
         assert_eq!(evaluation.skipped.len(), 1);

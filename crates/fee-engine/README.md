@@ -237,6 +237,7 @@ lowercase. An order with every field set looks like this (hashes shortened):
     }
   },
   "fastPath": false,
+  "waitForCow": true,
   "inMarket": true,
   "ethflowData": {
     "userValidTo": 1793284991
@@ -246,6 +247,12 @@ lowercase. An order with every field set looks like this (hashes shortened):
 
 `inMarket` is `OrderView::in_market` as the host passes it. The engine does not
 check it: the host must pass false when the order has no quote.
+
+`fastPath` and `waitForCow` are the execution modes the order asks for with
+the `enableFastPath` and `enableWaitForCow` app-data flags; at most one is
+true. `waitForCow` is also false while the host runs no canonical batches
+(`OrderView::canonical_batches`): such an order then trades as a regular
+order, so it pays the fee of one.
 
 Execution state (`executed*`, `status`, `invalidated`, `availableBalance`,
 `gasCost`), settlement fields (`signature`, `interactions`,
@@ -269,6 +276,7 @@ of it.
 when: order.kind == "sell" && order.signingScheme == "eip1271" && order.sellAmount > 1e21
 when: timestamp(int(order.validTo)) - now > duration("1h")
 when: order.?ethflowData.hasValue()
+when: order.waitForCow
 fee:  order.inMarket ? price_improvement(50, 100) : surplus(50, 100)
 ```
 
@@ -292,8 +300,9 @@ order has no document or the protocol cannot parse it. `appData` and
 `appData.metadata` are always present; every field under them is optional,
 so reach it with `.?` or guard it with `has`.
 
-`metadata.enableFastPath` and `metadata.validFrom` are not here: read
-`order.fastPath` and `order.validFrom`, which hold the values in effect.
+`metadata.enableFastPath`, `metadata.enableWaitForCow` and
+`metadata.validFrom` are not here: read `order.fastPath`, `order.waitForCow`
+and `order.validFrom`, which hold the values in effect.
 
 `appCode` is free text in the case the wallet chose, and the same wallet
 does not always choose the same. Compare it through `lowerAscii()` against

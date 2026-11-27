@@ -88,14 +88,23 @@ pub fn fast_path_partner_fees(protocol: &ProtocolAppData) -> Vec<PartnerFee> {
 /// other: surplus and price improvement fees take nothing at the quoted price.
 pub struct FeeEngineVolumeFees {
     rules: RuleSet,
+    canonical_batches: bool,
 }
 
 impl FeeEngineVolumeFees {
     /// Loads the rules of `[fee-engine]`, with the chain's wrapped native
     /// token added as the list `wrapped_native`, which the section may not set.
-    pub fn new(config: &FeeEngineConfig, native_token: Address) -> anyhow::Result<Self> {
+    /// `canonical_batches` tells whether the orderbook runs canonical batches.
+    pub fn new(
+        config: &FeeEngineConfig,
+        native_token: Address,
+        canonical_batches: bool,
+    ) -> anyhow::Result<Self> {
         let rules = load_host_rules(config, native_token, &[])?;
-        Ok(Self { rules })
+        Ok(Self {
+            rules,
+            canonical_batches,
+        })
     }
 
     fn evaluate(
@@ -114,6 +123,7 @@ impl FeeEngineVolumeFees {
                 app_data: &self::app_data(&app_data.protocol, app_code),
                 partner_fees,
                 in_market,
+                canonical_batches: self.canonical_batches,
             });
         evaluation.warn_skipped();
         evaluation
@@ -235,7 +245,7 @@ fee = "volume(2)"
             .map(|bps| format!("[partner-fees]\nmax-volume-bps = {bps}\n"))
             .unwrap_or_default();
         let config = toml::from_str(&format!("{cap}{rules}")).unwrap();
-        FeeEngineVolumeFees::new(&config, WETH).unwrap()
+        FeeEngineVolumeFees::new(&config, WETH, false).unwrap()
     }
 
     fn engine(max_partner_fee_bps: Option<u32>) -> FeeEngineVolumeFees {
@@ -343,7 +353,7 @@ fee = "volume(2)"
 
     #[test]
     fn no_rules_charge_no_volume_fee() {
-        let engine = FeeEngineVolumeFees::new(&FeeEngineConfig::default(), WETH).unwrap();
+        let engine = FeeEngineVolumeFees::new(&FeeEngineConfig::default(), WETH, false).unwrap();
         let (order, app_data) = (order(USDC, WETH), validated(VOLUME_PARTNER_FEES));
         assert_eq!(engine.quote_volume_fee(&order, &app_data, None), None);
         assert_eq!(
@@ -356,9 +366,11 @@ fee = "volume(2)"
     fn rules_must_load() {
         let broken =
             toml::from_str("[[rule]]\nname = 'x'\nwhen = 'true'\nfee = 'volume('\n").unwrap();
-        assert!(FeeEngineVolumeFees::new(&broken, WETH).is_err());
+        assert!(FeeEngineVolumeFees::new(&broken, WETH, false).is_err());
         let missing_fee = toml::from_str("[[rule]]\nname = 'x'\nwhen = 'true'\n").unwrap();
-        let error = FeeEngineVolumeFees::new(&missing_fee, WETH).err().unwrap();
+        let error = FeeEngineVolumeFees::new(&missing_fee, WETH, false)
+            .err()
+            .unwrap();
         assert!(
             format!("{error:#}").contains("rule number 1 is malformed: missing field `fee`"),
             "{error:#}"
@@ -372,9 +384,37 @@ fee = "volume(2)"
             "[[rule]]\nname = 'x'\nwhen = 'order.sellToken in wrapped_native'\nfee = 'volume(1)'\n",
         )
         .unwrap();
-        assert!(FeeEngineVolumeFees::new(&config, WETH).is_ok());
+        assert!(FeeEngineVolumeFees::new(&config, WETH, false).is_ok());
         config.lists = Some(toml::from_str("wrapped_native = []").unwrap());
-        assert!(FeeEngineVolumeFees::new(&config, WETH).is_err());
+        assert!(FeeEngineVolumeFees::new(&config, WETH, false).is_err());
+    }
+
+    #[test]
+    fn wait_for_cow_quotes_skip_the_volume_fee_only_with_canonical_batches() {
+        let config: FeeEngineConfig = toml::from_str(
+            r#"
+[[rule]]
+name = "Wait for CoW: no volume fee"
+when = "order.waitForCow"
+fee = "surplus(50, 98)"
+
+[[rule]]
+name = "Default: 2 bps"
+when = "true"
+fee = "[surplus(50, 98), volume(2)]"
+"#,
+        )
+        .unwrap();
+        let fee = |wait_for_cow, canonical_batches| {
+            let mut order = order(USDC, WETH);
+            order.metadata.wait_for_cow = wait_for_cow;
+            FeeEngineVolumeFees::new(&config, WETH, canonical_batches)
+                .unwrap()
+                .quote_volume_fee(&order, &validated("{}"), None)
+        };
+        assert_eq!(fee(true, true), None);
+        assert_eq!(fee(true, false), Some(factor(0.0002)));
+        assert_eq!(fee(false, true), Some(factor(0.0002)));
     }
 
     #[test]

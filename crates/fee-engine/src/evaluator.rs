@@ -247,6 +247,7 @@ mod tests {
             app_data: &AppData::default(),
             partner_fees: &[],
             in_market,
+            canonical_batches: false,
         })
     }
 
@@ -480,6 +481,7 @@ mod tests {
             app_data: &app_data,
             partner_fees: &[],
             in_market: false,
+            canonical_batches: false,
         });
         assert!(evaluation.skipped.is_empty());
         assert_eq!(names(&evaluation), ["CoW Swap"]);
@@ -500,6 +502,7 @@ mod tests {
                 app_data: &AppData::default(),
                 partner_fees: &[PartnerFee::Volume { bps: 60 }],
                 in_market: false,
+                canonical_batches: false,
             });
             assert!(evaluation.matched.is_empty());
             evaluation.partner_fees

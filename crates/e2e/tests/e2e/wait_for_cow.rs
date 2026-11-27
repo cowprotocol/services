@@ -1,5 +1,6 @@
 use {
     ::alloy::primitives::{Address, U256},
+    autopilot::infra::persistence::dto::order::FeePolicy,
     configs::{
         autopilot::{Configuration as AutopilotConfiguration, run_loop::RunLoopConfig},
         canonical_batch::CanonicalBatchInterval,
@@ -9,15 +10,17 @@ use {
         },
         test_util::TestDefault,
     },
+    database::fee_policies::{FeePolicyKind, FeePolicyOrigin},
     e2e::setup::*,
     ethrpc::{Web3, alloy::CallBuilderExt},
     model::{
         DomainSeparator,
         order::{OrderCreation, OrderCreationAppData, OrderKind, OrderStatus, OrderUid},
+        quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
         signature::EcdsaSigningScheme,
         time::now_in_epoch_seconds,
     },
-    number::units::EthUnit,
+    number::{nonzero::NonZeroU256, units::EthUnit},
     orderbook::dto::order::Status,
     reqwest::StatusCode,
     std::time::Duration,
@@ -53,6 +56,19 @@ fn order(
     }
     .sign(EcdsaSigningScheme::Eip712, domain_separator, &trader.signer)
 }
+/// The shape of the prod rules: every order pays a surplus or price
+/// improvement fee, and all but wait-for-CoW orders a 1% volume fee on top.
+const FEE_RULES: &str = r#"
+[[rule]]
+name = "Wait for CoW: no volume fee"
+when = "order.waitForCow"
+fee = "order.inMarket ? price_improvement(50, 98) : surplus(50, 98)"
+
+[[rule]]
+name = "Default"
+when = "true"
+fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(100)]"
+"#;
 
 #[tokio::test]
 #[ignore]
@@ -91,6 +107,7 @@ async fn wait_for_cow_test(web3: Web3) {
                     canonical_batch_interval: Some(interval),
                     ..RunLoopConfig::test_default()
                 },
+                fee_engine: fee_engine_config(FEE_RULES),
                 ..AutopilotConfiguration::test("test_solver", solver.address())
             },
             OrderbookConfiguration {
@@ -98,6 +115,7 @@ async fn wait_for_cow_test(web3: Web3) {
                     canonical_batch_interval: Some(interval),
                     ..Default::default()
                 },
+                fee_engine: fee_engine_config(FEE_RULES),
                 ..OrderbookConfiguration::test_default()
             },
             solver,
@@ -122,6 +140,33 @@ async fn wait_for_cow_test(web3: Web3) {
 
     let domain_separator = &onchain.contracts().domain_separator;
     let (token_a, token_b) = (*token_a.address(), *token_b.address());
+
+    tracing::info!("A wait-for-CoW quote has no volume fee.");
+    let quoted_volume_fee = |app_data: &str| {
+        let request = OrderQuoteRequest {
+            sell_token: token_a,
+            buy_token: token_b,
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: NonZeroU256::try_from(2u64.eth()).unwrap(),
+                },
+            },
+            app_data: OrderCreationAppData::Full {
+                full: app_data.to_string(),
+            },
+            ..Default::default()
+        };
+        let services = &services;
+        async move {
+            services
+                .submit_quote(&request)
+                .await
+                .unwrap()
+                .protocol_fee_bps
+        }
+    };
+    assert_eq!(quoted_volume_fee(WAIT_FOR_COW).await, None);
+    assert_eq!(quoted_volume_fee("{}").await.as_deref(), Some("100"));
 
     tracing::info!("Waiting until right after a batch time.");
     // The rest of the test relies on starting early in an interval. Sleeping
@@ -299,7 +344,30 @@ async fn wait_for_cow_test(web3: Web3) {
         );
     }
 
-    tracing::info!("The order that wasn't filled in its batch is a regular order afterwards.");
+    tracing::info!("Only the regular order paid a protocol volume fee.");
+    wait_for_condition(TIMEOUT, || async {
+        for uid in [regular, cow_a, cow_b] {
+            if stored_protocol_fees(&services, &uid).await.is_empty() {
+                return false;
+            }
+        }
+        true
+    })
+    .await
+    .unwrap();
+    let regular_fees = stored_protocol_fees(&services, &regular).await;
+    assert_eq!(regular_fees.len(), 2, "{regular_fees:?}");
+    assert_eq!(regular_fees[1], (FeePolicyKind::Volume, Some(0.01)));
+    for uid in [cow_a, cow_b] {
+        let fees = stored_protocol_fees(&services, &uid).await;
+        assert_eq!(fees.len(), 1, "{fees:?}");
+        assert_ne!(fees[0].0, FeePolicyKind::Volume);
+    }
+
+    tracing::info!(
+        "The order that wasn't filled in its batch is a regular order afterwards, still without a \
+         volume fee."
+    );
     let next_batch = batch + INTERVAL;
     wait_for_condition(TIMEOUT, || async {
         onchain.mint_block().await;
@@ -308,12 +376,21 @@ async fn wait_for_cow_test(web3: Web3) {
             "the unfilled order didn't enter an auction before the next batch"
         );
         let auction = services.get_auction().await;
-        auction.id > competition.auction_id
-            && auction
-                .auction
-                .orders
-                .iter()
-                .any(|order| order.uid == unfillable)
+        if auction.id <= competition.auction_id {
+            return false;
+        }
+        let Some(order) = auction
+            .auction
+            .orders
+            .iter()
+            .find(|order| order.uid == unfillable)
+        else {
+            return false;
+        };
+        let fees = &order.protocol_fees;
+        assert_eq!(fees.len(), 1, "{fees:?}");
+        assert!(!matches!(fees[0], FeePolicy::Volume { .. }), "{fees:?}");
+        true
     })
     .await
     .unwrap();
@@ -321,4 +398,18 @@ async fn wait_for_cow_test(web3: Web3) {
         services.get_order_status(&unfillable).await.unwrap(),
         Status::Scheduled
     );
+}
+
+/// The kind and volume factor of each protocol fee stored for the order in the
+/// latest auction where a solution included it.
+async fn stored_protocol_fees(
+    services: &Services<'_>,
+    uid: &OrderUid,
+) -> Vec<(FeePolicyKind, Option<f64>)> {
+    crate::database::latest_fee_policies_of_order(services.db(), uid)
+        .await
+        .into_iter()
+        .filter(|policy| policy.origin == Some(FeePolicyOrigin::Protocol))
+        .map(|policy| (policy.kind, policy.volume_factor))
+        .collect()
 }

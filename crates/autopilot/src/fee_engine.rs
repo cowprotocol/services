@@ -24,22 +24,28 @@ const JIT_OWNERS: &str = "jit_owners";
 /// the order's capped partner fees.
 pub struct FeeEngineFees {
     rules: RuleSet,
+    canonical_batches: bool,
 }
 
 impl FeeEngineFees {
     /// Loads the rules of `[fee-engine]`, with the lists `wrapped_native` and
     /// `jit_owners` added, which the section may not set.
+    /// `canonical_batches` tells whether the autopilot runs canonical batches.
     pub fn new(
         config: &FeeEngineConfig,
         native_token: Address,
         surplus_capturing_jit_order_owners: &[Address],
+        canonical_batches: bool,
     ) -> anyhow::Result<Self> {
         let rules = load_host_rules(
             config,
             native_token,
             &[(JIT_OWNERS, surplus_capturing_jit_order_owners)],
         )?;
-        Ok(Self { rules })
+        Ok(Self {
+            rules,
+            canonical_batches,
+        })
     }
 
     fn evaluate(
@@ -69,6 +75,7 @@ impl FeeEngineFees {
             app_data: &app_data,
             partner_fees: &partner_fees,
             in_market,
+            canonical_batches: self.canonical_batches,
         });
         evaluation.warn_skipped();
         evaluation
@@ -172,6 +179,11 @@ when = 'order.sellToken == order.buyToken || (order.sellToken in wrapped_native 
 fee = "order.inMarket ? price_improvement(50, 98) : surplus(50, 98)"
 
 [[rule]]
+name = "Wait for CoW: no volume fee"
+when = "order.waitForCow"
+fee = "order.inMarket ? price_improvement(50, 98) : surplus(50, 98)"
+
+[[rule]]
 name = "Stablecoins: 0.3 bps"
 when = "order.sellToken in stablecoins && order.buyToken in stablecoins"
 fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(0.3)]"
@@ -192,7 +204,7 @@ fee = "[order.inMarket ? price_improvement(50, 98) : surplus(50, 98), volume(2)]
     }
 
     fn engine() -> FeeEngineFees {
-        FeeEngineFees::new(&toml::from_str(RULES).unwrap(), WETH, &[JIT_OWNER]).unwrap()
+        FeeEngineFees::new(&toml::from_str(RULES).unwrap(), WETH, &[JIT_OWNER], false).unwrap()
     }
 
     /// Sells 1000 `sell_token` for 900 `buy_token` or more.
@@ -337,7 +349,7 @@ fee = "volume(2)"
 "#,
         )
         .unwrap();
-        let engine = FeeEngineFees::new(&config, WETH, &[]).unwrap();
+        let engine = FeeEngineFees::new(&config, WETH, &[], false).unwrap();
         assert_eq!(
             engine.auction_fees(&order(USDC, WETH, None), None, Utc::now()),
             [volume(0.0002, Origin::Protocol)]
@@ -346,7 +358,7 @@ fee = "volume(2)"
 
     #[test]
     fn no_rules_charge_no_fee() {
-        let engine = FeeEngineFees::new(&FeeEngineConfig::default(), WETH, &[]).unwrap();
+        let engine = FeeEngineFees::new(&FeeEngineConfig::default(), WETH, &[], false).unwrap();
         let order = order(USDC, WETH, Some(VOLUME_PARTNER_FEES));
         assert_eq!(engine.auction_fees(&order, None, Utc::now()), []);
     }
@@ -355,7 +367,7 @@ fee = "volume(2)"
     fn rules_must_load() {
         let broken =
             toml::from_str("[[rule]]\nname = 'x'\nwhen = 'true'\nfee = 'volume('\n").unwrap();
-        assert!(FeeEngineFees::new(&broken, WETH, &[]).is_err());
+        assert!(FeeEngineFees::new(&broken, WETH, &[], false).is_err());
     }
 
     #[test]
@@ -365,6 +377,35 @@ fee = "volume(2)"
         assert_eq!(
             engine().auction_fees(&order, None, Utc::now()),
             [
+                volume(0.04, Origin::Partner),
+                volume(0.009615384615384616, Origin::Partner),
+            ]
+        );
+    }
+
+    #[test]
+    fn wait_for_cow_orders_skip_the_volume_fee_only_with_canonical_batches() {
+        let mut order = order(USDC, WETH, Some(VOLUME_PARTNER_FEES));
+        order.metadata.wait_for_cow = true;
+        let fees = |canonical_batches| {
+            let config = toml::from_str(RULES).unwrap();
+            FeeEngineFees::new(&config, WETH, &[JIT_OWNER], canonical_batches)
+                .unwrap()
+                .auction_fees(&order, None, Utc::now())
+        };
+        assert_eq!(
+            fees(true),
+            [
+                surplus(),
+                volume(0.04, Origin::Partner),
+                volume(0.009615384615384616, Origin::Partner),
+            ]
+        );
+        assert_eq!(
+            fees(false),
+            [
+                surplus(),
+                volume(0.0002, Origin::Protocol),
                 volume(0.04, Origin::Partner),
                 volume(0.009615384615384616, Origin::Partner),
             ]
