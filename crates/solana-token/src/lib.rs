@@ -267,6 +267,16 @@ pub fn receivable_token_account(account: &Account, mint: &Pubkey) -> bool {
         })
 }
 
+/// Whether `account` is an unfrozen token account of `mint` that `owner` owns.
+pub fn spendable_token_account(account: &Account, mint: &Pubkey, owner: &Pubkey) -> bool {
+    TokenProgram::try_from(&account.owner).is_ok()
+        && StateWithExtensions::<TokenAccount>::unpack(&account.data).is_ok_and(|state| {
+            state.base.state == AccountState::Initialized
+                && state.base.mint == *mint
+                && state.base.owner == *owner
+        })
+}
+
 /// Whether the settlement's payout of `mint` lands in the token account at
 /// `account`, read from the chain as `found`: the account receives the mint,
 /// or the settlement creates it, which it does only at `owner`'s associated

@@ -47,7 +47,7 @@ use {
         transaction::VersionedTransaction,
     },
     solana_system_interface::instruction::SystemInstruction,
-    solana_token::receivable_or_creatable,
+    solana_token::{receivable_or_creatable, spendable_token_account},
     spl_associated_token_account_interface::address::get_associated_token_address_with_program_id,
     spl_token_interface::instruction::TokenInstruction,
     std::{
@@ -102,6 +102,7 @@ enum PlacementError {
     SameBuyAndSellToken,
     ZeroAmount,
     InvalidNativeBuy(&'static str),
+    InvalidSellTokenAccount,
     InvalidBuyTokenAccount,
     InsufficientValidTo,
     ExcessiveValidTo,
@@ -138,6 +139,10 @@ impl From<PlacementError> for error::Reply {
             }
             PlacementError::ZeroAmount => ("ZeroAmount", "order amounts must not be zero"),
             PlacementError::InvalidNativeBuy(description) => ("InvalidNativeBuy", description),
+            PlacementError::InvalidSellTokenAccount => (
+                "InvalidSellTokenAccount",
+                "the sell token account is frozen or not the owner's account of the sell mint",
+            ),
             PlacementError::InvalidBuyTokenAccount => (
                 "InvalidBuyTokenAccount",
                 "the receiver is not the wallet the buy token account belongs to",
@@ -516,9 +521,10 @@ fn validate(
     Ok((build_order(intent, uid, order_pda), token_programs))
 }
 
-/// Reject an order on a mint the settlement program cannot move, a
-/// preparation step naming a token program that does not own its mint, a
-/// native SOL buy paying an account the System Program does not own or
+/// Reject an order on a mint the settlement program cannot move, an existing
+/// sell token account that is frozen or not the owner's account of the sell
+/// mint, a preparation step naming a token program that does not own its mint,
+/// a native SOL buy paying an account the System Program does not own or
 /// leaving its wallet under the rent-exempt minimum, a receiver the buy
 /// token account does not belong to, and a token buy whose buy token
 /// account the settlement can neither pay out to nor create for the wallet
@@ -530,9 +536,10 @@ async fn check_accounts(
     order: &db::SponsoredOrder,
     token_programs: &[(Pubkey, Pubkey)],
 ) -> Result<(), Failure> {
-    let [sell, buy, buy_account, owner] = [
+    let [sell, buy, sell_account, buy_account, owner] = [
         order.sell_token,
         order.buy_token,
+        order.sell_token_account,
         order.buy_token_account,
         order.owner,
     ]
@@ -546,11 +553,24 @@ async fn check_accounts(
     let lookup = sponsoring.mints.lookup(mints.iter().copied());
     let accounts = sponsoring
         .rpc
-        .multiple_accounts(lookup.unread().chain(wallet).chain(token_account))
+        .multiple_accounts(
+            lookup
+                .unread()
+                .chain(wallet)
+                .chain(token_account)
+                .chain([sell_account]),
+        )
         .await
         .map_err(|err| Failure::internal(err, "order account lookup"))?;
     let verdicts = lookup.resolve(&accounts);
     ensure_settleable(&verdicts, mints).map_err(Failure::Replied)?;
+    // ATA creation allocates over a system account holding only lamports.
+    if let Some(found) = accounts.get(&sell_account)
+        && (found.owner != solana_system_interface::program::ID || !found.data.is_empty())
+        && !spendable_token_account(found, &sell, &owner)
+    {
+        return Err(PlacementError::InvalidSellTokenAccount.into());
+    }
     // The receiver only names whose account the payout lands in: the wallet
     // itself for a native SOL buy, the wallet the buy token account is the
     // associated token account of otherwise.
