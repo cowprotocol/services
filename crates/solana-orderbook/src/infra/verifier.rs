@@ -359,6 +359,14 @@ impl Verifier {
                 return Verdict::Unverified;
             }
         };
+        // Every simulated bundle is logged so any verdict can be replayed,
+        // including a failed leg whose logs `simulateBundle` drops.
+        tracing::debug!(
+            driver,
+            slot = response.context.slot,
+            bundle = ?Lazy(|| bundle.iter().map(encoded).collect::<Vec<_>>()),
+            "quote bundle simulated"
+        );
         let results = response.value;
         if let Some(err) = results.first().and_then(|result| result.err.as_ref()) {
             tracing::debug!(
@@ -379,13 +387,10 @@ impl Verifier {
             return Verdict::Unverified;
         };
         if let Some(err) = &settled.err {
-            // `simulateBundle` drops a failed leg's logs. A replay of the
-            // bundle elsewhere recovers them.
             tracing::debug!(
                 driver,
                 ?err,
                 slot = response.context.slot,
-                bundle = ?Lazy(|| bundle.iter().map(encoded).collect::<Vec<_>>()),
                 "quote unverified, its settlement fails in simulation"
             );
             return Verdict::Unverified;
