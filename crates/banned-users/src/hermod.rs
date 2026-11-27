@@ -3,8 +3,7 @@
 //! `GET /address_batches` request.
 
 use {
-    super::metrics::Metrics,
-    alloy_primitives::{Address, B256},
+    super::{Address, metrics::Metrics},
     futures::future::join_all,
     hmac::{Hmac, Mac},
     moka::{policy::EvictionPolicy, sync::Cache},
@@ -44,10 +43,14 @@ enum Error {
     UnexpectedStatus(reqwest::StatusCode),
 }
 
+/// The HMAC-SHA256 signature of an address.
+type Signature = [u8; 32];
+
 /// One known threat in a `GET /address_batches` response.
 #[derive(Deserialize)]
 struct Hit {
-    hashed_address: B256,
+    #[serde(deserialize_with = "const_hex::deserialize")]
+    hashed_address: Signature,
 }
 
 /// What Hermod reports for an address.
@@ -59,17 +62,17 @@ pub(super) enum Status {
     Unknown,
 }
 
-pub(super) struct Client {
+pub(super) struct Client<A: Address> {
     client: reqwest::Client,
     endpoint: Url,
     hmac_key: Vec<u8>,
     api_key: Option<String>,
     /// HMAC signature of each recently checked address, so repeated checks
     /// do not compute it again.
-    signatures: Cache<Address, B256>,
+    signatures: Cache<A, Signature>,
 }
 
-impl Client {
+impl<A: Address> Client<A> {
     pub(super) fn new(config: Config, max_cached_signatures: u64) -> Self {
         // Make sure the URL ends with a slash so joining `address_batches`
         // appends rather than replaces the last path segment.
@@ -95,23 +98,21 @@ impl Client {
         }
     }
 
-    /// HMAC-SHA256 of the lowercase `0x`-prefixed address (42 chars).
-    fn sign(&self, address: Address) -> B256 {
+    /// HMAC-SHA256 of the address bytes as lowercase `0x`-prefixed hex (42
+    /// chars for an EVM address).
+    fn sign(&self, address: A) -> Signature {
         self.signatures.get_with(address, || {
             let mut mac = Hmac::<Sha256>::new_from_slice(&self.hmac_key)
                 .expect("HMAC accepts keys of any length");
             mac.update(const_hex::encode_prefixed(address).as_bytes());
-            B256::from(<[u8; 32]>::from(mac.finalize().into_bytes()))
+            mac.finalize().into_bytes().into()
         })
     }
 
     /// Returns the status of each address. The addresses of a failed batch
     /// request are [`Status::Unknown`].
-    pub(super) async fn fetch_statuses(
-        &self,
-        addresses: &HashSet<Address>,
-    ) -> HashMap<Address, Status> {
-        let signed: Vec<(B256, Address)> = addresses
+    pub(super) async fn fetch_statuses(&self, addresses: &HashSet<A>) -> HashMap<A, Status> {
+        let signed: Vec<(Signature, A)> = addresses
             .iter()
             .map(|address| (self.sign(*address), *address))
             .collect();
@@ -128,7 +129,7 @@ impl Client {
 
     /// Checks `batch` with one request. Requires `batch` to have at most
     /// [`MAX_BATCH_SIZE`] items; extra items are not checked.
-    async fn fetch_batch_statuses(&self, batch: &[(B256, Address)]) -> Vec<(Address, Status)> {
+    async fn fetch_batch_statuses(&self, batch: &[(Signature, A)]) -> Vec<(A, Status)> {
         let batch = &batch[..batch.len().min(MAX_BATCH_SIZE)];
         let start = Instant::now();
         let result = self.request_batch(batch).await;
@@ -143,11 +144,11 @@ impl Client {
         statuses_of_batch(batch, result.as_deref().ok())
     }
 
-    async fn request_batch(&self, batch: &[(B256, Address)]) -> Result<Vec<Hit>, Error> {
+    async fn request_batch(&self, batch: &[(Signature, A)]) -> Result<Vec<Hit>, Error> {
         // Stack buffers: no heap allocation per signature.
         let hex: Vec<_> = batch
             .iter()
-            .map(|(signature, _)| const_hex::Buffer::<32>::new().const_format(&signature.0))
+            .map(|(signature, _)| const_hex::Buffer::<32>::new().const_format(signature))
             .collect();
         let body: Vec<&str> = hex.iter().map(const_hex::Buffer::as_str).collect();
         let mut request = self.client.get(self.endpoint.clone()).json(&body);
@@ -169,7 +170,10 @@ impl Client {
 
 /// Returns the status of each address in `batch`. `hits` are the threats that
 /// Hermod reported for the batch, or `None` if the request failed.
-fn statuses_of_batch(batch: &[(B256, Address)], hits: Option<&[Hit]>) -> Vec<(Address, Status)> {
+fn statuses_of_batch<A: Address>(
+    batch: &[(Signature, A)],
+    hits: Option<&[Hit]>,
+) -> Vec<(A, Status)> {
     batch
         .iter()
         .map(|(signature, address)| {
@@ -188,12 +192,9 @@ fn statuses_of_batch(batch: &[(B256, Address)], hits: Option<&[Hit]>) -> Vec<(Ad
 
 #[cfg(test)]
 mod tests {
-    use {
-        super::*,
-        alloy_primitives::{address, b256},
-    };
+    use {super::*, hex_literal::hex};
 
-    fn client(url: &str) -> Client {
+    fn client(url: &str) -> Client<[u8; 20]> {
         Client::new(
             Config {
                 url: url.parse().unwrap(),
@@ -212,17 +213,30 @@ mod tests {
         //   | openssl dgst -sha256 -hmac key
         let hermod = client("http://hermod:3000");
         assert_eq!(
-            hermod.sign(address!("dead000000000000000000000000000000000000")),
-            b256!("e146f8bc38fe78f9356be67706a02eb3ce386b4b12a14ab1f76d022020b6cef0"),
+            hermod.sign(hex!("dead000000000000000000000000000000000000")),
+            hex!("e146f8bc38fe78f9356be67706a02eb3ce386b4b12a14ab1f76d022020b6cef0"),
         );
     }
 
     #[test]
+    fn hit_reads_the_signature_as_hex() {
+        let signature = hex!("e146f8bc38fe78f9356be67706a02eb3ce386b4b12a14ab1f76d022020b6cef0");
+        for prefix in ["", "0x"] {
+            let json = format!(
+                r#"{{"hashed_address": "{prefix}{}"}}"#,
+                const_hex::encode(signature)
+            );
+            let hit: Hit = serde_json::from_str(&json).unwrap();
+            assert_eq!(hit.hashed_address, signature);
+        }
+    }
+
+    #[test]
     fn batch_statuses_follow_the_response() {
-        let (safe, threat) = (Address::repeat_byte(1), Address::repeat_byte(2));
-        let batch = [(B256::repeat_byte(1), safe), (B256::repeat_byte(2), threat)];
+        let (safe, threat) = ([1u8; 20], [2u8; 20]);
+        let batch = [([1; 32], safe), ([2; 32], threat)];
         let hits = [Hit {
-            hashed_address: B256::repeat_byte(2),
+            hashed_address: [2; 32],
         }];
 
         assert_eq!(

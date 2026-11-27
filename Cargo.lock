@@ -2226,9 +2226,9 @@ dependencies = [
 name = "banned-users"
 version = "0.1.0"
 dependencies = [
- "alloy-primitives",
  "const-hex",
  "futures",
+ "hex-literal",
  "hmac 0.12.1",
  "moka",
  "observe",
@@ -2236,6 +2236,7 @@ dependencies = [
  "prometheus-metric-storage",
  "reqwest 0.13.4",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "thiserror 1.0.69",
  "tokio",
