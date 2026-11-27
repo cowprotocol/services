@@ -3,6 +3,13 @@
 -- `fast_path` and `valid_from`, which app-data validation enforces.
 -- Legacy orders default to `false`.
 --
+-- On the large production databases, run this statement, the V136 index and
+-- `ANALYZE orders (wait_for_cow);` manually ahead of the deployment. Until the
+-- column has statistics, the planner may run the autopilot's per-loop
+-- `UPDATE ... WHERE wait_for_cow AND valid_from IS NULL` as a full scan of
+-- `orders` instead of using the index. `IF NOT EXISTS` (here and in V136) then
+-- turns both migrations into no-ops there.
+--
 -- Rollback: `ALTER TABLE orders DROP COLUMN wait_for_cow;` (also drops the
 -- `orders_wait_for_cow_pending` index from V136).
-ALTER TABLE orders ADD COLUMN wait_for_cow boolean NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS wait_for_cow boolean NOT NULL DEFAULT false;
