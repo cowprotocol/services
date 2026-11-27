@@ -4,10 +4,10 @@
 
 use {
     super::{
+        Address,
         hermod::{Client as Hermod, Status},
         metrics::Metrics,
     },
-    alloy_primitives::Address,
     moka::{policy::EvictionPolicy, sync::Cache},
     std::{
         collections::{HashMap, HashSet},
@@ -24,16 +24,16 @@ use {
 /// place: an `insert` would count as a request and keep the address cached.
 type Verdict = Arc<AtomicBool>;
 
-pub(super) struct Cached {
-    hermod: Hermod,
-    verdicts: Cache<Address, Verdict>,
+pub(super) struct Cached<A: Address> {
+    hermod: Hermod<A>,
+    verdicts: Cache<A, Verdict>,
 }
 
-impl Cached {
+impl<A: Address> Cached<A> {
     /// Checks the cached addresses again every `refresh_interval`. An address
     /// that nobody requested for `max_idle` leaves the cache.
     pub(super) fn new(
-        hermod: Hermod,
+        hermod: Hermod<A>,
         max_entries: u64,
         refresh_interval: Duration,
         max_idle: Duration,
@@ -52,7 +52,7 @@ impl Cached {
 
     /// Returns the subset of `addresses` that is banned. Only the addresses
     /// without a cached verdict are sent to Hermod.
-    pub(super) async fn banned(&self, addresses: &HashSet<Address>) -> HashSet<Address> {
+    pub(super) async fn banned(&self, addresses: &HashSet<A>) -> HashSet<A> {
         let mut banned = HashSet::new();
         let mut missing = HashSet::new();
         for address in addresses {
@@ -84,7 +84,7 @@ impl Cached {
     /// Checks all cached addresses again. Reads them with `iter`, which does
     /// not count as a request.
     async fn refresh(&self) {
-        let cached: Vec<(Arc<Address>, Verdict)> = self.verdicts.iter().collect();
+        let cached: Vec<(Arc<A>, Verdict)> = self.verdicts.iter().collect();
         let addresses = cached.iter().map(|(address, _)| **address).collect();
         let statuses = self.hermod.fetch_statuses(&addresses).await;
         store_verdicts(&cached, &statuses);
@@ -108,7 +108,7 @@ impl Cached {
 
 /// Stores the verdicts of a refresh. An address with an unknown status keeps
 /// its cached verdict: a failed request must not clear a ban.
-fn store_verdicts(cached: &[(Arc<Address>, Verdict)], statuses: &HashMap<Address, Status>) {
+fn store_verdicts<A: Address>(cached: &[(Arc<A>, Verdict)], statuses: &HashMap<A, Status>) {
     for (address, verdict) in cached {
         match statuses.get(&**address) {
             Some(Status::Banned) => verdict.store(true, Ordering::Relaxed),
@@ -120,7 +120,7 @@ fn store_verdicts(cached: &[(Arc<Address>, Verdict)], statuses: &HashMap<Address
 
 /// LRU, because the default policy can refuse a new address when the cache is
 /// full.
-fn verdict_cache(max_entries: u64, max_idle: Duration) -> Cache<Address, Verdict> {
+fn verdict_cache<A: Address>(max_entries: u64, max_idle: Duration) -> Cache<A, Verdict> {
     Cache::builder()
         .max_capacity(max_entries)
         .eviction_policy(EvictionPolicy::lru())
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn unknown_status_keeps_the_cached_verdict() {
-        let address = Address::repeat_byte;
+        let address = |byte: u8| [byte; 20];
         let entry = |byte, banned: bool| (Arc::new(address(byte)), Verdict::new(banned.into()));
         let cached = [
             entry(1, true),
@@ -159,8 +159,8 @@ mod tests {
     #[test]
     fn full_cache_evicts_the_oldest_address() {
         let verdicts = verdict_cache(1, Duration::from_secs(60));
-        let old = Address::repeat_byte(1);
-        let new = Address::repeat_byte(2);
+        let old = [1u8; 20];
+        let new = [2u8; 20];
 
         verdicts.insert(old, Verdict::default());
         verdicts.insert(new, Verdict::default());
@@ -174,7 +174,7 @@ mod tests {
     fn iterating_does_not_keep_an_address_cached() {
         let max_idle = Duration::from_millis(50);
         let verdicts = verdict_cache(10, max_idle);
-        let address = Address::repeat_byte(1);
+        let address = [1u8; 20];
         verdicts.insert(address, Verdict::default());
 
         // No pause is longer than `max_idle`, so an iteration that counted
