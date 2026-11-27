@@ -26,7 +26,6 @@ use {
     gas_price_estimation::gas_price::InstrumentedGasEstimator,
     http_client::HttpClientFactory,
     model::DomainSeparator,
-    num::ToPrimitive,
     observe::{
         config::EventBusConfig,
         metrics::{DEFAULT_METRICS_PORT, serve_metrics},
@@ -426,19 +425,7 @@ pub async fn run(config: Configuration) {
 
     let order_validator = Arc::new(OrderValidator::new(
         native_token.clone(),
-        Arc::new(order_validation::banned::Users::new(
-            config.banned_users.hermod.clone().map(|hermod| {
-                order_validation::banned::HermodConfig {
-                    url: hermod.url,
-                    hmac_key: hermod.hmac_key.into_inner(),
-                    api_key: hermod.api_key.map(|key| key.into_inner()),
-                    refresh_interval: hermod.refresh_interval,
-                    max_idle: hermod.max_idle,
-                }
-            }),
-            config.banned_users.addresses,
-            config.banned_users.max_cache_size.get().to_u64().unwrap(),
-        )),
+        Arc::new(order_validation::banned::Users::new(config.banned_users)),
         validity_configuration,
         config.eip1271_skip_creation_validation,
         deny_listed_tokens.clone(),

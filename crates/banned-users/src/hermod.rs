@@ -3,7 +3,7 @@
 //! `GET /address_batches` request.
 
 use {
-    super::{Address, metrics::Metrics},
+    super::{Address, HermodConfig as Config, metrics::Metrics},
     futures::future::join_all,
     hmac::{Hmac, Mac},
     moka::{policy::EvictionPolicy, sync::Cache},
@@ -19,21 +19,6 @@ use {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
 /// Hermod rejects batches with more unique signatures than this.
 const MAX_BATCH_SIZE: usize = 1000;
-
-/// Configuration for the Hermod (zeroShadow) sanctioned-address checker.
-#[derive(Debug, Clone)]
-pub struct Config {
-    /// Base URL of the Hermod agent (e.g. `http://hermod:3000`).
-    pub url: Url,
-    /// Per-customer HMAC key used to obfuscate addresses before sending.
-    pub hmac_key: String,
-    /// Optional API key sent as a Bearer token.
-    pub api_key: Option<String>,
-    /// How often the cached addresses are checked again.
-    pub refresh_interval: Duration,
-    /// An address that nobody requested for this long leaves the cache.
-    pub max_idle: Duration,
-}
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
@@ -89,8 +74,8 @@ impl<A: Address> Client<A> {
             endpoint: url
                 .join("address_batches")
                 .expect("base url is valid and the path is static"),
-            hmac_key: config.hmac_key.into_bytes(),
-            api_key: config.api_key,
+            hmac_key: config.hmac_key.into_inner().into_bytes(),
+            api_key: config.api_key.map(|key| key.into_inner()),
             signatures: Cache::builder()
                 .max_capacity(max_cached_signatures)
                 .eviction_policy(EvictionPolicy::lru())
@@ -198,7 +183,7 @@ mod tests {
         Client::new(
             Config {
                 url: url.parse().unwrap(),
-                hmac_key: "key".to_string(),
+                hmac_key: "key".to_string().into(),
                 api_key: None,
                 refresh_interval: Duration::from_secs(5),
                 max_idle: Duration::from_secs(60),

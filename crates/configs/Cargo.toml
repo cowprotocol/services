@@ -5,11 +5,12 @@ edition = "2024"
 
 [features]
 s3 = ["dep:s3"]
-test-util = ["dep:tempfile", "rate-limit/test-util"]
+test-util = ["banned-users/test-util", "dep:tempfile", "rate-limit/test-util"]
 
 [dependencies]
 alloy-primitives = { workspace = true, features = ["map", "serde"] }
 anyhow = { workspace = true }
+banned-users = { workspace = true }
 bigdecimal = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, features = ["serde"] }
 humantime-serde = { workspace = true }
@@ -23,6 +24,7 @@ tracing = { workspace = true }
 url = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
+banned-users = { workspace = true, features = ["test-util"] }
 configs = { path = ".", features = ["s3"] }
 rate-limit = { workspace = true, features = ["test-util"] }
 serde_json = { workspace = true }

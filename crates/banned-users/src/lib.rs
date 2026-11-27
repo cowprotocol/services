@@ -2,10 +2,11 @@
 //! behind a cache layer. An address is any type that works as bytes.
 
 mod cached;
+mod config;
 mod hermod;
 mod metrics;
 
-pub use hermod::Config as HermodConfig;
+pub use config::{Config, HermodConfig};
 use {
     self::{cached::Cached, hermod::Client as Hermod},
     std::{collections::HashSet, hash::Hash, sync::Arc},
@@ -23,17 +24,18 @@ pub struct Users<A: Address> {
 }
 
 impl<A: Address> Users<A> {
-    /// Builds the validator from a hardcoded list and an optional Hermod
-    /// backend. `cache_max_size` caps the cached Hermod address signatures
-    /// and the cached verdicts.
-    pub fn new(hermod: Option<HermodConfig>, banned_users: Vec<A>, cache_max_size: u64) -> Self {
+    /// Builds the validator from the hardcoded list and the optional Hermod
+    /// backend of `config`. `max_cache_size` caps the cached Hermod address
+    /// signatures and the cached verdicts.
+    pub fn new(config: Config<A>) -> Self {
+        let max_cache_size = config.max_cache_size.get() as u64;
         Self {
-            list: HashSet::from_iter(banned_users),
-            remote: hermod.map(|config| {
-                let (refresh_interval, max_idle) = (config.refresh_interval, config.max_idle);
+            list: HashSet::from_iter(config.addresses),
+            remote: config.hermod.map(|hermod| {
+                let (refresh_interval, max_idle) = (hermod.refresh_interval, hermod.max_idle);
                 Cached::new(
-                    Hermod::new(config, cache_max_size),
-                    cache_max_size,
+                    Hermod::new(hermod, max_cache_size),
+                    max_cache_size,
                     refresh_interval,
                     max_idle,
                 )

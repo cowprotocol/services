@@ -1,7 +1,10 @@
+//! Configuration of the banned user detection. All services read the same
+//! section; only the address type changes.
+
 use {
-    alloy_primitives::Address,
     serde::Deserialize,
     serde_ext::Env,
+    serde_with::{DisplayFromStr, serde_as},
     std::{fmt::Debug, num::NonZeroUsize, time::Duration},
     url::Url,
 };
@@ -20,14 +23,24 @@ fn default_max_cache_size() -> NonZeroUsize {
     NonZeroUsize::new(10000).unwrap()
 }
 
-/// Addresses banned from creating orders, with a local cache.
+/// Addresses banned from creating orders, with a local cache. An address is
+/// read from its text form, for example `0x` hex or base58.
+#[serde_as]
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(any(test, feature = "test-util"), derive(serde::Serialize))]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct BannedUsersConfig {
+#[serde(
+    rename_all = "kebab-case",
+    deny_unknown_fields,
+    bound(
+        deserialize = "A: std::str::FromStr, A::Err: std::fmt::Display",
+        serialize = "A: std::fmt::Display"
+    )
+)]
+pub struct Config<A> {
     /// List of account addresses to be denied from order creation.
     #[serde(default)]
-    pub addresses: Vec<Address>,
+    #[serde_as(as = "Vec<DisplayFromStr>")]
+    pub addresses: Vec<A>,
 
     /// Maximum number of addresses to cache for Hermod: their signatures
     /// (HMACs) and their verdicts.
@@ -39,7 +52,7 @@ pub struct BannedUsersConfig {
     pub hermod: Option<HermodConfig>,
 }
 
-impl Default for BannedUsersConfig {
+impl<A> Default for Config<A> {
     fn default() -> Self {
         Self {
             addresses: Vec::new(),
@@ -77,12 +90,15 @@ pub struct HermodConfig {
 
 #[cfg(test)]
 mod tests {
-    use {super::*, alloy_primitives::address};
+    use super::*;
+
+    /// The tests read the addresses as text: the callers choose the type.
+    type Config = super::Config<String>;
 
     #[test]
     fn deserialize_defaults() {
         let toml = "";
-        let config: BannedUsersConfig = toml::from_str(toml).unwrap();
+        let config: Config = toml::from_str(toml).unwrap();
         assert!(config.addresses.is_empty());
         assert_eq!(config.max_cache_size.get(), 10000);
         assert!(config.hermod.is_none());
@@ -94,13 +110,30 @@ mod tests {
         addresses = ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         max-cache-size = 5000
         "#;
-        let config: BannedUsersConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.addresses.len(), 1);
+        let config: Config = toml::from_str(toml).unwrap();
         assert_eq!(
-            config.addresses[0],
-            address!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+            config.addresses,
+            ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"]
         );
         assert_eq!(config.max_cache_size.get(), 5000);
+    }
+
+    #[test]
+    fn rejects_an_address_that_does_not_parse() {
+        let toml = r#"addresses = ["not an address"]"#;
+        assert!(toml::from_str::<super::Config<std::net::Ipv4Addr>>(toml).is_err());
+    }
+
+    #[test]
+    fn serialized_config_deserializes_again() {
+        let config = Config {
+            addresses: vec!["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".to_string()],
+            max_cache_size: NonZeroUsize::new(5000).unwrap(),
+            hermod: None,
+        };
+        let deserialized: Config = toml::from_str(&toml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(deserialized.addresses, config.addresses);
+        assert_eq!(deserialized.max_cache_size, config.max_cache_size);
     }
 
     #[test]
@@ -111,7 +144,7 @@ mod tests {
         hmac-key = "key"
         api-key = "secret"
         "#;
-        let config: BannedUsersConfig = toml::from_str(toml).unwrap();
+        let config: Config = toml::from_str(toml).unwrap();
         let hermod = config.hermod.unwrap();
         assert_eq!(hermod.url.as_str(), "http://hermod:3000/");
         assert_eq!(hermod.hmac_key.into_inner(), "key");
@@ -129,7 +162,7 @@ mod tests {
         refresh-interval = "12s"
         max-idle = "2m"
         "#;
-        let config: BannedUsersConfig = toml::from_str(toml).unwrap();
+        let config: Config = toml::from_str(toml).unwrap();
         let hermod = config.hermod.unwrap();
         assert_eq!(hermod.refresh_interval, Duration::from_secs(12));
         assert_eq!(hermod.max_idle, Duration::from_secs(120));
@@ -160,7 +193,7 @@ mod tests {
         hmac-key = "key"
         api-key = "%NONEXISTENT_TEST_HERMOD_API_KEY"
         "#;
-        let err = toml::from_str::<BannedUsersConfig>(toml).unwrap_err();
+        let err = toml::from_str::<Config>(toml).unwrap_err();
         assert!(
             err.to_string().contains("NONEXISTENT_TEST_HERMOD_API_KEY"),
             "{err}"
@@ -183,7 +216,7 @@ mod tests {
             api-key = "%{api_var}"
             "#,
         );
-        let config: BannedUsersConfig = toml::from_str(&toml).unwrap();
+        let config: Config = toml::from_str(&toml).unwrap();
         let hermod = config.hermod.unwrap();
         assert_eq!(hermod.hmac_key.into_inner(), "env-hmac");
         assert_eq!(hermod.api_key.unwrap().into_inner(), "env-api");

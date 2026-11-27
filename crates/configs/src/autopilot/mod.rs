@@ -11,7 +11,6 @@ use {
             trusted_tokens::TrustedTokensConfig,
         },
         balance_cache::BalanceCacheConfig,
-        banned_users::BannedUsersConfig,
         database::DatabasePoolConfig,
         fee_engine::FeeEngineConfig,
         http_client::HttpClient,
@@ -92,7 +91,7 @@ pub struct Configuration {
 
     /// Configuration for order validation rules.
     #[serde(default)]
-    pub banned_users: BannedUsersConfig,
+    pub banned_users: banned_users::Config<Address>,
 
     /// Configuration for uploading auction instances to S3.
     /// If absent, S3 uploads are disabled.
