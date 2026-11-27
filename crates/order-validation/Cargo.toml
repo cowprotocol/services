@@ -7,28 +7,16 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 alloy-contract = { workspace = true }
-alloy-primitives = { workspace = true, features = ["serde"] }
-const-hex = { workspace = true }
+alloy-primitives = { workspace = true }
+banned-users = { workspace = true }
 contracts = { workspace = true }
 ethrpc = { workspace = true }
-futures = { workspace = true }
-hmac = { workspace = true }
-moka = { workspace = true, features = ["sync"] }
-observe = { workspace = true }
-prometheus = { workspace = true }
-prometheus-metric-storage = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
-serde = { workspace = true }
-sha2 = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-url = { workspace = true }
 
 [dev-dependencies]
 alloy-provider = { workspace = true }
 alloy-sol-types = { workspace = true }
 ethrpc = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

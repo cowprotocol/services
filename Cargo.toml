@@ -38,6 +38,7 @@ aws-sdk-s3 = { version = "1.34.0", default-features = false }
 axum = "0.8"
 backtrace = { version = "0.3.76", default-features = false }
 balance-overrides = { path = "crates/balance-overrides" }
+banned-users = { path = "crates/banned-users" }
 base64 = "0.22.1"
 bigdecimal = "0.4"
 bincode = "1.3.3"

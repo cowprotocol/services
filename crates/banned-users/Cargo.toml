@@ -1,0 +1,26 @@
+[package]
+name = "banned-users"
+version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+alloy-primitives = { workspace = true, features = ["serde"] }
+const-hex = { workspace = true }
+futures = { workspace = true }
+hmac = { workspace = true }
+moka = { workspace = true, features = ["sync"] }
+observe = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+[lints]
+workspace = true
